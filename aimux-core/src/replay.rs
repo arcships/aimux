@@ -591,7 +591,7 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
                 .get("arguments")
                 .and_then(|x| x.as_str())
                 .unwrap_or("");
-            let input = serde_json::Value::String(args_str.to_string());
+            let input = args_str.to_string();
             content.push(GenerateContent::ToolCall {
                 tool_call_id,
                 tool_name,

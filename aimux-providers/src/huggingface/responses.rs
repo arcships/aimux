@@ -1139,7 +1139,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     .get("arguments")
                     .and_then(|v| v.as_str())
                     .unwrap_or("{}");
-                let input = Value::String(arguments.to_string());
+                let input = arguments.to_string();
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: call_id.to_string(),
                     tool_name: name.to_string(),
@@ -1158,7 +1158,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     .get("arguments")
                     .and_then(|v| v.as_str())
                     .unwrap_or("{}");
-                let input = Value::String(arguments.to_string());
+                let input = arguments.to_string();
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id.to_string(),
                     tool_name: name.to_string(),
@@ -1188,7 +1188,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id.to_string(),
                     tool_name: "list_tools".to_string(),
-                    input: Value::String(json!({ "server_label": server_label }).to_string()),
+                    input: json!({ "server_label": server_label }).to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
                     thought_signature: None,

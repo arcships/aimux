@@ -197,7 +197,7 @@ fn stream_sources(parts: &[StreamPart]) -> Vec<(String, String, Option<String>, 
 }
 
 /// Extract `(tool_call_id, tool_name, input)` from `GenerateContent::ToolCall`.
-fn gen_tool_calls(content: &[GenerateContent]) -> Vec<(String, String, Value)> {
+fn gen_tool_calls(content: &[GenerateContent]) -> Vec<(String, String, String)> {
     content
         .iter()
         .filter_map(|c| match c {

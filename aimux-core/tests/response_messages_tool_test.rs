@@ -38,7 +38,7 @@ impl LanguageModel for ProviderTranscriptModel {
                 GenerateContent::ToolCall {
                     tool_call_id: "srv-1".to_string(),
                     tool_name: "server_search".to_string(),
-                    input: json!(r#"{"query":"Rust"}"#),
+                    input: r#"{"query":"Rust"}"#.to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
                     thought_signature: None,
@@ -241,7 +241,7 @@ impl LanguageModel for InvalidToolInputModel {
             content: vec![GenerateContent::ToolCall {
                 tool_call_id: "bad-1".to_string(),
                 tool_name: "server_search".to_string(),
-                input: json!("{"),
+                input: "{".to_string(),
                 provider_executed: Some(true),
                 dynamic: Some(true),
                 thought_signature: None,

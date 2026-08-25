@@ -41,7 +41,7 @@ impl LanguageModel for RichModel {
                 GenerateContent::ToolCall {
                     tool_call_id: "tc-1".into(),
                     tool_name: "search".into(),
-                    input: serde_json::json!({ "q": "test" }),
+                    input: r#"{"q":"test"}"#.to_string(),
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
