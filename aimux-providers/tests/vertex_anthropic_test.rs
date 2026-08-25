@@ -18,7 +18,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::CallOptions;
+use aimux_core::options::{CallOptions, ProviderTool, Tool};
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
@@ -155,6 +155,46 @@ async fn vertex_anthropic_generate_text_response() {
     assert_eq!(
         result.response.id.as_deref(),
         Some("msg_017TfcQ4AgGxKyBduUpqYPZn")
+    );
+}
+
+#[tokio::test]
+async fn vertex_anthropic_generate_keeps_direct_caller_metadata() {
+    let server = MockServer::start().await;
+    mock_raw_predict_json(
+        &server,
+        200,
+        json!({
+            "id": "msg_direct",
+            "type": "message",
+            "role": "assistant",
+            "content": [{
+                "type": "tool_use",
+                "id": "toolu_direct",
+                "name": "get_weather",
+                "input": { "city": "Tokyo" },
+                "caller": { "type": "direct" },
+            }],
+            "model": MODEL_ID,
+            "stop_reason": "tool_use",
+            "usage": { "input_tokens": 100, "output_tokens": 50 },
+        }),
+    )
+    .await;
+
+    let result = make_model(&server)
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let metadata = result.content.iter().find_map(|part| match part {
+        GenerateContent::ToolCall {
+            provider_metadata, ..
+        } => provider_metadata.as_ref(),
+        _ => None,
+    });
+    assert_eq!(
+        metadata.expect("caller metadata")["anthropic"]["caller"],
+        json!({ "type": "direct" })
     );
 }
 
@@ -306,6 +346,172 @@ async fn vertex_anthropic_stream_text() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+#[tokio::test]
+async fn vertex_anthropic_streamed_tool_search_results_follow_their_call_ids() {
+    let server = MockServer::start().await;
+    let sse_body = sse_stream(&[
+        json!({
+            "type": "message_start",
+            "message": {
+                "id": "msg_tool_search",
+                "model": MODEL_ID,
+                "usage": { "input_tokens": 10 },
+            },
+        }),
+        json!({
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {
+                "type": "server_tool_use",
+                "id": "bm25_call",
+                "name": "tool_search_tool_bm25",
+                "input": { "query": "weather" },
+            },
+        }),
+        json!({ "type": "content_block_stop", "index": 0 }),
+        json!({
+            "type": "content_block_start",
+            "index": 1,
+            "content_block": {
+                "type": "tool_search_tool_result",
+                "tool_use_id": "bm25_call",
+                "content": {
+                    "type": "tool_search_tool_search_result",
+                    "tool_references": [{
+                        "type": "tool_reference",
+                        "tool_name": "get_weather",
+                    }],
+                },
+            },
+        }),
+        json!({ "type": "content_block_stop", "index": 1 }),
+        json!({
+            "type": "content_block_start",
+            "index": 2,
+            "content_block": {
+                "type": "server_tool_use",
+                "id": "regex_call",
+                "name": "tool_search_tool_regex",
+                "input": { "pattern": "forecast.*" },
+            },
+        }),
+        json!({ "type": "content_block_stop", "index": 2 }),
+        json!({
+            "type": "content_block_start",
+            "index": 3,
+            "content_block": {
+                "type": "tool_search_tool_result",
+                "tool_use_id": "regex_call",
+                "content": {
+                    "type": "tool_search_tool_search_result",
+                    "tool_references": [{
+                        "type": "tool_reference",
+                        "tool_name": "get_forecast",
+                    }],
+                },
+            },
+        }),
+        json!({ "type": "content_block_stop", "index": 3 }),
+        json!({
+            "type": "message_delta",
+            "delta": { "stop_reason": "end_turn" },
+            "usage": { "output_tokens": 20 },
+        }),
+        json!({ "type": "message_stop" }),
+    ]);
+    mock_stream_raw_predict_sse(&server, &sse_body).await;
+    let model = make_model(&server);
+    let options = CallOptions {
+        tools: Some(vec![
+            Tool::Provider(ProviderTool {
+                id: "anthropic.tool_search_regex_20251119".to_string(),
+                name: "regexSearch".to_string(),
+                args: json!({}),
+            }),
+            Tool::Provider(ProviderTool {
+                id: "anthropic.tool_search_bm25_20251119".to_string(),
+                name: "semanticSearch".to_string(),
+                args: json!({}),
+            }),
+        ]),
+        ..default_options(test_prompt())
+    };
+
+    let parts = collect_stream(model.do_stream(&options).await.unwrap()).await;
+    let result_names: std::collections::HashMap<&str, &str> = parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::ToolResult {
+                tool_call_id,
+                tool_name,
+                ..
+            } => Some((tool_call_id.as_str(), tool_name.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(result_names.get("bm25_call"), Some(&"semanticSearch"));
+    assert_eq!(result_names.get("regex_call"), Some(&"regexSearch"));
+}
+
+#[tokio::test]
+async fn vertex_anthropic_stream_keeps_programmatic_caller_metadata() {
+    let server = MockServer::start().await;
+    let sse_body = sse_stream(&[
+        json!({
+            "type": "message_start",
+            "message": {
+                "id": "msg_programmatic",
+                "model": MODEL_ID,
+                "usage": { "input_tokens": 100 },
+            },
+        }),
+        json!({
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {
+                "type": "tool_use",
+                "id": "toolu_programmatic",
+                "name": "query_database",
+                "input": { "sql": "SELECT 1" },
+                "caller": {
+                    "type": "code_execution_20250825",
+                    "tool_id": "srvtoolu_code",
+                },
+            },
+        }),
+        json!({ "type": "content_block_stop", "index": 0 }),
+        json!({
+            "type": "message_delta",
+            "delta": { "stop_reason": "tool_use" },
+            "usage": { "output_tokens": 50 },
+        }),
+        json!({ "type": "message_stop" }),
+    ]);
+    mock_stream_raw_predict_sse(&server, &sse_body).await;
+    let model = make_model(&server);
+
+    let parts = collect_stream(
+        model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let metadata = parts.iter().find_map(|part| match part {
+        StreamPart::ToolCall {
+            provider_metadata, ..
+        } => provider_metadata.as_ref(),
+        _ => None,
+    });
+    assert_eq!(
+        metadata.expect("caller metadata")["anthropic"]["caller"],
+        json!({
+            "type": "code_execution_20250825",
+            "toolId": "srvtoolu_code",
+        })
+    );
+}
+
 // Error handling
 // ═════════════════════════════════════════════════════════════════════════════
 

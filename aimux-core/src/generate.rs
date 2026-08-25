@@ -30,6 +30,56 @@ use crate::stream_part::StreamPart;
 use crate::tool::{RawToolCall, Tool, ToolCallRepair, parse_tool_call};
 use crate::types::{FinishReason, ReasoningEffort, Usage, Warning};
 
+/// Match the AI SDK's response-message safety rule for invalid tool calls:
+/// malformed primitive input must not be replayed as a prompt tool-call input.
+/// JavaScript's `typeof value === "object"` includes arrays and null, so those
+/// values are intentionally retained here as well.
+fn response_tool_call_input(input: &Value, invalid: Option<bool>) -> Value {
+    if invalid == Some(true) && !matches!(input, Value::Object(_) | Value::Array(_) | Value::Null) {
+        Value::Object(serde_json::Map::new())
+    } else {
+        input.clone()
+    }
+}
+
+fn flush_response_text(
+    parts: &mut Vec<ContentPart>,
+    text: &mut String,
+    provider_options: &mut Option<Value>,
+) {
+    if !text.is_empty() {
+        parts.push(ContentPart::Text {
+            text: std::mem::take(text),
+            provider_options: provider_options.take(),
+        });
+    } else {
+        *provider_options = None;
+    }
+}
+
+fn flush_response_reasoning(
+    parts: &mut Vec<ContentPart>,
+    reasoning: &mut Vec<ReasoningPart>,
+    text: &mut String,
+    provider_options: &mut Option<Value>,
+) {
+    if text.is_empty() && provider_options.is_none() {
+        return;
+    }
+
+    let text = std::mem::take(text);
+    if !text.is_empty() {
+        reasoning.push(ReasoningPart { text: text.clone() });
+    }
+    let provider_options = provider_options.take();
+    let signature = extract_reasoning_signature(provider_options.as_ref());
+    parts.push(ContentPart::Reasoning {
+        text,
+        signature,
+        provider_options,
+    });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // User-facing options
 // ─────────────────────────────────────────────────────────────────────────────
@@ -277,44 +327,108 @@ impl StreamTextResult {
         let mut finish_provider_metadata: Option<Value> = None;
         let mut response: Option<crate::types::ResponseMetadata> = None;
         let mut response_content_parts: Vec<ContentPart> = Vec::new();
+        let mut response_text_buf = String::new();
+        let mut response_text_provider_options: Option<Value> = None;
+        let mut response_reasoning_provider_options: Option<Value> = None;
 
         let mut stream = self.stream;
         while let Some(part) = stream.next().await {
             match part? {
-                StreamPart::TextDelta { delta, .. } => {
-                    text.push_str(&delta);
-                    // Accumulate for response_messages lazily (see Finish below).
+                StreamPart::TextStart {
+                    provider_metadata, ..
+                } => {
+                    flush_response_reasoning(
+                        &mut response_content_parts,
+                        &mut reasoning,
+                        &mut reasoning_text_buf,
+                        &mut response_reasoning_provider_options,
+                    );
+                    // A new text segment establishes its position immediately;
+                    // flush a preceding implicit segment before starting it.
+                    flush_response_text(
+                        &mut response_content_parts,
+                        &mut response_text_buf,
+                        &mut response_text_provider_options,
+                    );
+                    response_text_provider_options = provider_metadata;
                 }
-                StreamPart::ReasoningDelta { delta, .. } => {
+                StreamPart::TextDelta {
+                    delta,
+                    provider_metadata,
+                    ..
+                } => {
+                    flush_response_reasoning(
+                        &mut response_content_parts,
+                        &mut reasoning,
+                        &mut reasoning_text_buf,
+                        &mut response_reasoning_provider_options,
+                    );
+                    text.push_str(&delta);
+                    response_text_buf.push_str(&delta);
+                    if provider_metadata.is_some() {
+                        response_text_provider_options = provider_metadata;
+                    }
+                }
+                StreamPart::TextEnd {
+                    provider_metadata, ..
+                } => {
+                    if provider_metadata.is_some() {
+                        response_text_provider_options = provider_metadata;
+                    }
+                    flush_response_text(
+                        &mut response_content_parts,
+                        &mut response_text_buf,
+                        &mut response_text_provider_options,
+                    );
+                }
+                StreamPart::ReasoningStart {
+                    provider_metadata, ..
+                } => {
+                    flush_response_text(
+                        &mut response_content_parts,
+                        &mut response_text_buf,
+                        &mut response_text_provider_options,
+                    );
+                    flush_response_reasoning(
+                        &mut response_content_parts,
+                        &mut reasoning,
+                        &mut reasoning_text_buf,
+                        &mut response_reasoning_provider_options,
+                    );
+                    response_reasoning_provider_options = provider_metadata;
+                }
+                StreamPart::ReasoningDelta {
+                    delta,
+                    provider_metadata,
+                    ..
+                } => {
+                    flush_response_text(
+                        &mut response_content_parts,
+                        &mut response_text_buf,
+                        &mut response_text_provider_options,
+                    );
                     reasoning_text_buf.push_str(&delta);
+                    if provider_metadata.is_some() {
+                        response_reasoning_provider_options = provider_metadata;
+                    }
                 }
                 StreamPart::ReasoningEnd {
                     provider_metadata, ..
                 } => {
-                    if !reasoning_text_buf.is_empty() {
-                        reasoning.push(ReasoningPart {
-                            text: reasoning_text_buf.clone(),
-                        });
-                        // Push reasoning into response_messages too — it carries
-                        // the thinking-block signature (provider_metadata) which
-                        // must be echoed back for extended-thinking multi-turn.
-                        let signature = extract_reasoning_signature(provider_metadata.as_ref());
-                        response_content_parts.push(ContentPart::Reasoning {
-                            text: reasoning_text_buf.clone(),
-                            signature,
-                            provider_options: provider_metadata,
-                        });
-                        reasoning_text_buf.clear();
-                    } else if provider_metadata.is_some() {
-                        // No visible summary text, but the part carries
-                        // provider data (e.g. OpenAI encrypted reasoning with
-                        // store=false) that must round-trip on the next turn.
-                        response_content_parts.push(ContentPart::Reasoning {
-                            text: String::new(),
-                            signature: None,
-                            provider_options: provider_metadata,
-                        });
+                    flush_response_text(
+                        &mut response_content_parts,
+                        &mut response_text_buf,
+                        &mut response_text_provider_options,
+                    );
+                    if provider_metadata.is_some() {
+                        response_reasoning_provider_options = provider_metadata;
                     }
+                    flush_response_reasoning(
+                        &mut response_content_parts,
+                        &mut reasoning,
+                        &mut reasoning_text_buf,
+                        &mut response_reasoning_provider_options,
+                    );
                 }
                 StreamPart::ToolCall {
                     tool_call_id,
@@ -328,6 +442,19 @@ impl StreamTextResult {
                     error,
                     ..
                 } => {
+                    flush_response_text(
+                        &mut response_content_parts,
+                        &mut response_text_buf,
+                        &mut response_text_provider_options,
+                    );
+                    flush_response_reasoning(
+                        &mut response_content_parts,
+                        &mut reasoning,
+                        &mut reasoning_text_buf,
+                        &mut response_reasoning_provider_options,
+                    );
+                    let response_input = response_tool_call_input(&input, invalid);
+                    let response_provider_options = provider_metadata.clone();
                     tool_calls.push(crate::tool::ToolCall {
                         tool_call_id: tool_call_id.clone(),
                         tool_name: tool_name.clone(),
@@ -339,8 +466,50 @@ impl StreamTextResult {
                         invalid,
                         error,
                     });
-                    // Defer adding to response_content_parts — order is rebuilt
-                    // after the loop (reasoning → text → tool_calls).
+                    response_content_parts.push(ContentPart::ToolCall {
+                        tool_call_id,
+                        tool_name,
+                        input: response_input,
+                        provider_executed,
+                        thought_signature,
+                        provider_options: response_provider_options,
+                    });
+                }
+                StreamPart::ToolResult {
+                    tool_call_id,
+                    tool_name,
+                    result,
+                    is_error,
+                    preliminary,
+                    dynamic,
+                    provider_metadata,
+                } => {
+                    // Preliminary server-tool results are transient stream
+                    // updates. The provider contract requires a later final
+                    // result, and only that final value belongs in the replay
+                    // transcript for the next model turn.
+                    if preliminary != Some(true) {
+                        flush_response_text(
+                            &mut response_content_parts,
+                            &mut response_text_buf,
+                            &mut response_text_provider_options,
+                        );
+                        flush_response_reasoning(
+                            &mut response_content_parts,
+                            &mut reasoning,
+                            &mut reasoning_text_buf,
+                            &mut response_reasoning_provider_options,
+                        );
+                        response_content_parts.push(ContentPart::ToolResult {
+                            tool_call_id,
+                            tool_name: Some(tool_name),
+                            result,
+                            is_error,
+                            preliminary,
+                            dynamic,
+                            provider_options: provider_metadata,
+                        });
+                    }
                 }
                 StreamPart::Source {
                     id,
@@ -369,18 +538,17 @@ impl StreamTextResult {
                     usage: u,
                     provider_metadata: pm,
                 } => {
-                    // Flush any pending reasoning delta before finishing.
-                    if !reasoning_text_buf.is_empty() {
-                        reasoning.push(ReasoningPart {
-                            text: reasoning_text_buf.clone(),
-                        });
-                        response_content_parts.push(ContentPart::Reasoning {
-                            text: reasoning_text_buf.clone(),
-                            signature: None,
-                            provider_options: None,
-                        });
-                        reasoning_text_buf.clear();
-                    }
+                    flush_response_text(
+                        &mut response_content_parts,
+                        &mut response_text_buf,
+                        &mut response_text_provider_options,
+                    );
+                    flush_response_reasoning(
+                        &mut response_content_parts,
+                        &mut reasoning,
+                        &mut reasoning_text_buf,
+                        &mut response_reasoning_provider_options,
+                    );
                     raw_finish_reason = fr.raw.clone();
                     finish_reason = fr;
                     usage = u.clone();
@@ -403,23 +571,17 @@ impl StreamTextResult {
             }
         }
 
-        // Build response_content_parts in provider order:
-        // reasoning (added during loop) → text → tool_calls.
-        if !text.is_empty() {
-            response_content_parts.push(ContentPart::Text {
-                text: text.clone(),
-                provider_options: None,
-            });
-        }
-        for tc in &tool_calls {
-            response_content_parts.push(ContentPart::ToolCall {
-                tool_call_id: tc.tool_call_id.clone(),
-                tool_name: tc.tool_name.clone(),
-                input: crate::tool::response_message_input(tc),
-                thought_signature: tc.thought_signature.clone(),
-                provider_options: tc.provider_metadata.clone(),
-            });
-        }
+        flush_response_text(
+            &mut response_content_parts,
+            &mut response_text_buf,
+            &mut response_text_provider_options,
+        );
+        flush_response_reasoning(
+            &mut response_content_parts,
+            &mut reasoning,
+            &mut reasoning_text_buf,
+            &mut response_reasoning_provider_options,
+        );
         let response_messages = if response_content_parts.is_empty() {
             Vec::new()
         } else {
@@ -564,13 +726,6 @@ pub async fn generate_text(
             return Err(e);
         }
     };
-    if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
-        rec.record_outcome(
-            call_id,
-            &crate::recording::OutcomeRecord::from_generate_result(&result),
-        );
-    }
-
     // 4. Extract text, tool calls, reasoning, sources, files from content.
     let mut text = String::new();
     let mut tool_calls = Vec::new();
@@ -581,12 +736,17 @@ pub async fn generate_text(
     let mut response_content_parts: Vec<ContentPart> = Vec::new();
     for content in &result.content {
         match content {
-            GenerateContent::Text { text: t, .. } => {
+            GenerateContent::Text {
+                text: t,
+                provider_metadata,
+            } => {
                 text.push_str(t);
-                response_content_parts.push(ContentPart::Text {
-                    text: t.clone(),
-                    provider_options: None,
-                });
+                if !t.is_empty() {
+                    response_content_parts.push(ContentPart::Text {
+                        text: t.clone(),
+                        provider_options: provider_metadata.clone(),
+                    });
+                }
             }
             GenerateContent::ToolCall {
                 tool_call_id,
@@ -617,7 +777,8 @@ pub async fn generate_text(
                 response_content_parts.push(ContentPart::ToolCall {
                     tool_call_id: parsed.tool_call_id.clone(),
                     tool_name: parsed.tool_name.clone(),
-                    input: crate::tool::response_message_input(&parsed),
+                    input: response_tool_call_input(&parsed.input, parsed.invalid),
+                    provider_executed: parsed.provider_executed,
                     thought_signature: parsed.thought_signature.clone(),
                     provider_options: parsed.provider_metadata.clone(),
                 });
@@ -665,8 +826,29 @@ pub async fn generate_text(
                     media_type: media_type.clone(),
                 });
             }
-            // Provider-executed tool results; not extracted to the top level.
-            GenerateContent::ToolResult { .. } => {}
+            // Provider-executed results stay in the assistant message so the
+            // provider can replay its own server-tool transcript next turn.
+            GenerateContent::ToolResult {
+                tool_call_id,
+                tool_name,
+                result,
+                is_error,
+                preliminary,
+                dynamic,
+                provider_metadata,
+            } => {
+                if *preliminary != Some(true) {
+                    response_content_parts.push(ContentPart::ToolResult {
+                        tool_call_id: tool_call_id.clone(),
+                        tool_name: Some(tool_name.clone()),
+                        result: result.clone(),
+                        is_error: *is_error,
+                        preliminary: *preliminary,
+                        dynamic: *dynamic,
+                        provider_options: provider_metadata.clone(),
+                    });
+                }
+            }
         }
     }
 
@@ -676,10 +858,24 @@ pub async fn generate_text(
         .collect::<Vec<_>>()
         .join("");
 
-    let response_messages = vec![ModelMessage {
-        role: Role::Assistant,
-        content: MessageContent::Parts(response_content_parts),
-    }];
+    // Parsing and optional repair are part of the user operation. Record a
+    // successful outcome only after that phase has completed within the same
+    // deadline/cancellation scope as the provider call.
+    if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
+        rec.record_outcome(
+            call_id,
+            &crate::recording::OutcomeRecord::from_generate_result(&result),
+        );
+    }
+
+    let response_messages = if response_content_parts.is_empty() {
+        Vec::new()
+    } else {
+        vec![ModelMessage {
+            role: Role::Assistant,
+            content: MessageContent::Parts(response_content_parts),
+        }]
+    };
 
     // Extract fields before moving `result` into `raw`.
     let raw_finish_reason = result.finish_reason.raw.clone();
@@ -1026,8 +1222,9 @@ fn split_prompt(
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::openai_output::{
-    ChatCompletion, ChatCompletionStream, OpenAiStreamOptions, to_chat_completion,
-    to_chat_completion_stream,
+    ChatCompletion, ChatCompletionFunction, ChatCompletionStream, ChatCompletionToolCall,
+    OpenAiStreamOptions, parsed_tool_call_arguments, to_chat_completion, to_chat_completion_stream,
+    to_chat_completion_stream_with_deferred_tool_calls,
 };
 
 /// Generate text and return the result as an OpenAI Chat Completion.
@@ -1035,6 +1232,8 @@ use crate::openai_output::{
 /// This is the OpenAI-compatible equivalent of [`generate_text`]. Internally
 /// it calls `generate_text`, then converts the [`GenerateResult`] into a
 /// [`ChatCompletion`] via [`to_chat_completion`].
+/// Tool calls reflect Core parsing and any configured repair; provider
+/// response metadata, usage, and non-tool content are preserved from `raw`.
 ///
 /// Works with **any** provider (OpenAI, Anthropic, Google, …) — the output is
 /// always standard OpenAI Chat Completions JSON.
@@ -1066,7 +1265,31 @@ pub async fn generate_text_as_openai(
     options: GenerateTextOptions,
 ) -> Result<ChatCompletion, AiMuxError> {
     let result = generate_text(model, prompt, options).await?;
-    Ok(to_chat_completion(&result.raw, model.model_id()))
+    let mut completion = to_chat_completion(&result.raw, model.model_id());
+    if let Some(choice) = completion.choices.first_mut() {
+        choice.message.tool_calls = if result.tool_calls.is_empty() {
+            None
+        } else {
+            Some(
+                result
+                    .tool_calls
+                    .iter()
+                    .map(|tool_call| ChatCompletionToolCall {
+                        id: tool_call.tool_call_id.clone(),
+                        tool_type: "function".to_string(),
+                        function: ChatCompletionFunction {
+                            name: tool_call.tool_name.clone(),
+                            arguments: parsed_tool_call_arguments(
+                                &tool_call.input,
+                                tool_call.invalid,
+                            ),
+                        },
+                    })
+                    .collect(),
+            )
+        };
+    }
+    Ok(completion)
 }
 
 /// Stream text and return the result as a stream of OpenAI Chat Completion chunks.
@@ -1113,10 +1336,20 @@ pub async fn stream_text_as_openai(
     options: GenerateTextOptions,
     stream_options: OpenAiStreamOptions,
 ) -> Result<ChatCompletionStream, AiMuxError> {
+    // `parse_tool_call` only invokes repair when a tool set was supplied.
+    let defer_tool_calls = options.repair_tool_call.is_some() && options.tools.is_some();
     let result = stream_text(model, prompt, options).await?;
-    Ok(to_chat_completion_stream(
-        result.stream,
-        model.model_id(),
-        stream_options,
-    ))
+    if defer_tool_calls {
+        Ok(to_chat_completion_stream_with_deferred_tool_calls(
+            result.stream,
+            model.model_id(),
+            stream_options,
+        ))
+    } else {
+        Ok(to_chat_completion_stream(
+            result.stream,
+            model.model_id(),
+            stream_options,
+        ))
+    }
 }

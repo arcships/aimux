@@ -36,7 +36,7 @@ use serde_json::{Value, json};
 
 use super::convert::parse_stop_reason;
 use super::tool_name_mapping::ToolNameMapping;
-use super::types::{AnthropicResponse, ContentBlock, StreamEvent};
+use super::types::{AnthropicResponse, ContentBlock, StreamEvent, ToolCallCaller};
 
 /// How the request body is sent over the wire.
 #[derive(Debug, Clone, Copy)]
@@ -254,12 +254,76 @@ fn map_advisor_result(payload: &Value) -> (Value, Option<bool>) {
     }
 }
 
-/// Which `tool_search_*` provider name this call registered.
+/// Anthropic's 2025 code-execution tool exposes its bash and text-editor
+/// operations as distinct wire names, but both belong to the caller's single
+/// `code_execution` provider tool.
+pub(crate) fn server_tool_provider_name(name: &str) -> &str {
+    match name {
+        "text_editor_code_execution" | "bash_code_execution" => "code_execution",
+        _ => name,
+    }
+}
+
+pub(crate) fn normalized_server_tool_input(name: &str, input: &Value) -> Value {
+    let input_type = if matches!(name, "text_editor_code_execution" | "bash_code_execution") {
+        Some(name)
+    } else if name == "code_execution" && input.get("code").is_some() && input.get("type").is_none()
+    {
+        Some("programmatic-tool-call")
+    } else {
+        None
+    };
+    let (Some(input_type), Value::Object(input)) = (input_type, input) else {
+        return input.clone();
+    };
+
+    let mut normalized = serde_json::Map::new();
+    normalized.insert("type".to_string(), Value::String(input_type.to_string()));
+    normalized.extend(input.clone());
+    Value::Object(normalized)
+}
+
+pub(crate) fn initial_tool_input(input: &Value) -> String {
+    match input {
+        Value::Object(object) if object.is_empty() => String::new(),
+        _ => input.to_string(),
+    }
+}
+
+pub(crate) fn tool_call_caller_metadata(caller: Option<&ToolCallCaller>) -> Option<Value> {
+    let caller = match caller? {
+        ToolCallCaller::CodeExecution20250825 { tool_id } => json!({
+            "type": "code_execution_20250825",
+            "toolId": tool_id,
+        }),
+        ToolCallCaller::CodeExecution20260120 { tool_id } => json!({
+            "type": "code_execution_20260120",
+            "toolId": tool_id,
+        }),
+        ToolCallCaller::Direct => json!({ "type": "direct" }),
+    };
+    Some(json!({ "anthropic": { "caller": caller } }))
+}
+
+fn is_tool_search_provider_name(name: &str) -> bool {
+    matches!(name, "tool_search_tool_regex" | "tool_search_tool_bm25")
+}
+
+/// Resolve the provider tool behind a shared `tool_search_tool_result` block.
 ///
-/// Anthropic reports both regex and bm25 searches through one result block, so
-/// upstream probes which variant the caller renamed and defaults to regex
-/// (:1337-1352).
-fn tool_search_provider_name(names: &ToolNameMapping) -> &'static str {
+/// When the matching call is present, its id is authoritative. The name-based
+/// fallback preserves Anthropic's deferred-result behavior, where the call may
+/// have appeared in an earlier response.
+fn tool_search_provider_name<'a>(
+    names: &ToolNameMapping,
+    provider_name_for_call: Option<&'a str>,
+) -> &'a str {
+    if let Some(provider_name) = provider_name_for_call
+        && is_tool_search_provider_name(provider_name)
+    {
+        return provider_name;
+    }
+
     if names.to_custom_tool_name("tool_search_tool_bm25") != "tool_search_tool_bm25" {
         "tool_search_tool_bm25"
     } else {
@@ -276,6 +340,7 @@ pub(crate) fn stream_parts_for_result_block(
     block: &ContentBlock,
     names: &ToolNameMapping,
     mcp_tool_calls: &HashMap<String, (String, String)>,
+    server_tool_calls: &HashMap<String, String>,
 ) -> Vec<StreamPart> {
     let tool_result =
         |tool_name: String, (result, is_error): (Value, Option<bool>), tool_use_id: &str| {
@@ -366,7 +431,10 @@ pub(crate) fn stream_parts_for_result_block(
             content,
         } => vec![tool_result(
             names
-                .to_custom_tool_name(tool_search_provider_name(names))
+                .to_custom_tool_name(tool_search_provider_name(
+                    names,
+                    server_tool_calls.get(tool_use_id).map(String::as_str),
+                ))
                 .to_string(),
             map_tool_search_result(content),
             tool_use_id,
@@ -417,18 +485,24 @@ pub(crate) fn parse_anthropic_content(
     names: &ToolNameMapping,
 ) -> Vec<GenerateContent> {
     let mut content = Vec::new();
-    // `mcp_tool_result` inherits the name and server of the `mcp_tool_use` it
-    // answers, so index those first (upstream keeps the same lookup table).
+    // Result blocks inherit information from their matching calls. Index the
+    // complete response first so ordering does not affect non-stream parsing.
     let mut mcp_tool_calls: HashMap<&str, (&str, &str)> = HashMap::new();
+    let mut server_tool_calls: HashMap<&str, &str> = HashMap::new();
     for block in blocks {
-        if let ContentBlock::McpToolUse {
-            id,
-            name,
-            server_name,
-            ..
-        } = block
-        {
-            mcp_tool_calls.insert(id.as_str(), (name.as_str(), server_name.as_str()));
+        match block {
+            ContentBlock::McpToolUse {
+                id,
+                name,
+                server_name,
+                ..
+            } => {
+                mcp_tool_calls.insert(id.as_str(), (name.as_str(), server_name.as_str()));
+            }
+            ContentBlock::ServerToolUse { id, name, .. } if is_tool_search_provider_name(name) => {
+                server_tool_calls.insert(id.as_str(), name.as_str());
+            }
+            _ => {}
         }
     }
 
@@ -440,15 +514,20 @@ pub(crate) fn parse_anthropic_content(
                     provider_metadata: None,
                 });
             }
-            ContentBlock::ToolUse { id, name, input } => {
+            ContentBlock::ToolUse {
+                id,
+                name,
+                input,
+                caller,
+            } => {
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id.clone(),
-                    tool_name: name.clone(),
+                    tool_name: names.to_custom_tool_name(name).to_string(),
                     input: Value::String(input.to_string()),
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
-                    provider_metadata: None,
+                    provider_metadata: tool_call_caller_metadata(caller.as_ref()),
                 });
             }
             ContentBlock::Thinking {
@@ -465,12 +544,15 @@ pub(crate) fn parse_anthropic_content(
             // Provider-executed (server-side) tool calls are surfaced as tool
             // calls so they round-trip on follow-up turns.
             ContentBlock::ServerToolUse { id, name, input } => {
+                let provider_name = server_tool_provider_name(name);
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id.clone(),
-                    tool_name: name.clone(),
-                    input: Value::String(input.to_string()),
+                    tool_name: names.to_custom_tool_name(provider_name).to_string(),
+                    input: Value::String(normalized_server_tool_input(name, input).to_string()),
                     provider_executed: Some(true),
-                    dynamic: None,
+                    dynamic: (provider_name == "code_execution"
+                        && names.mark_code_execution_dynamic())
+                    .then_some(true),
                     thought_signature: None,
                     provider_metadata: None,
                 });
@@ -614,11 +696,13 @@ pub(crate) fn parse_anthropic_content(
                 content: payload,
             } => {
                 let (result, is_error) = map_tool_search_result(payload);
+                let provider_name = tool_search_provider_name(
+                    names,
+                    server_tool_calls.get(tool_use_id.as_str()).copied(),
+                );
                 content.push(GenerateContent::ToolResult {
                     tool_call_id: tool_use_id.clone(),
-                    tool_name: names
-                        .to_custom_tool_name(tool_search_provider_name(names))
-                        .to_string(),
+                    tool_name: names.to_custom_tool_name(provider_name).to_string(),
                     result,
                     is_error,
                     preliminary: None,
@@ -749,6 +833,12 @@ enum BlockState {
         id: String,
         name: String,
         accumulated_json: String,
+        provider_executed: Option<bool>,
+        dynamic: Option<bool>,
+        provider_tool_name: Option<String>,
+        provider_tool_input_type: Option<String>,
+        provider_metadata: Option<Value>,
+        first_delta: bool,
     },
     Thinking {
         started: bool,
@@ -805,6 +895,9 @@ pub(crate) async fn anthropic_stream_core(
         // id → (tool name, server name), so `mcp_tool_result` can inherit them
         // from the `mcp_tool_use` it answers.
         let mut mcp_tool_calls: HashMap<String, (String, String)> = HashMap::new();
+        // tool_use_id → provider tool name. Both tool-search variants share
+        // one result block type, so the id is required to disambiguate aliases.
+        let mut server_tool_calls: HashMap<String, String> = HashMap::new();
 
         while let Some(event) = sse.next().await {
             match event {
@@ -840,10 +933,19 @@ pub(crate) async fn anthropic_stream_core(
                                         },
                                     );
                                 }
-                                ContentBlock::ToolUse { id, name, .. } => {
+                                ContentBlock::ToolUse {
+                                    id,
+                                    name,
+                                    input,
+                                    caller,
+                                } => {
+                                    let custom_name = tool_names
+                                        .to_custom_tool_name(&name)
+                                        .to_string();
+                                    let initial_input = initial_tool_input(&input);
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
-                                        tool_name: name.clone(),
+                                        tool_name: custom_name.clone(),
                                         provider_executed: None,
                                         dynamic: None,
                                         title: None,
@@ -851,23 +953,56 @@ pub(crate) async fn anthropic_stream_core(
                                     });
                                     blocks.insert(index, BlockState::ToolUse {
                                         id,
-                                        name,
-                                        accumulated_json: String::new(),
+                                        name: custom_name,
+                                        first_delta: initial_input.is_empty(),
+                                        accumulated_json: initial_input,
+                                        provider_executed: None,
+                                        dynamic: None,
+                                        provider_tool_name: None,
+                                        provider_tool_input_type: None,
+                                        provider_metadata: tool_call_caller_metadata(caller.as_ref()),
                                     });
                                 }
-                                // Server-side tool use — emit as ToolCall.
+                                // Server-side tool use follows the same input
+                                // lifecycle as client tools because some code
+                                // execution inputs arrive entirely via deltas.
                                 ContentBlock::ServerToolUse { id, name, input } => {
-                                    yield Ok(StreamPart::ToolCall {
-                                        tool_call_id: id.clone(),
-                                        tool_name: tool_names
-                                            .to_custom_tool_name(&name)
-                                            .to_string(),
-                                        input: Value::String(input.to_string()),
+                                    if is_tool_search_provider_name(&name) {
+                                        server_tool_calls.insert(id.clone(), name.clone());
+                                    }
+                                    let provider_name = server_tool_provider_name(&name);
+                                    let custom_name = tool_names
+                                        .to_custom_tool_name(provider_name)
+                                        .to_string();
+                                    let dynamic = (provider_name == "code_execution"
+                                        && tool_names.mark_code_execution_dynamic())
+                                    .then_some(true);
+                                    let initial_input = initial_tool_input(&input);
+                                    yield Ok(StreamPart::ToolInputStart {
+                                        id: id.clone(),
+                                        tool_name: custom_name.clone(),
                                         provider_executed: Some(true),
-                                        dynamic: None,
-                                        thought_signature: None,
-                                        invalid: None,
-                                        error: None,
+                                        dynamic,
+                                        title: None,
+                                        provider_metadata: None,
+                                    });
+                                    blocks.insert(index, BlockState::ToolUse {
+                                        id,
+                                        name: custom_name,
+                                        first_delta: initial_input.is_empty(),
+                                        accumulated_json: initial_input,
+                                        provider_executed: Some(true),
+                                        dynamic,
+                                        provider_tool_name: Some(provider_name.to_string()),
+                                        provider_tool_input_type: match name.as_str() {
+                                            "text_editor_code_execution" | "bash_code_execution" => {
+                                                Some(name)
+                                            }
+                                            "code_execution" => {
+                                                Some("programmatic-tool-call".to_string())
+                                            }
+                                            _ => None,
+                                        },
                                         provider_metadata: None,
                                     });
                                 }
@@ -919,6 +1054,7 @@ pub(crate) async fn anthropic_stream_core(
                                         &other,
                                         &tool_names,
                                         &mcp_tool_calls,
+                                        &server_tool_calls,
                                     ) {
                                         yield Ok(part);
                                     }
@@ -959,21 +1095,37 @@ pub(crate) async fn anthropic_stream_core(
                                 // leading `input_json_delta` with
                                 // `partial_json: ""`) are skipped, matching the
                                 // TS SDK.
-                                let delta_id: Option<String> = match blocks.get_mut(&index) {
-                                    Some(BlockState::ToolUse {
-                                        id,
-                                        accumulated_json,
-                                        ..
-                                    }) if !partial.is_empty() => {
-                                        accumulated_json.push_str(&partial);
-                                        Some(id.clone())
-                                    }
-                                    _ => None,
-                                };
-                                if let Some(id) = delta_id {
+                                let delta_event: Option<(String, String)> =
+                                    match blocks.get_mut(&index) {
+                                        Some(BlockState::ToolUse {
+                                                id,
+                                                accumulated_json,
+                                                provider_tool_input_type,
+                                                first_delta,
+                                                ..
+                                            }) if !partial.is_empty() => {
+                                            let emitted_delta = if *first_delta {
+                                                if let Some(input_type) = provider_tool_input_type {
+                                                    format!(
+                                                        "{{\"type\": \"{input_type}\",{}",
+                                                        partial.strip_prefix('{').unwrap_or(&partial)
+                                                    )
+                                                } else {
+                                                    partial
+                                                }
+                                            } else {
+                                                partial
+                                            };
+                                            accumulated_json.push_str(&emitted_delta);
+                                            *first_delta = false;
+                                            Some((id.clone(), emitted_delta))
+                                        }
+                                        _ => None,
+                                    };
+                                if let Some((id, delta)) = delta_event {
                                     yield Ok(StreamPart::ToolInputDelta {
                                         id,
-                                        delta: partial,
+                                        delta,
                                         provider_metadata: None,
                                     });
                                 }
@@ -1057,29 +1209,45 @@ pub(crate) async fn anthropic_stream_core(
                                     BlockState::ToolUse {
                                         id,
                                         name,
-                                        accumulated_json,
+                                        mut accumulated_json,
+                                        provider_executed,
+                                        dynamic,
+                                        provider_tool_name,
+                                        provider_tool_input_type,
+                                        provider_metadata,
+                                        ..
                                     } => {
                                         yield Ok(StreamPart::ToolInputEnd {
                                             id: id.clone(),
                                             provider_metadata: None,
                                         });
-                                        // Empty input normalizes to "{}" per
-                                        // the upstream provider.
-                                        let input = Value::String(if accumulated_json.is_empty() {
-                                            "{}".to_string()
-                                        } else {
-                                            accumulated_json
-                                        });
+                                        if accumulated_json.is_empty() {
+                                            accumulated_json = "{}".to_string();
+                                        }
+                                        if provider_tool_name.as_deref() == Some("code_execution")
+                                            && let Ok(parsed) = serde_json::from_str::<Value>(&accumulated_json)
+                                        {
+                                            let wire_name = match provider_tool_input_type.as_deref() {
+                                                Some(name @ ("text_editor_code_execution" | "bash_code_execution")) => name,
+                                                _ => "code_execution",
+                                            };
+                                            accumulated_json = normalized_server_tool_input(
+                                                wire_name,
+                                                &parsed,
+                                            )
+                                            .to_string();
+                                        }
+                                        let input = Value::String(accumulated_json);
                                         yield Ok(StreamPart::ToolCall {
                                             tool_call_id: id,
                                             tool_name: name,
                                             input,
-                                            provider_executed: None,
-                                            dynamic: None,
+                                            provider_executed,
+                                            dynamic,
                                             thought_signature: None,
                                             invalid: None,
                                             error: None,
-                                            provider_metadata: None,
+                                            provider_metadata,
                                         });
                                     }
                                 }

@@ -24,6 +24,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
+use aimux_core::error::AiMuxError;
+use aimux_core::generate::{GenerateTextOptions, generate_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -572,6 +574,16 @@ async fn should_handle_mcp_tools_with_annotations() {
         GenerateContent::Source { id, .. } => assert_eq!(id, "id-1"),
         other => panic!("expected Source at [4], got {other:?}"),
     }
+
+    let result = generate_text(&model, "Hello", GenerateTextOptions::default())
+        .await
+        .expect("dynamic MCP call should pass Core validation without local tools");
+    let call = result.tool_calls.first().expect("MCP tool call");
+    assert_eq!(call.tool_name, "search");
+    assert_eq!(call.provider_executed, Some(true));
+    assert_eq!(call.dynamic, Some(true));
+    assert_eq!(call.invalid, None);
+    assert_eq!(call.input, json!({ "query": "San Francisco tech events" }));
 }
 
 // ════════════════════════════════════════════════════════════════════════════

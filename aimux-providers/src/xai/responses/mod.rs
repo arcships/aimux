@@ -748,7 +748,7 @@ impl LanguageModel for XaiResponsesModel {
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
-                                        provider_executed: None,
+                                        provider_executed: Some(true),
                                         dynamic: None,
                                         title: None,
                                         provider_metadata: None,
@@ -821,7 +821,7 @@ impl LanguageModel for XaiResponsesModel {
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
-                                        provider_executed: None,
+                                        provider_executed: Some(true),
                                         dynamic: None,
                                         title: None,
                                         provider_metadata: None,

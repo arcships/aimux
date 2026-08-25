@@ -130,6 +130,24 @@ function testModelMessage() {
     if (f.name === 'model_message_text') {
       assert(parsed.role === 'user' && parsed.content === 'Hello', f.name,
         `expected role:"user", content:"Hello", got ${JSON.stringify(parsed)}`)
+    } else if (f.name === 'model_message_provider_executed_tool_transcript') {
+      const [call, result] = parsed.content ?? []
+      assert(
+        parsed.role === 'assistant' && call?.type === 'tool_call' && result?.type === 'tool_result',
+        `${f.name} order`,
+        `expected assistant [tool_call, tool_result], got ${JSON.stringify(parsed)}`,
+      )
+      assert(
+        call?.provider_executed === true && call?.thought_signature === 'sig_provider',
+        `${f.name} provider execution`,
+        `provider_executed/thought_signature missing: ${JSON.stringify(call)}`,
+      )
+      assert(
+        call?.provider_options?.anthropic?.serverName === 'docs' &&
+          result?.provider_options?.anthropic?.resultId === 'result_1',
+        `${f.name} metadata`,
+        `provider metadata missing: ${JSON.stringify(parsed.content)}`,
+      )
     }
   }
 }

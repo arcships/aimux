@@ -2,8 +2,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
+use aimux_core::generate::{
+    GenerateTextOptions, generate_text, generate_text_as_openai, stream_text, stream_text_as_openai,
+};
 use aimux_core::language_model::LanguageModel;
+use aimux_core::openai_output::OpenAiStreamOptions;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
@@ -296,7 +299,33 @@ fn weather_tool_schema() -> serde_json::Value {
     })
 }
 
-struct RawToolModel;
+struct RawToolModel {
+    tool_name: &'static str,
+    input: &'static str,
+    leading_text: bool,
+    stream_input: bool,
+}
+
+impl RawToolModel {
+    fn new(input: &'static str) -> Self {
+        Self {
+            tool_name: "weather",
+            input,
+            leading_text: false,
+            stream_input: false,
+        }
+    }
+
+    fn named(mut self, tool_name: &'static str) -> Self {
+        self.tool_name = tool_name;
+        self
+    }
+
+    fn with_streamed_input(mut self) -> Self {
+        self.stream_input = true;
+        self
+    }
+}
 
 #[async_trait]
 impl LanguageModel for RawToolModel {
@@ -312,8 +341,8 @@ impl LanguageModel for RawToolModel {
         Ok(GenerateResult {
             content: vec![GenerateContent::ToolCall {
                 tool_call_id: "call-1".into(),
-                tool_name: "weather".into(),
-                input: json!(r#"{"city":"Singapore"}"#),
+                tool_name: self.tool_name.into(),
+                input: json!(self.input),
                 provider_executed: None,
                 dynamic: None,
                 thought_signature: None,
@@ -333,29 +362,58 @@ impl LanguageModel for RawToolModel {
     }
 
     async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        Ok(StreamResult {
-            stream: Box::pin(futures::stream::iter([
-                Ok(StreamPart::StreamStart { warnings: vec![] }),
-                Ok(StreamPart::ToolCall {
-                    tool_call_id: "call-1".into(),
-                    tool_name: "weather".into(),
-                    input: json!(r#"{"city":"Singapore"}"#),
+        let mut parts = vec![Ok(StreamPart::StreamStart { warnings: vec![] })];
+        if self.leading_text {
+            parts.push(Ok(StreamPart::TextDelta {
+                id: "text-1".into(),
+                delta: "ready".into(),
+                provider_metadata: None,
+            }));
+        }
+        if self.stream_input {
+            parts.extend([
+                Ok(StreamPart::ToolInputStart {
+                    id: "call-1".into(),
+                    tool_name: self.tool_name.into(),
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
-                    invalid: None,
-                    error: None,
+                    title: None,
                     provider_metadata: None,
                 }),
-                Ok(StreamPart::Finish {
-                    finish_reason: FinishReason {
-                        unified: FinishReasonUnified::ToolCalls,
-                        raw: Some("tool_calls".into()),
-                    },
-                    usage: Usage::default(),
+                Ok(StreamPart::ToolInputDelta {
+                    id: "call-1".into(),
+                    delta: self.input.into(),
                     provider_metadata: None,
                 }),
-            ])),
+                Ok(StreamPart::ToolInputEnd {
+                    id: "call-1".into(),
+                    provider_metadata: None,
+                }),
+            ]);
+        }
+        parts.extend([
+            Ok(StreamPart::ToolCall {
+                tool_call_id: "call-1".into(),
+                tool_name: self.tool_name.into(),
+                input: json!(self.input),
+                provider_executed: None,
+                dynamic: None,
+                thought_signature: None,
+                invalid: None,
+                error: None,
+                provider_metadata: None,
+            }),
+            Ok(StreamPart::Finish {
+                finish_reason: FinishReason {
+                    unified: FinishReasonUnified::ToolCalls,
+                    raw: Some("tool_calls".into()),
+                },
+                usage: Usage::default(),
+                provider_metadata: None,
+            }),
+        ]);
+        Ok(StreamResult {
+            stream: Box::pin(futures::stream::iter(parts)),
             request_body: None,
             response_headers: None,
         })
@@ -364,8 +422,9 @@ impl LanguageModel for RawToolModel {
 
 #[tokio::test]
 async fn generate_text_parses_provider_raw_input_at_the_core_boundary() {
+    let model = RawToolModel::new(r#"{"city":"Singapore"}"#);
     let result = generate_text(
-        &RawToolModel,
+        &model,
         "weather",
         GenerateTextOptions {
             tools: Some(vec![weather_tool()]),
@@ -386,8 +445,9 @@ async fn generate_text_parses_provider_raw_input_at_the_core_boundary() {
 
 #[tokio::test]
 async fn stream_text_parses_provider_raw_input_at_the_core_boundary() {
+    let model = RawToolModel::new(r#"{"city":"Singapore"}"#);
     let mut result = stream_text(
-        &RawToolModel,
+        &model,
         "weather",
         GenerateTextOptions {
             tools: Some(vec![weather_tool()]),
@@ -405,4 +465,164 @@ async fn stream_text_parses_provider_raw_input_at_the_core_boundary() {
         }
     }
     panic!("expected a parsed tool call");
+}
+
+#[tokio::test]
+async fn openai_outputs_preserve_invalid_raw_tool_arguments() {
+    let raw_input = r#"{"city":"Singapore"#;
+    let model = RawToolModel::new(raw_input);
+    let completion = generate_text_as_openai(
+        &model,
+        "weather",
+        GenerateTextOptions {
+            tools: Some(vec![weather_tool()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        completion.choices[0].message.tool_calls.as_ref().unwrap()[0]
+            .function
+            .arguments,
+        raw_input
+    );
+
+    let result = stream_text_as_openai(
+        &model,
+        "weather",
+        GenerateTextOptions {
+            tools: Some(vec![weather_tool()]),
+            ..Default::default()
+        },
+        OpenAiStreamOptions::default(),
+    )
+    .await
+    .unwrap();
+    let chunks = result
+        .stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    let arguments = chunks
+        .iter()
+        .flat_map(|chunk| &chunk.choices)
+        .filter_map(|choice| choice.delta.tool_calls.as_ref())
+        .flatten()
+        .find_map(|tool_call| tool_call.function.arguments.as_deref())
+        .expect("expected complete tool call arguments");
+    assert_eq!(arguments, raw_input);
+}
+
+#[tokio::test]
+async fn openai_outputs_use_repaired_tool_name_and_input_for_complete_calls() {
+    let repair = ToolCallRepair::new(|context| async move {
+        Ok(Some(RawToolCall {
+            tool_name: "weather".into(),
+            input: r#"{"city":"Singapore","days":3}"#.into(),
+            ..context.tool_call
+        }))
+    });
+    let model = RawToolModel::new(r#"{"place":"Singapore"}"#)
+        .named("forecast")
+        .with_streamed_input();
+    let options = GenerateTextOptions {
+        tools: Some(vec![weather_tool()]),
+        repair_tool_call: Some(repair.clone()),
+        ..Default::default()
+    };
+
+    let completion = generate_text_as_openai(&model, "weather", options)
+        .await
+        .unwrap();
+    let non_stream_call = &completion.choices[0].message.tool_calls.as_ref().unwrap()[0];
+
+    let stream = stream_text_as_openai(
+        &model,
+        "weather",
+        GenerateTextOptions {
+            tools: Some(vec![weather_tool()]),
+            repair_tool_call: Some(repair),
+            ..Default::default()
+        },
+        OpenAiStreamOptions::default(),
+    )
+    .await
+    .unwrap();
+    let chunks = stream
+        .stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let stream_calls = chunks
+        .iter()
+        .flat_map(|chunk| &chunk.choices)
+        .filter_map(|choice| choice.delta.tool_calls.as_ref())
+        .flatten()
+        .collect::<Vec<_>>();
+    assert_eq!(
+        stream_calls.len(),
+        1,
+        "provider input frames must stay buffered when repair can replace them"
+    );
+    let stream_call = stream_calls[0];
+
+    assert_eq!(non_stream_call.function.name, "weather");
+    assert_eq!(
+        non_stream_call.function.arguments,
+        r#"{"city":"Singapore","days":3}"#
+    );
+    assert_eq!(
+        stream_call.function.name.as_deref(),
+        Some(non_stream_call.function.name.as_str())
+    );
+    assert_eq!(
+        stream_call.function.arguments.as_deref(),
+        Some(non_stream_call.function.arguments.as_str())
+    );
+}
+
+#[tokio::test]
+async fn openai_stream_without_repair_preserves_provider_tool_input_deltas() {
+    let model = RawToolModel::new(r#"{"city":"Singapore"}"#).with_streamed_input();
+    let result = stream_text_as_openai(
+        &model,
+        "weather",
+        GenerateTextOptions {
+            tools: Some(vec![weather_tool()]),
+            ..Default::default()
+        },
+        OpenAiStreamOptions::default(),
+    )
+    .await
+    .unwrap();
+    let chunks = result
+        .stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let tool_calls = chunks
+        .iter()
+        .flat_map(|chunk| &chunk.choices)
+        .filter_map(|choice| choice.delta.tool_calls.as_ref())
+        .flatten()
+        .collect::<Vec<_>>();
+
+    assert_eq!(tool_calls.len(), 2);
+    assert_eq!(tool_calls[0].id.as_deref(), Some("call-1"));
+    assert_eq!(tool_calls[0].function.name.as_deref(), Some("weather"));
+    assert_eq!(tool_calls[0].function.arguments.as_deref(), Some(""));
+    assert_eq!(tool_calls[1].id, None);
+    assert_eq!(tool_calls[1].function.name, None);
+    assert_eq!(
+        tool_calls[1].function.arguments.as_deref(),
+        Some(r#"{"city":"Singapore"}"#)
+    );
 }

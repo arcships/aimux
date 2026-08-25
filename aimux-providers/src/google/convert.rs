@@ -9,12 +9,14 @@
 //! - Assistant messages become `role: "model"`.
 //! - Tool results become `functionResponse` parts inside a `role: "user"`
 //!   message (Gemini has no `tool` role).
-//! - Tool calls in assistant messages become `functionCall` parts.
+//! - Tool calls in assistant messages become `functionCall` parts, except
+//!   provider-executed server transcripts which retain their native wire
+//!   representation.
 //!
 //! We model the variable-shape content parts as `serde_json::Value` to keep
 //! the surface area small — the TS SDK uses a tagged union, but the only
-//! fields we actually read back are `text`, `functionCall`, and
-//! `functionResponse`, all of which we already produce ourselves.
+//! fields we actually read back are `text`, function tool parts, and native
+//! provider-executed tool parts.
 
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPrompt;
@@ -25,6 +27,22 @@ use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
 use base64::Engine;
 use serde_json::{Map, Value, json};
+
+/// Resolve the caller-facing name for Google's code execution provider tool.
+/// Gemini always uses `code_execution` on the response wire, while callers
+/// may rename the provider tool for a particular request.
+pub(crate) fn code_execution_tool_name(tools: Option<&[Tool]>) -> String {
+    tools
+        .unwrap_or_default()
+        .iter()
+        .find_map(|tool| match tool {
+            Tool::Provider(provider) if provider.id == "google.code_execution" => {
+                Some(provider.name.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| "code_execution".to_string())
+}
 
 // ── Public conversion result ─────────────────────────────────────────────────
 
@@ -40,6 +58,33 @@ pub struct GooglePrompt {
     pub contents: Vec<Value>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProviderMetadataNamespace {
+    Google,
+    Vertex,
+}
+
+/// Resolve per-part provider options in the same precedence order as the AI
+/// SDK. Vertex prefers `googleVertex`, then legacy `vertex`; `google` is only a
+/// cross-provider fallback. The public Google provider uses the inverse
+/// fallback so transcripts survive gateway/provider failover.
+fn read_provider_options(
+    provider_options: Option<&Value>,
+    namespace: ProviderMetadataNamespace,
+) -> Option<&Value> {
+    let provider_options = provider_options?;
+    match namespace {
+        ProviderMetadataNamespace::Google => provider_options
+            .get("google")
+            .or_else(|| provider_options.get("googleVertex"))
+            .or_else(|| provider_options.get("vertex")),
+        ProviderMetadataNamespace::Vertex => provider_options
+            .get("googleVertex")
+            .or_else(|| provider_options.get("vertex"))
+            .or_else(|| provider_options.get("google")),
+    }
+}
+
 // ── convertToGoogleMessages ──────────────────────────────────────────────────
 
 /// Convert a provider-facing prompt into Google's `{ systemInstruction, contents }`.
@@ -48,9 +93,9 @@ pub struct GooglePrompt {
 /// appropriate to the Rust data model:
 /// - No Gemma special-casing (we don't know the model id here; callers that
 ///   need it can post-process).
-/// - No server-tool-call handling — provider-executed `toolCall` parts have no
-///   dedicated `ContentPart` variant; callers must reconstruct them from raw
-///   results if they need to replay them.
+/// - Provider-executed calls and results use their provider metadata to replay
+///   native `toolCall` / `toolResponse` or `executableCode` /
+///   `codeExecutionResult` parts.
 /// - Tool-result `output` is serialized into `functionResponse.response.content`
 ///   as a string (JSON-stringified for non-string outputs, matching the TS
 ///   `output.type === 'json'` path).
@@ -60,6 +105,13 @@ pub struct GooglePrompt {
 /// by Gemini thinking models on follow-up turns).
 #[must_use]
 pub fn convert_to_google_messages(prompt: &LanguageModelPrompt) -> GooglePrompt {
+    convert_to_google_messages_for_namespace(prompt, ProviderMetadataNamespace::Google)
+}
+
+fn convert_to_google_messages_for_namespace(
+    prompt: &LanguageModelPrompt,
+    namespace: ProviderMetadataNamespace,
+) -> GooglePrompt {
     let mut system_parts: Vec<Value> = Vec::new();
     let mut contents: Vec<Value> = Vec::new();
     let mut system_messages_allowed = true;
@@ -91,7 +143,7 @@ pub fn convert_to_google_messages(prompt: &LanguageModelPrompt) -> GooglePrompt 
             }
             Role::Assistant => {
                 system_messages_allowed = false;
-                let parts = convert_assistant_parts(&msg.content);
+                let parts = convert_assistant_parts(&msg.content, namespace);
                 if !parts.is_empty() {
                     contents.push(json!({ "role": "model", "parts": parts }));
                 }
@@ -161,7 +213,10 @@ fn convert_user_parts(content: &[ContentPart]) -> Vec<Value> {
 ///
 /// - `Text` → `{ text }` (skipped when empty, matching the TS SDK).
 /// - `ToolCall` → `{ functionCall: { id?, name, args } }`.
-fn convert_assistant_parts(content: &[ContentPart]) -> Vec<Value> {
+fn convert_assistant_parts(
+    content: &[ContentPart],
+    namespace: ProviderMetadataNamespace,
+) -> Vec<Value> {
     let mut parts = Vec::new();
     for part in content {
         match part {
@@ -173,9 +228,7 @@ fn convert_assistant_parts(content: &[ContentPart]) -> Vec<Value> {
                     let mut p = json!({ "text": text });
                     // Echo thoughtSignature from provider_options if present
                     // (upstream convert-to-google-messages.ts:355-377).
-                    if let Some(sig) = provider_options
-                        .as_ref()
-                        .and_then(|o| o.get("google"))
+                    if let Some(sig) = read_provider_options(provider_options.as_ref(), namespace)
                         .and_then(|g| g.get("thoughtSignature"))
                         .and_then(|v| v.as_str())
                     {
@@ -194,11 +247,10 @@ fn convert_assistant_parts(content: &[ContentPart]) -> Vec<Value> {
                     // Prefer explicit signature field, then fall back to provider_options.
                     if let Some(sig) = signature.as_ref() {
                         p["thoughtSignature"] = json!(sig);
-                    } else if let Some(sig) = provider_options
-                        .as_ref()
-                        .and_then(|o| o.get("google"))
-                        .and_then(|g| g.get("thoughtSignature"))
-                        .and_then(|v| v.as_str())
+                    } else if let Some(sig) =
+                        read_provider_options(provider_options.as_ref(), namespace)
+                            .and_then(|g| g.get("thoughtSignature"))
+                            .and_then(|v| v.as_str())
                     {
                         p["thoughtSignature"] = json!(sig);
                     }
@@ -210,22 +262,53 @@ fn convert_assistant_parts(content: &[ContentPart]) -> Vec<Value> {
                 tool_name,
                 input,
                 thought_signature,
+                provider_options,
                 ..
             } => {
-                let mut function_call = Map::new();
-                if !tool_call_id.is_empty() {
-                    function_call.insert("id".to_string(), json!(tool_call_id));
-                }
-                function_call.insert("name".to_string(), json!(tool_name));
-                function_call.insert("args".to_string(), input.clone());
-                let mut part_value = json!({ "functionCall": function_call });
-                // Thinking models (e.g. gemini-2.5-pro) attach a
-                // `thoughtSignature` to the part; it must be echoed back
-                // verbatim on the follow-up turn or the API rejects the
-                // request with HTTP 400. Emit it as a sibling of
-                // `functionCall` (not inside it), matching the response shape.
-                if let Some(sig) = thought_signature {
-                    part_value["thoughtSignature"] = json!(sig);
+                let google_options = read_provider_options(provider_options.as_ref(), namespace);
+                let server_tool_call_id = google_options
+                    .and_then(|options| options.get("serverToolCallId"))
+                    .and_then(|value| value.as_str());
+                let server_tool_type = google_options
+                    .and_then(|options| options.get("serverToolType"))
+                    .and_then(|value| value.as_str());
+                let signature = thought_signature.as_deref().or_else(|| {
+                    google_options
+                        .and_then(|options| options.get("thoughtSignature"))
+                        .and_then(|value| value.as_str())
+                });
+
+                let mut part_value = if let (Some(server_id), Some(server_type)) =
+                    (server_tool_call_id, server_tool_type)
+                {
+                    let args = match input {
+                        Value::String(raw) => {
+                            serde_json::from_str(raw).unwrap_or_else(|_| input.clone())
+                        }
+                        _ => input.clone(),
+                    };
+                    if server_type == "code_execution" {
+                        json!({ "executableCode": args })
+                    } else {
+                        json!({
+                            "toolCall": {
+                                "toolType": server_type,
+                                "args": args,
+                                "id": server_id,
+                            }
+                        })
+                    }
+                } else {
+                    let mut function_call = Map::new();
+                    if !tool_call_id.is_empty() {
+                        function_call.insert("id".to_string(), json!(tool_call_id));
+                    }
+                    function_call.insert("name".to_string(), json!(tool_name));
+                    function_call.insert("args".to_string(), input.clone());
+                    json!({ "functionCall": function_call })
+                };
+                if let Some(signature) = signature {
+                    part_value["thoughtSignature"] = json!(signature);
                 }
                 parts.push(part_value);
             }
@@ -242,17 +325,28 @@ fn convert_assistant_parts(content: &[ContentPart]) -> Vec<Value> {
                 // upstream convert-to-google-messages.ts:518-540.
                 // If it carries serverToolCallId + serverToolType, emit as
                 // a toolResponse; otherwise skip (upstream returns undefined).
-                if let Some(opts) = provider_options.as_ref().and_then(|o| o.get("google")) {
+                if let Some(opts) = read_provider_options(provider_options.as_ref(), namespace) {
                     let server_id = opts.get("serverToolCallId").and_then(|v| v.as_str());
                     let server_type = opts.get("serverToolType").and_then(|v| v.as_str());
                     if let (Some(sid), Some(st)) = (server_id, server_type) {
-                        parts.push(json!({
-                            "toolResponse": {
-                                "toolType": st,
-                                "response": result,
-                                "id": sid,
-                            }
-                        }));
+                        let mut part_value = if st == "code_execution" {
+                            json!({ "codeExecutionResult": result })
+                        } else {
+                            json!({
+                                "toolResponse": {
+                                    "toolType": st,
+                                    "response": result,
+                                    "id": sid,
+                                }
+                            })
+                        };
+                        if let Some(signature) = opts
+                            .get("thoughtSignature")
+                            .and_then(|value| value.as_str())
+                        {
+                            part_value["thoughtSignature"] = json!(signature);
+                        }
+                        parts.push(part_value);
                     }
                 }
             }
@@ -915,6 +1009,18 @@ pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
     build_request_body_with_warnings(model_id, options).0
 }
 
+/// Build a Vertex Gemini request body using Vertex's provider-metadata
+/// namespaces when replaying response parts.
+#[must_use]
+pub(crate) fn build_vertex_request_body(model_id: &str, options: &CallOptions) -> Value {
+    build_request_body_with_warnings_for_namespace(
+        model_id,
+        options,
+        ProviderMetadataNamespace::Vertex,
+    )
+    .0
+}
+
 /// Build the Gemini `generateContent` request body **and** collect the tool
 /// warnings (e.g. unsupported provider-defined tools, mixed function+provider
 /// tools on pre-Gemini-3 models).
@@ -923,10 +1029,22 @@ pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
 ) -> (Value, Vec<Warning>) {
+    build_request_body_with_warnings_for_namespace(
+        model_id,
+        options,
+        ProviderMetadataNamespace::Google,
+    )
+}
+
+fn build_request_body_with_warnings_for_namespace(
+    model_id: &str,
+    options: &CallOptions,
+    namespace: ProviderMetadataNamespace,
+) -> (Value, Vec<Warning>) {
     let GooglePrompt {
         system_instruction,
         contents,
-    } = convert_to_google_messages(&options.prompt);
+    } = convert_to_google_messages_for_namespace(&options.prompt, namespace);
 
     let mut generation_config = Map::new();
 
@@ -1171,4 +1289,120 @@ pub fn extract_sources(
     }
 
     sources
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aimux_core::language_model_message::LanguageModelPromptMessage;
+
+    fn assistant_prompt(content: Vec<ContentPart>) -> LanguageModelPrompt {
+        vec![LanguageModelPromptMessage {
+            role: Role::Assistant,
+            content,
+            provider_options: None,
+        }]
+    }
+
+    fn code_metadata(namespace: &str, id: &str) -> Value {
+        json!({
+            (namespace): {
+                "serverToolCallId": id,
+                "serverToolType": "code_execution",
+            }
+        })
+    }
+
+    #[test]
+    fn vertex_replays_native_code_execution_with_multiple_results() {
+        let call_id = "code-1";
+        let prompt = assistant_prompt(vec![
+            ContentPart::ToolCall {
+                tool_call_id: call_id.to_string(),
+                tool_name: "runCode".to_string(),
+                input: json!({ "language": "PYTHON", "code": "print(2)" }),
+                provider_executed: Some(true),
+                thought_signature: None,
+                provider_options: Some(code_metadata("googleVertex", call_id)),
+            },
+            ContentPart::ToolResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: Some("runCode".to_string()),
+                result: json!({ "outcome": "OUTCOME_OK", "output": "2" }),
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
+                provider_options: Some(code_metadata("googleVertex", call_id)),
+            },
+            ContentPart::ToolResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: Some("runCode".to_string()),
+                result: json!({ "outcome": "OUTCOME_OK", "output": "still 2" }),
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
+                provider_options: Some(code_metadata("googleVertex", call_id)),
+            },
+        ]);
+
+        let converted =
+            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex);
+        assert_eq!(
+            converted.contents[0]["parts"],
+            json!([
+                { "executableCode": { "language": "PYTHON", "code": "print(2)" } },
+                { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "2" } },
+                { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "still 2" } },
+            ])
+        );
+    }
+
+    #[test]
+    fn provider_metadata_namespace_precedence_matches_ai_sdk() {
+        let content = ContentPart::ToolCall {
+            tool_call_id: "call-1".to_string(),
+            tool_name: "weather".to_string(),
+            input: json!({}),
+            provider_executed: None,
+            thought_signature: None,
+            provider_options: Some(json!({
+                "googleVertex": { "thoughtSignature": "google-vertex" },
+                "vertex": { "thoughtSignature": "vertex" },
+                "google": { "thoughtSignature": "google" },
+            })),
+        };
+        let prompt = assistant_prompt(vec![content]);
+
+        let vertex =
+            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex);
+        assert_eq!(
+            vertex.contents[0]["parts"][0]["thoughtSignature"],
+            "google-vertex"
+        );
+
+        let google =
+            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Google);
+        assert_eq!(google.contents[0]["parts"][0]["thoughtSignature"], "google");
+    }
+
+    #[test]
+    fn vertex_reads_google_as_cross_namespace_fallback() {
+        let prompt = assistant_prompt(vec![ContentPart::ToolCall {
+            tool_call_id: "call-1".to_string(),
+            tool_name: "weather".to_string(),
+            input: json!({}),
+            provider_executed: None,
+            thought_signature: None,
+            provider_options: Some(json!({
+                "google": { "thoughtSignature": "gateway-signature" },
+            })),
+        }]);
+
+        let converted =
+            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex);
+        assert_eq!(
+            converted.contents[0]["parts"][0]["thoughtSignature"],
+            "gateway-signature"
+        );
+    }
 }

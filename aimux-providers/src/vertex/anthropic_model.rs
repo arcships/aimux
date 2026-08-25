@@ -34,7 +34,10 @@ use aimux_provider_utils::{
 use aimux_stream::SseStream;
 
 use crate::anthropic::convert::{build_request_body_with_warnings, parse_stop_reason};
-use crate::anthropic::stream::stream_parts_for_result_block;
+use crate::anthropic::stream::{
+    initial_tool_input, normalized_server_tool_input, server_tool_provider_name,
+    stream_parts_for_result_block, tool_call_caller_metadata,
+};
 use crate::anthropic::tool_name_mapping::ToolNameMapping;
 use crate::anthropic::types::{AnthropicResponse, ContentBlock, StreamEvent};
 
@@ -283,6 +286,7 @@ impl LanguageModel for VertexAnthropicModel {
             let mut final_finish_reason: Option<FinishReason> = None;
             let mut response_meta_emitted = false;
             let mut mcp_tool_calls: HashMap<String, (String, String)> = HashMap::new();
+            let mut server_tool_calls: HashMap<String, String> = HashMap::new();
 
             while let Some(event) = sse.next().await {
                 match event {
@@ -312,10 +316,19 @@ impl LanguageModel for VertexAnthropicModel {
                                     ContentBlock::Thinking { .. } => {
                                         blocks.insert(index, BlockState::Thinking { started: false });
                                     }
-                                    ContentBlock::ToolUse { id, name, .. } => {
+                                    ContentBlock::ToolUse {
+                                        id,
+                                        name,
+                                        input,
+                                        caller,
+                                    } => {
+                                        let custom_name = tool_names
+                                            .to_custom_tool_name(&name)
+                                            .to_string();
+                                        let initial_input = initial_tool_input(&input);
                                         yield Ok(StreamPart::ToolInputStart {
                                             id: id.clone(),
-                                            tool_name: name.clone(),
+                                            tool_name: custom_name.clone(),
                                             provider_executed: None,
                                             dynamic: None,
                                             title: None,
@@ -323,22 +336,56 @@ impl LanguageModel for VertexAnthropicModel {
                                         });
                                         blocks.insert(index, BlockState::ToolUse {
                                             id,
-                                            name,
-                                            accumulated_json: String::new(),
+                                            name: custom_name,
+                                            first_delta: initial_input.is_empty(),
+                                            accumulated_json: initial_input,
+                                            provider_executed: None,
+                                            dynamic: None,
+                                            provider_tool_name: None,
+                                            provider_tool_input_type: None,
+                                            provider_metadata: tool_call_caller_metadata(caller.as_ref()),
                                         });
                                     }
                                     ContentBlock::ServerToolUse { id, name, input } => {
-                                        yield Ok(StreamPart::ToolCall {
-                                            tool_call_id: id.clone(),
-                                            tool_name: tool_names
-                                                .to_custom_tool_name(&name)
-                                                .to_string(),
-                                            input: Value::String(input.to_string()),
+                                        if matches!(
+                                            name.as_str(),
+                                            "tool_search_tool_regex" | "tool_search_tool_bm25"
+                                        ) {
+                                            server_tool_calls.insert(id.clone(), name.clone());
+                                        }
+                                        let provider_name = server_tool_provider_name(&name);
+                                        let custom_name = tool_names
+                                            .to_custom_tool_name(provider_name)
+                                            .to_string();
+                                        let dynamic = (provider_name == "code_execution"
+                                            && tool_names.mark_code_execution_dynamic())
+                                        .then_some(true);
+                                        let initial_input = initial_tool_input(&input);
+                                        yield Ok(StreamPart::ToolInputStart {
+                                            id: id.clone(),
+                                            tool_name: custom_name.clone(),
                                             provider_executed: Some(true),
-                                            dynamic: None,
-                                            thought_signature: None,
-                                            invalid: None,
-                                            error: None,
+                                            dynamic,
+                                            title: None,
+                                            provider_metadata: None,
+                                        });
+                                        blocks.insert(index, BlockState::ToolUse {
+                                            id,
+                                            name: custom_name,
+                                            first_delta: initial_input.is_empty(),
+                                            accumulated_json: initial_input,
+                                            provider_executed: Some(true),
+                                            dynamic,
+                                            provider_tool_name: Some(provider_name.to_string()),
+                                            provider_tool_input_type: match name.as_str() {
+                                                "text_editor_code_execution" | "bash_code_execution" => {
+                                                    Some(name)
+                                                }
+                                                "code_execution" => {
+                                                    Some("programmatic-tool-call".to_string())
+                                                }
+                                                _ => None,
+                                            },
                                             provider_metadata: None,
                                         });
                                     }
@@ -376,6 +423,7 @@ impl LanguageModel for VertexAnthropicModel {
                                             &other,
                                             &tool_names,
                                             &mcp_tool_calls,
+                                            &server_tool_calls,
                                         ) {
                                             yield Ok(part);
                                         }
@@ -405,21 +453,36 @@ impl LanguageModel for VertexAnthropicModel {
                                     });
                                 }
                                 if let Some(partial) = delta.partial_json {
-                                    let delta_id: Option<String> = match blocks.get_mut(&index) {
+                                    let delta_event: Option<(String, String)> = match blocks.get_mut(&index) {
                                         Some(BlockState::ToolUse {
                                             id,
                                             accumulated_json,
+                                            provider_tool_input_type,
+                                            first_delta,
                                             ..
                                         }) if !partial.is_empty() => {
-                                            accumulated_json.push_str(&partial);
-                                            Some(id.clone())
+                                            let emitted_delta = if *first_delta {
+                                                if let Some(input_type) = provider_tool_input_type {
+                                                    format!(
+                                                        "{{\"type\": \"{input_type}\",{}",
+                                                        partial.strip_prefix('{').unwrap_or(&partial)
+                                                    )
+                                                } else {
+                                                    partial
+                                                }
+                                            } else {
+                                                partial
+                                            };
+                                            accumulated_json.push_str(&emitted_delta);
+                                            *first_delta = false;
+                                            Some((id.clone(), emitted_delta))
                                         }
                                         _ => None,
                                     };
-                                    if let Some(id) = delta_id {
+                                    if let Some((id, delta)) = delta_event {
                                         yield Ok(StreamPart::ToolInputDelta {
                                             id,
-                                            delta: partial,
+                                            delta,
                                             provider_metadata: None,
                                         });
                                     }
@@ -469,27 +532,42 @@ impl LanguageModel for VertexAnthropicModel {
                                         BlockState::ToolUse {
                                             id,
                                             name,
-                                            accumulated_json,
+                                            mut accumulated_json,
+                                            provider_executed,
+                                            dynamic,
+                                            provider_tool_name,
+                                            provider_tool_input_type,
+                                            provider_metadata,
+                                            ..
                                         } => {
                                             yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
-                                            // Empty input normalizes to "{}"
-                                            // per the upstream provider.
-                                            let input =
-                                                Value::String(if accumulated_json.is_empty() {
-                                                    "{}".to_string()
-                                                } else {
-                                                    accumulated_json
-                                                });
+                                            if accumulated_json.is_empty() {
+                                                accumulated_json = "{}".to_string();
+                                            }
+                                            if provider_tool_name.as_deref() == Some("code_execution")
+                                                && let Ok(parsed) = serde_json::from_str::<Value>(&accumulated_json)
+                                            {
+                                                let wire_name = match provider_tool_input_type.as_deref() {
+                                                    Some(name @ ("text_editor_code_execution" | "bash_code_execution")) => name,
+                                                    _ => "code_execution",
+                                                };
+                                                accumulated_json = normalized_server_tool_input(
+                                                    wire_name,
+                                                    &parsed,
+                                                )
+                                                .to_string();
+                                            }
+                                            let input = Value::String(accumulated_json);
                                             yield Ok(StreamPart::ToolCall {
                                                 tool_call_id: id,
                                                 tool_name: name,
                                                 input,
-                                                provider_executed: None,
-                                                dynamic: None,
+                                                provider_executed,
+                                                dynamic,
                                                 thought_signature: None,
                                                 invalid: None,
                                                 error: None,
-                                                provider_metadata: None,
+                                                provider_metadata,
                                             });
                                         }
                                     }
@@ -563,6 +641,12 @@ enum BlockState {
         id: String,
         name: String,
         accumulated_json: String,
+        provider_executed: Option<bool>,
+        dynamic: Option<bool>,
+        provider_tool_name: Option<String>,
+        provider_tool_input_type: Option<String>,
+        provider_metadata: Option<Value>,
+        first_delta: bool,
     },
     Thinking {
         started: bool,

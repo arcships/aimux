@@ -1,4 +1,4 @@
-﻿//! Rust port of the provider-defined-tools section of
+//! Rust port of the provider-defined-tools section of
 //! `anthropic-language-model.test.ts` (doGenerate).
 //!
 //! Translated from the Vercel AI SDK TypeScript test suite:
@@ -45,6 +45,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
+use aimux_core::generate::{GenerateTextOptions, generate_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -553,10 +554,10 @@ mod web_search_tool {
         let mut options = default_options(test_prompt());
         options.tools = Some(vec![provider_tool(
             "anthropic.web_search_20250305",
-            "web_search",
+            "mySearch",
             json!({ "maxUses": 5 }),
         )]);
-        let _result = model.do_generate(&options).await.unwrap();
+        let raw_result = model.do_generate(&options).await.unwrap();
 
         // TS expects content to contain:
         // 1. tool-call (providerExecuted: true, toolName: 'web_search')
@@ -565,10 +566,116 @@ mod web_search_tool {
         // 4. text
         // The server_tool_use block is surfaced as a tool-call so the turn
         // round-trips; the result/source mapping is not yet asserted here.
-        assert!(_result
-            .content
-            .iter()
-            .any(|c| matches!(c, GenerateContent::ToolCall { tool_name, .. } if tool_name == "web_search")));
+        assert!(raw_result.content.iter().any(
+            |c| matches!(c, GenerateContent::ToolCall { tool_name, .. } if tool_name == "mySearch")
+        ));
+
+        let result = generate_text(
+            &model,
+            "Hello",
+            GenerateTextOptions {
+                tools: options.tools.clone(),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .expect("renamed server tool should pass Core validation");
+        let call = result.tool_calls.first().expect("web search tool call");
+        assert_eq!(call.tool_name, "mySearch");
+        assert_eq!(call.provider_executed, Some(true));
+        assert_eq!(call.invalid, None);
+    }
+
+    #[tokio::test]
+    async fn client_executed_provider_tool_uses_caller_name_at_core_boundary() {
+        let server = MockServer::start().await;
+        mock_json(
+            &server,
+            200,
+            json!({
+                "type": "message",
+                "id": "msg_test",
+                "model": "claude-3-5-sonnet-latest",
+                "content": [{
+                    "type": "tool_use",
+                    "id": "tool_1",
+                    "name": "computer",
+                    "input": { "action": "screenshot" },
+                }],
+                "stop_reason": "tool_use",
+                "usage": { "input_tokens": 10, "output_tokens": 20 },
+            }),
+        )
+        .await;
+        let model = make_model_with_id(&server, "claude-3-5-sonnet-latest");
+        let tools = vec![provider_tool(
+            "anthropic.computer_20250124",
+            "myComputer",
+            json!({ "displayWidthPx": 1280, "displayHeightPx": 720 }),
+        )];
+
+        let result = generate_text(
+            &model,
+            "Take a screenshot",
+            GenerateTextOptions {
+                tools: Some(tools),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .expect("renamed client-executed provider tool should validate");
+
+        let call = result.tool_calls.first().expect("computer tool call");
+        assert_eq!(call.tool_name, "myComputer");
+        assert_eq!(call.provider_executed, None);
+        assert_eq!(call.input, json!({ "action": "screenshot" }));
+        assert_eq!(call.invalid, None);
+    }
+
+    #[tokio::test]
+    async fn implicit_code_execution_from_2026_web_tool_is_dynamic() {
+        let server = MockServer::start().await;
+        mock_json(
+            &server,
+            200,
+            json!({
+                "type": "message",
+                "id": "msg_test",
+                "model": "claude-sonnet-4-5",
+                "content": [{
+                    "type": "server_tool_use",
+                    "id": "tool_1",
+                    "name": "code_execution",
+                    "input": { "code": "print(2)" },
+                }],
+                "stop_reason": "end_turn",
+                "usage": { "input_tokens": 10, "output_tokens": 20 },
+            }),
+        )
+        .await;
+        let model = make_model_with_id(&server, "claude-sonnet-4-5");
+
+        let result = generate_text(
+            &model,
+            "Search, then analyze",
+            GenerateTextOptions {
+                tools: Some(vec![provider_tool(
+                    "anthropic.web_search_20260209",
+                    "mySearch",
+                    json!({}),
+                )]),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .expect("implicit code execution should bypass local tool lookup");
+
+        let call = result.tool_calls.first().expect("code execution call");
+        assert_eq!(call.tool_name, "code_execution");
+        assert_eq!(call.provider_executed, Some(true));
+        assert_eq!(call.dynamic, Some(true));
+        assert_eq!(call.invalid, None);
+        assert_eq!(call.input["type"], "programmatic-tool-call");
     }
 
     /// TS: "should handle server-side web search errors" (L3636)
@@ -979,6 +1086,108 @@ mod tool_search_tool {
     #[tokio::test]
     #[ignore = "snapshot test �?requires fixture + response parsing for server tools"]
     async fn should_include_tool_search_bm25_tool_call_and_result_in_content() {}
+
+    #[tokio::test]
+    async fn tool_search_results_follow_their_call_ids_when_both_variants_are_configured() {
+        let server = MockServer::start().await;
+        mock_json(
+            &server,
+            200,
+            json!({
+                "type": "message",
+                "id": "msg_tool_search",
+                "model": "claude-sonnet-4-5",
+                "content": [
+                    {
+                        "type": "server_tool_use",
+                        "id": "bm25_call",
+                        "name": "tool_search_tool_bm25",
+                        "input": { "query": "weather" },
+                    },
+                    {
+                        "type": "tool_search_tool_result",
+                        "tool_use_id": "bm25_call",
+                        "content": {
+                            "type": "tool_search_tool_search_result",
+                            "tool_references": [{
+                                "type": "tool_reference",
+                                "tool_name": "get_weather",
+                            }],
+                        },
+                    },
+                    {
+                        "type": "server_tool_use",
+                        "id": "regex_call",
+                        "name": "tool_search_tool_regex",
+                        "input": { "pattern": "forecast.*" },
+                    },
+                    {
+                        "type": "tool_search_tool_result",
+                        "tool_use_id": "regex_call",
+                        "content": {
+                            "type": "tool_search_tool_search_result",
+                            "tool_references": [{
+                                "type": "tool_reference",
+                                "tool_name": "get_forecast",
+                            }],
+                        },
+                    },
+                ],
+                "stop_reason": "end_turn",
+                "usage": { "input_tokens": 10, "output_tokens": 20 },
+            }),
+        )
+        .await;
+        let model = make_model_with_id(&server, "claude-sonnet-4-5");
+        let tools = vec![
+            provider_tool(
+                "anthropic.tool_search_regex_20251119",
+                "regexSearch",
+                json!({}),
+            ),
+            provider_tool(
+                "anthropic.tool_search_bm25_20251119",
+                "semanticSearch",
+                json!({}),
+            ),
+        ];
+
+        let result = generate_text(
+            &model,
+            "Find weather tools",
+            GenerateTextOptions {
+                tools: Some(tools),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .expect("both provider tools should validate at the Core boundary");
+
+        let result_names: HashMap<&str, &str> = result
+            .raw
+            .content
+            .iter()
+            .filter_map(|part| match part {
+                GenerateContent::ToolResult {
+                    tool_call_id,
+                    tool_name,
+                    ..
+                } => Some((tool_call_id.as_str(), tool_name.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(result_names.get("bm25_call"), Some(&"semanticSearch"));
+        assert_eq!(result_names.get("regex_call"), Some(&"regexSearch"));
+
+        let call_names: HashMap<&str, &str> = result
+            .tool_calls
+            .iter()
+            .map(|call| (call.tool_call_id.as_str(), call.tool_name.as_str()))
+            .collect();
+        assert_eq!(call_names.get("bm25_call"), Some(&"semanticSearch"));
+        assert_eq!(call_names.get("regex_call"), Some(&"regexSearch"));
+        assert!(result.tool_calls.iter().all(|call| call.invalid.is_none()));
+    }
 
     /// TS: "should correctly map tool_search_tool_result when result comes without
     /// server_tool_use in same response" (L4140, bm25 deferred)

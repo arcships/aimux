@@ -6,12 +6,8 @@
 //! provider-executed block (`web_search_tool_result`, `mcp_tool_result`, …)
 //! instead, or the follow-up request is rejected with HTTP 400.
 //!
-//! `generate_text` does not route provider-executed results into
-//! `response_messages` yet — that needs `provider_executed` on the variant to
-//! express upstream's `!part.providerExecuted` predicate, and ships with the
-//! type change. The guard is in place first so the path is protected before it
-//! opens; these tests construct the assistant prompt directly rather than
-//! going through a generate call.
+//! Core routes provider-executed calls and results into the same assistant
+//! response message; these converter tests pin the replay wire blocks directly.
 //!
 //! Mirrors the assistant `case 'tool-result'` branch of
 //! `reference/vercel-ai/anthropic/src/convert-to-anthropic-prompt.ts` (:871-1285).
@@ -21,9 +17,12 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
+use aimux_core::generate::{GenerateTextOptions, generate_text};
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    LanguageModelPrompt, LanguageModelPromptMessage, convert_to_language_model_prompt,
+};
+use aimux_core::message::{MessageContent, ModelMessage, Role};
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::tool::{ProviderTool, Tool};
@@ -84,6 +83,36 @@ fn convert(prompt: LanguageModelPrompt, tools: Vec<Tool>) -> (Vec<Value>, Vec<St
 }
 
 // ── provider-executed result blocks ─────────────────────────────────────────
+
+#[test]
+fn assistant_tool_call_replays_programmatic_caller() {
+    let call = ContentPart::ToolCall {
+        tool_call_id: "toolu_programmatic".to_string(),
+        tool_name: "query_database".to_string(),
+        input: json!({ "sql": "SELECT 1" }),
+        provider_executed: None,
+        thought_signature: None,
+        provider_options: Some(json!({
+            "anthropic": {
+                "caller": {
+                    "type": "code_execution_20260120",
+                    "toolId": "srvtoolu_code",
+                }
+            }
+        })),
+    };
+
+    let (blocks, warnings) = convert(vec![msg(Role::Assistant, vec![call])], vec![]);
+
+    assert_eq!(
+        blocks[0]["caller"],
+        json!({
+            "type": "code_execution_20260120",
+            "tool_id": "srvtoolu_code",
+        })
+    );
+    assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+}
 
 #[test]
 fn assistant_web_search_result_becomes_web_search_tool_result() {
@@ -168,6 +197,7 @@ fn assistant_mcp_result_becomes_mcp_tool_result() {
         tool_call_id: "mcptoolu_1".to_string(),
         tool_name: "echo".to_string(),
         input: json!({ "text": "hi" }),
+        provider_executed: Some(true),
         thought_signature: None,
         provider_options: Some(json!({
             "anthropic": { "type": "mcp-tool-use", "serverName": "my-server" }
@@ -189,7 +219,16 @@ fn assistant_mcp_result_becomes_mcp_tool_result() {
         vec![],
     );
 
-    assert_eq!(blocks[0]["type"], "tool_use");
+    assert_eq!(
+        blocks[0],
+        json!({
+            "type": "mcp_tool_use",
+            "id": "mcptoolu_1",
+            "name": "echo",
+            "input": { "text": "hi" },
+            "server_name": "my-server",
+        })
+    );
     assert_eq!(
         blocks[1],
         json!({
@@ -198,6 +237,34 @@ fn assistant_mcp_result_becomes_mcp_tool_result() {
             "is_error": false,
             "content": [{ "type": "text", "text": "hi" }],
         })
+    );
+    assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+}
+
+#[test]
+fn renamed_provider_executed_call_replays_as_server_tool_use() {
+    let call = ContentPart::ToolCall {
+        tool_call_id: "srvtoolu_1".to_string(),
+        tool_name: "mySearch".to_string(),
+        input: json!({ "query": "Rust" }),
+        provider_executed: Some(true),
+        thought_signature: None,
+        provider_options: None,
+    };
+
+    let (blocks, warnings) = convert(
+        vec![msg(Role::Assistant, vec![call])],
+        vec![provider_tool("anthropic.web_search_20250305", "mySearch")],
+    );
+
+    assert_eq!(
+        blocks,
+        vec![json!({
+            "type": "server_tool_use",
+            "id": "srvtoolu_1",
+            "name": "web_search",
+            "input": { "query": "Rust" },
+        })]
     );
     assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
 }
@@ -571,4 +638,179 @@ async fn web_search_result_round_trips_through_a_generate_call() {
 
     assert_eq!(blocks, vec![wire_block]);
     assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+}
+
+#[tokio::test]
+async fn public_response_messages_replay_server_call_and_result_next_turn() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "msg_server_roundtrip",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "server_tool_use",
+                    "id": "srvtoolu_rt",
+                    "name": "web_search",
+                    "input": { "query": "Rust" },
+                },
+                {
+                    "type": "web_search_tool_result",
+                    "tool_use_id": "srvtoolu_rt",
+                    "content": [{
+                        "url": "https://example.com",
+                        "title": "Example",
+                        "page_age": "3 days",
+                        "encrypted_content": "enc-1",
+                        "type": "web_search_result",
+                    }],
+                },
+            ],
+            "model": "claude-sonnet-4-5",
+            "stop_reason": "end_turn",
+            "stop_sequence": null,
+            "usage": { "input_tokens": 1, "output_tokens": 1 },
+        })))
+        .mount(&server)
+        .await;
+
+    let tool = provider_tool("anthropic.web_search_20250305", "mySearch");
+    let model = AnthropicModel::new(
+        "claude-sonnet-4-5".to_string(),
+        AnthropicConfig::new("test-api-key").with_base_url(server.uri()),
+    );
+    let generated = generate_text(
+        &model,
+        "Search for Rust",
+        GenerateTextOptions {
+            tools: Some(vec![tool.clone()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let MessageContent::Parts(parts) = &generated.response_messages[0].content else {
+        panic!("expected multipart response message");
+    };
+    assert!(matches!(
+        &parts[0],
+        ContentPart::ToolCall {
+            tool_name,
+            provider_executed: Some(true),
+            ..
+        } if tool_name == "mySearch"
+    ));
+    assert!(matches!(
+        &parts[1],
+        ContentPart::ToolResult { tool_name: Some(name), .. } if name == "mySearch"
+    ));
+
+    let mut messages = vec![ModelMessage::user("Search for Rust")];
+    messages.extend(generated.response_messages);
+    messages.push(ModelMessage::user("Summarize the result"));
+    let mut next_options = CallOptions::new(convert_to_language_model_prompt(&messages, None));
+    next_options.tools = Some(vec![tool]);
+    let replay =
+        build_request_body_with_warnings("claude-sonnet-4-5", &next_options, false).unwrap();
+    let assistant = replay.body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|message| message["role"] == "assistant")
+        .unwrap();
+
+    assert_eq!(assistant["content"][0]["type"], "server_tool_use");
+    assert_eq!(assistant["content"][0]["name"], "web_search");
+    assert_eq!(assistant["content"][0]["id"], "srvtoolu_rt");
+    assert_eq!(assistant["content"][1]["type"], "web_search_tool_result");
+    assert_eq!(assistant["content"][1]["tool_use_id"], "srvtoolu_rt");
+    assert!(
+        replay.warnings.is_empty(),
+        "unexpected warnings: {:?}",
+        replay.warnings
+    );
+}
+
+#[tokio::test]
+async fn public_response_messages_replay_renamed_client_executed_provider_tool_name() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "msg_client_tool_roundtrip",
+            "type": "message",
+            "role": "assistant",
+            "content": [{
+                "type": "tool_use",
+                "id": "toolu_bash_1",
+                "name": "bash",
+                "input": { "command": "pwd" },
+            }],
+            "model": "claude-sonnet-4-5",
+            "stop_reason": "tool_use",
+            "stop_sequence": null,
+            "usage": { "input_tokens": 1, "output_tokens": 1 },
+        })))
+        .mount(&server)
+        .await;
+
+    let tool = provider_tool("anthropic.bash_20250124", "terminal");
+    let model = AnthropicModel::new(
+        "claude-sonnet-4-5".to_string(),
+        AnthropicConfig::new("test-api-key").with_base_url(server.uri()),
+    );
+    let generated = generate_text(
+        &model,
+        "Show the current directory",
+        GenerateTextOptions {
+            tools: Some(vec![tool.clone()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let MessageContent::Parts(parts) = &generated.response_messages[0].content else {
+        panic!("expected multipart response message");
+    };
+    assert!(matches!(
+        &parts[0],
+        ContentPart::ToolCall {
+            tool_name,
+            provider_executed: None,
+            ..
+        } if tool_name == "terminal"
+    ));
+
+    let mut messages = vec![ModelMessage::user("Show the current directory")];
+    messages.extend(generated.response_messages);
+    messages.push(ModelMessage::user("Continue"));
+    let mut next_options = CallOptions::new(convert_to_language_model_prompt(&messages, None));
+    next_options.tools = Some(vec![tool]);
+    let replay =
+        build_request_body_with_warnings("claude-sonnet-4-5", &next_options, false).unwrap();
+    let assistant = replay.body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|message| message["role"] == "assistant")
+        .unwrap();
+
+    assert_eq!(
+        assistant["content"],
+        json!([{
+            "type": "tool_use",
+            "id": "toolu_bash_1",
+            "name": "bash",
+            "input": { "command": "pwd" },
+        }])
+    );
+    assert!(
+        replay.warnings.is_empty(),
+        "unexpected warnings: {:?}",
+        replay.warnings
+    );
 }

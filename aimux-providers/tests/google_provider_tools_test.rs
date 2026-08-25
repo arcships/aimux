@@ -32,9 +32,12 @@ use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
+use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    LanguageModelPrompt, LanguageModelPromptMessage, convert_to_language_model_prompt,
+};
+use aimux_core::message::{ModelMessage, Role};
 use aimux_core::options::{CallOptions, ProviderTool, Tool};
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
@@ -1064,12 +1067,8 @@ mod do_generate {
 
     // ── code execution tool calls ─────────────────────────────────────────────
     //
-    // The request-body assertion is a normal red test. The content assertions
-    // for the `tool-call` part compile (`GenerateContent::ToolCall` exists) but
-    // are red because `executableCode` parts are not parsed. The TS also expects
-    // a `tool-result` content item with `providerExecuted: true`; Rust's
-    // `GenerateContent` has no `ToolResult` variant and `ToolCall` has no
-    // `provider_executed` flag — see the `#[ignore]`'d test below.
+    // Gemini may emit more than one `codeExecutionResult` for a single
+    // `executableCode`; every result must retain the originating call id.
 
     #[tokio::test]
     async fn code_execution_request_body_contains_code_execution() {
@@ -1150,6 +1149,101 @@ mod do_generate {
         // `code_execution_tool_result_content` below.
     }
 
+    #[tokio::test]
+    async fn renamed_code_execution_passes_core_generate_boundary() {
+        let server = MockServer::start().await;
+        mock_json_response(
+            &server,
+            "gemini-2.0-pro",
+            json!({
+                "candidates": [{
+                    "content": {
+                        "parts": [
+                            { "executableCode": { "language": "PYTHON", "code": "print(2)" } },
+                            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "2" } },
+                            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "still 2" } }
+                        ],
+                        "role": "model"
+                    },
+                    "finishReason": "STOP"
+                }]
+            }),
+        )
+        .await;
+        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let tool = provider_tool("google.code_execution", "runCode", json!({}));
+
+        let result = generate_text(
+            &model,
+            "Run code",
+            GenerateTextOptions {
+                tools: Some(vec![tool.clone()]),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .expect("renamed code execution tool should pass Core validation");
+
+        let call = result.tool_calls.first().expect("code execution call");
+        assert_eq!(call.tool_name, "runCode");
+        assert_eq!(call.provider_executed, Some(true));
+        assert_eq!(call.invalid, None);
+        assert_eq!(call.input["code"], "print(2)");
+        assert_eq!(
+            call.provider_metadata.as_ref().expect("call metadata")["google"],
+            json!({
+                "serverToolCallId": call.tool_call_id,
+                "serverToolType": "code_execution",
+            })
+        );
+        let raw_results: Vec<_> = result
+            .raw
+            .content
+            .iter()
+            .filter_map(|content| match content {
+                GenerateContent::ToolResult {
+                    tool_call_id,
+                    tool_name,
+                    result,
+                    provider_metadata,
+                    ..
+                } if tool_name == "runCode" => Some((
+                    tool_call_id,
+                    result,
+                    provider_metadata.as_ref().expect("result metadata"),
+                )),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(raw_results.len(), 2);
+        assert!(raw_results.iter().all(|(id, _, metadata)| {
+            *id == &call.tool_call_id
+                && metadata["google"]["serverToolCallId"] == call.tool_call_id
+                && metadata["google"]["serverToolType"] == "code_execution"
+        }));
+
+        let mut messages = vec![ModelMessage::user("Run code")];
+        messages.extend(result.response_messages);
+        messages.push(ModelMessage::user("Continue"));
+        let mut next_options = CallOptions::new(convert_to_language_model_prompt(&messages, None));
+        next_options.tools = Some(vec![tool]);
+        let replay = build_request_body("gemini-2.0-pro", &next_options);
+        let assistant = replay["contents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|content| content["role"] == "model")
+            .expect("assistant replay content");
+        assert_eq!(
+            assistant["parts"],
+            json!([
+                { "executableCode": { "language": "PYTHON", "code": "print(2)" } },
+                { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "2" } },
+                { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "still 2" } },
+            ])
+        );
+    }
+
     /// TS: "should handle code execution tool calls" — the `tool-result` portion.
     ///
     /// `GenerateContent::ToolResult` now exists, so the TS assertion is
@@ -1167,7 +1261,8 @@ mod do_generate {
                     "content": {
                         "parts": [
                             { "executableCode": { "language": "PYTHON", "code": "print(1+1)" } },
-                            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "2" } }
+                            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "2" } },
+                            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "still 2" } }
                         ],
                         "role": "model"
                     },
@@ -1197,8 +1292,8 @@ mod do_generate {
         let results = gen_tool_results(&result.content);
         assert_eq!(
             results.len(),
-            1,
-            "one codeExecutionResult part → one tool-result"
+            2,
+            "each codeExecutionResult part becomes a tool-result"
         );
         assert_eq!(results[0].1, "code_execution");
         assert_eq!(
@@ -1209,6 +1304,11 @@ mod do_generate {
         assert_eq!(
             results[0].0, calls[0].0,
             "the result must carry the id of the call it answers"
+        );
+        assert_eq!(results[1].0, calls[0].0);
+        assert_eq!(
+            results[1].2,
+            json!({ "outcome": "OUTCOME_OK", "output": "still 2" })
         );
         assert!(
             !results[0].0.is_empty(),
@@ -1808,7 +1908,10 @@ mod do_stream {
                 json!({
                     "candidates": [{
                         "content": {
-                            "parts": [{ "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "hello\n" } }]
+                            "parts": [
+                                { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "hello\n" } },
+                                { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "second result\n" } }
+                            ]
                         },
                         "finishReason": "STOP"
                     }]
@@ -1818,18 +1921,16 @@ mod do_stream {
         .await;
 
         let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let tool = provider_tool("google.code_execution", "runCode", json!({}));
         let result = model
-            .do_stream(&options_with_tools(
-                test_prompt(),
-                vec![code_execution_tool()],
-            ))
+            .do_stream(&options_with_tools(test_prompt(), vec![tool.clone()]))
             .await
             .expect("do_stream should succeed");
         let parts = collect_stream(result).await;
 
         let calls = stream_tool_calls(&parts);
         let has_call = calls.iter().any(|(_, name, input)| {
-            name == "code_execution"
+            name == "runCode"
                 && *input == json!(r#"{"language":"PYTHON","code":"print(\"hello\")"}"#)
         });
         assert!(
@@ -1845,9 +1946,74 @@ mod do_stream {
             has_result,
             "expected a code_execution tool-result, got {results:?}"
         );
-        // NOTE: TS also asserts toolName: "code_execution" on the result and
-        // providerExecuted: true on the call — not expressible on current
-        // StreamPart variants.
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|(id, _)| id == &calls[0].0));
+        assert!(parts.iter().any(|part| matches!(
+            part,
+            StreamPart::ToolCall {
+                tool_call_id,
+                tool_name,
+                provider_executed: Some(true),
+                provider_metadata: Some(metadata),
+                ..
+            } if tool_name == "runCode"
+                && metadata["google"] == json!({
+                    "serverToolCallId": tool_call_id,
+                    "serverToolType": "code_execution",
+                })
+        )));
+        assert!(parts.iter().any(|part| matches!(
+            part,
+            StreamPart::ToolResult {
+                tool_call_id,
+                tool_name,
+                provider_metadata: Some(metadata),
+                ..
+            } if tool_name == "runCode"
+                && metadata["google"] == json!({
+                    "serverToolCallId": tool_call_id,
+                    "serverToolType": "code_execution",
+                })
+        )));
+
+        let result = stream_text(
+            &model,
+            "Run code",
+            GenerateTextOptions {
+                tools: Some(vec![tool.clone()]),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .expect("stream_text should start")
+        .consume()
+        .await
+        .expect("renamed code execution tool should pass Core validation");
+        let call = result.tool_calls.first().expect("code execution call");
+        assert_eq!(call.tool_name, "runCode");
+        assert_eq!(call.provider_executed, Some(true));
+        assert_eq!(call.invalid, None);
+
+        let mut messages = vec![ModelMessage::user("Run code")];
+        messages.extend(result.response_messages);
+        messages.push(ModelMessage::user("Continue"));
+        let mut next_options = CallOptions::new(convert_to_language_model_prompt(&messages, None));
+        next_options.tools = Some(vec![tool]);
+        let replay = build_request_body("gemini-2.0-pro", &next_options);
+        let assistant = replay["contents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|content| content["role"] == "model")
+            .expect("assistant replay content");
+        assert_eq!(
+            assistant["parts"],
+            json!([
+                { "executableCode": { "language": "PYTHON", "code": "print(\"hello\")" } },
+                { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "hello\n" } },
+                { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "second result\n" } },
+            ])
+        );
     }
 
     #[tokio::test]

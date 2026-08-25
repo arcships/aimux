@@ -24,7 +24,8 @@ use aimux_provider_utils::{
 use aimux_stream::SseStream;
 
 use crate::google::convert::{
-    build_request_body, convert_usage, extract_sources, parse_finish_reason,
+    build_vertex_request_body, code_execution_tool_name, convert_usage, extract_sources,
+    parse_finish_reason,
 };
 use crate::google::types::{Candidate, GenerateContentResponse, GoogleUsageMetadata, StreamChunk};
 
@@ -158,7 +159,8 @@ impl LanguageModel for VertexModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options);
+        let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
+        let body = build_vertex_request_body(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
         let retry_config = crate::openai::model::resolve_retry_config(
             &self.config.retry_config,
@@ -191,7 +193,8 @@ impl LanguageModel for VertexModel {
             AiMuxError::InvalidResponseData("no candidates in response".to_string())
         })?;
 
-        let (content, has_tool_calls) = extract_content_from_candidate(&candidate);
+        let (content, has_tool_calls) =
+            extract_content_from_candidate(&candidate, &code_execution_tool_name);
 
         let finish_reason = candidate
             .finish_reason
@@ -208,16 +211,14 @@ impl LanguageModel for VertexModel {
             .map(convert_usage)
             .unwrap_or_default();
 
-        let provider_metadata = Some(serde_json::json!({
-            "googleVertex": {
-                "promptFeedback": data.prompt_feedback,
-                "groundingMetadata": candidate.grounding_metadata,
-                "urlContextMetadata": candidate.url_context_metadata,
-                "safetyRatings": candidate.safety_ratings,
-                "usageMetadata": data.usage_metadata,
-                "finishMessage": candidate.finish_message,
-            }
-        }));
+        let provider_metadata = Some(vertex_provider_metadata(json!({
+            "promptFeedback": data.prompt_feedback,
+            "groundingMetadata": candidate.grounding_metadata,
+            "urlContextMetadata": candidate.url_context_metadata,
+            "safetyRatings": candidate.safety_ratings,
+            "usageMetadata": data.usage_metadata,
+            "finishMessage": candidate.finish_message,
+        })));
 
         Ok(GenerateResult {
             content,
@@ -238,7 +239,8 @@ impl LanguageModel for VertexModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options);
+        let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
+        let body = build_vertex_request_body(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
         let retry_config = crate::openai::model::resolve_retry_config(
             &self.config.retry_config,
@@ -390,17 +392,28 @@ impl LanguageModel for VertexModel {
                             for part in parts {
                                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
                                     if !text.is_empty() {
+                                        let text_metadata = part
+                                            .get("thoughtSignature")
+                                            .and_then(|v| v.as_str())
+                                            .map(|signature| {
+                                                vertex_provider_metadata(json!({
+                                                    "thoughtSignature": signature,
+                                                }))
+                                            });
                                         if text_id.is_none() {
                                             let id = format!("{block_counter}");
                                             block_counter += 1;
                                             text_id = Some(id.clone());
-                                            yield Ok(StreamPart::TextStart { id, provider_metadata: None});
+                                            yield Ok(StreamPart::TextStart {
+                                                id,
+                                                provider_metadata: text_metadata.clone(),
+                                            });
                                         }
                                         if let Some(id) = &text_id {
                                             yield Ok(StreamPart::TextDelta {
                                                 id: id.clone(),
                                                 delta: text.to_string(),
-                                                provider_metadata: None,
+                                                provider_metadata: text_metadata,
                                             });
                                         }
                                     }
@@ -420,6 +433,11 @@ impl LanguageModel for VertexModel {
                                         .get("thoughtSignature")
                                         .and_then(|v| v.as_str())
                                         .map(std::string::ToString::to_string);
+                                    let tool_metadata = thought_signature.as_deref().map(|signature| {
+                                        vertex_provider_metadata(json!({
+                                            "thoughtSignature": signature,
+                                        }))
+                                    });
 
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
@@ -427,15 +445,18 @@ impl LanguageModel for VertexModel {
                                         provider_executed: None,
                                         dynamic: None,
                                         title: None,
-                                        provider_metadata: None,
+                                        provider_metadata: tool_metadata.clone(),
                                     });
                                     let args_str = args.to_string();
                                     yield Ok(StreamPart::ToolInputDelta {
                                         id: id.clone(),
                                         delta: args_str,
-                                        provider_metadata: None,
+                                        provider_metadata: tool_metadata.clone(),
                                     });
-                                    yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
+                                    yield Ok(StreamPart::ToolInputEnd {
+                                        id: id.clone(),
+                                        provider_metadata: tool_metadata.clone(),
+                                    });
                                     yield Ok(StreamPart::ToolCall {
                                         tool_call_id: id,
                                         tool_name: name.to_string(),
@@ -445,7 +466,7 @@ impl LanguageModel for VertexModel {
                                         thought_signature,
                                         invalid: None,
                                         error: None,
-                                        provider_metadata: None,
+                                        provider_metadata: tool_metadata,
                                     });
                                     has_tool_calls = true;
                                 } else if let Some(ec) = part.get("executableCode") {
@@ -460,23 +481,29 @@ impl LanguageModel for VertexModel {
                                         block_counter += 1;
                                         last_code_execution_tool_call_id = Some(id.clone());
                                         yield Ok(StreamPart::ToolCall {
-                                            tool_call_id: id,
-                                            tool_name: "code_execution".to_string(),
+                                            tool_call_id: id.clone(),
+                                            tool_name: code_execution_tool_name.clone(),
                                             input: Value::String(ec.to_string()),
                                             provider_executed: Some(true),
                                             dynamic: None,
                                             thought_signature: None,
                                             invalid: None,
                                             error: None,
-                                            provider_metadata: None,
+                                            provider_metadata: Some(vertex_server_tool_metadata(
+                                                &id,
+                                                "code_execution",
+                                                None,
+                                            )),
                                         });
                                         // provider-executed → does NOT set has_tool_calls
                                     }
                                 } else if let Some(cer) = part.get("codeExecutionResult") {
                                     // Result corresponds to the most recent
-                                    // executableCode part.
+                                    // executableCode part. Gemini may emit
+                                    // several results for that one call, so
+                                    // retain the association until a new call.
                                     if let Some(call_id) =
-                                        last_code_execution_tool_call_id.take()
+                                        last_code_execution_tool_call_id.as_ref()
                                     {
                                         let outcome =
                                             cer.get("outcome").cloned().unwrap_or(json!(null));
@@ -486,13 +513,17 @@ impl LanguageModel for VertexModel {
                                             .map(std::string::ToString::to_string)
                                             .unwrap_or_default();
                                         yield Ok(StreamPart::ToolResult {
-                                            tool_call_id: call_id,
-                                            tool_name: String::new(),
+                                            tool_call_id: call_id.clone(),
+                                            tool_name: code_execution_tool_name.clone(),
                                             result: json!({ "outcome": outcome, "output": output }),
                                             is_error: None,
                                             preliminary: None,
                                             dynamic: None,
-                                            provider_metadata: None,
+                                            provider_metadata: Some(vertex_server_tool_metadata(
+                                                call_id,
+                                                "code_execution",
+                                                None,
+                                            )),
                                         });
                                     }
                                 } else if let Some(tc) = part.get("toolCall") {
@@ -509,20 +540,33 @@ impl LanguageModel for VertexModel {
                                     block_counter += 1;
                                     last_server_tool_call_id = Some(id.clone());
                                     let args = tc.get("args").cloned().unwrap_or(json!({}));
+                                    let thought_signature = part
+                                        .get("thoughtSignature")
+                                        .and_then(|v| v.as_str())
+                                        .map(std::string::ToString::to_string);
+                                    let server_meta = vertex_server_tool_metadata(
+                                        &id,
+                                        tool_type,
+                                        thought_signature.as_deref(),
+                                    );
                                     yield Ok(StreamPart::ToolCall {
                                         tool_call_id: id,
                                         tool_name: format!("server:{tool_type}"),
                                         input: Value::String(args.to_string()),
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
-                                        thought_signature: None,
+                                        thought_signature,
                                         invalid: None,
                                         error: None,
-                                        provider_metadata: None,
+                                        provider_metadata: Some(server_meta),
                                     });
                                     // provider-executed → does NOT set has_tool_calls
                                 } else if let Some(tr) = part.get("toolResponse") {
                                     // Server-side tool response.
+                                    let tool_type = tr
+                                        .get("toolType")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("");
                                     let id = last_server_tool_call_id
                                         .take()
                                         .or_else(|| {
@@ -534,14 +578,19 @@ impl LanguageModel for VertexModel {
                                     block_counter += 1;
                                     let response =
                                         tr.get("response").cloned().unwrap_or(json!({}));
+                                    let server_meta = vertex_server_tool_metadata(
+                                        &id,
+                                        tool_type,
+                                        part.get("thoughtSignature").and_then(|v| v.as_str()),
+                                    );
                                     yield Ok(StreamPart::ToolResult {
                                         tool_call_id: id,
-                                        tool_name: String::new(),
+                                        tool_name: format!("server:{tool_type}"),
                                         result: response,
                                         is_error: None,
                                         preliminary: None,
                                         dynamic: None,
-                                        provider_metadata: None,
+                                        provider_metadata: Some(server_meta),
                                     });
                                 }
                             }
@@ -577,16 +626,14 @@ impl LanguageModel for VertexModel {
                 yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
             }
 
-            let provider_metadata = Some(serde_json::json!({
-                "googleVertex": {
-                    "promptFeedback": last_prompt_feedback,
-                    "groundingMetadata": last_grounding_metadata,
-                    "urlContextMetadata": last_url_context_metadata,
-                    "safetyRatings": last_safety_ratings,
-                    "usageMetadata": last_usage_metadata_value,
-                    "finishMessage": last_finish_message,
-                }
-            }));
+            let provider_metadata = Some(vertex_provider_metadata(json!({
+                "promptFeedback": last_prompt_feedback,
+                "groundingMetadata": last_grounding_metadata,
+                "urlContextMetadata": last_url_context_metadata,
+                "safetyRatings": last_safety_ratings,
+                "usageMetadata": last_usage_metadata_value,
+                "finishMessage": last_finish_message,
+            })));
 
             yield Ok(StreamPart::Finish {
                 finish_reason: if stream_errored {
@@ -615,21 +662,98 @@ impl LanguageModel for VertexModel {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+fn vertex_provider_metadata(payload: Value) -> Value {
+    json!({
+        "googleVertex": payload.clone(),
+        "vertex": payload,
+    })
+}
+
+fn vertex_server_tool_metadata(
+    tool_call_id: &str,
+    server_tool_type: &str,
+    thought_signature: Option<&str>,
+) -> Value {
+    let mut payload = json!({
+        "serverToolCallId": tool_call_id,
+        "serverToolType": server_tool_type,
+    });
+    if let Some(signature) = thought_signature {
+        payload["thoughtSignature"] = json!(signature);
+    }
+    vertex_provider_metadata(payload)
+}
+
 /// Extract `GenerateContent` items from a non-streaming candidate.
-fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent>, bool) {
+fn extract_content_from_candidate(
+    candidate: &Candidate,
+    code_execution_tool_name: &str,
+) -> (Vec<GenerateContent>, bool) {
     let mut content = Vec::new();
     let mut has_tool_calls = false;
     let mut source_id = 0usize;
+    let mut last_code_execution_tool_call_id: Option<String> = None;
+    let mut last_server_tool_call_id: Option<String> = None;
 
     let parts = candidate.content.as_ref().and_then(|c| c.parts.as_ref());
 
     if let Some(parts) = parts {
         for part in parts {
-            if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
+            if let Some(ec) = part.get("executableCode") {
+                let has_code = ec
+                    .get("code")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|code| !code.is_empty());
+                if has_code {
+                    let id = format!("call-{}", content.len());
+                    last_code_execution_tool_call_id = Some(id.clone());
+                    content.push(GenerateContent::ToolCall {
+                        tool_call_id: id.clone(),
+                        tool_name: code_execution_tool_name.to_string(),
+                        input: Value::String(ec.to_string()),
+                        provider_executed: Some(true),
+                        dynamic: None,
+                        thought_signature: None,
+                        provider_metadata: Some(vertex_server_tool_metadata(
+                            &id,
+                            "code_execution",
+                            None,
+                        )),
+                    });
+                }
+            } else if let Some(cer) = part.get("codeExecutionResult") {
+                // One executableCode may be followed by multiple results.
+                if let Some(call_id) = last_code_execution_tool_call_id.as_ref() {
+                    let outcome = cer.get("outcome").cloned().unwrap_or(json!(null));
+                    let output = cer
+                        .get("output")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default();
+                    content.push(GenerateContent::ToolResult {
+                        tool_call_id: call_id.clone(),
+                        tool_name: code_execution_tool_name.to_string(),
+                        result: json!({ "outcome": outcome, "output": output }),
+                        is_error: None,
+                        preliminary: None,
+                        dynamic: None,
+                        provider_metadata: Some(vertex_server_tool_metadata(
+                            call_id,
+                            "code_execution",
+                            None,
+                        )),
+                    });
+                }
+            } else if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
                 if !text.is_empty() {
+                    let provider_metadata = part
+                        .get("thoughtSignature")
+                        .and_then(|v| v.as_str())
+                        .map(|signature| {
+                            vertex_provider_metadata(json!({ "thoughtSignature": signature }))
+                        });
                     content.push(GenerateContent::Text {
                         text: text.to_string(),
-                        provider_metadata: None,
+                        provider_metadata,
                     });
                 }
             } else if let Some(fc) = part.get("functionCall") {
@@ -648,6 +772,9 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                     .get("thoughtSignature")
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string);
+                let provider_metadata = thought_signature.as_deref().map(|signature| {
+                    vertex_provider_metadata(json!({ "thoughtSignature": signature }))
+                });
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id,
                     tool_name: name,
@@ -655,9 +782,58 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                     provider_executed: None,
                     dynamic: None,
                     thought_signature,
-                    provider_metadata: None,
+                    provider_metadata,
                 });
                 has_tool_calls = true;
+            } else if let Some(tc) = part.get("toolCall") {
+                let tool_type = tc.get("toolType").and_then(|v| v.as_str()).unwrap_or("");
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .map(std::string::ToString::to_string)
+                    .unwrap_or_else(|| format!("call-{}", content.len()));
+                last_server_tool_call_id = Some(id.clone());
+                let input = tc.get("args").cloned().unwrap_or(json!({}));
+                let thought_signature = part
+                    .get("thoughtSignature")
+                    .and_then(|v| v.as_str())
+                    .map(std::string::ToString::to_string);
+                let server_meta =
+                    vertex_server_tool_metadata(&id, tool_type, thought_signature.as_deref());
+                content.push(GenerateContent::ToolCall {
+                    tool_call_id: id,
+                    tool_name: format!("server:{tool_type}"),
+                    input: Value::String(input.to_string()),
+                    provider_executed: Some(true),
+                    dynamic: Some(true),
+                    thought_signature,
+                    provider_metadata: Some(server_meta),
+                });
+            } else if let Some(tr) = part.get("toolResponse") {
+                let tool_type = tr.get("toolType").and_then(|v| v.as_str()).unwrap_or("");
+                let id = last_server_tool_call_id
+                    .take()
+                    .or_else(|| {
+                        tr.get("id")
+                            .and_then(|v| v.as_str())
+                            .map(std::string::ToString::to_string)
+                    })
+                    .unwrap_or_else(|| format!("call-{}", content.len()));
+                let response = tr.get("response").cloned().unwrap_or(json!({}));
+                let server_meta = vertex_server_tool_metadata(
+                    &id,
+                    tool_type,
+                    part.get("thoughtSignature").and_then(|v| v.as_str()),
+                );
+                content.push(GenerateContent::ToolResult {
+                    tool_call_id: id,
+                    tool_name: format!("server:{tool_type}"),
+                    result: response,
+                    is_error: None,
+                    preliminary: None,
+                    dynamic: None,
+                    provider_metadata: Some(server_meta),
+                });
             }
         }
     }

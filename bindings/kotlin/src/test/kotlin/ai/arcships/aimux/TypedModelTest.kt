@@ -258,20 +258,17 @@ class TypedModelRoundTripTest {
 
     @Test
     fun `top-level ToolCall provider metadata round-trips`() {
-        val metadata = JsonObject(
-            mapOf("google" to JsonObject(mapOf("cache_id" to JsonPrimitive("cache-1"))))
-        )
         val original = ToolCall(
             toolCallId = "call_1",
             toolName = "get_weather",
-            providerMetadata = metadata,
+            input = JsonObject(mapOf("city" to JsonPrimitive("Paris"))),
+            providerMetadata = JsonObject(
+                mapOf("openai" to JsonObject(mapOf("itemId" to JsonPrimitive("item_1")))),
+            ),
         )
-
         val json = AimuxJson.encodeToString(ToolCall.serializer(), original)
-        val decoded = AimuxJson.decodeFromString(ToolCall.serializer(), json)
-
         assertThat(json).contains("\"provider_metadata\"")
-        assertThat(decoded.providerMetadata).isEqualTo(metadata)
+        val decoded = AimuxJson.decodeFromString(ToolCall.serializer(), json)
         assertThat(decoded).isEqualTo(original)
     }
 
@@ -387,12 +384,14 @@ class TypedModelRoundTripTest {
             toolCallId = "call_1",
             toolName = "get_weather",
             input = JsonObject(mapOf("location" to JsonPrimitive("Tokyo"))),
+            providerExecuted = true,
             providerOptions = null,
         )
         val json = AimuxJson.encodeToString(ContentPart.serializer(), original)
         val decoded = AimuxJson.decodeFromString(ContentPart.serializer(), json)
         assertThat(decoded).isEqualTo(original)
         assertThat(json).contains("\"tool_call\"")
+        assertThat(json).contains("\"provider_executed\":true")
     }
 
     @Test
