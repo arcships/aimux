@@ -8,9 +8,10 @@ use aimux_core::generate::{
 use aimux_core::language_model::LanguageModel;
 use aimux_core::openai_output::OpenAiStreamOptions;
 use aimux_core::options::CallOptions;
+use aimux_core::parse_tool_call::{RawToolCall, ToolCallRepair, parse_tool_call};
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::{FunctionTool, RawToolCall, Tool, ToolCallRepair, parse_tool_call};
+use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
 use async_trait::async_trait;
 use futures::StreamExt;
