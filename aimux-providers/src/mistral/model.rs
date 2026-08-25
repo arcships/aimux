@@ -289,7 +289,7 @@ impl LanguageModel for MistralModel {
         // Tool calls.
         if let Some(tool_calls) = choice.message.tool_calls {
             for tc in tool_calls {
-                let input = Value::String(tc.function.arguments);
+                let input = tc.function.arguments;
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: tc.id,
                     tool_name: tc.function.name,

@@ -245,12 +245,13 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                 input,
                 ..
             } => {
-                let arguments = match input {
-                    // Provider results carry string-native arguments verbatim;
-                    // serializing the Value again would add an extra JSON layer.
-                    serde_json::Value::String(input) => input.clone(),
-                    serde_json::Value::Null => "{}".to_string(),
-                    input => input.to_string(),
+                // The provider's raw argument text passes through verbatim;
+                // OpenAI's wire format requires a JSON object even when the
+                // model emitted no arguments at all.
+                let arguments = if input.is_empty() {
+                    "{}".to_string()
+                } else {
+                    input.clone()
                 };
                 tool_calls.push(ChatCompletionToolCall {
                     id: tool_call_id.clone(),
@@ -1170,7 +1171,7 @@ mod tests {
             GenerateContent::ToolCall {
                 tool_call_id: "call_abc".to_string(),
                 tool_name: "get_weather".to_string(),
-                input: json!({"city": "Tokyo"}),
+                input: r#"{"city":"Tokyo"}"#.to_string(),
                 provider_executed: None,
                 dynamic: None,
                 thought_signature: None,
@@ -1205,7 +1206,7 @@ mod tests {
         let result = make_result(vec![GenerateContent::ToolCall {
             tool_call_id: "call_raw".to_string(),
             tool_name: "get_weather".to_string(),
-            input: json!(r#"{"city":"Tokyo"}"#),
+            input: r#"{"city":"Tokyo"}"#.to_string(),
             provider_executed: None,
             dynamic: None,
             thought_signature: None,
@@ -1227,7 +1228,7 @@ mod tests {
         let result = make_result(vec![GenerateContent::ToolCall {
             tool_call_id: "call_abc".to_string(),
             tool_name: "get_weather".to_string(),
-            input: json!({"city": "Tokyo"}),
+            input: r#"{"city":"Tokyo"}"#.to_string(),
             provider_executed: None,
             dynamic: None,
             thought_signature: None,

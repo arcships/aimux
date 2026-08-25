@@ -547,7 +547,7 @@ pub(crate) fn parse_anthropic_content(
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id.clone(),
                     tool_name: names.to_custom_tool_name(name).to_string(),
-                    input: Value::String(input.to_string()),
+                    input: input.to_string(),
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
@@ -572,7 +572,7 @@ pub(crate) fn parse_anthropic_content(
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id.clone(),
                     tool_name: names.to_custom_tool_name(provider_name).to_string(),
-                    input: Value::String(normalized_server_tool_input(name, input).to_string()),
+                    input: normalized_server_tool_input(name, input).to_string(),
                     provider_executed: Some(true),
                     dynamic: (provider_name == "code_execution"
                         && names.mark_code_execution_dynamic())
@@ -591,7 +591,7 @@ pub(crate) fn parse_anthropic_content(
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id.clone(),
                     tool_name: name.clone(),
-                    input: Value::String(input.to_string()),
+                    input: input.to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
                     thought_signature: None,

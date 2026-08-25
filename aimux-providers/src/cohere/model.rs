@@ -240,7 +240,7 @@ impl LanguageModel for CohereModel {
                 } else {
                     tc.function.arguments.clone()
                 };
-                let input = Value::String(args_str);
+                let input = args_str;
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: tc.id.clone(),
                     tool_name: tc.function.name.clone(),

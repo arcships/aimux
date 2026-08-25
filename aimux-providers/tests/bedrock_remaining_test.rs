@@ -97,7 +97,7 @@ fn as_text(item: &GenerateContent) -> &str {
     }
 }
 
-fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
+fn as_tool_call(item: &GenerateContent) -> (&str, &str, &str) {
     match item {
         GenerateContent::ToolCall {
             tool_call_id,

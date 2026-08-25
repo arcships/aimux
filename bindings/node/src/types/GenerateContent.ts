@@ -7,10 +7,11 @@ import type { JsonValue } from "./serde_json/JsonValue";
  */
 export type GenerateContent = { "Text": { text: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": { tool_call_id: string, tool_name: string, 
 /**
- * Raw provider input. Providers put serialized argument text in a
- * `Value::String`; `generate_text` parses and validates it.
+ * The model's raw argument text, exactly as the provider delivered
+ * it (possibly malformed). Providers never parse it — `generate_text`
+ * owns parsing, schema validation, and repair.
  */
-input: JsonValue, 
+input: string, 
 /**
  * Whether the tool call will be executed by the provider.
  * If false/unset, the tool call is executed by the client.

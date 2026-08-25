@@ -710,7 +710,7 @@ fn extract_content_from_candidate(
                     content.push(GenerateContent::ToolCall {
                         tool_call_id: id.clone(),
                         tool_name: code_execution_tool_name.to_string(),
-                        input: Value::String(ec.to_string()),
+                        input: ec.to_string(),
                         provider_executed: Some(true),
                         dynamic: None,
                         thought_signature: None,
@@ -778,7 +778,7 @@ fn extract_content_from_candidate(
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id,
                     tool_name: name,
-                    input: Value::String(input.to_string()),
+                    input: input.to_string(),
                     provider_executed: None,
                     dynamic: None,
                     thought_signature,
@@ -803,7 +803,7 @@ fn extract_content_from_candidate(
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id,
                     tool_name: format!("server:{tool_type}"),
-                    input: Value::String(input.to_string()),
+                    input: input.to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
                     thought_signature,

@@ -184,7 +184,7 @@ pub fn build_responses_generate_result(
                     .and_then(|v| v.as_str())
                     .unwrap_or("{}")
                     .to_string();
-                let input = Value::String(arguments);
+                let input = arguments;
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: call_id,
                     tool_name: name,
@@ -212,10 +212,8 @@ pub fn build_responses_generate_result(
                     .unwrap_or("")
                     .to_string();
                 let input_str = part.get("input").and_then(|v| v.as_str()).unwrap_or("{}");
-                let input = Value::String(
-                    serde_json::to_string(input_str)
-                        .expect("serializing a custom-tool input string cannot fail"),
-                );
+                let input = serde_json::to_string(input_str)
+                    .expect("serializing a custom-tool input string cannot fail");
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: call_id,
                     tool_name: name,

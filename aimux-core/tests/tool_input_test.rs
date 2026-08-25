@@ -343,7 +343,7 @@ impl LanguageModel for RawToolModel {
             content: vec![GenerateContent::ToolCall {
                 tool_call_id: "call-1".into(),
                 tool_name: self.tool_name.into(),
-                input: json!(self.input),
+                input: self.input.to_string(),
                 provider_executed: None,
                 dynamic: None,
                 thought_signature: None,

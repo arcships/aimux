@@ -28,9 +28,10 @@ pub enum GenerateContent {
     ToolCall {
         tool_call_id: String,
         tool_name: String,
-        /// Raw provider input. Providers put serialized argument text in a
-        /// `Value::String`; `generate_text` parses and validates it.
-        input: serde_json::Value,
+        /// The model's raw argument text, exactly as the provider delivered
+        /// it (possibly malformed). Providers never parse it — `generate_text`
+        /// owns parsing, schema validation, and repair.
+        input: String,
         /// Whether the tool call will be executed by the provider.
         /// If false/unset, the tool call is executed by the client.
         #[serde(default, skip_serializing_if = "Option::is_none")]

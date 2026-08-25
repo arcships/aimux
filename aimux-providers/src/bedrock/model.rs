@@ -612,7 +612,7 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
         content.push(GenerateContent::ToolCall {
             tool_call_id: tool_use.tool_use_id.clone(),
             tool_name: tool_use.name.clone(),
-            input: serde_json::Value::String(tool_use.input.to_string()),
+            input: tool_use.input.to_string(),
             provider_executed: None,
             dynamic: None,
             thought_signature: None,

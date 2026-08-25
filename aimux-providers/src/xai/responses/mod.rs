@@ -157,7 +157,7 @@ impl LanguageModel for XaiResponsesModel {
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: part_id.to_string(),
                     tool_name: tool_name.clone(),
-                    input: Value::String(String::new()),
+                    input: String::new(),
                     provider_executed: Some(true),
                     dynamic: None,
                     thought_signature: None,
@@ -214,7 +214,7 @@ impl LanguageModel for XaiResponsesModel {
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: part_id.to_string(),
                     tool_name,
-                    input: Value::String(tool_input),
+                    input: tool_input,
                     provider_executed: Some(true),
                     dynamic: None,
                     thought_signature: None,
@@ -267,7 +267,7 @@ impl LanguageModel for XaiResponsesModel {
                     let call_id = part.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
                     let name = part.get("name").and_then(|v| v.as_str()).unwrap_or("");
                     let arguments = part.get("arguments").and_then(|v| v.as_str()).unwrap_or("");
-                    let input = Value::String(arguments.to_string());
+                    let input = arguments.to_string();
                     content.push(GenerateContent::ToolCall {
                         tool_call_id: call_id.to_string(),
                         tool_name: name.to_string(),

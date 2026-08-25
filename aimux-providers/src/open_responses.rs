@@ -374,7 +374,7 @@ impl LanguageModel for OpenResponsesModel {
                             .get("arguments")
                             .and_then(|a| a.as_str())
                             .unwrap_or("{}");
-                        let input = Value::String(arguments.to_string());
+                        let input = arguments.to_string();
                         content.push(GenerateContent::ToolCall {
                             tool_call_id: call_id,
                             tool_name: name,

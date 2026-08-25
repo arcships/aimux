@@ -566,7 +566,7 @@ pub async fn generate_text(
                     RawToolCall {
                         tool_call_id: tool_call_id.clone(),
                         tool_name: tool_name.clone(),
-                        input: crate::parse_tool_call::raw_tool_input(input),
+                        input: input.clone(),
                         provider_executed: *provider_executed,
                         dynamic: *dynamic,
                         thought_signature: thought_signature.clone(),
