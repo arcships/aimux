@@ -2,8 +2,7 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 
 async function main() {
-  const openaiReq = createRequire('/media/eric8810/fast-deliver/code/aimux/reference/ai/packages/openai/package.json')
-  const { createOpenAI } = openaiReq('@ai-sdk/openai')
+    const { createOpenAI } = await import('@ai-sdk/openai')
 
   const uri = 'http://127.0.0.1:36131'
   const openai = createOpenAI({ apiKey: 'test-key', baseURL: uri + '/v1' })
