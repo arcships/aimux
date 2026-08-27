@@ -16,8 +16,8 @@ use aimux_core::image_model::{
 use aimux_core::shared::Warning;
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
-    without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, send_validated,
+    sleep_or_abort, without_trailing_slash,
 };
 
 /// Configuration for the Replicate provider.
@@ -303,7 +303,8 @@ impl ImageModel for ReplicateImageModel {
         // Download images
         let mut downloaded: Vec<Vec<u8>> = Vec::new();
         for url in &urls {
-            let ir = send(
+            // output URLs come from the prediction response body.
+            let ir = send_validated(
                 HttpRequest {
                     method: HttpMethod::Get,
                     url: url.clone(),
@@ -314,6 +315,8 @@ impl ImageModel for ReplicateImageModel {
                     call_id: None,
                     recording_context: None,
                 },
+                Some(&self.config.base_url),
+                Some(&self.config.base_url),
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,
             )

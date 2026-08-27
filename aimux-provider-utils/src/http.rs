@@ -166,6 +166,27 @@ pub fn shared_client() -> Result<&'static Client, AiMuxError> {
                 PoolConfig::default(),
                 TimeoutConfig::default(),
                 global_proxy(),
+                RedirectMode::Automatic,
+            )
+        })
+        .as_ref()
+        .map_err(|e| client_init_error(e))
+}
+
+/// 校验下载共享 Client（带 30s 整体超时，禁自动重定向——逐跳手动校验）。
+static DOWNLOAD: OnceLock<Result<Client, String>> = OnceLock::new();
+
+/// Shared client for validated downloads whose hop is not pinned (trusted
+/// origin, or a proxy owns resolution). Redirects are followed manually by
+/// [`send_validated_redirects`] so each hop is re-validated.
+fn download_client() -> Result<&'static Client, AiMuxError> {
+    DOWNLOAD
+        .get_or_init(|| {
+            build_client(
+                PoolConfig::default(),
+                TimeoutConfig::default(),
+                global_proxy(),
+                RedirectMode::Manual,
             )
         })
         .as_ref()
@@ -185,6 +206,7 @@ pub fn shared_streaming_client() -> Result<&'static Client, AiMuxError> {
                 PoolConfig::default(),
                 TimeoutConfig::streaming(),
                 global_proxy(),
+                RedirectMode::Automatic,
             )
         })
         .as_ref()
@@ -194,12 +216,46 @@ pub fn shared_streaming_client() -> Result<&'static Client, AiMuxError> {
 /// 用给定配置构建一个 reqwest Client。构建失败返回错误字符串（reqwest 仅
 /// 提供 Display），由调用方决定映射——不再 `expect`（issue #115：受限环境
 /// 下 TLS/资源初始化失败不应在 panic=abort 产物中直接终止宿主进程）。
+/// One redirect ceiling for both modes: reqwest's automatic following and
+/// the manual validated-download loop.
+const MAX_REDIRECTS: usize = 10;
+
+/// How a client treats redirects. `Manual` is for the validated-download
+/// path, which follows redirects itself so every hop can be re-validated
+/// and re-pinned.
+#[derive(Clone, Copy)]
+enum RedirectMode {
+    Automatic,
+    Manual,
+}
+
+impl RedirectMode {
+    fn policy(self) -> reqwest::redirect::Policy {
+        match self {
+            Self::Automatic => reqwest::redirect::Policy::limited(MAX_REDIRECTS),
+            Self::Manual => reqwest::redirect::Policy::none(),
+        }
+    }
+}
+
 fn build_client(
     pool: PoolConfig,
     timeout: TimeoutConfig,
     proxy: ProxyConfig,
+    redirects: RedirectMode,
 ) -> Result<Client, String> {
+    apply_proxy(client_builder(&pool, &timeout, redirects), &proxy)
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+fn client_builder(
+    pool: &PoolConfig,
+    timeout: &TimeoutConfig,
+    redirects: RedirectMode,
+) -> reqwest::ClientBuilder {
     let mut b = Client::builder()
+        .redirect(redirects.policy())
         .connect_timeout(Duration::from_millis(timeout.connect_timeout_ms))
         .pool_max_idle_per_host(pool.max_idle_per_host)
         .pool_idle_timeout(Some(Duration::from_secs(pool.idle_timeout_secs)));
@@ -209,8 +265,51 @@ fn build_client(
     if timeout.response_timeout_ms > 0 {
         b = b.timeout(Duration::from_millis(timeout.response_timeout_ms));
     }
-    b = apply_proxy(b, &proxy);
-    b.build().map_err(|e| e.to_string())
+    b
+}
+
+/// Build a one-off client whose resolver only ever answers with the
+/// pre-validated addresses. Used for downloads whose DNS results passed the
+/// SSRF guard; prevents rebinding between validation and connection.
+///
+/// `reqwest` matches `resolve` entries by exact host, so the URL's host (and
+/// port, which `reqwest` reuses for the socket) must be supplied explicitly;
+/// port 0 would make it dial port 0.
+fn pinned_client(url: &str, addresses: &[std::net::IpAddr]) -> Result<Client, AiMuxError> {
+    if addresses.is_empty() {
+        return Err(AiMuxError::Other(
+            "cannot build a pinned download client without an address".into(),
+        ));
+    }
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|e| AiMuxError::Other(format!("invalid download url: {e}")))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| AiMuxError::Other("download url has no host".to_string()))?
+        .to_string();
+    let port = parsed.port_or_known_default().unwrap_or(80);
+    // The proxy configuration is applied so reqwest makes the per-URL
+    // routing decision itself: when a proxy carries the request the proxy
+    // resolves the target (a trusted transport, the override below is
+    // unused), and any request the proxy rules send DIRECT — a NO_PROXY
+    // match, or no proxy configured for the URL's scheme — still connects
+    // only through the validated, pinned addresses.
+    let mut b = apply_proxy(
+        client_builder(
+            &PoolConfig::default(),
+            &TimeoutConfig::default(),
+            RedirectMode::Manual,
+        ),
+        &global_proxy(),
+    );
+    let socket_addresses: Vec<_> = addresses
+        .iter()
+        .map(|address| std::net::SocketAddr::new(*address, port))
+        .collect();
+    b = b.resolve_to_addrs(&host, &socket_addresses);
+    b.build().map_err(|e| {
+        AiMuxError::Other(format!("pinned download client initialization failed: {e}"))
+    })
 }
 
 /// Apply proxy configuration to a reqwest client builder (by-value chain).
@@ -376,9 +475,69 @@ pub async fn send(
 ) -> Result<HttpResponse, AiMuxError> {
     auto_init_from_env();
     let client = shared_client()?;
+    send_via(
+        RequestTransport::Direct(client),
+        request,
+        retry_config,
+        error_structure,
+    )
+    .await
+}
+
+/// Fetch a **provider-supplied URL** (a generated asset, polling URL, result
+/// URL, or upload URL taken from a response body or header) with SSRF
+/// protection: the URL is validated against AI SDK's address blocklists,
+/// every DNS answer is checked and the connection pinned to the validated
+/// addresses (defeating TTL-0 rebinding), every redirect hop is re-validated,
+/// and headers are sanitized (hop-by-hop, forwarding, and metadata-service
+/// headers dropped).
+///
+/// Both origins mirror AI SDK's options and must come from developer
+/// configuration or a provider's own allowlist — never from a response:
+///
+/// - `trusted_origin` (normally the configured `base_url`) exempts
+///   same-origin URLs from the address blocklist so self-hosted deployments
+///   keep working. It is only about reachability, never about headers.
+/// - `credentialed_origin` — AI SDK's `credentialedOrigin` — confines caller
+///   headers (which may carry the provider API key) to that origin, from the
+///   first request and on every redirect hop; once stripped they are never
+///   restored. `None` means the caller gates its own headers (e.g. BFL's
+///   host allowlist); headers then still strip on any redirect leaving the
+///   request's origin.
+///
+/// # Errors
+///
+/// Returns [`AiMuxError::InvalidArgument`] when the URL or a DNS answer
+/// fails validation, plus the same transport/response errors as [`send`].
+pub async fn send_validated(
+    request: HttpRequest,
+    trusted_origin: Option<&str>,
+    credentialed_origin: Option<&str>,
+    retry_config: RetryConfig,
+    error_structure: &ErrorStructure,
+) -> Result<HttpResponse, AiMuxError> {
+    auto_init_from_env();
+    send_via(
+        RequestTransport::Validated {
+            trusted_origin,
+            credentialed_origin,
+        },
+        request,
+        retry_config,
+        error_structure,
+    )
+    .await
+}
+
+async fn send_via(
+    transport: RequestTransport<'_>,
+    request: HttpRequest,
+    retry_config: RetryConfig,
+    error_structure: &ErrorStructure,
+) -> Result<HttpResponse, AiMuxError> {
     let started = Instant::now();
     let (resp, attempt) =
-        send_with_retry_raw(client, &request, retry_config, error_structure).await?;
+        send_with_retry_raw(&transport, &request, retry_config, error_structure).await?;
 
     let status = resp.status().as_u16();
     let headers = collect_headers(resp.headers());
@@ -494,8 +653,13 @@ pub async fn send_stream(
     auto_init_from_env();
     let client = shared_streaming_client()?;
     let started = Instant::now();
-    let (resp, attempt) =
-        send_with_retry_raw(client, &request, retry_config, error_structure).await?;
+    let (resp, attempt) = send_with_retry_raw(
+        &RequestTransport::Direct(client),
+        &request,
+        retry_config,
+        error_structure,
+    )
+    .await?;
 
     let status = resp.status().as_u16();
     let headers = collect_headers(resp.headers());
@@ -1326,8 +1490,143 @@ fn record_failed_exchange(
 ///
 /// 这是 http 层内部函数——`reqwest::Response` 不外泄。每次重试从 `&request`
 /// 重建 `RequestBuilder`（HttpRequest 是纯数据，可重复读）。
+/// How one attempt of the retry loop reaches the network: directly on a
+/// client, or through the validated-download redirect loop.
+enum RequestTransport<'a> {
+    Direct(&'a Client),
+    Validated {
+        trusted_origin: Option<&'a str>,
+        credentialed_origin: Option<&'a str>,
+    },
+}
+
+impl RequestTransport<'_> {
+    async fn send(&self, request: &HttpRequest) -> Result<reqwest::Response, AiMuxError> {
+        match self {
+            Self::Direct(client) => send_request(client, request).await,
+            Self::Validated {
+                trusted_origin,
+                credentialed_origin,
+            } => send_validated_redirects(request, *trusted_origin, *credentialed_origin).await,
+        }
+    }
+}
+
+/// The redirect statuses fetch follows; 300/304 are responses, not hops.
+fn is_redirect_status(status: reqwest::StatusCode) -> bool {
+    matches!(
+        status,
+        reqwest::StatusCode::MOVED_PERMANENTLY
+            | reqwest::StatusCode::FOUND
+            | reqwest::StatusCode::SEE_OTHER
+            | reqwest::StatusCode::TEMPORARY_REDIRECT
+            | reqwest::StatusCode::PERMANENT_REDIRECT
+    )
+}
+
+fn redirect_error(message: impl Into<String>, status: reqwest::StatusCode) -> AiMuxError {
+    AiMuxError::ApiCall(ApiCallError {
+        message: message.into(),
+        status_code: Some(status.as_u16()),
+        is_retryable: false,
+        ..Default::default()
+    })
+}
+
+/// Send one attempt of a validated download, following redirects manually so
+/// every hop is validated and its connection pinned to the DNS answers that
+/// passed the guard. The whole chain counts as one attempt to the retry
+/// layer, matching how the auto-following shared client behaves.
+async fn send_validated_redirects(
+    request: &HttpRequest,
+    trusted_origin: Option<&str>,
+    credentialed_origin: Option<&str>,
+) -> Result<reqwest::Response, AiMuxError> {
+    let mut current = request.clone();
+    crate::download_guard::sanitize_download_headers(&mut current.headers);
+    // AI SDK's credentialedOrigin: when set, caller headers (which may carry
+    // the provider API key) are confined to that exact origin from the very
+    // first request. When unset the caller has already gated its own headers
+    // (e.g. BFL's host allowlist); redirects still strip below either way.
+    if let Some(origin) = credentialed_origin
+        && !crate::download_guard::same_origin(&current.url, origin)
+    {
+        crate::download_guard::retain_user_agent(&mut current.headers);
+    }
+    // Headers never travel past this origin on a redirect; stripping is
+    // one-way, so a hop back onto it cannot restore them.
+    let credential_anchor = credentialed_origin.unwrap_or(&request.url);
+    let mut pinned =
+        crate::download_guard::validate_download_target(&current.url, trusted_origin).await?;
+    for redirect_count in 0..=MAX_REDIRECTS {
+        let hop_client;
+        let client: &Client = if pinned.is_empty() {
+            // Empty pins mean the hop is on the trusted origin.
+            download_client()?
+        } else {
+            // DNS answers were validated; pin them so a direct connection
+            // can only reach the addresses that passed the guard. When a
+            // configured proxy carries the request instead, the proxy
+            // resolves the target and the pin is deliberately unused.
+            hop_client = pinned_client(&current.url, &pinned)?;
+            &hop_client
+        };
+        let response = send_request(client, &current).await?;
+        let status = response.status();
+        if !is_redirect_status(status) {
+            return Ok(response);
+        }
+        let Some(location) = response.headers().get(reqwest::header::LOCATION) else {
+            return Ok(response);
+        };
+        if redirect_count == MAX_REDIRECTS {
+            return Err(redirect_error("too many redirects", status));
+        }
+        let location = location
+            .to_str()
+            .map(str::to_owned)
+            .map_err(|_| redirect_error("redirect location is not valid UTF-8", status))?;
+        // Dropping the unconsumed 3xx body releases its connection before a
+        // potentially slow DNS check for the next hop.
+        drop(response);
+        let base = url::Url::parse(&current.url)
+            .map_err(|e| AiMuxError::InvalidArgument(format!("invalid request URL: {e}")))?;
+        let next = base
+            .join(&location)
+            .map_err(|e| redirect_error(format!("invalid redirect URL: {e}"), status))?;
+        // Fetch treats a redirect to a non-HTTP(S) scheme (data:, file:, ...)
+        // as a network error; following one would let the redirecting server
+        // fabricate a response outside the transport.
+        if !matches!(next.scheme(), "http" | "https") {
+            return Err(redirect_error(
+                format!("redirect to non-HTTP scheme: {}", next.scheme()),
+                status,
+            ));
+        }
+        let next = next.to_string();
+        let hop_trusted = crate::download_guard::hop_trusted_origin(trusted_origin, &current.url);
+        pinned = crate::download_guard::validate_download_target(&next, hop_trusted).await?;
+        // Credentials are scoped to the credential anchor, not the previous
+        // hop: once a redirect leaves it, headers cannot come back.
+        if !crate::download_guard::same_origin(&next, credential_anchor) {
+            crate::download_guard::retain_user_agent(&mut current.headers);
+        }
+        if status == reqwest::StatusCode::SEE_OTHER
+            || (matches!(
+                status,
+                reqwest::StatusCode::MOVED_PERMANENTLY | reqwest::StatusCode::FOUND
+            ) && matches!(current.method, HttpMethod::Post))
+        {
+            current.method = HttpMethod::Get;
+            current.body = HttpBody::Empty;
+        }
+        current.url = next;
+    }
+    unreachable!("redirect loop returns on response or error")
+}
+
 async fn send_with_retry_raw(
-    client: &Client,
+    transport: &RequestTransport<'_>,
     request: &HttpRequest,
     retry_config: RetryConfig,
     error_structure: &ErrorStructure,
@@ -1347,7 +1646,7 @@ async fn send_with_retry_raw(
 
     for attempt in 0..=retry_config.max_retries {
         let attempt_start = Instant::now();
-        let resp = send_request(client, request).await;
+        let resp = transport.send(request).await;
         let latency_ms = attempt_start.elapsed().as_millis() as u64;
 
         match resp {
@@ -2086,5 +2385,36 @@ mod tests {
         // Either true (first call) or false (already set by another test) —
         // both are valid. We just assert it doesn't panic.
         let _ = result;
+    }
+
+    #[tokio::test]
+    async fn pinned_client_resolves_only_through_validated_addresses() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 1024];
+            let _ = stream.read(&mut request).await.unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                .await
+                .unwrap();
+        });
+        // .example never resolves in real DNS, so success proves the resolve
+        // override was used rather than the system resolver.
+        let url = format!("http://download.example:{port}/file");
+        let client =
+            pinned_client(&url, &["127.0.0.1".parse().unwrap()]).expect("pinned client builds");
+        let response = tokio::time::timeout(Duration::from_secs(2), client.get(url).send())
+            .await
+            .expect("request must not hang")
+            .expect("the validated address must be used");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .expect("test server must finish")
+            .unwrap();
     }
 }

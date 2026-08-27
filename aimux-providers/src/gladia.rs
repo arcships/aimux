@@ -23,7 +23,7 @@ use aimux_core::transcription_model::{
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
     HttpBody, HttpMethod, HttpRequest, MultipartForm, RetryConfig, load_api_key,
-    media_type_to_extension, send, sleep_or_abort, without_trailing_slash,
+    media_type_to_extension, send, send_validated, sleep_or_abort, without_trailing_slash,
 };
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -274,7 +274,10 @@ impl TranscriptionModel for GladiaTranscriptionModel {
             )
             .await?;
 
-            let resp = send(
+            // AI SDK polls result_url with validateUrl: true and
+            // credentialedOrigin = the API origin: the target is validated
+            // and headers survive only while it stays on base_url's origin.
+            let resp = send_validated(
                 HttpRequest {
                     method: HttpMethod::Get,
                     url: init.result_url.clone(),
@@ -288,6 +291,8 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                     call_id: None,
                     recording_context: None,
                 },
+                Some(&self.config.base_url),
+                Some(&self.config.base_url),
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,
             )

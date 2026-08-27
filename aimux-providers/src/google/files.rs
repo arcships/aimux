@@ -26,7 +26,9 @@ use aimux_core::shared::FileBytes;
 use aimux_core::types::Warning;
 
 use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, sleep_or_abort};
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_validated, sleep_or_abort,
+};
 
 use super::GoogleConfig;
 
@@ -237,7 +239,10 @@ impl Files for GoogleFiles {
             ),
         ];
 
-        let upload_resp = send(
+        // The upload URL comes from the init response's x-goog-upload-url
+        // header and receives the user's file bytes; validate it. (AI SDK
+        // fetches this URL unvalidated — kept stricter here deliberately.)
+        let upload_resp = send_validated(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: upload_url,
@@ -248,6 +253,8 @@ impl Files for GoogleFiles {
                 call_id: None,
                 recording_context: None,
             },
+            Some(&self.config.base_url),
+            Some(&self.config.base_url),
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
         )

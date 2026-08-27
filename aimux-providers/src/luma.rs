@@ -19,8 +19,8 @@ use aimux_core::image_model::{
 use aimux_core::shared::Warning;
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
-    without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, send_validated,
+    sleep_or_abort, without_trailing_slash,
 };
 
 const DEFAULT_POLL_INTERVAL_MS: u64 = 500;
@@ -386,8 +386,8 @@ impl ImageModel for LumaImageModel {
             ))
         })?;
 
-        // Download image
-        let ir = send(
+        // Download image; assets.image is a URL from the poll response body.
+        let ir = send_validated(
             HttpRequest {
                 method: HttpMethod::Get,
                 url: image_url,
@@ -398,6 +398,8 @@ impl ImageModel for LumaImageModel {
                 call_id: None,
                 recording_context: None,
             },
+            Some(&self.config.base_url),
+            Some(&self.config.base_url),
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
         )
