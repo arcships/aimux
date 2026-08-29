@@ -7,6 +7,7 @@
 //! `@ai-sdk/provider-utils`. Operation retry and timeout live in `aimux-core`.
 
 pub mod api_key;
+mod download_guard;
 pub mod extract_response_headers;
 pub mod get_from_api;
 pub mod handle_fetch_error;
@@ -25,6 +26,7 @@ pub mod url;
 pub mod ws;
 
 pub use api_key::load_api_key;
+pub use download_guard::same_origin;
 pub use get_from_api::get_from_api;
 pub use headers::with_user_agent_suffix;
 pub use http::{HttpBody, HttpRequest, ProxyConfig, init_proxy, shared_client, sleep_or_abort};

@@ -9,19 +9,19 @@ import type { JsonValue } from "./serde_json/JsonValue";
  *
  * Aligned with V4 `VideoModelV4Result`.
  */
-export type VideoResult = {
+export type VideoResult = { 
 /**
  * Generated videos as URLs, base64 strings, or binary data.
  */
-videos: Array<VideoData>,
+videos: Array<VideoData>, 
 /**
  * Warnings for the call, e.g. unsupported features.
  */
-warnings: Array<Warning>,
+warnings: Array<Warning>, 
 /**
  * Additional provider-specific metadata, keyed by provider name.
  */
-provider_metadata: { [key in string]: JsonValue } | null,
+provider_metadata: { [key in string]: JsonValue } | null, 
 /**
  * Response information for telemetry and debugging.
  */

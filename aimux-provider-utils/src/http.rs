@@ -99,6 +99,57 @@ fn build_client(proxy: ProxyConfig) -> Result<Client, String> {
         .map_err(|error| error.to_string())
 }
 
+/// Redirect ceiling for the manual validated-download loop.
+const MAX_REDIRECTS: usize = 10;
+
+/// Non-redirecting client for a validated hop on the trusted origin.
+/// Redirects are followed manually so every hop is re-validated; built per
+/// exchange (downloads are rare and each hop is one request, so there is no
+/// pool to share — and no stale-runtime pool to reuse).
+fn download_client() -> Result<Client, AiMuxError> {
+    let builder = Client::builder()
+        .connect_timeout(Duration::from_millis(10_000))
+        .redirect(reqwest::redirect::Policy::none());
+    apply_proxy(builder, &global_proxy())
+        .build()
+        .map_err(|e| AiMuxError::Other(format!("download client initialization failed: {e}")))
+}
+
+/// Client for one validated hop off the trusted origin: the connection is
+/// pinned to exactly the DNS answers that passed the guard (resolve
+/// overrides), defeating TTL-0 rebinding. The proxy configuration is applied
+/// so reqwest makes the per-URL routing decision itself: when a proxy
+/// carries the request the proxy resolves the target (a trusted transport,
+/// the override below is unused), and any request the proxy rules send
+/// DIRECT still connects only through the validated, pinned addresses.
+fn pinned_client(url: &str, addresses: &[std::net::IpAddr]) -> Result<Client, AiMuxError> {
+    if addresses.is_empty() {
+        return Err(AiMuxError::Other(
+            "cannot build a pinned download client without an address".into(),
+        ));
+    }
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|e| AiMuxError::Other(format!("invalid download url: {e}")))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| AiMuxError::Other("download url has no host".to_string()))?
+        .to_string();
+    let port = parsed.port_or_known_default().unwrap_or(80);
+    let socket_addresses: Vec<_> = addresses
+        .iter()
+        .map(|address| std::net::SocketAddr::new(*address, port))
+        .collect();
+    let builder = Client::builder()
+        .connect_timeout(Duration::from_millis(10_000))
+        .redirect(reqwest::redirect::Policy::none());
+    apply_proxy(builder, &global_proxy())
+        .resolve_to_addrs(&host, &socket_addresses)
+        .build()
+        .map_err(|e| {
+            AiMuxError::Other(format!("pinned download client initialization failed: {e}"))
+        })
+}
+
 fn apply_proxy(mut builder: reqwest::ClientBuilder, proxy: &ProxyConfig) -> reqwest::ClientBuilder {
     let http = proxy.http_url.as_deref().or(proxy.all_url.as_deref());
     let https = proxy.https_url.as_deref().or(proxy.all_url.as_deref());
@@ -160,6 +211,36 @@ pub struct HttpRequest {
     pub abort_signal: Option<aimux_core::AbortSignal>,
     pub call_id: Option<String>,
     pub recording_context: Option<RecordingContext>,
+    /// Per-exchange whole-response hang guard. `None` uses the 30s default;
+    /// a provider whose endpoint legitimately holds the connection longer
+    /// (e.g. Replicate `prefer: wait`) declares its own bound here. Streaming
+    /// exchanges are exempt regardless.
+    pub response_timeout: Option<std::time::Duration>,
+    /// AI SDK `validateUrl`: set for URLs taken from provider responses
+    /// (generated assets, polling and result URLs). The exchange then goes
+    /// through the SSRF download guard — target and every DNS answer
+    /// validated and pinned, redirects followed manually with each hop
+    /// re-validated.
+    pub validate_url: bool,
+    /// AI SDK `trustedOrigin`: a developer-configured origin (normally the
+    /// provider's `base_url`) whose same-origin URLs are exempt from the
+    /// address blocklist, so self-hosted deployments serving assets from
+    /// their own (possibly private) origin keep working. Reachability only —
+    /// never about headers, and never derived from response data.
+    pub trusted_origin: Option<String>,
+    /// AI SDK `credentialedOrigin`: caller headers (which may carry the
+    /// provider API key) are sent only while the target is same-origin with
+    /// this value — from the first request and on every redirect hop. `None`
+    /// means the caller gates its own headers (e.g. BFL's host allowlist).
+    pub credentialed_origin: Option<String>,
+}
+
+/// SSRF guard configuration carried by a validated exchange
+/// (`HttpRequest.validate_url`).
+#[derive(Debug, Clone)]
+pub(crate) struct DownloadValidation {
+    pub(crate) trusted_origin: Option<String>,
+    pub(crate) credentialed_origin: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -171,18 +252,34 @@ pub(crate) struct PreparedRequest {
     pub(crate) abort_signal: Option<aimux_core::AbortSignal>,
     call_id: Option<String>,
     recording_context: Option<RecordingContext>,
+    pub(crate) response_timeout: Option<std::time::Duration>,
+    pub(crate) validation: Option<DownloadValidation>,
 }
 
 impl HttpRequest {
     pub(crate) fn prepare(self, method: HttpMethod, body: HttpBody) -> PreparedRequest {
+        // AI SDK gates credentialed headers independently of validateUrl:
+        // when the target is off the credentialed origin they never leave,
+        // whichever transport the exchange takes.
+        let mut headers = self.headers;
+        if let Some(origin) = self.credentialed_origin.as_deref()
+            && !crate::download_guard::same_origin(&self.url, origin)
+        {
+            crate::download_guard::retain_user_agent(&mut headers);
+        }
         PreparedRequest {
             method,
             body,
             url: self.url,
-            headers: self.headers,
+            headers,
             abort_signal: self.abort_signal,
             call_id: self.call_id,
             recording_context: self.recording_context,
+            response_timeout: self.response_timeout,
+            validation: self.validate_url.then_some(DownloadValidation {
+                trusted_origin: self.trusted_origin,
+                credentialed_origin: self.credentialed_origin,
+            }),
         }
     }
 }
@@ -255,13 +352,6 @@ pub(crate) async fn send_request_once(
         .map(RecordingContext::next_exchange)
         .unwrap_or((1, 1));
     let mut exchange = ExchangeGuard::new(request, attempt, exchange_index, started);
-    let client = match shared_client() {
-        Ok(client) => client,
-        Err(error) => {
-            exchange.fail(&error.to_string());
-            return Err(error);
-        }
-    };
     tracing::debug!(
         target: "aimux_provider_utils::http",
         method = request.method.as_str(),
@@ -282,7 +372,15 @@ pub(crate) async fn send_request_once(
         );
     }
 
-    let response = match send_one_request(&client, request).await {
+    let sent = if request.validation.is_some() {
+        send_validated_redirects(request).await
+    } else {
+        match shared_client() {
+            Ok(client) => send_one_request(&client, request).await,
+            Err(error) => Err(error),
+        }
+    };
+    let response = match sent {
         Ok(response) => response,
         Err(error) => {
             exchange.fail(&error.to_string());
@@ -336,6 +434,112 @@ async fn send_one_request(
                 }))
             })
     }
+}
+
+fn is_redirect_status(status: reqwest::StatusCode) -> bool {
+    matches!(
+        status,
+        reqwest::StatusCode::MOVED_PERMANENTLY
+            | reqwest::StatusCode::FOUND
+            | reqwest::StatusCode::SEE_OTHER
+            | reqwest::StatusCode::TEMPORARY_REDIRECT
+            | reqwest::StatusCode::PERMANENT_REDIRECT
+    )
+}
+
+fn redirect_error(
+    request: &PreparedRequest,
+    message: impl Into<String>,
+    status: reqwest::StatusCode,
+) -> AiMuxError {
+    AiMuxError::ApiCall(Box::new(ApiCallError {
+        status_code: Some(status.as_u16()),
+        ..api_call_error(request, message)
+    }))
+}
+
+/// Send one validated-download exchange, following redirects manually so
+/// every hop is re-validated and its connection pinned to the DNS answers
+/// that passed the guard (see `download_guard`). The whole chain is one
+/// exchange to the caller, matching how an auto-following client behaves.
+async fn send_validated_redirects(
+    request: &PreparedRequest,
+) -> Result<reqwest::Response, AiMuxError> {
+    let validation = request
+        .validation
+        .clone()
+        .expect("send_validated_redirects requires a validation config");
+    let trusted_origin = validation.trusted_origin.as_deref();
+    let credentialed_origin = validation.credentialed_origin.as_deref();
+    let mut current = request.clone();
+    // First-request credential gating already ran in `prepare`; this strips
+    // hop-by-hop, forwarding, and metadata-service headers for every hop.
+    crate::download_guard::sanitize_download_headers(&mut current.headers);
+    // Headers never travel past this origin on a redirect; stripping is
+    // one-way, so a hop back onto it cannot restore them.
+    let credential_anchor = credentialed_origin.unwrap_or(&request.url);
+    let mut pinned =
+        crate::download_guard::validate_download_target(&current.url, trusted_origin).await?;
+    for redirect_count in 0..=MAX_REDIRECTS {
+        // Empty pins mean the hop is on the trusted origin.
+        let client = if pinned.is_empty() {
+            download_client()?
+        } else {
+            pinned_client(&current.url, &pinned)?
+        };
+        let response = send_one_request(&client, &current).await?;
+        let status = response.status();
+        if !is_redirect_status(status) {
+            return Ok(response);
+        }
+        let Some(location) = response.headers().get(reqwest::header::LOCATION) else {
+            return Ok(response);
+        };
+        if redirect_count == MAX_REDIRECTS {
+            return Err(redirect_error(request, "too many redirects", status));
+        }
+        let location = location
+            .to_str()
+            .map(str::to_owned)
+            .map_err(|_| redirect_error(request, "redirect location is not valid UTF-8", status))?;
+        // Dropping the unconsumed 3xx body releases its connection before a
+        // potentially slow DNS check for the next hop.
+        drop(response);
+        let base = url::Url::parse(&current.url)
+            .map_err(|e| AiMuxError::InvalidArgument(format!("invalid request URL: {e}")))?;
+        let next = base
+            .join(&location)
+            .map_err(|e| redirect_error(request, format!("invalid redirect URL: {e}"), status))?;
+        // Fetch treats a redirect to a non-HTTP(S) scheme (data:, file:, ...)
+        // as a network error; following one would let the redirecting server
+        // fabricate a response outside the transport.
+        if !matches!(next.scheme(), "http" | "https") {
+            return Err(redirect_error(
+                request,
+                format!("redirect to non-HTTP scheme: {}", next.scheme()),
+                status,
+            ));
+        }
+        let next = next.to_string();
+        let hop_trusted = crate::download_guard::hop_trusted_origin(trusted_origin, &current.url);
+        pinned = crate::download_guard::validate_download_target(&next, hop_trusted).await?;
+        // Credentials are scoped to the credential anchor, not the previous
+        // hop: once a redirect leaves it, headers cannot come back.
+        if !crate::download_guard::same_origin(&next, credential_anchor) {
+            crate::download_guard::retain_user_agent(&mut current.headers);
+        }
+        if status == reqwest::StatusCode::SEE_OTHER
+            || (matches!(
+                status,
+                reqwest::StatusCode::MOVED_PERMANENTLY | reqwest::StatusCode::FOUND
+            ) && matches!(current.method, HttpMethod::Post))
+        {
+            current.method = HttpMethod::Get;
+            current.body = HttpBody::Empty;
+        }
+        current.url = next;
+    }
+    unreachable!("redirect loop returns on response or error")
 }
 
 fn build_request_builder(

@@ -228,6 +228,7 @@ async fn extract_images(
     response: &Value,
     retries: &retry::PreparedRetries,
     abort_signal: Option<aimux_core::AbortSignal>,
+    base_url: &str,
 ) -> Result<ImageOutputs, AiMuxError> {
     let items = response.get("data").and_then(|d| d.as_array());
 
@@ -257,6 +258,8 @@ async fn extract_images(
 
     let mut binaries = Vec::with_capacity(urls.len());
     for url in &urls {
+        // data[].url is a generated-image URL from the response body, so it
+        // goes through the SSRF download guard.
         let resp = retries
             .retry(|| {
                 aimux_provider_utils::get_from_api(
@@ -267,6 +270,10 @@ async fn extract_images(
                         abort_signal: abort_signal.clone(),
                         call_id: None,
                         recording_context: None,
+                        response_timeout: None,
+                        validate_url: true,
+                        trusted_origin: Some(base_url.to_string()),
+                        credentialed_origin: Some(base_url.to_string()),
                     },
                     aimux_provider_utils::create_binary_response_handler(),
                     recraft_failed_response_handler(),
@@ -319,6 +326,10 @@ impl ImageModel for RecraftImageModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
@@ -334,7 +345,13 @@ impl ImageModel for RecraftImageModel {
             options.abort_signal.clone(),
         );
 
-        let images = extract_images(&value, &retries, options.abort_signal.clone()).await?;
+        let images = extract_images(
+            &value,
+            &retries,
+            options.abort_signal.clone(),
+            &self.config.base_url,
+        )
+        .await?;
 
         Ok(ImageResult {
             images,

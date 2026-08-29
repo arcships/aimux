@@ -27,6 +27,11 @@ fn request(url: String) -> HttpRequest {
         abort_signal: None,
         call_id: None,
         recording_context: None,
+
+        response_timeout: None,
+        validate_url: false,
+        trusted_origin: None,
+        credentialed_origin: None,
     }
 }
 

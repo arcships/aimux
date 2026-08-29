@@ -237,6 +237,10 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
             HttpBody::Bytes(body_bytes, content_type),
             aimux_provider_utils::create_json_response_handler(),
@@ -273,6 +277,10 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
@@ -297,6 +305,9 @@ impl TranscriptionModel for GladiaTranscriptionModel {
             )
             .await?;
 
+            // AI SDK polls result_url with validateUrl: true and
+            // credentialedOrigin = the API origin: the target is validated
+            // and headers survive only while it stays on base_url's origin.
             let resp = retries
                 .retry(|| {
                     aimux_provider_utils::get_from_api(
@@ -310,6 +321,10 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                             abort_signal: options.abort_signal.clone(),
                             call_id: None,
                             recording_context: None,
+                            response_timeout: None,
+                            validate_url: true,
+                            trusted_origin: Some(self.config.base_url.clone()),
+                            credentialed_origin: Some(self.config.base_url.clone()),
                         },
                         aimux_provider_utils::create_json_response_handler::<GladiaResultResponse>(
                         ),

@@ -21,6 +21,23 @@ use aimux_core::retry;
 use aimux_core::shared::Warning;
 use aimux_provider_utils::{HttpRequest, load_api_key, sleep_or_abort, without_trailing_slash};
 
+/// AI SDK's `isTrustedUrl` (black-forest-labs-api.ts): credentials may go to
+/// the configured origin, or over HTTPS to `bfl.ai` and its subdomains — BFL
+/// serves polling and asset URLs from regional clusters. Allowlisted hosts
+/// still get full URL/DNS validation; this gates only the headers.
+fn bfl_trusted_url(url: &str, base_url: &str) -> bool {
+    if aimux_provider_utils::same_origin(url, base_url) {
+        return true;
+    }
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    parsed.scheme() == "https"
+        && parsed
+            .host_str()
+            .is_some_and(|host| host == "bfl.ai" || host.ends_with(".bfl.ai"))
+}
+
 fn bfl_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
         let detail = data.get("detail");
@@ -316,6 +333,10 @@ impl ImageModel for BlackForestLabsImageModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
@@ -367,17 +388,36 @@ impl ImageModel for BlackForestLabsImageModel {
         let mut result_end_time = None;
         let mut result_duration = None;
 
+        // AI SDK gates headers per URL via isTrustedUrl; response-supplied
+        // targets outside the BFL allowlist get none.
+        let gated_headers = |url: &str| -> Vec<(String, String)> {
+            if bfl_trusted_url(url, &self.config.base_url) {
+                header_list.clone()
+            } else {
+                vec![]
+            }
+        };
+
         for _ in 0..max_attempts {
+            // AI SDK polls polling_url with validateUrl: true and gates the
+            // headers itself via isTrustedUrl (base_url origin or HTTPS
+            // *.bfl.ai), so credentialed_origin is None here.
+            let poll_url = poll_url_with_id.to_string();
             let pr = retries
                 .retry(|| {
                     aimux_provider_utils::get_from_api(
                         HttpRequest {
-                            url: poll_url_with_id.to_string(),
-                            headers: header_list.clone(),
+                            url: poll_url.clone(),
+                            headers: gated_headers(&poll_url),
 
                             abort_signal: options.abort_signal.clone(),
                             call_id: None,
                             recording_context: None,
+                            response_timeout: None,
+                            validate_url: true,
+                            trusted_origin: Some(self.config.base_url.clone()),
+                            // Headers are gated per URL by gated_headers above.
+                            credentialed_origin: None,
                         },
                         aimux_provider_utils::create_json_response_handler::<Value>(),
                         bfl_failed_response_handler(),
@@ -436,17 +476,24 @@ impl ImageModel for BlackForestLabsImageModel {
             ))
         })?;
 
-        // Download image
+        // Download image; result.sample is a URL from the poll response body.
+        // AI SDK sends its headers to trusted BFL hosts on the download too,
+        // gated by the same allowlist.
         let ir = retries
             .retry(|| {
                 aimux_provider_utils::get_from_api(
                     HttpRequest {
                         url: image_url.clone(),
-                        headers: vec![],
+                        headers: gated_headers(&image_url),
 
                         abort_signal: options.abort_signal.clone(),
                         call_id: None,
                         recording_context: None,
+                        response_timeout: None,
+                        validate_url: true,
+                        trusted_origin: Some(self.config.base_url.clone()),
+                        // Headers are gated per URL by gated_headers above.
+                        credentialed_origin: None,
                     },
                     aimux_provider_utils::create_binary_response_handler(),
                     bfl_failed_response_handler(),

@@ -112,6 +112,10 @@ fn build_anthropic_request(
             abort_signal,
             call_id: recording_context.as_ref().map(|c| c.call_id.clone()),
             recording_context,
+            response_timeout: None,
+            validate_url: false,
+            trusted_origin: None,
+            credentialed_origin: None,
         },
         http_body,
     ))

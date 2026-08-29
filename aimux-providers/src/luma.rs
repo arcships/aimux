@@ -325,6 +325,10 @@ impl ImageModel for LumaImageModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
@@ -360,6 +364,10 @@ impl ImageModel for LumaImageModel {
                             abort_signal: options.abort_signal.clone(),
                             call_id: None,
                             recording_context: None,
+                            response_timeout: None,
+                            validate_url: false,
+                            trusted_origin: None,
+                            credentialed_origin: None,
                         },
                         aimux_provider_utils::create_json_response_handler::<Value>(),
                         luma_failed_response_handler(),
@@ -410,7 +418,8 @@ impl ImageModel for LumaImageModel {
             ))
         })?;
 
-        // Download image
+        // Download image; assets.image is a URL from the poll response body,
+        // so it goes through the SSRF download guard.
         let ir = retries
             .retry(|| {
                 aimux_provider_utils::get_from_api(
@@ -421,6 +430,10 @@ impl ImageModel for LumaImageModel {
                         abort_signal: options.abort_signal.clone(),
                         call_id: None,
                         recording_context: None,
+                        response_timeout: None,
+                        validate_url: true,
+                        trusted_origin: Some(self.config.base_url.clone()),
+                        credentialed_origin: Some(self.config.base_url.clone()),
                     },
                     aimux_provider_utils::create_binary_response_handler(),
                     aimux_provider_utils::create_status_code_error_response_handler(),

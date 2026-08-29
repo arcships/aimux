@@ -52,6 +52,11 @@ fn request_with_signal(
         recording_context: Some(aimux_core::recording::RecordingContext::new(
             call_id, recorder,
         )),
+
+        response_timeout: None,
+        validate_url: false,
+        trusted_origin: None,
+        credentialed_origin: None,
     }
 }
 

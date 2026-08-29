@@ -4,6 +4,7 @@
 //! (`reference/ai/packages/replicate/src/replicate-image-model.ts`).
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
@@ -16,6 +17,14 @@ use aimux_core::image_model::{
 use aimux_core::retry;
 use aimux_core::shared::Warning;
 use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
+
+/// Replicate's `prefer: wait` holds the connection for at most this long when
+/// no explicit duration is given (their documented default and maximum).
+const DEFAULT_WAIT_SECONDS: u64 = 60;
+
+/// Headroom added on top of the wait window for connect/TLS/body transport
+/// when sizing the create exchange's `response_timeout`.
+const WAIT_TRANSPORT_MARGIN_SECONDS: u64 = 5;
 
 fn replicate_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -290,6 +299,16 @@ impl ImageModel for ReplicateImageModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                // This exchange legitimately holds the connection for the
+                // whole wait window; widen the hang guard past it so a
+                // slow-but-alive generation is not misread as a dead
+                // transport (retryable → re-create → double billing).
+                response_timeout: Some(Duration::from_secs(
+                    max_wait.unwrap_or(DEFAULT_WAIT_SECONDS) + WAIT_TRANSPORT_MARGIN_SECONDS,
+                )),
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
@@ -315,7 +334,8 @@ impl ImageModel for ReplicateImageModel {
             _ => Vec::new(),
         };
 
-        // Download images
+        // Download images; output URLs come from the prediction response
+        // body, so they go through the SSRF download guard.
         let mut downloaded: Vec<Vec<u8>> = Vec::new();
         for url in &urls {
             let ir = retries
@@ -328,6 +348,10 @@ impl ImageModel for ReplicateImageModel {
                             abort_signal: options.abort_signal.clone(),
                             call_id: None,
                             recording_context: None,
+                            response_timeout: None,
+                            validate_url: true,
+                            trusted_origin: Some(self.config.base_url.clone()),
+                            credentialed_origin: Some(self.config.base_url.clone()),
                         },
                         aimux_provider_utils::create_binary_response_handler(),
                         replicate_failed_response_handler(),
@@ -457,6 +481,10 @@ impl VideoModel for ReplicateVideoModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
             body,
             aimux_provider_utils::create_json_response_handler(),
@@ -512,6 +540,10 @@ impl VideoModel for ReplicateVideoModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
             aimux_provider_utils::create_json_response_handler::<Value>(),
             replicate_failed_response_handler(),

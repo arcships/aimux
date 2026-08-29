@@ -270,6 +270,10 @@ impl TranscriptionModel for FalTranscriptionModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
@@ -305,6 +309,10 @@ impl TranscriptionModel for FalTranscriptionModel {
                             abort_signal: options.abort_signal.clone(),
                             call_id: None,
                             recording_context: None,
+                            response_timeout: None,
+                            validate_url: false,
+                            trusted_origin: None,
+                            credentialed_origin: None,
                         },
                         aimux_provider_utils::create_json_response_handler::<
                             FalTranscriptionResponse,
@@ -567,6 +575,10 @@ impl ImageModel for FalImageModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
@@ -594,6 +606,8 @@ impl ImageModel for FalImageModel {
         let mut downloaded: Vec<Vec<u8>> = Vec::new();
         for img in &target_images {
             if let Some(url) = img.get("url").and_then(|v| v.as_str()) {
+                // images[].url comes from the queue result response body, so
+                // it goes through the SSRF download guard.
                 let ir = retries
                     .retry(|| {
                         aimux_provider_utils::get_from_api(
@@ -604,6 +618,10 @@ impl ImageModel for FalImageModel {
                                 abort_signal: options.abort_signal.clone(),
                                 call_id: None,
                                 recording_context: None,
+                                response_timeout: None,
+                                validate_url: true,
+                                trusted_origin: Some(self.config.base_url.clone()),
+                                credentialed_origin: Some(self.config.base_url.clone()),
                             },
                             aimux_provider_utils::create_binary_response_handler(),
                             fal_failed_response_handler(),
@@ -809,6 +827,10 @@ impl VideoModel for FalVideoModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
@@ -858,6 +880,10 @@ impl VideoModel for FalVideoModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
             aimux_provider_utils::create_json_response_handler::<Value>(),
             fal_failed_response_handler(),

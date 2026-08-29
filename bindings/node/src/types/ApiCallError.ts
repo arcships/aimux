@@ -23,48 +23,48 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * This keeps transport and response failures self-contained and matches the
  * AI SDK's `APICallError` contract.
  */
-export type ApiCallError = {
+export type ApiCallError = { 
 /**
  * Sanitized request URL. Required for every API-derived failure.
  */
-url: string,
+url: string, 
 /**
  * Sanitized request values used to create the API request.
  */
-request_body_values: JsonValue,
+request_body_values: JsonValue, 
 /**
  * HTTP status of the response, when it came from one
  * (`APICallError.statusCode`). Always the *observed* status: the HTTP
  * layer fills it for every response-derived error; errors built without
  * an HTTP exchange leave it `None`.
  */
-status_code: number | null,
+status_code: number | null, 
 /**
  * Provider's machine-readable code (OpenAI's `code`/`type`,
  * e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
  * status. Our normalized take on `APICallError.data`.
  */
-provider_code: string | null,
+provider_code: string | null, 
 /**
  * Human-readable failure text. Provider text is verbatim when available;
  * locally detected transport/parse failures include their source detail.
  * Never includes an HTTP status prefix.
  */
-message: string,
+message: string, 
 /**
  * The raw response body, verbatim (`APICallError.responseBody`) — the
  * lossless evidence when `message`/`provider_code` are extractions.
  * `None` when the error did not come from a response body.
  */
-response_body: string | null,
+response_body: string | null, 
 /**
  * Sanitized response headers.
  */
-response_headers: { [key in string]: string } | null,
+response_headers: { [key in string]: string } | null, 
 /**
  * Parsed provider error data.
  */
-data: JsonValue | null,
+data: JsonValue | null, 
 /**
  * Whether retrying can help (`APICallError.isRetryable`) — stored at
  * construction, exactly like the AI SDK: the response path computes it

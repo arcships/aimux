@@ -87,12 +87,17 @@ pub(crate) async fn call_to_api<T>(
     successful_response_handler: ResponseHandler<T>,
     failed_response_handler: ResponseHandler<AiMuxError>,
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
+    // A provider whose endpoint legitimately holds the connection longer
+    // (e.g. Replicate `prefer: wait`) declares its own bound on the request.
+    let response_timeout = request
+        .response_timeout
+        .unwrap_or(EXCHANGE_RESPONSE_TIMEOUT);
     call_to_api_with_deadline(
         request,
         request_body_values,
         successful_response_handler,
         failed_response_handler,
-        EXCHANGE_RESPONSE_TIMEOUT,
+        response_timeout,
     )
     .await
 }
@@ -230,6 +235,10 @@ mod tests {
             abort_signal: None,
             call_id: None,
             recording_context: None,
+            response_timeout: None,
+            validate_url: false,
+            trusted_origin: None,
+            credentialed_origin: None,
         };
         let error = call_to_api_with_deadline(
             request.prepare(HttpMethod::Post, HttpBody::Json(serde_json::json!({}))),

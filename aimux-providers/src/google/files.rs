@@ -197,6 +197,10 @@ impl Files for GoogleFiles {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
             init_body_value,
             aimux_provider_utils::ResponseHandler::new(|input| async move {
@@ -243,6 +247,9 @@ impl Files for GoogleFiles {
         ];
 
         let upload_request_url = upload_url.clone();
+        // The upload URL comes from the init response's x-goog-upload-url
+        // header and receives the user's file bytes; validate it. (AI SDK
+        // fetches this URL unvalidated — kept stricter here deliberately.)
         let upload_resp = aimux_provider_utils::post_to_api(
             HttpRequest {
                 url: upload_url,
@@ -251,6 +258,10 @@ impl Files for GoogleFiles {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                validate_url: true,
+                trusted_origin: Some(self.config.base_url.clone()),
+                credentialed_origin: Some(self.config.base_url.clone()),
             },
             HttpBody::Bytes(file_bytes, media_type.clone()),
             aimux_provider_utils::create_json_response_handler::<UploadResponse>(),
@@ -305,6 +316,10 @@ impl Files for GoogleFiles {
                     abort_signal: options.abort_signal.clone(),
                     call_id: None,
                     recording_context: None,
+                    response_timeout: None,
+                    validate_url: false,
+                    trusted_origin: None,
+                    credentialed_origin: None,
                 },
                 aimux_provider_utils::create_json_response_handler::<GoogleFileResource>(),
                 super::google_failed_response_handler(),

@@ -7,23 +7,23 @@ import type { JsonValue } from "./serde_json/JsonValue";
  *
  * Aligned with V4 `EmbeddingModelV4CallOptions`.
  */
-export type EmbeddingCallOptions = {
+export type EmbeddingCallOptions = { 
 /**
  * List of text values to generate embeddings for.
  */
-values: Array<string>,
+values: Array<string>, 
 /**
  * Per-call retry override. `None` uses the model default.
  */
-max_retries: number | null,
+max_retries: number | null, 
 /**
  * Per-call operation timeout.
  */
-timeout: TimeoutConfiguration | null,
+timeout: TimeoutConfiguration | null, 
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: JsonValue } | null,
+provider_options: { [key in string]: JsonValue } | null, 
 /**
  * Additional HTTP headers to send with the request.
  */
