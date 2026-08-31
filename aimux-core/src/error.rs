@@ -315,6 +315,10 @@ impl AiMuxError {
                         })
                 })
             })
+            // Upstream's `0 <= ms` check: a hint in the past is no hint. It
+            // also keeps the value clear of the C ABI's -1 = absent sentinel
+            // (`aimux_error_retry_ms`).
+            .filter(|milliseconds| *milliseconds >= 0)
     }
 
     /// Returns the HTTP status code carried by this error, if any.
