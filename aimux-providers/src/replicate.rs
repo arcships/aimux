@@ -316,7 +316,7 @@ impl ImageModel for ReplicateImageModel {
         )
         .await?;
 
-        let rh = resp.response_headers.unwrap_or_default();
+        let rh = resp.response_headers;
         let rb: Value = resp.value;
         let retries = retry::prepare_retries(
             options.max_retries,
@@ -509,7 +509,7 @@ impl VideoModel for ReplicateVideoModel {
             response: VideoResponse {
                 timestamp: Some(chrono::Utc::now().to_rfc3339()),
                 model_id: Some(self.model_id.clone()),
-                headers: response_headers,
+                headers: Some(response_headers),
             },
         })
     }
@@ -550,7 +550,7 @@ impl VideoModel for ReplicateVideoModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let response_body = resp.raw_value.as_ref().map(ToString::to_string);
         let raw_body = resp.value;
         let status_str = raw_body

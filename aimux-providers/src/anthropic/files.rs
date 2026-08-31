@@ -131,18 +131,7 @@ impl Files for AnthropicFiles {
         // sets `Content-Type` from it, so it is intentionally not added to the
         // header list above.
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.endpoint(), header_list, options),
             HttpBody::Bytes(body, content_type),
             aimux_provider_utils::create_json_response_handler(),
             super::anthropic_failed_response_handler(),

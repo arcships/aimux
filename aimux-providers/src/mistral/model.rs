@@ -225,28 +225,21 @@ impl LanguageModel for MistralModel {
         let body = build_request_body(&self.model_id, options, false);
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: headers
+            HttpRequest::new(
+                self.endpoint(),
+                headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+                options,
+            ),
             body.clone(),
             aimux_provider_utils::create_json_response_handler(),
             super::mistral_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let data: ChatCompletionResponse = resp.value;
 
         let choice =
@@ -329,28 +322,21 @@ impl LanguageModel for MistralModel {
         let body = build_request_body(&self.model_id, options, true);
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: headers
+            HttpRequest::new(
+                self.endpoint(),
+                headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+                options,
+            ),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             super::mistral_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let mut sse_stream = resp.value;
 
         // Peek at the first SSE event to detect early errors.

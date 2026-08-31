@@ -17,24 +17,6 @@ use aimux_core::search_model::{
 };
 use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
 
-fn serper_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
-    aimux_provider_utils::create_json_error_response_handler(|data| {
-        let error = data.get("error").unwrap_or(data);
-        aimux_provider_utils::ProviderErrorParts {
-            message: error
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            provider_code: error
-                .get("type")
-                .or_else(|| error.get("code"))
-                .and_then(Value::as_str)
-                .map(str::to_owned),
-        }
-    })
-}
-
 const MODEL_ID: &str = "serper-search";
 
 /// Configuration for the Serper provider.
@@ -184,17 +166,14 @@ impl SearchModel for SerperSearchModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             body,
             aimux_provider_utils::create_json_response_handler(),
-            serper_failed_response_handler(),
+            aimux_provider_utils::create_standard_json_error_response_handler(),
         )
         .await?;
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let response_body = resp.raw_value;
         let parsed: SerperResponse = resp.value;
 

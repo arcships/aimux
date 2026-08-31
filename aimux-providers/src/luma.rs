@@ -318,24 +318,13 @@ impl ImageModel for LumaImageModel {
 
         // Submit
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.generations_url(None),
-                headers: header_list.clone(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.generations_url(None), header_list.clone(), options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             luma_failed_response_handler(),
         )
         .await?;
-        let rh = resp.response_headers.unwrap_or_default();
+        let rh = resp.response_headers;
         let submit_body: Value = resp.value;
 
         let generation_id = submit_body
@@ -357,18 +346,11 @@ impl ImageModel for LumaImageModel {
             let pr = retries
                 .retry(|| {
                     aimux_provider_utils::get_from_api(
-                        HttpRequest {
-                            url: self.generations_url(Some(&generation_id)),
-                            headers: header_list.clone(),
-
-                            abort_signal: options.abort_signal.clone(),
-                            call_id: None,
-                            recording_context: None,
-                            response_timeout: None,
-                            validate_url: false,
-                            trusted_origin: None,
-                            credentialed_origin: None,
-                        },
+                        HttpRequest::new(
+                            self.generations_url(Some(&generation_id)),
+                            header_list.clone(),
+                            options,
+                        ),
                         aimux_provider_utils::create_json_response_handler::<Value>(),
                         luma_failed_response_handler(),
                     )

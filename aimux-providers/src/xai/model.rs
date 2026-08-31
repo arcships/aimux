@@ -113,18 +113,7 @@ impl LanguageModel for XaiModel {
         let body = request_result.body;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: build_header_list(&headers),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.endpoint(), build_header_list(&headers), options),
             body.clone(),
             super::xai_successful_response_handler::<XaiChatResponse>(),
             super::xai_failed_response_handler(),
@@ -132,7 +121,7 @@ impl LanguageModel for XaiModel {
         .await?;
 
         // Capture response headers.
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let _raw_value = resp.raw_value.unwrap_or(Value::Null);
         let data = resp.value;
@@ -262,25 +251,14 @@ impl LanguageModel for XaiModel {
         let endpoint = self.endpoint();
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: endpoint.clone(),
-                headers: build_header_list(&headers),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(endpoint.clone(), build_header_list(&headers), options),
             body.clone(),
             super::xai_event_source_response_handler::<Value>(),
             super::xai_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let mut sse_stream = resp.value;
 

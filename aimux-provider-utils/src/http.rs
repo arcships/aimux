@@ -204,7 +204,7 @@ impl HttpMethod {
 /// Metadata shared by `post_json_to_api`, `post_form_data_to_api`,
 /// `post_to_api`, and `get_from_api`. Method and body are fixed by the helper
 /// signature rather than supplied as runtime fields.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct HttpRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
@@ -233,6 +233,75 @@ pub struct HttpRequest {
     /// this value — from the first request and on every redirect hop. `None`
     /// means the caller gates its own headers (e.g. BFL's host allowlist).
     pub credentialed_origin: Option<String>,
+}
+
+/// The per-operation context every model's call options carry into an
+/// exchange: cancellation, and (for language models) the call id and
+/// recording context the RFC-0031 pipeline threads through.
+pub trait ExchangeContext {
+    fn abort_signal(&self) -> Option<aimux_core::AbortSignal>;
+    /// Only language-model `CallOptions` participate in recording; the other
+    /// modalities have no call id to correlate on.
+    fn call_id(&self) -> Option<String> {
+        None
+    }
+    fn recording_context(&self) -> Option<RecordingContext> {
+        None
+    }
+}
+
+impl ExchangeContext for aimux_core::options::CallOptions {
+    fn abort_signal(&self) -> Option<aimux_core::AbortSignal> {
+        self.abort_signal.clone()
+    }
+    fn call_id(&self) -> Option<String> {
+        self.call_id.clone()
+    }
+    fn recording_context(&self) -> Option<RecordingContext> {
+        self.recording_context.clone()
+    }
+}
+
+macro_rules! exchange_context_abort_only {
+    ($($ty:path),* $(,)?) => {
+        $(impl ExchangeContext for $ty {
+            fn abort_signal(&self) -> Option<aimux_core::AbortSignal> {
+                self.abort_signal.clone()
+            }
+        })*
+    };
+}
+
+exchange_context_abort_only!(
+    aimux_core::search_model::SearchCallOptions,
+    aimux_core::speech_model::SpeechCallOptions,
+    aimux_core::image_model::ImageCallOptions,
+    aimux_core::video_model::VideoCallOptions,
+    aimux_core::transcription_model::TranscriptionCallOptions,
+    aimux_core::embedding_model::EmbeddingCallOptions,
+    aimux_core::reranking_model::RerankingCallOptions,
+    aimux_core::files_model::UploadFileCallOptions,
+);
+
+impl HttpRequest {
+    /// A plain exchange that inherits the operation's cancellation and
+    /// recording context. Downloads of provider-supplied URLs set the guard
+    /// fields explicitly instead.
+    #[must_use]
+    pub fn new(
+        url: impl Into<String>,
+        headers: Vec<(String, String)>,
+        options: &impl ExchangeContext,
+    ) -> Self {
+        Self {
+            url: url.into(),
+            headers,
+            abort_signal: options.abort_signal(),
+            call_id: options.call_id(),
+            recording_context: options.recording_context(),
+            ..Self::default()
+        }
+    }
 }
 
 /// SSRF guard configuration carried by a validated exchange

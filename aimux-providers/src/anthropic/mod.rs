@@ -341,10 +341,7 @@ impl Provider for AnthropicProvider {
                             abort_signal: None,
                             call_id: None,
                             recording_context: None,
-                            response_timeout: None,
-                            validate_url: false,
-                            trusted_origin: None,
-                            credentialed_origin: None,
+                            ..Default::default()
                         },
                         aimux_provider_utils::create_json_response_handler(),
                         anthropic_failed_response_handler(),

@@ -286,10 +286,7 @@ impl SpeechModel for AwsPollySpeechModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_binary_response_handler(),
@@ -297,7 +294,7 @@ impl SpeechModel for AwsPollySpeechModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let audio_bytes = resp.value.to_vec();
 

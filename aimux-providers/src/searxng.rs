@@ -176,16 +176,13 @@ impl SearchModel for SearxngSearchModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             aimux_provider_utils::create_json_response_handler::<SearxngResponse>(),
             aimux_provider_utils::create_status_code_error_response_handler(),
         )
         .await?;
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let raw_body = resp.raw_value.unwrap_or(Value::Null);
         let data = resp.value;

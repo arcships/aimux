@@ -216,10 +216,7 @@ impl SpeechModel for ElevenLabsSpeechModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             Value::Object(body.clone()),
             aimux_provider_utils::create_binary_response_handler(),
@@ -227,7 +224,7 @@ impl SpeechModel for ElevenLabsSpeechModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let audio_bytes = resp.value.to_vec();
 
         let timestamp = chrono::Utc::now().to_rfc3339();
@@ -681,28 +678,21 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
         let headers = self.build_headers(options.headers.as_ref());
 
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: headers
+            HttpRequest::new(
+                self.endpoint(),
+                headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+                options,
+            ),
             HttpBody::Bytes(body_bytes, content_type),
             aimux_provider_utils::create_json_response_handler::<ElevenLabsTranscriptionResponse>(),
             elevenlabs_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let raw_body = resp.raw_value.unwrap_or(Value::Null);
         let parsed = resp.value;
 

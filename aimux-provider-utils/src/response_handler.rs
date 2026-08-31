@@ -27,7 +27,7 @@ pub struct ResponseHandlerInput {
 pub struct ResponseHandlerOutput<T> {
     pub value: T,
     pub raw_value: Option<serde_json::Value>,
-    pub response_headers: Option<std::collections::HashMap<String, String>>,
+    pub response_headers: std::collections::HashMap<String, String>,
 }
 
 type HandlerFuture<T> =
@@ -133,7 +133,7 @@ where
         Ok(ResponseHandlerOutput {
             value,
             raw_value: Some(raw_value),
-            response_headers: Some(headers),
+            response_headers: headers,
         })
     })
 }
@@ -173,6 +173,28 @@ fn error_body_string(body: &[u8], read_truncated: bool) -> String {
         value.push_str("…(truncated)");
     }
     value
+}
+
+/// Handler for the `{ "error": { "message", "type" | "code" } }` error shape,
+/// which several providers share verbatim. Providers whose error JSON differs
+/// keep their own mapping via [`create_json_error_response_handler`].
+#[must_use]
+pub fn create_standard_json_error_response_handler() -> ResponseHandler<AiMuxError> {
+    create_json_error_response_handler(|data| {
+        let error = data.get("error").unwrap_or(data);
+        ProviderErrorParts {
+            message: error
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: error
+                .get("type")
+                .or_else(|| error.get("code"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+        }
+    })
 }
 
 /// Parse an error JSON and map its data to a provider message and code.
@@ -226,7 +248,7 @@ where
         Ok(ResponseHandlerOutput {
             value: error,
             raw_value: None,
-            response_headers: Some(headers),
+            response_headers: headers,
         })
     })
 }
@@ -303,7 +325,7 @@ pub fn create_binary_response_handler() -> ResponseHandler<Bytes> {
         Ok(ResponseHandlerOutput {
             value,
             raw_value: None,
-            response_headers: Some(headers),
+            response_headers: headers,
         })
     })
 }
@@ -382,7 +404,7 @@ where
         Ok(ResponseHandlerOutput {
             value,
             raw_value: None,
-            response_headers: Some(output_headers),
+            response_headers: output_headers,
         })
     })
     .streaming()
@@ -419,7 +441,7 @@ pub fn create_status_code_error_response_handler() -> ResponseHandler<AiMuxError
         Ok(ResponseHandlerOutput {
             value: error,
             raw_value: None,
-            response_headers: Some(headers),
+            response_headers: headers,
         })
     })
 }

@@ -344,25 +344,14 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.endpoint(), header_list, options),
             HttpBody::Bytes(body_bytes, content_type),
             aimux_provider_utils::create_json_response_handler::<OpenAITranscriptionResponse>(),
             super::openai_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let raw_body = resp.raw_value.unwrap_or(Value::Null);
         let parsed = resp.value;

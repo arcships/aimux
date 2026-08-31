@@ -229,21 +229,14 @@ impl TranscriptionModel for RevaiTranscriptionModel {
 
         // Submit job.
         let resp = aimux_provider_utils::post_form_data_to_api(
-            HttpRequest {
-                url: submit_url.clone(),
-                headers: headers
+            HttpRequest::new(
+                submit_url.clone(),
+                headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+                options,
+            ),
             form,
             aimux_provider_utils::create_json_response_handler::<RevaiJobResponse>(),
             revai_failed_response_handler(),
@@ -291,21 +284,14 @@ impl TranscriptionModel for RevaiTranscriptionModel {
             let resp = retries
                 .retry(|| {
                     aimux_provider_utils::get_from_api(
-                        HttpRequest {
-                            url: poll_url.clone(),
-                            headers: headers
+                        HttpRequest::new(
+                            poll_url.clone(),
+                            headers
                                 .iter()
                                 .map(|(k, v)| (k.clone(), v.clone()))
                                 .collect(),
-
-                            abort_signal: options.abort_signal.clone(),
-                            call_id: None,
-                            recording_context: None,
-                            response_timeout: None,
-                            validate_url: false,
-                            trusted_origin: None,
-                            credentialed_origin: None,
-                        },
+                            options,
+                        ),
                         aimux_provider_utils::create_json_response_handler::<RevaiJobResponse>(),
                         revai_failed_response_handler(),
                     )
@@ -334,28 +320,21 @@ impl TranscriptionModel for RevaiTranscriptionModel {
         let resp = retries
             .retry(|| {
                 aimux_provider_utils::get_from_api(
-                    HttpRequest {
-                        url: self.transcript_url(&job_id),
-                        headers: headers
+                    HttpRequest::new(
+                        self.transcript_url(&job_id),
+                        headers
                             .iter()
                             .map(|(k, v)| (k.clone(), v.clone()))
                             .collect(),
-
-                        abort_signal: options.abort_signal.clone(),
-                        call_id: None,
-                        recording_context: None,
-                        response_timeout: None,
-                        validate_url: false,
-                        trusted_origin: None,
-                        credentialed_origin: None,
-                    },
+                        options,
+                    ),
                     aimux_provider_utils::create_json_response_handler::<RevaiTranscriptResponse>(),
                     revai_failed_response_handler(),
                 )
             })
             .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let raw_body = resp.raw_value.unwrap_or(Value::Null);
         let parsed = resp.value;
 

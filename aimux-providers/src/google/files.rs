@@ -211,7 +211,7 @@ impl Files for GoogleFiles {
                 Ok(aimux_provider_utils::ResponseHandlerOutput {
                     value: (),
                     raw_value: None,
-                    response_headers: Some(headers),
+                    response_headers: headers,
                 })
             }),
             super::google_failed_response_handler(),
@@ -227,8 +227,6 @@ impl Files for GoogleFiles {
 
         let upload_url = init_resp
             .response_headers
-            .as_ref()
-            .expect("header-only response handler always supplies headers")
             .get("x-goog-upload-url")
             .cloned()
             .ok_or_else(|| {

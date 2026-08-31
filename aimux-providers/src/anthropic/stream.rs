@@ -112,10 +112,7 @@ fn build_anthropic_request(
             abort_signal,
             call_id: recording_context.as_ref().map(|c| c.call_id.clone()),
             recording_context,
-            response_timeout: None,
-            validate_url: false,
-            trusted_origin: None,
-            credentialed_origin: None,
+            ..Default::default()
         },
         http_body,
     ))
@@ -830,7 +827,7 @@ pub(crate) async fn anthropic_stream_core(
     )
     .await?;
 
-    let response_headers = resp.response_headers.unwrap_or_default();
+    let response_headers = resp.response_headers;
     let mut sse_stream = resp.value;
     let first_event = match sse_stream.next().await {
         Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),

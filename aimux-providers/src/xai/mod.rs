@@ -109,7 +109,7 @@ where
         let output = aimux_provider_utils::create_json_response_handler::<Value>()
             .handle(input)
             .await?;
-        let headers = output.response_headers.clone().unwrap_or_default();
+        let headers = output.response_headers.clone();
         let raw = output.value;
         if let Some(error) = raw.get("error").filter(|value| !value.is_null()) {
             let message = error
@@ -180,7 +180,7 @@ where
         let output = aimux_provider_utils::create_json_response_handler::<Value>()
             .handle(input)
             .await?;
-        let headers = output.response_headers.unwrap_or_default();
+        let headers = output.response_headers;
         let raw = output.value;
         let error = raw.get("error").filter(|value| !value.is_null());
         let message = error

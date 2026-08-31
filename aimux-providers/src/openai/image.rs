@@ -155,18 +155,7 @@ impl ImageModel for OpenAIImageModel {
                 build_edit_multipart(&self.model_id, options, &openai_options);
 
             let resp = aimux_provider_utils::post_to_api(
-                HttpRequest {
-                    url: self.edits_endpoint(),
-                    headers: build_header_list(&headers),
-
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                    response_timeout: None,
-                    validate_url: false,
-                    trusted_origin: None,
-                    credentialed_origin: None,
-                },
+                HttpRequest::new(self.edits_endpoint(), build_header_list(&headers), options),
                 HttpBody::Bytes(form_body, content_type),
                 aimux_provider_utils::create_json_response_handler(),
                 super::openai_failed_response_handler(),
@@ -174,25 +163,18 @@ impl ImageModel for OpenAIImageModel {
             .await?;
 
             let val: Value = resp.value;
-            (val, resp.response_headers.unwrap_or_default(), None)
+            (val, resp.response_headers, None)
         } else {
             // ── Generation path: JSON body ──
             let openai_options = parse_generation_provider_options(&options.provider_options);
             let body = build_generation_body(&self.model_id, options, &openai_options);
 
             let resp = aimux_provider_utils::post_json_to_api(
-                HttpRequest {
-                    url: self.generations_endpoint(),
-                    headers: build_header_list(&headers),
-
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                    response_timeout: None,
-                    validate_url: false,
-                    trusted_origin: None,
-                    credentialed_origin: None,
-                },
+                HttpRequest::new(
+                    self.generations_endpoint(),
+                    build_header_list(&headers),
+                    options,
+                ),
                 Value::Object(body.clone()),
                 aimux_provider_utils::create_json_response_handler(),
                 super::openai_failed_response_handler(),
@@ -200,11 +182,7 @@ impl ImageModel for OpenAIImageModel {
             .await?;
 
             let val: Value = resp.value;
-            (
-                val,
-                resp.response_headers.unwrap_or_default(),
-                Some(Value::Object(body)),
-            )
+            (val, resp.response_headers, Some(Value::Object(body)))
         };
 
         let images = extract_images(&body_value);

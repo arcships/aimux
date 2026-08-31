@@ -108,25 +108,14 @@ impl EmbeddingModel for CohereEmbeddingModel {
         header_list.push(("Content-Type".to_string(), "application/json".to_string()));
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.endpoint(), header_list, options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             super::cohere_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let raw_value: Value = resp.value;
 

@@ -200,25 +200,14 @@ impl SpeechModel for CartesiaSpeechModel {
         let headers = self.build_headers(options.headers.as_ref());
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: headers.into_iter().collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.endpoint(), headers.into_iter().collect(), options),
             Value::Object(body.clone()),
             aimux_provider_utils::create_binary_response_handler(),
             cartesia_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let audio_bytes = resp.value.to_vec();
 
@@ -779,25 +768,14 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
         let headers = self.build_headers(options.headers.as_ref());
 
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: headers.into_iter().collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.endpoint(), headers.into_iter().collect(), options),
             HttpBody::Bytes(body_bytes, content_type),
             aimux_provider_utils::create_json_response_handler::<CartesiaTranscriptionResponse>(),
             cartesia_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let raw_body = resp.raw_value.unwrap_or(Value::Null);
         let parsed = resp.value;

@@ -26,10 +26,7 @@ fn request(url: String) -> HttpRequest {
         call_id: None,
         recording_context: None,
 
-        response_timeout: None,
-        validate_url: false,
-        trusted_origin: None,
-        credentialed_origin: None,
+        ..Default::default()
     }
 }
 
@@ -75,10 +72,7 @@ async fn post_json_dispatches_typed_success_handler() {
 
     assert_eq!(output.value, Reply { value: "ok".into() });
     assert_eq!(output.raw_value, Some(json!({"value": "ok"})));
-    assert_eq!(
-        output.response_headers.unwrap().get("x-test"),
-        Some(&"yes".into())
-    );
+    assert_eq!(output.response_headers.get("x-test"), Some(&"yes".into()));
 }
 
 #[tokio::test]

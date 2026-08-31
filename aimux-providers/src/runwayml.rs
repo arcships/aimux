@@ -268,18 +268,7 @@ impl VideoModel for RunwaymlVideoModel {
 
         // Submit the task.
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: submit_url,
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(submit_url, header_list, options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             runwayml_failed_response_handler(),
@@ -296,7 +285,7 @@ impl VideoModel for RunwaymlVideoModel {
             response: VideoResponse {
                 timestamp: Some(chrono::Utc::now().to_rfc3339()),
                 model_id: Some(self.model_id.clone()),
-                headers: response_headers,
+                headers: Some(response_headers),
             },
         })
     }
@@ -320,24 +309,13 @@ impl VideoModel for RunwaymlVideoModel {
         let poll_url = format!("{}/v1/tasks/{}", self.config.base_url, task_id);
 
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest {
-                url: poll_url.clone(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(poll_url.clone(), header_list, options),
             aimux_provider_utils::create_json_response_handler::<RunwaymlTaskDetailsResponse>(),
             runwayml_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.clone().unwrap_or_default();
+        let response_headers = resp.response_headers.clone();
         let response_body = resp.raw_value.as_ref().map(ToString::to_string);
         let task_details: RunwaymlTaskDetailsResponse = resp.value;
 

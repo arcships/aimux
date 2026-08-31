@@ -73,7 +73,7 @@ fn open_responses_successful_response_handler() -> aimux_provider_utils::Respons
                     .and_then(Value::as_str)
                     .map(str::to_string),
                 response_body: Some(output.value.to_string()),
-                response_headers: output.response_headers.clone(),
+                response_headers: Some(output.response_headers.clone()),
                 ..ApiCallError::new(message, url, request_body_values)
             })));
         }
@@ -315,25 +315,18 @@ impl LanguageModel for OpenResponsesModel {
             build_request_body(&self.model_id, options, &self.config.provider_options_name);
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.config.url.clone(),
-                headers: headers.into_iter().collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(
+                self.config.url.clone(),
+                headers.into_iter().collect(),
+                options,
+            ),
             body.clone(),
             open_responses_successful_response_handler(),
             open_responses_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let raw: Value = resp.value;
 
@@ -471,25 +464,18 @@ impl LanguageModel for OpenResponsesModel {
         };
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.config.url.clone(),
-                headers: headers.into_iter().collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(
+                self.config.url.clone(),
+                headers.into_iter().collect(),
+                options,
+            ),
             stream_body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             open_responses_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let mut sse_stream = resp.value;
 

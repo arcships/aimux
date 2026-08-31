@@ -80,7 +80,7 @@ fn huggingface_successful_response_handler() -> aimux_provider_utils::ResponseHa
                     .and_then(Value::as_str)
                     .map(str::to_string),
                 response_body: Some(output.value.to_string()),
-                response_headers: output.response_headers.clone(),
+                response_headers: Some(output.response_headers.clone()),
                 ..ApiCallError::new(message, url, request_body_values)
             })));
         }
@@ -187,25 +187,14 @@ impl LanguageModel for HuggingFaceResponsesModel {
         let headers = self.build_headers(options.headers.as_ref());
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: build_header_list(&headers),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.endpoint(), build_header_list(&headers), options),
             body.clone(),
             huggingface_successful_response_handler(),
             huggingface_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let response: Value = resp.value;
 
@@ -250,25 +239,14 @@ impl LanguageModel for HuggingFaceResponsesModel {
         let headers = self.build_headers(options.headers.as_ref());
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: build_header_list(&headers),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.endpoint(), build_header_list(&headers), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             huggingface_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let mut sse_stream = resp.value;
         let first_event = match sse_stream.next().await {
             Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),

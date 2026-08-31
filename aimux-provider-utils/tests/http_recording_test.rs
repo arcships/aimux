@@ -53,10 +53,7 @@ fn request_with_signal(
             call_id, recorder,
         )),
 
-        response_timeout: None,
-        validate_url: false,
-        trusted_origin: None,
-        credentialed_origin: None,
+        ..Default::default()
     }
 }
 

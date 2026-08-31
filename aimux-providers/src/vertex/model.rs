@@ -162,10 +162,7 @@ impl LanguageModel for VertexModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             body.clone(),
             aimux_provider_utils::create_json_response_handler(),
@@ -173,7 +170,7 @@ impl LanguageModel for VertexModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let data: GenerateContentResponse = resp.value;
 
@@ -239,10 +236,7 @@ impl LanguageModel for VertexModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<GoogleStreamEvent>(),
@@ -250,7 +244,7 @@ impl LanguageModel for VertexModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         // Same source as the non-stream path: the response `Date` header.
         let response_timestamp = response_headers.get("date").cloned();
 

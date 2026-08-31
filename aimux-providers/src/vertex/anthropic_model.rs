@@ -184,10 +184,7 @@ impl LanguageModel for VertexAnthropicModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             body.clone(),
             aimux_provider_utils::create_json_response_handler(),
@@ -245,10 +242,7 @@ impl LanguageModel for VertexAnthropicModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<StreamEvent>(),
@@ -256,7 +250,7 @@ impl LanguageModel for VertexAnthropicModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let mut sse_stream = resp.value;
         let first_event = match sse_stream.next().await {
             Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),

@@ -337,7 +337,7 @@ impl ImageModel for RecraftImageModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let value: Value = resp.value;
         let retries = retry::prepare_retries(
             options.max_retries,

@@ -227,21 +227,14 @@ impl TranscriptionModel for GladiaTranscriptionModel {
         let (body_bytes, content_type) = form.finish();
 
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url: self.upload_url(),
-                headers: headers
+            HttpRequest::new(
+                self.upload_url(),
+                headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+                options,
+            ),
             HttpBody::Bytes(body_bytes, content_type),
             aimux_provider_utils::create_json_response_handler(),
             gladia_failed_response_handler(),
@@ -267,21 +260,14 @@ impl TranscriptionModel for GladiaTranscriptionModel {
         }
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.initiate_url(),
-                headers: headers
+            HttpRequest::new(
+                self.initiate_url(),
+                headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+                options,
+            ),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             gladia_failed_response_handler(),
@@ -333,7 +319,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                 })
                 .await?;
 
-            response_headers = resp.response_headers.unwrap_or_default();
+            response_headers = resp.response_headers;
             raw_body = resp.raw_value.unwrap_or(Value::Null);
             let parsed = resp.value;
 

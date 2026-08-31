@@ -258,25 +258,14 @@ impl ImageModel for ProdiaImageModel {
         let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.endpoint(), header_list, options),
             body,
             aimux_provider_utils::create_binary_response_handler(),
             prodia_failed_response_handler(),
         )
         .await?;
 
-        let rh = resp.response_headers.unwrap_or_default();
+        let rh = resp.response_headers;
         let content_type = rh.get("content-type").cloned().unwrap_or_default();
 
         // Extract boundary
@@ -411,18 +400,11 @@ impl VideoModel for ProdiaVideoModel {
 
         // Submit job.
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: format!("{}/job", self.config.base_url),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(
+                format!("{}/job", self.config.base_url),
+                header_list,
+                options,
+            ),
             body,
             aimux_provider_utils::create_json_response_handler(),
             prodia_failed_response_handler(),
@@ -448,7 +430,7 @@ impl VideoModel for ProdiaVideoModel {
             response: VideoResponse {
                 timestamp: Some(chrono::Utc::now().to_rfc3339()),
                 model_id: Some(self.model_id.clone()),
-                headers: response_headers,
+                headers: Some(response_headers),
             },
         })
     }
@@ -472,24 +454,13 @@ impl VideoModel for ProdiaVideoModel {
         let poll_url = format!("{}/job/{}", self.config.base_url, job_id);
 
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest {
-                url: poll_url.clone(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(poll_url.clone(), header_list, options),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             prodia_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let response_body = resp.raw_value.as_ref().map(ToString::to_string);
         let raw_body = resp.value;
         let status_str = raw_body

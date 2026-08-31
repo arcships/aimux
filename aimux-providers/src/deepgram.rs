@@ -332,10 +332,7 @@ impl TranscriptionModel for DeepgramTranscriptionModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             HttpBody::Bytes(audio_bytes, options.media_type.clone()),
             aimux_provider_utils::create_json_response_handler::<DeepgramResponse>(),
@@ -343,7 +340,7 @@ impl TranscriptionModel for DeepgramTranscriptionModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let raw_body = resp.raw_value.unwrap_or(Value::Null);
         let parsed = resp.value;

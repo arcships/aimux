@@ -294,17 +294,7 @@ impl CodexModel {
 
         let endpoint = self.endpoint();
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: endpoint.clone(),
-                headers: build_header_list(&headers),
-                abort_signal: opts.abort_signal.clone(),
-                call_id: opts.call_id.clone(),
-                recording_context: opts.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(endpoint.clone(), build_header_list(&headers), &opts),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             crate::openai::openai_failed_response_handler(),
@@ -312,7 +302,7 @@ impl CodexModel {
         .await
         .map_err(|e| self.map_subscription_401(e))?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let mut sse = resp.value;
         // (parsed response object, raw event payload) of the terminal event.
         let mut completed: Option<(Value, String)> = None;
@@ -407,10 +397,7 @@ impl CodexModel {
                 abort_signal: opts.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
@@ -419,7 +406,7 @@ impl CodexModel {
         .await
         .map_err(|e| self.map_subscription_401(e))?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let mut sse_stream = resp.value;
         let first_event = match sse_stream.next().await {
             Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
@@ -549,10 +536,7 @@ pub async fn codex_refresh_at(
             abort_signal: None,
             call_id: None,
             recording_context: None,
-            response_timeout: None,
-            validate_url: false,
-            trusted_origin: None,
-            credentialed_origin: None,
+            ..Default::default()
         },
         body,
         aimux_provider_utils::create_json_response_handler(),

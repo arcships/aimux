@@ -169,25 +169,14 @@ impl GoogleImageModel {
         let header_list = build_header_list(&headers);
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.predict_endpoint(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.predict_endpoint(), header_list, options),
             body,
             aimux_provider_utils::create_json_response_handler(),
             super::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let response_body: Value = resp.value;
 
@@ -324,25 +313,14 @@ impl GoogleImageModel {
         let header_list = build_header_list(&headers);
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.generate_content_endpoint(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.generate_content_endpoint(), header_list, options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             super::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let response_body: Value = resp.value;
 

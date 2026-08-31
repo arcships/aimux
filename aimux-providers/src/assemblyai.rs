@@ -238,18 +238,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
 
         // Step 1: Upload audio.
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url: self.upload_url(),
-                headers: header_list.clone(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.upload_url(), header_list.clone(), options),
             HttpBody::Bytes(audio_bytes, "application/octet-stream".to_string()),
             aimux_provider_utils::create_json_response_handler(),
             assemblyai_failed_response_handler(),
@@ -288,18 +277,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
         }
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.transcript_url(),
-                headers: header_list.clone(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.transcript_url(), header_list.clone(), options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             assemblyai_failed_response_handler(),
@@ -327,18 +305,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
             let resp = retries
                 .retry(|| {
                     aimux_provider_utils::get_from_api(
-                        HttpRequest {
-                            url: poll_url.clone(),
-                            headers: header_list.clone(),
-
-                            abort_signal: options.abort_signal.clone(),
-                            call_id: None,
-                            recording_context: None,
-                            response_timeout: None,
-                            validate_url: false,
-                            trusted_origin: None,
-                            credentialed_origin: None,
-                        },
+                        HttpRequest::new(poll_url.clone(), header_list.clone(), options),
                         aimux_provider_utils::create_json_response_handler::<
                             AssemblyAITranscriptResponse,
                         >(),
@@ -347,7 +314,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
                 })
                 .await?;
 
-            response_headers = resp.response_headers.unwrap_or_default();
+            response_headers = resp.response_headers;
 
             raw_body = resp.raw_value.unwrap_or(Value::Null);
             let parsed = resp.value;

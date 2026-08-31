@@ -279,25 +279,14 @@ pub async fn execute_generate(
     let body = request_result.body;
 
     let resp = aimux_provider_utils::post_json_to_api(
-        HttpRequest {
-            url: endpoint.to_string(),
-            headers: build_header_list(headers),
-
-            abort_signal: options.abort_signal.clone(),
-            call_id: options.call_id.clone(),
-            recording_context: options.recording_context.clone(),
-            response_timeout: None,
-            validate_url: false,
-            trusted_origin: None,
-            credentialed_origin: None,
-        },
+        HttpRequest::new(endpoint.to_string(), build_header_list(headers), options),
         body.clone(),
         aimux_provider_utils::create_json_response_handler::<ChatCompletionResponse>(),
         super::openai_failed_response_handler(),
     )
     .await?;
 
-    let response_headers = resp.response_headers.unwrap_or_default();
+    let response_headers = resp.response_headers;
 
     // Parse the raw body once: the `Value` keeps the provider's original
     // fields (incl. vendor-specific usage fields) for `Usage.raw` (M10).
@@ -445,25 +434,14 @@ pub async fn execute_stream(
     let RequestBodyResult { body, warnings } = request_result;
 
     let resp = aimux_provider_utils::post_json_to_api(
-        HttpRequest {
-            url: endpoint.to_string(),
-            headers: build_header_list(headers),
-
-            abort_signal: options.abort_signal.clone(),
-            call_id: options.call_id.clone(),
-            recording_context: options.recording_context.clone(),
-            response_timeout: None,
-            validate_url: false,
-            trusted_origin: None,
-            credentialed_origin: None,
-        },
+        HttpRequest::new(endpoint.to_string(), build_header_list(headers), options),
         body.clone(),
         aimux_provider_utils::create_event_source_response_handler::<Value>(),
         super::openai_failed_response_handler(),
     )
     .await?;
 
-    let response_headers = resp.response_headers.unwrap_or_default();
+    let response_headers = resp.response_headers;
 
     let mut sse_stream = resp.value;
 
@@ -928,10 +906,7 @@ pub async fn execute_list_models(
                     abort_signal: None,
                     call_id: None,
                     recording_context: None,
-                    response_timeout: None,
-                    validate_url: false,
-                    trusted_origin: None,
-                    credentialed_origin: None,
+                    ..Default::default()
                 },
                 aimux_provider_utils::create_json_response_handler(),
                 super::openai_failed_response_handler(),

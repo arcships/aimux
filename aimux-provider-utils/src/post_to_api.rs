@@ -235,10 +235,7 @@ mod tests {
             abort_signal: None,
             call_id: None,
             recording_context: None,
-            response_timeout: None,
-            validate_url: false,
-            trusted_origin: None,
-            credentialed_origin: None,
+            ..Default::default()
         };
         let error = call_to_api_with_deadline(
             request.prepare(HttpMethod::Post, HttpBody::Json(serde_json::json!({}))),

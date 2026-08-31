@@ -158,18 +158,7 @@ impl VideoModel for VertexVideoModel {
             .collect();
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.predict_url(),
-                headers: header_list.clone(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.predict_url(), header_list.clone(), options),
             body,
             aimux_provider_utils::create_json_response_handler(),
             crate::google::google_failed_response_handler(),
@@ -195,7 +184,7 @@ impl VideoModel for VertexVideoModel {
             response: VideoResponse {
                 timestamp: Some(chrono::Utc::now().to_rfc3339()),
                 model_id: Some(self.model_id.clone()),
-                headers: response_headers,
+                headers: Some(response_headers),
             },
         })
     }
@@ -222,24 +211,13 @@ impl VideoModel for VertexVideoModel {
 
         let poll_url = self.operation_url(operation_name);
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest {
-                url: poll_url.clone(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(poll_url.clone(), header_list, options),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             crate::google::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let response_body = resp.raw_value.as_ref().map(ToString::to_string);
         let raw_body: Value = resp.value;
         // Check the in-band error first: a terminal response may carry both

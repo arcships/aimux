@@ -105,26 +105,14 @@ impl EmbeddingModel for VoyageEmbeddingModel {
         // sets `Content-Type: application/json`, so it is intentionally not
         // added to the header list above.
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.endpoint(), header_list, options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             voyage_failed_response_handler(),
         )
         .await?;
 
-        let response_headers: HashMap<String, String> =
-            resp.response_headers.unwrap_or_default().clone();
+        let response_headers: HashMap<String, String> = resp.response_headers.clone();
 
         let raw_value: Value = resp.value;
 

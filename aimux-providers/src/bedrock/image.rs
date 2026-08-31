@@ -290,17 +290,14 @@ impl ImageModel for BedrockImageModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             super::bedrock_failed_response_handler(),
         )
         .await?;
-        let rh = resp.response_headers.unwrap_or_default();
+        let rh = resp.response_headers;
         let response_body = resp.raw_value.as_ref().map(ToString::to_string);
         let rb = resp.value;
 

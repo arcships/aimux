@@ -326,18 +326,7 @@ impl ImageModel for BlackForestLabsImageModel {
 
         // Submit
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.submit_endpoint(),
-                headers: header_list.clone(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.submit_endpoint(), header_list.clone(), options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             bfl_failed_response_handler(),

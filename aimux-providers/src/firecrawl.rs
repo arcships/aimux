@@ -196,17 +196,14 @@ impl SearchModel for FirecrawlSearchModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             body,
             aimux_provider_utils::create_json_response_handler(),
             firecrawl_failed_response_handler(),
         )
         .await?;
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let response_body = resp.raw_value;
         let parsed: FirecrawlResponse = resp.value;
 

@@ -121,25 +121,18 @@ impl LanguageModel for GoogleModel {
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.generate_endpoint(),
-                headers: build_header_list(&headers),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(
+                self.generate_endpoint(),
+                build_header_list(&headers),
+                options,
+            ),
             body.clone(),
             aimux_provider_utils::create_json_response_handler(),
             super::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let data: GenerateContentResponse = resp.value;
 
@@ -198,25 +191,14 @@ impl LanguageModel for GoogleModel {
         let headers = self.build_headers(options.headers.as_ref());
         let endpoint = self.stream_endpoint();
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: endpoint.clone(),
-                headers: build_header_list(&headers),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(endpoint.clone(), build_header_list(&headers), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<GoogleStreamEvent>(),
             super::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let mut sse_stream = resp.value;
         let first_event = match sse_stream.next().await {

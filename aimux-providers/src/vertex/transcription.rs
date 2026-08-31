@@ -264,10 +264,7 @@ impl TranscriptionModel for VertexTranscriptionModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             request_body.clone(),
             aimux_provider_utils::create_json_response_handler::<GoogleVertexResponse>(),
@@ -275,7 +272,7 @@ impl TranscriptionModel for VertexTranscriptionModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let raw_body = resp.raw_value.unwrap_or(Value::Null);
         let parsed = resp.value;

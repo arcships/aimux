@@ -293,18 +293,7 @@ impl VideoModel for KlingAIVideoModel {
         let submit_url = self.submit_endpoint(&mode);
         let request_body = Value::Object(body);
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: submit_url.clone(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(submit_url.clone(), header_list, options),
             request_body.clone(),
             aimux_provider_utils::create_json_response_handler::<KlingAITaskResponse>(),
             klingai_failed_response_handler(),
@@ -354,7 +343,7 @@ impl VideoModel for KlingAIVideoModel {
             response: VideoResponse {
                 timestamp: Some(chrono::Utc::now().to_rfc3339()),
                 model_id: Some(self.model_id.clone()),
-                headers: response_headers,
+                headers: Some(response_headers),
             },
         })
     }
@@ -380,24 +369,13 @@ impl VideoModel for KlingAIVideoModel {
 
         let poll_url = self.poll_endpoint(mode, id, task_id);
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest {
-                url: poll_url.clone(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(poll_url.clone(), header_list, options),
             aimux_provider_utils::create_json_response_handler::<KlingAITaskResult>(),
             klingai_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
         let response_body = resp.raw_value.as_ref().map(ToString::to_string);
         let result: KlingAITaskResult = resp.value;
 

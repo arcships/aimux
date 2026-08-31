@@ -194,24 +194,13 @@ impl VertexImageModel {
         let headers = self.build_headers(options.headers.as_ref());
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.predict_endpoint(),
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.predict_endpoint(), headers, options),
             body,
             aimux_provider_utils::create_json_response_handler(),
             crate::google::google_failed_response_handler(),
         )
         .await?;
-        let rh = resp.response_headers.unwrap_or_default();
+        let rh = resp.response_headers;
         let rb: Value = resp.value;
 
         let images: Vec<String> = rb
@@ -342,24 +331,13 @@ impl VertexImageModel {
         let headers = self.build_headers(options.headers.as_ref());
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.generate_content_endpoint(),
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.generate_content_endpoint(), headers, options),
             body,
             aimux_provider_utils::create_json_response_handler(),
             google_failed_response_handler(),
         )
         .await?;
-        let rh = resp.response_headers.unwrap_or_default();
+        let rh = resp.response_headers;
         let rb: Value = resp.value;
 
         let mut images: Vec<String> = Vec::new();

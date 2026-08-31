@@ -279,10 +279,7 @@ impl SearchModel for DataforseoSearchModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             body,
             aimux_provider_utils::create_json_response_handler::<DataforseoResponse>(),
@@ -291,7 +288,7 @@ impl SearchModel for DataforseoSearchModel {
         .await?;
 
         // Capture response headers.
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let raw_body = resp.raw_value.unwrap_or(Value::Null);
         let data = resp.value;

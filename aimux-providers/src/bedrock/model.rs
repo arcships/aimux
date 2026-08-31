@@ -72,7 +72,7 @@ fn bedrock_event_stream_response_handler()
         Ok(aimux_provider_utils::ResponseHandlerOutput {
             value,
             raw_value: None,
-            response_headers: Some(output_headers),
+            response_headers: output_headers,
         })
     })
     .streaming()
@@ -205,10 +205,7 @@ impl LanguageModel for BedrockModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_json_response_handler(),
@@ -216,7 +213,7 @@ impl LanguageModel for BedrockModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let data: BedrockConverseResponse = resp.value;
 
@@ -275,10 +272,7 @@ impl LanguageModel for BedrockModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             bedrock_event_stream_response_handler(),
@@ -286,7 +280,7 @@ impl LanguageModel for BedrockModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         // Bedrock converse-stream returns binary AWS event stream format.
         // We read the full body and decode it, then emit stream parts.

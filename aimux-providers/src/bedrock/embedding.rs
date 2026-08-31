@@ -207,10 +207,7 @@ impl EmbeddingModel for BedrockEmbeddingModel {
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
+                ..Default::default()
             },
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_json_response_handler(),
@@ -219,7 +216,7 @@ impl EmbeddingModel for BedrockEmbeddingModel {
         .await?;
 
         // Capture response headers (needed for token count extraction).
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let raw_value: Value = resp.value;
 

@@ -148,18 +148,7 @@ impl RerankingModel for VoyageRerankingModel {
         header_list.push(("Content-Type".to_string(), "application/json".to_string()));
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            HttpRequest::new(self.endpoint(), header_list, options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler::<VoyageRerankingResponse>(),
             voyage_failed_response_handler(),
@@ -167,7 +156,7 @@ impl RerankingModel for VoyageRerankingModel {
         .await?;
 
         // Capture response headers.
-        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_headers = resp.response_headers;
 
         let raw_body = resp.raw_value.unwrap_or(Value::Null);
         let data = resp.value;
