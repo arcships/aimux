@@ -1279,47 +1279,6 @@ mod tests {
         );
     }
 
-    // `parsed_tool_call_arguments` renders the Core-parsed `StreamPart::ToolCall`
-    // surface for OpenAI-compatible output. Regression coverage for the P1
-    // finding on PR #165: `Value::String` alone can't distinguish a validly
-    // parsed JSON string from malformed text wrapped as a fallback string, and
-    // `Value::Null` on a valid call must not be rewritten to `{}`.
-
-    #[test]
-    fn parsed_tool_call_arguments_invalid_json_string_round_trips_with_quotes() {
-        // Raw text `"hello"` (a syntactically valid JSON string) fails a
-        // schema that expects an object. `input` is the parsed value
-        // (`Value::String("hello")`, quotes stripped by JSON parsing); the
-        // typed error carries the original raw text with quotes intact.
-        let error = AiMuxError::InvalidToolInput {
-            tool_name: "get_weather".to_string(),
-            tool_input: r#""hello""#.to_string(),
-            cause: "Type validation failed: Value: \"hello\".\nError message: ...".to_string(),
-        };
-        let arguments = parsed_tool_call_arguments(&json!("hello"), Some(true), Some(&error));
-        assert_eq!(arguments, r#""hello""#);
-        // The bug reproduced here: emitting `input` (the parsed string's
-        // content) verbatim would yield bare `hello`, which is not valid JSON.
-        assert_ne!(arguments, "hello");
-    }
-
-    #[test]
-    fn parsed_tool_call_arguments_invalid_malformed_json_round_trips_verbatim() {
-        // Raw text `{"a":` never parses as JSON at all; Core's fallback wraps
-        // it verbatim as `Value::String("{\"a\":")`.
-        let error = AiMuxError::InvalidToolInput {
-            tool_name: "get_weather".to_string(),
-            tool_input: r#"{"a":"#.to_string(),
-            cause: "JSON parsing failed: Text: {\"a\":.\nError message: ...".to_string(),
-        };
-        let arguments = parsed_tool_call_arguments(
-            &Value::String(r#"{"a":"#.to_string()),
-            Some(true),
-            Some(&error),
-        );
-        assert_eq!(arguments, r#"{"a":"#);
-    }
-
     #[test]
     fn blank_invalid_tool_arguments_render_as_an_empty_object() {
         // Both OpenAI renderers: blank raw text has no wire representation
@@ -1361,226 +1320,52 @@ mod tests {
         assert_eq!(arguments, "null");
     }
 
-    #[test]
-    fn parsed_tool_call_arguments_valid_call_uses_compact_parsed_json() {
-        let arguments = parsed_tool_call_arguments(&json!({"city": "Tokyo"}), None, None);
-        assert_eq!(arguments, r#"{"city":"Tokyo"}"#);
-    }
-
-    #[test]
-    fn parsed_tool_call_arguments_no_such_tool_round_trips_malformed_text_verbatim() {
-        // NoSuchTool carries no raw text of its own (it fires off the tool
-        // name alone), so the malformed text is recovered from `input`, where
-        // the best-effort parse left it wrapped verbatim.
-        let error = AiMuxError::NoSuchTool {
-            tool_name: "get_weather".to_string(),
-            available_tools: Some(vec!["other_tool".to_string()]),
-        };
-        let arguments = parsed_tool_call_arguments(
-            &Value::String(r#"{"a":"#.to_string()),
-            Some(true),
-            Some(&error),
-        );
-        assert_eq!(arguments, r#"{"a":"#);
-    }
-
-    #[test]
-    fn parsed_tool_call_arguments_failed_repair_unwraps_original_invalid_tool_input() {
-        // A failed repair *callback* (not a re-validation failure) wraps the
-        // pre-repair error as `ToolCallRepair.original_error` — unwrap one
-        // level to recover the raw text instead of falling through to a
-        // compact re-serialization of the ambiguous `Value`.
-        let original_error = AiMuxError::InvalidToolInput {
-            tool_name: "get_weather".to_string(),
-            tool_input: r#"{"a":"#.to_string(),
-            cause: "JSON parsing failed: ...".to_string(),
-        };
-        let error = AiMuxError::ToolCallRepair {
-            original_error: Box::new(original_error),
-            cause: Box::new(AiMuxError::Other("repair callback failed".to_string())),
-        };
-        let arguments = parsed_tool_call_arguments(
-            &Value::String(r#"{"a":"#.to_string()),
-            Some(true),
-            Some(&error),
-        );
-        assert_eq!(arguments, r#"{"a":"#);
-    }
-
+    /// Regression coverage for the P1 finding on PR #165: `input: Value`
+    /// alone cannot distinguish a validly parsed JSON string from malformed
+    /// text wrapped as a fallback string, so an invalid call's arguments are
+    /// recovered from its typed error instead. Driven end to end so the
+    /// error/`input` pairing `parse_tool_call` actually produces is pinned
+    /// too, not just the renderer.
     #[tokio::test]
-    async fn test_stream_invalid_tool_call_round_trips_raw_text_not_double_encoded() {
-        // End-to-end: `parse_tool_call` builds the invalid call the way Core
-        // actually does, then the OpenAI-compat stream conversion renders its
-        // arguments. Guards the whole pipeline, not just the unit above.
-        let tool = crate::tool::Tool::Function(crate::tool::FunctionTool::new(
-            "get_weather",
-            json!({"type": "object", "properties": {}, "additionalProperties": false}),
-        ));
-        let parsed = crate::parse_tool_call::parse_tool_call(
-            crate::parse_tool_call::RawToolCall {
-                tool_call_id: "call_1".to_string(),
-                tool_name: "get_weather".to_string(),
-                input: r#""hello""#.to_string(),
-                provider_executed: None,
-                dynamic: None,
-                thought_signature: None,
-                provider_metadata: None,
-            },
-            Some(&[tool]),
-            None,
-            &[],
-            None,
-        )
-        .await;
-        assert_eq!(parsed.invalid, Some(true));
-
-        let parts: Vec<Result<StreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::ToolCall {
-                tool_call_id: parsed.tool_call_id,
-                tool_name: parsed.tool_name,
-                input: parsed.input,
-                provider_executed: parsed.provider_executed,
-                dynamic: parsed.dynamic,
-                thought_signature: parsed.thought_signature,
-                invalid: parsed.invalid,
-                error: parsed.error,
-                provider_metadata: parsed.provider_metadata,
-            }),
-            Ok(StreamPart::Finish {
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::ToolCalls,
-                    raw: None,
-                },
-                usage: Usage::default(),
-                provider_metadata: None,
-            }),
-        ];
-
-        let result = to_chat_completion_stream(
-            Box::pin(futures::stream::iter(parts)),
-            "gpt-4o",
-            OpenAiStreamOptions::default(),
-        );
-        let chunks = collect_stream(result).await;
-
-        let arguments = chunks
-            .iter()
-            .find_map(|c| {
-                c.choices
-                    .first()
-                    .and_then(|ch| ch.delta.tool_calls.as_ref())
-                    .and_then(|tcs| tcs.first())
-                    .and_then(|tc| tc.function.arguments.clone())
-            })
-            .expect("tool call arguments chunk not found");
-        assert_eq!(arguments, r#""hello""#);
-    }
-
-    #[tokio::test]
-    async fn test_stream_no_such_tool_round_trips_malformed_text_verbatim() {
-        // End-to-end: an unknown tool name whose arguments are also malformed
-        // must still reach the OpenAI-compat arguments field verbatim, not
-        // double-encoded.
-        let known_tool = crate::tool::Tool::Function(crate::tool::FunctionTool::new(
-            "other_tool",
-            json!({"type": "object"}),
-        ));
-        let parsed = crate::parse_tool_call::parse_tool_call(
-            crate::parse_tool_call::RawToolCall {
-                tool_call_id: "call_1".to_string(),
-                tool_name: "get_weather".to_string(),
-                input: r#"{"a":"#.to_string(),
-                provider_executed: None,
-                dynamic: None,
-                thought_signature: None,
-                provider_metadata: None,
-            },
-            Some(&[known_tool]),
-            None,
-            &[],
-            None,
-        )
-        .await;
-        assert!(matches!(parsed.error, Some(AiMuxError::NoSuchTool { .. })));
-
-        let parts: Vec<Result<StreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::ToolCall {
-                tool_call_id: parsed.tool_call_id,
-                tool_name: parsed.tool_name,
-                input: parsed.input,
-                provider_executed: parsed.provider_executed,
-                dynamic: parsed.dynamic,
-                thought_signature: parsed.thought_signature,
-                invalid: parsed.invalid,
-                error: parsed.error,
-                provider_metadata: parsed.provider_metadata,
-            }),
-            Ok(StreamPart::Finish {
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::ToolCalls,
-                    raw: None,
-                },
-                usage: Usage::default(),
-                provider_metadata: None,
-            }),
-        ];
-
-        let result = to_chat_completion_stream(
-            Box::pin(futures::stream::iter(parts)),
-            "gpt-4o",
-            OpenAiStreamOptions::default(),
-        );
-        let chunks = collect_stream(result).await;
-
-        let arguments = chunks
-            .iter()
-            .find_map(|c| {
-                c.choices
-                    .first()
-                    .and_then(|ch| ch.delta.tool_calls.as_ref())
-                    .and_then(|tcs| tcs.first())
-                    .and_then(|tc| tc.function.arguments.clone())
-            })
-            .expect("tool call arguments chunk not found");
-        assert_eq!(arguments, r#"{"a":"#);
-    }
-
-    #[tokio::test]
-    async fn test_stream_failed_repair_round_trips_malformed_json_verbatim() {
-        // End-to-end: the repair *callback* itself failing wraps the
-        // pre-repair InvalidToolInput as ToolCallRepair.original_error — the
-        // malformed raw text must still round-trip verbatim, not
-        // double-encoded or dropped.
-        let tool = crate::tool::Tool::Function(crate::tool::FunctionTool::new(
-            "get_weather",
-            json!({"type": "object", "properties": {}, "additionalProperties": false}),
-        ));
-        let repair = crate::parse_tool_call::ToolCallRepair::new(|_context| async {
+    async fn invalid_tool_calls_stream_their_raw_arguments_verbatim() {
+        let failing_repair = crate::parse_tool_call::ToolCallRepair::new(|_context| async {
             Err(AiMuxError::Other("repair model failed".to_string()))
         });
-        let parsed = crate::parse_tool_call::parse_tool_call(
-            crate::parse_tool_call::RawToolCall {
-                tool_call_id: "call_1".to_string(),
-                tool_name: "get_weather".to_string(),
-                input: r#"{"a":"#.to_string(),
-                provider_executed: None,
-                dynamic: None,
-                thought_signature: None,
-                provider_metadata: None,
-            },
-            Some(&[tool]),
-            Some(&repair),
-            &[],
-            None,
-        )
-        .await;
-        assert!(matches!(
-            parsed.error,
-            Some(AiMuxError::ToolCallRepair { .. })
-        ));
+        let cases: [(&str, &str, Option<&crate::parse_tool_call::ToolCallRepair>); 3] = [
+            // Valid JSON string rejected by the schema: the quotes must
+            // survive, or the arguments field stops being JSON at all.
+            ("get_weather", r#""hello""#, None),
+            // Unknown tool *and* malformed text: `NoSuchTool` carries no raw
+            // text of its own, so it comes off the unparsable `input`.
+            ("unknown_tool", r#"{"a":"#, None),
+            // A failed repair callback wraps the pre-repair error.
+            ("get_weather", r#"{"a":"#, Some(&failing_repair)),
+        ];
+        let tools = [crate::tool::Tool::Function(crate::tool::FunctionTool::new(
+            "get_weather",
+            json!({"type": "object", "properties": {}, "additionalProperties": false}),
+        ))];
 
-        let parts: Vec<Result<StreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::ToolCall {
+        for (tool_name, raw_input, repair) in cases {
+            let parsed = crate::parse_tool_call::parse_tool_call(
+                crate::parse_tool_call::RawToolCall {
+                    tool_call_id: "call_1".to_string(),
+                    tool_name: tool_name.to_string(),
+                    input: raw_input.to_string(),
+                    provider_executed: None,
+                    dynamic: None,
+                    thought_signature: None,
+                    provider_metadata: None,
+                },
+                Some(&tools),
+                repair,
+                &[],
+                None,
+            )
+            .await;
+            assert_eq!(parsed.invalid, Some(true), "{raw_input}");
+
+            let parts: Vec<Result<StreamPart, AiMuxError>> = vec![Ok(StreamPart::ToolCall {
                 tool_call_id: parsed.tool_call_id,
                 tool_name: parsed.tool_name,
                 input: parsed.input,
@@ -1590,35 +1375,30 @@ mod tests {
                 invalid: parsed.invalid,
                 error: parsed.error,
                 provider_metadata: parsed.provider_metadata,
-            }),
-            Ok(StreamPart::Finish {
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::ToolCalls,
-                    raw: None,
-                },
-                usage: Usage::default(),
-                provider_metadata: None,
-            }),
-        ];
+            })];
+            let chunks = collect_stream(to_chat_completion_stream(
+                Box::pin(futures::stream::iter(parts)),
+                "gpt-4o",
+                OpenAiStreamOptions::default(),
+            ))
+            .await;
 
-        let result = to_chat_completion_stream(
-            Box::pin(futures::stream::iter(parts)),
-            "gpt-4o",
-            OpenAiStreamOptions::default(),
-        );
-        let chunks = collect_stream(result).await;
-
-        let arguments = chunks
-            .iter()
-            .find_map(|c| {
-                c.choices
-                    .first()
-                    .and_then(|ch| ch.delta.tool_calls.as_ref())
-                    .and_then(|tcs| tcs.first())
-                    .and_then(|tc| tc.function.arguments.clone())
-            })
-            .expect("tool call arguments chunk not found");
-        assert_eq!(arguments, r#"{"a":"#);
+            let arguments = chunks
+                .iter()
+                .find_map(|c| {
+                    c.choices
+                        .first()?
+                        .delta
+                        .tool_calls
+                        .as_ref()?
+                        .first()?
+                        .function
+                        .arguments
+                        .clone()
+                })
+                .expect("tool call arguments chunk not found");
+            assert_eq!(arguments, raw_input, "tool {tool_name}");
+        }
     }
 
     #[test]
