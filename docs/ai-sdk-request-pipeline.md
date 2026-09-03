@@ -765,6 +765,16 @@ start/status 流），Core 拥有 poll 循环并分别 retry 两个阶段：
   retry 次数有界；
 - Provider-specific polling delay 不是通用 exponential retry；
 - 耗尽产生的 `RetryError` 原样透传，外层不得再次 submit。
+- **修订**（RFC-0031 review）：`options.n` 按 `VideoModel::max_videos_per_call`
+  切成多个 batch（AI SDK `generateVideo`/`generateImage` 同款算法：除最后一个
+  batch 外每个都是满批，最后一个是余数或整批），每个 batch **并发**跑一次
+  完整的独立 `do_start`/poll 流程（AI SDK 用 `Promise.all`；Rust 侧用
+  `futures::future::try_join_all`，第一个 batch 失败时其余尚在进行的 batch
+  future 被 drop，这点比 JS 更激进但不影响正确性——没有 batch 会重连或取消
+  已经发出的 provider 任务）——每个 batch 独立铸造 idempotency key。结果按
+  batch 顺序拼接 `videos`/`warnings`；`provider_metadata` 跨 batch 用与
+  start/completion 相同的 deep-merge 策略聚合。`n == 0` 在任何网络调用之前
+  返回 `InvalidArgument`。
 
 ### 9.2 Router / MoA
 

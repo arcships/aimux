@@ -331,17 +331,31 @@ pub trait VideoModel: Send + Sync {
     ) -> Result<VideoOperationStatus, AiMuxError>;
 }
 
-/// User-facing video generation with Core-owned retry, polling, and timeout.
+/// User-facing video generation with Core-owned retry, polling, batching, and
+/// timeout.
 ///
-/// Orchestration (AI SDK `generate-video`): `do_start` is retried as one
-/// unit, then `do_status` is polled — each poll retried independently —
-/// against the same operation reference, so a transient poll failure never
-/// re-creates the billed task.
+/// Orchestration (AI SDK `generateVideo`, mirroring `generateImage`'s
+/// batching): `options.n` is split into `VideoModel::max_videos_per_call`
+/// sized batches, and every batch runs a full, independent `do_start`/poll
+/// cycle **concurrently** (the AI SDK batches images/videos via
+/// `Promise.all`, not sequentially) — each with its own idempotency key, so a
+/// retried batch never collides with another batch's replay. Within a batch,
+/// `do_start` is retried as one unit, then `do_status` is polled — each poll
+/// retried independently — against that batch's operation reference, so a
+/// transient poll failure never re-creates the billed task. Batch results are
+/// flattened back in batch order; provider metadata across batches is
+/// deep-merged the same way start/completion metadata is within a batch (see
+/// [`merge_provider_metadata`]).
 ///
 /// # Errors
 ///
-/// Returns the provider failure, retry exhaustion, poll or operation
-/// timeout, or caller abort.
+/// Returns `InvalidArgument` when `options.n == 0` (checked before any
+/// network call), or the first batch's provider failure, retry exhaustion,
+/// poll or operation timeout, or caller abort — Rust drops the other
+/// in-flight batches' futures on the first error, unlike `Promise.all`,
+/// which lets sibling settles run to completion; their partial network
+/// effects (e.g. an already-started but abandoned batch) are the same
+/// either way, since nothing here reconnects to or cancels a provider job.
 pub async fn generate_video(
     model: &dyn VideoModel,
     options: VideoCallOptions,
@@ -360,6 +374,12 @@ async fn start_and_poll(
     model: &dyn VideoModel,
     options: VideoCallOptions,
 ) -> Result<VideoResult, AiMuxError> {
+    if options.n == 0 {
+        return Err(AiMuxError::InvalidArgument(
+            "video generation `n` must be at least 1".to_string(),
+        ));
+    }
+
     let abort_signal = options.abort_signal.clone();
     let retries = retry::prepare_retries(
         options.max_retries,
@@ -367,6 +387,81 @@ async fn start_and_poll(
         abort_signal.clone(),
     );
 
+    let mut poll = model.poll_config();
+    if let Some(overrides) = options.poll {
+        if let Some(ms) = overrides.interval_ms {
+            poll.interval = Duration::from_millis(ms);
+        }
+        if let Some(ms) = overrides.timeout_ms {
+            poll.timeout = Duration::from_millis(ms);
+        }
+    }
+
+    let max_per_call = model.max_videos_per_call().unwrap_or(options.n).max(1);
+    let batch_counts = batch_video_counts(options.n, max_per_call);
+
+    let batches = batch_counts.into_iter().map(|n| {
+        let mut batch_options = options.clone();
+        batch_options.n = n;
+        start_and_poll_one_batch(model, batch_options, &retries, poll, abort_signal.clone())
+    });
+    let results = futures::future::try_join_all(batches).await?;
+
+    let mut videos = Vec::new();
+    let mut warnings = Vec::new();
+    let mut provider_metadata = None;
+    let mut response = None;
+    for result in results {
+        videos.extend(result.videos);
+        warnings.extend(result.warnings);
+        provider_metadata = merge_provider_metadata(provider_metadata, result.provider_metadata);
+        response.get_or_insert(result.response);
+    }
+
+    Ok(VideoResult {
+        videos,
+        warnings,
+        provider_metadata,
+        // `batch_counts` is never empty (`n >= 1` was checked above), so at
+        // least one batch ran and `response` is always `Some` here; the first
+        // batch's response represents the call for telemetry purposes.
+        response: response.unwrap_or_default(),
+    })
+}
+
+/// Split `n` into `max_per_call`-sized batches (AI SDK `generateVideo` /
+/// `generateImage`): every batch but the last is full-sized; the last batch
+/// takes the remainder, or a full batch if `n` divides evenly.
+fn batch_video_counts(n: u32, max_per_call: u32) -> Vec<u32> {
+    let max_per_call = max_per_call.max(1);
+    let call_count = n.div_ceil(max_per_call);
+    (0..call_count)
+        .map(|i| {
+            if i + 1 < call_count {
+                max_per_call
+            } else {
+                let remainder = n % max_per_call;
+                if remainder == 0 {
+                    max_per_call
+                } else {
+                    remainder
+                }
+            }
+        })
+        .collect()
+}
+
+/// Run one `do_start` + poll cycle for a single provider-sized batch.
+///
+/// Each batch mints its own idempotency key (AI SDK batching semantics): a
+/// batch, not the whole `n`-video request, is the unit of idempotent replay.
+async fn start_and_poll_one_batch(
+    model: &dyn VideoModel,
+    options: VideoCallOptions,
+    retries: &retry::PreparedRetries,
+    poll: VideoPollConfig,
+    abort_signal: Option<AbortSignal>,
+) -> Result<VideoResult, AiMuxError> {
     // `do_start` is billable: mint one idempotency key per logical start,
     // OUTSIDE the retry closure, so providers that honor this header can
     // deduplicate a replay where the first attempt succeeded but its response
@@ -385,15 +480,6 @@ async fn start_and_poll(
 
     let start = retries.retry(|| model.do_start(&start_options)).await?;
 
-    let mut poll = model.poll_config();
-    if let Some(overrides) = options.poll {
-        if let Some(ms) = overrides.interval_ms {
-            poll.interval = Duration::from_millis(ms);
-        }
-        if let Some(ms) = overrides.timeout_ms {
-            poll.timeout = Duration::from_millis(ms);
-        }
-    }
     let poll_started = Instant::now();
     loop {
         let elapsed = poll_started.elapsed();
@@ -798,6 +884,160 @@ mod tests {
                 .lock()
                 .expect("status key capture lock should not be poisoned")
                 .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn n_zero_is_rejected_before_any_network_call() {
+        let model = ScriptedVideoModel::new(vec![StatusStep::Complete]);
+        let mut options = fast_poll_options();
+        options.n = 0;
+
+        let error = generate_video(&model, options).await.unwrap_err();
+
+        assert!(
+            matches!(error, AiMuxError::InvalidArgument(_)),
+            "expected InvalidArgument, got {error:?}"
+        );
+        assert_eq!(
+            model.starts.load(Ordering::SeqCst),
+            0,
+            "n=0 must not start a billed request"
+        );
+    }
+
+    /// A model whose `do_start` is retriable per-batch (a small delay proves
+    /// batches overlap rather than running one after another) and whose
+    /// `do_status` completes immediately with one video + one provider
+    /// metadata field unique to the batch index.
+    struct BatchedVideoModel {
+        starts: AtomicU32,
+        start_idempotency_keys: Mutex<Vec<Option<String>>>,
+        start_delay: Duration,
+        max_per_call: Option<u32>,
+    }
+
+    #[async_trait]
+    impl VideoModel for BatchedVideoModel {
+        fn provider(&self) -> &str {
+            "test"
+        }
+        fn model_id(&self) -> &str {
+            "batched"
+        }
+        fn max_videos_per_call(&self) -> Option<u32> {
+            self.max_per_call
+        }
+        async fn do_start(
+            &self,
+            options: &VideoCallOptions,
+        ) -> Result<VideoOperationStart, AiMuxError> {
+            let index = self.starts.fetch_add(1, Ordering::SeqCst);
+            self.start_idempotency_keys
+                .lock()
+                .expect("start key capture lock should not be poisoned")
+                .push(idempotency_key(options));
+            tokio::time::sleep(self.start_delay).await;
+            Ok(VideoOperationStart {
+                operation: serde_json::json!({ "task_id": format!("t-{index}") }),
+                warnings: vec![Warning::Other {
+                    message: format!("batch {index} start"),
+                }],
+                provider_metadata: Some(SharedProviderMetadata::from([(
+                    "test".to_string(),
+                    serde_json::json!({ format!("batch{index}"): index }),
+                )])),
+                response: VideoResponse::default(),
+            })
+        }
+        async fn do_status(
+            &self,
+            operation: &serde_json::Value,
+            _options: &VideoCallOptions,
+        ) -> Result<VideoOperationStatus, AiMuxError> {
+            let task_id = operation["task_id"].as_str().unwrap().to_string();
+            Ok(VideoOperationStatus::Completed(VideoResult {
+                videos: vec![VideoData::Url {
+                    url: format!("https://cdn/{task_id}.mp4"),
+                    media_type: "video/mp4".to_string(),
+                }],
+                warnings: Vec::new(),
+                provider_metadata: None,
+                response: VideoResponse::default(),
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn n_above_max_per_call_splits_into_batches_and_aggregates() {
+        let model = BatchedVideoModel {
+            starts: AtomicU32::new(0),
+            start_idempotency_keys: Mutex::new(Vec::new()),
+            start_delay: Duration::from_millis(1),
+            max_per_call: Some(1),
+        };
+        let mut options = fast_poll_options();
+        options.n = 3;
+
+        let result = generate_video(&model, options).await.unwrap();
+
+        assert_eq!(
+            model.starts.load(Ordering::SeqCst),
+            3,
+            "n=3 with max_videos_per_call=1 must run three do_start batches"
+        );
+        assert_eq!(result.videos.len(), 3);
+        assert_eq!(result.warnings.len(), 3, "warnings from every batch kept");
+
+        let keys = model
+            .start_idempotency_keys
+            .lock()
+            .expect("start key capture lock should not be poisoned");
+        assert_eq!(keys.len(), 3);
+        assert!(keys.iter().all(Option::is_some));
+        let unique: std::collections::HashSet<_> = keys.iter().collect();
+        assert_eq!(
+            unique.len(),
+            3,
+            "each batch must mint its own idempotency key: {keys:?}"
+        );
+
+        // Provider metadata across batches is deep-merged (§ merge_provider_metadata),
+        // not `entry().or_insert()`-dropped: all three batch-specific fields survive
+        // under the shared "test" provider key.
+        let metadata = result
+            .provider_metadata
+            .expect("provider metadata aggregated");
+        let test_meta = metadata.get("test").expect("test provider metadata");
+        for i in 0..3 {
+            assert!(
+                test_meta.get(format!("batch{i}")).is_some(),
+                "batch {i}'s metadata field missing from aggregate: {test_meta:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn batches_run_concurrently_not_sequentially() {
+        let model = BatchedVideoModel {
+            starts: AtomicU32::new(0),
+            start_idempotency_keys: Mutex::new(Vec::new()),
+            start_delay: Duration::from_millis(80),
+            max_per_call: Some(1),
+        };
+        let mut options = fast_poll_options();
+        options.n = 3;
+
+        let started = Instant::now();
+        generate_video(&model, options).await.unwrap();
+        let elapsed = started.elapsed();
+
+        // Sequential batches would take >= 3 * 80ms = 240ms; concurrent
+        // batches take roughly one delay (~80ms) plus scheduling overhead.
+        assert!(
+            elapsed < Duration::from_millis(200),
+            "batches should overlap (AI SDK generateVideo/generateImage runs \
+             them concurrently via Promise.all), took {elapsed:?}"
         );
     }
 }
