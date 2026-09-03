@@ -51,7 +51,7 @@ fn recording(
         ..Default::default()
     };
     Recording {
-        schema: 1,
+        schema: aimux_core::recording::RECORDING_SCHEMA,
         call_id: call_id.into(),
         recorded_at: recorded_at.into(),
         input: InputRecord {

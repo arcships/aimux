@@ -40,7 +40,7 @@ fn main() {
     };
 
     let rec = Recording {
-        schema: 1,
+        schema: aimux_core::recording::RECORDING_SCHEMA,
         call_id: "call-fixture-1".into(),
         recorded_at: "2026-08-14T00:00:00.000Z".into(),
         input: InputRecord {
