@@ -181,41 +181,28 @@ FFI 调用仅 8 个符号。[Types.swift](../../bindings/swift/Sources/Aimux/Typ
 
 ## 9. Wire-shape migration: `GenerateContent::ToolCall.input`
 
-The tool-input-parse-repair refactor (PR #165 and predecessors) moved JSON
-parsing, schema validation, and repair from providers into Core
-(`generate_text` / `stream_text`). Providers now hand Core the model's raw
-argument text unparsed; `GenerateContent::ToolCall.input` — part of
-`GenerateResult.content`, i.e. what `result.raw.content` carries for a
-non-streaming call — changed type accordingly:
+The tool-input-parse-repair refactor (PR #165) moved JSON parsing, schema
+validation, and repair from the providers into Core. Providers now hand Core
+the model's raw argument text unparsed, and
+`GenerateContent::ToolCall.input` — the per-provider content on
+`GenerateResult` (`result.raw.content`) — changed from `serde_json::Value`
+(the already-parsed arguments) to `String` (that raw text).
+
+The wire shape changed with it:
 
 | | Before | After |
 |---|---|---|
-| Rust type | `serde_json::Value` | `String` |
-| What it held | The provider's raw text, but *always* wrapped in `Value::String(text)` — providers never put a structured value there either, by convention (not by the type system) | The same raw text, now typed as the wire carrier directly |
-| Wire JSON | `"input": "<raw text>"` (a JSON string, because `Value::String` and `String` serialize identically) | `"input": "<raw text>"` (unchanged) |
+| Wire JSON | `"input": {"city":"Paris"}` | `"input": "{\"city\":\"Paris\"}"` |
 
-**For a `GenerateContent::ToolCall` produced by *this* version of aimux, the
-wire format did not change** — `Value::String(text)` and `String` serialize to
-the identical JSON string, so nothing downstream (recordings, replay
-fixtures, cross-binding contract tests) written by this version or later
-needs to move.
+Serialization always writes the JSON string; nothing writes the old shape any
+more. Deserialization accepts both — a JSON string loads unchanged, and any
+other JSON value (object, array, number, bool, null) is re-serialized to its
+compact JSON text (`deserialize_tool_call_input` in
+`aimux-core/src/result.rs`). A `GenerateResult` persisted or recorded before
+the refactor therefore keeps loading, with no migration step.
 
-**What did change**: before this refactor line existed, `input` briefly held
-the *already-parsed* argument value (an object/array/etc., not a raw-text
-string) on `main`, because parsing happened provider-side. A `GenerateResult`
-recorded or persisted from that window carries an object-shaped `input`,
-which the current `String`-typed field cannot deserialize as-is — deserializing
-such a record with a plain `#[derive(Deserialize)]` `String` field fails
-closed instead of loading.
-
-**Compatibility**: `GenerateContent::ToolCall.input` uses a custom
-`deserialize_with` (`aimux-core/src/result.rs`) that accepts either shape —
-a JSON string loads unchanged; any other JSON value (object, array, number,
-bool, null) is re-serialized to its compact JSON text. Serialization always
-emits a plain JSON string; there is no code path that writes the legacy
-object shape going forward. Old recordings/replay fixtures and any
-externally-persisted `GenerateResult` JSON keep loading without a migration
-step.
+The parsed arguments still reach callers as a `Value`, on
+`GenerateTextResult.tool_calls[].input` — that field is unchanged.
 
 ---
 

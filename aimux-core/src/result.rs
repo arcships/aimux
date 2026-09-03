@@ -16,16 +16,14 @@ use serde_json::Value;
 
 /// Compatibility deserializer for `GenerateContent::ToolCall.input`.
 ///
-/// The field used to be a `serde_json::Value` (the already-parsed argument
-/// object) and became a `String` (the provider's raw, unparsed text) in the
-/// tool-input-parse-repair refactor. The wire format for a *new* result was
-/// unaffected — providers had only ever put the raw text in a
-/// `Value::String`, and `Value::String` / `String` serialize identically —
-/// but a result persisted (recording/replay) before that refactor, back when
-/// providers parsed their own input, can carry an object/array/number/bool/
-/// null here. Accept both: a JSON string passes through unchanged, and any
-/// other JSON value is re-serialized to its compact JSON text so the field
-/// keeps meaning "the raw text a schema-validating parse would run against".
+/// The field used to be a `serde_json::Value` (the already-parsed arguments,
+/// since providers parsed their own input) and became a `String` (the raw,
+/// unparsed provider text) in the tool-input-parse-repair refactor, so a
+/// `GenerateResult` persisted or recorded before it carries an
+/// object/array/number/bool/null here. Accept both: a JSON string passes
+/// through unchanged, and any other JSON value is re-serialized to its
+/// compact JSON text so the field keeps meaning "the raw text a
+/// schema-validating parse would run against".
 fn deserialize_tool_call_input<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -55,12 +53,10 @@ pub enum GenerateContent {
         /// owns parsing, schema validation, and repair.
         ///
         /// Always serializes as a JSON string. Deserializes a JSON string
-        /// (the current wire shape) unchanged, and also accepts the
-        /// pre-refactor legacy shape — an already-parsed JSON value (object,
-        /// array, number, bool, or null) — by re-serializing it to its
-        /// compact JSON text, so `GenerateResult`s persisted or replayed from
-        /// before this field became a `String` keep loading. See
-        /// docs/api/gaps.md §9 for the wire-shape and migration note.
+        /// (the current wire shape) unchanged, and also re-serializes the
+        /// pre-refactor shape — an already-parsed JSON value — to its compact
+        /// JSON text, so a `GenerateResult` persisted before this field
+        /// became a `String` keeps loading. See docs/api/gaps.md §9.
         #[serde(deserialize_with = "deserialize_tool_call_input")]
         input: String,
         /// Whether the tool call will be executed by the provider.
