@@ -289,9 +289,31 @@ fn valid_tool_call(tool_call: RawToolCall, input: Value, dynamic: Option<bool>) 
     }
 }
 
+/// Whether `error` means the raw text was never even attempted to parse.
+///
+/// Currently only `NoSuchTool`: like the AI SDK, aimux raises it purely from
+/// the tool name, before looking at the arguments at all — so unlike
+/// `InvalidToolInput` (a parse or schema failure), there is no "best effort"
+/// parsed value to fall back to. Recurses through `ToolCallRepair` so a
+/// `NoSuchTool` that survives a failed repair attempt is still recognized.
+fn input_was_never_parsed(error: &AiMuxError) -> bool {
+    match error {
+        AiMuxError::NoSuchTool { .. } => true,
+        AiMuxError::ToolCallRepair { original_error, .. } => input_was_never_parsed(original_error),
+        _ => false,
+    }
+}
+
 fn invalid_tool_call(tool_call: RawToolCall, error: AiMuxError) -> ToolCall {
-    let input = serde_json::from_str(&tool_call.input)
-        .unwrap_or_else(|_| Value::String(tool_call.input.clone()));
+    let input = if input_was_never_parsed(&error) {
+        // Keep the raw text verbatim and unparsed — a valid-JSON-but-quoted
+        // call (`"hello"`) must not lose its quotes to a "helpful" parse that
+        // was never actually attempted for this error.
+        Value::String(tool_call.input.clone())
+    } else {
+        serde_json::from_str(&tool_call.input)
+            .unwrap_or_else(|_| Value::String(tool_call.input.clone()))
+    };
     ToolCall {
         tool_call_id: tool_call.tool_call_id,
         tool_name: tool_call.tool_name,
