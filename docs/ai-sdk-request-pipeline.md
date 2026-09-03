@@ -93,6 +93,7 @@ Core user operation
 | timeout 输入形状 | 保留跨语言已有的 object/struct 形式，不增加 AI SDK 的裸 number 简写；字段语义一致 |
 | `AbortSignal` | 保留既有的 `CancellationToken` 薄包装，只表示调用方取消；Rust 可直接 drop future，因此 timeout 由 Core deadline/select 表达，不照搬 JS 的 signal merge（§8.0） |
 | stream 驱动 | AI SDK 的 `streamText` 返回前即开始消费 provider stream（push 语义，timer 观察到的是 chunk 到达时刻）；Rust stream 是 pull 语义，只在 `poll_next` 里观察 deadline 会把消费方不 poll 的时间也算进 `first_chunk_ms`/`chunk_ms`。Aimux 在 `stream_text` 返回前 spawn 一个 pump task 驱动 provider stream 进 unbounded channel，deadline 在 pump 侧按到达时刻 arm/reset；返回的 stream drop 时 abort pump。缓冲无上界与 AI SDK 一致（受响应本身约束），pump 在 terminal item 处停止 |
+| runtime 依赖 | AI SDK 没有这层概念；Aimux 的 `stream_text` 因为 pump task 需要 `tokio::spawn`，现在无条件要求运行在 tokio runtime 上，此前只有 armed 的 deadline 才需要（`stream_text` 之外的 Core operation 不变） |
 | SSE framing | AI SDK 的 event-source handler 直接产出解析后的事件；Aimux 复用 `aimux_stream::SseStream` 做同一件事，framing 不留在 Provider |
 | tool timeout | aimux 目前不执行用户 tool，本 RFC 不增加 `tool_ms`/per-tool timeout |
 | observability | 每次 exchange 继续走 Aimux recording/tracing；这不改变 helper 的单次请求语义 |
