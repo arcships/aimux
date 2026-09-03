@@ -167,13 +167,28 @@ impl Files for OpenAIFiles {
         // and its content-type are carried by `HttpBody::Bytes` — the HTTP layer
         // sets `Content-Type` from it, so it is intentionally not added to the
         // header list above.
-        let resp = aimux_provider_utils::post_to_api(
-            HttpRequest::new(self.endpoint(), header_list, options),
-            HttpBody::Bytes(body, content_type),
-            aimux_provider_utils::create_json_response_handler(),
-            super::openai_failed_response_handler(),
-        )
-        .await?;
+        //
+        // `upload_file` is a single-exchange Provider SPI operation (no Core
+        // `do_upload_file` wrapper, RFC-0031 §9.4), so nothing above this call
+        // retries it. Apply the Core retry primitive here, same as
+        // `execute_list_models`: the upload itself is not billable, and a
+        // failed create-a-file request never returns a file id to replay
+        // against, so a plain retry of the whole exchange is safe.
+        let retries = aimux_core::retry::prepare_retries(
+            None,
+            self.config.retry_config,
+            options.abort_signal.clone(),
+        );
+        let resp = retries
+            .retry(|| {
+                aimux_provider_utils::post_to_api(
+                    HttpRequest::new(self.endpoint(), header_list.clone(), options),
+                    HttpBody::Bytes(body.clone(), content_type.clone()),
+                    aimux_provider_utils::create_json_response_handler(),
+                    super::openai_failed_response_handler(),
+                )
+            })
+            .await?;
 
         let data: OpenAIFilesResponse = resp.value;
 

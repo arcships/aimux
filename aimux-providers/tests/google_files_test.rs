@@ -401,7 +401,16 @@ async fn should_throw_when_initiation_request_fails() {
         .mount(&server)
         .await;
 
-    let provider = provider(&server);
+    // A persistent failure exhausts retries either way; pin max_retries to 0
+    // so this test (which only checks the message text, not retry
+    // exhaustion) stays fast.
+    let config = GoogleConfig::new("test-api-key")
+        .with_base_url(format!("{}/v1beta", server.uri()))
+        .with_retry_config(aimux_core::retry::RetryConfig {
+            max_retries: 0,
+            ..Default::default()
+        });
+    let provider = GoogleProvider::new(config);
     let files = provider.files();
 
     let result = files.upload_file(&upload_options()).await;
@@ -456,7 +465,16 @@ async fn should_throw_when_upload_request_fails() {
         .mount(&server)
         .await;
 
-    let provider = provider(&server);
+    // A persistent failure exhausts retries either way; pin max_retries to 0
+    // so this test (which only checks the message text, not retry
+    // exhaustion) stays fast.
+    let config = GoogleConfig::new("test-api-key")
+        .with_base_url(format!("{}/v1beta", server.uri()))
+        .with_retry_config(aimux_core::retry::RetryConfig {
+            max_retries: 0,
+            ..Default::default()
+        });
+    let provider = GoogleProvider::new(config);
     let files = provider.files();
 
     let result = files.upload_file(&upload_options()).await;
@@ -585,4 +603,62 @@ async fn should_omit_optional_fields_from_metadata_when_not_present() {
     assert!(google.get("createTime").is_none());
     assert!(google.get("expirationTime").is_none());
     assert!(google.get("sha256Hash").is_none());
+}
+
+/// A transient 503 on the upload stage followed by 200 must succeed, and
+/// must not re-run the init stage — a retried upload reuses the
+/// already-minted `upload_url` instead of requesting a new one.
+#[tokio::test]
+async fn transient_upload_failure_is_retried_without_re_initiating() {
+    let server = MockServer::start().await;
+    let upload_url = format!("{}/resume", server.uri());
+
+    let init_attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let init_observed = std::sync::Arc::clone(&init_attempts);
+    Mock::given(method("POST"))
+        .and(path("/upload/v1beta/files"))
+        .respond_with(move |_: &wiremock::Request| {
+            init_observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            ResponseTemplate::new(200).insert_header("x-goog-upload-url", upload_url.as_str())
+        })
+        .mount(&server)
+        .await;
+
+    let upload_attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let upload_observed = std::sync::Arc::clone(&upload_attempts);
+    Mock::given(method("POST"))
+        .and(path("/resume"))
+        .respond_with(move |_: &wiremock::Request| {
+            if upload_observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                ResponseTemplate::new(503)
+                    .insert_header("retry-after-ms", "0")
+                    .set_body_json(json!({"error": {"message": "try again"}}))
+            } else {
+                ResponseTemplate::new(200).set_body_json(json!({ "file": default_file_resource() }))
+            }
+        })
+        .mount(&server)
+        .await;
+
+    let config = GoogleConfig::new("test-api-key")
+        .with_base_url(format!("{}/v1beta", server.uri()))
+        .with_retry_config(aimux_core::retry::RetryConfig {
+            max_retries: 1,
+            ..Default::default()
+        });
+    let provider = GoogleProvider::new(config);
+    let files = provider.files();
+
+    let result = files.upload_file(&upload_options()).await.unwrap();
+
+    assert_eq!(
+        result.provider_reference.get("google"),
+        Some(&"https://generativelanguage.googleapis.com/v1beta/files/abc123".to_string())
+    );
+    assert_eq!(
+        init_attempts.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "the init stage must not be replayed by an upload-stage retry"
+    );
+    assert_eq!(upload_attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
 }

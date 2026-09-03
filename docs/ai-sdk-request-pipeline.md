@@ -788,11 +788,16 @@ Composite 外层不重放；重试放在已有语义边界内：
 ### 9.4 Files
 
 `Files::upload_file` 按 AI SDK Provider SPI 本身就是公开 operation，没有对应的
-`do_upload_file`；本轮不为它虚构第二层。upload 只执行一次，Provider
-`RetryConfig` 不适用于 Files。这与旧 HTTP helper 会对 upload exchange 自动重试的
-行为不同；对非幂等 POST 保留该行为可能重复创建文件/上传会话，因此本轮
-明确不保留。Google Files 的 poll GET 如需独立 retry，应作为后续幂等
-exchange 改动，不得包住整个 upload。
+`do_upload_file`；本轮不为它虚构第二层。**修订**（RFC-0031 review）：`upload_file`
+现在用 Provider 已配置的 `RetryConfig`（`aimux_core::retry::prepare_retries` +
+`PreparedRetries::retry`，与 `execute_list_models` 同一 primitive）包住单次 HTTP
+exchange——upload 不计费，失败的 create-file 请求不会返回可供下一次请求复用的
+file id，因此对整个 exchange 做 plain retry 是安全的；这与非幂等的“创建资源”类
+POST 通常不能自动重试的一般规则不同，此处的例外前提就是“不计费 + 无副作用可
+重放”。OpenAI 与 Anthropic 各是一次 exchange，直接整体重试。Google Files 是
+init/upload/poll 三阶段：三个 exchange **分别独立**重试，而不是包住整个
+`upload_file`——upload 阶段的重试只重发文件字节到已经拿到的 `upload_url`，不会
+重新调用 init 铸造新 URL；poll 阶段的重试只重发状态 GET，不会触发 upload。
 
 ---
 
