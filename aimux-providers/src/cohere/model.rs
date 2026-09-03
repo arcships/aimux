@@ -503,35 +503,30 @@ impl LanguageModel for CohereModel {
                                         provider_metadata: None,
                                     });
 
-                                    // TS trims the accumulated arguments,
-                                    // defaults empty to "{}", and re-serializes
-                                    // the parsed JSON compactly; a parse
-                                    // failure is terminal for the stream.
+                                    // Providers never parse tool input — Core
+                                    // owns JSON parsing, schema validation,
+                                    // and repair (aimux-core::parse_tool_call).
+                                    // Trim the accumulated text and default
+                                    // empty to "{}" to match the TS
+                                    // provider's convention; forward it
+                                    // verbatim otherwise, malformed JSON
+                                    // included, so a bad call surfaces as a
+                                    // retained `invalid: true` tool call
+                                    // instead of a terminal stream error.
                                     let trimmed = ptc.arguments.trim();
                                     let text = if trimmed.is_empty() { "{}" } else { trimmed };
-                                    match serde_json::from_str::<Value>(text) {
-                                        Ok(parsed_args) => {
-                                            // `Value` Display is compact JSON — the
-                                            // `JSON.stringify` equivalent, infallible.
-                                            let input = Value::String(parsed_args.to_string());
-                                            yield Ok(StreamPart::ToolCall {
-                                                tool_call_id: ptc.id,
-                                                tool_name: ptc.name,
-                                                input,
-                                                provider_executed: None,
-                                                dynamic: None,
-                                                thought_signature: None,
-                                                invalid: None,
-                                                error: None,
-                                                provider_metadata: None,
-                                            });
-                                        }
-                                        Err(e) => {
-                                            yield Ok(StreamPart::Error { error: e.into() });
-                                            stream_errored = true;
-                                            break;
-                                        }
-                                    }
+                                    let input = Value::String(text.to_string());
+                                    yield Ok(StreamPart::ToolCall {
+                                        tool_call_id: ptc.id,
+                                        tool_name: ptc.name,
+                                        input,
+                                        provider_executed: None,
+                                        dynamic: None,
+                                        thought_signature: None,
+                                        invalid: None,
+                                        error: None,
+                                        provider_metadata: None,
+                                    });
                                 }
                             }
 
