@@ -2541,7 +2541,7 @@ public final class MultimodalTypes {
         @JsonProperty("aspect_ratio") private String aspectRatio;
         @JsonProperty("resolution") private String resolution;
         @JsonProperty("duration") private Long duration;
-        @JsonProperty("fps") private Double fps;
+        @JsonProperty("fps") private Long fps;
         @JsonProperty("seed") private Long seed;
         @JsonProperty("image") private VideoFile image;
         @JsonProperty("frame_images") private List<VideoFrameImage> frameImages;
@@ -2557,7 +2557,7 @@ public final class MultimodalTypes {
         VideoCallOptions() {}
 
         private VideoCallOptions(String prompt, Integer n, String aspectRatio, String resolution,
-                                 Long duration, Double fps, Long seed,
+                                 Long duration, Long fps, Long seed,
                                  VideoFile image, List<VideoFrameImage> frameImages,
                                  List<VideoFile> inputReferences, Boolean generateAudio,
                                  JsonNode providerOptions, Map<String, String> headers,
@@ -2591,7 +2591,7 @@ public final class MultimodalTypes {
         public String getAspectRatio() { return aspectRatio; }
         public String getResolution() { return resolution; }
         public Long getDuration() { return duration; }
-        public Double getFps() { return fps; }
+        public Long getFps() { return fps; }
         public Long getSeed() { return seed; }
         public VideoFile getImage() { return image; }
         public List<VideoFrameImage> getFrameImages() { return frameImages; }
@@ -2611,7 +2611,7 @@ public final class MultimodalTypes {
             private String aspectRatio;
             private String resolution;
             private Long duration;
-            private Double fps;
+            private Long fps;
             private Long seed;
             private VideoFile image;
             private List<VideoFrameImage> frameImages;
@@ -2628,7 +2628,7 @@ public final class MultimodalTypes {
             public Builder aspectRatio(String v) { this.aspectRatio = v; return this; }
             public Builder resolution(String v) { this.resolution = v; return this; }
             public Builder duration(Long v) { this.duration = v; return this; }
-            public Builder fps(Double v) { this.fps = v; return this; }
+            public Builder fps(Long v) { this.fps = v; return this; }
             public Builder seed(Long v) { this.seed = v; return this; }
             public Builder image(VideoFile v) { this.image = v; return this; }
             public Builder frameImages(List<VideoFrameImage> v) { this.frameImages = v; return this; }

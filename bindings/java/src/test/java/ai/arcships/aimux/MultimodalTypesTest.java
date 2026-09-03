@@ -253,6 +253,21 @@ class MultimodalTypesTest {
         assertThat(decoded).isEqualTo(options);
     }
 
+    @Test
+    void videoFpsIsEmittedAsAnIntegerForRustU32() throws Exception {
+        // `VideoCallOptions.fps` is `Option<u32>` in Rust; a JSON float makes
+        // serde reject the whole options object at the FFI boundary.
+        MultimodalTypes.VideoCallOptions options = MultimodalTypes.VideoCallOptions.builder()
+            .prompt("a cat")
+            .fps(24L)
+            .build();
+
+        String json = M.writeValueAsString(options);
+        assertThat(M.readTree(json).path("fps").isIntegralNumber())
+            .as("wire form: %s", json)
+            .isTrue();
+    }
+
     // ── Search ─────────────────────────────────────────────────────────────
 
     @Test
