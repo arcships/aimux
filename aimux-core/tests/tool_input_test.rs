@@ -128,7 +128,7 @@ async fn preserves_parsed_input_when_schema_validation_fails() {
 #[tokio::test]
 async fn unknown_tool_is_an_invalid_dynamic_call_with_available_tools() {
     let call = parse_tool_call(
-        raw("forecast", "{}"),
+        raw("forecast", r#"{"city":"Tokyo"}"#),
         Some(&[weather_tool()]),
         None,
         &[],
@@ -136,6 +136,10 @@ async fn unknown_tool_is_an_invalid_dynamic_call_with_available_tools() {
     )
     .await;
 
+    // The arguments still parse: `response_messages` drops a non-structured
+    // input from the next turn's transcript, so an unknown tool called with
+    // perfectly good arguments must not arrive here as raw text.
+    assert_eq!(call.input, json!({ "city": "Tokyo" }));
     assert_eq!(call.dynamic, Some(true));
     assert_eq!(call.invalid, Some(true));
     assert!(matches!(
