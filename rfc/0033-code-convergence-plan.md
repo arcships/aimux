@@ -289,8 +289,8 @@ RFC-0023 标为 IMPLEMENTED,但在四处停在 MVP 边界:mock 回放只解析 O
 
 与删减无关但要修的,按严重度:
 
-1. **重试重复提交计费任务。** fal / luma / black_forest_labs / revai / gladia 的 submit + poll 在同一个 `do_generate` 里,Core 重试会重新提交。video 已修同一个 bug。§8.2 的 `submit_and_poll` 修根。
-2. **`DEFAULT_MAX_DOWNLOAD_SIZE = 2 GiB` 读进 `Vec`** 等于没有上限。定一个合理默认(如 64 MiB)并允许配置。
+1. **重试重复提交计费任务。** #164 已把 assemblyai / gladia 改成逐阶段重试,并核实 fal / luma / black_forest_labs / revai / replicate 等的计费后阶段已各自重试;但每个 provider 手写一套脚手架,§8.2 的 `submit_and_poll` 仍是收口。
+2. **`DEFAULT_MAX_DOWNLOAD_SIZE = 2 GiB` 读进 `Vec`**。#164 已给 JSON 成功体单独的 64 MiB 默认上限并允许按请求覆盖;二进制下载仍是 2 GiB。
 3. **responses 家族 `build_headers` 忽略 `config.headers`**;responses 请求构造器不应用 `body_overrides`(只有 chat 应用,`openai/convert.rs:1500`)。B6 前置。
 4. **`Provider::name()` 硬编码 `"openai"`**,responses 的 `provider_options` 键也硬编码;注册表 provider(openrouter 等)全部自报 `"openai"`,录制的 `ProviderRecord.provider` 因此不可信,`rebuild_provider` 只能靠 base_url 反推厂商。B1 修。
 5. **`openai/` 目录里有 14 个 `"groq"` 字面量**,协议实现里嵌了 provider 分支。B3 的 CI grep 防止再长。
@@ -305,6 +305,10 @@ RFC-0023 标为 IMPLEMENTED,但在四处停在 MVP 边界:mock 回放只解析 O
 14. **`quality-audit/round4/` 里 119k 行的 clippy 日志和 lcov** 是构建产物被提交进仓库。
 15. **Node 的 napi tokio 桥与 FFI 全局 runtime 的重入守卫是否冲突未量过**,D6 前先量。
 16. **`generate_object` 的 `fix_json` 路径**只有 `json_repair.rs` 一个消费者,与 AI SDK 的 `parse_partial_json` 流式路径没有接上(流式 object 不修复)。记为 RFC-0016 的能力缺口,不在本轮。
+17. **`generate_image` 不校验 `n`、不按 `max_images_per_call()` 分批**;`max_images_per_call` / `max_embeddings_per_call` 是必填 trait 方法但零读者。#164 只给 video 补了分批,image 应照搬同一段逻辑。
+18. **`VideoOperationStart.response` 七个 video provider 都写、无人读**。要么暴露到 `VideoResult`,要么删字段。
+19. **跨语言 fixture 只覆盖 `TimeoutConfiguration`**(`contract-tests/fixtures/wire-format.json`),所以 Kotlin / Go 的 `VideoCallOptions` 缺六个字段、Java `fps` 类型错、Node/Python 三个模态传 options 即报错,CI 都抓不到。D 轨道的类型镜像生成(§7)前,至少给每个 `*CallOptions` 加一条 fixture。
+20. **`HttpRequest` 二十余处字面量构造**,每加一个字段(如 #164 的 `max_json_response_bytes`)都要改所有调用点;已 `derive(Default)`,收成 `..Default::default()`。
 
 ## 11. 文档整理(不删)
 
