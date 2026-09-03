@@ -1096,11 +1096,12 @@ fn now_unix() -> u64 {
 /// byte-for-byte provider text, whether the failure was a JSON parse error or
 /// a schema mismatch on already-valid JSON. `NoSuchTool` carries no text of
 /// its own — it fires purely off the tool name, before Core looks at the
-/// arguments — but `parse_tool_call::invalid_tool_call` reflects that by
-/// leaving `input` as the unparsed `Value::String(raw)` rather than a
-/// best-effort parse, so it is recovered from there instead. `ToolCallRepair`
-/// wraps whichever of those the repair callback was invoked over; unwrap one
-/// level to reach it.
+/// arguments — so it falls back to `input`, which holds the best-effort parse
+/// of that text: a string there is either malformed text kept verbatim (emit
+/// it as-is) or a genuine JSON string (whose quotes are then lost). The two
+/// are indistinguishable without a raw-text field on the error, and the
+/// malformed case is the one that actually occurs. `ToolCallRepair` wraps
+/// whichever of those the repair callback was invoked over; unwrap to reach it.
 fn raw_tool_call_text(error: &AiMuxError, input: &Value) -> Option<String> {
     match error {
         AiMuxError::InvalidToolInput { tool_input, .. } => Some(tool_input.clone()),
@@ -1326,21 +1327,20 @@ mod tests {
     }
 
     #[test]
-    fn parsed_tool_call_arguments_no_such_tool_round_trips_raw_text_with_quotes() {
-        // NoSuchTool fires off the tool name alone, before Core ever looks at
-        // the arguments — `parse_tool_call::invalid_tool_call` reflects that
-        // by leaving `input` unparsed (`Value::String(raw)`), quotes
-        // included, instead of a best-effort parse that strips them.
+    fn parsed_tool_call_arguments_no_such_tool_round_trips_malformed_text_verbatim() {
+        // NoSuchTool carries no raw text of its own (it fires off the tool
+        // name alone), so the malformed text is recovered from `input`, where
+        // the best-effort parse left it wrapped verbatim.
         let error = AiMuxError::NoSuchTool {
             tool_name: "get_weather".to_string(),
             available_tools: Some(vec!["other_tool".to_string()]),
         };
         let arguments = parsed_tool_call_arguments(
-            &Value::String(r#""hello""#.to_string()),
+            &Value::String(r#"{"a":"#.to_string()),
             Some(true),
             Some(&error),
         );
-        assert_eq!(arguments, r#""hello""#);
+        assert_eq!(arguments, r#"{"a":"#);
     }
 
     #[test]
@@ -1436,10 +1436,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_stream_no_such_tool_round_trips_raw_text_with_quotes() {
-        // End-to-end: an unknown tool name never gets its arguments parsed at
-        // all (NoSuchTool fires off the name alone) — the raw text, quotes
-        // included, must still survive to the OpenAI-compat arguments field.
+    async fn test_stream_no_such_tool_round_trips_malformed_text_verbatim() {
+        // End-to-end: an unknown tool name whose arguments are also malformed
+        // must still reach the OpenAI-compat arguments field verbatim, not
+        // double-encoded.
         let known_tool = crate::tool::Tool::Function(crate::tool::FunctionTool::new(
             "other_tool",
             json!({"type": "object"}),
@@ -1448,7 +1448,7 @@ mod tests {
             crate::parse_tool_call::RawToolCall {
                 tool_call_id: "call_1".to_string(),
                 tool_name: "get_weather".to_string(),
-                input: r#""hello""#.to_string(),
+                input: r#"{"a":"#.to_string(),
                 provider_executed: None,
                 dynamic: None,
                 thought_signature: None,
@@ -1501,7 +1501,7 @@ mod tests {
                     .and_then(|tc| tc.function.arguments.clone())
             })
             .expect("tool call arguments chunk not found");
-        assert_eq!(arguments, r#""hello""#);
+        assert_eq!(arguments, r#"{"a":"#);
     }
 
     #[tokio::test]
