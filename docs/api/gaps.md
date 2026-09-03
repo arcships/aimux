@@ -179,6 +179,46 @@ FFI 调用仅 8 个符号。[Types.swift](../../bindings/swift/Sources/Aimux/Typ
 
 ---
 
+## 9. Wire-shape migration: `GenerateContent::ToolCall.input`
+
+The tool-input-parse-repair refactor (PR #165 and predecessors) moved JSON
+parsing, schema validation, and repair from providers into Core
+(`generate_text` / `stream_text`). Providers now hand Core the model's raw
+argument text unparsed; `GenerateContent::ToolCall.input` — part of
+`GenerateResult.content`, i.e. what `result.raw.content` carries for a
+non-streaming call — changed type accordingly:
+
+| | Before | After |
+|---|---|---|
+| Rust type | `serde_json::Value` | `String` |
+| What it held | The provider's raw text, but *always* wrapped in `Value::String(text)` — providers never put a structured value there either, by convention (not by the type system) | The same raw text, now typed as the wire carrier directly |
+| Wire JSON | `"input": "<raw text>"` (a JSON string, because `Value::String` and `String` serialize identically) | `"input": "<raw text>"` (unchanged) |
+
+**For a `GenerateContent::ToolCall` produced by *this* version of aimux, the
+wire format did not change** — `Value::String(text)` and `String` serialize to
+the identical JSON string, so nothing downstream (recordings, replay
+fixtures, cross-binding contract tests) written by this version or later
+needs to move.
+
+**What did change**: before this refactor line existed, `input` briefly held
+the *already-parsed* argument value (an object/array/etc., not a raw-text
+string) on `main`, because parsing happened provider-side. A `GenerateResult`
+recorded or persisted from that window carries an object-shaped `input`,
+which the current `String`-typed field cannot deserialize as-is — deserializing
+such a record with a plain `#[derive(Deserialize)]` `String` field fails
+closed instead of loading.
+
+**Compatibility**: `GenerateContent::ToolCall.input` uses a custom
+`deserialize_with` (`aimux-core/src/result.rs`) that accepts either shape —
+a JSON string loads unchanged; any other JSON value (object, array, number,
+bool, null) is re-serialized to its compact JSON text. Serialization always
+emits a plain JSON string; there is no code path that writes the legacy
+object shape going forward. Old recordings/replay fixtures and any
+externally-persisted `GenerateResult` JSON keep loading without a migration
+step.
+
+---
+
 ## 建议实施顺序
 
 1. **C ABI + Go + Node/Python 小缺口**(半天):不涉及新架构,纯追加
