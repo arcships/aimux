@@ -1017,23 +1017,18 @@ pub async fn stream_text(
     // first-chunk budget armed at operation start continues until the first
     // output chunk.
     let operation_deadline = operation_timeout.deadline();
-    // The provider stream is driven by a pump task, not by the consumer's
-    // polls: first-chunk and chunk-idle deadlines measure when provider
-    // output *arrives*, so a caller that polls late still receives output the
-    // provider delivered on time. Pull-based streams cannot express this
-    // without a driver — a deadline observed only inside `poll_next` keeps
-    // elapsing while nobody polls. The channel is unbounded on purpose: the
-    // AI SDK's `streamText` also consumes eagerly, and a bounded channel
-    // would make the pump block on the consumer, reintroducing consumer
-    // latency into the provider timers. Buffering is bounded by the response
-    // itself; the pump stops at the terminal item and is aborted when the
-    // returned stream is dropped.
+    // A pump task drives the provider stream, so the deadlines below measure
+    // when provider output *arrives*: a deadline observed only inside
+    // `poll_next` keeps elapsing while nobody polls, charging the provider
+    // for the consumer's latency. The channel is unbounded so the pump never
+    // blocks on the consumer (which would put that latency back into the
+    // timers); the AI SDK's `streamText` consumes eagerly for the same
+    // reason, and buffering is bounded by the response itself.
     //
-    // Always wrapped, even with no abort signal or deadlines armed: the pump
-    // is also the stream's terminal fuse — `Finish` and non-recoverable
-    // errors must end the stream under every configuration, or a provider
-    // that keeps the connection open after `Finish` hangs a consumer
-    // reading to end-of-stream.
+    // Spawned even with no abort signal or deadlines armed: the pump is also
+    // the stream's terminal fuse — `Finish` and non-recoverable errors must
+    // end the stream under every configuration, or a provider that keeps the
+    // connection open after `Finish` hangs a consumer reading to end-of-stream.
     let stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>> = {
         let mut stream = stream;
         let chunk_ms = stream_timeout.chunk_ms;

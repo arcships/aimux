@@ -133,7 +133,10 @@ where
                 ..aimux_core::ApiCallError::new(message, url, request_body_values)
             })));
         }
-        let value = serde_json::from_value(raw.clone()).map_err(|error| {
+        // Borrow `raw` instead of `from_value(raw.clone())`: the whole body is
+        // already a `Value` here and is handed back as `raw_value`, so the
+        // clone was a second full tree resident at peak.
+        let value = serde::Deserialize::deserialize(&raw).map_err(|error: serde_json::Error| {
             AiMuxError::ApiCall(Box::new(aimux_core::ApiCallError {
                 status_code: Some(status),
                 response_body: Some(raw.to_string()),
