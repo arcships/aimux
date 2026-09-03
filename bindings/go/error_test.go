@@ -468,7 +468,8 @@ func TestEmbedRejectsRawPassThroughOpts(t *testing.T) {
 }
 
 func TestCodeFromCRejectsOutOfRange(t *testing.T) {
-	for _, bad := range []int{0, 14, 15, 999} {
+	// 4 is the retired Tool slot; 14 is reserved.
+	for _, bad := range []int{0, 4, 14, 18, 999} {
 		if _, ok := codeFromC(bad); ok {
 			t.Fatalf("%d is not an AiMuxError variant", bad)
 		}
@@ -479,5 +480,8 @@ func TestCodeFromCRejectsOutOfRange(t *testing.T) {
 	}
 	if c, ok := codeFromC(11); !ok || c != CodeAPICall {
 		t.Fatalf("11 → %v, %v", c, ok)
+	}
+	if c, ok := codeFromC(17); !ok || c != CodeToolCallRepair {
+		t.Fatalf("17 → %v, %v", c, ok)
 	}
 }

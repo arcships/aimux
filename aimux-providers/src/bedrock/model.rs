@@ -438,11 +438,13 @@ impl LanguageModel for BedrockModel {
 
                         if let Some((id, name, acc)) = tool_blocks.remove(&idx) {
                             yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
-                            let input: serde_json::Value = if acc.is_empty() {
-                                serde_json::json!({})
+                            // Empty input normalizes to "{}" per the upstream
+                            // provider.
+                            let input = serde_json::Value::String(if acc.is_empty() {
+                                "{}".to_string()
                             } else {
-                                serde_json::from_str(&acc).unwrap_or(serde_json::json!({}))
-                            };
+                                acc
+                            });
                             yield Ok(StreamPart::ToolCall {
                                 tool_call_id: id,
                                 tool_name: name,
@@ -450,6 +452,8 @@ impl LanguageModel for BedrockModel {
                                 provider_executed: None,
                                 dynamic: None,
                                 thought_signature: None,
+                                invalid: None,
+                                error: None,
                                 provider_metadata: None,
                             });
                         } else if reasoning_id.is_some() {
@@ -608,7 +612,7 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
         content.push(GenerateContent::ToolCall {
             tool_call_id: tool_use.tool_use_id.clone(),
             tool_name: tool_use.name.clone(),
-            input: tool_use.input.clone(),
+            input: tool_use.input.to_string(),
             provider_executed: None,
             dynamic: None,
             thought_signature: None,

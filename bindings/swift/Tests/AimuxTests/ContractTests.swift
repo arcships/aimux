@@ -64,6 +64,76 @@ final class ContractTests: XCTestCase {
         XCTAssertEqual(decoded, again, "fixture '\(fixture.name)' does not survive a Swift encode/decode round-trip")
     }
 
+    func testTopLevelToolCallProviderMetadataRoundTrips() throws {
+        let json = #"{"tool_call_id":"call_1","tool_name":"get_weather","input":{"city":"Paris"},"provider_metadata":{"openai":{"itemId":"item_1"}}}"#
+        let call = try JSONDecoder().decode(ToolCall.self, from: Data(json.utf8))
+        XCTAssertEqual(call.providerMetadata?["openai"]?["itemId"]?.stringValue, "item_1")
+
+        let encoded = try JSONEncoder().encode(call)
+        let decoded = try JSONDecoder().decode(ToolCall.self, from: encoded)
+        XCTAssertEqual(decoded, call)
+    }
+
+    func testProviderExecutedToolTranscriptMessageRoundTrips() throws {
+        let fixtures = try loadFixtures()
+        guard let fixture = fixtures.first(where: {
+            $0.name == "model_message_provider_executed_tool_transcript"
+        }) else {
+            return XCTFail("provider-executed transcript fixture is missing")
+        }
+        let message = try JSONDecoder().decode(
+            ModelMessage.self,
+            from: Data(fixture.json.utf8)
+        )
+        guard case .parts(let parts) = message.content else {
+            return XCTFail("expected multipart assistant message")
+        }
+        guard case .toolCall(_, let name, _, let providerExecuted,
+                             let thoughtSignature, _) = parts[0] else {
+            return XCTFail("expected tool call")
+        }
+        XCTAssertEqual(name, "search")
+        XCTAssertEqual(providerExecuted, true)
+        XCTAssertEqual(thoughtSignature, "sig_provider")
+        guard case .toolResult(_, _, let resultName, let isError,
+                               let preliminary, let dynamic, _) = parts[1] else {
+            return XCTFail("expected tool result")
+        }
+        XCTAssertEqual(resultName, "search")
+        XCTAssertEqual(isError, false)
+        XCTAssertEqual(preliminary, true)
+        XCTAssertEqual(dynamic, true)
+
+        let reencoded = try JSONEncoder().encode(message)
+        XCTAssertEqual(try JSONDecoder().decode(ModelMessage.self, from: reencoded), message)
+    }
+
+    func testResultToolCallThoughtSignaturesRoundTrip() throws {
+        let fixtures = try loadFixtures()
+        guard let fixture = fixtures.first(where: { $0.name == "generate_content_tool_call" }) else {
+            return XCTFail("generate-content tool-call fixture is missing")
+        }
+        let content = try JSONDecoder().decode(
+            GenerateContent.self,
+            from: Data(fixture.json.utf8)
+        )
+        guard case .toolCall(_, _, _, _, _, let generateSignature, _) = content else {
+            return XCTFail("expected generate-content tool call")
+        }
+        XCTAssertEqual(generateSignature, "sig_abc")
+        let contentData = try JSONEncoder().encode(content)
+        XCTAssertEqual(try JSONDecoder().decode(GenerateContent.self, from: contentData), content)
+
+        let streamJSON = #"{"ToolCall":{"tool_call_id":"stream_1","tool_name":"search","input":{"query":"Rust"},"thought_signature":"sig_stream"}}"#
+        let part = try JSONDecoder().decode(StreamPart.self, from: Data(streamJSON.utf8))
+        guard case .toolCall(_, _, _, _, _, let streamSignature, _, _, _) = part else {
+            return XCTFail("expected stream tool call")
+        }
+        XCTAssertEqual(streamSignature, "sig_stream")
+        let partData = try JSONEncoder().encode(part)
+        XCTAssertEqual(try JSONDecoder().decode(StreamPart.self, from: partData), part)
+    }
+
     // MARK: - every fixture decodes
 
     /// A fixture type with no case here fails rather than being skipped:

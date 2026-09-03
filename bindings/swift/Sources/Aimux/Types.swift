@@ -435,13 +435,16 @@ public enum ContentPart: Codable, Equatable {
     case fileUrl(url: String, mediaType: String, providerOptions: JSONValue?)
     case fileReference(mediaType: String, reference: JSONValue, filename: String?, providerOptions: JSONValue?)
     case reasoning(text: String, signature: String?, providerOptions: JSONValue?)
-    case toolCall(toolCallId: String, toolName: String, input: JSONValue, providerOptions: JSONValue?)
+    case toolCall(toolCallId: String, toolName: String, input: JSONValue,
+                  providerExecuted: Bool? = nil, thoughtSignature: String? = nil,
+                  providerOptions: JSONValue?)
     case toolResult(toolCallId: String, result: JSONValue, toolName: String?,
                      isError: Bool?, preliminary: Bool?, dynamic: Bool?, providerOptions: JSONValue?)
 
     private enum Field: String, CodingKey {
         case text, image, data, mediaType = "media_type", filename, url, reference
         case signature, toolCallId = "tool_call_id", toolName = "tool_name", input, result
+        case providerExecuted = "provider_executed", thoughtSignature = "thought_signature"
         case isError = "is_error", preliminary, dynamic
         case providerOptions = "provider_options"
     }
@@ -485,6 +488,8 @@ public enum ContentPart: Codable, Equatable {
             self = .toolCall(toolCallId: try c.decode(String.self, forKey: AnyCodingKey("tool_call_id")),
                              toolName: try c.decode(String.self, forKey: AnyCodingKey("tool_name")),
                              input: try c.decode(JSONValue.self, forKey: AnyCodingKey("input")),
+                             providerExecuted: try c.decodeIfPresent(Bool.self, forKey: AnyCodingKey("provider_executed")),
+                             thoughtSignature: try c.decodeIfPresent(String.self, forKey: AnyCodingKey("thought_signature")),
                              providerOptions: try po())
         case "tool_result":
             self = .toolResult(toolCallId: try c.decode(String.self, forKey: AnyCodingKey("tool_call_id")),
@@ -539,11 +544,13 @@ public enum ContentPart: Codable, Equatable {
             try c.encode(text, forKey: AnyCodingKey("text"))
             try c.encodeIfPresent(signature, forKey: AnyCodingKey("signature"))
             try c.encodeIfPresent(po, forKey: AnyCodingKey("provider_options"))
-        case .toolCall(let toolCallId, let toolName, let input, let po):
+        case .toolCall(let toolCallId, let toolName, let input, let providerExecuted, let thoughtSignature, let po):
             try c.encode("tool_call", forKey: AnyCodingKey("type"))
             try c.encode(toolCallId, forKey: AnyCodingKey("tool_call_id"))
             try c.encode(toolName, forKey: AnyCodingKey("tool_name"))
             try c.encode(input, forKey: AnyCodingKey("input"))
+            try c.encodeIfPresent(providerExecuted, forKey: AnyCodingKey("provider_executed"))
+            try c.encodeIfPresent(thoughtSignature, forKey: AnyCodingKey("thought_signature"))
             try c.encodeIfPresent(po, forKey: AnyCodingKey("provider_options"))
         case .toolResult(let toolCallId, let result, let toolName, let isError, let preliminary, let dynamic, let po):
             try c.encode("tool_result", forKey: AnyCodingKey("type"))
@@ -629,6 +636,12 @@ public struct ToolCall: Codable, Equatable {
     /// Provider-assigned thought signature (e.g. Google Gemini
     /// `thoughtSignature`); must be echoed back verbatim on follow-up turns.
     public var thoughtSignature: String?
+    /// Additional provider-specific metadata associated with this call.
+    public var providerMetadata: JSONValue?
+    /// Set by Core when the tool call stays invalid after optional repair.
+    public var invalid: Bool?
+    /// The typed lookup, parse, schema, or repair failure for an invalid call.
+    public var error: JSONValue?
 
     enum CodingKeys: String, CodingKey {
         case toolCallId = "tool_call_id"
@@ -637,14 +650,21 @@ public struct ToolCall: Codable, Equatable {
         case providerExecuted = "provider_executed"
         case dynamic
         case thoughtSignature = "thought_signature"
+        case providerMetadata = "provider_metadata"
+        case invalid
+        case error
     }
 
     public init(toolCallId: String, toolName: String, input: JSONValue,
                 providerExecuted: Bool? = nil, dynamic: Bool? = nil,
-                thoughtSignature: String? = nil) {
+                thoughtSignature: String? = nil, providerMetadata: JSONValue? = nil,
+                invalid: Bool? = nil,
+                error: JSONValue? = nil) {
         self.toolCallId = toolCallId; self.toolName = toolName; self.input = input
         self.providerExecuted = providerExecuted; self.dynamic = dynamic
         self.thoughtSignature = thoughtSignature
+        self.providerMetadata = providerMetadata
+        self.invalid = invalid; self.error = error
     }
 }
 
@@ -743,7 +763,8 @@ public enum FileData: Codable, Equatable {
 public enum GenerateContent: Codable, Equatable {
     case text(text: String, providerMetadata: JSONValue?)
     case toolCall(toolCallId: String, toolName: String, input: JSONValue,
-                  providerExecuted: Bool?, dynamic: Bool?, providerMetadata: JSONValue?)
+                  providerExecuted: Bool?, dynamic: Bool?, thoughtSignature: String? = nil,
+                  providerMetadata: JSONValue?)
     case source(id: String, sourceType: String, url: String?, title: String?,
                 providerMetadata: JSONValue?)
     case reasoning(text: String, providerMetadata: JSONValue?)
@@ -754,7 +775,8 @@ public enum GenerateContent: Codable, Equatable {
     private enum Field: String, CodingKey {
         case text
         case toolCallId = "tool_call_id", toolName = "tool_name", input, result
-        case providerExecuted = "provider_executed", dynamic, providerMetadata = "provider_metadata"
+        case providerExecuted = "provider_executed", dynamic
+        case thoughtSignature = "thought_signature", providerMetadata = "provider_metadata"
         case id, sourceType = "source_type", url, title
         case isError = "is_error", preliminary
         case data, mediaType = "media_type"
@@ -776,6 +798,7 @@ public enum GenerateContent: Codable, Equatable {
                              input: try n.decode(JSONValue.self, forKey: .input),
                              providerExecuted: try n.decodeIfPresent(Bool.self, forKey: .providerExecuted),
                              dynamic: try n.decodeIfPresent(Bool.self, forKey: .dynamic),
+                             thoughtSignature: try n.decodeIfPresent(String.self, forKey: .thoughtSignature),
                              providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata))
         case "Source":
             self = .source(id: try n.decode(String.self, forKey: .id),
@@ -810,13 +833,14 @@ public enum GenerateContent: Codable, Equatable {
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("Text"))
             try n.encode(text, forKey: .text)
             try n.encodeIfPresent(pm, forKey: .providerMetadata)
-        case .toolCall(let toolCallId, let toolName, let input, let pe, let dyn, let pm):
+        case .toolCall(let toolCallId, let toolName, let input, let pe, let dyn, let signature, let pm):
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("ToolCall"))
             try n.encode(toolCallId, forKey: .toolCallId)
             try n.encode(toolName, forKey: .toolName)
             try n.encode(input, forKey: .input)
             try n.encodeIfPresent(pe, forKey: .providerExecuted)
             try n.encodeIfPresent(dyn, forKey: .dynamic)
+            try n.encodeIfPresent(signature, forKey: .thoughtSignature)
             try n.encodeIfPresent(pm, forKey: .providerMetadata)
         case .source(let id, let sourceType, let url, let title, let pm):
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("Source"))
@@ -1183,7 +1207,9 @@ public enum StreamPart: Codable, Equatable {
     case toolInputDelta(id: String, delta: String, providerMetadata: JSONValue?)
     case toolInputEnd(id: String, providerMetadata: JSONValue?)
     case toolCall(toolCallId: String, toolName: String, input: JSONValue,
-                  providerExecuted: Bool?, dynamic: Bool?, providerMetadata: JSONValue?)
+                  providerExecuted: Bool?, dynamic: Bool?, thoughtSignature: String? = nil,
+                  providerMetadata: JSONValue?,
+                  invalid: Bool?, error: JSONValue?)
     case toolResult(toolCallId: String, toolName: String, result: JSONValue,
                     isError: Bool?, preliminary: Bool?, dynamic: Bool?, providerMetadata: JSONValue?)
     // P2: file
@@ -1203,7 +1229,7 @@ public enum StreamPart: Codable, Equatable {
         case finishReason = "finish_reason", providerMetadata = "provider_metadata"
         case error
         case toolName = "tool_name", toolCallId = "tool_call_id", input, result
-        case providerExecuted = "provider_executed", dynamic
+        case providerExecuted = "provider_executed", dynamic, thoughtSignature = "thought_signature", invalid
         case isError = "is_error", preliminary
         case timestamp, modelId = "model_id"
         case sourceType = "source_type", url, title
@@ -1258,7 +1284,10 @@ public enum StreamPart: Codable, Equatable {
                              input: try n.decode(JSONValue.self, forKey: .input),
                              providerExecuted: try n.decodeIfPresent(Bool.self, forKey: .providerExecuted),
                              dynamic: try n.decodeIfPresent(Bool.self, forKey: .dynamic),
-                             providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata))
+                             thoughtSignature: try n.decodeIfPresent(String.self, forKey: .thoughtSignature),
+                             providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata),
+                             invalid: try n.decodeIfPresent(Bool.self, forKey: .invalid),
+                             error: try n.decodeIfPresent(JSONValue.self, forKey: .error))
         case "ToolResult":
             self = .toolResult(toolCallId: try n.decode(String.self, forKey: .toolCallId),
                                toolName: try n.decode(String.self, forKey: .toolName),
@@ -1333,12 +1362,14 @@ public enum StreamPart: Codable, Equatable {
         case .toolInputEnd(let id, let pm):
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("ToolInputEnd"))
             try n.encode(id, forKey: .id); try n.encodeIfPresent(pm, forKey: .providerMetadata)
-        case .toolCall(let toolCallId, let toolName, let input, let pe, let dyn, let pm):
+        case .toolCall(let toolCallId, let toolName, let input, let pe, let dyn, let signature, let pm, let inv, let err):
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("ToolCall"))
             try n.encode(toolCallId, forKey: .toolCallId); try n.encode(toolName, forKey: .toolName)
             try n.encode(input, forKey: .input)
             try n.encodeIfPresent(pe, forKey: .providerExecuted); try n.encodeIfPresent(dyn, forKey: .dynamic)
+            try n.encodeIfPresent(signature, forKey: .thoughtSignature)
             try n.encodeIfPresent(pm, forKey: .providerMetadata)
+            try n.encodeIfPresent(inv, forKey: .invalid); try n.encodeIfPresent(err, forKey: .error)
         case .toolResult(let toolCallId, let toolName, let result, let ie, let prel, let dyn, let pm):
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("ToolResult"))
             try n.encode(toolCallId, forKey: .toolCallId); try n.encode(toolName, forKey: .toolName)

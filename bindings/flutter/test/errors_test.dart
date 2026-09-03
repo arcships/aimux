@@ -63,7 +63,6 @@ void main() {
       final cases = <int, Type>{
         AimuxErrorCode.jsonParse: JSONParseError,
         AimuxErrorCode.invalidResponseData: InvalidResponseDataError,
-        AimuxErrorCode.tool: ToolError,
         AimuxErrorCode.invalidArgument: InvalidArgumentError,
         AimuxErrorCode.invalidPrompt: InvalidPromptError,
         AimuxErrorCode.tokenExpired: TokenExpiredError,
@@ -73,6 +72,9 @@ void main() {
         AimuxErrorCode.apiCall: APICallError,
         AimuxErrorCode.timeout: AimuxTimeoutError,
         AimuxErrorCode.aborted: RequestAbortedError,
+        AimuxErrorCode.noSuchTool: NoSuchToolError,
+        AimuxErrorCode.invalidToolInput: InvalidToolInputError,
+        AimuxErrorCode.toolCallRepair: ToolCallRepairError,
         AimuxErrorCode.other: OtherError,
       };
       for (final entry in cases.entries) {
@@ -85,9 +87,11 @@ void main() {
     test('unknown code is rejected with StateError', () {
       // A code outside the published table is an ABI mismatch, not an error
       // kind. 1 is AIMUX_E_OTHER now because Other inherited the old UNKNOWN
-      // slot, so it resolves; 14 is the gap left behind.
+      // slot, so it resolves; 4 is the retired legacy Tool catch-all and 14
+      // is reserved by the request-pipeline change.
       expect(() => AimuxException.fromCode(999, 'future'), throwsStateError);
-      expect(() => AimuxException.fromCode(14, 'unused'), throwsStateError);
+      expect(() => AimuxException.fromCode(4, 'retired'), throwsStateError);
+      expect(() => AimuxException.fromCode(14, 'reserved'), throwsStateError);
     });
   });
 
@@ -110,10 +114,18 @@ void main() {
       expect(AimuxErrorCode.noSuchProvider, 10);
       expect(AimuxErrorCode.name(AimuxErrorCode.noSuchProvider),
           'NoSuchProvider');
-      // The AIMUX_E_UNKNOWN catch-all is gone and Other took its slot, so the
-      // engine codes are contiguous 1–13.
+      // The AIMUX_E_UNKNOWN catch-all is gone and Other took its slot; the
+      // engine codes are 1–13 (4 retired) plus 15–17 (14 reserved).
       expect(AimuxErrorCode.other, 1);
       expect(AimuxErrorCode.aborted, 13);
+      expect(AimuxErrorCode.noSuchTool, 15);
+      expect(AimuxErrorCode.name(AimuxErrorCode.noSuchTool), 'NoSuchTool');
+      expect(AimuxErrorCode.invalidToolInput, 16);
+      expect(AimuxErrorCode.name(AimuxErrorCode.invalidToolInput),
+          'InvalidToolInput');
+      expect(AimuxErrorCode.toolCallRepair, 17);
+      expect(AimuxErrorCode.name(AimuxErrorCode.toolCallRepair),
+          'ToolCallRepair');
     });
   });
 

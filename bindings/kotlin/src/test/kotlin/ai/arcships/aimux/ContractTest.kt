@@ -83,6 +83,29 @@ class ContractTest {
         assertThat(reencoded).contains("\"session_id\":\"sess-1\"")
     }
 
+    @Test
+    fun `provider executed tool transcript message round-trips`() {
+        val json = fixtureJson(
+            loadFixtures(),
+            "model_message_provider_executed_tool_transcript",
+        )
+        val message = AimuxJson.decodeFromString<ModelMessage>(json)
+        assertThat(message.role).isEqualTo(Role.ASSISTANT)
+        val parts = message.contentParts!!
+        assertThat(parts).hasSize(2)
+        val call = parts[0] as ContentPart.ToolCall
+        assertThat(call.providerExecuted).isTrue()
+        val result = parts[1] as ContentPart.ToolResult
+        assertThat(result.toolName).isEqualTo("search")
+        assertThat(result.isError).isFalse()
+        assertThat(result.preliminary).isTrue()
+        assertThat(result.dynamic).isTrue()
+
+        val reencoded = AimuxJson.encodeToString(ModelMessage.serializer(), message)
+        assertThat(AimuxJson.parseToJsonElement(reencoded))
+            .isEqualTo(AimuxJson.parseToJsonElement(json))
+    }
+
     /// Every `GenerateContent` fixture decodes into its concrete variant.
     ///
     /// The variant type is asserted, not merely the absence of an exception:
@@ -112,7 +135,7 @@ class ContractTest {
         // the nested file union, and Source's optionals.
         val toolCall = byName["generate_content_tool_call"] as GenerateContent.ToolCall
         assertThat(toolCall.toolCallId).isEqualTo("call_1")
-        assertThat(toolCall.input.jsonObject["city"]?.jsonPrimitive?.content).isEqualTo("Paris")
+        assertThat(toolCall.input.jsonPrimitive.content).isEqualTo("{\"city\":\"Paris\"}")
         assertThat(toolCall.providerExecuted).isTrue()
 
         val file = byName["generate_content_file"] as GenerateContent.File

@@ -116,6 +116,7 @@ func TestToolCallRoundTrip(t *testing.T) {
 		Input:            json.RawMessage(`{"location":"Tokyo"}`),
 		ProviderExecuted: &pe,
 		Dynamic:          &dyn,
+		ProviderMetadata: json.RawMessage(`{"openai":{"itemId":"item_1"}}`),
 	}
 	b, err := json.Marshal(original)
 	if err != nil {
@@ -123,7 +124,7 @@ func TestToolCallRoundTrip(t *testing.T) {
 	}
 	// Verify wire field names match Kotlin (snake_case).
 	s := string(b)
-	for _, want := range []string{`"tool_call_id"`, `"tool_name"`, `"input"`, `"provider_executed"`, `"dynamic"`} {
+	for _, want := range []string{`"tool_call_id"`, `"tool_name"`, `"input"`, `"provider_executed"`, `"dynamic"`, `"provider_metadata"`} {
 		if !contains(s, want) {
 			t.Errorf("expected %s in wire JSON, got %s", want, s)
 		}
@@ -143,6 +144,9 @@ func TestToolCallRoundTrip(t *testing.T) {
 	}
 	if decoded.Dynamic == nil || *decoded.Dynamic != false {
 		t.Error("dynamic did not round-trip")
+	}
+	if string(decoded.ProviderMetadata) != string(original.ProviderMetadata) {
+		t.Errorf("provider_metadata mismatch: got %s, want %s", decoded.ProviderMetadata, original.ProviderMetadata)
 	}
 }
 

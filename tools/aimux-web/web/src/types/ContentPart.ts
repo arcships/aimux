@@ -22,6 +22,12 @@ provider_options?: JsonValue | null, } | { "type": "tool_call", tool_call_id: st
  */
 input: JsonValue, 
 /**
+ * Whether the tool call is executed by the provider rather than by
+ * the client. This is part of the prompt contract because providers
+ * need it to replay server tool calls on a later turn.
+ */
+provider_executed?: boolean | null,
+/**
  * Provider-assigned thought signature (e.g. Google Gemini
  * `thoughtSignature`). Must be echoed back verbatim on the follow-up
  * turn when the tool result is sent.

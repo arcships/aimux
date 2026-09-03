@@ -59,10 +59,16 @@ if err != nil {
 | `ProviderCode`, `ProviderMessage`, `RequestID`, `ResponseBody` | `CodeAPICall` payload; empty under any other code |
 | `ModelID`, `ModelType` | `CodeNoSuchModel` payload; empty under any other code |
 | `ProviderID` | `CodeNoSuchProvider` payload; empty under any other code |
+| `ToolName` | `CodeNoSuchTool` / `CodeInvalidToolInput` payload: the tool name called |
+| `AvailableTools` | `CodeNoSuchTool` payload: `[]string` of the tools the call offered; `nil` when not reported |
+| `ToolInput` | `CodeInvalidToolInput` payload: the raw argument text the model produced |
+| `OriginalError` | `CodeToolCallRepair` payload: the pre-repair failure as `json.RawMessage` wire JSON (same encoding as `ToolCall.Error`) |
 
-`Code` values 1..13 mirror aimux-core's `AiMuxError` variants. A code outside
-the enum is a header/library mismatch and fails with a `panic`, not an error
-type.
+`Code` values 1..13 and 15..17 mirror aimux-core's `AiMuxError` variants; 4 is
+retired (the legacy `Tool` variant) and 14 is reserved. The tool-call variants
+arrive as `CodeNoSuchTool` (15), `CodeInvalidToolInput` (16), and
+`CodeToolCallRepair` (17). A code outside the enum is a header/library
+mismatch and fails with a `panic`, not an error type.
 
 Recording failures are a separate type, as in Rust (`recording::RecordingError`
 is unrelated to `AiMuxError`): `RecordingTryFlush() error` returns
@@ -94,7 +100,8 @@ no Go type of their own; the binding maps them to native Go errors:
 
 Decoder: every fallible C call returns an opaque `aimux_error_t *` (NULL =
 success, result in the out-parameter). One `aimux_error_code()` distinguishes
-`AiMuxError` (1–13), `RecordingError` (100–105), and C ABI failures (200–206).
+`AiMuxError` (1–13, 15–17), `RecordingError` (100–105), and C ABI failures
+(200–206).
 `expectAimuxError`, `expectRecordingError`, and `expectFfiError` enforce the
 range expected by each call; the first two restore `*Error` and
 `*RecordingError`, while 200–206 becomes a plain `error`. Every path frees the
@@ -111,7 +118,7 @@ design** — that one is opt-in, and every one of its five entry points has a
 |------------|--------------------------|
 | `aimux.go` `mustNew` — behind `OpenAI` / `OpenAIWithBase` / `Anthropic` / `AnthropicWithBase` / `DeepSeek` | **Yes, by design.** `regexp.MustCompile` convention: an `apiKey` / `modelID` / `baseURL` that is not valid UTF-8 or contains a NUL panics, as does any AiMuxError failure. Use `NewOpenAI` / `NewOpenAIWithBase` / `NewAnthropic` / `NewAnthropicWithBase` / `NewDeepSeek` for anything caller-supplied |
 | `aimux.go` `InitLogging` — `expectFfiError` returned an error | No. `level` is coerced first: empty, non-UTF-8, or NUL-bearing falls back to `"warn"`, which is what aimux-core does with an unparseable level anyway (`AIMUX_LOG` / `AIMUX_LOG_LEVEL` outrank it regardless). That leaves no documented failure for `aimux_init_logging`, so a non-nil error here is a header/library mismatch |
-| `aimux.go` `expectAimuxError` — `aimux_error_code_t` outside 1..13 | No. Header/library version mismatch |
+| `aimux.go` `expectAimuxError` — `aimux_error_code_t` outside 1..13, 15..17 | No. Header/library version mismatch |
 | `aimux.go` `expectRecordingError` — `aimux_error_code_t` outside the enum | No. Header/library version mismatch |
 | `multimodal.go` `TranscriptionSession.NextPart` — unknown `aimux_transcription_next_part` state | No. Header/library version mismatch |
 
@@ -505,3 +512,7 @@ Typed structs live in `bindings/go/types.go` (text) and
 The multimodal methods return JSON strings through the C ABI; the
 `ParseXxxResult` functions decode them into the typed structs. All call-option
 pointer fields (`*string`, `*bool`, `*int`) are optional — pass `nil` to omit.
+
+`ToolCall` carries `ProviderMetadata` plus `Invalid` (set by Core when tool
+lookup, input parse, or schema validation fails, even after repair) and `Error`
+(the serialized `AiMuxError` for that failure).

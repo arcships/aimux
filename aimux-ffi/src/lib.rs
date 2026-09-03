@@ -414,7 +414,9 @@ pub const AIMUX_OK: i32 = 0;
 pub const AIMUX_E_OTHER: i32 = 1;
 pub const AIMUX_E_JSON_PARSE: i32 = 2;
 pub const AIMUX_E_INVALID_RESPONSE_DATA: i32 = 3;
-pub const AIMUX_E_TOOL: i32 = 4;
+// 4 is retired: it was the legacy catch-all `Tool` variant, which nothing
+// ever produced; the typed tool-contract codes are 15..17. 14 is claimed by
+// the in-flight request-pipeline change (`Retry`).
 pub const AIMUX_E_INVALID_ARGUMENT: i32 = 5;
 pub const AIMUX_E_INVALID_PROMPT: i32 = 6;
 pub const AIMUX_E_TOKEN_EXPIRED: i32 = 7;
@@ -424,6 +426,9 @@ pub const AIMUX_E_NO_SUCH_PROVIDER: i32 = 10;
 pub const AIMUX_E_API_CALL: i32 = 11;
 pub const AIMUX_E_TIMEOUT: i32 = 12;
 pub const AIMUX_E_ABORTED: i32 = 13;
+pub const AIMUX_E_NO_SUCH_TOOL: i32 = 15;
+pub const AIMUX_E_INVALID_TOOL_INPUT: i32 = 16;
+pub const AIMUX_E_TOOL_CALL_REPAIR: i32 = 17;
 
 // 100..105 preserve `RecordingError` as a separate high-level type while C
 // uses one code space for every returned error.
@@ -454,7 +459,9 @@ fn aimux_error_code_of(err: &AiMuxError) -> i32 {
         AiMuxError::ApiCall { .. } => AIMUX_E_API_CALL,
         AiMuxError::JsonParse(_) => AIMUX_E_JSON_PARSE,
         AiMuxError::InvalidResponseData(_) => AIMUX_E_INVALID_RESPONSE_DATA,
-        AiMuxError::Tool(_) => AIMUX_E_TOOL,
+        AiMuxError::NoSuchTool { .. } => AIMUX_E_NO_SUCH_TOOL,
+        AiMuxError::InvalidToolInput { .. } => AIMUX_E_INVALID_TOOL_INPUT,
+        AiMuxError::ToolCallRepair { .. } => AIMUX_E_TOOL_CALL_REPAIR,
         AiMuxError::InvalidArgument(_) => AIMUX_E_INVALID_ARGUMENT,
         AiMuxError::InvalidPrompt(_) => AIMUX_E_INVALID_PROMPT,
         AiMuxError::TokenExpired(_) => AIMUX_E_TOKEN_EXPIRED,
@@ -630,6 +637,63 @@ pub extern "C" fn aimux_error_provider_id(err: *const aimux_error_t) -> *mut c_c
     opt_cstring(
         map_aimux_error(err, |e| match e {
             AiMuxError::NoSuchProvider { provider_id } => Some(provider_id.clone()),
+            _ => None,
+        })
+        .flatten(),
+    )
+}
+
+/// `AIMUX_E_NO_SUCH_TOOL` / `AIMUX_E_INVALID_TOOL_INPUT`: the tool name the
+/// model called.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_tool_name(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(
+        map_aimux_error(err, |e| match e {
+            AiMuxError::NoSuchTool { tool_name, .. }
+            | AiMuxError::InvalidToolInput { tool_name, .. } => Some(tool_name.clone()),
+            _ => None,
+        })
+        .flatten(),
+    )
+}
+
+/// `AIMUX_E_NO_SUCH_TOOL`: the available tool names as a JSON string array,
+/// or NULL when no tool set was supplied.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_available_tools(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(
+        map_aimux_error(err, |e| match e {
+            AiMuxError::NoSuchTool {
+                available_tools: Some(tools),
+                ..
+            } => serde_json::to_string(tools).ok(),
+            _ => None,
+        })
+        .flatten(),
+    )
+}
+
+/// `AIMUX_E_INVALID_TOOL_INPUT`: the raw argument text the model produced.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_tool_input(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(
+        map_aimux_error(err, |e| match e {
+            AiMuxError::InvalidToolInput { tool_input, .. } => Some(tool_input.clone()),
+            _ => None,
+        })
+        .flatten(),
+    )
+}
+
+/// `AIMUX_E_TOOL_CALL_REPAIR`: the original lookup/parse/validation error as
+/// externally-tagged wire JSON — the same encoding as `ToolCall.error`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_original_error(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(
+        map_aimux_error(err, |e| match e {
+            AiMuxError::ToolCallRepair { original_error, .. } => {
+                serde_json::to_string(original_error).ok()
+            }
             _ => None,
         })
         .flatten(),
@@ -3137,7 +3201,7 @@ mod tests {
     fn expect_aimux_error(e: *mut aimux_error_t) -> (i32, String) {
         assert!(!e.is_null(), "expected a returned error");
         let code = aimux_error_code(e);
-        if !(AIMUX_E_OTHER..=AIMUX_E_ABORTED).contains(&code) {
+        if !(AIMUX_E_OTHER..=AIMUX_E_TOOL_CALL_REPAIR).contains(&code) {
             panic!("expected an AiMuxError code, got {code}: {}", msg(e));
         }
         let out = (code, take(aimux_error_message(e)).unwrap());
@@ -3385,7 +3449,7 @@ mod tests {
         );
     }
 
-    /// Pin the full 13-variant → code mapping.
+    /// Pin the full 16-variant → code mapping.
     #[test]
     fn error_code_mapping_covers_all_variants() {
         let s = |t: &str| t.to_string();
@@ -3402,7 +3466,31 @@ mod tests {
                 AiMuxError::InvalidResponseData(s("x")),
                 AIMUX_E_INVALID_RESPONSE_DATA,
             ),
-            (AiMuxError::Tool(s("x")), AIMUX_E_TOOL),
+            (
+                AiMuxError::NoSuchTool {
+                    tool_name: s("t"),
+                    available_tools: None,
+                },
+                AIMUX_E_NO_SUCH_TOOL,
+            ),
+            (
+                AiMuxError::InvalidToolInput {
+                    tool_name: s("t"),
+                    tool_input: s("{}"),
+                    cause: s("x"),
+                },
+                AIMUX_E_INVALID_TOOL_INPUT,
+            ),
+            (
+                AiMuxError::ToolCallRepair {
+                    original_error: Box::new(AiMuxError::NoSuchTool {
+                        tool_name: s("t"),
+                        available_tools: None,
+                    }),
+                    cause: Box::new(AiMuxError::Other(s("x"))),
+                },
+                AIMUX_E_TOOL_CALL_REPAIR,
+            ),
             (
                 AiMuxError::InvalidArgument(s("x")),
                 AIMUX_E_INVALID_ARGUMENT,

@@ -19,6 +19,7 @@ tracing = { workspace = true }
 ts-rs = { workspace = true }
 tokio-util = "0.7"
 base64 = "0.22"
+jsonschema = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }

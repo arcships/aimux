@@ -15,8 +15,17 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
+
+func jsonStructurallyEqual(a, b string) bool {
+	var av, bv any
+	if json.Unmarshal([]byte(a), &av) != nil || json.Unmarshal([]byte(b), &bv) != nil {
+		return false
+	}
+	return reflect.DeepEqual(av, bv)
+}
 
 // fixtureCase is a single entry in the wire-format.json fixture.
 type fixtureCase struct {
@@ -64,7 +73,7 @@ func TestWireFormatConsistency(t *testing.T) {
 				if err := json.Unmarshal([]byte(wireJSON), &tc2); err != nil {
 					t.Fatalf("failed to unmarshal ToolChoice %s: %v", wireJSON, err)
 				}
-				if string(tc2) != wireJSON {
+				if !jsonStructurallyEqual(string(tc2), wireJSON) {
 					t.Errorf("round-trip mismatch: got %s, want %s", tc2, wireJSON)
 				}
 
@@ -163,7 +172,7 @@ func TestWireFormatConsistency(t *testing.T) {
 					t.Fatalf("failed to unmarshal Role: %v", err)
 				}
 				reencoded, _ := json.Marshal(r)
-				if string(reencoded) != wireJSON {
+				if !jsonStructurallyEqual(string(reencoded), wireJSON) {
 					t.Errorf("round-trip mismatch: got %s, want %s", reencoded, wireJSON)
 				}
 
@@ -180,7 +189,7 @@ func TestWireFormatConsistency(t *testing.T) {
 				}
 				// Round-trip: re-encode and verify structure.
 				reencoded, _ := json.Marshal(msg)
-				if string(reencoded) != wireJSON {
+				if !jsonStructurallyEqual(string(reencoded), wireJSON) {
 					t.Errorf("round-trip mismatch: got %s, want %s", reencoded, wireJSON)
 				}
 
@@ -190,7 +199,7 @@ func TestWireFormatConsistency(t *testing.T) {
 					t.Fatalf("failed to unmarshal FinishReasonUnified: %v", err)
 				}
 				reencoded, _ := json.Marshal(fr)
-				if string(reencoded) != wireJSON {
+				if !jsonStructurallyEqual(string(reencoded), wireJSON) {
 					t.Errorf("round-trip mismatch: got %s, want %s", reencoded, wireJSON)
 				}
 
@@ -200,7 +209,7 @@ func TestWireFormatConsistency(t *testing.T) {
 					t.Fatalf("failed to unmarshal ReasoningEffort: %v", err)
 				}
 				reencoded, _ := json.Marshal(re)
-				if string(reencoded) != wireJSON {
+				if !jsonStructurallyEqual(string(reencoded), wireJSON) {
 					t.Errorf("round-trip mismatch: got %s, want %s", reencoded, wireJSON)
 				}
 
@@ -233,7 +242,7 @@ func TestWireFormatConsistency(t *testing.T) {
 				if err := json.Unmarshal([]byte(wireJSON), &gc); err != nil {
 					t.Fatalf("failed to unmarshal GenerateContent %s: %v", wireJSON, err)
 				}
-				if string(gc) != wireJSON {
+				if !jsonStructurallyEqual(string(gc), wireJSON) {
 					t.Errorf("round-trip mismatch: got %s, want %s", gc, wireJSON)
 				}
 

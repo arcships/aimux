@@ -15,10 +15,13 @@ use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
+use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
-use aimux_core::options::CallOptions;
+use aimux_core::language_model_message::{
+    LanguageModelPrompt, LanguageModelPromptMessage, convert_to_language_model_prompt,
+};
+use aimux_core::message::{ModelMessage, Role};
+use aimux_core::options::{CallOptions, ProviderTool, Tool};
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
@@ -97,7 +100,7 @@ fn as_text(item: &GenerateContent) -> &str {
     }
 }
 
-fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
+fn as_tool_call(item: &GenerateContent) -> (&str, &str, &str) {
     match item {
         GenerateContent::ToolCall {
             tool_call_id,
@@ -147,7 +150,6 @@ async fn vertex_generate_text_response() {
         }),
     )
     .await;
-
     let model = make_model(&server);
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -159,6 +161,12 @@ async fn vertex_generate_text_response() {
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
     assert_eq!(result.usage.input_tokens.total, Some(5));
     assert_eq!(result.usage.output_tokens.total, Some(10));
+    let metadata = result
+        .provider_metadata
+        .as_ref()
+        .expect("provider metadata");
+    assert_eq!(metadata["vertex"], metadata["googleVertex"]);
+    assert!(metadata.get("google").is_none());
 }
 
 /// Test: non-streaming tool call extraction.
@@ -199,9 +207,189 @@ async fn vertex_generate_tool_call() {
     let (id, name, input) = as_tool_call(&result.content[0]);
     assert_eq!(id, "call_1");
     assert_eq!(name, "getWeather");
-    assert_eq!(input["location"], "Tokyo");
+    assert_eq!(input, &json!(r#"{"location":"Tokyo"}"#));
     // STOP with tool calls → ToolCalls
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
+}
+
+#[tokio::test]
+async fn vertex_renamed_code_execution_passes_core_generate_boundary() {
+    let server = MockServer::start().await;
+    mock_generate_content(
+        &server,
+        json!({
+            "candidates": [{
+                "content": {
+                    "role": "model",
+                    "parts": [
+                        { "executableCode": { "language": "PYTHON", "code": "print(2)" } },
+                        { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "2" } },
+                        { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "still 2" } }
+                    ]
+                },
+                "finishReason": "STOP"
+            }]
+        }),
+    )
+    .await;
+    let model = make_model(&server);
+    let tool = Tool::Provider(ProviderTool {
+        id: "google.code_execution".to_string(),
+        name: "runCode".to_string(),
+        args: json!({}),
+    });
+
+    let result = generate_text(
+        &model,
+        "Run code",
+        GenerateTextOptions {
+            tools: Some(vec![tool.clone()]),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    .expect("renamed Vertex code execution should pass Core validation");
+    let call = result.tool_calls.first().expect("code execution call");
+    assert_eq!(call.tool_name, "runCode");
+    assert_eq!(call.provider_executed, Some(true));
+    assert_eq!(call.invalid, None);
+    let call_metadata = call.provider_metadata.as_ref().expect("call metadata");
+    assert_eq!(
+        call_metadata["googleVertex"],
+        json!({
+            "serverToolCallId": call.tool_call_id,
+            "serverToolType": "code_execution",
+        })
+    );
+    assert_eq!(call_metadata["vertex"], call_metadata["googleVertex"]);
+    assert!(call_metadata.get("google").is_none());
+    assert!(result.raw.content.iter().any(|content| matches!(
+        content,
+        GenerateContent::ToolResult { tool_name, .. } if tool_name == "runCode"
+    )));
+    let result_ids: Vec<&str> = result
+        .raw
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            GenerateContent::ToolResult { tool_call_id, .. } => Some(tool_call_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(result_ids.len(), 2);
+    assert!(
+        result_ids
+            .iter()
+            .all(|id| *id == call.tool_call_id.as_str())
+    );
+
+    let mut messages = vec![ModelMessage::user("Run code")];
+    messages.extend(result.response_messages);
+    messages.push(ModelMessage::user("Continue"));
+    let mut next_options = CallOptions::new(convert_to_language_model_prompt(&messages, None));
+    next_options.tools = Some(vec![tool]);
+    let replay = model
+        .do_generate(&next_options)
+        .await
+        .expect("Vertex replay request should succeed")
+        .request_body
+        .expect("request body");
+    let assistant = replay["contents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|content| content["role"] == "model")
+        .expect("assistant replay content");
+    assert_eq!(
+        assistant["parts"],
+        json!([
+            { "executableCode": { "language": "PYTHON", "code": "print(2)" } },
+            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "2" } },
+            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "still 2" } },
+        ])
+    );
+}
+
+#[tokio::test]
+async fn vertex_server_tool_call_and_response_pass_core_generate_boundary() {
+    let server = MockServer::start().await;
+    mock_generate_content(
+        &server,
+        json!({
+            "candidates": [{
+                "content": {
+                    "role": "model",
+                    "parts": [
+                        { "toolCall": {
+                            "toolType": "GOOGLE_SEARCH_WEB",
+                            "args": { "query": "Singapore weather" },
+                            "id": "server-call-1"
+                        }, "thoughtSignature": "call-signature" },
+                        { "toolResponse": {
+                            "toolType": "GOOGLE_SEARCH_WEB",
+                            "response": { "results": [{ "title": "Sunny" }] },
+                            "id": "server-call-1"
+                        }, "thoughtSignature": "result-signature" }
+                    ]
+                },
+                "finishReason": "STOP"
+            }]
+        }),
+    )
+    .await;
+
+    let model = make_model(&server);
+    let result = generate_text(&model, "Search the web", GenerateTextOptions::default())
+        .await
+        .expect("dynamic Vertex server tool should pass Core validation");
+
+    let call = result.tool_calls.first().expect("server tool call");
+    assert_eq!(call.tool_call_id, "server-call-1");
+    assert_eq!(call.tool_name, "server:GOOGLE_SEARCH_WEB");
+    assert_eq!(call.input, json!({ "query": "Singapore weather" }));
+    assert_eq!(call.provider_executed, Some(true));
+    assert_eq!(call.dynamic, Some(true));
+    assert_eq!(call.invalid, None);
+    assert_eq!(
+        call.provider_metadata.as_ref().expect("call metadata")["googleVertex"],
+        json!({
+            "serverToolCallId": "server-call-1",
+            "serverToolType": "GOOGLE_SEARCH_WEB",
+            "thoughtSignature": "call-signature"
+        })
+    );
+    assert_eq!(
+        call.provider_metadata.as_ref().unwrap()["vertex"],
+        call.provider_metadata.as_ref().unwrap()["googleVertex"]
+    );
+    assert!(
+        call.provider_metadata
+            .as_ref()
+            .unwrap()
+            .get("google")
+            .is_none()
+    );
+    assert!(result.raw.content.iter().any(|content| matches!(
+        content,
+        GenerateContent::ToolResult {
+            tool_call_id,
+            tool_name,
+            result,
+            dynamic: None,
+            provider_metadata: Some(metadata),
+            ..
+        } if tool_call_id == "server-call-1"
+            && tool_name == "server:GOOGLE_SEARCH_WEB"
+            && *result == json!({ "results": [{ "title": "Sunny" }] })
+            && metadata["googleVertex"] == json!({
+                "serverToolCallId": "server-call-1",
+                "serverToolType": "GOOGLE_SEARCH_WEB",
+                "thoughtSignature": "result-signature"
+            })
+            && metadata["vertex"] == metadata["googleVertex"]
+            && metadata.get("google").is_none()
+    )));
+    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
 }
 
 /// Vertex Gemini thinking models echo `thoughtSignature` on `functionCall`
@@ -247,15 +435,23 @@ async fn vertex_generate_tool_call_with_thought_signature() {
             tool_name,
             input,
             thought_signature,
+            provider_metadata,
             ..
         } => {
             assert_eq!(tool_call_id, "call_1");
             assert_eq!(tool_name, "getWeather");
-            assert_eq!(input["location"], "Tokyo");
+            assert_eq!(input, &json!(r#"{"location":"Tokyo"}"#));
             assert_eq!(
                 thought_signature.as_deref(),
                 Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
             );
+            let metadata = provider_metadata.as_ref().expect("thought metadata");
+            assert_eq!(
+                metadata["googleVertex"]["thoughtSignature"],
+                json!("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
+            );
+            assert_eq!(metadata["vertex"], metadata["googleVertex"]);
+            assert!(metadata.get("google").is_none());
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -569,7 +765,7 @@ async fn vertex_stream_tool_call() {
     let (id, name, input) = tool_call.expect("should have ToolCall");
     assert_eq!(id, "call_1");
     assert_eq!(name, "getWeather");
-    assert_eq!(input["location"], "Tokyo");
+    assert_eq!(input, json!(r#"{"location":"Tokyo"}"#));
 }
 
 /// TS: response headers are exposed on the stream result.
@@ -730,7 +926,10 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
             json!({
                 "candidates": [{
                     "content": {
-                        "parts": [{ "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "hello\n" } }]
+                        "parts": [
+                            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "hello\n" } },
+                            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "second result\n" } }
+                        ]
                     },
                     "finishReason": "STOP"
                 }]
@@ -738,18 +937,36 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
         ]),
     )
     .await;
+    mock_generate_content(
+        &server,
+        json!({
+            "candidates": [{
+                "content": { "parts": [{ "text": "ok" }] },
+                "finishReason": "STOP"
+            }]
+        }),
+    )
+    .await;
 
     let model = make_model(&server);
+    let tool = Tool::Provider(ProviderTool {
+        id: "google.code_execution".to_string(),
+        name: "runCode".to_string(),
+        args: json!({}),
+    });
+    let options = CallOptions {
+        tools: Some(vec![tool.clone()]),
+        ..default_options(test_prompt())
+    };
     let result = model
-        .do_stream(&default_options(test_prompt()))
+        .do_stream(&options)
         .await
         .expect("do_stream should succeed");
     let parts = collect_stream(result).await;
 
     let calls = stream_tool_calls(&parts);
     let has_call = calls.iter().any(|(_, name, input)| {
-        name == "code_execution"
-            && *input == json!({ "language": "PYTHON", "code": "print(\"hello\")" })
+        name == "runCode" && *input == json!(r#"{"language":"PYTHON","code":"print(\"hello\")"}"#)
     });
     assert!(
         has_call,
@@ -760,7 +977,7 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
     let results = stream_tool_results(&parts);
     let call_id = calls
         .iter()
-        .find(|(_, name, _)| name == "code_execution")
+        .find(|(_, name, _)| name == "runCode")
         .map(|(id, _, _)| id.clone())
         .expect("code_execution call id");
     let has_result = results.iter().any(|(id, output)| {
@@ -770,6 +987,38 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
         has_result,
         "expected a code_execution tool-result, got {results:?}"
     );
+    assert_eq!(results.len(), 2);
+    assert!(results.iter().all(|(id, _)| id == &call_id));
+    assert!(parts.iter().any(|part| matches!(
+        part,
+        StreamPart::ToolCall {
+            tool_call_id,
+            tool_name,
+            provider_metadata: Some(metadata),
+            ..
+        } if tool_name == "runCode"
+            && metadata["googleVertex"] == json!({
+                "serverToolCallId": tool_call_id,
+                "serverToolType": "code_execution",
+            })
+            && metadata["vertex"] == metadata["googleVertex"]
+            && metadata.get("google").is_none()
+    )));
+    assert!(parts.iter().any(|part| matches!(
+        part,
+        StreamPart::ToolResult {
+            tool_call_id,
+            tool_name,
+            provider_metadata: Some(metadata),
+            ..
+        } if tool_name == "runCode"
+            && metadata["googleVertex"] == json!({
+                "serverToolCallId": tool_call_id,
+                "serverToolType": "code_execution",
+            })
+            && metadata["vertex"] == metadata["googleVertex"]
+            && metadata.get("google").is_none()
+    )));
 
     // Provider-executed tool → Stop, not ToolCalls.
     let finish = parts.iter().find_map(|p| match p {
@@ -779,6 +1028,50 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
     assert_eq!(
         finish.expect("finish part").unified,
         FinishReasonUnified::Stop
+    );
+
+    let result = stream_text(
+        &model,
+        "Run code",
+        GenerateTextOptions {
+            tools: Some(vec![tool.clone()]),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    .expect("stream_text should start")
+    .consume()
+    .await
+    .expect("renamed Vertex code execution should pass Core validation");
+    let call = result.tool_calls.first().expect("code execution call");
+    assert_eq!(call.tool_name, "runCode");
+    assert_eq!(call.provider_executed, Some(true));
+    assert_eq!(call.invalid, None);
+
+    let mut messages = vec![ModelMessage::user("Run code")];
+    messages.extend(result.response_messages);
+    messages.push(ModelMessage::user("Continue"));
+    let mut next_options = CallOptions::new(convert_to_language_model_prompt(&messages, None));
+    next_options.tools = Some(vec![tool]);
+    let replay = model
+        .do_generate(&next_options)
+        .await
+        .expect("Vertex stream replay request should succeed")
+        .request_body
+        .expect("request body");
+    let assistant = replay["contents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|content| content["role"] == "model")
+        .expect("assistant replay content");
+    assert_eq!(
+        assistant["parts"],
+        json!([
+            { "executableCode": { "language": "PYTHON", "code": "print(\"hello\")" } },
+            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "hello\n" } },
+            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "second result\n" } },
+        ])
     );
 }
 
@@ -904,6 +1197,50 @@ async fn vertex_stream_server_tool_call_and_response() {
         finish.expect("finish part").unified,
         FinishReasonUnified::Stop
     );
+
+    let result = stream_text(&model, "Search the web", GenerateTextOptions::default())
+        .await
+        .expect("stream_text should start");
+    let mut core_stream = result.stream;
+    let mut core_parts = Vec::new();
+    while let Some(part) = core_stream.next().await {
+        core_parts.push(part.expect("Core stream part should succeed"));
+    }
+
+    assert!(core_parts.iter().any(|part| matches!(
+        part,
+        StreamPart::ToolCall {
+            tool_call_id,
+            tool_name,
+            input,
+            provider_executed: Some(true),
+            dynamic: Some(true),
+            invalid: None,
+            provider_metadata: Some(metadata),
+            ..
+        } if tool_call_id == "server-call-1"
+            && tool_name == "server:GOOGLE_SEARCH_WEB"
+            && *input == json!({ "query": "San Francisco weather" })
+            && metadata["googleVertex"]["serverToolCallId"] == "server-call-1"
+            && metadata["vertex"] == metadata["googleVertex"]
+            && metadata.get("google").is_none()
+    )));
+    assert!(core_parts.iter().any(|part| matches!(
+        part,
+        StreamPart::ToolResult {
+            tool_call_id,
+            tool_name,
+            result,
+            dynamic: None,
+            provider_metadata: Some(metadata),
+            ..
+        } if tool_call_id == "server-call-1"
+            && tool_name == "server:GOOGLE_SEARCH_WEB"
+            && *result == json!({ "results": [{ "title": "Weather in SF" }] })
+            && metadata["googleVertex"]["serverToolType"] == "GOOGLE_SEARCH_WEB"
+            && metadata["vertex"] == metadata["googleVertex"]
+            && metadata.get("google").is_none()
+    )));
 }
 
 /// TS: "should stream source events" + "should deduplicate sources across
@@ -1026,6 +1363,8 @@ async fn vertex_stream_finish_provider_metadata() {
 
     let pm = finish_provider_metadata(&parts).expect("finish part");
     let vertex = &pm["googleVertex"];
+    assert_eq!(&pm["vertex"], vertex);
+    assert!(pm.get("google").is_none());
     assert!(
         !vertex.is_null() && vertex.as_object().map(|o| !o.is_empty()).unwrap_or(false),
         "googleVertex provider metadata should be non-empty, got {pm}"

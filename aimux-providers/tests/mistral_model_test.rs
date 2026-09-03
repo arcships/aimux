@@ -310,7 +310,10 @@ async fn should_extract_tool_call() {
         } => {
             assert_eq!(tool_call_id, "gSIMJiOkT");
             assert_eq!(tool_name, "weather");
-            assert_eq!(input, &json!({"location": "San Francisco"}));
+            assert_eq!(
+                input,
+                &Value::String(r#"{"location": "San Francisco"}"#.into())
+            );
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -609,7 +612,10 @@ async fn should_stream_tool_call() {
     let (id, name, input) = tool_call.expect("should have a ToolCall");
     assert_eq!(id, "gSIMJiOkT");
     assert_eq!(name, "weather");
-    assert_eq!(input, &json!({"location": "San Francisco"}));
+    assert_eq!(
+        input,
+        &Value::String(r#"{"location": "San Francisco"}"#.into())
+    );
 
     // Should also have ToolInputStart, ToolInputDelta, ToolInputEnd.
     assert!(
@@ -1223,7 +1229,7 @@ async fn should_extract_multiple_tool_calls() {
         } => {
             assert_eq!(tool_call_id, "call-1");
             assert_eq!(tool_name, "weather");
-            assert_eq!(input, &json!({"city": "SF"}));
+            assert_eq!(input, &Value::String(r#"{"city": "SF"}"#.into()));
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -1236,7 +1242,7 @@ async fn should_extract_multiple_tool_calls() {
         } => {
             assert_eq!(tool_call_id, "call-2");
             assert_eq!(tool_name, "time");
-            assert_eq!(input, &json!({"zone": "PST"}));
+            assert_eq!(input, &Value::String(r#"{"zone": "PST"}"#.into()));
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }

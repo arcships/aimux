@@ -113,6 +113,8 @@ pub enum WireContentPart {
         tool_call_id: String,
         tool_name: String,
         input: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_executed: Option<bool>,
     },
     ToolResult {
         tool_call_id: String,
@@ -160,10 +162,12 @@ fn to_content_part(p: &WireContentPart) -> ContentPart {
             tool_call_id,
             tool_name,
             input,
+            provider_executed,
         } => ContentPart::ToolCall {
             tool_call_id: tool_call_id.clone(),
             tool_name: tool_name.clone(),
             input: input.clone(),
+            provider_executed: *provider_executed,
             thought_signature: None,
             provider_options: None,
         },
@@ -418,6 +422,7 @@ mod tests {
                         tool_call_id: "c1".into(),
                         tool_name: "calc".into(),
                         input: serde_json::json!({"expr": "1+1"}),
+                        provider_executed: None,
                     },
                 ],
             },

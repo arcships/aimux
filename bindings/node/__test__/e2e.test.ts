@@ -239,7 +239,9 @@ test('e2e: OpenAI generateText parses tool_calls (structured content)', async (t
     t.truthy(tc, 'raw.content contains a ToolCall variant')
     t.is(tc.ToolCall.tool_name, 'get_weather')
     t.is(tc.ToolCall.tool_call_id, 'call_abc')
-    t.deepEqual(tc.ToolCall.input, { location: 'Tokyo' })
+    // raw content keeps the provider's argument text; the parsed object
+    // lives on the top-level toolCalls.
+    t.is(tc.ToolCall.input, '{"location":"Tokyo"}')
   } finally {
     await closeServer(server)
   }

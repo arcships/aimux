@@ -10,8 +10,8 @@ import (
 )
 
 // Code is the machine-readable Aimux error code. Values match
-// aimux-ffi aimux_error_code_t (1..13 = core AiMuxError variants; 1 is the
-// catch-all Other).
+// aimux-ffi aimux_error_code_t (1..13 and 15..17 = core AiMuxError variants;
+// 1 is the catch-all Other; 4 is retired, 14 is reserved).
 // A code outside that range is a header/library mismatch and expectAimuxError
 // panics rather than inventing an "unknown" variant. Recording failures are
 // a different type: see RecordingError.
@@ -23,11 +23,11 @@ import (
 type Code int
 
 const (
-	CodeOK                       Code = 0
-	CodeOther                    Code = 1
-	CodeJSONParse                Code = 2
-	CodeInvalidResponseData      Code = 3
-	CodeTool                     Code = 4
+	CodeOK                  Code = 0
+	CodeOther               Code = 1
+	CodeJSONParse           Code = 2
+	CodeInvalidResponseData Code = 3
+	// 4 is retired (the legacy Tool variant); 14 is reserved.
 	CodeInvalidArgument          Code = 5
 	CodeInvalidPrompt            Code = 6
 	CodeTokenExpired             Code = 7
@@ -37,6 +37,9 @@ const (
 	CodeAPICall                  Code = 11
 	CodeTimeout                  Code = 12
 	CodeAborted                  Code = 13
+	CodeNoSuchTool               Code = 15
+	CodeInvalidToolInput         Code = 16
+	CodeToolCallRepair           Code = 17
 )
 
 // String returns the core error_type name (e.g. "ApiCall", "TokenExpired").
@@ -49,8 +52,6 @@ func (c Code) String() string {
 		return "JsonParse"
 	case CodeInvalidResponseData:
 		return "InvalidResponseData"
-	case CodeTool:
-		return "Tool"
 	case CodeInvalidArgument:
 		return "InvalidArgument"
 	case CodeInvalidPrompt:
@@ -69,6 +70,12 @@ func (c Code) String() string {
 		return "Timeout"
 	case CodeAborted:
 		return "Aborted"
+	case CodeNoSuchTool:
+		return "NoSuchTool"
+	case CodeInvalidToolInput:
+		return "InvalidToolInput"
+	case CodeToolCallRepair:
+		return "ToolCallRepair"
 	case CodeOther:
 		return "Other"
 	default:
@@ -76,9 +83,10 @@ func (c Code) String() string {
 	}
 }
 
-// codeFromC maps a C aimux_error_code_t (1..13); false for any other value.
+// codeFromC maps a C aimux_error_code_t (1..13, 15..17); false for any other
+// value — including the retired 4 and the reserved 14.
 func codeFromC(code int) (Code, bool) {
-	if code < int(CodeOther) || code > int(CodeAborted) {
+	if code < int(CodeOther) || code > int(CodeToolCallRepair) || code == 4 || code == 14 {
 		return 0, false
 	}
 	return Code(code), true
@@ -106,6 +114,10 @@ func codeFromC(code int) (Code, bool) {
 //   - ProviderCode / ProviderMessage / RequestID / ResponseBody: CodeAPICall payload
 //   - ModelID / ModelType: CodeNoSuchModel payload
 //   - ProviderID: CodeNoSuchProvider payload
+//   - ToolName / AvailableTools: CodeNoSuchTool payload (ToolName is shared
+//     with CodeInvalidToolInput)
+//   - ToolInput: CodeInvalidToolInput payload
+//   - OriginalError: CodeToolCallRepair payload
 type Error struct {
 	Code    Code
 	Message string
@@ -126,6 +138,15 @@ type Error struct {
 	ModelID         string // CodeNoSuchModel: the model id asked for
 	ModelType       string // CodeNoSuchModel: the model type it was asked for as
 	ProviderID      string // CodeNoSuchProvider: the provider id asked for
+	ToolName        string // CodeNoSuchTool / CodeInvalidToolInput: the tool name called
+	// AvailableTools is the tool names the call offered (CodeNoSuchTool);
+	// nil when the core did not report them.
+	AvailableTools []string
+	ToolInput      string // CodeInvalidToolInput: the raw argument text the model produced
+	// OriginalError is the lookup/parse/validation failure repair could not
+	// fix (CodeToolCallRepair), as externally-tagged wire JSON — the same
+	// encoding as ToolCall.Error.
+	OriginalError json.RawMessage
 }
 
 // Error implements the error interface.

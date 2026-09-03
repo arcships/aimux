@@ -1,4 +1,4 @@
-﻿//! Wiremock tests for the Cohere provider.
+//! Wiremock tests for the Cohere provider.
 //!
 //! Translated from `packages/cohere/src/cohere-chat-language-model.test.ts`,
 //! focusing on the cases that the Rust data model can express:
@@ -11,6 +11,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
+use aimux_core::generate::{GenerateTextOptions, stream_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -263,7 +264,10 @@ async fn should_extract_tool_calls() {
             tool_name, input, ..
         } => {
             assert_eq!(tool_name, "weather");
-            assert_eq!(input, &json!({"location": "San Francisco"}));
+            assert_eq!(
+                input,
+                &Value::String(r#"{"location":"San Francisco"}"#.into())
+            );
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -272,7 +276,7 @@ async fn should_extract_tool_calls() {
             tool_name, input, ..
         } => {
             assert_eq!(tool_name, "cityAttractions");
-            assert_eq!(input, &json!({"city": "San Francisco"}));
+            assert_eq!(input, &Value::String(r#"{"city":"San Francisco"}"#.into()));
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -320,7 +324,7 @@ async fn should_handle_null_tool_call_arguments() {
     match &result.content[0] {
         GenerateContent::ToolCall { input, .. } => {
             // "null" should be replaced with "{}".
-            assert_eq!(input, &json!({}));
+            assert_eq!(input, &Value::String("{}".into()));
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -547,7 +551,13 @@ async fn should_stream_tool_call_deltas() {
     let (id, name, input) = tool_call.expect("should have ToolCall");
     assert_eq!(id, "weather_e8p4pn45zt0t");
     assert_eq!(name, "weather");
-    assert_eq!(input, &json!({"location": "San Francisco"}));
+    // Providers never parse tool input (Core owns that) — the flush forwards
+    // the accumulated deltas verbatim (only trimmed), so interior whitespace
+    // from the deltas survives.
+    assert_eq!(
+        input,
+        &Value::String(r#"{"location": "San Francisco"}"#.into())
+    );
 
     // Verify the accumulated deltas.
     let deltas: Vec<String> = parts
@@ -567,6 +577,80 @@ async fn should_stream_tool_call_deltas() {
         }
         other => panic!("expected Finish, got {other:?}"),
     }
+}
+
+/// Regression test for PR #165 review finding: Cohere used to parse the
+/// accumulated tool-call arguments itself and treat a parse failure as a
+/// terminal stream error, unlike every other provider (which forwards raw
+/// text and lets Core own parsing/validation/repair) and unlike Cohere's own
+/// non-streaming path. Malformed streamed arguments must surface as a
+/// retained `invalid: true` tool call, not abort the stream.
+#[tokio::test]
+async fn malformed_streamed_tool_call_arguments_do_not_error_the_stream() {
+    let server = MockServer::start().await;
+    let sse = cohere_sse_body(&[
+        r#"{"id":"malformed-1","type":"message-start","delta":{"message":{"role":"assistant","content":[],"tool_plan":"","tool_calls":[],"citations":[]}}}"#,
+        r#"{"type":"tool-call-start","index":0,"delta":{"message":{"tool_calls":{"id":"tc_malformed","type":"function","function":{"name":"test-tool","arguments":""}}}}}"#,
+        r#"{"type":"tool-call-delta","index":0,"delta":{"message":{"tool_calls":{"function":{"arguments":"{\"value\":"}}}}}"#,
+        r#"{"type":"tool-call-end","index":0}"#,
+        r#"{"type":"message-end","delta":{"finish_reason":"TOOL_CALL","usage":{"billed_units":{"input_tokens":10,"output_tokens":5},"tokens":{"input_tokens":10,"output_tokens":5}}}}"#,
+    ]);
+    mock_sse_response(&server, &sse).await;
+
+    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
+    let provider = CohereProvider::new(config);
+    let model = provider.model("command-r-plus");
+
+    // First, confirm the raw provider stream itself never parses and never
+    // errors on the malformed arguments — it just forwards the text.
+    let raw_options = CallOptions {
+        tools: Some(vec![test_tool()]),
+        ..default_options(test_prompt())
+    };
+    let raw_parts =
+        collect_stream(model.do_stream(&raw_options).await.expect("should succeed")).await;
+    assert!(
+        !raw_parts
+            .iter()
+            .any(|part| matches!(part, StreamPart::Error { .. })),
+        "provider must not parse tool input itself: {raw_parts:?}"
+    );
+    let raw_input = raw_parts.iter().find_map(|p| match p {
+        StreamPart::ToolCall { input, .. } => Some(input.clone()),
+        _ => None,
+    });
+    assert_eq!(
+        raw_input,
+        Some(Value::String(r#"{"value":"#.to_string())),
+        "provider must forward the malformed text verbatim"
+    );
+
+    // Then, through Core's `stream_text` (parse/validate/repair boundary),
+    // the malformed call surfaces as a retained invalid tool call — the
+    // stream itself completes normally.
+    let result = stream_text(
+        &model,
+        "test",
+        GenerateTextOptions {
+            tools: Some(vec![test_tool()]),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    .expect("stream_text should start")
+    .consume()
+    .await
+    .expect("Core parsing keeps an invalid call, not a stream error");
+
+    let call = result
+        .tool_calls
+        .first()
+        .expect("should have one tool call");
+    assert_eq!(call.invalid, Some(true));
+    assert!(matches!(
+        call.error,
+        Some(aimux_core::error::AiMuxError::InvalidToolInput { .. })
+    ));
 }
 
 /// TS: "should stream reasoning deltas"
@@ -1456,8 +1540,7 @@ async fn should_stream_empty_tool_call_arguments() {
     let (id, name, input) = tool_call.expect("should have ToolCall");
     assert_eq!(id, "tc_empty");
     assert_eq!(name, "doThing");
-    // Empty arguments → empty object.
-    assert_eq!(input, json!({}));
+    assert_eq!(input, Value::String("{}".into()));
 
     let finish = parts.last().expect("should have finish");
     match finish {

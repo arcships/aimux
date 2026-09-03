@@ -157,8 +157,8 @@ impl LanguageModel for XaiResponsesModel {
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: part_id.to_string(),
                     tool_name: tool_name.clone(),
-                    input: Value::String(String::new()),
-                    provider_executed: None,
+                    input: String::new(),
+                    provider_executed: Some(true),
                     dynamic: None,
                     thought_signature: None,
                     provider_metadata: None,
@@ -214,8 +214,8 @@ impl LanguageModel for XaiResponsesModel {
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: part_id.to_string(),
                     tool_name,
-                    input: Value::String(tool_input),
-                    provider_executed: None,
+                    input: tool_input,
+                    provider_executed: Some(true),
                     dynamic: None,
                     thought_signature: None,
                     provider_metadata: None,
@@ -267,8 +267,7 @@ impl LanguageModel for XaiResponsesModel {
                     let call_id = part.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
                     let name = part.get("name").and_then(|v| v.as_str()).unwrap_or("");
                     let arguments = part.get("arguments").and_then(|v| v.as_str()).unwrap_or("");
-                    let input: Value = serde_json::from_str(arguments)
-                        .unwrap_or_else(|_| Value::String(arguments.to_string()));
+                    let input = arguments.to_string();
                     content.push(GenerateContent::ToolCall {
                         tool_call_id: call_id.to_string(),
                         tool_name: name.to_string(),
@@ -749,7 +748,7 @@ impl LanguageModel for XaiResponsesModel {
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
-                                        provider_executed: None,
+                                        provider_executed: Some(true),
                                         dynamic: None,
                                         title: None,
                                         provider_metadata: None,
@@ -767,9 +766,11 @@ impl LanguageModel for XaiResponsesModel {
                                         tool_call_id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
                                         input: Value::String(String::new()),
-                                        provider_executed: None,
+                                        provider_executed: Some(true),
                                         dynamic: None,
                                         thought_signature: None,
+                                        invalid: None,
+                                        error: None,
                                         provider_metadata: None,
                                     });
                                 }
@@ -820,7 +821,7 @@ impl LanguageModel for XaiResponsesModel {
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
-                                        provider_executed: None,
+                                        provider_executed: Some(true),
                                         dynamic: None,
                                         title: None,
                                         provider_metadata: None,
@@ -838,9 +839,11 @@ impl LanguageModel for XaiResponsesModel {
                                         tool_call_id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
                                         input: Value::String(tool_input),
-                                        provider_executed: None,
+                                        provider_executed: Some(true),
                                         dynamic: None,
                                         thought_signature: None,
+                                        invalid: None,
+                                        error: None,
                                         provider_metadata: None,
                                     });
                                 }
@@ -924,8 +927,7 @@ impl LanguageModel for XaiResponsesModel {
                                         id: call_id.to_string(),
                                         provider_metadata: None,
                                     });
-                                    let input: Value = serde_json::from_str(arguments)
-                                        .unwrap_or_else(|_| Value::String(arguments.to_string()));
+                                    let input = Value::String(arguments.to_string());
                                     yield Ok(StreamPart::ToolCall {
                                         tool_call_id: call_id.to_string(),
                                         tool_name: name.to_string(),
@@ -933,6 +935,8 @@ impl LanguageModel for XaiResponsesModel {
                                         provider_executed: None,
                                         dynamic: None,
                                         thought_signature: None,
+                                        invalid: None,
+                                        error: None,
                                         provider_metadata: None,
                                     });
                                 }

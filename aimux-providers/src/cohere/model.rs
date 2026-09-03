@@ -233,10 +233,14 @@ impl LanguageModel for CohereModel {
         // Tool calls.
         if let Some(tool_calls) = &data.message.tool_calls {
             for tc in tool_calls {
-                // Cohere sometimes returns "null" for empty arguments.
-                let args_str = tc.function.arguments.replacen("null", "{}", 1);
-                let input: Value = serde_json::from_str(&args_str)
-                    .unwrap_or_else(|_| Value::String(tc.function.arguments.clone()));
+                // Cohere returns the literal string "null" for tools defined
+                // as having no arguments (TS: `.replace(/^null$/, '{}')`).
+                let args_str = if tc.function.arguments == "null" {
+                    "{}".to_string()
+                } else {
+                    tc.function.arguments.clone()
+                };
+                let input = args_str;
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: tc.id.clone(),
                     tool_name: tc.function.name.clone(),
@@ -499,16 +503,19 @@ impl LanguageModel for CohereModel {
                                         provider_metadata: None,
                                     });
 
+                                    // Providers never parse tool input — Core
+                                    // owns JSON parsing, schema validation,
+                                    // and repair (aimux-core::parse_tool_call).
+                                    // Trim the accumulated text and default
+                                    // empty to "{}" to match the TS
+                                    // provider's convention; forward it
+                                    // verbatim otherwise, malformed JSON
+                                    // included, so a bad call surfaces as a
+                                    // retained `invalid: true` tool call
+                                    // instead of a terminal stream error.
                                     let trimmed = ptc.arguments.trim();
-                                    let input: Value = if trimmed.is_empty() {
-                                        json!({})
-                                    } else {
-                                        serde_json::from_str(trimmed)
-                                            .unwrap_or_else(|_| {
-                                                Value::String(ptc.arguments.clone())
-                                            })
-                                    };
-
+                                    let text = if trimmed.is_empty() { "{}" } else { trimmed };
+                                    let input = Value::String(text.to_string());
                                     yield Ok(StreamPart::ToolCall {
                                         tool_call_id: ptc.id,
                                         tool_name: ptc.name,
@@ -516,6 +523,8 @@ impl LanguageModel for CohereModel {
                                         provider_executed: None,
                                         dynamic: None,
                                         thought_signature: None,
+                                        invalid: None,
+                                        error: None,
                                         provider_metadata: None,
                                     });
                                 }

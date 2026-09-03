@@ -65,7 +65,7 @@ fn as_text(item: &GenerateContent) -> &str {
     }
 }
 
-fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
+fn as_tool_call(item: &GenerateContent) -> (&str, &str, &str) {
     match item {
         GenerateContent::ToolCall {
             tool_call_id,
@@ -175,7 +175,7 @@ async fn bedrock_generate_tool_call() {
     let (id, name, input) = as_tool_call(&result.content[1]);
     assert_eq!(id, "tool_use_123");
     assert_eq!(name, "getWeather");
-    assert_eq!(input["location"], "San Francisco");
+    assert_eq!(input, &json!(r#"{"location":"San Francisco"}"#));
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }
 
@@ -385,7 +385,10 @@ async fn bedrock_stream_tool_call() {
     assert_eq!(tool_calls.len(), 1);
     assert_eq!(tool_calls[0].0, "tool_1");
     assert_eq!(tool_calls[0].1, "getWeather");
-    assert_eq!(tool_calls[0].2["location"], "SF");
+    assert_eq!(
+        tool_calls[0].2,
+        Value::String(r#"{"location":"SF"}"#.into())
+    );
 }
 
 /// Test: SigV4 authentication adds Authorization header.

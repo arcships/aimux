@@ -10,18 +10,18 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use std::time::Instant;
 
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::Instrument;
 use ts_rs::TS;
 
-use crate::content::ContentPart;
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::language_model_message::convert_to_language_model_prompt;
-use crate::message::{MessageContent, ModelMessage, ModelPrompt, Role};
+use crate::message::{ModelMessage, ModelPrompt};
 use crate::options::{CallOptions, ResponseFormat, ToolChoice};
+use crate::parse_tool_call::{RawToolCall, ToolCallRepair, parse_tool_call};
 use crate::result::{
     FilePart, GenerateContent, GenerateResult, ReasoningPart, SourcePart, StreamResult,
     StreamTextResultAggregated,
@@ -80,6 +80,11 @@ pub struct GenerateTextOptions {
     pub abort_signal: Option<crate::shared::AbortSignal>,
     /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
     pub include_raw_chunks: Option<bool>,
+    /// Optional one-shot repair callback for unknown, malformed, or
+    /// schema-invalid tool calls.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub repair_tool_call: Option<ToolCallRepair>,
 }
 
 impl GenerateTextOptions {
@@ -257,8 +262,6 @@ impl StreamTextResult {
         use futures::StreamExt;
 
         let mut text = String::new();
-        let mut reasoning: Vec<ReasoningPart> = Vec::new();
-        let mut reasoning_text_buf = String::new();
         let mut tool_calls: Vec<crate::tool::ToolCall> = Vec::new();
         let mut sources: Vec<SourcePart> = Vec::new();
         let mut files: Vec<FilePart> = Vec::new();
@@ -271,64 +274,79 @@ impl StreamTextResult {
         let mut usage = Usage::default();
         let mut finish_provider_metadata: Option<Value> = None;
         let mut response: Option<crate::types::ResponseMetadata> = None;
-        let mut response_content_parts: Vec<ContentPart> = Vec::new();
+        let mut rm = crate::response_messages::ResponseMessageBuilder::new();
 
         let mut stream = self.stream;
         while let Some(part) = stream.next().await {
             match part? {
-                StreamPart::TextDelta { delta, .. } => {
+                StreamPart::TextStart {
+                    provider_metadata, ..
+                } => rm.text_start(provider_metadata),
+                StreamPart::TextDelta {
+                    delta,
+                    provider_metadata,
+                    ..
+                } => {
                     text.push_str(&delta);
-                    // Accumulate for response_messages lazily (see Finish below).
+                    rm.text_delta(&delta, provider_metadata);
                 }
-                StreamPart::ReasoningDelta { delta, .. } => {
-                    reasoning_text_buf.push_str(&delta);
-                }
+                StreamPart::TextEnd {
+                    provider_metadata, ..
+                } => rm.text_end(provider_metadata),
+                StreamPart::ReasoningStart {
+                    provider_metadata, ..
+                } => rm.reasoning_start(provider_metadata),
+                StreamPart::ReasoningDelta {
+                    delta,
+                    provider_metadata,
+                    ..
+                } => rm.reasoning_delta(&delta, provider_metadata),
                 StreamPart::ReasoningEnd {
                     provider_metadata, ..
-                } => {
-                    if !reasoning_text_buf.is_empty() {
-                        reasoning.push(ReasoningPart {
-                            text: reasoning_text_buf.clone(),
-                        });
-                        // Push reasoning into response_messages too — it carries
-                        // the thinking-block signature (provider_metadata) which
-                        // must be echoed back for extended-thinking multi-turn.
-                        let signature = extract_reasoning_signature(provider_metadata.as_ref());
-                        response_content_parts.push(ContentPart::Reasoning {
-                            text: reasoning_text_buf.clone(),
-                            signature,
-                            provider_options: provider_metadata,
-                        });
-                        reasoning_text_buf.clear();
-                    } else if provider_metadata.is_some() {
-                        // No visible summary text, but the part carries
-                        // provider data (e.g. OpenAI encrypted reasoning with
-                        // store=false) that must round-trip on the next turn.
-                        response_content_parts.push(ContentPart::Reasoning {
-                            text: String::new(),
-                            signature: None,
-                            provider_options: provider_metadata,
-                        });
-                    }
-                }
+                } => rm.reasoning_end(provider_metadata),
                 StreamPart::ToolCall {
                     tool_call_id,
                     tool_name,
                     input,
+                    provider_executed,
+                    dynamic,
                     thought_signature,
+                    provider_metadata,
+                    invalid,
+                    error,
                     ..
                 } => {
-                    tool_calls.push(crate::tool::ToolCall {
-                        tool_call_id: tool_call_id.clone(),
-                        tool_name: tool_name.clone(),
-                        input: input.clone(),
-                        provider_executed: None,
-                        dynamic: None,
-                        thought_signature: thought_signature.clone(),
-                    });
-                    // Defer adding to response_content_parts — order is rebuilt
-                    // after the loop (reasoning → text → tool_calls).
+                    let call = crate::tool::ToolCall {
+                        tool_call_id,
+                        tool_name,
+                        input,
+                        provider_executed,
+                        dynamic,
+                        thought_signature,
+                        provider_metadata,
+                        invalid,
+                        error,
+                    };
+                    rm.tool_call(&call);
+                    tool_calls.push(call);
                 }
+                StreamPart::ToolResult {
+                    tool_call_id,
+                    tool_name,
+                    result,
+                    is_error,
+                    preliminary,
+                    dynamic,
+                    provider_metadata,
+                } => rm.tool_result(
+                    tool_call_id,
+                    tool_name,
+                    result,
+                    is_error,
+                    preliminary,
+                    dynamic,
+                    provider_metadata,
+                ),
                 StreamPart::Source {
                     id,
                     source_type,
@@ -356,18 +374,6 @@ impl StreamTextResult {
                     usage: u,
                     provider_metadata: pm,
                 } => {
-                    // Flush any pending reasoning delta before finishing.
-                    if !reasoning_text_buf.is_empty() {
-                        reasoning.push(ReasoningPart {
-                            text: reasoning_text_buf.clone(),
-                        });
-                        response_content_parts.push(ContentPart::Reasoning {
-                            text: reasoning_text_buf.clone(),
-                            signature: None,
-                            provider_options: None,
-                        });
-                        reasoning_text_buf.clear();
-                    }
                     raw_finish_reason = fr.raw.clone();
                     finish_reason = fr;
                     usage = u.clone();
@@ -390,31 +396,10 @@ impl StreamTextResult {
             }
         }
 
-        // Build response_content_parts in provider order:
-        // reasoning (added during loop) → text → tool_calls.
-        if !text.is_empty() {
-            response_content_parts.push(ContentPart::Text {
-                text: text.clone(),
-                provider_options: None,
-            });
-        }
-        for tc in &tool_calls {
-            response_content_parts.push(ContentPart::ToolCall {
-                tool_call_id: tc.tool_call_id.clone(),
-                tool_name: tc.tool_name.clone(),
-                input: tc.input.clone(),
-                thought_signature: tc.thought_signature.clone(),
-                provider_options: None,
-            });
-        }
-        let response_messages = if response_content_parts.is_empty() {
-            Vec::new()
-        } else {
-            vec![ModelMessage {
-                role: Role::Assistant,
-                content: MessageContent::Parts(response_content_parts),
-            }]
-        };
+        let crate::response_messages::ResponseMessages {
+            messages: response_messages,
+            reasoning,
+        } = rm.finish();
 
         let reasoning_text = reasoning
             .iter()
@@ -474,7 +459,10 @@ pub async fn generate_text(
     options: GenerateTextOptions,
 ) -> Result<GenerateTextResult, AiMuxError> {
     // 1. Convert user prompt to provider-facing prompt.
-    let (messages, instructions) = split_prompt(prompt.into(), options.instructions.as_deref());
+    let repair_tool_call = options.repair_tool_call.clone();
+    let tools = options.tools.clone();
+    let operation_instructions = options.instructions.clone();
+    let (messages, instructions) = split_prompt(prompt.into(), operation_instructions.as_deref());
     let lm_prompt = convert_to_language_model_prompt(&messages, instructions);
 
     // 2. Build CallOptions.
@@ -548,72 +536,56 @@ pub async fn generate_text(
             return Err(e);
         }
     };
-    if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
-        rec.record_outcome(
-            call_id,
-            &crate::recording::OutcomeRecord::from_generate_result(&result),
-        );
-    }
-
     // 4. Extract text, tool calls, reasoning, sources, files from content.
     let mut text = String::new();
     let mut tool_calls = Vec::new();
-    let mut reasoning = Vec::new();
     let mut sources = Vec::new();
     let mut files = Vec::new();
     // Build the assistant response message content parts in parallel.
-    let mut response_content_parts: Vec<ContentPart> = Vec::new();
+    let mut rm = crate::response_messages::ResponseMessageBuilder::new();
     for content in &result.content {
         match content {
-            GenerateContent::Text { text: t, .. } => {
+            GenerateContent::Text {
+                text: t,
+                provider_metadata,
+            } => {
                 text.push_str(t);
-                response_content_parts.push(ContentPart::Text {
-                    text: t.clone(),
-                    provider_options: None,
-                });
+                rm.text(t, provider_metadata.as_ref());
             }
             GenerateContent::ToolCall {
                 tool_call_id,
                 tool_name,
                 input,
+                provider_executed,
+                dynamic,
                 thought_signature,
+                provider_metadata,
                 ..
             } => {
-                tool_calls.push(crate::tool::ToolCall {
-                    tool_call_id: tool_call_id.clone(),
-                    tool_name: tool_name.clone(),
-                    input: input.clone(),
-                    provider_executed: None,
-                    dynamic: None,
-                    thought_signature: thought_signature.clone(),
-                });
-                response_content_parts.push(ContentPart::ToolCall {
-                    tool_call_id: tool_call_id.clone(),
-                    tool_name: tool_name.clone(),
-                    input: input.clone(),
-                    thought_signature: thought_signature.clone(),
-                    provider_options: None,
-                });
+                let parsed = parse_tool_call(
+                    RawToolCall {
+                        tool_call_id: tool_call_id.clone(),
+                        tool_name: tool_name.clone(),
+                        input: input.clone(),
+                        provider_executed: *provider_executed,
+                        dynamic: *dynamic,
+                        thought_signature: thought_signature.clone(),
+                        provider_metadata: provider_metadata.clone(),
+                    },
+                    tools.as_deref(),
+                    repair_tool_call.as_ref(),
+                    &messages,
+                    operation_instructions.as_deref(),
+                )
+                .await;
+                rm.tool_call(&parsed);
+                tool_calls.push(parsed);
             }
             GenerateContent::Reasoning {
                 text: rtext,
                 provider_metadata,
             } => {
-                reasoning.push(ReasoningPart {
-                    text: rtext.clone(),
-                });
-                // Reasoning MUST go into responseMessages — it carries the
-                // thinking-block signature (Anthropic: provider_metadata
-                // .anthropic.signature; Bedrock: .bedrock.signature /
-                // .amazonBedrock.signature) which must be echoed back
-                // verbatim on the next turn for extended-thinking models.
-                // Consistent with AI SDK's toResponseMessages.
-                let signature = extract_reasoning_signature(provider_metadata.as_ref());
-                response_content_parts.push(ContentPart::Reasoning {
-                    text: rtext.clone(),
-                    signature,
-                    provider_options: provider_metadata.clone(),
-                });
+                rm.reasoning(rtext, provider_metadata.as_ref());
             }
             GenerateContent::Source {
                 id,
@@ -637,21 +609,49 @@ pub async fn generate_text(
                     media_type: media_type.clone(),
                 });
             }
-            // Provider-executed tool results; not extracted to the top level.
-            GenerateContent::ToolResult { .. } => {}
+            // Provider-executed results stay in the assistant message so the
+            // provider can replay its own server-tool transcript next turn.
+            GenerateContent::ToolResult {
+                tool_call_id,
+                tool_name,
+                result,
+                is_error,
+                preliminary,
+                dynamic,
+                provider_metadata,
+            } => {
+                rm.tool_result(
+                    tool_call_id.clone(),
+                    tool_name.clone(),
+                    result.clone(),
+                    *is_error,
+                    *preliminary,
+                    *dynamic,
+                    provider_metadata.clone(),
+                );
+            }
         }
     }
 
+    let crate::response_messages::ResponseMessages {
+        messages: response_messages,
+        reasoning,
+    } = rm.finish();
     let reasoning_text = reasoning
         .iter()
         .map(|r| r.text.as_str())
         .collect::<Vec<_>>()
         .join("");
 
-    let response_messages = vec![ModelMessage {
-        role: Role::Assistant,
-        content: MessageContent::Parts(response_content_parts),
-    }];
+    // Parsing and optional repair are part of the user operation. Record a
+    // successful outcome only after that phase has completed within the same
+    // deadline/cancellation scope as the provider call.
+    if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
+        rec.record_outcome(
+            call_id,
+            &crate::recording::OutcomeRecord::from_generate_result(&result),
+        );
+    }
 
     // Extract fields before moving `result` into `raw`.
     let raw_finish_reason = result.finish_reason.raw.clone();
@@ -755,20 +755,6 @@ pub async fn generate_object(
 
 /// Extract the reasoning signature from provider metadata, checking all known
 /// provider keys (Anthropic, Bedrock).
-fn extract_reasoning_signature(provider_metadata: Option<&Value>) -> Option<String> {
-    let m = provider_metadata?;
-    for key in &["anthropic", "bedrock", "amazonBedrock"] {
-        if let Some(sig) = m
-            .get(key)
-            .and_then(|p| p.get("signature"))
-            .and_then(|s| s.as_str())
-        {
-            return Some(sig.to_string());
-        }
-    }
-    None
-}
-
 /// Stream text from the model.
 ///
 /// # Example
@@ -805,7 +791,10 @@ pub async fn stream_text(
     options: GenerateTextOptions,
 ) -> Result<StreamTextResult, AiMuxError> {
     // 1. Convert user prompt to provider-facing prompt.
-    let (messages, instructions) = split_prompt(prompt.into(), options.instructions.as_deref());
+    let repair_tool_call = options.repair_tool_call.clone();
+    let tools = options.tools.clone();
+    let operation_instructions = options.instructions.clone();
+    let (messages, instructions) = split_prompt(prompt.into(), operation_instructions.as_deref());
     let lm_prompt = convert_to_language_model_prompt(&messages, instructions);
 
     // 2. Build CallOptions.
@@ -883,6 +872,52 @@ pub async fn stream_text(
         request_body,
         response_headers,
     } = result;
+    let mut stream = stream;
+    let stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>> =
+        Box::pin(async_stream::stream! {
+            while let Some(item) = stream.next().await {
+                match item {
+                    Ok(StreamPart::ToolCall {
+                        tool_call_id,
+                        tool_name,
+                        input,
+                        provider_executed,
+                        dynamic,
+                        thought_signature,
+                        provider_metadata,
+                        ..
+                    }) => {
+                        let parsed = parse_tool_call(
+                            RawToolCall {
+                                tool_call_id,
+                                tool_name,
+                                input: crate::parse_tool_call::raw_tool_input(&input),
+                                provider_executed,
+                                dynamic,
+                                thought_signature,
+                                provider_metadata,
+                            },
+                            tools.as_deref(),
+                            repair_tool_call.as_ref(),
+                            &messages,
+                            operation_instructions.as_deref(),
+                        ).await;
+                        yield Ok(StreamPart::ToolCall {
+                            tool_call_id: parsed.tool_call_id,
+                            tool_name: parsed.tool_name,
+                            input: parsed.input,
+                            provider_executed: parsed.provider_executed,
+                            dynamic: parsed.dynamic,
+                            thought_signature: parsed.thought_signature,
+                            invalid: parsed.invalid,
+                            error: parsed.error,
+                            provider_metadata: parsed.provider_metadata,
+                        });
+                    }
+                    item => yield item,
+                }
+            }
+        });
     // 录制开启时才包装(终结时写 outcome + 传输封闭);关闭时零成本透传。
     let stream = crate::recording::RecordingOutcomeStream::new(
         stream,
@@ -942,8 +977,9 @@ fn split_prompt(
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::openai_output::{
-    ChatCompletion, ChatCompletionStream, OpenAiStreamOptions, to_chat_completion,
-    to_chat_completion_stream,
+    ChatCompletion, ChatCompletionFunction, ChatCompletionStream, ChatCompletionToolCall,
+    OpenAiStreamOptions, parsed_tool_call_arguments, to_chat_completion, to_chat_completion_stream,
+    to_chat_completion_stream_with_deferred_tool_calls,
 };
 
 /// Generate text and return the result as an OpenAI Chat Completion.
@@ -951,6 +987,8 @@ use crate::openai_output::{
 /// This is the OpenAI-compatible equivalent of [`generate_text`]. Internally
 /// it calls `generate_text`, then converts the [`GenerateResult`] into a
 /// [`ChatCompletion`] via [`to_chat_completion`].
+/// Tool calls reflect Core parsing and any configured repair; provider
+/// response metadata, usage, and non-tool content are preserved from `raw`.
 ///
 /// Works with **any** provider (OpenAI, Anthropic, Google, …) — the output is
 /// always standard OpenAI Chat Completions JSON.
@@ -982,7 +1020,32 @@ pub async fn generate_text_as_openai(
     options: GenerateTextOptions,
 ) -> Result<ChatCompletion, AiMuxError> {
     let result = generate_text(model, prompt, options).await?;
-    Ok(to_chat_completion(&result.raw, model.model_id()))
+    let mut completion = to_chat_completion(&result.raw, model.model_id());
+    if let Some(choice) = completion.choices.first_mut() {
+        choice.message.tool_calls = if result.tool_calls.is_empty() {
+            None
+        } else {
+            Some(
+                result
+                    .tool_calls
+                    .iter()
+                    .map(|tool_call| ChatCompletionToolCall {
+                        id: tool_call.tool_call_id.clone(),
+                        tool_type: "function".to_string(),
+                        function: ChatCompletionFunction {
+                            name: tool_call.tool_name.clone(),
+                            arguments: parsed_tool_call_arguments(
+                                &tool_call.input,
+                                tool_call.invalid,
+                                tool_call.error.as_ref(),
+                            ),
+                        },
+                    })
+                    .collect(),
+            )
+        };
+    }
+    Ok(completion)
 }
 
 /// Stream text and return the result as a stream of OpenAI Chat Completion chunks.
@@ -1029,10 +1092,20 @@ pub async fn stream_text_as_openai(
     options: GenerateTextOptions,
     stream_options: OpenAiStreamOptions,
 ) -> Result<ChatCompletionStream, AiMuxError> {
+    // `parse_tool_call` only invokes repair when a tool set was supplied.
+    let defer_tool_calls = options.repair_tool_call.is_some() && options.tools.is_some();
     let result = stream_text(model, prompt, options).await?;
-    Ok(to_chat_completion_stream(
-        result.stream,
-        model.model_id(),
-        stream_options,
-    ))
+    if defer_tool_calls {
+        Ok(to_chat_completion_stream_with_deferred_tool_calls(
+            result.stream,
+            model.model_id(),
+            stream_options,
+        ))
+    } else {
+        Ok(to_chat_completion_stream(
+            result.stream,
+            model.model_id(),
+            stream_options,
+        ))
+    }
 }

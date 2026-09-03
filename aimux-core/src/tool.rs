@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
+use crate::error::AiMuxError;
+use crate::types::ProviderMetadata;
+
 /// A tool definition passed to the model in `CallOptions.tools`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -106,7 +109,8 @@ pub struct ToolCall {
     pub tool_call_id: String,
     /// Tool name.
     pub tool_name: String,
-    /// Arguments as a JSON value (usually an object).
+    /// Parsed arguments, or the original string when `invalid` is true and the
+    /// provider input was not valid JSON.
     pub input: Value,
     /// Whether the tool call will be executed by the provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -120,6 +124,16 @@ pub struct ToolCall {
     /// otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thought_signature: Option<String>,
+    /// Additional provider-specific metadata associated with this call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_metadata: Option<ProviderMetadata>,
+    /// Set when lookup, JSON parsing, or schema validation still failed after
+    /// the optional repair attempt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invalid: Option<bool>,
+    /// Typed failure associated with an invalid tool call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<AiMuxError>,
 }
 
 /// The result of executing a tool call, to be sent back to the model.

@@ -384,6 +384,7 @@ fn convert_assistant_tool_call_message() {
                 tool_call_id: "tool-call-1".to_string(),
                 tool_name: "tool-1".to_string(),
                 input: json!({ "test": "This is a tool message" }),
+                provider_executed: None,
                 thought_signature: None,
                 provider_options: None,
             },

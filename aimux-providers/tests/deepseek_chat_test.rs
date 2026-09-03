@@ -417,7 +417,10 @@ async fn should_extract_tool_call_content() {
         } => {
             assert_eq!(tool_call_id, "call_00_9V0vrf86Pc9aelHCJMZqnJBo");
             assert_eq!(tool_name, "weather");
-            assert_eq!(input, &json!({ "location": "San Francisco" }));
+            assert_eq!(
+                input,
+                &Value::String(r#"{"location": "San Francisco"}"#.into())
+            );
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -754,7 +757,10 @@ async fn should_stream_tool_call() {
     assert_eq!(tool_calls.len(), 1);
     assert_eq!(tool_calls[0].0, "call_1");
     assert_eq!(tool_calls[0].1, "weather");
-    assert_eq!(tool_calls[0].2, &json!({ "location": "San Francisco" }));
+    assert_eq!(
+        tool_calls[0].2,
+        &Value::String(r#"{"location": "San Francisco"}"#.into())
+    );
 
     // The last part should be Finish with ToolCalls.
     match parts.last() {

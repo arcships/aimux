@@ -154,6 +154,25 @@ class TypedModelTest {
     // ── Tests ───────────────────────────────────────────────────────────
 
     @Test
+    void topLevelToolCallProviderMetadataRoundTrips() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode metadata = mapper.createObjectNode();
+        metadata.set("google", mapper.createObjectNode().put("cache_id", "cache-1"));
+        Types.ToolCall original = Types.ToolCall.builder()
+            .toolCallId("call_1")
+            .toolName("get_weather")
+            .providerMetadata(metadata)
+            .build();
+
+        String json = Types.AimuxJson.MAPPER.writeValueAsString(original);
+        Types.ToolCall decoded = Types.AimuxJson.MAPPER.readValue(json, Types.ToolCall.class);
+
+        assertThat(json).contains("\"provider_metadata\"");
+        assertThat(decoded.getProviderMetadata()).isEqualTo(metadata);
+        assertThat(decoded).isEqualTo(original);
+    }
+
+    @Test
     void generateTextReturnsTypedGenerateTextResultWithTextAndRawContent() {
         server.setResponseBody(plainOpenAiResponse());
 
@@ -377,4 +396,3 @@ class TypedModelTest {
     // via a single-response mock; terminal stream failures throw AimuxException
     // from the C return/err path (same as raw Model.streamTextStream).
 }
-

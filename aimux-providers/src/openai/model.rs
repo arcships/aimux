@@ -359,8 +359,7 @@ pub async fn execute_generate(
     }
     if let Some(tool_calls) = choice.message.tool_calls {
         for tc in tool_calls {
-            let input: Value = serde_json::from_str(&tc.function.arguments)
-                .unwrap_or_else(|_| Value::String(tc.function.arguments.clone()));
+            let input = tc.function.arguments;
             content.push(GenerateContent::ToolCall {
                 tool_call_id: tc.id,
                 tool_name: tc.function.name,
@@ -776,30 +775,6 @@ pub async fn execute_stream(
                                 text_started = false;
                             }
 
-                            // Close any open tool calls.
-                            for &idx in &tool_call_order {
-                                if let Some(acc) = tool_calls.get(&idx) {
-                                    yield Ok(StreamPart::ToolInputEnd {
-                                        id: acc.id.clone(),
-                                        provider_metadata: None,
-                                    });
-                                    let args = &acc.arguments;
-                                    let input: Value = serde_json::from_str(args)
-                                        .unwrap_or_else(|_| Value::String(args.clone()));
-                                    yield Ok(StreamPart::ToolCall {
-                                        tool_call_id: acc.id.clone(),
-                                        tool_name: acc.name.clone(),
-                                        input,
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        thought_signature: None,
-                                        provider_metadata: None,
-                                    });
-                                }
-                            }
-                            tool_calls.clear();
-                            tool_call_order.clear();
-
                             final_finish_reason = Some(parse_finish_reason(&reason));
                         }
                     }
@@ -830,16 +805,15 @@ pub async fn execute_stream(
             });
         }
 
-        // Close any remaining tool calls (no finish_reason was received).
+        // A parsable argument buffer can still be a prefix of a longer input.
+        // Match AI SDK's tracker by finalizing only when the stream flushes.
         for &idx in &tool_call_order {
             if let Some(acc) = tool_calls.get(&idx) {
                 yield Ok(StreamPart::ToolInputEnd {
                     id: acc.id.clone(),
                     provider_metadata: None,
                 });
-                let args = &acc.arguments;
-                let input: Value = serde_json::from_str(args)
-                    .unwrap_or_else(|_| Value::String(args.clone()));
+                let input = Value::String(acc.arguments.clone());
                 yield Ok(StreamPart::ToolCall {
                     tool_call_id: acc.id.clone(),
                     tool_name: acc.name.clone(),
@@ -847,6 +821,8 @@ pub async fn execute_stream(
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
+                    invalid: None,
+                    error: None,
                     provider_metadata: None,
                 });
             }

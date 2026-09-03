@@ -161,6 +161,13 @@ class ToolCall {
   final bool? isDynamic;
   @JsonKey(name: 'thought_signature')
   final String? thoughtSignature;
+  /// Additional provider-specific metadata associated with this call.
+  @JsonKey(name: 'provider_metadata', includeIfNull: false)
+  final dynamic providerMetadata;
+  /// Set by Core when the tool call stays invalid after optional repair.
+  final bool? invalid;
+  /// The typed lookup, parse, schema, or repair failure for an invalid call.
+  final dynamic error;
 
   ToolCall({
     required this.toolCallId,
@@ -169,6 +176,9 @@ class ToolCall {
     this.providerExecuted,
     this.isDynamic,
     this.thoughtSignature,
+    this.providerMetadata,
+    this.invalid,
+    this.error,
   });
 
   factory ToolCall.fromJson(Map<String, dynamic> json) =>
@@ -1247,6 +1257,10 @@ final class StreamPartToolCall extends StreamPart {
   final bool? isDynamic;
   final String? thoughtSignature;
   final Map<String, dynamic>? providerMetadata;
+  /// Set by Core when the tool call stays invalid after optional repair.
+  final bool? invalid;
+  /// The typed lookup, parse, schema, or repair failure for an invalid call.
+  final dynamic error;
 
   StreamPartToolCall({
     required this.toolCallId,
@@ -1256,6 +1270,8 @@ final class StreamPartToolCall extends StreamPart {
     this.isDynamic,
     this.thoughtSignature,
     this.providerMetadata,
+    this.invalid,
+    this.error,
   });
 
   factory StreamPartToolCall.fromJson(Map<String, dynamic> json) =>
@@ -1268,6 +1284,8 @@ final class StreamPartToolCall extends StreamPart {
         thoughtSignature: json['thought_signature'] as String?,
         providerMetadata:
             json['provider_metadata'] as Map<String, dynamic>?,
+        invalid: json['invalid'] as bool?,
+        error: json['error'],
       );
 
   @override
@@ -1280,6 +1298,8 @@ final class StreamPartToolCall extends StreamPart {
           if (isDynamic != null) 'dynamic': isDynamic,
           if (thoughtSignature != null) 'thought_signature': thoughtSignature,
           if (providerMetadata != null) 'provider_metadata': providerMetadata,
+          if (invalid != null) 'invalid': invalid,
+          if (error != null) 'error': error,
         },
       };
 }
@@ -1794,15 +1814,17 @@ final class ContentPartToolCall extends ContentPart {
   final String toolCallId;
   final String toolName;
   final dynamic input;
+  final bool? providerExecuted;
   final String? thoughtSignature;
   final Map<String, dynamic>? providerOptions;
   const ContentPartToolCall(
-      {required this.toolCallId, required this.toolName, required this.input, this.thoughtSignature, this.providerOptions});
+      {required this.toolCallId, required this.toolName, required this.input, this.providerExecuted, this.thoughtSignature, this.providerOptions});
   static ContentPartToolCall fromJson(Map<String, dynamic> json) =>
       ContentPartToolCall(
         toolCallId: json['tool_call_id'] as String,
         toolName: json['tool_name'] as String,
         input: json['input'],
+        providerExecuted: json['provider_executed'] as bool?,
         thoughtSignature: json['thought_signature'] as String?,
         providerOptions: json['provider_options'] as Map<String, dynamic>?,
       );
@@ -1812,6 +1834,7 @@ final class ContentPartToolCall extends ContentPart {
         'tool_call_id': toolCallId,
         'tool_name': toolName,
         'input': input,
+        if (providerExecuted != null) 'provider_executed': providerExecuted,
         if (thoughtSignature != null) 'thought_signature': thoughtSignature,
         if (providerOptions != null) 'provider_options': providerOptions,
       };

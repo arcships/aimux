@@ -407,7 +407,7 @@ async fn do_generate_extracts_tool_call() {
         } => {
             assert_eq!(tool_call_id, "call_abc");
             assert_eq!(tool_name, "get-weather");
-            assert_eq!(input, &json!({"city": "SF"}));
+            assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -538,7 +538,7 @@ async fn do_stream_emits_tool_call() {
     let (id, name, input) = tool_call.expect("should have ToolCall");
     assert_eq!(id, "call_abc");
     assert_eq!(name, "get-weather");
-    assert_eq!(input, json!({"city": "SF"}));
+    assert_eq!(input, Value::String(r#"{"city":"SF"}"#.into()));
 }
 
 /// A 401 response maps to `AiMuxError::ApiCall` (401 in `status_code`).

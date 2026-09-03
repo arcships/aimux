@@ -536,16 +536,6 @@ fn parse_usage(v: &serde_json::Value) -> Result<Usage, AiMuxError> {
     })
 }
 
-/// 解析 OpenAI tool_call `arguments`(JSON 字符串)为 `Value`。
-///
-/// 非法 JSON → 回退为 `Value::String(raw)`,**不返回错误**:与 openai provider
-/// 正向解析一致(`serde_json::from_str(args).unwrap_or_else(|_| Value::String(args))`)。
-/// 部分流式拼接偶发非完整 JSON,provider 侧同样容忍——回放须与正向解析同语义,
-/// 否则同一录制在真实调用与回放间行为分叉。
-fn parse_tool_arguments(args: &str) -> serde_json::Value {
-    serde_json::from_str(args).unwrap_or_else(|_| serde_json::Value::String(args.to_string()))
-}
-
 /// 重建非流式结果。
 ///
 /// 仅支持 OpenAI `chat.completions` 格式:`choices[0].message` 的 `content`
@@ -601,7 +591,7 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
                 .get("arguments")
                 .and_then(|x| x.as_str())
                 .unwrap_or("");
-            let input = parse_tool_arguments(args_str);
+            let input = args_str.to_string();
             content.push(GenerateContent::ToolCall {
                 tool_call_id,
                 tool_name,
@@ -647,9 +637,8 @@ struct ToolCallAccumulator {
 /// 支持(C4-8):
 /// - `delta.content` → TextStart/TextDelta/TextEnd;
 /// - `delta.reasoning_content`/`reasoning` → Reasoning*(优先 reasoning_content);
-/// - `delta.tool_calls` → 按 `index` 稳定累积,ToolInputStart/Delta + (finish 或
-///   流末)ToolInputEnd + ToolCall;`arguments` 非法 JSON 回退为字符串(与正向
-///   解析一致,见 [`parse_tool_arguments`]);
+/// - `delta.tool_calls` → 按 `index` 稳定累积,ToolInputStart/Delta + 流末
+///   ToolInputEnd/ToolCall;`arguments` 保持 provider 原始字符串;
 /// - 首帧 `id`/`model` → ResponseMetadata(与 provider 一致);
 /// - usage-only 末帧(`choices:[]` + `usage`)→ 累积到 Finish.usage。
 ///
@@ -825,7 +814,8 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                     }
                 }
 
-                // finish_reason:结束 reasoning/text/tool_calls,捕获 finish。
+                // finish_reason:结束 reasoning/text 并捕获 finish。Tool calls
+                // 只在流结束时收尾,与 AI SDK streaming tracker 一致。
                 if let Some(fr) = choice.get("finish_reason").and_then(|x| x.as_str()) {
                     if reasoning_started {
                         parts.push(Ok(StreamPart::ReasoningEnd {
@@ -841,26 +831,6 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                         }));
                         text_started = false;
                     }
-                    for &i in &tool_order {
-                        if let Some(acc) = tool_calls.get(&i) {
-                            parts.push(Ok(StreamPart::ToolInputEnd {
-                                id: acc.id.clone(),
-                                provider_metadata: None,
-                            }));
-                            let input = parse_tool_arguments(&acc.arguments);
-                            parts.push(Ok(StreamPart::ToolCall {
-                                tool_call_id: acc.id.clone(),
-                                tool_name: acc.name.clone(),
-                                input,
-                                provider_executed: None,
-                                dynamic: None,
-                                thought_signature: None,
-                                provider_metadata: None,
-                            }));
-                        }
-                    }
-                    tool_calls.clear();
-                    tool_order.clear();
                     let (unified, raw) = parse_finish(Some(fr));
                     final_finish = Some(FinishReason { unified, raw });
                 }
@@ -868,7 +838,7 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
         }
     }
 
-    // 收尾:结束未关闭的 reasoning/text/tool_calls(未见 finish_reason 时)。
+    // 收尾:结束未关闭的 reasoning/text/tool_calls。
     if reasoning_started {
         parts.push(Ok(StreamPart::ReasoningEnd {
             id: reasoning_id,
@@ -887,14 +857,15 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                 id: acc.id.clone(),
                 provider_metadata: None,
             }));
-            let input = parse_tool_arguments(&acc.arguments);
             parts.push(Ok(StreamPart::ToolCall {
                 tool_call_id: acc.id.clone(),
                 tool_name: acc.name.clone(),
-                input,
+                input: serde_json::Value::String(acc.arguments.clone()),
                 provider_executed: None,
                 dynamic: None,
                 thought_signature: None,
+                invalid: None,
+                error: None,
                 provider_metadata: None,
             }));
         }
@@ -1033,6 +1004,7 @@ fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
         session_id: o.session_id,
         abort_signal: None,
         include_raw_chunks: o.include_raw_chunks,
+        repair_tool_call: None,
     }
 }
 
@@ -1646,13 +1618,13 @@ mod tests {
         };
         assert_eq!(tool_call_id, "call_abc");
         assert_eq!(tool_name, "get_weather");
-        assert_eq!(input, &serde_json::json!({ "city": "SF" }));
+        assert_eq!(input, &serde_json::json!(r#"{"city":"SF"}"#));
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
     }
 
     #[test]
     fn mock_model_tool_call_bad_json_arguments_falls_back_to_string() {
-        // C4-4:arguments 非法 JSON → 回退为字符串值(与 openai provider 正向解析一致)。
+        // Provider-facing replay keeps arguments as their original string.
         let mut rec = openai_recording("t1", "ping", "x", "tool_calls");
         let body = serde_json::json!({
             "id": "chatcmpl-mock",
@@ -1739,7 +1711,7 @@ mod tests {
             })
             .collect();
         assert_eq!(deltas, vec!["{\"city\":\"SF\"}"]);
-        // ToolInputEnd + ToolCall(finish_reason 触发)。
+        // ToolInputEnd + ToolCall are emitted when the replay stream flushes.
         assert!(
             parts
                 .iter()
@@ -1760,7 +1732,7 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "call_1");
         assert_eq!(calls[0].1, "get_weather");
-        assert_eq!(calls[0].2, serde_json::json!({"city":"SF"}));
+        assert_eq!(calls[0].2, serde_json::json!(r#"{"city":"SF"}"#));
         // finish_reason tool_calls。
         assert!(parts.iter().any(|p| matches!(
             p,

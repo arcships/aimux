@@ -189,7 +189,8 @@ test('wrapper: generateText parses tool_calls + raw.content ToolCall', async (t)
     if (tc && 'ToolCall' in tc) {
       t.is(tc.ToolCall.tool_name, 'get_weather')
       t.is(tc.ToolCall.tool_call_id, 'call_abc')
-      t.deepEqual(tc.ToolCall.input, { location: 'Tokyo' })
+      // raw content keeps the provider's argument text (see e2e.test.ts).
+      t.is(tc.ToolCall.input, '{"location":"Tokyo"}')
     }
   } finally {
     await closeServer(server)

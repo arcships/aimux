@@ -11,7 +11,7 @@ import Foundation
 //
 // Every fallible C function returns `aimux_error_t *` (`OpaquePointer?`):
 // NULL = success (result in the trailing out-param), non-NULL = failure. The
-// unified code is AiMuxError (1...13), RecordingError (100...105), or a C ABI
+// unified code is AiMuxError (1...13, 15...17), RecordingError (100...105), or a C ABI
 // failure (200...206). The three `expect*` decoders copy the relevant fields, release
 // it with `aimux_error_free` (exactly once) and return the Swift error
 // to throw. Errors are not handles: never `aimux_drop_handle` one.
@@ -44,7 +44,7 @@ func expectFfiError(_ e: OpaquePointer, context: String) -> any Error {
     return invariant("aimux ffi: \(context): \(message)")
 }
 
-/// Decode a returned error from an `[AiMuxError]` call: 1...13 becomes
+/// Decode a returned error from an `[AiMuxError]` call: 1...13 / 15...17 becomes
 /// `AimuxError`; 200...206 is decoded by `expectFfiError`. Frees `e` once.
 func expectAimuxError(_ e: OpaquePointer, context: String) -> any Error {
     let code = aimux_error_code(e)
@@ -110,7 +110,7 @@ func ffiStringCall(
 
 /// Structured aimux failure type (Swift `Error`).
 ///
-/// Maps 1:1 from the 13 core `AiMuxError` variants. Every HTTP-shaped failure
+/// Maps 1:1 from the 15 core `AiMuxError` variants. Every HTTP-shaped failure
 /// is `.apiCall` (`AIMUX_E_API_CALL`). Only aimux-core produces these: a
 /// binding-local failure (raw JSON that does not parse, a typed value that
 /// fails to encode, library output that fails to decode) surfaces as the
@@ -134,7 +134,6 @@ func ffiStringCall(
 public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatable, Sendable {
     case jsonParse(message: String, status: Int, retryMs: Int64, retryable: Bool)
     case invalidResponseData(message: String, status: Int, retryMs: Int64, retryable: Bool)
-    case tool(message: String, status: Int, retryMs: Int64, retryable: Bool)
     case invalidArgument(message: String, status: Int, retryMs: Int64, retryable: Bool)
     case invalidPrompt(message: String, status: Int, retryMs: Int64, retryable: Bool)
     case tokenExpired(message: String, status: Int, retryMs: Int64, retryable: Bool)
@@ -149,6 +148,14 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
     case apiCall(message: String, status: Int, retryMs: Int64, retryable: Bool, providerCode: String? = nil, providerMessage: String? = nil, requestId: String? = nil, responseBody: String? = nil)
     case timeout(message: String, status: Int, retryMs: Int64, retryable: Bool)
     case aborted(message: String, status: Int, retryMs: Int64, retryable: Bool)
+    /// The model called a tool that is not in the supplied tool set.
+    case noSuchTool(message: String, status: Int, retryMs: Int64, retryable: Bool, toolName: String, availableTools: [String]?)
+    /// The model produced tool arguments that fail to parse or validate.
+    case invalidToolInput(message: String, status: Int, retryMs: Int64, retryable: Bool, toolName: String, toolInput: String)
+    /// A `repairToolCall` hook itself failed; `originalError` is the error it
+    /// was repairing, as externally-tagged wire JSON (the same encoding as
+    /// `ToolCall.error`).
+    case toolCallRepair(message: String, status: Int, retryMs: Int64, retryable: Bool, originalError: String)
     case other(message: String, status: Int, retryMs: Int64, retryable: Bool)
 
     // MARK: Accessors
@@ -158,7 +165,6 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         switch self {
         case .jsonParse(let m, let s, let r, let t),
              .invalidResponseData(let m, let s, let r, let t),
-             .tool(let m, let s, let r, let t),
              .invalidArgument(let m, let s, let r, let t),
              .invalidPrompt(let m, let s, let r, let t),
              .tokenExpired(let m, let s, let r, let t),
@@ -168,6 +174,9 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
              .apiCall(let m, let s, let r, let t, _, _, _, _),
              .timeout(let m, let s, let r, let t),
              .aborted(let m, let s, let r, let t),
+             .noSuchTool(let m, let s, let r, let t, _, _),
+             .invalidToolInput(let m, let s, let r, let t, _, _),
+             .toolCallRepair(let m, let s, let r, let t, _),
              .other(let m, let s, let r, let t):
             return (m, s, r, t)
         }
@@ -179,7 +188,6 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         switch self {
         case .jsonParse: c = AIMUX_E_JSON_PARSE
         case .invalidResponseData: c = AIMUX_E_INVALID_RESPONSE_DATA
-        case .tool: c = AIMUX_E_TOOL
         case .invalidArgument: c = AIMUX_E_INVALID_ARGUMENT
         case .invalidPrompt: c = AIMUX_E_INVALID_PROMPT
         case .tokenExpired: c = AIMUX_E_TOKEN_EXPIRED
@@ -189,6 +197,9 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         case .apiCall: c = AIMUX_E_API_CALL
         case .timeout: c = AIMUX_E_TIMEOUT
         case .aborted: c = AIMUX_E_ABORTED
+        case .noSuchTool: c = AIMUX_E_NO_SUCH_TOOL
+        case .invalidToolInput: c = AIMUX_E_INVALID_TOOL_INPUT
+        case .toolCallRepair: c = AIMUX_E_TOOL_CALL_REPAIR
         case .other: c = AIMUX_E_OTHER
         }
         return Int32(bitPattern: c.rawValue)
@@ -256,6 +267,36 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         return nil
     }
 
+    /// `.noSuchTool` / `.invalidToolInput` only: the tool name the model called.
+    public var toolName: String? {
+        switch self {
+        case .noSuchTool(_, _, _, _, let v, _), .invalidToolInput(_, _, _, _, let v, _):
+            return v
+        default:
+            return nil
+        }
+    }
+
+    /// `.noSuchTool` only: the available tool names, or `nil` when no tool set
+    /// was supplied.
+    public var availableTools: [String]? {
+        if case .noSuchTool(_, _, _, _, _, let v) = self { return v }
+        return nil
+    }
+
+    /// `.invalidToolInput` only: the raw argument text the model produced.
+    public var toolInput: String? {
+        if case .invalidToolInput(_, _, _, _, _, let v) = self { return v }
+        return nil
+    }
+
+    /// `.toolCallRepair` only: the original lookup/parse/validation error as
+    /// externally-tagged wire JSON (the same encoding as `ToolCall.error`).
+    public var originalError: String? {
+        if case .toolCallRepair(_, _, _, _, let v) = self { return v }
+        return nil
+    }
+
     public var description: String { message }
 
     public var errorDescription: String? {
@@ -286,8 +327,6 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
             return .jsonParse(message: message, status: status, retryMs: retryMs, retryable: retryable)
         case AIMUX_E_INVALID_RESPONSE_DATA:
             return .invalidResponseData(message: message, status: status, retryMs: retryMs, retryable: retryable)
-        case AIMUX_E_TOOL:
-            return .tool(message: message, status: status, retryMs: retryMs, retryable: retryable)
         case AIMUX_E_INVALID_ARGUMENT:
             return .invalidArgument(message: message, status: status, retryMs: retryMs, retryable: retryable)
         case AIMUX_E_INVALID_PROMPT:
@@ -314,6 +353,21 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
             return .timeout(message: message, status: status, retryMs: retryMs, retryable: retryable)
         case AIMUX_E_ABORTED:
             return .aborted(message: message, status: status, retryMs: retryMs, retryable: retryable)
+        case AIMUX_E_NO_SUCH_TOOL:
+            // The accessor's JSON string array (or NULL) → [String]?; a decode
+            // failure would be an FFI contract break, treated as "absent".
+            let tools = takeCString(aimux_error_available_tools(h))
+                .flatMap { try? JSONDecoder().decode([String].self, from: Data($0.utf8)) }
+            return .noSuchTool(message: message, status: status, retryMs: retryMs, retryable: retryable,
+                               toolName: takeCString(aimux_error_tool_name(h)) ?? "",
+                               availableTools: tools)
+        case AIMUX_E_INVALID_TOOL_INPUT:
+            return .invalidToolInput(message: message, status: status, retryMs: retryMs, retryable: retryable,
+                                     toolName: takeCString(aimux_error_tool_name(h)) ?? "",
+                                     toolInput: takeCString(aimux_error_tool_input(h)) ?? "")
+        case AIMUX_E_TOOL_CALL_REPAIR:
+            return .toolCallRepair(message: message, status: status, retryMs: retryMs, retryable: retryable,
+                                   originalError: takeCString(aimux_error_original_error(h)) ?? "")
         case AIMUX_E_OTHER:
             return .other(message: message, status: status, retryMs: retryMs, retryable: retryable)
         default:

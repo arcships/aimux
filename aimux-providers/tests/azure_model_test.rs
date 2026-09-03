@@ -674,7 +674,7 @@ async fn should_extract_tool_call() {
         } => {
             assert_eq!(tool_call_id, "call_abc");
             assert_eq!(tool_name, "get-weather");
-            assert_eq!(input, &json!({"city": "SF"}));
+            assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -716,7 +716,7 @@ async fn should_stream_tool_call() {
     let (id, name, input) = tool_call.expect("should have ToolCall");
     assert_eq!(id, "call_abc");
     assert_eq!(name, "get-weather");
-    assert_eq!(input, json!({"city": "SF"}));
+    assert_eq!(input, Value::String(r#"{"city":"SF"}"#.into()));
 }
 
 /// TS: "should send a json_schema response format for structured output"
