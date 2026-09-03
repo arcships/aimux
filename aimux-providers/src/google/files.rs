@@ -189,13 +189,10 @@ impl Files for GoogleFiles {
         ));
         init_headers.push(("Content-Type".to_string(), "application/json".to_string()));
 
-        // `upload_file` is a single-exchange Provider SPI operation (no Core
-        // `do_upload_file` wrapper, RFC-0031 §9.4), so nothing above this call
-        // retries any of its three stages. Each stage is retried independently
-        // (same Core primitive `execute_list_models` uses) rather than
-        // wrapping the whole upload: a transient failure in the upload or
-        // poll stage must not replay a prior stage — the init exchange that
-        // minted `upload_url`, or the potentially large upload body itself.
+        // Nothing above `upload_file` retries it (§9.4), so the retry lives
+        // here — per stage, not around the whole upload: a failure in the
+        // upload or poll stage must not replay the init exchange that minted
+        // `upload_url`, nor resend the file body.
         let retries = aimux_core::retry::prepare_retries(
             None,
             self.config.retry_config,
@@ -231,8 +228,7 @@ impl Files for GoogleFiles {
                     super::google_failed_response_handler(),
                 )
                 .await
-                // Applied per attempt (not just on final exhaustion) so a
-                // `RetryError`'s saved `errors` also carry this context.
+                // Per attempt, so a `RetryError`'s saved `errors` carry it too.
                 .map_err(|e| match e {
                     AiMuxError::ApiCall(d) => AiMuxError::ApiCall(Box::new(ApiCallError {
                         message: format!("Failed to initiate resumable upload: {}", d.message),
@@ -266,9 +262,6 @@ impl Files for GoogleFiles {
         // The upload URL comes from the init response's x-goog-upload-url
         // header and receives the user's file bytes; validate it. (AI SDK
         // fetches this URL unvalidated — kept stricter here deliberately.)
-        // Retried independently of the init stage above (§ note there): a
-        // retry here resends the same bytes to the same `upload_url`, never
-        // re-mints one.
         let upload_resp = retries
             .retry(|| async {
                 aimux_provider_utils::post_to_api(
@@ -290,7 +283,6 @@ impl Files for GoogleFiles {
                     super::google_failed_response_handler(),
                 )
                 .await
-                // Applied per attempt, same reasoning as the init stage above.
                 .map_err(|e| match e {
                     AiMuxError::ApiCall(d) => AiMuxError::ApiCall(Box::new(ApiCallError {
                         message: format!("Failed to upload file data: {}", d.message),
@@ -333,9 +325,6 @@ impl Files for GoogleFiles {
 
             let poll_url = format!("{}/{}", self.config.base_url, file.name);
 
-            // A status GET is idempotent, so it gets the same independent
-            // retry as the init/upload stages; a failure here never re-runs
-            // the upload.
             let poll_resp = retries
                 .retry(|| {
                     aimux_provider_utils::get_from_api(

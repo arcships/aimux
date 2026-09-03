@@ -716,11 +716,9 @@ future，不构造合并 signal，也不把 timeout 写进 `AbortSignal`。外�
 first-event peek；慢握手、200 后无首帧、以及首条 semantic output 迟到都受同一 budget 约束。
 被 peek 的正常事件会重新接回流首，第一条 semantic output 对用户可见前清除 timer。
 
-`do_stream` 返回后，provider stream 由 Core spawn 的 pump task 驱动并写入 unbounded channel，
-`first_chunk_ms`/`chunk_ms`/total/step deadline 都在 pump 侧观察：timer 只度量 provider 输出
-的到达间隔，消费方晚 poll 或处理上一条 item 的时间不计入。已到达但尚未被消费的 output 在
-timeout 之前原样交付，timeout 作为其后的 terminal `Err` 项出现。返回的 stream 被 drop 时
-pump 被 abort，provider stream 随之 drop，取消底层 HTTP exchange。aimux
+`do_stream` 返回后所有 deadline 都由 pump task 观察（见“stream 驱动”偏差行）：timer 只度量
+provider 输出的到达间隔，消费方晚 poll 的时间不计入；已到达但尚未被消费的 output 在 timeout
+之前原样交付，timeout 作为其后的 terminal `Err` 项出现。aimux
 目前是单 step，`step_ms` 与 `total_ms` 作用域重合——照样接受并在同一处 arm，以便字段语义
 跨语言一致、将来多 step 时不改 contract。
 
@@ -773,15 +771,10 @@ start/status 流），Core 拥有 poll 循环并分别 retry 两个阶段：
 - Provider-specific polling delay 不是通用 exponential retry；
 - 耗尽产生的 `RetryError` 原样透传，外层不得再次 submit。
 - **修订**（RFC-0031 review）：`options.n` 按 `VideoModel::max_videos_per_call`
-  切成多个 batch（AI SDK `generateVideo`/`generateImage` 同款算法：除最后一个
-  batch 外每个都是满批，最后一个是余数或整批），每个 batch **并发**跑一次
-  完整的独立 `do_start`/poll 流程（AI SDK 用 `Promise.all`；Rust 侧用
-  `futures::future::try_join_all`，第一个 batch 失败时其余尚在进行的 batch
-  future 被 drop，这点比 JS 更激进但不影响正确性——没有 batch 会重连或取消
-  已经发出的 provider 任务）——每个 batch 独立铸造 idempotency key。结果按
-  batch 顺序拼接 `videos`/`warnings`；`provider_metadata` 跨 batch 用与
-  start/completion 相同的 deep-merge 策略聚合。`n == 0` 在任何网络调用之前
-  返回 `InvalidArgument`。
+  切 batch，每个 batch 并发跑一次独立的 `do_start`/poll 流程并独立铸造
+  idempotency key（AI SDK 用 `Promise.all`，Rust 侧 `try_join_all` 会在首个
+  失败时 drop 其余 batch future——不影响正确性，两边都不会重连或取消已发出的
+  provider 任务）。`n == 0` 在任何网络调用之前返回 `InvalidArgument`。
 
 ### 9.2 Router / MoA
 
@@ -806,15 +799,10 @@ Composite 外层不重放；重试放在已有语义边界内：
 
 `Files::upload_file` 按 AI SDK Provider SPI 本身就是公开 operation，没有对应的
 `do_upload_file`；本轮不为它虚构第二层。**修订**（RFC-0031 review）：`upload_file`
-现在用 Provider 已配置的 `RetryConfig`（`aimux_core::retry::prepare_retries` +
-`PreparedRetries::retry`，与 `execute_list_models` 同一 primitive）包住单次 HTTP
-exchange——upload 不计费，失败的 create-file 请求不会返回可供下一次请求复用的
-file id，因此对整个 exchange 做 plain retry 是安全的；这与非幂等的“创建资源”类
-POST 通常不能自动重试的一般规则不同，此处的例外前提就是“不计费 + 无副作用可
-重放”。OpenAI 与 Anthropic 各是一次 exchange，直接整体重试。Google Files 是
-init/upload/poll 三阶段：三个 exchange **分别独立**重试，而不是包住整个
-`upload_file`——upload 阶段的重试只重发文件字节到已经拿到的 `upload_url`，不会
-重新调用 init 铸造新 URL；poll 阶段的重试只重发状态 GET，不会触发 upload。
+自己用 Provider 已配置的 `RetryConfig` 重试（与 `execute_list_models` 同一
+primitive）。这是“创建资源类 POST 不自动重试”一般规则的显式例外，前提是
+upload 不计费、失败的 create-file 请求不会返回可复用的 file id。多阶段的
+Google Files 按 exchange 分别重试，而不是包住整个 `upload_file`。
 
 ---
 

@@ -221,15 +221,10 @@ impl TranscriptionModel for GladiaTranscriptionModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        // Core wraps the whole `do_generate` in one retry (RFC-0031 §6.2), so
-        // without per-stage retries here, a transient failure in a later
-        // stage would replay every earlier stage — re-uploading the audio to
-        // retry an initiate or poll failure. Each stage gets its own retry
-        // against the provider's configured retry settings instead; an
+        // Per-stage retry, not one retry around `do_generate`: Core's outer
+        // retry would re-upload the audio to retry a later stage. An
         // exhausted inner retry returns `AiMuxError::Retry`, which the outer
-        // Core retry passes through unchanged rather than re-wrapping
-        // (`retry_with_exponential_backoff`'s `Err(AiMuxError::Retry(_))`
-        // arm), so `do_generate` is never replayed either.
+        // retry passes through, so `do_generate` is never replayed (§6.2).
         let retries = retry::prepare_retries(
             options.max_retries,
             self.retry_config(),

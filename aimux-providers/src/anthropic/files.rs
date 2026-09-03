@@ -131,12 +131,10 @@ impl Files for AnthropicFiles {
         // sets `Content-Type` from it, so it is intentionally not added to the
         // header list above.
         //
-        // `upload_file` is a single-exchange Provider SPI operation (no Core
-        // `do_upload_file` wrapper, RFC-0031 §9.4), so nothing above this call
-        // retries it. Apply the Core retry primitive here, same as
-        // `execute_list_models`: the upload itself is not billable, and a
-        // failed create-a-file request never returns a file id to replay
-        // against, so a plain retry of the whole exchange is safe.
+        // Nothing above `upload_file` retries it (there is no Core
+        // `do_upload_file`), so the retry lives here — safe for the whole
+        // exchange because an upload is not billable and a failed
+        // create-a-file request returns no id to replay against (§9.4).
         let retries = aimux_core::retry::prepare_retries(
             None,
             self.config.retry_config,

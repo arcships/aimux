@@ -15,6 +15,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
+use aimux_core::retry::RetryConfig;
 use aimux_core::shared::{FileBytes, SharedProviderOptions};
 use aimux_providers::{GoogleConfig, GoogleProvider};
 
@@ -36,8 +37,16 @@ fn default_file_resource() -> Value {
 }
 
 fn provider(server: &MockServer) -> GoogleProvider {
-    let config =
-        GoogleConfig::new("test-api-key").with_base_url(format!("{}/v1beta", server.uri()));
+    provider_with_retries(server, RetryConfig::default().max_retries)
+}
+
+fn provider_with_retries(server: &MockServer, max_retries: u32) -> GoogleProvider {
+    let config = GoogleConfig::new("test-api-key")
+        .with_base_url(format!("{}/v1beta", server.uri()))
+        .with_retry_config(RetryConfig {
+            max_retries,
+            ..Default::default()
+        });
     GoogleProvider::new(config)
 }
 
@@ -401,16 +410,8 @@ async fn should_throw_when_initiation_request_fails() {
         .mount(&server)
         .await;
 
-    // A persistent failure exhausts retries either way; pin max_retries to 0
-    // so this test (which only checks the message text, not retry
-    // exhaustion) stays fast.
-    let config = GoogleConfig::new("test-api-key")
-        .with_base_url(format!("{}/v1beta", server.uri()))
-        .with_retry_config(aimux_core::retry::RetryConfig {
-            max_retries: 0,
-            ..Default::default()
-        });
-    let provider = GoogleProvider::new(config);
+    // Only the message text matters here; skip the retries so it stays fast.
+    let provider = provider_with_retries(&server, 0);
     let files = provider.files();
 
     let result = files.upload_file(&upload_options()).await;
@@ -465,16 +466,8 @@ async fn should_throw_when_upload_request_fails() {
         .mount(&server)
         .await;
 
-    // A persistent failure exhausts retries either way; pin max_retries to 0
-    // so this test (which only checks the message text, not retry
-    // exhaustion) stays fast.
-    let config = GoogleConfig::new("test-api-key")
-        .with_base_url(format!("{}/v1beta", server.uri()))
-        .with_retry_config(aimux_core::retry::RetryConfig {
-            max_retries: 0,
-            ..Default::default()
-        });
-    let provider = GoogleProvider::new(config);
+    // Only the message text matters here; skip the retries so it stays fast.
+    let provider = provider_with_retries(&server, 0);
     let files = provider.files();
 
     let result = files.upload_file(&upload_options()).await;
@@ -640,13 +633,7 @@ async fn transient_upload_failure_is_retried_without_re_initiating() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key")
-        .with_base_url(format!("{}/v1beta", server.uri()))
-        .with_retry_config(aimux_core::retry::RetryConfig {
-            max_retries: 1,
-            ..Default::default()
-        });
-    let provider = GoogleProvider::new(config);
+    let provider = provider_with_retries(&server, 1);
     let files = provider.files();
 
     let result = files.upload_file(&upload_options()).await.unwrap();
