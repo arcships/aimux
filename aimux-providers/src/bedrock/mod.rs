@@ -24,12 +24,34 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{RetryConfig, without_trailing_slash};
+use serde_json::Value;
 
 pub use embedding::BedrockEmbeddingModel;
 pub use image::BedrockImageModel;
 pub use model::{BedrockConfig, BedrockModel};
 pub use reranking::BedrockRerankingModel;
 pub use sigv4::AwsCredentials;
+
+pub(crate) fn bedrock_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
+{
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        // Converse errors may be a top-level AWS error object or be wrapped
+        // as `{ "error": { ... } }` by compatible gateways.
+        let error = data.get("error").unwrap_or(data);
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: error
+                .get("type")
+                .or_else(|| error.get("__type"))
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        }
+    })
+}
 
 /// Authentication method for the Bedrock provider.
 #[derive(Debug, Clone)]
@@ -47,7 +69,7 @@ pub struct BedrockProviderConfig {
     pub auth: BedrockAuth,
     /// AWS region, used for constructing model ARNs and agent-runtime URLs.
     pub region: String,
-    /// 重试配置(M1b)。默认 `RetryConfig::default()`。
+    /// Retry settings used by Core model operations.
     pub retry_config: RetryConfig,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
@@ -172,7 +194,7 @@ impl BedrockProviderConfig {
 
 /// Amazon Bedrock provider — creates [`BedrockModel`] instances.
 ///
-/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct BedrockProvider {
     config: BedrockProviderConfig,
@@ -247,6 +269,7 @@ impl BedrockProvider {
             self.config.region.clone(),
             self.config.auth.clone(),
         )
+        .with_retry_config(self.config.retry_config)
     }
 }
 
@@ -290,23 +313,24 @@ impl Provider for BedrockProvider {
             let mut headers = signed.headers;
             headers.push(("Accept".to_string(), "application/json".to_string()));
 
-            use aimux_provider_utils::{
-                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send,
-            };
-            let resp = send(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url,
-                    headers,
-                    body: HttpBody::Empty,
-                    abort_signal: None,
-                    call_id: None,
-                    recording_context: None,
-                },
-                retry_config,
-                &DEFAULT_ERROR_STRUCTURE,
-            )
-            .await?;
+            use aimux_provider_utils::HttpRequest;
+            // Retry rationale: see `openai::model::execute_list_models`.
+            let resp = aimux_core::retry::prepare_retries(None, retry_config, None)
+                .retry(|| {
+                    aimux_provider_utils::get_from_api(
+                        HttpRequest {
+                            url: url.clone(),
+                            headers: headers.clone(),
+                            abort_signal: None,
+                            call_id: None,
+                            recording_context: None,
+                            ..Default::default()
+                        },
+                        aimux_provider_utils::create_json_response_handler(),
+                        bedrock_failed_response_handler(),
+                    )
+                })
+                .await?;
 
             // AWS response: { modelSummaries: [{ modelId, modelName, ... }] }
             #[derive(serde::Deserialize)]
@@ -321,7 +345,7 @@ impl Provider for BedrockProvider {
                 #[serde(default, rename = "modelName")]
                 name: Option<String>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)?;
+            let parsed: Resp = resp.value;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .summaries
                 .into_iter()

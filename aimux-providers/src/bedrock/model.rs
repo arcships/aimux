@@ -8,7 +8,8 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use futures::StreamExt;
+use bytes::Bytes;
+use futures::{StreamExt, stream::BoxStream};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
@@ -19,19 +20,67 @@ use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usa
 
 use serde_json::json;
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
-};
+use aimux_provider_utils::{HttpBody, HttpRequest, RetryConfig};
 
 use super::BedrockAuth;
 use super::convert::{build_request_body, convert_usage, map_finish_reason};
 use super::sigv4::sign_request;
 use super::types::{BedrockContentBlock, BedrockConverseResponse};
 
+fn bedrock_event_stream_response_handler()
+-> aimux_provider_utils::ResponseHandler<BoxStream<'static, Result<Bytes, AiMuxError>>> {
+    aimux_provider_utils::ResponseHandler::new(|input| async move {
+        let headers = aimux_provider_utils::extract_response_headers::extract_response_headers(
+            input.response.headers(),
+        );
+        let output_headers = headers.clone();
+        let url = input.url;
+        let request_body_values = input.request_body_values;
+        let signal = input.abort_signal;
+        let stream = input.response.bytes_stream().map(move |result| {
+            result.map_err(|error| {
+                AiMuxError::ApiCall(Box::new(aimux_core::ApiCallError {
+                    response_headers: Some(headers.clone()),
+                    is_retryable: true,
+                    ..aimux_core::ApiCallError::new(
+                        error.to_string(),
+                        url.clone(),
+                        request_body_values.clone(),
+                    )
+                }))
+            })
+        });
+        let value: BoxStream<'static, Result<Bytes, AiMuxError>> = match signal {
+            Some(signal) => Box::pin(async_stream::stream! {
+                futures::pin_mut!(stream);
+                loop {
+                    tokio::select! {
+                        biased;
+                        () = signal.cancelled() => {
+                            yield Err(AiMuxError::from_abort_signal(&signal));
+                            break;
+                        }
+                        item = stream.next() => match item {
+                            Some(item) => yield item,
+                            None => break,
+                        }
+                    }
+                }
+            }),
+            None => Box::pin(stream),
+        };
+        Ok(aimux_provider_utils::ResponseHandlerOutput {
+            value,
+            raw_value: None,
+            response_headers: output_headers,
+        })
+    })
+    .streaming()
+}
+
 /// An Amazon Bedrock language model (e.g. `anthropic.claude-3-5-sonnet-20240620-v1:0`).
 ///
-/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct BedrockModel {
     model_id: String,
@@ -43,7 +92,7 @@ pub struct BedrockModel {
 pub struct BedrockConfig {
     pub base_url: String,
     pub auth: BedrockAuth,
-    /// 重试配置(M1b)。默认 `RetryConfig::default()`。
+    /// Retry settings used by Core model operations.
     pub retry_config: RetryConfig,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     /// SigV4 记 access-key 来源;BearerToken 记 bearer-token 来源。不存明文。
@@ -113,6 +162,10 @@ impl LanguageModel for BedrockModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         use aimux_core::recording::ProviderRecord;
         // M2b: record identity + credential source + region (encoded in
@@ -144,32 +197,25 @@ impl LanguageModel for BedrockModel {
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.endpoint(false);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_timed(
+        let resp = aimux_provider_utils::post_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url,
                 headers,
-                body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
+                ..Default::default()
             },
-            retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+            aimux_provider_utils::create_json_response_handler(),
+            super::bedrock_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let data: BedrockConverseResponse =
-            serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
+        let data: BedrockConverseResponse = resp.value;
 
         // Extract content from response.output.message.content
         let mut content = Vec::new();
@@ -218,36 +264,30 @@ impl LanguageModel for BedrockModel {
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.endpoint(true);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_stream_timed(
+        let resp = aimux_provider_utils::post_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url,
                 headers,
-                body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
+                ..Default::default()
             },
-            retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+            bedrock_event_stream_response_handler(),
+            super::bedrock_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
         // Bedrock converse-stream returns binary AWS event stream format.
         // We read the full body and decode it, then emit stream parts.
         // (For true streaming we'd decode incrementally, but the Bedrock event
         // stream codec requires buffering whole frames anyway.)
         let mut buf: Vec<u8> = Vec::new();
-        let mut body_stream = resp.body;
+        let mut body_stream = resp.value;
         while let Some(chunk) = body_stream.next().await {
             match chunk {
                 Ok(bytes) => buf.extend_from_slice(&bytes),
@@ -649,8 +689,3 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
         }
     }
 }
-
-// Suppress unused import warning for SseStream (kept for potential future use
-// with SSE-based Bedrock variants).
-#[allow(unused)]
-use super::event_stream;

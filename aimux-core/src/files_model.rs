@@ -1,4 +1,4 @@
-﻿//! The `Files` trait — the provider-facing interface for file management.
+//! The `Files` trait — the provider-facing interface for file management.
 //!
 //! Aligned with Vercel AI SDK `FilesV4`
 //! (`reference/ai/packages/provider/src/files/v4/`).
@@ -10,10 +10,10 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::AbortSignal;
 use crate::error::AiMuxError;
 use crate::shared::{
-    AbortSignal, FileBytes, SharedProviderMetadata, SharedProviderOptions, SharedProviderReference,
-    Warning,
+    FileBytes, SharedProviderMetadata, SharedProviderOptions, SharedProviderReference, Warning,
 };
 
 /// File data accepted by [`Files::upload_file`].

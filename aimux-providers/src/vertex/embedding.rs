@@ -13,27 +13,22 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
+use crate::google::google_failed_response_handler;
+
 use aimux_core::embedding_model::{
     EmbeddingCallOptions, EmbeddingModel, EmbeddingResponse, EmbeddingResult, EmbeddingUsage,
 };
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+use aimux_provider_utils::HttpRequest;
 
 use super::VertexAuth;
 use super::model::VertexConfig;
 
-/// Google-specific error structure: `{ "error": { "message": "..." } }`.
-const GOOGLE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["error", "message"],
-    type_path: &["error", "status"],
-};
-
 /// A Google Vertex AI embedding model (e.g. `"textembedding-gecko@001"`).
 ///
-/// Does **not** hold an HTTP client — `http::send` uses the process-wide shared
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the process-wide shared
 /// `Client` internally (RFC-0009 §4.1).
 pub struct VertexEmbeddingModel {
     model_id: String,
@@ -79,6 +74,10 @@ impl EmbeddingModel for VertexEmbeddingModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
     }
 
     fn max_embeddings_per_call(&self) -> Option<u32> {
@@ -142,25 +141,25 @@ impl EmbeddingModel for VertexEmbeddingModel {
                 self.config.base_url, self.model_id
             );
 
-            let resp = send(
+            let resp = aimux_provider_utils::post_json_to_api(
                 HttpRequest {
-                    method: HttpMethod::Post,
                     url,
                     headers,
-                    body: HttpBody::Json(Value::Object(body)),
 
                     abort_signal: options.abort_signal.clone(),
                     call_id: None,
                     recording_context: None,
+                    ..Default::default()
                 },
-                RetryConfig::default(),
-                &GOOGLE_ERROR_STRUCTURE,
+                Value::Object(body),
+                aimux_provider_utils::create_json_response_handler(),
+                google_failed_response_handler(),
             )
             .await?;
 
-            let response_headers = resp.headers;
+            let response_headers = resp.response_headers;
 
-            let raw_value: Value = serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
+            let raw_value: Value = resp.value;
 
             let embedding = raw_value
                 .get("embedding")
@@ -224,25 +223,25 @@ impl EmbeddingModel for VertexEmbeddingModel {
 
         let url = format!("{}/models/{}:predict", self.config.base_url, self.model_id);
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url,
                 headers,
-                body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                ..Default::default()
             },
-            RetryConfig::default(),
-            &GOOGLE_ERROR_STRUCTURE,
+            Value::Object(body),
+            aimux_provider_utils::create_json_response_handler(),
+            crate::google::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let raw_value: Value = serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
+        let raw_value: Value = resp.value;
 
         // Batch: response.predictions[].embeddings.values
         let (embeddings, total_tokens): (Vec<Vec<f32>>, u32) = raw_value

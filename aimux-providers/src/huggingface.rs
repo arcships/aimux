@@ -123,7 +123,7 @@ impl Provider for HuggingFaceProvider {
             let runtime = crate::openai::model::execute_list_models(
                 &config.base_url,
                 &headers,
-                &config.retry_config,
+                config.retry_config,
             )
             .await?;
             Ok(runtime)

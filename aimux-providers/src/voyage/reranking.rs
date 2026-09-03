@@ -16,10 +16,9 @@ use aimux_core::reranking_model::{
 };
 use aimux_core::types::Warning;
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+use aimux_provider_utils::HttpRequest;
 
-use super::VoyageConfig;
+use super::{VoyageConfig, voyage_failed_response_handler};
 
 /// Voyage provider-specific reranking options.
 #[derive(Debug, Clone, Default)]
@@ -148,28 +147,19 @@ impl RerankingModel for VoyageRerankingModel {
             .collect();
         header_list.push(("Content-Type".to_string(), "application/json".to_string()));
 
-        let resp = send(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
-                headers: header_list,
-                body: HttpBody::Json(body.clone()),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+        let resp = aimux_provider_utils::post_json_to_api(
+            HttpRequest::new(self.endpoint(), header_list, options),
+            body.clone(),
+            aimux_provider_utils::create_json_response_handler::<VoyageRerankingResponse>(),
+            voyage_failed_response_handler(),
         )
         .await?;
 
         // Capture response headers.
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let raw_body: Value = serde_json::from_slice(&resp.body)?;
-
-        let data: VoyageRerankingResponse = serde_json::from_value(raw_body.clone())?;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let data = resp.value;
 
         let ranking: Vec<RerankingRank> = data
             .data

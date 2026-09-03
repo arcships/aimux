@@ -174,7 +174,12 @@ async fn list_models_malformed_response() {
     let config = OpenAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
     let provider = OpenAIProvider::new(config);
     let err = provider.list_models().await.unwrap_err();
-    assert!(matches!(err, aimux_core::AiMuxError::JsonParse(_)));
+    assert!(matches!(
+        err,
+        aimux_core::AiMuxError::ApiCall(ref detail)
+            if detail.status_code == Some(200)
+                && detail.message.starts_with("Invalid JSON response:")
+    ));
 }
 
 #[tokio::test]

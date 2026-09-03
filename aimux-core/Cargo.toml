@@ -17,11 +17,19 @@ futures = { workspace = true }
 async-stream = { workspace = true }
 tracing = { workspace = true }
 ts-rs = { workspace = true }
+# Deliberately narrower than the workspace-wide `full`: core's production
+# code uses only timers (`time`) and `select!` (`macros`). Keeping the
+# declaration at the real API surface documents what Core actually asks
+# of the runtime (RFC-0016 had removed core's tokio dependency; RFC-0031
+# reintroduces it for operation deadlines and retry backoff).
+tokio = { version = "1", features = ["time", "macros", "rt", "sync"] }
 tokio-util = "0.7"
+httpdate = { workspace = true }
+rand = { workspace = true }
 base64 = "0.22"
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 
 [lints]
 workspace = true

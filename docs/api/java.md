@@ -75,6 +75,7 @@ RuntimeException
       ├── UnsupportedFunctionalityError
       ├── NoSuchModelError / NoSuchProviderError
       ├── APICallError               // every HTTP-shaped failure; classify on getStatusCode()
+      ├── RetryError                 // reason, errors, lastError
       ├── TimeoutError / RequestAbortedError
       └── OtherError
 ```
@@ -84,7 +85,7 @@ Every instance has:
 | Field | Meaning |
 |-------|---------|
 | `getMessage()` | human-readable text from C |
-| `getCode()` | `aimux_error_code_t` value 1–13 (matches `aimux-error.h`) |
+| `getCode()` | `aimux_error_code_t` value 1–14, where 14 = `Retry` (matches `aimux-error.h`) |
 | `getStatusCode()` | HTTP status, or `-1` |
 | `getRetryMs()` | rate-limit hint, or `-1` (`0` = retry now) |
 | `isRetryable()` | the `AiMuxError` retry verdict (not derivable from status) |
@@ -92,10 +93,15 @@ Every instance has:
 A code outside the enum is a header/library mismatch and fails with
 `IllegalStateException`, not an error type.
 
-Three subclasses carry the C payload of their variant (nullable `String`s,
-`null` when unavailable): `APICallError` —
-`getProviderCode()`, `getProviderMessage()`, `getRequestId()`, `getResponseBody()`;
-`NoSuchModelError` — `getModelId()`, `getModelType()`;
+Four subclasses carry the C payload of their variant (`null` when
+unavailable): `APICallError` — `getProviderCode()`, `getProviderMessage()`,
+`getResponseBody()`, `getUrl()`, `getRequestBodyValues()`,
+`getResponseHeaders()`, `getData()`; `RetryError` — `getReason()`
+(`RetryErrorReason.MAX_RETRIES_EXCEEDED` — every permitted attempt failed
+with a retryable error — or `ERROR_NOT_RETRYABLE` — a later attempt failed
+non-retryably), `getErrors()` (the per-attempt history, oldest first, each
+itself an `AimuxException` — typically `APICallError` with its full detail),
+`getLastError()`; `NoSuchModelError` — `getModelId()`, `getModelType()`;
 `NoSuchProviderError` — `getProviderId()`.
 
 Recording failures are a **separate type**, mirroring the two unrelated
@@ -134,11 +140,12 @@ types and share no base beyond `RuntimeException`.
 Transport: every fallible C call returns an opaque `aimux_error_t *`
 (JNA `Pointer`) — `null` on success with the result in a trailing out-parameter
 (`LongByReference` handle / `PointerByReference` JSON), non-null on failure.
-`AimuxResult` reads one unified code: 1–13 restores the matching
+`AimuxResult` reads one unified code: 1–14 restores the matching
 `AimuxException` subclass, 100–105 restores `RecordingException`, and 200–206
 becomes `IllegalStateException("aimux ffi: …")`. Payload getters are read only
-under their owning AiMuxError code. Every returned string is freed and the
-returned error is released with
+under their owning AiMuxError code; a `RetryError`'s attempt errors are new
+owned errors, decoded recursively and freed by the binding. Every returned
+string is freed and the returned error is released with
 `aimux_error_free` exactly once (errors are never handles). No JSON error
 envelopes on the main path. Subclasses are nested under `AimuxException` (e.g.
 `AimuxException.APICallError`).
@@ -360,7 +367,7 @@ in the wrapper-object wire form (e.g. `{"TextDelta":{...}}`).
 `EmbeddingCallOptions` / `EmbeddingResult`, `SpeechCallOptions` / `SpeechResult`,
 `ImageCallOptions` / `ImageResult`, `TranscriptionCallOptions` /
 `TranscriptionResult`, `RerankingCallOptions` / `RerankingResult`,
-`VideoCallOptions` / `VideoResult`, `SearchCallOptions` / `SearchResult`,
+`VideoCallOptions` / `VideoPollOptions` / `VideoResult`, `SearchCallOptions` / `SearchResult`,
 `UploadFileCallOptions` / `UploadFileResult`. Sealed unions (`AudioData`,
 `ImageOutputs`, `VideoData`) use custom Jackson serializers with the
 externally-tagged wire form. Response types (`EmbeddingResponse`, etc.) match

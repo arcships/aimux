@@ -8,7 +8,7 @@
  * Errors: every fallible C call returns an `aimux_error_t *` ([Pointer]?):
  * null = success, result written to the trailing out-parameter
  * ([LongByReference] for handles, [PointerByReference] for JSON strings);
- * non-null = failure. Its unified code identifies [AimuxException] (1..13),
+ * non-null = failure. Its unified code identifies [AimuxException] (1..14),
  * [RecordingException] (100..105), or a C ABI failure (200..206). The last
  * range maps to `IllegalStateException("aimux ffi: …")`. A decoder releases
  * the returned pointer with `aimux_error_free`.
@@ -117,8 +117,16 @@ internal interface AimuxFFI : Library {
     fun aimux_error_retry_ms(error: Pointer?): Long
     fun aimux_error_provider_code(error: Pointer?): Pointer?
     fun aimux_error_provider_message(error: Pointer?): Pointer?
-    fun aimux_error_request_id(error: Pointer?): Pointer?
     fun aimux_error_response_body(error: Pointer?): Pointer?
+    fun aimux_error_url(error: Pointer?): Pointer?
+    fun aimux_error_request_body_values(error: Pointer?): Pointer?
+    fun aimux_error_response_headers(error: Pointer?): Pointer?
+    fun aimux_error_provider_data(error: Pointer?): Pointer?
+    // AIMUX_E_RETRY payload: reason wire name, attempt count, and each attempt
+    // as a NEW OWNED error the caller frees with aimux_error_free.
+    fun aimux_error_retry_reason(error: Pointer?): Pointer?
+    fun aimux_error_retry_count(error: Pointer?): Int
+    fun aimux_error_retry_error_at(error: Pointer?, index: Int): Pointer?
     fun aimux_error_model_id(error: Pointer?): Pointer?
     fun aimux_error_model_type(error: Pointer?): Pointer?
     fun aimux_error_provider_id(error: Pointer?): Pointer?
@@ -251,7 +259,7 @@ private fun ffiError(e: Pointer, prefix: String): IllegalStateException {
 }
 
 /**
- * Decode an error from a call that may return `AiMuxError`: 1..13 →
+ * Decode an error from a call that may return `AiMuxError`: 1..14 →
  * [AimuxException]; 200..206 → [IllegalStateException]. Frees [e].
  */
 internal fun expectAimuxError(e: Pointer, context: String = ""): RuntimeException {
@@ -259,7 +267,7 @@ internal fun expectAimuxError(e: Pointer, context: String = ""): RuntimeExceptio
     try {
         val code = FFI.lib.aimux_error_code(e)
         if (isFfiCode(code)) return ffiError(e, prefix)
-        check(code in AIMUX_E_OTHER..AIMUX_E_ABORTED) {
+        check(code in AIMUX_E_OTHER..AIMUX_E_ABORTED || code == AIMUX_E_RETRY) {
             "${prefix}aimux ffi: expected AiMuxError code, got $code"
         }
         return AimuxException.fromC(e, prefix)
@@ -512,9 +520,11 @@ class Model internal constructor(handle: Long) : Closeable {
     /**
      * Stream text from the model.
      *
-     * Blocks the calling thread until the stream completes. Stream failures
-     * throw [AimuxException] (on_done is not invoked on failure). Mid-stream
-     * errors surface the same way after any parts already delivered to [onPart].
+     * Blocks the calling thread until the stream completes. Recoverable
+     * frame errors (a malformed SSE frame) arrive as `StreamPart::Error`
+     * data parts and the stream continues; only transport/Core failures
+     * throw [AimuxException] (on_done is not invoked on failure), after any
+     * parts already delivered to [onPart].
      *
      * @param promptJson JSON prompt string.
      * @param optsJson Optional JSON-serialized GenerateTextOptions.

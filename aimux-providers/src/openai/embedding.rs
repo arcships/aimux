@@ -16,15 +16,14 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send};
+use aimux_provider_utils::HttpRequest;
 
 use super::OpenAIConfig;
 
 /// An OpenAI-compatible embedding model.
 ///
 /// Works with any OpenAI-compatible `/embeddings` endpoint. Does **not** hold an
-/// HTTP client — `http::send` uses the shared `Client` internally (RFC-0009 §4.1).
+/// HTTP client — the `aimux-provider-utils` API helpers use the shared `Client` internally (RFC-0009 §4.1).
 pub struct OpenAIEmbeddingModel {
     model_id: String,
     config: OpenAIConfig,
@@ -77,6 +76,10 @@ impl EmbeddingModel for OpenAIEmbeddingModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn max_embeddings_per_call(&self) -> Option<u32> {
         Some(2048)
     }
@@ -110,27 +113,19 @@ impl EmbeddingModel for OpenAIEmbeddingModel {
             .collect();
         header_list.push(("Content-Type".to_string(), "application/json".to_string()));
 
-        let resp = send(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
-                headers: header_list,
-                body: HttpBody::Json(Value::Object(body)),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            self.config.retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
+        let resp = aimux_provider_utils::post_json_to_api(
+            HttpRequest::new(self.endpoint(), header_list, options),
+            Value::Object(body),
+            aimux_provider_utils::create_json_response_handler(),
+            super::openai_failed_response_handler(),
         )
         .await?;
 
         // `send` retries 408/409/429/5xx and returns an error for non-2xx, so an `Ok`
         // response here is guaranteed to be 2xx — no manual is_success() check.
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let raw_value: Value = serde_json::from_slice(&resp.body)?;
+        let raw_value: Value = resp.value;
 
         // Extract embeddings: response.data[].embedding
         // The embedding field can be a JSON array of floats (default) or a

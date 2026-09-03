@@ -23,6 +23,7 @@ serde_json = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
+bytes = { workspace = true }
 tracing = { workspace = true }
 async-stream = { workspace = true }
 base64 = "0.22"

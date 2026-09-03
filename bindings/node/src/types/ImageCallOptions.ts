@@ -2,6 +2,7 @@
 import type { AspectRatio } from "./AspectRatio";
 import type { ImageFile } from "./ImageFile";
 import type { Size } from "./Size";
+import type { TimeoutConfiguration } from "./TimeoutConfiguration";
 import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
@@ -45,6 +46,14 @@ mask: ImageFile | null,
  * Additional provider-specific options, keyed by provider name.
  */
 provider_options: { [key in string]: JsonValue }, 
+/**
+ * Per-call retry override. `None` uses the model default.
+ */
+max_retries: number | null, 
+/**
+ * Per-call operation timeout.
+ */
+timeout: TimeoutConfiguration | null, 
 /**
  * Additional HTTP headers to send with the request.
  */

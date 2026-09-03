@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
+use crate::AbortSignal;
 use crate::language_model_message::LanguageModelPrompt;
-use crate::shared::AbortSignal;
 pub use crate::tool::{FunctionTool, ProviderTool, Tool, ToolChoice};
 use crate::types::ReasoningEffort;
 
@@ -43,7 +43,15 @@ pub struct TimeoutConfiguration {
     // cannot reach 2^53 (~285k years), so precision is never at stake.
     #[ts(type = "number | null")]
     pub total_ms: Option<u64>,
+    /// Timeout for one generation step, including that step's attempts and
+    /// retry backoff, in milliseconds. Aimux currently has one step.
+    #[ts(type = "number | null")]
+    pub step_ms: Option<u64>,
     /// Timeout waiting for the first stream chunk (streaming only).
+    ///
+    /// Counted from operation start, so it also bounds stream establishment
+    /// and any retries before the first semantic output: it is the
+    /// user-perceived time-to-first-output budget, not a per-attempt timer.
     #[ts(type = "number | null")]
     pub first_chunk_ms: Option<u64>,
     /// Maximum idle time between consecutive stream chunks (streaming only).
@@ -112,7 +120,7 @@ pub struct CallOptions {
     pub body_overrides: Option<Value>,
 
     /// Per-call retry count override. `None` uses the provider's configured
-    /// `RetryConfig.max_retries`. `Some(0)` disables retries.
+    /// Core operation retry. `Some(0)` disables retries.
     pub max_retries: Option<u32>,
 
     /// Per-call timeout configuration (total / first-chunk / chunk idle).
@@ -159,6 +167,21 @@ pub struct CallOptions {
 }
 
 impl CallOptions {
+    /// Clone these options for one composite child step (Router child, MoA
+    /// reference or aggregator): the recording context, when present, is
+    /// replaced by a child context labeled `step`, so the child's exchanges
+    /// and retry attempts are recorded as their own step instead of blending
+    /// into the parent operation's.
+    #[must_use]
+    pub fn for_step(&self, step: impl Into<String>) -> Self {
+        let mut child = self.clone();
+        child.recording_context = self
+            .recording_context
+            .as_ref()
+            .map(|context| context.child(step.into()));
+        child
+    }
+
     /// Create a `CallOptions` with the given prompt and all other fields set
     /// to their defaults (`None` / `ToolChoice::Auto`).
     ///

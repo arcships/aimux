@@ -4,6 +4,13 @@
 > **Date**: 2026-08-01
 > **Scope**: 系统对比 aimux 0.1.2 与 Vercel AI SDK (`@ai-sdk/openai` / `@ai-sdk/openai-compatible` / `@ai-sdk/provider` V4) 的接口与实现,识别能力缺口,并按优先级规划补齐路径
 > **Related**: [RFC-0009](0009-request-resilience.md) request resilience(retry/timeout,本 RFC 的 abortSignal/timeout 缺口与之相关),[RFC-0014](0014-logging.md) 统一日志体系(可观测性缺口依赖本 RFC 的 span 树)
+>
+> **Request-pipeline sections are superseded by
+> [RFC-0031](0031-ai-sdk-request-pipeline.md)**: retry/timeout ownership moved
+> to Core, provider-utils now exposes one-exchange API helpers plus response
+> handlers, and the old `send_timed` / `send_stream_timed` implementation was
+> removed. RFC-0016 M3's first-SSE-event peek is intentionally retained as
+> Aimux's documented deviation from the AI SDK.
 
 ---
 

@@ -42,6 +42,8 @@ fn text_docs_opts(query: &str, top_n: u32) -> RerankingCallOptions {
         abort_signal: None,
         provider_options: None,
         headers: None,
+        max_retries: None,
+        timeout: None,
     }
 }
 
@@ -58,6 +60,8 @@ fn json_docs_opts(query: &str, top_n: u32) -> RerankingCallOptions {
         abort_signal: None,
         provider_options: None,
         headers: None,
+        max_retries: None,
+        timeout: None,
     }
 }
 

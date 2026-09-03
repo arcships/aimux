@@ -12,7 +12,7 @@
 //! value on failure (the out-parameter is left at its sentinel: handle 0,
 //! pointer NULL). Every non-NULL error has one code from [`aimux_error_code`]
 //! and one message from [`aimux_error_message`], and is released exactly once
-//! with [`aimux_error_free`]. Codes 1..13 come from `AiMuxError`, 100..105
+//! with [`aimux_error_free`]. Codes 1..14 come from `AiMuxError`, 100..105
 //! from `RecordingError`, and 200..206 identify failures detected while
 //! crossing the C ABI.
 //!
@@ -53,6 +53,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::de::DeserializeOwned;
 
+use aimux_core::AbortSignal;
 use aimux_core::AiMuxError;
 use aimux_core::generate::{
     GenerateTextOptions, generate_object, generate_text, generate_text_as_openai, stream_text,
@@ -63,7 +64,6 @@ use aimux_core::message::ModelPrompt;
 use aimux_core::openai_output::OpenAiStreamOptions;
 use aimux_core::provider::Provider;
 use aimux_core::recording::RecordingError;
-use aimux_core::shared::AbortSignal;
 use aimux_core::trace::{RingTraceStore, TraceFilter, TraceLayer};
 use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
 use aimux_providers::anthropic_aws::{AnthropicAwsProvider, AnthropicAwsProviderConfig};
@@ -424,6 +424,9 @@ pub const AIMUX_E_NO_SUCH_PROVIDER: i32 = 10;
 pub const AIMUX_E_API_CALL: i32 = 11;
 pub const AIMUX_E_TIMEOUT: i32 = 12;
 pub const AIMUX_E_ABORTED: i32 = 13;
+// `Retry` (newest variant) reclaims the slot the pre-unification `Other`
+// vacated — the opaque-pointer ABI break means no old caller can misread it.
+pub const AIMUX_E_RETRY: i32 = 14;
 
 // 100..105 preserve `RecordingError` as a separate high-level type while C
 // uses one code space for every returned error.
@@ -452,6 +455,7 @@ pub const AIMUX_TRANSCRIPTION_NEXT_PART_TIMEOUT: i32 = 3;
 fn aimux_error_code_of(err: &AiMuxError) -> i32 {
     match err {
         AiMuxError::ApiCall { .. } => AIMUX_E_API_CALL,
+        AiMuxError::Retry(_) => AIMUX_E_RETRY,
         AiMuxError::JsonParse(_) => AIMUX_E_JSON_PARSE,
         AiMuxError::InvalidResponseData(_) => AIMUX_E_INVALID_RESPONSE_DATA,
         AiMuxError::Tool(_) => AIMUX_E_TOOL,
@@ -462,7 +466,7 @@ fn aimux_error_code_of(err: &AiMuxError) -> i32 {
         AiMuxError::NoSuchModel { .. } => AIMUX_E_NO_SUCH_MODEL,
         AiMuxError::NoSuchProvider { .. } => AIMUX_E_NO_SUCH_PROVIDER,
         AiMuxError::Timeout(_) => AIMUX_E_TIMEOUT,
-        AiMuxError::Aborted => AIMUX_E_ABORTED,
+        AiMuxError::Aborted(_) => AIMUX_E_ABORTED,
         AiMuxError::Other(_) => AIMUX_E_OTHER,
     }
 }
@@ -502,6 +506,13 @@ fn error_code_of(e: &AiMuxFfiError) -> i32 {
 fn api_call(e: &AiMuxError) -> Option<&aimux_core::ApiCallError> {
     match e {
         AiMuxError::ApiCall(d) => Some(d),
+        _ => None,
+    }
+}
+
+fn retry(e: &AiMuxError) -> Option<&aimux_core::RetryError> {
+    match e {
+        AiMuxError::Retry(r) => Some(r),
         _ => None,
     }
 }
@@ -588,16 +599,106 @@ pub extern "C" fn aimux_error_provider_message(err: *const aimux_error_t) -> *mu
     )
 }
 
-/// `AIMUX_E_API_CALL`: provider request id.
-#[unsafe(no_mangle)]
-pub extern "C" fn aimux_error_request_id(err: *const aimux_error_t) -> *mut c_char {
-    opt_cstring(map_aimux_error(err, |e| api_call(e)?.request_id.clone()).flatten())
-}
-
 /// `AIMUX_E_API_CALL`: raw response body.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_error_response_body(err: *const aimux_error_t) -> *mut c_char {
     opt_cstring(map_aimux_error(err, |e| api_call(e)?.response_body.clone()).flatten())
+}
+
+/// `AIMUX_E_API_CALL`: sanitized request URL.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_url(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(
+        map_aimux_error(err, |e| Some(api_call(e)?.url.clone()))
+            .flatten()
+            .filter(|u| !u.is_empty()),
+    )
+}
+
+/// `AIMUX_E_API_CALL`: sanitized request body values as a JSON string; NULL
+/// when the request carried none (JSON `null`).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_request_body_values(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(
+        map_aimux_error(err, |e| {
+            let values = &api_call(e)?.request_body_values;
+            if values.is_null() {
+                return None;
+            }
+            serde_json::to_string(values).ok()
+        })
+        .flatten(),
+    )
+}
+
+/// `AIMUX_E_API_CALL`: sanitized response headers as one JSON object string
+/// of name → value pairs, e.g. `{"retry-after-ms":"1500"}`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_response_headers(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(
+        map_aimux_error(err, |e| {
+            serde_json::to_string(api_call(e)?.response_headers.as_ref()?).ok()
+        })
+        .flatten(),
+    )
+}
+
+/// `AIMUX_E_API_CALL`: parsed provider error data as a JSON string.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_provider_data(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(
+        map_aimux_error(err, |e| {
+            serde_json::to_string(api_call(e)?.data.as_ref()?).ok()
+        })
+        .flatten(),
+    )
+}
+
+/// `AIMUX_E_RETRY`: why retrying stopped — the wire name of
+/// `RetryErrorReason`: "maxRetriesExceeded" or "errorNotRetryable".
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_retry_reason(err: *const aimux_error_t) -> *mut c_char {
+    let reason = map_aimux_error(err, |e| {
+        Some(match retry(e)?.reason {
+            aimux_core::RetryErrorReason::MaxRetriesExceeded => "maxRetriesExceeded",
+            aimux_core::RetryErrorReason::ErrorNotRetryable => "errorNotRetryable",
+        })
+    })
+    .flatten();
+    opt_cstring(reason.map(str::to_string))
+}
+
+/// `AIMUX_E_RETRY`: number of recorded attempt errors; 0 under any other
+/// code or for NULL.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_retry_count(err: *const aimux_error_t) -> i32 {
+    map_aimux_error(err, |e| Some(retry(e)?.errors.len() as i32))
+        .flatten()
+        .unwrap_or(0)
+}
+
+/// `AIMUX_E_RETRY`: the attempt error at `index` (0-based, oldest first; the
+/// last entry is the final attempt) as a NEW owned error the caller reads
+/// with these same getters and releases with `aimux_error_free`,
+/// independently of the parent. NULL when `index` is out of range or under
+/// any other code.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_retry_error_at(
+    err: *const aimux_error_t,
+    index: i32,
+) -> *mut aimux_error_t {
+    if index < 0 {
+        return std::ptr::null_mut();
+    }
+    map_aimux_error(err, |e| {
+        retry(e)?.errors.get(index as usize).map(|attempt| {
+            Box::into_raw(Box::new(aimux_error_t {
+                error: AiMuxFfiError::AiMux(attempt.clone()),
+            }))
+        })
+    })
+    .flatten()
+    .unwrap_or_else(std::ptr::null_mut)
 }
 
 /// `AIMUX_E_NO_SUCH_MODEL`: the model id that was asked for.
@@ -1696,7 +1797,7 @@ fn stream_text_as_openai_with_signal(
             Some(signal) => {
                 tokio::select! {
                     biased;
-                    _ = signal.cancelled() => Err(AiMuxError::Aborted),
+                    _ = signal.cancelled() => Err(AiMuxError::from_abort_signal(signal)),
                     result = stream_text_as_openai(&*model, prompt, opts, stream_options) => result,
                 }
             }
@@ -1708,7 +1809,9 @@ fn stream_text_as_openai_with_signal(
                 Some(signal) => {
                     tokio::select! {
                         biased;
-                        _ = signal.cancelled() => return Err(AiMuxError::Aborted.into()),
+                        _ = signal.cancelled() => {
+                            return Err(AiMuxError::from_abort_signal(signal).into());
+                        }
                         item = stream.next() => item,
                     }
                 }
@@ -1719,7 +1822,16 @@ fn stream_text_as_openai_with_signal(
             };
             // A chunk that cannot be serialized ends the stream with this
             // layer's ResultSerialization — never a silent "{}" placeholder.
-            let cstr = stream_part_cstring(&item?)?;
+            // Core yields a malformed frame as a recoverable Err and keeps the
+            // stream alive. Every consumer of this path types items as
+            // ChatCompletionChunk, so the error cannot ride this wire — skip
+            // it and keep pumping (full fidelity lives on the plain
+            // StreamPart path).
+            let cstr = match item {
+                Ok(chunk) => stream_part_cstring(&chunk)?,
+                Err(e) if e.is_recoverable_stream_error() => continue,
+                Err(e) => return Err(e.into()),
+            };
             invoke_stream_callback("on_part", || {
                 on_part(cstr.as_ptr(), stream_ctx as *mut c_void);
             })?;
@@ -1758,7 +1870,7 @@ fn stream_text_with_signal(
             Some(signal) => {
                 tokio::select! {
                     biased;
-                    _ = signal.cancelled() => Err(AiMuxError::Aborted),
+                    _ = signal.cancelled() => Err(AiMuxError::from_abort_signal(signal)),
                     result = stream_text(&*model, prompt, opts) => result,
                 }
             }
@@ -1770,7 +1882,9 @@ fn stream_text_with_signal(
                 Some(signal) => {
                     tokio::select! {
                         biased;
-                        _ = signal.cancelled() => return Err(AiMuxError::Aborted.into()),
+                        _ = signal.cancelled() => {
+                            return Err(AiMuxError::from_abort_signal(signal).into());
+                        }
                         item = stream.next() => item,
                     }
                 }
@@ -1781,7 +1895,16 @@ fn stream_text_with_signal(
             };
             // A part that cannot be serialized ends the stream with this
             // layer's ResultSerialization — never a silent "{}" placeholder.
-            let cstr = stream_part_cstring(&item?)?;
+            // Core keeps the stream alive across a malformed frame; mirror it
+            // by delivering the error as a StreamPart::Error data frame (the
+            // documented non-terminal shape on this path) and keep pumping.
+            let cstr = match item {
+                Ok(part) => stream_part_cstring(&part)?,
+                Err(e) if e.is_recoverable_stream_error() => {
+                    stream_part_cstring(&aimux_core::stream_part::StreamPart::Error { error: e })?
+                }
+                Err(e) => return Err(e.into()),
+            };
             invoke_stream_callback("on_part", || {
                 on_part(cstr.as_ptr(), stream_ctx as *mut c_void);
             })?;
@@ -1950,7 +2073,7 @@ pub extern "C" fn aimux_embed(
             opts = serde_json::from_str(&s).map_err(|e| wire_err("opts_json", e))?;
         }
         opts.values = serde_json::from_str(&values_json).map_err(|e| wire_err("values_json", e))?;
-        run_json(async move { model.do_embed(&opts).await })
+        run_json(async move { aimux_core::embedding_model::embed(model.as_ref(), opts).await })
     })
 }
 
@@ -2001,7 +2124,9 @@ pub extern "C" fn aimux_speech_generate(
         };
         let opts: aimux_core::speech_model::SpeechCallOptions =
             parse_json_arg(opts_json, "opts_json")?;
-        run_json(async move { model.do_generate(&opts).await })
+        run_json(
+            async move { aimux_core::speech_model::generate_speech(model.as_ref(), opts).await },
+        )
     })
 }
 
@@ -2083,7 +2208,7 @@ pub extern "C" fn aimux_image_generate(
         };
         let opts: aimux_core::image_model::ImageCallOptions =
             parse_json_arg(opts_json, "opts_json")?;
-        run_json(async move { model.do_generate(&opts).await })
+        run_json(async move { aimux_core::image_model::generate_image(model.as_ref(), opts).await })
     })
 }
 
@@ -2143,7 +2268,9 @@ pub extern "C" fn aimux_transcription_generate(
             aimux_core::transcription_model::AudioInput::Base64(audio_base64),
             media_type,
         );
-        run_json(async move { model.do_generate(&opts).await })
+        run_json(
+            async move { aimux_core::transcription_model::transcribe(model.as_ref(), opts).await },
+        )
     })
 }
 
@@ -2454,7 +2581,7 @@ pub extern "C" fn aimux_rerank(
         };
         let opts: aimux_core::reranking_model::RerankingCallOptions =
             parse_json_arg(opts_json, "opts_json")?;
-        run_json(async move { model.do_rerank(&opts).await })
+        run_json(async move { aimux_core::reranking_model::rerank(model.as_ref(), opts).await })
     })
 }
 
@@ -2508,7 +2635,7 @@ pub extern "C" fn aimux_video_generate(
         };
         let opts: aimux_core::video_model::VideoCallOptions =
             parse_json_arg(opts_json, "opts_json")?;
-        run_json(async move { model.do_generate(&opts).await })
+        run_json(async move { aimux_core::video_model::generate_video(model.as_ref(), opts).await })
     })
 }
 
@@ -2563,7 +2690,7 @@ pub extern "C" fn aimux_search(
         };
         let opts: aimux_core::search_model::SearchCallOptions =
             parse_json_arg(opts_json, "opts_json")?;
-        run_json(async move { model.do_search(&opts).await })
+        run_json(async move { aimux_core::search_model::search(model.as_ref(), opts).await })
     })
 }
 
@@ -3105,7 +3232,7 @@ struct RouterFfiConfig {
 
 #[cfg(test)]
 mod tests {
-    use aimux_core::ApiCallError;
+    use aimux_core::{ApiCallError, RetryError, RetryErrorReason};
     use std::time::Duration;
 
     use super::*;
@@ -3137,7 +3264,7 @@ mod tests {
     fn expect_aimux_error(e: *mut aimux_error_t) -> (i32, String) {
         assert!(!e.is_null(), "expected a returned error");
         let code = aimux_error_code(e);
-        if !(AIMUX_E_OTHER..=AIMUX_E_ABORTED).contains(&code) {
+        if !(AIMUX_E_OTHER..=AIMUX_E_RETRY).contains(&code) {
             panic!("expected an AiMuxError code, got {code}: {}", msg(e));
         }
         let out = (code, take(aimux_error_message(e)).unwrap());
@@ -3166,18 +3293,26 @@ mod tests {
     /// NULL / -1 / 0 under every other; a NULL pointer answers as "no error".
     #[test]
     fn payload_getters_follow_the_code() {
-        let owner = boxed(AiMuxError::ApiCall(ApiCallError {
+        let owner = boxed(AiMuxError::ApiCall(Box::new(ApiCallError {
             status_code: Some(429),
             provider_code: Some("insufficient_quota".into()),
-            message: "quota".into(),
             response_body: Some("{}".into()),
-            request_id: Some("req_1".into()),
-            retry_after_ms: Some(1500),
+            response_headers: Some(std::collections::HashMap::from([(
+                "retry-after-ms".to_string(),
+                "1500".to_string(),
+            )])),
+            data: Some(serde_json::json!({"code": "insufficient_quota"})),
             is_retryable: true,
-        }));
+            ..ApiCallError::new(
+                "quota",
+                "https://api.example.test/v1",
+                serde_json::json!({"model": "m"}),
+            )
+        })));
         let h = owner;
         assert_eq!(aimux_error_code(h), AIMUX_E_API_CALL);
         assert_eq!(aimux_error_status(h), 429);
+        // The retry hint is derived from the response headers.
         assert_eq!(aimux_error_retry_ms(h), 1500);
         assert_eq!(aimux_error_retryable(h), 1);
         assert_eq!(
@@ -3191,23 +3326,104 @@ mod tests {
         );
         let m = take(aimux_error_message(h)).unwrap();
         assert!(m.contains("quota") && m != "quota", "{m}");
-        assert_eq!(take(aimux_error_request_id(h)).as_deref(), Some("req_1"));
         assert_eq!(take(aimux_error_response_body(h)).as_deref(), Some("{}"));
+        assert_eq!(
+            take(aimux_error_url(h)).as_deref(),
+            Some("https://api.example.test/v1")
+        );
+        assert_eq!(
+            take(aimux_error_request_body_values(h)).as_deref(),
+            Some(r#"{"model":"m"}"#)
+        );
+        assert_eq!(
+            take(aimux_error_response_headers(h)).as_deref(),
+            Some(r#"{"retry-after-ms":"1500"}"#)
+        );
+        assert_eq!(
+            take(aimux_error_provider_data(h)).as_deref(),
+            Some(r#"{"code":"insufficient_quota"}"#)
+        );
         assert!(aimux_error_model_id(h).is_null());
         assert!(aimux_error_model_type(h).is_null());
         assert!(aimux_error_provider_id(h).is_null());
+        // Retry getters answer their sentinels under AIMUX_E_API_CALL.
+        assert!(aimux_error_retry_reason(h).is_null());
+        assert_eq!(aimux_error_retry_count(h), 0);
+        assert!(aimux_error_retry_error_at(h, 0).is_null());
         aimux_error_free(owner);
 
-        // Absent Option fields are NULL, not empty strings.
-        let owner = boxed(AiMuxError::ApiCall(ApiCallError {
-            message: "x".into(),
-            ..Default::default()
-        }));
+        // Absent Option fields are NULL, not empty strings; a JSON `null`
+        // request body is NULL too.
+        let owner = boxed(AiMuxError::ApiCall(Box::new(ApiCallError::new(
+            "x",
+            "https://api.example.test/v1",
+            serde_json::Value::Null,
+        ))));
         let h = owner;
         assert!(aimux_error_provider_code(h).is_null());
-        assert!(aimux_error_request_id(h).is_null());
         assert!(aimux_error_response_body(h).is_null());
+        assert!(aimux_error_response_headers(h).is_null());
+        assert!(aimux_error_provider_data(h).is_null());
+        assert!(aimux_error_request_body_values(h).is_null());
         assert_eq!(take(aimux_error_provider_message(h)).as_deref(), Some("x"));
+        aimux_error_free(owner);
+
+        // Retry owns reason + attempt history; each history entry crosses the
+        // ABI as a new owned error read with the same getters.
+        let owner = boxed(AiMuxError::Retry(RetryError {
+            reason: RetryErrorReason::MaxRetriesExceeded,
+            errors: vec![
+                AiMuxError::Other("first".into()),
+                AiMuxError::ApiCall(Box::new(ApiCallError {
+                    status_code: Some(500),
+                    is_retryable: true,
+                    ..ApiCallError::new(
+                        "boom",
+                        "https://api.example.test/v1",
+                        serde_json::Value::Null,
+                    )
+                })),
+            ],
+        }));
+        let h = owner;
+        assert_eq!(aimux_error_code(h), AIMUX_E_RETRY);
+        assert_eq!(
+            take(aimux_error_retry_reason(h)).as_deref(),
+            Some("maxRetriesExceeded")
+        );
+        assert_eq!(aimux_error_retry_count(h), 2);
+        // ApiCall-owned facts stay with the attempt that owns them.
+        assert_eq!(aimux_error_status(h), -1);
+        assert_eq!(aimux_error_retryable(h), 0);
+        assert!(aimux_error_provider_code(h).is_null());
+        let m = take(aimux_error_message(h)).unwrap();
+        assert!(m.contains("Failed after 2 attempts"), "{m}");
+        let first = aimux_error_retry_error_at(h, 0);
+        assert_eq!(aimux_error_code(first), AIMUX_E_OTHER);
+        assert_eq!(take(aimux_error_message(first)).as_deref(), Some("first"));
+        aimux_error_free(first);
+        let last = aimux_error_retry_error_at(h, 1);
+        assert_eq!(aimux_error_code(last), AIMUX_E_API_CALL);
+        assert_eq!(aimux_error_status(last), 500);
+        assert_eq!(aimux_error_retryable(last), 1);
+        // The history entry outlives the parent: free order is unconstrained.
+        aimux_error_free(owner);
+        assert_eq!(
+            take(aimux_error_provider_message(last)).as_deref(),
+            Some("boom")
+        );
+        aimux_error_free(last);
+        let owner = boxed(AiMuxError::Retry(RetryError {
+            reason: RetryErrorReason::ErrorNotRetryable,
+            errors: vec![AiMuxError::Other("bad".into())],
+        }));
+        let h = owner;
+        assert_eq!(
+            take(aimux_error_retry_reason(h)).as_deref(),
+            Some("errorNotRetryable")
+        );
+        assert!(aimux_error_retry_error_at(h, 1).is_null(), "out of range");
+        assert!(aimux_error_retry_error_at(h, -1).is_null());
         aimux_error_free(owner);
 
         let owner = boxed(AiMuxError::NoSuchModel {
@@ -3241,26 +3457,37 @@ mod tests {
         assert_eq!(aimux_error_retry_ms(n), -1);
         assert_eq!(aimux_error_retryable(n), 0);
         assert!(aimux_error_provider_code(n).is_null());
+        assert!(aimux_error_url(n).is_null());
+        assert!(aimux_error_request_body_values(n).is_null());
+        assert!(aimux_error_response_headers(n).is_null());
+        assert!(aimux_error_provider_data(n).is_null());
+        assert!(aimux_error_retry_reason(n).is_null());
+        assert_eq!(aimux_error_retry_count(n), 0);
+        assert!(aimux_error_retry_error_at(n, 0).is_null());
     }
 
     /// The retry verdict crosses the ABI as its own getter. It is not
     /// derivable from `status`: both cases below report -1, and they disagree.
     #[test]
     fn retryable_crosses_the_abi_and_status_cannot_stand_in() {
-        let transport_owner = boxed(AiMuxError::ApiCall(ApiCallError {
-            message: "connection reset".into(),
+        let transport_owner = boxed(AiMuxError::ApiCall(Box::new(ApiCallError {
             is_retryable: true,
-            ..Default::default()
-        }));
+            ..ApiCallError::new(
+                "connection reset",
+                "https://api.example.test/v1",
+                serde_json::Value::Null,
+            )
+        })));
         let transport = transport_owner;
         assert_eq!(aimux_error_status(transport), -1);
         assert_eq!(aimux_error_retryable(transport), 1);
         aimux_error_free(transport_owner);
 
-        let no_key_owner = boxed(AiMuxError::ApiCall(ApiCallError {
-            message: "no api key".into(),
-            ..Default::default()
-        }));
+        let no_key_owner = boxed(AiMuxError::ApiCall(Box::new(ApiCallError::new(
+            "no api key",
+            "https://api.example.test/v1",
+            serde_json::Value::Null,
+        ))));
         let no_key = no_key_owner;
         assert_eq!(
             aimux_error_status(no_key),
@@ -3281,9 +3508,17 @@ mod tests {
     #[test]
     fn unified_error_codes_cover_every_source() {
         // AiMuxError.
-        let e = boxed(AiMuxError::Aborted);
+        let e = boxed(AiMuxError::Aborted("request aborted".into()));
         assert_eq!(aimux_error_code(e), AIMUX_E_ABORTED);
-        assert_eq!(msg(e), AiMuxError::Aborted.to_string());
+        assert_eq!(msg(e), "request aborted");
+
+        // Retry extends the contiguous run to 1..14.
+        let e = boxed(AiMuxError::Retry(RetryError {
+            reason: RetryErrorReason::ErrorNotRetryable,
+            errors: vec![AiMuxError::Other("bad".into())],
+        }));
+        assert_eq!(aimux_error_code(e), AIMUX_E_RETRY);
+        assert!(msg(e).contains("non-retryable"));
 
         // Recording.
         use RecordingError as R;
@@ -3385,17 +3620,25 @@ mod tests {
         );
     }
 
-    /// Pin the full 13-variant → code mapping.
+    /// Pin the full 14-variant → code mapping.
     #[test]
     fn error_code_mapping_covers_all_variants() {
         let s = |t: &str| t.to_string();
         let cases: Vec<(AiMuxError, i32)> = vec![
             (
-                AiMuxError::ApiCall(ApiCallError {
-                    message: s("x"),
-                    ..Default::default()
-                }),
+                AiMuxError::ApiCall(Box::new(ApiCallError::new(
+                    "x",
+                    "https://example.test",
+                    serde_json::json!({}),
+                ))),
                 AIMUX_E_API_CALL,
+            ),
+            (
+                AiMuxError::Retry(RetryError {
+                    reason: RetryErrorReason::MaxRetriesExceeded,
+                    errors: vec![AiMuxError::Other(s("first")), AiMuxError::Other(s("last"))],
+                }),
+                AIMUX_E_RETRY,
             ),
             (AiMuxError::JsonParse(s("x")), AIMUX_E_JSON_PARSE),
             (
@@ -3427,7 +3670,10 @@ mod tests {
                 AIMUX_E_NO_SUCH_PROVIDER,
             ),
             (AiMuxError::Timeout(s("x")), AIMUX_E_TIMEOUT),
-            (AiMuxError::Aborted, AIMUX_E_ABORTED),
+            (
+                AiMuxError::Aborted("request aborted".into()),
+                AIMUX_E_ABORTED,
+            ),
             (AiMuxError::Other(s("x")), AIMUX_E_OTHER),
         ];
         for (e, code) in cases {
@@ -3621,6 +3867,157 @@ mod tests {
         }))
     }
 
+    /// Streams: delta, recoverable Err(JsonParse), delta, Finish.
+    struct RecoverableFrameModel;
+    #[async_trait::async_trait]
+    impl aimux_core::LanguageModel for RecoverableFrameModel {
+        fn provider(&self) -> &str {
+            "mock"
+        }
+        fn model_id(&self) -> &str {
+            "recoverable"
+        }
+        async fn do_generate(
+            &self,
+            _options: &aimux_core::options::CallOptions,
+        ) -> Result<aimux_core::result::GenerateResult, AiMuxError> {
+            unimplemented!()
+        }
+        async fn do_stream(
+            &self,
+            _options: &aimux_core::options::CallOptions,
+        ) -> Result<aimux_core::result::StreamResult, AiMuxError> {
+            let delta = |text: &str| aimux_core::stream_part::StreamPart::TextDelta {
+                id: "1".into(),
+                delta: text.into(),
+                provider_metadata: None,
+            };
+            Ok(aimux_core::result::StreamResult {
+                stream: Box::pin(futures::stream::iter([
+                    Ok(delta("a")),
+                    Err(AiMuxError::JsonParse("bad frame".into())),
+                    Ok(delta("b")),
+                    Ok(aimux_core::stream_part::StreamPart::Finish {
+                        finish_reason: aimux_core::types::FinishReason {
+                            unified: aimux_core::types::FinishReasonUnified::Stop,
+                            raw: None,
+                        },
+                        usage: aimux_core::types::Usage::default(),
+                        provider_metadata: None,
+                    }),
+                ])),
+                request_body: None,
+                response_headers: None,
+            })
+        }
+    }
+
+    /// The pump must deliver a recoverable frame error as a StreamPart::Error
+    /// data part and keep going — parts after it still arrive and on_done
+    /// fires (the pre-fix pump returned the error and skipped on_done).
+    #[test]
+    fn recoverable_frame_error_does_not_end_the_ffi_stream() {
+        struct Collected {
+            parts: Vec<String>,
+            done: bool,
+        }
+        extern "C-unwind" fn on_part(json: *const c_char, ctx: *mut c_void) {
+            let collected = unsafe { &mut *(ctx as *mut Collected) };
+            let text = unsafe { std::ffi::CStr::from_ptr(json) }
+                .to_string_lossy()
+                .into_owned();
+            collected.parts.push(text);
+        }
+        extern "C-unwind" fn on_done(ctx: *mut c_void) {
+            let collected = unsafe { &mut *(ctx as *mut Collected) };
+            collected.done = true;
+        }
+
+        let handle = intern_model(Arc::new(RecoverableFrameModel));
+        let mut collected = Collected {
+            parts: Vec::new(),
+            done: false,
+        };
+        let prompt = std::ffi::CString::new("\"hi\"").unwrap();
+        let e = aimux_stream_text(
+            handle,
+            prompt.as_ptr(),
+            std::ptr::null(),
+            Some(on_part),
+            Some(on_done),
+            &mut collected as *mut Collected as *mut c_void,
+        );
+        assert!(e.is_null(), "{}", msg(e));
+        assert!(
+            collected.done,
+            "on_done must fire after a recoverable frame"
+        );
+        let error_index = collected
+            .parts
+            .iter()
+            .position(|p| p.contains("\"Error\""))
+            .expect("the recoverable frame arrives as a StreamPart::Error part");
+        assert!(
+            collected.parts[error_index + 1..]
+                .iter()
+                .any(|p| p.contains("\"b\"")),
+            "parts after the recoverable frame still arrive: {:?}",
+            collected.parts
+        );
+    }
+
+    /// On the OpenAI-compatible path every item is a ChatCompletionChunk, so a
+    /// recoverable frame error is skipped — no error item, no truncation, and
+    /// on_done still fires.
+    #[test]
+    fn recoverable_frame_error_is_skipped_on_the_openai_stream() {
+        struct Collected {
+            parts: Vec<String>,
+            done: bool,
+        }
+        extern "C-unwind" fn on_part(json: *const c_char, ctx: *mut c_void) {
+            let collected = unsafe { &mut *(ctx as *mut Collected) };
+            let text = unsafe { std::ffi::CStr::from_ptr(json) }
+                .to_string_lossy()
+                .into_owned();
+            collected.parts.push(text);
+        }
+        extern "C-unwind" fn on_done(ctx: *mut c_void) {
+            let collected = unsafe { &mut *(ctx as *mut Collected) };
+            collected.done = true;
+        }
+
+        let handle = intern_model(Arc::new(RecoverableFrameModel));
+        let mut collected = Collected {
+            parts: Vec::new(),
+            done: false,
+        };
+        let prompt = std::ffi::CString::new("\"hi\"").unwrap();
+        let e = aimux_stream_text_as_openai(
+            handle,
+            prompt.as_ptr(),
+            std::ptr::null(),
+            Some(on_part),
+            Some(on_done),
+            &mut collected as *mut Collected as *mut c_void,
+        );
+        assert!(e.is_null(), "{}", msg(e));
+        assert!(
+            collected.done,
+            "on_done must fire after a recoverable frame"
+        );
+        assert!(
+            collected.parts.iter().all(|p| !p.contains("\"error\"")),
+            "no error item may ride the chunk-typed wire: {:?}",
+            collected.parts
+        );
+        assert!(
+            collected.parts.iter().any(|p| p.contains("\"b\"")),
+            "chunks after the recoverable frame still arrive: {:?}",
+            collected.parts
+        );
+    }
+
     #[test]
     fn router_new_builds_router_model() {
         let handles = [
@@ -3798,7 +4195,7 @@ mod tests {
                     };
                     tokio::select! {
                         _ = aborted => {
-                            yield Err(AiMuxError::Aborted);
+                            yield Err(AiMuxError::Aborted("request aborted".into()));
                             break;
                         }
                         chunk = audio.next() => match chunk {

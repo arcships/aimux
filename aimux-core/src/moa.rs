@@ -18,6 +18,7 @@ use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::options::{CallOptions, ToolChoice};
 use crate::result::{GenerateResult, StreamResult};
+use crate::retry;
 use crate::stream_part::StreamPart;
 use crate::types::{Usage, Warning};
 
@@ -120,11 +121,25 @@ impl MoaModel {
             return Ok((Vec::new(), Usage::default(), Vec::new()));
         }
         let ref_opts = self.reference_options(options);
-        let results = join_all(
-            self.references
-                .iter()
-                .map(|m| async { m.do_generate(&ref_opts).await }),
-        )
+        let results = join_all(self.references.iter().enumerate().map(|(i, m)| {
+            let child_opts =
+                ref_opts.for_step(format!("moa.ref[{i}]:{}/{}", m.provider(), m.model_id()));
+            async move {
+                let retries = retry::prepare_retries(
+                    child_opts.max_retries,
+                    m.retry_config(),
+                    child_opts.abort_signal.clone(),
+                );
+                retries
+                    .retry(|| {
+                        if let Some(context) = &child_opts.recording_context {
+                            let _ = context.start_attempt();
+                        }
+                        m.do_generate(&child_opts)
+                    })
+                    .await
+            }
+        }))
         .await;
 
         let mut usage = Usage::default();
@@ -168,6 +183,15 @@ impl LanguageModel for MoaModel {
         &self.config.model_id
     }
 
+    fn retry_config(&self) -> retry::RetryConfig {
+        // Retrying the composite would rerun the entire reference fanout;
+        // references and aggregator are retried independently instead.
+        retry::RetryConfig {
+            max_retries: 0,
+            ..retry::RetryConfig::default()
+        }
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         // 1. Fan out references (non-streaming).
         let (texts, ref_usage, warnings) = self.run_references_nonstream(options).await?;
@@ -182,7 +206,24 @@ impl LanguageModel for MoaModel {
         agg_opts.prompt = agg_prompt;
 
         // 3. Run the aggregator.
-        let mut agg = self.aggregator.do_generate(&agg_opts).await?;
+        let retries = retry::prepare_retries(
+            agg_opts.max_retries,
+            self.aggregator.retry_config(),
+            agg_opts.abort_signal.clone(),
+        );
+        let agg_opts = agg_opts.for_step(format!(
+            "moa.aggregator:{}/{}",
+            self.aggregator.provider(),
+            self.aggregator.model_id()
+        ));
+        let mut agg = retries
+            .retry(|| {
+                if let Some(context) = &agg_opts.recording_context {
+                    let _ = context.start_attempt();
+                }
+                self.aggregator.do_generate(&agg_opts)
+            })
+            .await?;
 
         // 4. Fold reference usage + drop warnings into the aggregator result.
         agg.usage = add_usage(agg.usage, &ref_usage);
@@ -207,7 +248,24 @@ impl LanguageModel for MoaModel {
         // 3. Aggregator streams; we emit our own StreamStart and add reference
         //    usage onto its Finish. We swallow the aggregator's StreamStart
         //    (we've already emitted ours).
-        let agg = self.aggregator.do_stream(&agg_opts).await?;
+        let retries = retry::prepare_retries(
+            agg_opts.max_retries,
+            self.aggregator.retry_config(),
+            agg_opts.abort_signal.clone(),
+        );
+        let agg_opts = agg_opts.for_step(format!(
+            "moa.aggregator:{}/{}",
+            self.aggregator.provider(),
+            self.aggregator.model_id()
+        ));
+        let agg = retries
+            .retry(|| {
+                if let Some(context) = &agg_opts.recording_context {
+                    let _ = context.start_attempt();
+                }
+                self.aggregator.do_stream(&agg_opts)
+            })
+            .await?;
         let mut agg_stream = agg.stream;
 
         let stream = async_stream::stream! {
@@ -223,10 +281,16 @@ impl LanguageModel for MoaModel {
                         });
                     }
                     Ok(other) => yield Ok(other),
-                    // Stream errors are terminal — relay and stop (the user's
-                    // original request was NOT the aggregator body MoA
-                    // synthesized, so relaying more would be noise).
-                    Err(e) => { yield Err(e); break; }
+                    Err(e) => {
+                        let recoverable = e.is_recoverable_stream_error();
+                        yield Err(e);
+                        if !recoverable {
+                            // A transport/Core failure is terminal. Retrying or
+                            // replaying the synthesized aggregator request after
+                            // output has escaped would duplicate visible data.
+                            break;
+                        }
+                    }
                 }
             }
         };
@@ -255,6 +319,7 @@ mod tests {
     use async_trait::async_trait;
     use futures::stream;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// A mock child that returns fixed text with fixed usage. `fail` forces an
     /// error. Used as both reference and aggregator.
@@ -263,6 +328,8 @@ mod tests {
         text: String,
         fail: bool,
         usage: Usage,
+        retry_failures: usize,
+        calls: Arc<AtomicUsize>,
     }
 
     #[async_trait]
@@ -274,8 +341,12 @@ mod tests {
             self.name
         }
         async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+            let attempt = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
             if self.fail {
                 return Err(AiMuxError::Other(format!("{} failed", self.name)));
+            }
+            if attempt <= self.retry_failures {
+                return Err(retryable_error(self.name));
             }
             Ok(GenerateResult {
                 content: vec![GenerateContent::Text {
@@ -298,8 +369,12 @@ mod tests {
             })
         }
         async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+            let attempt = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
             if self.fail {
                 return Err(AiMuxError::Other(format!("{} failed", self.name)));
+            }
+            if attempt <= self.retry_failures {
+                return Err(retryable_error(self.name));
             }
             let parts: Vec<Result<StreamPart, AiMuxError>> = vec![
                 Ok(StreamPart::StreamStart { warnings: vec![] }),
@@ -325,6 +400,41 @@ mod tests {
         }
     }
 
+    fn retryable_error(name: &str) -> AiMuxError {
+        AiMuxError::ApiCall(Box::new(crate::ApiCallError {
+            status_code: Some(503),
+            response_headers: Some(std::collections::HashMap::from([(
+                "retry-after-ms".into(),
+                "0".into(),
+            )])),
+            is_retryable: true,
+            ..crate::ApiCallError::new(
+                format!("{name} retryable failure"),
+                "https://example.test",
+                serde_json::json!({}),
+            )
+        }))
+    }
+
+    fn retry_child(
+        name: &'static str,
+        text: &str,
+        retry_failures: usize,
+    ) -> (ChildModel, Arc<AtomicUsize>) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        (
+            Arc::new(MockChild {
+                name,
+                text: text.into(),
+                fail: false,
+                usage: Usage::default(),
+                retry_failures,
+                calls: calls.clone(),
+            }),
+            calls,
+        )
+    }
+
     fn mk(name: &'static str, text: &str, fail: bool, total: u32) -> ChildModel {
         Arc::new(MockChild {
             name,
@@ -341,6 +451,8 @@ mod tests {
                 },
                 raw: None,
             },
+            retry_failures: 0,
+            calls: Arc::new(AtomicUsize::new(0)),
         })
     }
 
@@ -446,6 +558,52 @@ mod tests {
         assert_eq!(text, "streamed");
         // references(7 + 8) + aggregator(2) = 17 on each side.
         assert_eq!(finish_usage.unwrap().input_tokens.total, Some(17));
+    }
+
+    #[tokio::test]
+    async fn retries_references_and_aggregator_independently_without_replaying_fanout() {
+        let (ref_a, ref_a_calls) = retry_child("ref-a", "A", 1);
+        let (ref_b, ref_b_calls) = retry_child("ref-b", "B", 0);
+        let (aggregator, aggregator_calls) = retry_child("aggregator", "final", 1);
+        let moa = MoaModel::new(vec![ref_a, ref_b], aggregator, MoaConfig::default());
+        assert_eq!(moa.retry_config().max_retries, 0);
+
+        let result = crate::generate::generate_text(
+            &moa,
+            "hello",
+            crate::generate::GenerateTextOptions {
+                max_retries: Some(2),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.text, "final");
+        assert_eq!(ref_a_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(ref_b_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(aggregator_calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn retries_aggregator_stream_setup_without_replaying_references() {
+        let (reference, reference_calls) = retry_child("reference", "A", 0);
+        let (aggregator, aggregator_stream_calls) = retry_child("aggregator", "final", 1);
+        let moa = MoaModel::new(vec![reference], aggregator, MoaConfig::default());
+
+        let _result = crate::generate::stream_text(
+            &moa,
+            "hello",
+            crate::generate::GenerateTextOptions {
+                max_retries: Some(2),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(reference_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(aggregator_stream_calls.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
@@ -576,6 +734,73 @@ mod tests {
         );
     }
 
+    struct RecoverableFrameErrorAggregator;
+
+    #[async_trait]
+    impl LanguageModel for RecoverableFrameErrorAggregator {
+        fn provider(&self) -> &str {
+            "mock"
+        }
+
+        fn model_id(&self) -> &str {
+            "agg-recoverable-error"
+        }
+
+        async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+            unimplemented!()
+        }
+
+        async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+            Ok(StreamResult {
+                stream: Box::pin(stream::iter([
+                    Ok(StreamPart::StreamStart { warnings: vec![] }),
+                    Err(AiMuxError::JsonParse("malformed SSE data".into())),
+                    Ok(StreamPart::TextDelta {
+                        id: "t1".into(),
+                        delta: "after-error".into(),
+                        provider_metadata: None,
+                    }),
+                    Ok(StreamPart::Finish {
+                        finish_reason: FinishReason {
+                            unified: FinishReasonUnified::Stop,
+                            raw: Some("stop".into()),
+                        },
+                        usage: Usage::default(),
+                        provider_metadata: None,
+                    }),
+                ])),
+                request_body: None,
+                response_headers: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_continues_after_recoverable_aggregator_frame_error() {
+        let refs = vec![mk("ref-a", "A", false, 5)];
+        let moa = MoaModel::new(
+            refs,
+            Arc::new(RecoverableFrameErrorAggregator),
+            MoaConfig::default(),
+        );
+        let result = moa.do_stream(&opts_with_prompt()).await.unwrap();
+        let outcomes: Vec<_> = result.stream.collect().await;
+        let error_index = outcomes
+            .iter()
+            .position(|outcome| matches!(outcome, Err(AiMuxError::JsonParse(_))))
+            .expect("parse error should be relayed");
+
+        assert!(outcomes[error_index + 1..].iter().any(|outcome| matches!(
+            outcome,
+            Ok(StreamPart::TextDelta { delta, .. }) if delta == "after-error"
+        )));
+        assert!(outcomes.iter().any(|outcome| matches!(
+            outcome,
+            Ok(StreamPart::Finish { finish_reason, .. })
+                if finish_reason.unified == FinishReasonUnified::Stop
+        )));
+    }
+
     /// Like `mk` but with full per-field usage (for G4 accumulation testing).
     fn mk_full(
         name: &'static str,
@@ -605,6 +830,8 @@ mod tests {
                 },
                 raw: None,
             },
+            retry_failures: 0,
+            calls: Arc::new(AtomicUsize::new(0)),
         })
     }
 

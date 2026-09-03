@@ -12,8 +12,6 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_providers::{VertexAuth, VertexProvider, VertexProviderConfig};
 
-use aimux_provider_utils::RetryConfig;
-
 const TEST_VALUES: &[&str] = &["test text one", "test text two"];
 
 fn mock_provider_options() -> HashMap<String, Value> {
@@ -70,6 +68,8 @@ fn default_options(values: Vec<String>) -> EmbeddingCallOptions {
         abort_signal: None,
         provider_options: Some(mock_provider_options()),
         headers: None,
+        max_retries: None,
+        timeout: None,
     }
 }
 
@@ -80,7 +80,7 @@ fn test_provider(base_url: String) -> VertexProvider {
         location: Some("us-central1".to_string()),
         auth: VertexAuth::BearerToken("test-token".to_string()),
         api_key_source: None,
-        retry_config: RetryConfig::default(),
+        retry_config: aimux_provider_utils::RetryConfig::default(),
     };
     VertexProvider::new(config)
 }
@@ -205,6 +205,8 @@ async fn should_accept_google_vertex_key() {
         abort_signal: None,
         provider_options: Some(provider_options),
         headers: None,
+        max_retries: None,
+        timeout: None,
     };
 
     let _ = model.do_embed(&options).await.expect("should succeed");
@@ -238,6 +240,8 @@ async fn should_pass_task_type_only() {
         abort_signal: None,
         provider_options: Some(provider_options),
         headers: None,
+        max_retries: None,
+        timeout: None,
     };
 
     let _ = model.do_embed(&options).await.expect("should succeed");
@@ -291,7 +295,7 @@ fn gemini_embedding_2_max_per_call() {
         location: Some("us-central1".to_string()),
         auth: VertexAuth::BearerToken("test".to_string()),
         api_key_source: None,
-        retry_config: RetryConfig::default(),
+        retry_config: aimux_provider_utils::RetryConfig::default(),
     };
     let provider = VertexProvider::new(config);
     let model = provider.embedding_model("gemini-embedding-2");

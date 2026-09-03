@@ -22,10 +22,7 @@ use aimux_core::search_model::{
 };
 use aimux_core::shared::SharedHeaders;
 
-use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, send, without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, without_trailing_slash};
 
 /// Provider canonical name.
 const PROVIDER_NAME: &str = "dataforseo";
@@ -40,10 +37,22 @@ const DEFAULT_DEPTH: u32 = 10;
 const MAX_CREDITS: u32 = 1;
 
 /// DataForSEO error response structure: `{ status_code, status_message }`.
-const DATAFORSEO_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["status_message"],
-    type_path: &["status_code"],
-};
+fn dataforseo_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        aimux_provider_utils::ProviderErrorParts {
+            message: data
+                .get("status_message")
+                .and_then(Value::as_str)
+                .unwrap_or("DataForSEO request failed")
+                .to_string(),
+            provider_code: data.get("status_code").and_then(|value| match value {
+                Value::String(s) => Some(s.clone()),
+                Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            }),
+        }
+    })
+}
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -262,28 +271,27 @@ impl SearchModel for DataforseoSearchModel {
             .into_iter()
             .collect();
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers,
-                body: HttpBody::Json(body),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                ..Default::default()
             },
-            RetryConfig::default(),
-            &DATAFORSEO_ERROR_STRUCTURE,
+            body,
+            aimux_provider_utils::create_json_response_handler::<DataforseoResponse>(),
+            dataforseo_failed_response_handler(),
         )
         .await?;
 
         // Capture response headers.
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let raw_body: Value = serde_json::from_slice(&resp.body)?;
-
-        let data: DataforseoResponse = serde_json::from_value(raw_body.clone())?;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let data = resp.value;
 
         // Flatten tasks[].result[].organic[] preserving provider order.
         let results: Vec<SearchResultItem> = data

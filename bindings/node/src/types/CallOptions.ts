@@ -84,7 +84,7 @@ reasoning: ReasoningEffort | null,
 body_overrides: JsonValue | null, 
 /**
  * Per-call retry count override. `None` uses the provider's configured
- * `RetryConfig.max_retries`. `Some(0)` disables retries.
+ * Core operation retry. `Some(0)` disables retries.
  */
 max_retries: number | null, 
 /**

@@ -16,7 +16,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
-napi = { version = "3", features = ["napi8", "tokio_rt", "async"] }
+napi = { version = "3", features = ["napi8", "tokio_rt", "async", "serde-json"] }
 napi-derive = "3"
 
 # Keep this crate out of the main cargo workspace — napi-rs builds it independently.

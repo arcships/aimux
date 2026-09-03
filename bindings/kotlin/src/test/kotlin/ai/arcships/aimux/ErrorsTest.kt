@@ -2,6 +2,7 @@ package ai.arcships.aimux
 
 import com.sun.jna.ptr.LongByReference
 import com.sun.jna.ptr.PointerByReference
+import kotlinx.serialization.json.Json
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -125,15 +126,21 @@ class ErrorsTest {
         val apiEx = AimuxException.createByCode(
             AIMUX_E_API_CALL, "API call error: HTTP 429: slow down", 429, 1500,
             retryable = true, providerCode = "insufficient_quota", providerMessage = "slow down",
-            requestId = "req_123", responseBody = "{\"error\":{}}",
+            responseBody = "{\"error\":{}}", url = "https://api.example/v1/chat",
+            requestBodyValues = Json.parseToJsonElement("""{"model":"m"}"""),
+            responseHeaders = mapOf("retry-after-ms" to "1500"),
+            data = Json.parseToJsonElement("""{"code":"quota"}"""),
         ) as APICallError
         assertThat(apiEx.status).isEqualTo(429)
         assertThat(apiEx.retryMs).isEqualTo(1500L)
         assertThat(apiEx.retryable).isTrue()
         assertThat(apiEx.providerCode).isEqualTo("insufficient_quota")
         assertThat(apiEx.providerMessage).isEqualTo("slow down")
-        assertThat(apiEx.requestId).isEqualTo("req_123")
         assertThat(apiEx.responseBody).isEqualTo("{\"error\":{}}")
+        assertThat(apiEx.url).isEqualTo("https://api.example/v1/chat")
+        assertThat(apiEx.requestBodyValues.toString()).isEqualTo("""{"model":"m"}""")
+        assertThat(apiEx.responseHeaders).isEqualTo(mapOf("retry-after-ms" to "1500"))
+        assertThat(apiEx.data.toString()).isEqualTo("""{"code":"quota"}""")
 
         val modelEx = AimuxException.createByCode(
             AIMUX_E_NO_SUCH_MODEL, "no such model", modelId = "gpt-nope", modelType = "language",
@@ -142,9 +149,42 @@ class ErrorsTest {
         assertThat(modelEx.modelType).isEqualTo("language")
 
         // Absent: null on APICallError, "" on the id classes.
-        assertThat((AimuxException.createByCode(AIMUX_E_API_CALL, "x") as APICallError).requestId).isNull()
+        assertThat((AimuxException.createByCode(AIMUX_E_API_CALL, "x") as APICallError).url).isNull()
+        assertThat((AimuxException.createByCode(AIMUX_E_API_CALL, "x") as APICallError).responseHeaders).isNull()
         assertThat((AimuxException.createByCode(AIMUX_E_NO_SUCH_MODEL, "x") as NoSuchModelError).modelId).isEmpty()
         assertThat((AimuxException.createByCode(AIMUX_E_NO_SUCH_PROVIDER, "x") as NoSuchProviderError).providerId).isEmpty()
+    }
+
+    /** Code 14: the retry loop's verdict plus the per-attempt history, oldest first. */
+    @Test
+    fun `createByCode builds RetryError with reason and attempt history`() {
+        val attempts = listOf(
+            AimuxException.createByCode(AIMUX_E_API_CALL, "HTTP 500", 500, retryable = true),
+            AimuxException.createByCode(AIMUX_E_API_CALL, "HTTP 401", 401),
+        )
+        val ex = AimuxException.createByCode(
+            AIMUX_E_RETRY, "Failed after 2 attempts with non-retryable error: 'HTTP 401'",
+            retryReason = RetryErrorReason.ERROR_NOT_RETRYABLE, retryErrors = attempts,
+        ) as RetryError
+        assertThat(ex.code).isEqualTo(AIMUX_E_RETRY)
+        assertThat(ex.reason).isEqualTo(RetryErrorReason.ERROR_NOT_RETRYABLE)
+        assertThat(ex.errors).hasSize(2)
+        assertThat(ex.lastError.status).isEqualTo(401)
+        assertThat(ex.status).isEqualTo(-1)
+
+        // Defensive: an empty history collapses to one OtherError carrying the message.
+        val fallback = AimuxException.createByCode(AIMUX_E_RETRY, "gave up") as RetryError
+        assertThat(fallback.errors).hasSize(1)
+        assertThat(fallback.lastError).isInstanceOf(OtherError::class.java)
+        assertThat(fallback.reason).isEqualTo(RetryErrorReason.MAX_RETRIES_EXCEEDED)
+    }
+
+    /** The wire names are the core's serde camelCase; unknown text falls back to the common case. */
+    @Test
+    fun `RetryErrorReason maps the wire names`() {
+        assertThat(RetryErrorReason.fromWire("errorNotRetryable")).isEqualTo(RetryErrorReason.ERROR_NOT_RETRYABLE)
+        assertThat(RetryErrorReason.fromWire("maxRetriesExceeded")).isEqualTo(RetryErrorReason.MAX_RETRIES_EXCEEDED)
+        assertThat(RetryErrorReason.fromWire(null)).isEqualTo(RetryErrorReason.MAX_RETRIES_EXCEEDED)
     }
 
     /** 401 / 404 are the same class; only the status distinguishes them. */
@@ -175,10 +215,13 @@ class ErrorsTest {
         assertThat(noKey.retryable).isFalse()
     }
 
-    /** A code outside 1..13 is a header/library mismatch, not an error type. */
+    /** A code outside 1..14 is a header/library mismatch, not an error type. */
     @Test
     fun `createByCode rejects codes outside the enum`() {
         assertThatThrownBy { AimuxException.createByCode(999, "?") }
+            .isInstanceOf(IllegalStateException::class.java)
+        // 15 is the first unassigned value and is rejected.
+        assertThatThrownBy { AimuxException.createByCode(15, "?") }
             .isInstanceOf(IllegalStateException::class.java)
         assertThatThrownBy { AimuxException.createByCode(AIMUX_OK, "?") }
             .isInstanceOf(IllegalStateException::class.java)

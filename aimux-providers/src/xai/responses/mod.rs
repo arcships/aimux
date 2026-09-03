@@ -22,16 +22,14 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use aimux_core::error::{AiMuxError, ApiCallError};
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed};
-use aimux_stream::SseStream;
+use aimux_provider_utils::HttpRequest;
 
 use super::super::XAIConfig;
 use crate::openai::responses::responses_convert::build_header_list;
@@ -49,7 +47,7 @@ fn generate_source_id() -> String {
 
 /// An xAI Responses language model (Grok).
 ///
-/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct XaiResponsesModel {
     model_id: String,
@@ -91,6 +89,10 @@ impl LanguageModel for XaiResponsesModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.openai_config().retry_config
+    }
+
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         // M2b: reuse the OpenAI snapshot helper with xAI's provider name.
         crate::openai::config_snapshot_from_config(
@@ -106,42 +108,18 @@ impl LanguageModel for XaiResponsesModel {
         let body = request_result.body;
         let provider_tool_names = request_result.provider_tool_names;
 
-        let resp = send_timed(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
-                headers: build_header_list(&headers),
-                body: HttpBody::Json(body.clone()),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-            },
-            self.config.retry_config(),
-            &DEFAULT_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+        let resp = aimux_provider_utils::post_json_to_api(
+            HttpRequest::new(self.endpoint(), build_header_list(&headers), options),
+            body.clone(),
+            super::xai_successful_response_handler::<types::XaiResponsesResponse>(),
+            super::xai_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let raw_value: Value = serde_json::from_slice(&resp.body)?;
-
-        // Check for 200-status error.
-        if let Some(error_msg) = raw_value.get("error").and_then(|v| v.as_str()) {
-            return Err(AiMuxError::ApiCall(ApiCallError {
-                status_code: Some(resp.status),
-                provider_code: raw_value
-                    .get("code")
-                    .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string),
-                message: error_msg.to_string(),
-                response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
-                ..Default::default()
-            }));
-        }
-
-        let data: types::XaiResponsesResponse = serde_json::from_value(raw_value.clone())?;
+        let _raw_value = resp.raw_value.unwrap_or(Value::Null);
+        let data = resp.value;
 
         let mut content: Vec<GenerateContent> = Vec::new();
         let mut has_function_call = false;
@@ -385,59 +363,36 @@ impl LanguageModel for XaiResponsesModel {
         let body = request_result.body;
         let warnings = request_result.warnings;
         let provider_tool_names = request_result.provider_tool_names;
+        let endpoint = self.endpoint();
 
-        let resp = send_stream_timed(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
-                headers: build_header_list(&headers),
-                body: HttpBody::Json(body.clone()),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-            },
-            self.config.retry_config(),
-            &DEFAULT_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+        let resp = aimux_provider_utils::post_json_to_api(
+            HttpRequest::new(endpoint.clone(), build_header_list(&headers), options),
+            body.clone(),
+            super::xai_event_source_response_handler::<Value>(),
+            super::xai_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        // Check for JSON error (200-status).
-        let content_type = response_headers
-            .get("content-type")
-            .map(std::string::String::as_str)
-            .unwrap_or("");
-        if content_type.contains("application/json") {
-            // Collect the (non-SSE) JSON body and check for an error object.
-            let mut buf = Vec::new();
-            let mut body_stream = resp.body;
-            while let Some(chunk) = body_stream.next().await {
-                if let Ok(bytes) = chunk {
-                    buf.extend_from_slice(&bytes);
-                }
-            }
-            let val: Value = serde_json::from_slice(&buf)?;
-            if let Some(err_msg) = val.get("error").and_then(|v| v.as_str()) {
-                return Err(AiMuxError::ApiCall(ApiCallError {
-                    status_code: Some(resp.status),
-                    provider_code: val
-                        .get("code")
-                        .and_then(|v| v.as_str())
-                        .map(std::string::ToString::to_string),
-                    message: err_msg.to_string(),
-                    response_body: Some(String::from_utf8_lossy(&buf).into_owned()),
-                    ..Default::default()
-                }));
-            }
-            return Err(AiMuxError::InvalidResponseData(
-                "expected SSE stream but got JSON response without an error object".to_string(),
+        let mut sse_stream = resp.value;
+        let first_event = match sse_stream.next().await {
+            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+            first_event => first_event,
+        };
+        if let Some(Ok(ref event)) = first_event
+            && types::event_type(event) == "error"
+        {
+            return Err(super::xai_stream_error(
+                event,
+                &endpoint,
+                body.clone(),
+                response_headers.clone(),
             ));
         }
-
-        let sse_stream = SseStream::new(resp.body);
+        let stream_error_url = endpoint;
+        let stream_request_body = body.clone();
+        let stream_response_headers = response_headers.clone();
 
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings });
@@ -459,25 +414,11 @@ impl LanguageModel for XaiResponsesModel {
             // Track ongoing function calls by output_index.
             let mut ongoing_tool_calls: HashMap<u64, (String, String)> = HashMap::new(); // output_index -> (tool_call_id, tool_name)
 
-            let mut event_iter = sse_stream;
+            let mut event_iter = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
 
             while let Some(event) = event_iter.next().await {
                 match event {
-                    Ok(sse_event) => {
-                        if sse_event.data == "[DONE]" {
-                            break;
-                        }
-
-                        let parsed: Value = match serde_json::from_str(&sse_event.data) {
-                            Ok(v) => v,
-                            Err(e) => {
-                                yield Ok(StreamPart::Error {
-                                    error: AiMuxError::from(e),
-                                });
-                                break;
-                            }
-                        };
-
+                    Ok(parsed) => {
                         let event_type = types::event_type(&parsed);
 
                         // ── response.created / response.in_progress ──
@@ -665,16 +606,22 @@ impl LanguageModel for XaiResponsesModel {
 
                         // ── error event ──
                         if event_type == "error" {
-                            let message = parsed.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
                             yield Ok(StreamPart::Error {
-                                error: AiMuxError::ApiCall(ApiCallError {
-                                    provider_code: parsed.get("code").and_then(|v| v.as_str()).map(std::string::ToString::to_string),
-                                    message: message.to_string(),
-                                    response_body: Some(sse_event.data.clone()),
-                                    ..Default::default()
-                                }),
+                                error: super::xai_stream_error(
+                                    &parsed,
+                                    &stream_error_url,
+                                    stream_request_body.clone(),
+                                    stream_response_headers.clone(),
+                                ),
                             });
-                            continue;
+                            final_finish_reason = FinishReason {
+                                unified: FinishReasonUnified::Error,
+                                raw: Some("error".to_string()),
+                            };
+                            // A terminal error ends this stream; waiting for
+                            // more events can hang on a source that keeps the
+                            // connection open.
+                            break;
                         }
 
                         // ── custom_tool_call_input.delta / .done ──
@@ -942,11 +889,12 @@ impl LanguageModel for XaiResponsesModel {
 
                         // All other event types (web_search_call.in_progress, etc.) are ignored.
                     }
-                    Err(e) => {
-                        yield Ok(StreamPart::Error {
-                            error: AiMuxError::InvalidResponseData(e.to_string()),
-                        });
-                        break;
+                    Err(error) => {
+                        let recoverable = error.is_recoverable_stream_error();
+                        yield Err(error);
+                        if !recoverable {
+                            return;
+                        }
                     }
                 }
             }

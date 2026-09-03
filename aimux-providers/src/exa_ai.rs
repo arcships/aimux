@@ -15,10 +15,24 @@ use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
+
+fn exa_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error");
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .and_then(|value| value.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or("Exa request failed")
+                .to_string(),
+            provider_code: error
+                .and_then(|value| value.get("code").or_else(|| value.get("type")))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        }
+    })
+}
 
 const MODEL_ID: &str = "exa-search";
 
@@ -167,24 +181,24 @@ impl SearchModel for ExaAiSearchModel {
         let body = build_request_body(options);
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers,
-                body: HttpBody::Json(body),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                ..Default::default()
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            body,
+            aimux_provider_utils::create_json_response_handler(),
+            exa_failed_response_handler(),
         )
         .await?;
-        let response_headers = resp.headers;
-
-        let parsed: ExaResponse = serde_json::from_slice(&resp.body)?;
+        let response_headers = resp.response_headers;
+        let response_body = resp.raw_value;
+        let parsed: ExaResponse = resp.value;
 
         Ok(SearchResult {
             results: map_results(parsed.results),
@@ -193,7 +207,7 @@ impl SearchModel for ExaAiSearchModel {
             warnings: Vec::new(),
             response: Some(SearchResponse {
                 headers: Some(response_headers),
-                body: Some(serde_json::from_slice(&resp.body).unwrap_or(Value::Null)),
+                body: response_body,
             }),
         })
     }

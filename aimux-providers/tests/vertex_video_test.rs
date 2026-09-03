@@ -1,15 +1,24 @@
 ﻿//! Rust translation of the Google Vertex video model tests.
 //! Source: `reference/ai/packages/google-vertex/src/google-vertex-video-model.test.ts`
 
-use aimux_core::video_model::{VideoCallOptions, VideoModel};
+use aimux_core::video_model::{VideoCallOptions, generate_video};
 use aimux_providers::{VertexProvider, VertexProviderConfig};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+fn fast_poll() -> Option<aimux_core::video_model::VideoPollOptions> {
+    Some(aimux_core::video_model::VideoPollOptions {
+        interval_ms: Some(1),
+        timeout_ms: Some(10_000),
+    })
+}
+
 fn options(p: &str) -> VideoCallOptions {
-    VideoCallOptions::new(p)
+    let mut o = VideoCallOptions::new(p);
+    o.poll = fast_poll();
+    o
 }
 
 fn make_provider(server_uri: &str) -> VertexProvider {
@@ -41,7 +50,7 @@ async fn should_generate_video() {
     mock_predict_and_poll(&server, &result).await;
     let provider = make_provider(&server.uri());
     let model = provider.video("veo-3.0-generate-001").unwrap();
-    let r = model.do_generate(&options("A cat")).await.unwrap();
+    let r = generate_video(&model, options("A cat")).await.unwrap();
     assert_eq!(r.videos.len(), 1);
 }
 
@@ -53,7 +62,7 @@ async fn should_pass_prompt() {
     mock_predict_and_poll(&server, &result).await;
     let provider = make_provider(&server.uri());
     let model = provider.video("veo-3.0-generate-001").unwrap();
-    model.do_generate(&options("A cat")).await.unwrap();
+    generate_video(&model, options("A cat")).await.unwrap();
     let requests = server.received_requests().await.unwrap();
     let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
     assert_eq!(body["instances"][0]["prompt"], "A cat");
@@ -71,7 +80,7 @@ async fn should_pass_headers() {
     let mut rh = HashMap::new();
     rh.insert("Custom-Header".to_string(), "val".to_string());
     opts.headers = Some(rh);
-    model.do_generate(&opts).await.unwrap();
+    generate_video(&model, opts).await.unwrap();
     let requests = server.received_requests().await.unwrap();
     let h = &requests[0].headers;
     assert_eq!(h.get("authorization").unwrap(), "Bearer test-token");
@@ -86,7 +95,7 @@ async fn should_include_response_data() {
     mock_predict_and_poll(&server, &result).await;
     let provider = make_provider(&server.uri());
     let model = provider.video("veo-3.0-generate-001").unwrap();
-    let r = model.do_generate(&options("test")).await.unwrap();
+    let r = generate_video(&model, options("test")).await.unwrap();
     assert!(r.response.timestamp.is_some());
     assert_eq!(
         r.response.model_id,

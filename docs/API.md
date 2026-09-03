@@ -111,7 +111,7 @@ Examples: [Node.js](api/node.md#text-generation) · [Python](api/python.md#text-
 | `instructions` | `string?` | System instructions |
 | `reasoning` | `ReasoningEffort?` | Reasoning effort |
 | `max_retries` | `number?` | Per-call retry override; `0` disables retries (`None` = provider default, 2) |
-| `timeout` | `TimeoutConfiguration?` | Per-call timeouts (total / first-chunk / chunk idle) — see [Timeouts](#timeouts) |
+| `timeout` | `TimeoutConfiguration?` | Per-call timeouts (total / step / first-chunk / chunk idle) — see [Timeouts](#timeouts) |
 | `body_overrides` | `object?` | Per-call request-body overrides, deep-merged; `null` values delete keys |
 | `headers` | `object?` | Extra HTTP headers |
 
@@ -213,7 +213,7 @@ pre-aborted signal fails fast without sending).
   never crosses the JSON boundary):
 
   ```rust
-  let signal = aimux_core::shared::AbortSignal::new();
+  let signal = aimux_core::AbortSignal::new();
   let opts = GenerateTextOptions { abort_signal: Some(signal.clone()), ..Default::default() };
   let task = tokio::spawn(generate_text(&model, "Explain Rust.", opts));
   signal.abort(); // cancels the call

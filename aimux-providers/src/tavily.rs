@@ -14,18 +14,24 @@ use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
 
 const MODEL_ID: &str = "tavily-search";
 
 /// Tavily-specific error structure: `{ "detail": { "error": "..." } }`.
-const TAVILY_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["detail", "error"],
-    type_path: &[],
-};
+fn tavily_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        aimux_provider_utils::ProviderErrorParts {
+            message: data
+                .get("detail")
+                .and_then(|detail| detail.get("error"))
+                .and_then(Value::as_str)
+                .unwrap_or("Tavily request failed")
+                .to_string(),
+            provider_code: None,
+        }
+    })
+}
 
 /// Configuration for the Tavily provider.
 #[derive(Debug, Clone)]
@@ -185,24 +191,24 @@ impl SearchModel for TavilySearchModel {
         let body = build_request_body(options);
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers,
-                body: HttpBody::Json(body),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                ..Default::default()
             },
-            RetryConfig::default(),
-            &TAVILY_ERROR_STRUCTURE,
+            body,
+            aimux_provider_utils::create_json_response_handler(),
+            tavily_failed_response_handler(),
         )
         .await?;
-        let response_headers = resp.headers;
-
-        let parsed: TavilyResponse = serde_json::from_slice(&resp.body)?;
+        let response_headers = resp.response_headers;
+        let response_body = resp.raw_value;
+        let parsed: TavilyResponse = resp.value;
 
         Ok(SearchResult {
             results: map_results(parsed.results),
@@ -211,7 +217,7 @@ impl SearchModel for TavilySearchModel {
             warnings: Vec::new(),
             response: Some(SearchResponse {
                 headers: Some(response_headers),
-                body: Some(serde_json::from_slice(&resp.body).unwrap_or(Value::Null)),
+                body: response_body,
             }),
         })
     }

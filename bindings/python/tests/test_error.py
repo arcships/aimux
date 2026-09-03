@@ -23,7 +23,10 @@ _API_CALL_ONLY = (
     "provider_code",
     "provider_message",
     "response_body",
-    "request_id",
+    "url",
+    "request_body_values",
+    "response_headers",
+    "data",
 )
 
 _ERROR_BODY = json.dumps(
@@ -37,7 +40,7 @@ def _free_port():
         return s.getsockname()[1]
 
 
-def _rate_limited_server(port):
+def _rate_limited_server(port, retry_after_ms="1500"):
     """Always answers 429 with a provider error body plus retry/request headers."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -48,7 +51,7 @@ def _rate_limited_server(port):
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(resp)))
             self.send_header("x-request-id", "req_abc123")
-            self.send_header("retry-after-ms", "1500")
+            self.send_header("retry-after-ms", retry_after_ms)
             self.end_headers()
             self.wfile.write(resp)
 
@@ -56,6 +59,16 @@ def _rate_limited_server(port):
             pass
 
     HTTPServer(("127.0.0.1", port), Handler).serve_forever()
+
+
+def _wait_for_port(port):
+    for _ in range(50):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect(("127.0.0.1", port))
+            break
+        except ConnectionRefusedError:
+            time.sleep(0.05)
 
 
 def test_no_such_provider_carries_only_its_payload_and_no_json():
@@ -82,17 +95,12 @@ def test_api_call_error_carries_every_field_the_response_produced():
     proc = Process(target=_rate_limited_server, args=(port,))
     proc.start()
     try:
-        for _ in range(50):
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.connect(("127.0.0.1", port))
-                break
-            except ConnectionRefusedError:
-                time.sleep(0.05)
+        _wait_for_port(port)
 
         model = openai("test-key", "gpt-4o", f"http://127.0.0.1:{port}")
+        # 429 is retryable; disable retries to observe the bare call failure.
         with pytest.raises(APICallError) as excinfo:
-            generate_text(model, "hi")
+            generate_text(model, "hi", {"max_retries": 0})
         err = excinfo.value
 
         assert type(err) is APICallError
@@ -100,12 +108,46 @@ def test_api_call_error_carries_every_field_the_response_produced():
         assert err.retry_ms == 1500
         assert err.retryable is True
         assert err.provider_code == "rate_limit_exceeded"
-        assert err.request_id == "req_abc123"
+        # No distinct request-id field: the raw header evidence carries it.
+        assert err.response_headers["x-request-id"] == "req_abc123"
+        assert err.response_headers["retry-after-ms"] == "1500"
+        assert f"127.0.0.1:{port}" in err.url
+        assert err.request_body_values["model"] == "gpt-4o"
         assert err.response_body == _ERROR_BODY
         # The provider's text on its own; str(e) is the composed form.
         assert err.provider_message == "slow down"
         assert "slow down" in str(err)
         assert str(err) != err.provider_message
+    finally:
+        proc.terminate()
+        proc.join(timeout=2)
+
+
+def test_retry_error_carries_reason_and_typed_attempt_history():
+    from aimux import APICallError, RetryError, generate_text, openai
+
+    port = _free_port()
+    # retry-after-ms: 1 keeps the honored retry delay negligible.
+    proc = Process(target=_rate_limited_server, args=(port, "1"))
+    proc.start()
+    try:
+        _wait_for_port(port)
+
+        model = openai("test-key", "gpt-4o", f"http://127.0.0.1:{port}")
+        with pytest.raises(RetryError) as excinfo:
+            generate_text(model, "hi", {"max_retries": 1})
+        err = excinfo.value
+
+        assert type(err) is RetryError
+        assert err.reason == "maxRetriesExceeded"
+        # Attempt history, oldest first; each entry is a full typed exception.
+        assert len(err.errors) == 2
+        assert err.last_error is err.errors[-1]
+        for attempt in err.errors:
+            assert type(attempt) is APICallError
+            assert attempt.status == 429
+            assert attempt.provider_code == "rate_limit_exceeded"
+        assert "Failed after 2 attempts" in str(err)
     finally:
         proc.terminate()
         proc.join(timeout=2)

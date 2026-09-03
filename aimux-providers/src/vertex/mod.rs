@@ -55,8 +55,7 @@ pub struct VertexProviderConfig {
     pub auth: VertexAuth,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
-    /// 重试配置(M1b)。默认 `RetryConfig::default()`（max_retries=2）。
-    /// 取代之前硬编码的 `RetryConfig::default()`,让 per-call `max_retries` 生效。
+    /// Retry settings used by Core model operations.
     pub retry_config: RetryConfig,
 }
 
@@ -176,7 +175,7 @@ fn build_base_url(project: &str, location: &str, _endpoint: bool) -> String {
 
 /// Google Vertex AI provider — creates [`VertexModel`] instances.
 ///
-/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct VertexProvider {
     config: VertexProviderConfig,
@@ -303,7 +302,8 @@ impl VertexProvider {
             location,
             self.config.auth.clone(),
             self.config.base_url.clone(),
-        ))
+        )
+        .with_retry_config(self.config.retry_config))
     }
 
     /// Create a video generation model instance for the given Vertex AI model
@@ -331,7 +331,8 @@ impl VertexProvider {
             location,
             self.config.auth.clone(),
             self.config.base_url.clone(),
-        ))
+        )
+        .with_retry_config(self.config.retry_config))
     }
 }
 
@@ -372,24 +373,24 @@ impl Provider for VertexProvider {
             }
             headers.push(("Content-Type".to_string(), "application/json".to_string()));
 
-            use aimux_provider_utils::{
-                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send_timed,
-            };
-            let resp = send_timed(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url,
-                    headers,
-                    body: HttpBody::Empty,
-                    abort_signal: None,
-                    call_id: None,
-                    recording_context: None,
-                },
-                retry_config,
-                &DEFAULT_ERROR_STRUCTURE,
-                None,
-            )
-            .await?;
+            use aimux_provider_utils::HttpRequest;
+            // Retry rationale: see `openai::model::execute_list_models`.
+            let resp = aimux_core::retry::prepare_retries(None, retry_config, None)
+                .retry(|| {
+                    aimux_provider_utils::get_from_api(
+                        HttpRequest {
+                            url: url.clone(),
+                            headers: headers.clone(),
+                            abort_signal: None,
+                            call_id: None,
+                            recording_context: None,
+                            ..Default::default()
+                        },
+                        aimux_provider_utils::create_json_response_handler(),
+                        crate::google::google_failed_response_handler(),
+                    )
+                })
+                .await?;
 
             #[derive(serde::Deserialize)]
             struct Resp {
@@ -402,7 +403,7 @@ impl Provider for VertexProvider {
                 #[serde(default)]
                 display_name: Option<String>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)?;
+            let parsed: Resp = resp.value;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .models
                 .into_iter()

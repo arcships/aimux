@@ -629,8 +629,10 @@ public class Model implements Closeable {
      * <p>The FFI call starts on the first terminal operation of the returned
      * stream (mirror of Kotlin's {@code streamTextSequence}). Iteration pulls
      * parts from a {@link LinkedBlockingQueue} fed by the stream callbacks;
-     * the stream ends at the sentinel. Terminal stream failures throw
-     * {@link AimuxException} from the blocking FFI call.
+     * the stream ends at the sentinel. Recoverable frame errors arrive as
+     * {@code StreamPart.Error} data parts and the stream continues; only
+     * transport/Core failures throw {@link AimuxException} from the blocking
+     * FFI call.
      *
      * <pre>{@code
      * model.streamTextStream("\"Write a haiku\"").forEach(System.out::println);

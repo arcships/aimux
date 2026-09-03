@@ -26,8 +26,40 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send};
+use aimux_provider_utils::{HttpRequest, load_api_key};
+
+/// Hume errors carry a top-level `message` with a `code` such as `"E0101"`
+/// (https://dev.hume.ai/docs/resources/errors); the nested `{error:
+/// {message, code}}` shape matches the AI SDK's Hume error schema.
+fn hume_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorParts {
+    let error = data.get("error");
+    let message = data
+        .get("message")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            error
+                .and_then(|value| value.get("message"))
+                .and_then(Value::as_str)
+        })
+        .or_else(|| error.and_then(Value::as_str))
+        .unwrap_or("Hume request failed")
+        .to_string();
+    aimux_provider_utils::ProviderErrorParts {
+        message,
+        provider_code: data
+            .get("code")
+            .or_else(|| error.and_then(|value| value.get("code")))
+            .and_then(|value| match value {
+                Value::String(s) => Some(s.clone()),
+                Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            }),
+    }
+}
+
+fn hume_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(hume_error_parts)
+}
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -160,25 +192,25 @@ impl SpeechModel for HumeSpeechModel {
             .into_iter()
             .collect();
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers,
-                body: HttpBody::Json(Value::Object(body.clone())),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                ..Default::default()
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            Value::Object(body.clone()),
+            aimux_provider_utils::create_binary_response_handler(),
+            hume_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let audio_bytes = resp.body.to_vec();
+        let audio_bytes = resp.value.to_vec();
 
         let timestamp = chrono::Utc::now().to_rfc3339();
 

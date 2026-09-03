@@ -87,7 +87,7 @@ pub struct AzureConfig {
     /// api_key 来源(RFC-0023):`None` = explicit (api-key 或 token provider);
     /// `Some("env:VAR")` = 环境变量。不存明文。
     pub api_key_source: Option<String>,
-    /// 重试配置(M1b)。默认 `RetryConfig::default()`。
+    /// Retry settings used by Core model operations.
     pub retry_config: RetryConfig,
 }
 
@@ -324,24 +324,24 @@ impl Provider for AzureProvider {
                 }
             }
 
-            use aimux_provider_utils::{
-                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send_timed,
-            };
-            let resp = send_timed(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url,
-                    headers,
-                    body: HttpBody::Empty,
-                    abort_signal: None,
-                    call_id: None,
-                    recording_context: None,
-                },
-                config.retry_config,
-                &DEFAULT_ERROR_STRUCTURE,
-                None,
-            )
-            .await?;
+            use aimux_provider_utils::HttpRequest;
+            // Retry rationale: see `openai::model::execute_list_models`.
+            let resp = aimux_core::retry::prepare_retries(None, config.retry_config, None)
+                .retry(|| {
+                    aimux_provider_utils::get_from_api(
+                        HttpRequest {
+                            url: url.clone(),
+                            headers: headers.clone(),
+                            abort_signal: None,
+                            call_id: None,
+                            recording_context: None,
+                            ..Default::default()
+                        },
+                        aimux_provider_utils::create_json_response_handler(),
+                        crate::openai::openai_failed_response_handler(),
+                    )
+                })
+                .await?;
 
             // Azure response: { data: [{ id, model, ... }] }
             #[derive(serde::Deserialize)]
@@ -357,7 +357,7 @@ impl Provider for AzureProvider {
                 #[serde(default, rename = "modelName")]
                 model_name: Option<String>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)?;
+            let parsed: Resp = resp.value;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .data
                 .into_iter()
@@ -479,6 +479,10 @@ impl LanguageModel for AzureModel {
         &self.deployment
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         use aimux_core::recording::ProviderRecord;
         ProviderRecord {
@@ -502,10 +506,6 @@ impl LanguageModel for AzureModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
         execute_generate(
             &self.endpoint(),
             &headers,
@@ -513,17 +513,12 @@ impl LanguageModel for AzureModel {
             options,
             "azure",
             &crate::openai::OpenAICompatProfile::full(),
-            &retry_config,
         )
         .await
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
         execute_stream(
             &self.endpoint(),
             &headers,
@@ -531,7 +526,6 @@ impl LanguageModel for AzureModel {
             options,
             "azure",
             &crate::openai::OpenAICompatProfile::full(),
-            &retry_config,
         )
         .await
     }

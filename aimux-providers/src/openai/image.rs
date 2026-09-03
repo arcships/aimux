@@ -20,8 +20,7 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::{SharedProviderMetadata, Warning};
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send};
+use aimux_provider_utils::{HttpBody, HttpRequest};
 
 use super::OpenAIConfig;
 
@@ -119,6 +118,10 @@ impl ImageModel for OpenAIImageModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn max_images_per_call(&self) -> Option<u32> {
         Some(get_max_images_per_call(&self.model_id))
     }
@@ -151,48 +154,35 @@ impl ImageModel for OpenAIImageModel {
             let (form_body, content_type) =
                 build_edit_multipart(&self.model_id, options, &openai_options);
 
-            let resp = send(
-                HttpRequest {
-                    method: HttpMethod::Post,
-                    url: self.edits_endpoint(),
-                    headers: build_header_list(&headers),
-                    // Content-Type is set by the http layer from the `Bytes` body.
-                    body: HttpBody::Bytes(form_body, content_type),
-
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                },
-                self.config.retry_config,
-                &DEFAULT_ERROR_STRUCTURE,
+            let resp = aimux_provider_utils::post_to_api(
+                HttpRequest::new(self.edits_endpoint(), build_header_list(&headers), options),
+                HttpBody::Bytes(form_body, content_type),
+                aimux_provider_utils::create_json_response_handler(),
+                super::openai_failed_response_handler(),
             )
             .await?;
 
-            let val: Value = serde_json::from_slice(&resp.body)?;
-            (val, resp.headers, None)
+            let val: Value = resp.value;
+            (val, resp.response_headers, None)
         } else {
             // ── Generation path: JSON body ──
             let openai_options = parse_generation_provider_options(&options.provider_options);
             let body = build_generation_body(&self.model_id, options, &openai_options);
 
-            let resp = send(
-                HttpRequest {
-                    method: HttpMethod::Post,
-                    url: self.generations_endpoint(),
-                    headers: build_header_list(&headers),
-                    body: HttpBody::Json(Value::Object(body.clone())),
-
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                },
-                self.config.retry_config,
-                &DEFAULT_ERROR_STRUCTURE,
+            let resp = aimux_provider_utils::post_json_to_api(
+                HttpRequest::new(
+                    self.generations_endpoint(),
+                    build_header_list(&headers),
+                    options,
+                ),
+                Value::Object(body.clone()),
+                aimux_provider_utils::create_json_response_handler(),
+                super::openai_failed_response_handler(),
             )
             .await?;
 
-            let val: Value = serde_json::from_slice(&resp.body)?;
-            (val, resp.headers, Some(Value::Object(body)))
+            let val: Value = resp.value;
+            (val, resp.response_headers, Some(Value::Object(body)))
         };
 
         let images = extract_images(&body_value);

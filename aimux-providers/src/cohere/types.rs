@@ -73,7 +73,7 @@ pub struct TokenPair {
 // always has a `type` field matching the event name. We parse as a generic
 // `Value` and dispatch on the `type` field in the model code.
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StreamEvent {
     #[serde(rename = "type")]
     pub event_type: String,
@@ -83,9 +83,15 @@ pub struct StreamEvent {
     pub id: Option<String>,
     #[serde(default)]
     pub delta: Option<StreamDelta>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub status_code: Option<u16>,
+    #[serde(default)]
+    pub code: Option<Value>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct StreamDelta {
     #[serde(default)]
     pub message: Option<StreamMessage>,
@@ -95,7 +101,7 @@ pub struct StreamDelta {
     pub usage: Option<StreamUsage>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct StreamMessage {
     /// Content can be {type:"text",text:""} or {type:"thinking",thinking:""}.
     #[serde(default)]
@@ -110,7 +116,7 @@ pub struct StreamMessage {
     pub role: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StreamUsage {
     pub tokens: TokenPair,
 }

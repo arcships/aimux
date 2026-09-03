@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use serde_json::Value;
 
 use aimux_core::Provider;
@@ -20,10 +21,8 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::shared::Warning;
-use aimux_provider_utils::response::ErrorStructure;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, MultipartForm, RetryConfig, load_api_key, send,
-    without_trailing_slash,
+    HttpBody, HttpRequest, MultipartForm, load_api_key, without_trailing_slash,
 };
 
 /// Stability error response structure: `{ "id": "...", "name": "...", "errors": ["..."] }`.
@@ -31,10 +30,70 @@ use aimux_provider_utils::{
 /// The human-readable summary lives in the `name` field (e.g. `"unauthorized"`,
 /// `"bad_request"`); the detailed messages are in the `errors` array, which the
 /// shared error parser cannot index into, so we surface `name` as the message.
-const STABILITY_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["name"],
-    type_path: &["name"],
-};
+fn stability_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let name = data
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("Stability request failed");
+        aimux_provider_utils::ProviderErrorParts {
+            message: name.to_string(),
+            provider_code: Some(name.to_string()),
+        }
+    })
+}
+
+enum StabilitySuccess {
+    Json(Value),
+    Binary(Bytes),
+}
+
+fn stability_successful_response_handler() -> aimux_provider_utils::ResponseHandler<StabilitySuccess>
+{
+    aimux_provider_utils::ResponseHandler::new(|input| async move {
+        let status = input.response.status().as_u16();
+        let headers = aimux_provider_utils::extract_response_headers::extract_response_headers(
+            input.response.headers(),
+        );
+        let is_json = input
+            .response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("application/json"));
+        let bytes =
+            aimux_provider_utils::read_response_with_size_limit::read_response_with_size_limit(
+                input.response,
+                &input.url,
+                &input.request_body_values,
+                aimux_provider_utils::read_response_with_size_limit::DEFAULT_MAX_DOWNLOAD_SIZE,
+                input.abort_signal.as_ref(),
+            )
+            .await?;
+        let value = if is_json {
+            let value = serde_json::from_slice(&bytes).map_err(|error| {
+                AiMuxError::ApiCall(Box::new(aimux_core::ApiCallError {
+                    status_code: Some(status),
+                    response_headers: Some(headers.clone()),
+                    response_body: Some(String::from_utf8_lossy(&bytes).into_owned()),
+                    ..aimux_core::ApiCallError::new(
+                        format!("Invalid JSON response: {error}"),
+                        input.url,
+                        input.request_body_values,
+                    )
+                }))
+            })?;
+            StabilitySuccess::Json(value)
+        } else {
+            StabilitySuccess::Binary(bytes)
+        };
+        Ok(aimux_provider_utils::ResponseHandlerOutput {
+            value,
+            raw_value: None,
+            response_headers: headers,
+        })
+    })
+}
 
 /// Map a Stability model ID to its generate-endpoint sub-path.
 ///
@@ -267,37 +326,27 @@ impl ImageModel for StabilityImageModel {
         let headers = self.build_headers(options.headers.as_ref());
         let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
-        let resp = send(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
-                headers: header_list,
-                body: HttpBody::Bytes(body_bytes, content_type),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            RetryConfig::default(),
-            &STABILITY_ERROR_STRUCTURE,
+        let resp = aimux_provider_utils::post_to_api(
+            HttpRequest::new(self.endpoint(), header_list, options),
+            HttpBody::Bytes(body_bytes, content_type),
+            stability_successful_response_handler(),
+            stability_failed_response_handler(),
         )
         .await?;
 
-        let rh = resp.headers;
-        let response_content_type = rh.get("content-type").cloned().unwrap_or_default();
-
-        // The image is returned either as raw binary (Accept: image/*) or as
-        // base64 inside a JSON body (Accept: application/json).
-        let image_bytes = if response_content_type.starts_with("application/json") {
-            let v: Value = serde_json::from_slice(&resp.body)?;
-            let b64 = v.get("image").and_then(|i| i.as_str()).ok_or_else(|| {
-                AiMuxError::InvalidResponseData("Stability response missing `image` field".into())
-            })?;
-            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(
-                |e| AiMuxError::InvalidResponseData(format!("invalid base64 image: {e}")),
-            )?
-        } else {
-            resp.body.to_vec()
+        let rh = resp.response_headers;
+        let image_bytes = match resp.value {
+            StabilitySuccess::Json(v) => {
+                let b64 = v.get("image").and_then(|i| i.as_str()).ok_or_else(|| {
+                    AiMuxError::InvalidResponseData(
+                        "Stability response missing `image` field".into(),
+                    )
+                })?;
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(
+                    |e| AiMuxError::InvalidResponseData(format!("invalid base64 image: {e}")),
+                )?
+            }
+            StabilitySuccess::Binary(bytes) => bytes.to_vec(),
         };
 
         Ok(ImageResult {

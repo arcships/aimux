@@ -12,14 +12,23 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::video_model::{VideoCallOptions, VideoModel};
+use aimux_core::video_model::{VideoCallOptions, VideoModel, generate_video};
 use aimux_providers::{RunwaymlConfig, RunwaymlProvider};
 
 const MODEL_ID: &str = "gen3a_turbo";
 const VIDEO_URL: &str = "https://cdn.runwayml.com/video.mp4";
 
+fn fast_poll() -> Option<aimux_core::video_model::VideoPollOptions> {
+    Some(aimux_core::video_model::VideoPollOptions {
+        interval_ms: Some(1),
+        timeout_ms: Some(10_000),
+    })
+}
+
 fn options(prompt: &str) -> VideoCallOptions {
-    VideoCallOptions::new(prompt)
+    let mut o = VideoCallOptions::new(prompt);
+    o.poll = fast_poll();
+    o
 }
 
 /// A config pointed at the mock server with a short poll interval so tests run
@@ -80,7 +89,9 @@ async fn should_generate_video_from_prompt() {
     let provider = RunwaymlProvider::new(config(server.uri()));
     let model = provider.video(MODEL_ID);
 
-    let result = model.do_generate(&options("A cat playing")).await.unwrap();
+    let result = generate_video(&model, options("A cat playing"))
+        .await
+        .unwrap();
 
     assert_eq!(result.videos.len(), 1);
     match &result.videos[0] {
@@ -101,7 +112,9 @@ async fn should_post_to_text_to_video_endpoint() {
     let provider = RunwaymlProvider::new(config(server.uri()));
     let model = provider.video(MODEL_ID);
 
-    model.do_generate(&options("A cat playing")).await.unwrap();
+    generate_video(&model, options("A cat playing"))
+        .await
+        .unwrap();
 
     let requests = server.received_requests().await.unwrap();
     // The first request is the task submission.
@@ -120,7 +133,7 @@ async fn should_send_auth_and_version_headers() {
     let provider = RunwaymlProvider::new(config(server.uri()));
     let model = provider.video(MODEL_ID);
 
-    model.do_generate(&options("test")).await.unwrap();
+    generate_video(&model, options("test")).await.unwrap();
 
     let requests = server.received_requests().await.unwrap();
     // Submit request carries the bearer token and the required version header.
@@ -164,7 +177,7 @@ async fn should_pass_custom_headers() {
     request_headers.insert("Custom-Request-Header".to_string(), "req-val".to_string());
     opts.headers = Some(request_headers);
 
-    model.do_generate(&opts).await.unwrap();
+    generate_video(&model, opts).await.unwrap();
 
     let requests = server.received_requests().await.unwrap();
     let h = &requests[0].headers;
@@ -193,7 +206,7 @@ async fn should_return_error_when_task_failed() {
     let provider = RunwaymlProvider::new(config(server.uri()));
     let model = provider.video(MODEL_ID);
 
-    let result = model.do_generate(&options("test")).await;
+    let result = generate_video(&model, options("test")).await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
@@ -214,7 +227,7 @@ async fn should_return_error_on_submit_failure() {
     let provider = RunwaymlProvider::new(config(server.uri()));
     let model = provider.video(MODEL_ID);
 
-    let result = model.do_generate(&options("test")).await;
+    let result = generate_video(&model, options("test")).await;
     assert!(result.is_err());
 }
 

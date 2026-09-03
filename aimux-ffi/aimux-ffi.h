@@ -15,7 +15,7 @@
  * Getter strings are caller-owned (`aimux_free_string`). See aimux-error.h.
  *
  * Each prototype below identifies its expected high-level error:
- *   [AiMuxError]      codes 1..13
+ *   [AiMuxError]      codes 1..14
  *   [RecordingError]  codes 100..105
  *   [C ABI]           no expected high-level code
  * Every fallible call can additionally return a C ABI failure (200..206).
@@ -48,7 +48,7 @@
  * ## Concurrency
  *
  * All functions are synchronous (block until the operation completes).
- * `opts_json.timeout` (`{"total_ms","first_chunk_ms","chunk_ms"}`,
+ * `opts_json.timeout` (`{"total_ms","step_ms","first_chunk_ms","chunk_ms"}`,
  * milliseconds; the latter two streaming-only) bounds a call from the callee
  * side; `aimux_abort_signal_*` plus the `*_with_abort` entry points cancel a
  * running call from another thread.

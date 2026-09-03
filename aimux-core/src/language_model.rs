@@ -34,6 +34,12 @@ pub trait LanguageModel: Send + Sync {
     /// Model identifier, e.g. `"gpt-4o"`.
     fn model_id(&self) -> &str;
 
+    /// Provider/model retry settings used when the caller does not override
+    /// the retry count.
+    fn retry_config(&self) -> crate::retry::RetryConfig {
+        crate::retry::RetryConfig::default()
+    }
+
     /// Generate a complete (non-streaming) response.
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError>;
 

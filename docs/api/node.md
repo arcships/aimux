@@ -89,6 +89,7 @@ checks); the recorder throws its own class:
 Error
  └── AimuxError
       ├── APICallError              // provider call/transport failure; status when observed
+      ├── RetryError                // the retry loop gave up; reason, errors (oldest first), lastError
       ├── JSONParseError / InvalidResponseDataError / ToolError
       ├── InvalidArgumentError / InvalidPromptError
       ├── TokenExpiredError
@@ -126,11 +127,15 @@ works directly for synchronous calls, promises, and stream/session errors;
 Every `AimuxError` instance has the ordinary `Error` fields. There is no aimux
 `code` discriminator and no JSON companion. Payload fields belong to the class
 that carries them: `APICallError` adds `retryable` and optional `status` /
-`retryMs` / `providerCode` /
-`providerMessage` / `responseBody` / `requestId`, `TokenExpiredError` carries
-`status: 401`, `NoSuchModelError` adds `modelId` / `modelType`, and
-`NoSuchProviderError` adds `providerId`. Missing HTTP status and retry hints are
-absent rather than represented by `-1`.
+`retryMs` / `url` / `requestBodyValues` / `responseHeaders` / `providerCode` /
+`providerMessage` / `responseBody` / `data`; `RetryError` adds `reason`
+(`'maxRetriesExceeded'` — every permitted attempt failed with a retryable
+error — or `'errorNotRetryable'` — a later attempt failed non-retryably),
+`errors` — the per-attempt history, oldest first, each itself an error from
+this hierarchy — and `lastError`; `TokenExpiredError` carries `status: 401`;
+`NoSuchModelError` adds `modelId` / `modelType`; and `NoSuchProviderError`
+adds `providerId`. Missing HTTP status and retry hints are absent rather than
+represented by `-1`.
 
 ```typescript
 import { generateText, AimuxError, APICallError } from '@arcships/aimux'
@@ -379,6 +384,7 @@ const videor = await googleVideo('sk-...', 'veo-3.0')
 const resultJson = await videor.generate(JSON.stringify({
   prompt: 'A cat playing piano',
   n: 1,
+  poll: { interval_ms: 1_000, timeout_ms: 120_000 },
   provider_options: {},
 }))
 const result = JSON.parse(resultJson)
@@ -388,6 +394,9 @@ if (result.videos[0].Url) {
   console.log('Video URL:', result.videos[0].Url.url)
 }
 ```
+
+The package root exports the generated `VideoCallOptions` and
+`VideoPollOptions` types; both poll fields are milliseconds.
 
 ## Reranking
 

@@ -265,6 +265,7 @@ func MarshalMessages(msgs []ModelMessage) (string, error) {
 // TimeoutConfiguration sets per-call timeouts (RFC-0016 H3).
 type TimeoutConfiguration struct {
 	TotalMs      *uint64 `json:"total_ms,omitempty"`
+	StepMs       *uint64 `json:"step_ms,omitempty"`
 	FirstChunkMs *uint64 `json:"first_chunk_ms,omitempty"`
 	ChunkMs      *uint64 `json:"chunk_ms,omitempty"`
 }

@@ -46,8 +46,7 @@ pub struct AnthropicAwsProviderConfig {
     pub workspace_id: Option<String>,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
-    /// 重试配置(M1b)。默认 `RetryConfig::default()`（max_retries=2）。
-    /// 取代之前硬编码的 `RetryConfig::default()`,让 per-call `max_retries` 生效。
+    /// Retry settings used by Core model operations.
     pub retry_config: RetryConfig,
 }
 
@@ -248,24 +247,24 @@ impl Provider for AnthropicAwsProvider {
                 }
             }
 
-            use aimux_provider_utils::{
-                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send_timed,
-            };
-            let resp = send_timed(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url,
-                    headers,
-                    body: HttpBody::Empty,
-                    abort_signal: None,
-                    call_id: None,
-                    recording_context: None,
-                },
-                config.retry_config,
-                &DEFAULT_ERROR_STRUCTURE,
-                None,
-            )
-            .await?;
+            use aimux_provider_utils::HttpRequest;
+            // Retry rationale: see `openai::model::execute_list_models`.
+            let resp = aimux_core::retry::prepare_retries(None, config.retry_config, None)
+                .retry(|| {
+                    aimux_provider_utils::get_from_api(
+                        HttpRequest {
+                            url: url.clone(),
+                            headers: headers.clone(),
+                            abort_signal: None,
+                            call_id: None,
+                            recording_context: None,
+                            ..Default::default()
+                        },
+                        aimux_provider_utils::create_json_response_handler(),
+                        crate::anthropic::anthropic_failed_response_handler(),
+                    )
+                })
+                .await?;
 
             #[derive(serde::Deserialize)]
             struct Resp {
@@ -278,7 +277,7 @@ impl Provider for AnthropicAwsProvider {
                 #[serde(default)]
                 display_name: Option<String>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)?;
+            let parsed: Resp = resp.value;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .data
                 .into_iter()

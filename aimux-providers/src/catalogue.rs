@@ -412,35 +412,47 @@ async fn fetch_text(url: &str) -> Result<String, AiMuxError> {
         .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| {
-            AiMuxError::ApiCall(ApiCallError {
-                message: format!("get_model_specs: build client: {e}"),
+            AiMuxError::ApiCall(Box::new(ApiCallError {
                 is_retryable: true,
-                ..Default::default()
-            })
+                ..ApiCallError::new(
+                    format!("get_model_specs: build client: {e}"),
+                    url,
+                    serde_json::json!({}),
+                )
+            }))
         })?;
     let resp = client.get(url).send().await.map_err(|e| {
-        AiMuxError::ApiCall(ApiCallError {
-            message: format!("get_model_specs: fetch {url}: {e}"),
+        AiMuxError::ApiCall(Box::new(ApiCallError {
             is_retryable: true,
-            ..Default::default()
-        })
+            ..ApiCallError::new(
+                format!("get_model_specs: fetch {url}: {e}"),
+                url,
+                serde_json::json!({}),
+            )
+        }))
     })?;
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
-        return Err(AiMuxError::ApiCall(ApiCallError {
+        return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
             status_code: Some(status),
-            message: format!("get_model_specs: fetch {url}"),
             response_body: resp.text().await.ok().filter(|b| !b.is_empty()),
             is_retryable: status == 429 || status >= 500,
-            ..Default::default()
-        }));
+            ..ApiCallError::new(
+                format!("get_model_specs: fetch {url}"),
+                url,
+                serde_json::json!({}),
+            )
+        })));
     }
     resp.text().await.map_err(|e| {
-        AiMuxError::ApiCall(ApiCallError {
-            message: format!("get_model_specs: read body: {e}"),
+        AiMuxError::ApiCall(Box::new(ApiCallError {
             is_retryable: true,
-            ..Default::default()
-        })
+            ..ApiCallError::new(
+                format!("get_model_specs: read body: {e}"),
+                url,
+                serde_json::json!({}),
+            )
+        }))
     })
 }
 

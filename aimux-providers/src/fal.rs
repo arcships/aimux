@@ -13,16 +13,50 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
+use aimux_core::retry;
 use aimux_core::shared::Warning;
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, send_validated,
-    sleep_or_abort, without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, sleep_or_abort, without_trailing_slash};
+
+/// fal errors are FastAPI-style: `{"detail": "..."}` or
+/// `{"detail": [{"loc": [...], "msg": "...", "type": "..."}]}` where `type`
+/// is the machine code (https://fal.ai/docs/model-apis/errors).
+fn fal_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorParts {
+    let detail = data.get("detail");
+    let first_detail = detail
+        .and_then(Value::as_array)
+        .and_then(|items| items.first());
+    let message = detail
+        .and_then(Value::as_str)
+        .or_else(|| {
+            first_detail
+                .and_then(|item| item.get("msg"))
+                .and_then(Value::as_str)
+        })
+        .or_else(|| {
+            data.get("error")
+                .and_then(|value| value.get("message"))
+                .and_then(Value::as_str)
+        })
+        .or_else(|| data.get("error").and_then(Value::as_str))
+        .or_else(|| data.get("message").and_then(Value::as_str))
+        .unwrap_or("Fal request failed")
+        .to_string();
+    aimux_provider_utils::ProviderErrorParts {
+        message,
+        provider_code: first_detail
+            .and_then(|item| item.get("type"))
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+    }
+}
+
+fn fal_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(fal_error_parts)
+}
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -225,80 +259,95 @@ impl TranscriptionModel for FalTranscriptionModel {
         let headers = self.build_headers(options.headers.as_ref());
 
         // Submit job.
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.submit_url(),
                 headers: headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-                body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                max_json_response_bytes: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            Value::Object(body),
+            aimux_provider_utils::create_json_response_handler(),
+            fal_failed_response_handler(),
         )
         .await?;
 
-        let job: FalJobResponse = serde_json::from_slice(&resp.body)?;
+        let job: FalJobResponse = resp.value;
+        let retries = retry::prepare_retries(
+            options.max_retries,
+            self.retry_config(),
+            options.abort_signal.clone(),
+        );
 
         // Poll for result.
         let raw_body: Value;
+        let parsed: FalTranscriptionResponse;
         let response_headers: HashMap<String, String>;
         loop {
-            // fal returns 400/404 while a queued request is still in progress —
-            // `send` surfaces those as errors, so catch them and keep polling.
-            let resp = match send(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url: self.poll_url(&job.request_id),
-                    headers: headers
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                    body: HttpBody::Empty,
+            // Fal returns 400/404 while a queued request is still registering.
+            // Normalize that state inside the retry attempt so a preceding 5xx
+            // cannot wrap the pending response in RetryError.
+            let resp = retries
+                .retry(|| {
+                    let request = aimux_provider_utils::get_from_api(
+                        HttpRequest {
+                            url: self.poll_url(&job.request_id),
+                            headers: headers
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect(),
 
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                },
-                RetryConfig::default(),
-                &DEFAULT_ERROR_STRUCTURE,
-            )
-            .await
-            {
-                Ok(resp) => resp,
-                Err(AiMuxError::ApiCall(ref d)) if d.status_code == Some(404) => {
-                    sleep_or_abort(
-                        std::time::Duration::from_millis(100),
-                        options.abort_signal.as_ref(),
-                    )
-                    .await?;
-                    continue;
-                }
-                // The queue answers 400 until the job registers; read the status
-                // from the field rather than sniffing the message text.
-                Err(AiMuxError::ApiCall(d)) if d.status_code == Some(400) => {
-                    sleep_or_abort(
-                        std::time::Duration::from_millis(100),
-                        options.abort_signal.as_ref(),
-                    )
-                    .await?;
-                    continue;
-                }
-                Err(e) => return Err(e),
+                            abort_signal: options.abort_signal.clone(),
+                            call_id: None,
+                            recording_context: None,
+                            response_timeout: None,
+                            max_json_response_bytes: None,
+                            validate_url: false,
+                            trusted_origin: None,
+                            credentialed_origin: None,
+                        },
+                        aimux_provider_utils::create_json_response_handler::<
+                            FalTranscriptionResponse,
+                        >(),
+                        fal_failed_response_handler(),
+                    );
+                    async move {
+                        match request.await {
+                            Ok(response) => Ok(Some(response)),
+                            Err(AiMuxError::ApiCall(detail))
+                                if matches!(detail.status_code, Some(400 | 404)) =>
+                            {
+                                Ok(None)
+                            }
+                            Err(error) => Err(error),
+                        }
+                    }
+                })
+                .await?;
+            let Some(resp) = resp else {
+                sleep_or_abort(
+                    std::time::Duration::from_millis(100),
+                    options.abort_signal.as_ref(),
+                )
+                .await?;
+                continue;
             };
 
-            response_headers = resp.headers;
-            raw_body = serde_json::from_slice(&resp.body)?;
+            response_headers = resp.response_headers;
+            raw_body = resp.raw_value.unwrap_or(Value::Null);
+            parsed = resp.value;
             break;
         }
-
-        let parsed: FalTranscriptionResponse = serde_json::from_value(raw_body.clone())?;
 
         let segments: Vec<TranscriptionSegment> = parsed
             .chunks
@@ -517,27 +566,36 @@ impl ImageModel for FalImageModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-                body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                max_json_response_bytes: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            Value::Object(body),
+            aimux_provider_utils::create_json_response_handler(),
+            fal_failed_response_handler(),
         )
         .await?;
 
-        let rh = resp.headers;
-        let rb: Value = serde_json::from_slice(&resp.body)?;
+        let rh = resp.response_headers;
+        let rb: Value = resp.value;
+        let retries = retry::prepare_retries(
+            options.max_retries,
+            self.retry_config(),
+            options.abort_signal.clone(),
+        );
 
         let target_images: Vec<Value> = if let Some(i) = rb.get("images").and_then(|v| v.as_array())
         {
@@ -551,25 +609,30 @@ impl ImageModel for FalImageModel {
         let mut downloaded: Vec<Vec<u8>> = Vec::new();
         for img in &target_images {
             if let Some(url) = img.get("url").and_then(|v| v.as_str()) {
-                // images[].url comes from the queue result response body.
-                let ir = send_validated(
-                    HttpRequest {
-                        method: HttpMethod::Get,
-                        url: url.to_string(),
-                        headers: vec![],
-                        body: HttpBody::Empty,
+                // images[].url comes from the queue result response body, so
+                // it goes through the SSRF download guard.
+                let ir = retries
+                    .retry(|| {
+                        aimux_provider_utils::get_from_api(
+                            HttpRequest {
+                                url: url.to_string(),
+                                headers: vec![],
 
-                        abort_signal: options.abort_signal.clone(),
-                        call_id: None,
-                        recording_context: None,
-                    },
-                    Some(&self.config.base_url),
-                    Some(&self.config.base_url),
-                    RetryConfig::default(),
-                    &DEFAULT_ERROR_STRUCTURE,
-                )
-                .await?;
-                downloaded.push(ir.body.to_vec());
+                                abort_signal: options.abort_signal.clone(),
+                                call_id: None,
+                                recording_context: None,
+                                response_timeout: None,
+                                max_json_response_bytes: None,
+                                validate_url: true,
+                                trusted_origin: Some(self.config.base_url.clone()),
+                                credentialed_origin: Some(self.config.base_url.clone()),
+                            },
+                            aimux_provider_utils::create_binary_response_handler(),
+                            fal_failed_response_handler(),
+                        )
+                    })
+                    .await?;
+                downloaded.push(ir.value.to_vec());
             }
         }
 
@@ -636,7 +699,8 @@ impl ImageModel for FalImageModel {
 // ════════════════════════════════════════════════════════════════════════════
 
 use aimux_core::video_model::{
-    VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoModel, VideoResponse, VideoResult,
+    VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoModel, VideoOperationStart,
+    VideoOperationStatus, VideoResponse, VideoResult,
 };
 
 /// Fal video generation model — implements `VideoModel`.
@@ -644,7 +708,8 @@ use aimux_core::video_model::{
 /// Aligned with Vercel AI SDK `FalVideoModel`
 /// (`reference/ai/packages/fal/src/fal-video-model.ts`).
 ///
-/// Uses the same async queue pattern as the transcription model.
+/// Uses the same async queue pattern as the transcription model; the status
+/// polling is driven by Core via `do_status`.
 pub struct FalVideoModel {
     model_id: String,
     config: FalConfig,
@@ -726,7 +791,10 @@ impl VideoModel for FalVideoModel {
         Some(1)
     }
 
-    async fn do_generate(&self, options: &VideoCallOptions) -> Result<VideoResult, AiMuxError> {
+    async fn do_start(
+        &self,
+        options: &VideoCallOptions,
+    ) -> Result<VideoOperationStart, AiMuxError> {
         let warnings: Vec<Warning> = Vec::new();
         let mut body = Map::new();
 
@@ -752,76 +820,94 @@ impl VideoModel for FalVideoModel {
         let headers = self.build_headers(options.headers.as_ref());
 
         // Submit.
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.submit_url(),
                 headers: headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-                body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                max_json_response_bytes: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            Value::Object(body),
+            aimux_provider_utils::create_json_response_handler(),
+            fal_failed_response_handler(),
         )
         .await?;
 
-        let job: FalJobResponse = serde_json::from_slice(&resp.body)?;
+        let response_headers = resp.response_headers;
+        let job: FalJobResponse = resp.value;
 
-        // Poll.
-        let raw_body: Value;
-        let response_headers: HashMap<String, String>;
-        loop {
-            let resp = match send(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url: self.poll_url(&job.request_id),
-                    headers: headers
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                    body: HttpBody::Empty,
+        Ok(VideoOperationStart {
+            operation: json!({ "request_id": job.request_id }),
+            warnings,
+            provider_metadata: None,
+            response: VideoResponse {
+                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                model_id: Some(self.model_id.clone()),
+                headers: Some(response_headers),
+            },
+        })
+    }
 
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                },
-                RetryConfig::default(),
-                &DEFAULT_ERROR_STRUCTURE,
-            )
-            .await
-            {
-                Ok(resp) => resp,
-                Err(AiMuxError::ApiCall(ref d)) if d.status_code == Some(404) => {
-                    sleep_or_abort(
-                        std::time::Duration::from_millis(100),
-                        options.abort_signal.as_ref(),
-                    )
-                    .await?;
-                    continue;
-                }
-                // The queue answers 400 until the job registers; read the status
-                // from the field rather than sniffing the message text.
-                Err(AiMuxError::ApiCall(d)) if d.status_code == Some(400) => {
-                    sleep_or_abort(
-                        std::time::Duration::from_millis(100),
-                        options.abort_signal.as_ref(),
-                    )
-                    .await?;
-                    continue;
-                }
-                Err(e) => return Err(e),
-            };
+    async fn do_status(
+        &self,
+        operation: &Value,
+        options: &VideoCallOptions,
+    ) -> Result<VideoOperationStatus, AiMuxError> {
+        let request_id = operation
+            .get("request_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                AiMuxError::InvalidArgument(
+                    "fal operation reference is missing request_id".to_string(),
+                )
+            })?;
 
-            response_headers = resp.headers;
-            raw_body = serde_json::from_slice(&resp.body)?;
-            break;
-        }
+        let headers = self.build_headers(options.headers.as_ref());
+
+        let resp = aimux_provider_utils::get_from_api(
+            HttpRequest {
+                url: self.poll_url(request_id),
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+
+                abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
+                response_timeout: None,
+                max_json_response_bytes: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
+            },
+            aimux_provider_utils::create_json_response_handler::<Value>(),
+            fal_failed_response_handler(),
+        )
+        .await;
+
+        // Fal returns 400/404 while a queued request is still registering or
+        // running; that is Pending, not a failure.
+        let resp = match resp {
+            Ok(response) => response,
+            Err(AiMuxError::ApiCall(detail)) if matches!(detail.status_code, Some(400 | 404)) => {
+                return Ok(VideoOperationStatus::Pending);
+            }
+            Err(error) => return Err(error),
+        };
+
+        let response_headers = resp.response_headers;
+        let raw_body = resp.value;
 
         // Extract video URL from response.
         let videos: Vec<VideoData> = if let Some(video) = raw_body
@@ -844,15 +930,15 @@ impl VideoModel for FalVideoModel {
             ));
         };
 
-        Ok(VideoResult {
+        Ok(VideoOperationStatus::Completed(VideoResult {
             videos,
-            warnings,
+            warnings: Vec::new(),
             provider_metadata: None,
             response: VideoResponse {
                 timestamp: Some(chrono::Utc::now().to_rfc3339()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },
-        })
+        }))
     }
 }

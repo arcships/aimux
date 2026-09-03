@@ -17,19 +17,11 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed};
-use aimux_stream::SseStream;
+use aimux_provider_utils::HttpRequest;
 
 use super::CohereConfig;
 use super::convert::{build_request_body, parse_finish_reason};
 use super::types::{ChatResponse, StreamEvent, TokenPair};
-
-/// Cohere error structure: `{ "message": "..." }` (flat, no `error` wrapper).
-const COHERE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["message"],
-    type_path: &[],
-};
 
 /// A Cohere language model.
 pub struct CohereModel {
@@ -106,6 +98,10 @@ impl LanguageModel for CohereModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         use aimux_core::recording::ProviderRecord;
         ProviderRecord {
@@ -126,33 +122,23 @@ impl LanguageModel for CohereModel {
         let body_result = build_request_body(&self.model_id, options, false);
         let body = body_result.body.clone();
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_timed(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
-                headers: headers
+        let resp = aimux_provider_utils::post_json_to_api(
+            HttpRequest::new(
+                self.endpoint(),
+                headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-                body: HttpBody::Json(body.clone()),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-            },
-            retry_config,
-            &COHERE_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+                options,
+            ),
+            body.clone(),
+            aimux_provider_utils::create_json_response_handler(),
+            super::cohere_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
-        let data: ChatResponse = serde_json::from_slice(&resp.body)?;
+        let response_headers = resp.response_headers;
+        let data: ChatResponse = resp.value;
 
         // Build content array.
         let mut content = Vec::new();
@@ -272,35 +258,43 @@ impl LanguageModel for CohereModel {
         let body_result = build_request_body(&self.model_id, options, true);
         let body = body_result.body.clone();
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_stream_timed(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
-                headers: headers
+        let endpoint = self.endpoint();
+        let resp = aimux_provider_utils::post_json_to_api(
+            HttpRequest::new(
+                endpoint.clone(),
+                headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-                body: HttpBody::Json(body.clone()),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-            },
-            retry_config,
-            &COHERE_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+                options,
+            ),
+            body.clone(),
+            aimux_provider_utils::create_event_source_response_handler::<StreamEvent>(),
+            super::cohere_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
-        let sse_stream = SseStream::new(resp.body);
+        let response_headers = resp.response_headers;
+        let mut sse_stream = resp.value;
+        let first_event = match sse_stream.next().await {
+            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+            first_event => first_event,
+        };
+        match first_event.as_ref() {
+            Some(Ok(event)) if event.event_type == "error" => {
+                return Err(cohere_stream_error(
+                    event,
+                    &endpoint,
+                    &body,
+                    &response_headers,
+                ));
+            }
+            _ => {}
+        }
 
         let stream_warnings = body_result.warnings;
+        let stream_body = body.clone();
+        let stream_response_headers = response_headers.clone();
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: stream_warnings });
 
@@ -310,7 +304,9 @@ impl LanguageModel for CohereModel {
             let mut is_reasoning = false;
             let mut stream_errored = false;
 
-            let mut sse_iter = Box::pin(sse_stream);
+            let mut sse_iter = Box::pin(
+                futures::stream::iter(first_event.into_iter()).chain(sse_stream),
+            );
 
             while let Some(event) = sse_iter.next().await {
                 if stream_errored {
@@ -318,20 +314,7 @@ impl LanguageModel for CohereModel {
                 }
 
                 match event {
-                    Ok(sse_event) => {
-                        // Parse the JSON payload.
-                        let parsed: StreamEvent = match serde_json::from_str(&sse_event.data) {
-                            Ok(e) => e,
-                            Err(e) => {
-                                // Unparsable chunk — emit Error.
-                                yield Ok(StreamPart::Error {
-                                    error: AiMuxError::from(e),
-                                });
-                                stream_errored = true;
-                                break;
-                            }
-                        };
-
+                    Ok(parsed) => {
                         match parsed.event_type.as_str() {
                             "message-start" => {
                                 yield Ok(StreamPart::ResponseMetadata {
@@ -532,17 +515,30 @@ impl LanguageModel for CohereModel {
                                 }
                             }
 
+                            "error" => {
+                                yield Ok(StreamPart::Error {
+                                    error: cohere_stream_error(
+                                        &parsed,
+                                        &endpoint,
+                                        &stream_body,
+                                        &stream_response_headers,
+                                    ),
+                                });
+                                stream_errored = true;
+                                break;
+                            }
+
                             // citation-start, citation-end, and any unknown
                             // event types are silently consumed.
                             _ => {}
                         }
                     }
-                    Err(e) => {
-                        yield Ok(StreamPart::Error {
-                            error: AiMuxError::InvalidResponseData(e.to_string()),
-                        });
-                        stream_errored = true;
-                        break;
+                    Err(error) => {
+                        let recoverable = error.is_recoverable_stream_error();
+                        yield Err(error);
+                        if !recoverable {
+                            return;
+                        }
                     }
                 }
             }
@@ -574,6 +570,36 @@ impl LanguageModel for CohereModel {
             response_headers: Some(response_headers),
         })
     }
+}
+
+fn cohere_stream_error(
+    event: &StreamEvent,
+    url: &str,
+    request_body: &Value,
+    response_headers: &std::collections::HashMap<String, String>,
+) -> AiMuxError {
+    let status = event.status_code;
+    let provider_code = event.code.as_ref().and_then(|value| match value {
+        Value::String(value) => Some(value.clone()),
+        Value::Number(value) => Some(value.to_string()),
+        _ => None,
+    });
+    AiMuxError::ApiCall(Box::new(aimux_core::ApiCallError {
+        status_code: status,
+        provider_code,
+        response_body: serde_json::to_string(event).ok(),
+        response_headers: Some(response_headers.clone()),
+        data: serde_json::to_value(event).ok(),
+        is_retryable: status.is_some_and(aimux_core::error::is_retryable_status),
+        ..aimux_core::ApiCallError::new(
+            event
+                .message
+                .clone()
+                .unwrap_or_else(|| "Cohere stream error".to_string()),
+            url,
+            aimux_provider_utils::logging::redact_error_context(request_body.clone()),
+        )
+    }))
 }
 
 #[cfg(test)]

@@ -71,7 +71,7 @@ The code range identifies the source:
 
 | Range | Meaning |
 |---|---|
-| `1..13` | `AiMuxError` |
+| `1..14` | `AiMuxError` (14 = `Retry`) |
 | `100..105` | `RecordingError` |
 | `200..206` | failure detected by the C ABI |
 
@@ -83,15 +83,18 @@ The code range identifies the source:
 ```c
 int32_t aimux_error_code(const aimux_error_t *err);        /* aimux_error_code_t; AIMUX_OK for NULL */
 char   *aimux_error_message(const aimux_error_t *err);     /* every code; owned → aimux_free_string */
-int32_t aimux_error_retryable(const aimux_error_t *err);   /* 1 = retrying may help; every code */
+int32_t aimux_error_retryable(const aimux_error_t *err);   /* 1 = retrying may help; only API_CALL can answer 1 */
 int32_t aimux_error_status(const aimux_error_t *err);      /* API_CALL: observed status or -1; TOKEN_EXPIRED: 401; else -1 */
 
 /* AIMUX_E_API_CALL — NULL / -1 under any other code */
 int64_t aimux_error_retry_ms(const aimux_error_t *err);         /* retry hint, or -1; 0 = retry now */
 char   *aimux_error_provider_code(const aimux_error_t *err);    /* provider's own code, e.g. "insufficient_quota" */
 char   *aimux_error_provider_message(const aimux_error_t *err); /* the failure's own text; message is the composed form */
-char   *aimux_error_request_id(const aimux_error_t *err);
-char   *aimux_error_response_body(const aimux_error_t *err);
+char   *aimux_error_response_body(const aimux_error_t *err);    /* provider response body; first 64 KiB, "…(truncated)" beyond */
+char   *aimux_error_url(const aimux_error_t *err);              /* sanitized request URL */
+char   *aimux_error_request_body_values(const aimux_error_t *err); /* sanitized request body values, as a JSON string */
+char   *aimux_error_response_headers(const aimux_error_t *err); /* sanitized headers, one JSON object string, e.g. {"retry-after-ms":"1500"} */
+char   *aimux_error_provider_data(const aimux_error_t *err);    /* parsed provider error data, as a JSON string */
 
 /* AIMUX_E_NO_SUCH_MODEL */
 char   *aimux_error_model_id(const aimux_error_t *err);
@@ -99,25 +102,48 @@ char   *aimux_error_model_type(const aimux_error_t *err);
 
 /* AIMUX_E_NO_SUCH_PROVIDER */
 char   *aimux_error_provider_id(const aimux_error_t *err);
+
+/* AIMUX_E_RETRY — retrying stopped; the error keeps the per-attempt history */
+char   *aimux_error_retry_reason(const aimux_error_t *err);     /* "maxRetriesExceeded" | "errorNotRetryable" */
+int32_t aimux_error_retry_count(const aimux_error_t *err);      /* recorded attempts; 0 under any other code */
+aimux_error_t *aimux_error_retry_error_at(const aimux_error_t *err, int32_t index); /* NEW owned error, or NULL */
 ```
 
 `code` and `message` answer for every non-`NULL` error. Every other getter
 belongs to an AiMuxError code and returns `NULL` / `-1` / `0` under any other
 code — read it inside the matching `case`. All returned `char *` are owned by the caller
 (`aimux_free_string`); a `NULL` payload string under its own code means the
-provider did not send it (`provider_code`, `request_id`, `response_body` are
-optional even under `AIMUX_E_API_CALL`). Every getter is `NULL`-safe.
+provider did not send it (`provider_code`, `response_body`, `url`,
+`response_headers`, `provider_data` are optional even under
+`AIMUX_E_API_CALL`). Provider request ids ride in `response_headers`.
+Every getter is `NULL`-safe.
 
 Branch on `retryable`, never on the `status` sentinel: a transport failure and
 a missing API key both report `status == -1` and disagree about whether a retry
-would help. `retry_ms` is a *hint* that rides along — it is `-1` whenever the
-provider advertised no delay (neither a `retry-after` / `retry-after-ms`
-response header nor a `retry_after_ms` / `retry_after` member in the JSON
-error payload), including on a retryable status, so fall back to your own
-exponential backoff when it is negative.
+would help. `retry_ms` is a *hint* that rides along — derived from the
+response headers (`retry-after-ms`, then `retry-after` in seconds or
+HTTP-date form); it is `-1` whenever the headers advertised no delay,
+including on a retryable status, so fall back to your own exponential
+backoff when it is negative.
 
-The unified `aimux_error_code_t` keeps the existing AiMuxError values 1–13,
-adds RecordingError values 100–105, and assigns C ABI failures 200–206:
+`AIMUX_E_RETRY` (14) means the core ran the operation's retry loop and gave
+up: `aimux_error_retry_reason` says why — `"maxRetriesExceeded"` (every
+permitted attempt failed with a retryable error) or `"errorNotRetryable"` (a
+later attempt failed with a non-retryable error) — and `aimux_error_message`
+composes the summary (`Failed after 2 attempts. Last error: …`). Walk the
+per-attempt history with `aimux_error_retry_count` /
+`aimux_error_retry_error_at` (index 0 = oldest; `count - 1` = the final
+attempt). Each attempt comes back as a **new owned** `aimux_error_t *`: read
+it with these same getters — it can itself be any AiMuxError code, including
+`AIMUX_E_API_CALL` with the full detail set — and release it with
+`aimux_error_free` independently of the parent (free order is
+unconstrained).
+
+The unified `aimux_error_code_t` extends the AiMuxError values to 1–14
+(`AIMUX_E_RETRY` = 14 reclaims the slot the pre-unification `Other` vacated —
+the opaque-pointer ABI break means no old caller can misread it), adds
+RecordingError values 100–105, and assigns C ABI
+failures 200–206:
 `NULL_POINTER`, `INVALID_UTF8`, `INVALID_WIRE_JSON`, `INVALID_HANDLE`,
 `REENTRANT_CALL`, `RESULT_SERIALIZATION`, and `CALLBACK_FAILURE`. Values are
 never renumbered or reused. A code outside the enum is a header/library

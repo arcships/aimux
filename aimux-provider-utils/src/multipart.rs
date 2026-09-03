@@ -14,6 +14,7 @@ use aimux_core::AiMuxError;
 pub struct MultipartForm {
     boundary: String,
     parts: Vec<u8>,
+    values: serde_json::Map<String, serde_json::Value>,
 }
 
 impl MultipartForm {
@@ -27,6 +28,7 @@ impl MultipartForm {
         Self {
             boundary,
             parts: Vec::new(),
+            values: serde_json::Map::new(),
         }
     }
 
@@ -48,6 +50,10 @@ impl MultipartForm {
         );
         self.parts.extend_from_slice(value.as_bytes());
         self.parts.extend_from_slice(b"\r\n");
+        self.values.insert(
+            name.to_string(),
+            serde_json::Value::String(value.to_string()),
+        );
         Ok(self)
     }
 
@@ -81,17 +87,34 @@ impl MultipartForm {
             .extend_from_slice(format!("Content-Type: {media_type}\r\n\r\n").as_bytes());
         self.parts.extend_from_slice(data);
         self.parts.extend_from_slice(b"\r\n");
+        self.values.insert(
+            name.to_string(),
+            serde_json::json!({
+                "filename": filename,
+                "mediaType": media_type,
+                "size": data.len(),
+            }),
+        );
         Ok(self)
     }
 
     /// Finalize the body, returning the raw bytes and the content-type header
     /// value.
     #[must_use]
-    pub fn finish(mut self) -> (Vec<u8>, String) {
+    pub fn finish(self) -> (Vec<u8>, String) {
+        let (bytes, content_type, _) = self.into_parts();
+        (bytes, content_type)
+    }
+
+    pub(crate) fn into_parts(mut self) -> (Vec<u8>, String, serde_json::Value) {
         self.parts
             .extend_from_slice(format!("--{}--\r\n", self.boundary).as_bytes());
         let content_type = format!("multipart/form-data; boundary={}", self.boundary);
-        (self.parts, content_type)
+        (
+            self.parts,
+            content_type,
+            serde_json::Value::Object(self.values),
+        )
     }
 }
 
