@@ -429,18 +429,47 @@ async fn start_and_poll(
                 let mut warnings = start.warnings;
                 warnings.append(&mut result.warnings);
                 result.warnings = warnings;
-                if let Some(start_meta) = start.provider_metadata {
-                    let merged = result
-                        .provider_metadata
-                        .get_or_insert_with(Default::default);
-                    for (provider, value) in start_meta {
-                        merged.entry(provider).or_insert(value);
-                    }
-                }
+                result.provider_metadata =
+                    merge_provider_metadata(start.provider_metadata, result.provider_metadata);
                 return Ok(result);
             }
         }
     }
+}
+
+/// Merge two phases' provider metadata one level deep.
+///
+/// A plain `HashMap::entry().or_insert()` at the provider-key level drops
+/// every field the other phase set once both phases report the *same*
+/// provider key — e.g. a start call's `job_id` disappearing once the
+/// completion call also reports `x_provider` metadata. Instead, when both
+/// sides have an object for the same provider key, their fields are unioned;
+/// on a field collision the later (`completion`/`b`) value wins. When a
+/// provider key appears on only one side, or either side's value for it is
+/// not a JSON object, that side's value is used as-is — there is nothing to
+/// union.
+fn merge_provider_metadata(
+    a: Option<SharedProviderMetadata>,
+    b: Option<SharedProviderMetadata>,
+) -> Option<SharedProviderMetadata> {
+    let Some(mut merged) = a else { return b };
+    let Some(b) = b else { return Some(merged) };
+    for (provider, b_value) in b {
+        match merged.get_mut(&provider) {
+            Some(a_value) => match (a_value.as_object_mut(), b_value.as_object()) {
+                (Some(a_obj), Some(b_obj)) => {
+                    for (field, value) in b_obj {
+                        a_obj.insert(field.clone(), value.clone());
+                    }
+                }
+                _ => *a_value = b_value,
+            },
+            None => {
+                merged.insert(provider, b_value);
+            }
+        }
+    }
+    Some(merged)
 }
 
 #[cfg(test)]
@@ -681,6 +710,29 @@ mod tests {
         let messages: Vec<String> = result.warnings.iter().map(|w| format!("{w:?}")).collect();
         assert!(messages[0].contains("from start"), "{messages:?}");
         assert!(messages[1].contains("from status"), "{messages:?}");
+    }
+
+    #[test]
+    fn merge_provider_metadata_unions_same_provider_key_across_phases() {
+        let start = SharedProviderMetadata::from([(
+            "fal".to_string(),
+            serde_json::json!({ "job_id": "job-1", "region": "us-east" }),
+        )]);
+        let completion = SharedProviderMetadata::from([(
+            "fal".to_string(),
+            serde_json::json!({ "region": "eu-west", "seed": 42 }),
+        )]);
+
+        let merged = merge_provider_metadata(Some(start), Some(completion))
+            .expect("both phases reported metadata");
+
+        // `job_id` only came from the start phase and must survive the merge
+        // instead of being dropped by an `entry().or_insert()` collision.
+        assert_eq!(
+            merged["fal"],
+            serde_json::json!({ "job_id": "job-1", "region": "eu-west", "seed": 42 }),
+            "expected start-only fields preserved and completion to win on collision"
+        );
     }
 
     #[tokio::test]
