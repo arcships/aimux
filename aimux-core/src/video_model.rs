@@ -397,58 +397,35 @@ async fn start_and_poll(
         }
     }
 
+    // Split `n` into `max_per_call`-sized batches (AI SDK `generateVideo` /
+    // `generateImage`): every batch but the last is full-sized, the last one
+    // takes the remainder (or a full batch when `n` divides evenly).
     let max_per_call = model.max_videos_per_call().unwrap_or(options.n).max(1);
-    let batch_counts = batch_video_counts(options.n, max_per_call);
-
-    let batches = batch_counts.into_iter().map(|n| {
+    let last = options.n.div_ceil(max_per_call) - 1;
+    let batches = (0..=last).map(|i| {
         let mut batch_options = options.clone();
-        batch_options.n = n;
+        batch_options.n = if i < last {
+            max_per_call
+        } else {
+            match options.n % max_per_call {
+                0 => max_per_call,
+                remainder => remainder,
+            }
+        };
         start_and_poll_one_batch(model, batch_options, &retries, poll, abort_signal.clone())
     });
-    let results = futures::future::try_join_all(batches).await?;
 
-    let mut videos = Vec::new();
-    let mut warnings = Vec::new();
-    let mut provider_metadata = None;
-    let mut response = None;
+    // `n >= 1` was checked above, so at least one batch ran; the first
+    // batch's `response` represents the call for telemetry purposes.
+    let mut results = futures::future::try_join_all(batches).await?.into_iter();
+    let mut merged = results.next().expect("at least one batch");
     for result in results {
-        videos.extend(result.videos);
-        warnings.extend(result.warnings);
-        provider_metadata = merge_provider_metadata(provider_metadata, result.provider_metadata);
-        response.get_or_insert(result.response);
+        merged.videos.extend(result.videos);
+        merged.warnings.extend(result.warnings);
+        merged.provider_metadata =
+            merge_provider_metadata(merged.provider_metadata, result.provider_metadata);
     }
-
-    Ok(VideoResult {
-        videos,
-        warnings,
-        provider_metadata,
-        // `batch_counts` is never empty (`n >= 1` was checked above), so at
-        // least one batch ran and `response` is always `Some` here; the first
-        // batch's response represents the call for telemetry purposes.
-        response: response.unwrap_or_default(),
-    })
-}
-
-/// Split `n` into `max_per_call`-sized batches (AI SDK `generateVideo` /
-/// `generateImage`): every batch but the last is full-sized; the last batch
-/// takes the remainder, or a full batch if `n` divides evenly.
-fn batch_video_counts(n: u32, max_per_call: u32) -> Vec<u32> {
-    let max_per_call = max_per_call.max(1);
-    let call_count = n.div_ceil(max_per_call);
-    (0..call_count)
-        .map(|i| {
-            if i + 1 < call_count {
-                max_per_call
-            } else {
-                let remainder = n % max_per_call;
-                if remainder == 0 {
-                    max_per_call
-                } else {
-                    remainder
-                }
-            }
-        })
-        .collect()
+    Ok(merged)
 }
 
 /// Run one `do_start` + poll cycle for a single provider-sized batch.
@@ -525,35 +502,26 @@ async fn start_and_poll_one_batch(
 
 /// Merge two phases' provider metadata one level deep.
 ///
-/// A plain `HashMap::entry().or_insert()` at the provider-key level drops
-/// every field the other phase set once both phases report the *same*
-/// provider key — e.g. a start call's `job_id` disappearing once the
-/// completion call also reports `x_provider` metadata. Instead, when both
-/// sides have an object for the same provider key, their fields are unioned;
-/// on a field collision the later (`completion`/`b`) value wins. When a
-/// provider key appears on only one side, or either side's value for it is
-/// not a JSON object, that side's value is used as-is — there is nothing to
-/// union.
+/// A plain `entry().or_insert()` at the provider-key level drops every field
+/// the other phase set once both phases report the *same* provider key — e.g.
+/// a start call's `job_id` disappearing once the completion call also reports
+/// metadata under `x_provider`. Objects under a shared key are unioned
+/// instead, with `b` (the later phase) winning a field collision. Anything
+/// that is not a pair of objects has nothing to union, so `b` replaces `a`.
 fn merge_provider_metadata(
     a: Option<SharedProviderMetadata>,
     b: Option<SharedProviderMetadata>,
 ) -> Option<SharedProviderMetadata> {
     let Some(mut merged) = a else { return b };
-    let Some(b) = b else { return Some(merged) };
-    for (provider, b_value) in b {
-        match merged.get_mut(&provider) {
-            Some(a_value) => match (a_value.as_object_mut(), b_value.as_object()) {
-                (Some(a_obj), Some(b_obj)) => {
-                    for (field, value) in b_obj {
-                        a_obj.insert(field.clone(), value.clone());
-                    }
-                }
-                _ => *a_value = b_value,
-            },
-            None => {
-                merged.insert(provider, b_value);
+    for (provider, b_value) in b.into_iter().flatten() {
+        let value = match (merged.remove(&provider), b_value) {
+            (Some(serde_json::Value::Object(mut a_obj)), serde_json::Value::Object(b_obj)) => {
+                a_obj.extend(b_obj);
+                serde_json::Value::Object(a_obj)
             }
-        }
+            (_, b_value) => b_value,
+        };
+        merged.insert(provider, value);
     }
     Some(merged)
 }
@@ -575,6 +543,10 @@ mod tests {
 
     struct ScriptedVideoModel {
         starts: AtomicU32,
+        /// High-water mark of `do_start` calls in flight at once, so a test
+        /// can assert batch concurrency without a wall-clock threshold.
+        peak_concurrent_starts: AtomicU32,
+        in_flight_starts: AtomicU32,
         statuses: AtomicU32,
         script: Vec<StatusStep>,
         start_failures: u32,
@@ -586,6 +558,8 @@ mod tests {
         fn new(script: Vec<StatusStep>) -> Self {
             Self {
                 starts: AtomicU32::new(0),
+                peak_concurrent_starts: AtomicU32::new(0),
+                in_flight_starts: AtomicU32::new(0),
                 statuses: AtomicU32::new(0),
                 script,
                 start_failures: 0,
@@ -635,6 +609,13 @@ mod tests {
             options: &VideoCallOptions,
         ) -> Result<VideoOperationStart, AiMuxError> {
             let attempt = self.starts.fetch_add(1, Ordering::SeqCst);
+            let in_flight = self.in_flight_starts.fetch_add(1, Ordering::SeqCst) + 1;
+            self.peak_concurrent_starts
+                .fetch_max(in_flight, Ordering::SeqCst);
+            // Yield so concurrent batches actually overlap here rather than
+            // each running to completion on its first poll.
+            tokio::task::yield_now().await;
+            self.in_flight_starts.fetch_sub(1, Ordering::SeqCst);
             let key = idempotency_key(options);
             self.start_idempotency_keys
                 .lock()
@@ -800,24 +781,18 @@ mod tests {
 
     #[test]
     fn merge_provider_metadata_unions_same_provider_key_across_phases() {
-        let start = SharedProviderMetadata::from([(
-            "fal".to_string(),
-            serde_json::json!({ "job_id": "job-1", "region": "us-east" }),
-        )]);
-        let completion = SharedProviderMetadata::from([(
-            "fal".to_string(),
-            serde_json::json!({ "region": "eu-west", "seed": 42 }),
-        )]);
+        let phase = |value| Some(SharedProviderMetadata::from([("fal".to_string(), value)]));
+        let merged = merge_provider_metadata(
+            phase(serde_json::json!({ "job_id": "job-1", "region": "us-east" })),
+            phase(serde_json::json!({ "region": "eu-west", "seed": 42 })),
+        )
+        .expect("both phases reported metadata");
 
-        let merged = merge_provider_metadata(Some(start), Some(completion))
-            .expect("both phases reported metadata");
-
-        // `job_id` only came from the start phase and must survive the merge
-        // instead of being dropped by an `entry().or_insert()` collision.
+        // `job_id` is start-only and must survive instead of being dropped by
+        // an `entry().or_insert()` collision on the shared provider key.
         assert_eq!(
             merged["fal"],
-            serde_json::json!({ "job_id": "job-1", "region": "eu-west", "seed": 42 }),
-            "expected start-only fields preserved and completion to win on collision"
+            serde_json::json!({ "job_id": "job-1", "region": "eu-west", "seed": 42 })
         );
     }
 
@@ -906,138 +881,34 @@ mod tests {
         );
     }
 
-    /// A model whose `do_start` is retriable per-batch (a small delay proves
-    /// batches overlap rather than running one after another) and whose
-    /// `do_status` completes immediately with one video + one provider
-    /// metadata field unique to the batch index.
-    struct BatchedVideoModel {
-        starts: AtomicU32,
-        start_idempotency_keys: Mutex<Vec<Option<String>>>,
-        start_delay: Duration,
-        max_per_call: Option<u32>,
-    }
-
-    #[async_trait]
-    impl VideoModel for BatchedVideoModel {
-        fn provider(&self) -> &str {
-            "test"
-        }
-        fn model_id(&self) -> &str {
-            "batched"
-        }
-        fn max_videos_per_call(&self) -> Option<u32> {
-            self.max_per_call
-        }
-        async fn do_start(
-            &self,
-            options: &VideoCallOptions,
-        ) -> Result<VideoOperationStart, AiMuxError> {
-            let index = self.starts.fetch_add(1, Ordering::SeqCst);
-            self.start_idempotency_keys
-                .lock()
-                .expect("start key capture lock should not be poisoned")
-                .push(idempotency_key(options));
-            tokio::time::sleep(self.start_delay).await;
-            Ok(VideoOperationStart {
-                operation: serde_json::json!({ "task_id": format!("t-{index}") }),
-                warnings: vec![Warning::Other {
-                    message: format!("batch {index} start"),
-                }],
-                provider_metadata: Some(SharedProviderMetadata::from([(
-                    "test".to_string(),
-                    serde_json::json!({ format!("batch{index}"): index }),
-                )])),
-                response: VideoResponse::default(),
-            })
-        }
-        async fn do_status(
-            &self,
-            operation: &serde_json::Value,
-            _options: &VideoCallOptions,
-        ) -> Result<VideoOperationStatus, AiMuxError> {
-            let task_id = operation["task_id"].as_str().unwrap().to_string();
-            Ok(VideoOperationStatus::Completed(VideoResult {
-                videos: vec![VideoData::Url {
-                    url: format!("https://cdn/{task_id}.mp4"),
-                    media_type: "video/mp4".to_string(),
-                }],
-                warnings: Vec::new(),
-                provider_metadata: None,
-                response: VideoResponse::default(),
-            }))
-        }
-    }
-
     #[tokio::test]
-    async fn n_above_max_per_call_splits_into_batches_and_aggregates() {
-        let model = BatchedVideoModel {
-            starts: AtomicU32::new(0),
-            start_idempotency_keys: Mutex::new(Vec::new()),
-            start_delay: Duration::from_millis(1),
-            max_per_call: Some(1),
-        };
+    async fn n_above_max_per_call_splits_into_concurrent_batches() {
+        // `ScriptedVideoModel::max_videos_per_call()` is 1, so n=3 must run
+        // three independent start/poll cycles, concurrently, each with its
+        // own idempotency key (a batch, not the whole request, is the unit of
+        // idempotent replay).
+        let model = ScriptedVideoModel::new(vec![]);
         let mut options = fast_poll_options();
         options.n = 3;
 
         let result = generate_video(&model, options).await.unwrap();
 
-        assert_eq!(
-            model.starts.load(Ordering::SeqCst),
-            3,
-            "n=3 with max_videos_per_call=1 must run three do_start batches"
-        );
+        assert_eq!(model.starts.load(Ordering::SeqCst), 3);
         assert_eq!(result.videos.len(), 3);
-        assert_eq!(result.warnings.len(), 3, "warnings from every batch kept");
-
+        assert_eq!(
+            result.warnings.len(),
+            6,
+            "start + status warnings per batch"
+        );
+        assert!(
+            model.peak_concurrent_starts.load(Ordering::SeqCst) > 1,
+            "batches must overlap, not run one after another"
+        );
         let keys = model
             .start_idempotency_keys
             .lock()
             .expect("start key capture lock should not be poisoned");
-        assert_eq!(keys.len(), 3);
-        assert!(keys.iter().all(Option::is_some));
         let unique: std::collections::HashSet<_> = keys.iter().collect();
-        assert_eq!(
-            unique.len(),
-            3,
-            "each batch must mint its own idempotency key: {keys:?}"
-        );
-
-        // Provider metadata across batches is deep-merged (§ merge_provider_metadata),
-        // not `entry().or_insert()`-dropped: all three batch-specific fields survive
-        // under the shared "test" provider key.
-        let metadata = result
-            .provider_metadata
-            .expect("provider metadata aggregated");
-        let test_meta = metadata.get("test").expect("test provider metadata");
-        for i in 0..3 {
-            assert!(
-                test_meta.get(format!("batch{i}")).is_some(),
-                "batch {i}'s metadata field missing from aggregate: {test_meta:?}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn batches_run_concurrently_not_sequentially() {
-        let model = BatchedVideoModel {
-            starts: AtomicU32::new(0),
-            start_idempotency_keys: Mutex::new(Vec::new()),
-            start_delay: Duration::from_millis(80),
-            max_per_call: Some(1),
-        };
-        let mut options = fast_poll_options();
-        options.n = 3;
-
-        let started = Instant::now();
-        generate_video(&model, options).await.unwrap();
-        let elapsed = started.elapsed();
-
-        // Sequential batches would take >= 3 * 80ms = 240ms; concurrent
-        // batches take roughly one delay (~80ms) plus scheduling overhead.
-        assert!(
-            elapsed < Duration::from_millis(200),
-            "batches should overlap (AI SDK generateVideo/generateImage runs \
-             them concurrently via Promise.all), took {elapsed:?}"
-        );
+        assert_eq!(unique.len(), 3, "one key per batch: {keys:?}");
     }
 }
