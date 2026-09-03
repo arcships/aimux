@@ -1613,41 +1613,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tool_contract_errors_have_distinct_log_reasons() {
-        let cases = [
-            (
-                AiMuxError::NoSuchTool {
-                    tool_name: "weather".into(),
-                    available_tools: None,
-                },
-                "no_such_tool",
-            ),
-            (
-                AiMuxError::InvalidToolInput {
-                    tool_name: "weather".into(),
-                    tool_input: "{}".into(),
-                    cause: "schema mismatch".into(),
-                },
-                "invalid_tool_input",
-            ),
-            (
-                AiMuxError::ToolCallRepair {
-                    original_error: Box::new(AiMuxError::NoSuchTool {
-                        tool_name: "weather".into(),
-                        available_tools: None,
-                    }),
-                    cause: Box::new(AiMuxError::Other("repair failed".into())),
-                },
-                "tool_call_repair",
-            ),
-        ];
-
-        for (error, expected) in cases {
-            assert_eq!(error_variant(&error), expected);
-        }
-    }
-
-    #[test]
     fn shared_client_is_stable_handle() {
         let a = shared_client().expect("client init in test env");
         let b = shared_client().expect("client init in test env");

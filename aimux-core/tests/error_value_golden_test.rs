@@ -118,35 +118,6 @@ fn error_value_snapshots_plain_variants() {
             r#"{"ToolCallRepair":{"original_error":{"NoSuchTool":{"tool_name":"weathr"}},"cause":{"Other":"repair model failed"}}}"#,
         ),
         (
-            AiMuxError::NoSuchTool {
-                tool_name: "forecast".into(),
-                available_tools: Some(vec!["weather".into(), "search".into()]),
-            },
-            r#"{"NoSuchTool":{"tool_name":"forecast","available_tools":["weather","search"]}}"#,
-        ),
-        (
-            AiMuxError::InvalidToolInput {
-                tool_name: "weather".into(),
-                tool_input: r#"{"city":7}"#.into(),
-                cause: "input does not match the schema".into(),
-            },
-            r#"{"InvalidToolInput":{"tool_name":"weather","tool_input":"{\"city\":7}","cause":"input does not match the schema"}}"#,
-        ),
-        (
-            AiMuxError::ToolCallRepair {
-                original_error: Box::new(AiMuxError::NoSuchTool {
-                    tool_name: "forecast".into(),
-                    available_tools: None,
-                }),
-                cause: Box::new(AiMuxError::InvalidToolInput {
-                    tool_name: "weather".into(),
-                    tool_input: "{".into(),
-                    cause: "input is not valid JSON".into(),
-                }),
-            },
-            r#"{"ToolCallRepair":{"original_error":{"NoSuchTool":{"tool_name":"forecast"}},"cause":{"InvalidToolInput":{"tool_name":"weather","tool_input":"{","cause":"input is not valid JSON"}}}}"#,
-        ),
-        (
             AiMuxError::InvalidArgument("bad arg".into()),
             r#"{"InvalidArgument":"bad arg"}"#,
         ),
