@@ -85,6 +85,7 @@ Core user operation
 | 既有错误字段 | 保留 Aimux 的 `provider_code`；删除旧路径派生的 `request_id` / `retry_after_ms`，retry hint 的唯一事实源是 `response_headers` |
 | error context 安全 | AI SDK 传原始 request context；Aimux 写入 public error 前使用统一白名单/脱敏/大小限制，binary 与大型 data URL 只保留摘要 |
 | 错误 body 上限 | AI SDK 全量读取错误 body（仅受 2 GiB 防 OOM 上限，超限直接抛 `DownloadError` 替换原错误）；Aimux 的 `ApiCallError` 会跨 FFI 序列化并写入 recording，因此错误 body 采用 best-effort 截断读：public `response_body` 上限 64 KiB（lossy 解码后按字符边界执行，带 `…(truncated)` 标记），解析上限 1 MiB 保证超大但合法的错误 JSON 仍能进 provider mapper，读取中途连接死亡保留已收到的部分 |
+| 成功 JSON body 上限 | AI SDK 对成功 body 复用同一个 2 GiB 下载上限；Aimux 的成功 JSON body 会同时以 bytes + `T` 的形式驻留（`raw_value` 是 best-effort 的第二次解析，不再额外持有 `Value` 克隆），2 GiB 上限会放大峰值内存，因此 `create_json_response_handler` 改用独立更小的默认值 `DEFAULT_MAX_JSON_RESPONSE_SIZE`（64 MiB），可通过 `HttpRequest::max_json_response_bytes` 按请求覆盖；`create_binary_response_handler` 不受影响，仍使用 `DEFAULT_MAX_DOWNLOAD_SIZE`（2 GiB） |
 | provider 默认 retry | 保留既有 `RetryConfig` 源码与行为兼容；Core 读取 model config，per-call 只覆盖 `max_retries` |
 | jitter | AI SDK 默认不抖动但留 `getDelayInMs` 注入点；Aimux 用同一注入点默认注入 RFC-0009 Full Jitter，只作用于 exponential delay，server hint 精确遵守（§6.5） |
 | 第一条 SSE error | AI SDK OpenAI provider 会扫描到首个 semantic output；Aimux 保留 RFC-0016 的更窄 first-event peek，使立即到达的 error 成为 retry 边界内的 attempt 失败（§8.3） |

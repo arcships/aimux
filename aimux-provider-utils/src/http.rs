@@ -216,6 +216,12 @@ pub struct HttpRequest {
     /// (e.g. Replicate `prefer: wait`) declares its own bound here. Streaming
     /// exchanges are exempt regardless.
     pub response_timeout: Option<std::time::Duration>,
+    /// Per-request override of the successful-JSON-body size cap (default
+    /// [`crate::read_response_with_size_limit::DEFAULT_MAX_JSON_RESPONSE_SIZE`]).
+    /// Only consulted by [`crate::response_handler::create_json_response_handler`];
+    /// binary downloads keep the separate, larger
+    /// `DEFAULT_MAX_DOWNLOAD_SIZE` bound regardless of this field.
+    pub max_json_response_bytes: Option<usize>,
     /// AI SDK `validateUrl`: set for URLs taken from provider responses
     /// (generated assets, polling and result URLs). The exchange then goes
     /// through the SSRF download guard — target and every DNS answer
@@ -322,6 +328,7 @@ pub(crate) struct PreparedRequest {
     call_id: Option<String>,
     recording_context: Option<RecordingContext>,
     pub(crate) response_timeout: Option<std::time::Duration>,
+    pub(crate) max_json_response_bytes: Option<usize>,
     pub(crate) validation: Option<DownloadValidation>,
 }
 
@@ -345,6 +352,7 @@ impl HttpRequest {
             call_id: self.call_id,
             recording_context: self.recording_context,
             response_timeout: self.response_timeout,
+            max_json_response_bytes: self.max_json_response_bytes,
             validation: self.validate_url.then_some(DownloadValidation {
                 trusted_origin: self.trusted_origin,
                 credentialed_origin: self.credentialed_origin,

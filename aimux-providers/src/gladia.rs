@@ -308,6 +308,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                             call_id: None,
                             recording_context: None,
                             response_timeout: None,
+                            max_json_response_bytes: None,
                             validate_url: true,
                             trusted_origin: Some(self.config.base_url.clone()),
                             credentialed_origin: Some(self.config.base_url.clone()),

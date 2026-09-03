@@ -5,8 +5,17 @@ use futures::StreamExt;
 
 use aimux_core::{AiMuxError, ApiCallError};
 
-/// Default maximum buffered response size (2 GiB, matching AI SDK).
+/// Default maximum buffered response size for binary downloads (2 GiB,
+/// matching AI SDK).
 pub const DEFAULT_MAX_DOWNLOAD_SIZE: usize = 2 * 1024 * 1024 * 1024;
+
+/// Default maximum buffered response size for a successful JSON body (64
+/// MiB). AI SDK reuses its 2 GiB download bound for JSON bodies too, but a
+/// JSON success response is held simultaneously as raw bytes, a parsed
+/// `serde_json::Value`, and a deserialized struct — a 2 GiB cap lets a single
+/// response balloon to several times that in resident memory. This bound is
+/// per-request configurable via `HttpRequest::max_json_response_bytes`.
+pub const DEFAULT_MAX_JSON_RESPONSE_SIZE: usize = 64 * 1024 * 1024;
 
 /// Read a response incrementally and fail before unbounded allocation.
 ///

@@ -11,7 +11,7 @@ use aimux_core::{AiMuxError, ApiCallError};
 
 use crate::extract_response_headers::extract_response_headers;
 use crate::read_response_with_size_limit::{
-    DEFAULT_MAX_DOWNLOAD_SIZE, read_response_with_size_limit,
+    DEFAULT_MAX_DOWNLOAD_SIZE, DEFAULT_MAX_JSON_RESPONSE_SIZE, read_response_with_size_limit,
 };
 
 /// Input supplied to one response handler.
@@ -20,6 +20,11 @@ pub struct ResponseHandlerInput {
     pub request_body_values: serde_json::Value,
     pub response: reqwest::Response,
     pub abort_signal: Option<aimux_core::AbortSignal>,
+    /// Per-request override of the successful-JSON-body size cap, forwarded
+    /// from `HttpRequest::max_json_response_bytes`. Only
+    /// [`create_json_response_handler`] consults this; other handlers ignore
+    /// it.
+    pub max_json_response_bytes: Option<usize>,
 }
 
 /// A parsed value plus response metadata.
@@ -90,6 +95,11 @@ impl<T> ResponseHandler<T> {
 }
 
 /// Parse a successful JSON response using the endpoint's response type.
+///
+/// The body is size-limited to [`DEFAULT_MAX_JSON_RESPONSE_SIZE`] (or
+/// `HttpRequest::max_json_response_bytes`, when the caller overrides it) —
+/// deliberately smaller than the binary-download bound, since a JSON success
+/// body is deserialized straight into `T` and held alongside the raw bytes.
 #[must_use]
 pub fn create_json_response_handler<T>() -> ResponseHandler<T>
 where
@@ -98,15 +108,25 @@ where
     ResponseHandler::new(|input| async move {
         let status = input.response.status().as_u16();
         let headers = extract_response_headers(input.response.headers());
+        let max_bytes = input
+            .max_json_response_bytes
+            .unwrap_or(DEFAULT_MAX_JSON_RESPONSE_SIZE);
         let body = read_response_with_size_limit(
             input.response,
             &input.url,
             &input.request_body_values,
-            DEFAULT_MAX_DOWNLOAD_SIZE,
+            max_bytes,
             input.abort_signal.as_ref(),
         )
         .await?;
-        let raw_value = serde_json::from_slice::<serde_json::Value>(&body).map_err(|error| {
+        // Deserialize straight into `T` instead of parsing a
+        // `serde_json::Value` first and converting that — the previous
+        // two-step parse cloned the intermediate `Value` tree, holding
+        // bytes + `Value` + `T` at once. `raw_value` (needed by callers such
+        // as `Usage.raw`) is a best-effort second parse: `T`'s successful
+        // deserialization already proves `body` is valid JSON, so this
+        // cannot fail in a way that changes the outcome.
+        let value = serde_json::from_slice::<T>(&body).map_err(|error| {
             AiMuxError::ApiCall(Box::new(ApiCallError {
                 status_code: Some(status),
                 response_body: Some(String::from_utf8_lossy(&body).into_owned()),
@@ -118,21 +138,10 @@ where
                 )
             }))
         })?;
-        let value = serde_json::from_value(raw_value.clone()).map_err(|error| {
-            AiMuxError::ApiCall(Box::new(ApiCallError {
-                status_code: Some(status),
-                response_body: Some(String::from_utf8_lossy(&body).into_owned()),
-                response_headers: Some(headers.clone()),
-                ..ApiCallError::new(
-                    format!("Invalid JSON response: {error}"),
-                    input.url,
-                    input.request_body_values,
-                )
-            }))
-        })?;
+        let raw_value = serde_json::from_slice::<serde_json::Value>(&body).ok();
         Ok(ResponseHandlerOutput {
             value,
-            raw_value: Some(raw_value),
+            raw_value,
             response_headers: headers,
         })
     })

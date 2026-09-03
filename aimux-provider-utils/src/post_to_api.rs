@@ -160,6 +160,7 @@ async fn execute_exchange<T>(
         request_body_values: request_body_values.clone(),
         response,
         abort_signal: request.abort_signal.clone(),
+        max_json_response_bytes: request.max_json_response_bytes,
     };
 
     if !(200..300).contains(&status) {

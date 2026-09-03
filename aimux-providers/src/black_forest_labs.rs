@@ -403,6 +403,7 @@ impl ImageModel for BlackForestLabsImageModel {
                             call_id: None,
                             recording_context: None,
                             response_timeout: None,
+                            max_json_response_bytes: None,
                             validate_url: true,
                             trusted_origin: Some(self.config.base_url.clone()),
                             // Headers are gated per URL by gated_headers above.
@@ -479,6 +480,7 @@ impl ImageModel for BlackForestLabsImageModel {
                         call_id: None,
                         recording_context: None,
                         response_timeout: None,
+                        max_json_response_bytes: None,
                         validate_url: true,
                         trusted_origin: Some(self.config.base_url.clone()),
                         // Headers are gated per URL by gated_headers above.

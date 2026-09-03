@@ -327,3 +327,47 @@ async fn oversize_error_body_is_truncated_not_replaced() {
     assert!(body.ends_with("…(truncated)"), "truncation marked");
     assert!(body.len() < 70 * 1024, "body actually truncated");
 }
+
+/// A JSON success body over the configured cap must fail with the
+/// size-limit `ApiCallError`, not be buffered in full. Uses
+/// `HttpRequest::max_json_response_bytes` (rather than waiting for a
+/// multi-hundred-MB fixture) to exercise the same code path a provider hits
+/// against the real 64 MiB default.
+#[tokio::test]
+async fn oversize_json_success_body_is_rejected() {
+    let server = MockServer::start().await;
+    let huge = format!("{{\"value\":\"{}\"}}", "x".repeat(2048));
+    Mock::given(method("POST"))
+        .and(path("/call"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_string(huge),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let error = post_json_to_api::<Reply>(
+        HttpRequest {
+            max_json_response_bytes: Some(1024),
+            ..request(format!("{}/call", server.uri()))
+        },
+        json!({"input": 1}),
+        create_json_response_handler(),
+        failed_response_handler(),
+    )
+    .await
+    .unwrap_err();
+
+    let AiMuxError::ApiCall(detail) = error else {
+        panic!("expected ApiCall");
+    };
+    assert!(
+        detail
+            .message
+            .contains("exceeded maximum size of 1024 bytes"),
+        "expected the size-limit error, got: {}",
+        detail.message
+    );
+}
