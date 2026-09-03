@@ -1037,6 +1037,7 @@ pub async fn generate_text_as_openai(
                             arguments: parsed_tool_call_arguments(
                                 &tool_call.input,
                                 tool_call.invalid,
+                                tool_call.error.as_ref(),
                             ),
                         },
                     })
