@@ -14,6 +14,28 @@ use crate::types::{FinishReason, ProviderMetadata, ResponseMetadata, Usage, Warn
 
 use serde_json::Value;
 
+/// Compatibility deserializer for `GenerateContent::ToolCall.input`.
+///
+/// The field used to be a `serde_json::Value` (the already-parsed argument
+/// object) and became a `String` (the provider's raw, unparsed text) in the
+/// tool-input-parse-repair refactor. The wire format for a *new* result was
+/// unaffected — providers had only ever put the raw text in a
+/// `Value::String`, and `Value::String` / `String` serialize identically —
+/// but a result persisted (recording/replay) before that refactor, back when
+/// providers parsed their own input, can carry an object/array/number/bool/
+/// null here. Accept both: a JSON string passes through unchanged, and any
+/// other JSON value is re-serialized to its compact JSON text so the field
+/// keeps meaning "the raw text a schema-validating parse would run against".
+fn deserialize_tool_call_input<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(match Value::deserialize(deserializer)? {
+        Value::String(raw) => raw,
+        legacy => legacy.to_string(),
+    })
+}
+
 /// A content item in the generation result.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -31,6 +53,15 @@ pub enum GenerateContent {
         /// The model's raw argument text, exactly as the provider delivered
         /// it (possibly malformed). Providers never parse it — `generate_text`
         /// owns parsing, schema validation, and repair.
+        ///
+        /// Always serializes as a JSON string. Deserializes a JSON string
+        /// (the current wire shape) unchanged, and also accepts the
+        /// pre-refactor legacy shape — an already-parsed JSON value (object,
+        /// array, number, bool, or null) — by re-serializing it to its
+        /// compact JSON text, so `GenerateResult`s persisted or replayed from
+        /// before this field became a `String` keep loading. See
+        /// docs/api/gaps.md §9 for the wire-shape and migration note.
+        #[serde(deserialize_with = "deserialize_tool_call_input")]
         input: String,
         /// Whether the tool call will be executed by the provider.
         /// If false/unset, the tool call is executed by the client.
@@ -220,5 +251,88 @@ impl std::fmt::Debug for StreamResult {
             .field("response_headers", &self.response_headers)
             .field("stream", &"<stream>")
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test for PR #165 review finding: `GenerateContent::ToolCall`
+    /// went from carrying `input: Value` to `input: String`. A *new* result's
+    /// wire shape is unaffected (providers only ever put raw text in a
+    /// `Value::String`, which serializes identically to a bare `String`), but
+    /// a result persisted before the refactor can carry an object — this must
+    /// still deserialize, not fail closed.
+    #[test]
+    fn tool_call_input_deserializes_both_the_legacy_object_shape_and_the_new_string_shape() {
+        let legacy = serde_json::json!({
+            "ToolCall": {
+                "tool_call_id": "call_1",
+                "tool_name": "get_weather",
+                "input": { "city": "Tokyo" },
+            }
+        });
+        let from_legacy: GenerateContent = serde_json::from_value(legacy).unwrap();
+        let GenerateContent::ToolCall { input, .. } = &from_legacy else {
+            panic!("expected ToolCall, got {from_legacy:?}");
+        };
+        assert_eq!(input, r#"{"city":"Tokyo"}"#);
+
+        let current = serde_json::json!({
+            "ToolCall": {
+                "tool_call_id": "call_1",
+                "tool_name": "get_weather",
+                "input": r#"{"city":"Tokyo"}"#,
+            }
+        });
+        let from_current: GenerateContent = serde_json::from_value(current).unwrap();
+        assert_eq!(from_current, from_legacy);
+    }
+
+    /// A legacy array/number/bool/null-shaped `input` (any non-string JSON
+    /// value some historical provider integration may have written) also
+    /// loads, re-serialized to its compact JSON text.
+    #[test]
+    fn tool_call_input_deserializes_every_legacy_value_shape() {
+        for (legacy_input, expected) in [
+            (serde_json::json!([1, 2, 3]), "[1,2,3]"),
+            (serde_json::json!(42), "42"),
+            (serde_json::json!(true), "true"),
+            (serde_json::json!(null), "null"),
+        ] {
+            let wire = serde_json::json!({
+                "ToolCall": {
+                    "tool_call_id": "call_1",
+                    "tool_name": "get_weather",
+                    "input": legacy_input,
+                }
+            });
+            let parsed: GenerateContent = serde_json::from_value(wire).unwrap();
+            let GenerateContent::ToolCall { input, .. } = &parsed else {
+                panic!("expected ToolCall, got {parsed:?}");
+            };
+            assert_eq!(input, expected);
+        }
+    }
+
+    /// The field always serializes as a plain JSON string, never a nested
+    /// JSON value — the current, non-legacy wire shape.
+    #[test]
+    fn tool_call_input_serializes_as_a_string() {
+        let content = GenerateContent::ToolCall {
+            tool_call_id: "call_1".to_string(),
+            tool_name: "get_weather".to_string(),
+            input: r#"{"city":"Tokyo"}"#.to_string(),
+            provider_executed: None,
+            dynamic: None,
+            thought_signature: None,
+            provider_metadata: None,
+        };
+        let wire = serde_json::to_value(&content).unwrap();
+        assert_eq!(
+            wire["ToolCall"]["input"],
+            serde_json::json!(r#"{"city":"Tokyo"}"#)
+        );
     }
 }

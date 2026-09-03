@@ -10,6 +10,14 @@ export type GenerateContent = { "Text": { text: string, provider_metadata?: Json
  * The model's raw argument text, exactly as the provider delivered
  * it (possibly malformed). Providers never parse it — `generate_text`
  * owns parsing, schema validation, and repair.
+ *
+ * Always serializes as a JSON string. Deserializes a JSON string
+ * (the current wire shape) unchanged, and also accepts the
+ * pre-refactor legacy shape — an already-parsed JSON value (object,
+ * array, number, bool, or null) — by re-serializing it to its
+ * compact JSON text, so `GenerateResult`s persisted or replayed from
+ * before this field became a `String` keep loading. See
+ * docs/api/gaps.md §9 for the wire-shape and migration note.
  */
 input: string, 
 /**
