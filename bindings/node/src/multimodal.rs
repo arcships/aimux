@@ -20,6 +20,53 @@ use aimux_core::transcription_model::{
 use aimux_core::video_model::{VideoCallOptions, VideoModel as VideoModelTrait};
 use napi_derive::napi;
 
+/// Fill in the fields the method's explicit arguments own, then deserialize.
+///
+/// Those fields are required on the Rust options struct, so a caller's
+/// options object on its own fails with `missing field` before the explicit
+/// arguments can be put back. The values inserted here are placeholders that
+/// satisfy the shape only; the caller overwrites each one from its own
+/// argument right after this returns. Pure JSON — no binding error types — so
+/// the parse contract is unit-testable without a Node runtime.
+fn opts_with_args<T: serde::de::DeserializeOwned>(
+    json: &str,
+    owned_by_args: &[(&str, serde_json::Value)],
+) -> Result<T, serde_json::Error> {
+    let mut value: serde_json::Value = serde_json::from_str(json)?;
+    // A non-object body needs no filling; `from_value` reports it as the same
+    // invalid-type data error it always did.
+    if let Some(object) = value.as_object_mut() {
+        for (field, placeholder) in owned_by_args {
+            object.insert((*field).to_string(), placeholder.clone());
+        }
+    }
+    serde_json::from_value(value)
+}
+
+/// [`opts_with_args`] under `parse_wire_json`'s error classification.
+fn parse_opts_json<T: serde::de::DeserializeOwned>(
+    argument: &'static str,
+    json: &str,
+    owned_by_args: &[(&str, serde_json::Value)],
+) -> crate::error::MResult<T> {
+    opts_with_args(json, owned_by_args).map_err(|e| crate::error::wire_error(argument, &e))
+}
+
+/// Shape-only stand-in for `TranscriptionCallOptions::audio`, built from the
+/// real enum so a variant rename is a compile error rather than a runtime one.
+fn audio_placeholder() -> serde_json::Value {
+    serde_json::to_value(AudioInput::Base64(String::new()))
+        .expect("AudioInput always serializes")
+}
+
+/// Shape-only stand-in for `RerankingCallOptions::documents`.
+fn documents_placeholder() -> serde_json::Value {
+    serde_json::to_value(aimux_core::reranking_model::RerankingDocuments::Text {
+        values: Vec::new(),
+    })
+    .expect("RerankingDocuments always serializes")
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // EmbeddingModel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -163,8 +210,14 @@ impl TranscriptionModel {
                     TranscriptionCallOptions::new(AudioInput::Base64(audio_base64), media_type);
                 if let Some(s) = opts_json.as_deref() {
                     if !s.trim().is_empty() && s.trim() != "null" {
-                        let mut parsed: TranscriptionCallOptions =
-                            parse_wire_json("opts_json", s)?;
+                        let mut parsed: TranscriptionCallOptions = parse_opts_json(
+                            "opts_json",
+                            s,
+                            &[
+                                ("audio", audio_placeholder()),
+                                ("media_type", serde_json::Value::from("")),
+                            ],
+                        )?;
                         // Required data comes from the explicit arguments; all
                         // operation policy and optional fields come from JSON.
                         parsed.audio = opts.audio;
@@ -217,7 +270,14 @@ impl RerankingModel {
                 let mut opts = RerankingCallOptions::new(query, docs);
                 if let Some(s) = opts_json.as_deref() {
                     if !s.trim().is_empty() && s.trim() != "null" {
-                        let mut parsed: RerankingCallOptions = parse_wire_json("opts_json", s)?;
+                        let mut parsed: RerankingCallOptions = parse_opts_json(
+                            "opts_json",
+                            s,
+                            &[
+                                ("query", serde_json::Value::from("")),
+                                ("documents", documents_placeholder()),
+                            ],
+                        )?;
                         // Required data comes from the explicit arguments; all
                         // operation policy and optional fields come from JSON.
                         parsed.query = opts.query;
@@ -303,7 +363,11 @@ impl SearchModel {
                     if !s.trim().is_empty() && s.trim() != "null" {
                         // Required data comes from the explicit arguments; all
                         // operation policy and optional fields come from JSON.
-                        let mut parsed: SearchCallOptions = parse_wire_json("opts_json", s)?;
+                        let mut parsed: SearchCallOptions = parse_opts_json(
+                            "opts_json",
+                            s,
+                            &[("query", serde_json::Value::from(""))],
+                        )?;
                         parsed.query = opts.query;
                         opts = parsed;
                     }
@@ -919,5 +983,48 @@ impl TranscriptionSession {
             guard.take();
         }
         self.token.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aimux_core::search_model::SearchCallOptions;
+
+    /// A caller that passes any options at all must not trip `missing field`
+    /// on the data its explicit arguments already carry — that is what made
+    /// `maxRetries` / `timeout` unreachable from Node for these modalities.
+    #[test]
+    fn options_parse_without_the_fields_the_explicit_args_own() {
+        let transcription: TranscriptionCallOptions = opts_with_args(
+            r#"{"max_retries":3,"timeout":{"total_ms":1000}}"#,
+            &[
+                ("audio", audio_placeholder()),
+                ("media_type", serde_json::Value::from("")),
+            ],
+        )
+        .expect("transcription options with no audio/media_type");
+        assert_eq!(transcription.max_retries, Some(3));
+
+        let rerank: RerankingCallOptions = opts_with_args(
+            r#"{"top_n":2,"max_retries":1}"#,
+            &[
+                ("query", serde_json::Value::from("")),
+                ("documents", documents_placeholder()),
+            ],
+        )
+        .expect("rerank options with no query/documents");
+        assert_eq!(rerank.top_n, Some(2));
+
+        // The placeholder is overwritten by the caller, so it must lose to
+        // whatever the explicit argument holds — never to the JSON.
+        let mut search: SearchCallOptions = opts_with_args(
+            r#"{"query":"dogs","max_results":5}"#,
+            &[("query", serde_json::Value::from(""))],
+        )
+        .expect("search options with no query");
+        assert_eq!(search.max_results, Some(5));
+        search.query = "cats".to_string();
+        assert_eq!(search.query, "cats");
     }
 }

@@ -142,7 +142,13 @@ pub(crate) fn parse_wire_json<T: serde::de::DeserializeOwned>(
     argument: &'static str,
     json: &str,
 ) -> MResult<T> {
-    serde_json::from_str(json).map_err(|e| match e.classify() {
+    serde_json::from_str(json).map_err(|e| wire_error(argument, &e))
+}
+
+/// The classification above, for callers that produce the `serde_json::Error`
+/// themselves rather than through [`parse_wire_json`].
+pub(crate) fn wire_error(argument: &'static str, e: &serde_json::Error) -> AiMuxBindingError {
+    match e.classify() {
         serde_json::error::Category::Data => AiMuxBindingError::from(AiMuxError::InvalidArgument(
             format!("invalid {argument}: {e}"),
         )),
@@ -151,7 +157,7 @@ pub(crate) fn parse_wire_json<T: serde::de::DeserializeOwned>(
             message: e.to_string(),
         }
         .into(),
-    })
+    }
 }
 
 /// Serialize a result for the JS side; failure is a binding `ResultSerialization`.

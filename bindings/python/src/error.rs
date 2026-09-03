@@ -118,7 +118,13 @@ pub(crate) fn wire_json<T: serde::de::DeserializeOwned>(
     argument: &'static str,
     s: &str,
 ) -> PyResult<T> {
-    serde_json::from_str(s).map_err(|e| match e.classify() {
+    serde_json::from_str(s).map_err(|e| wire_error(argument, &e))
+}
+
+/// The classification above, for callers that produce the `serde_json::Error`
+/// themselves rather than through [`wire_json`].
+pub(crate) fn wire_error(argument: &'static str, e: &serde_json::Error) -> pyo3::PyErr {
+    match e.classify() {
         serde_json::error::Category::Data => to_py_err(&AiMuxError::InvalidArgument(format!(
             "invalid {argument}: {e}"
         ))),
@@ -126,7 +132,7 @@ pub(crate) fn wire_json<T: serde::de::DeserializeOwned>(
             argument,
             message: e.to_string(),
         }),
-    })
+    }
 }
 
 /// Serialize a result for the wire; failure is the binding's, not an AiMuxError.
