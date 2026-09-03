@@ -221,25 +221,43 @@ impl TranscriptionModel for GladiaTranscriptionModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
+        // Core wraps the whole `do_generate` in one retry (RFC-0031 §6.2), so
+        // without per-stage retries here, a transient failure in a later
+        // stage would replay every earlier stage — re-uploading the audio to
+        // retry an initiate or poll failure. Each stage gets its own retry
+        // against the provider's configured retry settings instead; an
+        // exhausted inner retry returns `AiMuxError::Retry`, which the outer
+        // Core retry passes through unchanged rather than re-wrapping
+        // (`retry_with_exponential_backoff`'s `Err(AiMuxError::Retry(_))`
+        // arm), so `do_generate` is never replayed either.
+        let retries = retry::prepare_retries(
+            options.max_retries,
+            self.retry_config(),
+            options.abort_signal.clone(),
+        );
+
         // Step 1: Upload audio.
         let mut form = MultipartForm::new();
         form.file("audio", &filename, &options.media_type, &audio_bytes)?;
         let (body_bytes, content_type) = form.finish();
 
-        let resp = aimux_provider_utils::post_to_api(
-            HttpRequest::new(
-                self.upload_url(),
-                headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                options,
-            ),
-            HttpBody::Bytes(body_bytes, content_type),
-            aimux_provider_utils::create_json_response_handler(),
-            gladia_failed_response_handler(),
-        )
-        .await?;
+        let resp = retries
+            .retry(|| {
+                aimux_provider_utils::post_to_api(
+                    HttpRequest::new(
+                        self.upload_url(),
+                        headers
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect(),
+                        options,
+                    ),
+                    HttpBody::Bytes(body_bytes.clone(), content_type.clone()),
+                    aimux_provider_utils::create_json_response_handler(),
+                    gladia_failed_response_handler(),
+                )
+            })
+            .await?;
 
         let upload: GladiaUploadResponse = resp.value;
 
@@ -259,27 +277,26 @@ impl TranscriptionModel for GladiaTranscriptionModel {
             }
         }
 
-        let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(
-                self.initiate_url(),
-                headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                options,
-            ),
-            Value::Object(body),
-            aimux_provider_utils::create_json_response_handler(),
-            gladia_failed_response_handler(),
-        )
-        .await?;
+        let body = Value::Object(body);
+        let resp = retries
+            .retry(|| {
+                aimux_provider_utils::post_json_to_api(
+                    HttpRequest::new(
+                        self.initiate_url(),
+                        headers
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect(),
+                        options,
+                    ),
+                    body.clone(),
+                    aimux_provider_utils::create_json_response_handler(),
+                    gladia_failed_response_handler(),
+                )
+            })
+            .await?;
 
         let init: GladiaInitResponse = resp.value;
-        let retries = retry::prepare_retries(
-            options.max_retries,
-            self.retry_config(),
-            options.abort_signal.clone(),
-        );
 
         // Step 3: Poll for result.
         let mut raw_body: Value;

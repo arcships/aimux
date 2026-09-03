@@ -1,4 +1,4 @@
-﻿//! Rust translation of the AssemblyAI transcription model tests.
+//! Rust translation of the AssemblyAI transcription model tests.
 //! Source: `reference/ai/packages/assemblyai/src/assemblyai-transcription-model.test.ts`
 
 use std::collections::HashMap;
@@ -230,4 +230,65 @@ async fn should_include_provider_metadata_with_utterances() {
     let md = result.provider_metadata.as_ref().unwrap();
     let aai = md.get("assemblyai").unwrap();
     assert!(aai.get("utterances").is_some());
+}
+
+/// A transient 503 on the transcript-submit stage, followed by 200, must
+/// succeed without re-uploading the audio: the upload exchange is retried
+/// independently of the submit exchange, so Core's outer per-`do_generate`
+/// retry never needs to (and must not) replay the upload.
+#[tokio::test]
+async fn transient_submit_failure_is_retried_without_re_uploading() {
+    let server = MockServer::start().await;
+
+    let upload_attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let upload_observed = std::sync::Arc::clone(&upload_attempts);
+    Mock::given(method("POST"))
+        .and(path("/v2/upload"))
+        .respond_with(move |_: &wiremock::Request| {
+            upload_observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"upload_url": "https://upload.assemblyai.com/test"}))
+        })
+        .mount(&server)
+        .await;
+
+    let submit_attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let submit_observed = std::sync::Arc::clone(&submit_attempts);
+    Mock::given(method("POST"))
+        .and(path("/v2/transcript"))
+        .respond_with(move |_: &wiremock::Request| {
+            if submit_observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                ResponseTemplate::new(503)
+                    .insert_header("retry-after-ms", "0")
+                    .set_body_json(json!({"error": "try again"}))
+            } else {
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"id": "test-id", "status": "queued"}))
+            }
+        })
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/v2/transcript/test-id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture_transcript()))
+        .mount(&server)
+        .await;
+
+    let config = AssemblyAIConfig::new("test-api-key").with_base_url(server.uri());
+    let provider = AssemblyAIProvider::new(config);
+    let model = provider.transcription("universal-2");
+
+    let result = model
+        .do_generate(&options(mock_audio(), "audio/wav"))
+        .await
+        .unwrap();
+
+    assert_eq!(result.text, "Hello from AssemblyAI.");
+    assert_eq!(
+        upload_attempts.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "the upload stage must not be replayed by a submit-stage retry"
+    );
+    assert_eq!(submit_attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
