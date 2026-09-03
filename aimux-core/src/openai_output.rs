@@ -248,7 +248,7 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                 // The provider's raw argument text passes through verbatim;
                 // OpenAI's wire format requires a JSON object even when the
                 // model emitted no arguments at all.
-                let arguments = if input.is_empty() {
+                let arguments = if input.trim().is_empty() {
                     "{}".to_string()
                 } else {
                     input.clone()
@@ -1135,7 +1135,15 @@ pub(crate) fn parsed_tool_call_arguments(
         && let Some(error) = error
         && let Some(raw) = raw_tool_call_text(error, input)
     {
-        return raw;
+        // Blank text still fails validation against a schema with required
+        // properties, but OpenAI's wire format has no representation for
+        // "no arguments" other than an empty object — same rule as
+        // `to_chat_completion` applies to the unparsed non-streaming path.
+        return if raw.trim().is_empty() {
+            "{}".to_string()
+        } else {
+            raw
+        };
     }
     // `Value` Display is compact JSON, the `JSON.stringify` equivalent —
     // correct for every shape, `null` included.
@@ -1310,6 +1318,39 @@ mod tests {
             Some(&error),
         );
         assert_eq!(arguments, r#"{"a":"#);
+    }
+
+    #[test]
+    fn blank_invalid_tool_arguments_render_as_an_empty_object() {
+        // Both OpenAI renderers: blank raw text has no wire representation
+        // other than `{}`.
+        let error = AiMuxError::InvalidToolInput {
+            tool_name: "get_weather".to_string(),
+            tool_input: String::new(),
+            cause: "Type validation failed: missing 'city'".to_string(),
+        };
+        let arguments = parsed_tool_call_arguments(&json!({}), Some(true), Some(&error));
+        assert_eq!(arguments, "{}");
+
+        let result = make_result(vec![GenerateContent::ToolCall {
+            tool_call_id: "call_blank".to_string(),
+            tool_name: "get_weather".to_string(),
+            input: "  ".to_string(),
+            provider_executed: None,
+            dynamic: None,
+            thought_signature: None,
+            provider_metadata: None,
+        }]);
+        assert_eq!(
+            to_chat_completion(&result, "gpt-4o").choices[0]
+                .message
+                .tool_calls
+                .as_ref()
+                .unwrap()[0]
+                .function
+                .arguments,
+            "{}"
+        );
     }
 
     #[test]
