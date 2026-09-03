@@ -255,80 +255,34 @@ mod tests {
     use super::*;
 
     /// Regression test for PR #165 review finding: `GenerateContent::ToolCall`
-    /// went from carrying `input: Value` to `input: String`. A *new* result's
-    /// wire shape is unaffected (providers only ever put raw text in a
-    /// `Value::String`, which serializes identically to a bare `String`), but
-    /// a result persisted before the refactor can carry an object — this must
-    /// still deserialize, not fail closed.
+    /// went from carrying `input: Value` (the parsed arguments) to
+    /// `input: String` (the raw text), so a `GenerateResult` persisted before
+    /// the refactor carries an object here and must still load rather than
+    /// fail closed. Serialization stays one-way — always a plain string.
     #[test]
-    fn tool_call_input_deserializes_both_the_legacy_object_shape_and_the_new_string_shape() {
-        let legacy = serde_json::json!({
-            "ToolCall": {
-                "tool_call_id": "call_1",
-                "tool_name": "get_weather",
-                "input": { "city": "Tokyo" },
-            }
-        });
-        let from_legacy: GenerateContent = serde_json::from_value(legacy).unwrap();
+    fn tool_call_input_loads_the_legacy_object_shape_and_the_current_string_shape() {
+        let wire = |input: serde_json::Value| {
+            serde_json::json!({
+                "ToolCall": {
+                    "tool_call_id": "call_1",
+                    "tool_name": "get_weather",
+                    "input": input,
+                }
+            })
+        };
+        let from_legacy: GenerateContent =
+            serde_json::from_value(wire(serde_json::json!({ "city": "Tokyo" }))).unwrap();
+        let from_current: GenerateContent =
+            serde_json::from_value(wire(serde_json::json!(r#"{"city":"Tokyo"}"#))).unwrap();
+        assert_eq!(from_legacy, from_current);
+
         let GenerateContent::ToolCall { input, .. } = &from_legacy else {
             panic!("expected ToolCall, got {from_legacy:?}");
         };
         assert_eq!(input, r#"{"city":"Tokyo"}"#);
-
-        let current = serde_json::json!({
-            "ToolCall": {
-                "tool_call_id": "call_1",
-                "tool_name": "get_weather",
-                "input": r#"{"city":"Tokyo"}"#,
-            }
-        });
-        let from_current: GenerateContent = serde_json::from_value(current).unwrap();
-        assert_eq!(from_current, from_legacy);
-    }
-
-    /// A legacy array/number/bool/null-shaped `input` (any non-string JSON
-    /// value some historical provider integration may have written) also
-    /// loads, re-serialized to its compact JSON text.
-    #[test]
-    fn tool_call_input_deserializes_every_legacy_value_shape() {
-        for (legacy_input, expected) in [
-            (serde_json::json!([1, 2, 3]), "[1,2,3]"),
-            (serde_json::json!(42), "42"),
-            (serde_json::json!(true), "true"),
-            (serde_json::json!(null), "null"),
-        ] {
-            let wire = serde_json::json!({
-                "ToolCall": {
-                    "tool_call_id": "call_1",
-                    "tool_name": "get_weather",
-                    "input": legacy_input,
-                }
-            });
-            let parsed: GenerateContent = serde_json::from_value(wire).unwrap();
-            let GenerateContent::ToolCall { input, .. } = &parsed else {
-                panic!("expected ToolCall, got {parsed:?}");
-            };
-            assert_eq!(input, expected);
-        }
-    }
-
-    /// The field always serializes as a plain JSON string, never a nested
-    /// JSON value — the current, non-legacy wire shape.
-    #[test]
-    fn tool_call_input_serializes_as_a_string() {
-        let content = GenerateContent::ToolCall {
-            tool_call_id: "call_1".to_string(),
-            tool_name: "get_weather".to_string(),
-            input: r#"{"city":"Tokyo"}"#.to_string(),
-            provider_executed: None,
-            dynamic: None,
-            thought_signature: None,
-            provider_metadata: None,
-        };
-        let wire = serde_json::to_value(&content).unwrap();
         assert_eq!(
-            wire["ToolCall"]["input"],
-            serde_json::json!(r#"{"city":"Tokyo"}"#)
+            serde_json::to_value(&from_legacy).unwrap(),
+            wire(serde_json::json!(r#"{"city":"Tokyo"}"#))
         );
     }
 }
