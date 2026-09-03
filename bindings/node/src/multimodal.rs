@@ -301,7 +301,10 @@ impl SearchModel {
                 let mut opts = SearchCallOptions::new(query);
                 if let Some(s) = opts_json.as_deref() {
                     if !s.trim().is_empty() && s.trim() != "null" {
-                        let parsed: SearchCallOptions = parse_wire_json("opts_json", s)?;
+                        // Required data comes from the explicit arguments; all
+                        // operation policy and optional fields come from JSON.
+                        let mut parsed: SearchCallOptions = parse_wire_json("opts_json", s)?;
+                        parsed.query = opts.query;
                         opts = parsed;
                     }
                 }

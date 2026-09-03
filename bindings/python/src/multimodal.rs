@@ -258,7 +258,10 @@ impl SearchModel {
         let mut opts = SearchCallOptions::new(query.to_string());
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: SearchCallOptions = wire_json("opts_json", s)?;
+                // Take every caller option; the query always comes from the
+                // explicit arg.
+                let mut parsed: SearchCallOptions = wire_json("opts_json", s)?;
+                parsed.query = opts.query;
                 opts = parsed;
             }
         }
