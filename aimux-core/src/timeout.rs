@@ -10,7 +10,9 @@ use crate::options::TimeoutConfiguration;
 
 /// Deadlines shared by the establishment and streaming phases of one model
 /// operation. No timer task is spawned: the future currently driving the
-/// operation observes the deadline directly.
+/// operation observes the deadline directly — for a returned stream that is
+/// the pump task in `generate::stream_text`, so deadlines measure provider
+/// output arrival rather than consumer polling.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct OperationTimeout {
     total: Option<TimeoutDeadline>,

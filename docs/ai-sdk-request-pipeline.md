@@ -92,6 +92,7 @@ Core user operation
 | 默认超时 | 与 AI SDK 一致无默认 `total_ms`；Aimux 有意保留非流式 exchange 的 30s whole-response 上限，但从 shared-client 全局配置下移到单次 exchange，流式 exchange 豁免（§5.4） |
 | timeout 输入形状 | 保留跨语言已有的 object/struct 形式，不增加 AI SDK 的裸 number 简写；字段语义一致 |
 | `AbortSignal` | 保留既有的 `CancellationToken` 薄包装，只表示调用方取消；Rust 可直接 drop future，因此 timeout 由 Core deadline/select 表达，不照搬 JS 的 signal merge（§8.0） |
+| stream 驱动 | AI SDK 的 `streamText` 返回前即开始消费 provider stream（push 语义，timer 观察到的是 chunk 到达时刻）；Rust stream 是 pull 语义，只在 `poll_next` 里观察 deadline 会把消费方不 poll 的时间也算进 `first_chunk_ms`/`chunk_ms`。Aimux 在 `stream_text` 返回前 spawn 一个 pump task 驱动 provider stream 进 unbounded channel，deadline 在 pump 侧按到达时刻 arm/reset；返回的 stream drop 时 abort pump。缓冲无上界与 AI SDK 一致（受响应本身约束），pump 在 terminal item 处停止 |
 | SSE framing | AI SDK 的 event-source handler 直接产出解析后的事件；Aimux 复用 `aimux_stream::SseStream` 做同一件事，framing 不留在 Provider |
 | tool timeout | aimux 目前不执行用户 tool，本 RFC 不增加 `tool_ms`/per-tool timeout |
 | observability | 每次 exchange 继续走 Aimux recording/tracing；这不改变 helper 的单次请求语义 |
@@ -649,7 +650,7 @@ impl AbortSignal {
 }
 ```
 
-`aimux-core/src/timeout.rs` 在 operation 开始时记录 total/step deadlines，不 spawn timer task：
+`aimux-core/src/timeout.rs` 在 operation 开始时记录 total/step deadlines，不 spawn timer task（流式阶段的 deadline 由 §8.1 的 pump task 观察，它是唯一 spawn 的 task，随返回的 stream drop 而 abort）：
 
 ```rust
 struct OperationTimeout {
@@ -713,7 +714,13 @@ future，不构造合并 signal，也不把 timeout 写进 `AbortSignal`。外�
 
 `first_chunk_ms` 在调用 `do_stream` **之前** arm，因此覆盖 request/setup 以及 §8.3 的
 first-event peek；慢握手、200 后无首帧、以及首条 semantic output 迟到都受同一 budget 约束。
-被 peek 的正常事件会重新接回流首，第一条 semantic output 对用户可见前清除 timer。aimux
+被 peek 的正常事件会重新接回流首，第一条 semantic output 对用户可见前清除 timer。
+
+`do_stream` 返回后，provider stream 由 Core spawn 的 pump task 驱动并写入 unbounded channel，
+`first_chunk_ms`/`chunk_ms`/total/step deadline 都在 pump 侧观察：timer 只度量 provider 输出
+的到达间隔，消费方晚 poll 或处理上一条 item 的时间不计入。已到达但尚未被消费的 output 在
+timeout 之前原样交付，timeout 作为其后的 terminal `Err` 项出现。返回的 stream 被 drop 时
+pump 被 abort，provider stream 随之 drop，取消底层 HTTP exchange。aimux
 目前是单 step，`step_ms` 与 `total_ms` 作用域重合——照样接受并在同一处 arm，以便字段语义
 跨语言一致、将来多 step 时不改 contract。
 
@@ -996,7 +1003,8 @@ handler 负责分帧和解析，peek 与"错误就 `Err` 返回"仍是 provider 
 20. polling failure 在已有 job 上 retry，耗尽也不重复 submit；
 21. Router child 在 fallback 前耗尽 retry，MoA reference/aggregator 独立 retry，且不重跑 routing/fanout；
 21a. `AbortSignal` 符合 §8.0：只有 caller cancellation；total/step deadline 直接返回对应 Timeout message，不改变 signal；
-21b. 一个 operation 结束后没有残留 timer/forwarding task（实现不 spawn，测试以 paused time 验证 drop operation 后不再有可触发状态）。
+21b. 一个 operation 结束后没有残留 timer/forwarding task（唯一 spawn 的 stream pump 随返回的 stream drop 而 abort；测试以 paused time 验证 drop operation 后不再有可触发状态）；
+21c. `first_chunk_ms`/`chunk_ms` 只度量 provider 输出到达：消费方在 budget 之外才 poll 时仍收到已按时到达的 output（测试：producer 按时产出、consumer sleep 过 deadline 再 poll）。
 
 ### Bindings/observability
 

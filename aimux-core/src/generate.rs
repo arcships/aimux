@@ -1017,18 +1017,78 @@ pub async fn stream_text(
     // first-chunk budget armed at operation start continues until the first
     // output chunk.
     let operation_deadline = operation_timeout.deadline();
-    // Always wrapped, even with no abort signal or deadlines armed: this
-    // loop is also the stream's terminal fuse — `Finish` and non-recoverable
+    // The provider stream is driven by a pump task, not by the consumer's
+    // polls: first-chunk and chunk-idle deadlines measure when provider
+    // output *arrives*, so a caller that polls late still receives output the
+    // provider delivered on time. Pull-based streams cannot express this
+    // without a driver — a deadline observed only inside `poll_next` keeps
+    // elapsing while nobody polls. The channel is unbounded on purpose: the
+    // AI SDK's `streamText` also consumes eagerly, and a bounded channel
+    // would make the pump block on the consumer, reintroducing consumer
+    // latency into the provider timers. Buffering is bounded by the response
+    // itself; the pump stops at the terminal item and is aborted when the
+    // returned stream is dropped.
+    //
+    // Always wrapped, even with no abort signal or deadlines armed: the pump
+    // is also the stream's terminal fuse — `Finish` and non-recoverable
     // errors must end the stream under every configuration, or a provider
     // that keeps the connection open after `Finish` hangs a consumer
     // reading to end-of-stream.
     let stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>> = {
         let mut stream = stream;
-        let abort_signal = abort_signal;
         let chunk_ms = stream_timeout.chunk_ms;
-        Box::pin(async_stream::stream! {
+        let pump_abort = abort_signal.clone();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let pump = tokio::spawn(async move {
             let mut chunk_deadline = first_chunk_deadline;
 
+            loop {
+                let next = tokio::select! {
+                    biased;
+                    // Dropping the provider stream cancels the in-flight HTTP
+                    // exchange; the consumer side reports the abort error.
+                    () = timeout::wait_for_abort(pump_abort.as_ref()) => break,
+                    () = timeout::wait_for_deadline(operation_deadline) => {
+                        let _ = tx.send(Err(operation_deadline
+                            .expect("operation deadline future only resolves for a deadline")
+                            .error()));
+                        break;
+                    }
+                    () = timeout::wait_for_deadline(chunk_deadline) => {
+                        let _ = tx.send(Err(chunk_deadline
+                            .expect("chunk deadline future only resolves for a deadline")
+                            .error()));
+                        break;
+                    }
+                    item = stream.next() => item,
+                };
+
+                let Some(item) = next else { break };
+                let terminal = is_terminal_item(&item);
+                if let Ok(part) = &item
+                    && is_output_chunk(part)
+                {
+                    chunk_deadline = match chunk_ms
+                        .map(|duration_ms| timeout::TimeoutDeadline::from_now("Chunk", duration_ms))
+                        .transpose()
+                    {
+                        Ok(deadline) => deadline,
+                        Err(error) => {
+                            let _ = tx.send(Err(error));
+                            break;
+                        }
+                    };
+                }
+
+                // A closed receiver means the consumer dropped the stream.
+                if tx.send(item).is_err() || terminal {
+                    break;
+                }
+            }
+        });
+        let pump = AbortOnDrop(pump);
+        Box::pin(async_stream::stream! {
+            let _pump = pump;
             loop {
                 let next = tokio::select! {
                     biased;
@@ -1038,45 +1098,13 @@ pub async fn stream_text(
                         ));
                         break;
                     }
-                    () = timeout::wait_for_deadline(operation_deadline) => {
-                        yield Err(operation_deadline
-                            .expect("operation deadline future only resolves for a deadline")
-                            .error());
-                        break;
-                    }
-                    () = timeout::wait_for_deadline(chunk_deadline) => {
-                        yield Err(chunk_deadline
-                            .expect("chunk deadline future only resolves for a deadline")
-                            .error());
-                        break;
-                    }
-                    item = stream.next() => item,
+                    item = rx.recv() => item,
                 };
-
                 let Some(item) = next else { break };
-                // A malformed individual frame does not prove that the
-                // transport is dead: SSE framing lets a later event still be
-                // valid. Transport/Core errors remain terminal so we do not
-                // keep polling a failed source indefinitely.
-                let terminal = matches!(&item, Ok(StreamPart::Finish { .. }))
-                    || matches!(&item, Err(error) if !error.is_recoverable_stream_error());
-                if let Ok(part) = &item
-                    && is_output_chunk(part)
-                {
-                    chunk_deadline = match chunk_ms
-                        .map(|duration_ms| {
-                            timeout::TimeoutDeadline::from_now("Chunk", duration_ms)
-                        })
-                        .transpose()
-                    {
-                        Ok(deadline) => deadline,
-                        Err(error) => {
-                            yield Err(error);
-                            break;
-                        }
-                    };
-                }
-
+                // Mirror the pump's fuse here so the stream ends right after
+                // the terminal item, ahead of a later abort or the channel
+                // close racing it.
+                let terminal = is_terminal_item(&item);
                 yield item;
                 if terminal {
                     break;
@@ -1097,6 +1125,24 @@ pub async fn stream_text(
         request_body,
         response_headers,
     })
+}
+
+/// A malformed individual frame does not prove that the transport is dead:
+/// SSE framing lets a later event still be valid. `Finish` and transport/Core
+/// errors are terminal so the stream is not polled past a dead source.
+fn is_terminal_item(item: &Result<StreamPart, AiMuxError>) -> bool {
+    matches!(item, Ok(StreamPart::Finish { .. }))
+        || matches!(item, Err(error) if !error.is_recoverable_stream_error())
+}
+
+/// Aborts the stream pump task when the returned stream is dropped, so an
+/// abandoned stream leaves no task driving the provider connection.
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 /// Run `do_generate` inside the RFC-0014 `generate` span and emit the
@@ -1418,7 +1464,11 @@ mod operation_retry_tests {
     }
 
     #[tokio::test]
-    async fn first_chunk_timeout_starts_before_the_returned_stream_is_polled() {
+    async fn late_consumer_still_receives_a_first_chunk_delivered_on_time() {
+        // The provider yields immediately; the first-chunk budget measures
+        // that arrival, not when the caller gets around to polling. Sleeping
+        // past the budget before the first poll must not turn delivered
+        // output into a timeout.
         let model = StreamModel::new(StreamBehavior::Normal);
         let options = GenerateTextOptions {
             max_retries: Some(0),
@@ -1430,12 +1480,13 @@ mod operation_retry_tests {
         };
         let mut result = stream_text(&model, "hello", options).await.unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
 
         assert!(matches!(
-            result.stream.next().await.unwrap(),
-            Err(AiMuxError::Timeout(message)) if message == "First chunk timeout of 1ms exceeded"
+            result.stream.next().await.unwrap().unwrap(),
+            StreamPart::TextDelta { delta, .. } if delta == "hello"
         ));
+        assert!(result.stream.next().await.is_none());
     }
 
     #[tokio::test]

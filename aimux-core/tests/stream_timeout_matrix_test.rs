@@ -1,4 +1,5 @@
-//! RFC-0031 §13 acceptance: chunk-timer semantics (item 17) and
+//! RFC-0031 §13 acceptance: chunk-timer semantics (item 17),
+//! producer-side timing (consumer delay never counts), and
 //! no-lingering-timer-state after drop (item 21b).
 //!
 //! Paused tokio time makes every assertion exact: auto-advance jumps to the
@@ -120,9 +121,37 @@ async fn semantic_output_resets_the_chunk_timer() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn consumer_delay_does_not_count_against_the_chunk_timer() {
+    // The second delta arrives at t=600, inside the 1000ms chunk budget
+    // measured from the first delta. A consumer that sleeps until t=2000
+    // before polling again must still receive it; only the *next* poll sees
+    // the timeout, which fired at t=1600 on the producer side.
+    let model = ProbeModel {
+        second_part_is_output: true,
+    };
+    let mut result = stream_text(&model, "hello", chunk_options()).await.unwrap();
+    assert!(result.stream.next().await.expect("first part").is_ok());
+
+    tokio::time::sleep(Duration::from_millis(2_000)).await;
+
+    match result.stream.next().await.expect("second part") {
+        Ok(StreamPart::TextDelta { delta, .. }) => assert_eq!(delta, "second"),
+        other => panic!("expected the buffered second delta, got {other:?}"),
+    }
+    match result.stream.next().await.expect("timeout") {
+        Err(AiMuxError::Timeout(message)) => {
+            assert_eq!(message, "Chunk timeout of 1000ms exceeded");
+        }
+        other => panic!("expected chunk timeout, got {other:?}"),
+    }
+    assert!(result.stream.next().await.is_none());
+}
+
+#[tokio::test(start_paused = true)]
 async fn dropped_operation_leaves_no_armed_timer_state() {
-    // §8.0/§13-21b: deadlines live inside the operation future, nothing is
-    // spawned. Dropping the stream mid-flight must leave no timer that could
+    // §8.0/§13-21b: deadlines live inside the pump task that drives the
+    // provider stream, and that task is aborted when the returned stream is
+    // dropped. Dropping the stream mid-flight must leave no timer that could
     // later fire and mutate the caller's signal (the rejected abort_after
     // design would trip this).
     let caller = AbortSignal::new();
