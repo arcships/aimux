@@ -379,6 +379,7 @@ Tests run on cassette playback — no network and no keys. See
 | [0027](rfc/0027-model-catalogue-and-list-api.md) | Model catalogue & `list_models` |
 | [0028](rfc/0028-transcription-streaming.md) | Realtime transcription streaming (WS sessions) |
 | [0029](rfc/0029-web-console.md) | `aimux-web` browser console |
+| [0033](rfc/0033-code-convergence-plan.md) | Code convergence plan (providers / FFI / bindings / recording / errors / tests / docs) |
 
 ## Contributing
 
