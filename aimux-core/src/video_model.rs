@@ -345,7 +345,7 @@ pub trait VideoModel: Send + Sync {
 /// transient poll failure never re-creates the billed task. Batch results are
 /// flattened back in batch order; provider metadata across batches is
 /// deep-merged the same way start/completion metadata is within a batch (see
-/// [`merge_provider_metadata`]).
+/// `merge_provider_metadata`).
 ///
 /// # Errors
 ///
