@@ -1,0 +1,127 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "cloudferro_sherlock",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "MiniMaxAI/MiniMax-M2.5",
+      "name": "MiniMax-M2.5",
+      "context": 196000,
+      "max_output": 16000,
+      "cost": {
+        "input": 0.3,
+        "output": 1.2,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-05",
+      "knowledge": "2026-01"
+    },
+    {
+      "id": "meta-llama/Llama-3.3-70B-Instruct",
+      "name": "Llama 3.3 70B Instruct",
+      "context": 70000,
+      "max_output": 70000,
+      "cost": {
+        "input": 2.92,
+        "output": 2.92,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-12-06",
+      "knowledge": "2024-10-09"
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "name": "OpenAI GPT OSS 120B",
+      "context": 131000,
+      "max_output": 131000,
+      "cost": {
+        "input": 2.92,
+        "output": 2.92,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-28",
+      "knowledge": null
+    },
+    {
+      "id": "speakleash/Bielik-11B-v2.6-Instruct",
+      "name": "Bielik 11B v2.6 Instruct",
+      "context": 32000,
+      "max_output": 32000,
+      "cost": {
+        "input": 0.67,
+        "output": 0.67,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-03-13",
+      "knowledge": "2025-03"
+    },
+    {
+      "id": "speakleash/Bielik-11B-v3.0-Instruct",
+      "name": "Bielik 11B v3.0 Instruct",
+      "context": 32000,
+      "max_output": 32000,
+      "cost": {
+        "input": 0.67,
+        "output": 0.67,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-03-13",
+      "knowledge": "2025-03"
+    }
+  ]
+}

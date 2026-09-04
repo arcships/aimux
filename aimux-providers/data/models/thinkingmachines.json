@@ -1,0 +1,57 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "thinkingmachines",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "thinkingmachines/Inkling",
+      "name": "Inkling",
+      "context": 65536,
+      "max_output": 65536,
+      "cost": {
+        "input": 1.87,
+        "output": 4.68,
+        "cache_read": 0.374,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-15",
+      "knowledge": null
+    },
+    {
+      "id": "thinkingmachines/Inkling:peft:262144",
+      "name": "Inkling (256K)",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 3.74,
+        "output": 9.36,
+        "cache_read": 0.748,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-15",
+      "knowledge": null
+    }
+  ]
+}

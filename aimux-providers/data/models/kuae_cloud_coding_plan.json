@@ -1,0 +1,31 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "kuae_cloud_coding_plan",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "GLM-4.7",
+      "name": "GLM-4.7",
+      "context": 204800,
+      "max_output": 131072,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_write": 0
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-22",
+      "knowledge": "2025-04"
+    }
+  ]
+}

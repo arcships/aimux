@@ -1,0 +1,103 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "ebcloud",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "DeepSeek-V4-Flash",
+      "name": "DeepSeek V4 Flash",
+      "context": 1000000,
+      "max_output": 384000,
+      "cost": {
+        "input": 0.143,
+        "output": 0.2857,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "DeepSeek-V4-Pro",
+      "name": "DeepSeek V4 Pro",
+      "context": 1000000,
+      "max_output": 384000,
+      "cost": {
+        "input": 0.4286,
+        "output": 0.8571,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "GLM-5.1",
+      "name": "GLM-5.1",
+      "context": 200000,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.8571,
+        "output": 3.4286,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-07",
+      "knowledge": null
+    },
+    {
+      "id": "Kimi-K2.6",
+      "name": "Kimi K2.6",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.9286,
+        "output": 3.8571,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-21",
+      "knowledge": "2025-01"
+    }
+  ]
+}

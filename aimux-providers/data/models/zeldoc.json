@@ -1,0 +1,32 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "zeldoc",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "zdev",
+      "name": "ZDev",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-15",
+      "knowledge": "2025-01"
+    }
+  ]
+}

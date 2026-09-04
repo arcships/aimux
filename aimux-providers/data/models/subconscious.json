@@ -1,0 +1,55 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "subconscious",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "subconscious/glm-5.2",
+      "name": "GLM-5.2",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": 1.4,
+        "output": 4.4,
+        "cache_read": 0.26,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-13",
+      "knowledge": null
+    },
+    {
+      "id": "subconscious/tim-qwen3.6-27b",
+      "name": "TIM-Qwen3.6 27B",
+      "context": 8192,
+      "max_output": 5000,
+      "cost": {
+        "input": 0.3,
+        "output": 3,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-11",
+      "knowledge": null
+    }
+  ]
+}

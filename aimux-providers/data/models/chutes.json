@@ -1,0 +1,351 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "chutes",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "Nemotron-3-Nano-Omni-30B-TEE",
+      "name": "Nemotron 3 Nano Omni 30B TEE",
+      "context": 131072,
+      "max_output": 0,
+      "cost": {
+        "input": 0.0245,
+        "output": 0.0978,
+        "cache_read": 0.0024499999999999995,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2026-07-23",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen/Qwen3-235B-A22B-Thinking-2507-TEE",
+      "name": "Qwen3 235B A22B Thinking 2507 TEE",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.2989,
+        "output": 1.1957,
+        "cache_read": 0.029889999999999993,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-07",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "Qwen/Qwen3-32B-TEE",
+      "name": "Qwen3 32B TEE",
+      "context": 40960,
+      "max_output": 40960,
+      "cost": {
+        "input": 0.104,
+        "output": 0.416,
+        "cache_read": 0.010399999999999998,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-04",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "Qwen/Qwen3.5-397B-A17B-TEE",
+      "name": "Qwen3.5 397B A17B TEE",
+      "context": 262144,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.45,
+        "output": 3,
+        "cache_read": 0.04499999999999999,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-15",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen/Qwen3.6-27B-TEE",
+      "name": "Qwen3.6 27B TEE",
+      "context": 262144,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.3,
+        "output": 2,
+        "cache_read": 0.029999999999999992,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-22",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen/Qwen3.8-27B-TEE",
+      "name": "Qwen3.8 27B TEE",
+      "context": 262144,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.32,
+        "output": 2.5,
+        "cache_read": 0.031999999999999994,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-16",
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-V3.2-TEE",
+      "name": "DeepSeek V3.2 TEE",
+      "context": 131072,
+      "max_output": 65536,
+      "cost": {
+        "input": 1,
+        "output": 1,
+        "cache_read": 0.09999999999999998,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12",
+      "knowledge": "2024-07"
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-V4-Flash-0731-TEE",
+      "name": "DeepSeek V4 Flash 0731 TEE",
+      "context": 1048576,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.44,
+        "output": 1.32,
+        "cache_read": 0.04399999999999999,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-31",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "google/gemma-4-31B-turbo-TEE",
+      "name": "gemma 4 31B turbo TEE",
+      "context": 131072,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.12,
+        "output": 0.37,
+        "cache_read": 0.011999999999999997,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-02",
+      "knowledge": null
+    },
+    {
+      "id": "moonshotai/Kimi-K2.6-TEE",
+      "name": "Kimi K2.6 TEE",
+      "context": 262144,
+      "max_output": 65535,
+      "cost": {
+        "input": 0.58,
+        "output": 3.4,
+        "cache_read": 0.05799999999999998,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-21",
+      "knowledge": "2025-12"
+    },
+    {
+      "id": "moonshotai/Kimi-K3-TEE",
+      "name": "Kimi K3 TEE",
+      "context": 1048576,
+      "max_output": 65535,
+      "cost": {
+        "input": 3,
+        "output": 15,
+        "cache_read": 0.29999999999999993,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-29",
+      "knowledge": null
+    },
+    {
+      "id": "unsloth/Mistral-Nemo-Instruct-2407-TEE",
+      "name": "Mistral Nemo Instruct 2407 TEE",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.0245,
+        "output": 0.0978,
+        "cache_read": 0.0024499999999999995,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2024-07-01",
+      "knowledge": "2024-07"
+    },
+    {
+      "id": "zai-org/GLM-5.1-TEE",
+      "name": "GLM 5.1 TEE",
+      "context": 202752,
+      "max_output": 65535,
+      "cost": {
+        "input": 0.98,
+        "output": 3.08,
+        "cache_read": 0.09799999999999998,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-07",
+      "knowledge": null
+    },
+    {
+      "id": "zai-org/GLM-5.2-TEE",
+      "name": "GLM 5.2 TEE",
+      "context": 1048576,
+      "max_output": 65535,
+      "cost": {
+        "input": 1.25,
+        "output": 3.95,
+        "cache_read": 0.12499999999999997,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-13",
+      "knowledge": null
+    }
+  ]
+}

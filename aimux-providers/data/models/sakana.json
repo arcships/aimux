@@ -1,0 +1,108 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "sakana",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "fugu",
+      "name": "Fugu",
+      "context": 1000000,
+      "max_output": 1000000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-15",
+      "knowledge": null
+    },
+    {
+      "id": "fugu-ultra",
+      "name": "Fugu Ultra",
+      "context": 1000000,
+      "max_output": 1000000,
+      "cost": {
+        "input": 5,
+        "output": 30,
+        "cache_read": 0.5,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-15",
+      "knowledge": null
+    },
+    {
+      "id": "fugu-ultra-20260615",
+      "name": "Fugu Ultra",
+      "context": 1000000,
+      "max_output": 1000000,
+      "cost": {
+        "input": 5,
+        "output": 30,
+        "cache_read": 0.5,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-15",
+      "knowledge": null
+    },
+    {
+      "id": "sakana-namazu",
+      "name": "Sakana Namazu",
+      "context": 262144,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.95,
+        "output": 4,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-03",
+      "knowledge": null
+    }
+  ]
+}

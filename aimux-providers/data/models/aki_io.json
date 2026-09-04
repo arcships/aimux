@@ -1,0 +1,180 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "aki_io",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "deepseek-v4-flash-0731-284b",
+      "name": "DeepSeek V4 Flash 0731",
+      "context": 1048576,
+      "max_output": 81920,
+      "cost": {
+        "input": 0.2,
+        "output": 0.5,
+        "cache_read": 0.1,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-31",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "gemma4-26b",
+      "name": "Gemma 4 26B A4B IT",
+      "context": 256000,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.1,
+        "output": 0.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-02",
+      "knowledge": null
+    },
+    {
+      "id": "gpt-oss-120b",
+      "name": "GPT OSS 120B",
+      "context": 128000,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.15,
+        "output": 0.55,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "kimi-k2.7-code-1100b",
+      "name": "Kimi K2.7 Code",
+      "context": 262144,
+      "max_output": 81920,
+      "cost": {
+        "input": 0.86,
+        "output": 3,
+        "cache_read": 0.18,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-12",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "mistral4-119b",
+      "name": "Mistral Small 4",
+      "context": 262144,
+      "max_output": 81920,
+      "cost": {
+        "input": 0.2,
+        "output": 0.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-16",
+      "knowledge": "2025-06"
+    },
+    {
+      "id": "qwen3.6-35b",
+      "name": "Qwen3.6 35B-A3B",
+      "context": 256000,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.15,
+        "output": 0.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-17",
+      "knowledge": null
+    },
+    {
+      "id": "qwen3.8-27b",
+      "name": "Qwen3.8 27B",
+      "context": 262144,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.3,
+        "output": 2.2,
+        "cache_read": 0.1,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-14",
+      "knowledge": null
+    }
+  ]
+}

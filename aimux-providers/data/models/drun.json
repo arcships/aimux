@@ -1,0 +1,79 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "drun",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "public/deepseek-r1",
+      "name": "DeepSeek R1",
+      "context": 131072,
+      "max_output": 32000,
+      "cost": {
+        "input": 0.55,
+        "output": 2.2,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-01-20",
+      "knowledge": "2024-12"
+    },
+    {
+      "id": "public/deepseek-v3",
+      "name": "DeepSeek V3",
+      "context": 131072,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.28,
+        "output": 1.1,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-12-26",
+      "knowledge": "2024-07"
+    },
+    {
+      "id": "public/minimax-m25",
+      "name": "MiniMax M2.5",
+      "context": 204800,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.29,
+        "output": 1.16,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-03-01",
+      "knowledge": null
+    }
+  ]
+}

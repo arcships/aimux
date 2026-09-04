@@ -1,0 +1,301 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "clarifai",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "arcee_ai/AFM/models/trinity-mini",
+      "name": "Trinity Mini",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.045,
+        "output": 0.15,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-01",
+      "knowledge": "2024-10"
+    },
+    {
+      "id": "clarifai/main/models/mm-poly-8b",
+      "name": "MM Poly 8B",
+      "context": 32768,
+      "max_output": 4096,
+      "cost": {
+        "input": 0.658,
+        "output": 1.11,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2025-06",
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-ai/deepseek-ocr/models/DeepSeek-OCR",
+      "name": "DeepSeek OCR",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.2,
+        "output": 0.7,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2025-10-20",
+      "knowledge": null
+    },
+    {
+      "id": "minimaxai/chat-completion/models/MiniMax-M2_5-high-throughput",
+      "name": "MiniMax-M2.5 High Throughput",
+      "context": 204800,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.3,
+        "output": 1.2,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-12",
+      "knowledge": null
+    },
+    {
+      "id": "mistralai/completion/models/Ministral-3-14B-Reasoning-2512",
+      "name": "Ministral 3 14B Reasoning 2512",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 2.5,
+        "output": 1.7,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-01",
+      "knowledge": "2025-12"
+    },
+    {
+      "id": "mistralai/completion/models/Ministral-3-3B-Reasoning-2512",
+      "name": "Ministral 3 3B Reasoning 2512",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 1.039,
+        "output": 0.54825,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12",
+      "knowledge": null
+    },
+    {
+      "id": "moonshotai/chat-completion/models/Kimi-K2_6",
+      "name": "Kimi K2.6",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.95,
+        "output": 4,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-21",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "openai/chat-completion/models/gpt-oss-120b-high-throughput",
+      "name": "GPT OSS 120B High Throughput",
+      "context": 131072,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.09,
+        "output": 0.36,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "openai/chat-completion/models/gpt-oss-20b",
+      "name": "GPT OSS 20B",
+      "context": 131072,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.045,
+        "output": 0.18,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwenCoder/models/Qwen3-Coder-30B-A3B-Instruct",
+      "name": "Qwen3 Coder 30B A3B Instruct",
+      "context": 262144,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.11458,
+        "output": 0.74812,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-07-31",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen/qwenLM/models/Qwen3-30B-A3B-Instruct-2507",
+      "name": "Qwen3 30B A3B Instruct 2507",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.3,
+        "output": 0.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-07-30",
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwenLM/models/Qwen3-30B-A3B-Thinking-2507",
+      "name": "Qwen3 30B A3B Thinking 2507",
+      "context": 262144,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.36,
+        "output": 1.3,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-07-31",
+      "knowledge": null
+    }
+  ]
+}

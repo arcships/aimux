@@ -1,0 +1,146 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "meta",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "muse-spark-1.1",
+      "name": "Muse Spark 1.1",
+      "context": 1048576,
+      "max_output": 131072,
+      "cost": {
+        "input": 1.25,
+        "output": 4.25,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-08",
+      "knowledge": null
+    },
+    {
+      "id": "muse-spark-1.2",
+      "name": "Muse Spark 1.2",
+      "context": 1048576,
+      "max_output": 131072,
+      "cost": {
+        "input": 1.25,
+        "output": 4.25,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "muse-spark-1.2-contributor",
+      "name": "Muse Spark 1.2 Contributor",
+      "context": 1048576,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.1,
+        "output": 0.2,
+        "cache_read": 0.002,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "muse-spark-1.3",
+      "name": "Muse Spark 1.3",
+      "context": 1048576,
+      "max_output": 131072,
+      "cost": {
+        "input": 1.25,
+        "output": 4.25,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-09-02",
+      "knowledge": null
+    },
+    {
+      "id": "muse-spark-1.3-contributor",
+      "name": "Muse Spark 1.3 Contributor",
+      "context": 1048576,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.1,
+        "output": 0.2,
+        "cache_read": 0.002,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-09-02",
+      "knowledge": null
+    }
+  ]
+}

@@ -1,0 +1,223 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "submodel",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "name": "Qwen3 235B A22B Instruct 2507",
+      "context": 262144,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.2,
+        "output": 0.3,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-08-23",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen/Qwen3-235B-A22B-Thinking-2507",
+      "name": "Qwen3 235B A22B Thinking 2507",
+      "context": 262144,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.2,
+        "output": 0.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-23",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+      "name": "Qwen3 Coder 480B A35B Instruct",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.2,
+        "output": 0.8,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-08-23",
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-R1-0528",
+      "name": "DeepSeek R1 0528",
+      "context": 75000,
+      "max_output": 163840,
+      "cost": {
+        "input": 0.5,
+        "output": 2.15,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-23",
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-V3-0324",
+      "name": "DeepSeek V3 0324",
+      "context": 75000,
+      "max_output": 163840,
+      "cost": {
+        "input": 0.2,
+        "output": 0.8,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-08-23",
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-V3.1",
+      "name": "DeepSeek V3.1",
+      "context": 75000,
+      "max_output": 163840,
+      "cost": {
+        "input": 0.2,
+        "output": 0.8,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-23",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "name": "GPT OSS 120B",
+      "context": 131072,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.1,
+        "output": 0.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-23",
+      "knowledge": null
+    },
+    {
+      "id": "zai-org/GLM-4.5-Air",
+      "name": "GLM 4.5 Air",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.1,
+        "output": 0.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-07-28",
+      "knowledge": null
+    },
+    {
+      "id": "zai-org/GLM-4.5-FP8",
+      "name": "GLM 4.5 FP8",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.2,
+        "output": 0.8,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-07-28",
+      "knowledge": null
+    }
+  ]
+}

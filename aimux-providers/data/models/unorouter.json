@@ -1,0 +1,586 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "unorouter",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "claude-haiku-4-5-20251001",
+      "name": "Claude Haiku 4.5",
+      "context": 200000,
+      "max_output": 64000,
+      "cost": {
+        "input": 1.2,
+        "output": 6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-10-15",
+      "knowledge": "2025-02-28"
+    },
+    {
+      "id": "claude-opus-4-8",
+      "name": "Claude Opus 4.8",
+      "context": 1000000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.425,
+        "output": 2.125,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-28",
+      "knowledge": "2026-01"
+    },
+    {
+      "id": "claude-sonnet-5",
+      "name": "Claude Sonnet 5",
+      "context": 1000000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.44,
+        "output": 7.2,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-30",
+      "knowledge": "2026-01-31"
+    },
+    {
+      "id": "deepseek-v4-flash",
+      "name": "DeepSeek V4 Flash",
+      "context": 1000000,
+      "max_output": 384000,
+      "cost": {
+        "input": 0.0625,
+        "output": 0.125,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "deepseek-v4-flash:free",
+      "name": "DeepSeek V4 Flash",
+      "context": 1000000,
+      "max_output": 384000,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "deepseek-v4-pro",
+      "name": "DeepSeek V4 Pro",
+      "context": 1000000,
+      "max_output": 384000,
+      "cost": {
+        "input": 0.8999,
+        "output": 1.7999,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "deepseek-v4-pro:free",
+      "name": "DeepSeek V4 Pro",
+      "context": 1000000,
+      "max_output": 384000,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "gemini-3.5-flash",
+      "name": "Gemini 3.5 Flash",
+      "context": 1048576,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.1857,
+        "output": 1.1142,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-19",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "gemma-4-31b-it:free",
+      "name": "Gemma 4 31B IT",
+      "context": 262144,
+      "max_output": 32768,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-02",
+      "knowledge": null
+    },
+    {
+      "id": "glm-4.5-flash:free",
+      "name": "GLM-4.5-Flash",
+      "context": 131072,
+      "max_output": 98304,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-07-28",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "glm-5.2",
+      "name": "GLM-5.2",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": 1.6001,
+        "output": 5.0288,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-13",
+      "knowledge": null
+    },
+    {
+      "id": "glm-5.2:free",
+      "name": "GLM-5.2",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-13",
+      "knowledge": null
+    },
+    {
+      "id": "gpt-5.2",
+      "name": "GPT-5.2",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.05,
+        "output": 8.4,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-11",
+      "knowledge": "2025-08-31"
+    },
+    {
+      "id": "gpt-5.4",
+      "name": "GPT-5.4",
+      "context": 1050000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.8,
+        "output": 10.8,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-05",
+      "knowledge": "2025-08-31"
+    },
+    {
+      "id": "gpt-5.4:free",
+      "name": "GPT-5.4",
+      "context": 1050000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-05",
+      "knowledge": "2025-08-31"
+    },
+    {
+      "id": "gpt-5.5",
+      "name": "GPT-5.5",
+      "context": 1050000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.1875,
+        "output": 1.125,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-23",
+      "knowledge": "2025-12-01"
+    },
+    {
+      "id": "gpt-5.5:free",
+      "name": "GPT-5.5",
+      "context": 1050000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-23",
+      "knowledge": "2025-12-01"
+    },
+    {
+      "id": "kimi-k2.6",
+      "name": "Kimi K2.6",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 1.2675,
+        "output": 5.3368,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-21",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "minimax-m2.7",
+      "name": "MiniMax-M2.7",
+      "context": 204800,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.819,
+        "output": 3.276,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-18",
+      "knowledge": null
+    },
+    {
+      "id": "minimax-m2.7:free",
+      "name": "MiniMax-M2.7",
+      "context": 204800,
+      "max_output": 131072,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-18",
+      "knowledge": null
+    },
+    {
+      "id": "nemotron-3-ultra-550b-a55b:free",
+      "name": "Nemotron 3 Ultra 550B A55B",
+      "context": 1000000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-04",
+      "knowledge": null
+    },
+    {
+      "id": "qwen3.5-397b-a17b:free",
+      "name": "Qwen3.5 397B-A17B",
+      "context": 262144,
+      "max_output": 65536,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-15",
+      "knowledge": null
+    },
+    {
+      "id": "step-3.7-flash:free",
+      "name": "Step 3.7 Flash",
+      "context": 256000,
+      "max_output": 256000,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-29",
+      "knowledge": "2026-03-01"
+    }
+  ]
+}

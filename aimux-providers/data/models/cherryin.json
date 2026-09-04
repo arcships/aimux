@@ -1,0 +1,3047 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "cherryin",
+  "source": "anya2a",
+  "models": [
+    {
+      "id": "BAAI/bge-reranker-v2-m3(free)",
+      "name": "BAAI/bge-reranker-v2-m3",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "agent/deepseek-v3.1-terminus(free)",
+      "name": "Agent: DeepSeek-V3.1-Terminus",
+      "context": 160000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "agent/deepseek-v3.2-exp(free)",
+      "name": "Agent: DeepSeek-V3.2-Exp",
+      "context": 163000,
+      "max_output": 163000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "agent/glm-4.6(free)",
+      "name": "Agent: glm-4.6",
+      "context": 204800,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "agent/kimi-k2-0905(free)",
+      "name": "Agent: Kimi-K2-0905",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "agent/kimi-k2-thinking(free)",
+      "name": "Agent: kimi-k2-thinking",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "agent/minimax-m2(free)",
+      "name": "Agent: minimax-m2",
+      "context": 204800,
+      "max_output": 192000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "agent/qwen3-coder-30b-a3b-instruct(free)",
+      "name": "Agent: qwen3-coder-30b-a3b-instruct",
+      "context": 2000000,
+      "max_output": 262000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "agent/qwen3-coder-480b-a35b-instruct(free)",
+      "name": "Agent: qwen3-coder-480b-a35b-instruct",
+      "context": 262000,
+      "max_output": 262000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "agent/qwen3-next-80b-a3b-instruct(free)",
+      "name": "Agent: qwen3-next-80b-a3b-instruct",
+      "context": 256000,
+      "max_output": 256000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "agent/qwen3-next-80b-a3b-thinking(free)",
+      "name": "Agent: qwen3-next-80b-a3b-thinking",
+      "context": 256000,
+      "max_output": 256000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-3.7-sonnet",
+      "name": "Anthropic: Claude 3.7 Sonnet",
+      "context": 200000,
+      "max_output": 64000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-02-19",
+      "knowledge": "2024-01"
+    },
+    {
+      "id": "anthropic/claude-haiku-4.5",
+      "name": "Anthropic: claude-haiku-4-5",
+      "context": 204800,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-4",
+      "name": "Anthropic: Claude Opus 4",
+      "context": 200000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-05-22",
+      "knowledge": "2025-03-31"
+    },
+    {
+      "id": "anthropic/claude-opus-4.1",
+      "name": "Anthropic: Claude Opus 4.1",
+      "context": 200000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": "2025-03-31"
+    },
+    {
+      "id": "anthropic/claude-opus-4.5",
+      "name": "Claude Opus 4.5",
+      "context": 200000,
+      "max_output": 64000,
+      "cost": {
+        "input": 5,
+        "output": 25,
+        "cache_read": 0.5,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-sonnet-4",
+      "name": "Anthropic: Claude Sonnet 4",
+      "context": 1000000,
+      "max_output": 64000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-05-22",
+      "knowledge": "2025-03-31"
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.5",
+      "name": "Anthropic: Claude Sonnet 4.5",
+      "context": 1000000,
+      "max_output": 64000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-09-29",
+      "knowledge": "2025-07-31"
+    },
+    {
+      "id": "bytedance/seed-oss-36b-instruct",
+      "name": "ByteDance: Seed OSS 36B Instruct",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-ocr(free)",
+      "name": "DeepSeek-OCR",
+      "context": 8000,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-r1-0528",
+      "name": "DeepSeek: R1 0528",
+      "context": 163840,
+      "max_output": 163840,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-v3.1",
+      "name": "DeepSeek V3.1",
+      "context": 128000,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-20",
+      "knowledge": "2024-07"
+    },
+    {
+      "id": "deepseek/deepseek-v3.1-fast",
+      "name": "DeepSeek: DeepSeek V3.1 (free)",
+      "context": 163800,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-v3.1-terminus",
+      "name": "DeepSeek: DeepSeek V3.1 Terminus",
+      "context": 163840,
+      "max_output": 163840,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-09-22",
+      "knowledge": "2025-07"
+    },
+    {
+      "id": "deepseek/deepseek-v3.1-terminus(free)",
+      "name": "DeepSeek-V3.1-Terminus",
+      "context": 160000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-v3.2-exp",
+      "name": "DeepSeek: DeepSeek V3.2 Exp",
+      "context": 163840,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-v3.2-exp(free)",
+      "name": "DeepSeek-V3.2-Exp",
+      "context": 163000,
+      "max_output": 163000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-flash",
+      "name": "Google: Gemini 2.5 Flash",
+      "context": 1048576,
+      "max_output": 65535,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-07-17",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "google/gemini-2.5-flash-image",
+      "name": "Google: Gemini 2.5 Flash Image (Nano Banana)",
+      "context": 32768,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "image",
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-flash-image-preview",
+      "name": "Google: Gemini 2.5 Flash Image Preview (Nano Banana)",
+      "context": 32768,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "image",
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "name": "Google: Gemini 2.5 Flash Lite",
+      "context": 1048576,
+      "max_output": 65535,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-pro",
+      "name": "Google: Gemini 2.5 Pro",
+      "context": 1048576,
+      "max_output": 65536,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-03-20",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "google/gemini-3-pro-preview",
+      "name": "Google: Gemini 3 Pro Preview",
+      "context": 1048576,
+      "max_output": 65536,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text",
+          "audio",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-19",
+      "knowledge": "2025-10"
+    },
+    {
+      "id": "inclusionai/ling-1t",
+      "name": "inclusionAI: Ling-1T",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "meituan/longcat-flash-chat",
+      "name": "Meituan: LongCat-Flash-Chat",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "minimax/MiniMax-M2(free)",
+      "name": "MiniMax: minimax-m2",
+      "context": 204800,
+      "max_output": 192000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "minimax/minimax-m2",
+      "name": "MiniMax: minimax-m2",
+      "context": 204800,
+      "max_output": 192000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "minimax/minimax-m2.1",
+      "name": "MiniMax: minimax-m2.1",
+      "context": 204800,
+      "max_output": 204800,
+      "cost": {
+        "input": 0.288,
+        "output": 1.152,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "minimax/minimax-m2.1-lightning",
+      "name": "MiniMax: minimax-m2.1-lightning",
+      "context": 204800,
+      "max_output": 204800,
+      "cost": {
+        "input": 0.144,
+        "output": 0.576,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "minimaxai/minimax-m1-80k",
+      "name": "MiniMax: MiniMax M1",
+      "context": 1000000,
+      "max_output": 40000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "moonshotai/kimi-k2-0905",
+      "name": "MoonshotAI: Kimi K2 0905",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-09-05",
+      "knowledge": "2024-10"
+    },
+    {
+      "id": "moonshotai/kimi-k2-0905(free)",
+      "name": "MoonshotAI: Kimi-K2-0905",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "moonshotai/kimi-k2-thinking",
+      "name": "MoonshotAI: kimi-k2-thinking",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "moonshotai/kimi-k2-thinking(free)",
+      "name": "MoonshotAI: kimi-k2-thinking",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "moonshotai/kimi-k2-thinking-turbo",
+      "name": "MoonshotAI: kimi-k2-thinking",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4.1",
+      "name": "OpenAI: GPT-4.1",
+      "context": 1047576,
+      "max_output": 32768,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04-14",
+      "knowledge": "2024-04"
+    },
+    {
+      "id": "openai/gpt-4.1-mini",
+      "name": "OpenAI: GPT-4.1 Mini",
+      "context": 1047576,
+      "max_output": 32768,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04-14",
+      "knowledge": "2024-04"
+    },
+    {
+      "id": "openai/gpt-4.1-nano",
+      "name": "OpenAI: GPT-4.1 Nano",
+      "context": 1047576,
+      "max_output": 32768,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4o",
+      "name": "OpenAI: gpt-4o",
+      "context": 128000,
+      "max_output": 16384,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "name": "OpenAI: gpt-4o-mini",
+      "context": 128000,
+      "max_output": 16384,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5",
+      "name": "OpenAI: GPT-5",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-07",
+      "knowledge": "2024-10-01"
+    },
+    {
+      "id": "openai/gpt-5-chat",
+      "name": "OpenAI: GPT-5 Chat",
+      "context": 128000,
+      "max_output": 16384,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2025-08-07",
+      "knowledge": "2024-09-30"
+    },
+    {
+      "id": "openai/gpt-5-mini",
+      "name": "OpenAI: GPT-5 Mini",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-07",
+      "knowledge": "2024-10-01"
+    },
+    {
+      "id": "openai/gpt-5-nano",
+      "name": "OpenAI: GPT-5 Nano",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-07",
+      "knowledge": "2024-10-01"
+    },
+    {
+      "id": "openai/gpt-5.1",
+      "name": "OpenAI: gpt-5.1",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.1-chat",
+      "name": "OpenAI: gpt-5.1",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.2",
+      "name": "OpenAI: gpt-5.2",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-image-1",
+      "name": "OpenAI: gpt-image-1",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "name": "OpenAI: gpt-oss-120b",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-oss-20b",
+      "name": "OpenAI: gpt-oss-20b",
+      "context": 131072,
+      "max_output": 32768,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "openai/o1",
+      "name": "OpenAI: o1",
+      "context": 200000,
+      "max_output": 100000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/o1-mini",
+      "name": "OpenAI: o1-mini",
+      "context": 128000,
+      "max_output": 65536,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/o3",
+      "name": "OpenAI: o3",
+      "context": 200000,
+      "max_output": 100000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/o4-mini",
+      "name": "OpenAI: o4 Mini",
+      "context": 200000,
+      "max_output": 100000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-04-16",
+      "knowledge": "2024-06"
+    },
+    {
+      "id": "qwen/qwen-image(free)",
+      "name": "Qwen: qwen-image",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen-image-edit(free)",
+      "name": "Qwen: qwen-image-edit",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen-image-edit-2509(free)",
+      "name": "Qwen: qwen-image-edit",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-235b-a22b-instruct-2507",
+      "name": "Qwen: Qwen3 235B A22B Instruct 2507",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-235b-a22b-instruct-2507(free)",
+      "name": "Qwen: qwen3-235b-a22b-instruct-2507",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-235b-a22b-thinking-2507",
+      "name": "Qwen: Qwen3 235B A22B Thinking 2507",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-07-25",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen/qwen3-235b-a22b-thinking-2507(free)",
+      "name": "Qwen: qwen3-235b-a22b-thinking-2507",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-30b-a3b-instruct-2507",
+      "name": "Qwen: Qwen3 30B A3B Instruct 2507",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-07-29",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen/qwen3-30b-a3b-instruct-2507(free)",
+      "name": "Qwen: qwen3-30b-a3b-instruct-2507",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-30b-a3b-thinking-2507",
+      "name": "Qwen: Qwen3 30B A3B Thinking 2507",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-30b-a3b-thinking-2507(free)",
+      "name": "Qwen: qwen3-30b-a3b-thinking-2507",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-8b",
+      "name": "Qwen: Qwen3 8B",
+      "context": 128000,
+      "max_output": 20000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-8b(free)",
+      "name": "Qwen: qwen3-8b",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-coder",
+      "name": "Qwen: Qwen3 Coder 480B A35B",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-07-23",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen/qwen3-coder-30b-a3b-instruct",
+      "name": "Qwen: Qwen3 Coder 30B A3B Instruct",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-coder-30b-a3b-instruct(free)",
+      "name": "Qwen: qwen3-coder-30b-a3b-instruct",
+      "context": 2000000,
+      "max_output": 262000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-coder-480b-a35b-instruct",
+      "name": "Qwen: Qwen3 Coder 480B A35B Instruct",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-coder-480b-a35b-instruct(free)",
+      "name": "Qwen: qwen3-coder-480b-a35b-instruct",
+      "context": 262000,
+      "max_output": 262000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-embedding-0.6b",
+      "name": "qwen/qwen3-embedding-0.6b",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-embedding-0.6b(free)",
+      "name": "Qwen: qwen3-embedding-0.6b",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-embedding-4b",
+      "name": "qwen/qwen3-embedding-4b",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-embedding-4b(free)",
+      "name": "Qwen: qwen3-embedding-4b",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-embedding-8b",
+      "name": "qwen/qwen3-embedding-8b",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-embedding-8b(free)",
+      "name": "Qwen: qwen3-embedding-8b",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-next-80b-a3b-instruct",
+      "name": "Qwen: Qwen3 Next 80B A3B Instruct",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-09-11",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen/qwen3-next-80b-a3b-thinking",
+      "name": "Qwen: Qwen3 Next 80B A3B Thinking",
+      "context": 262144,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-omni-30b-a3b-instruct",
+      "name": "Qwen: Qwen3 VL 30B A3B Instruct",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-omni-30b-a3b-thinking",
+      "name": "Qwen: Qwen3 VL 30B A3B Thinking",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-reranker-0.6b",
+      "name": "qwen/qwen3-reranker-0.6b",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-reranker-0.6b(free)",
+      "name": "Qwen: qwen3-reranker-0.6b",
+      "context": 16000,
+      "max_output": 8000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-reranker-4b",
+      "name": "qwen/qwen3-reranker-4b",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-reranker-4b(free)",
+      "name": "Qwen: qwen3-reranker-4b",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-reranker-8b",
+      "name": "qwen/qwen3-reranker-8b",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-reranker-8b(free)",
+      "name": "Qwen: qwen3-reranker-8b",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-235b-a22b-instruct",
+      "name": "Qwen: Qwen3 VL 235B A22B Instruct",
+      "context": 131072,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-235b-a22b-instruct(free)",
+      "name": "Qwen: qwen3-vl-235b-a22b-instruct",
+      "context": 131000,
+      "max_output": 33000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-235b-a22b-thinking",
+      "name": "Qwen: Qwen3 VL 235B A22B Thinking",
+      "context": 65536,
+      "max_output": 65536,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-235b-a22b-thinking(free)",
+      "name": "Qwen: qwen3-vl-235b-a22b-thinking",
+      "context": 131000,
+      "max_output": 33000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-30b-a3b-instruct",
+      "name": "Qwen: Qwen3 VL 30B A3B Instruct",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-30b-a3b-instruct(free)",
+      "name": "Qwen: qwen3-vl-30b-a3b-instruct",
+      "context": 128000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-30b-a3b-thinking",
+      "name": "Qwen: Qwen3 VL 30B A3B Thinking",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-30b-a3b-thinking(free)",
+      "name": "Qwen: qwen3-vl-30b-a3b-thinking",
+      "context": 128000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "tencent/hunyuan-mt-7b",
+      "name": "Tencent: Hunyuan A13B Instruct",
+      "context": 32768,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "tencent/hunyuan-mt-7b(free)",
+      "name": "Tencent: tencent/Hunyuan-MT-7B",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "x-ai/grok-2-image",
+      "name": "grok-2",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text",
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "x-ai/grok-3",
+      "name": "xAI: Grok 3",
+      "context": 131072,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-02-17",
+      "knowledge": "2024-11"
+    },
+    {
+      "id": "x-ai/grok-3-mini",
+      "name": "xAI: Grok 3 Mini",
+      "context": 131072,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-02-17",
+      "knowledge": "2024-11"
+    },
+    {
+      "id": "x-ai/grok-4",
+      "name": "xAI: Grok 4",
+      "context": 256000,
+      "max_output": 64000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-07-09",
+      "knowledge": "2025-07"
+    },
+    {
+      "id": "x-ai/grok-4-fast-non-reasoning",
+      "name": "x-ai/grok-4-fast-non-reasoning",
+      "context": 2000000,
+      "max_output": 2000000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "x-ai/grok-4-fast-reasoning",
+      "name": "x-ai/grok-4-fast-reasoning",
+      "context": 2000000,
+      "max_output": 2000000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "x-ai/grok-code-fast-1",
+      "name": "xAI: Grok Code Fast 1",
+      "context": 256000,
+      "max_output": 10000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-26",
+      "knowledge": "2025-08"
+    },
+    {
+      "id": "xiaomi/mimo-v2-flash",
+      "name": "Xiaomi: Mimo V2 Flash",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.1918,
+        "output": 0.5754,
+        "cache_read": 0.03836,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "xiaomimimo/mimo-v2-flash",
+      "name": "Xiaomi: Mimo V2 Flash",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.1918,
+        "output": 0.5754,
+        "cache_read": 0.03836,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-4.5",
+      "name": "Z.AI: GLM 4.5",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-07-28",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "z-ai/glm-4.5(free)",
+      "name": "Z.AI: glm-4.5",
+      "context": 131072,
+      "max_output": 98304,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-4.5-flash",
+      "name": "z-ai/glm-4.5-flash",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-4.5v",
+      "name": "Z.AI: GLM 4.5V",
+      "context": 65536,
+      "max_output": 16384,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-11",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "z-ai/glm-4.5v(free)",
+      "name": "Z.AI: glm-4.5v",
+      "context": 64000,
+      "max_output": 16384,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-4.6",
+      "name": "Z.AI: GLM 4.6",
+      "context": 202752,
+      "max_output": 202752,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-09-30",
+      "knowledge": "2025-09"
+    },
+    {
+      "id": "z-ai/glm-4.6(free)",
+      "name": "Z.AI: glm-4.6",
+      "context": 204800,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-4.7",
+      "name": "Z.AI: GLM 4.7",
+      "context": 200000,
+      "max_output": 200000,
+      "cost": {
+        "input": 0.273974,
+        "output": 1.095896,
+        "cache_read": 0.054795,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    }
+  ]
+}

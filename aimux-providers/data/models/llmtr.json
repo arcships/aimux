@@ -1,0 +1,811 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "llmtr",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "gemma-4",
+      "name": "Gemma 4",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 2,
+        "output": 5,
+        "cache_read": 0.5,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-02",
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "name": "Gemini 2.5 Flash-Lite",
+      "context": 1048576,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.1,
+        "output": 0.1,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-06-17",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "magibu-11b-v8",
+      "name": "Magibu 11B v8",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.1,
+        "output": 0.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2026-06-05",
+      "knowledge": null
+    },
+    {
+      "id": "medgemma-4b",
+      "name": "MedGemma 4B",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": 3,
+        "output": 5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2026-04-26",
+      "knowledge": null
+    },
+    {
+      "id": "meta/muse-spark-1.2-contributor",
+      "name": "Muse Spark 1.2 Contributor",
+      "context": 1048576,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.1,
+        "output": 0.2,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "mimo/mimo-v2.5",
+      "name": "MiMo-V2.5",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.14,
+        "output": 0.28,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-22",
+      "knowledge": "2024-12"
+    },
+    {
+      "id": "mimo/mimo-v2.5-pro",
+      "name": "MiMo-V2.5-Pro",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.435,
+        "output": 0.87,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-22",
+      "knowledge": "2024-12"
+    },
+    {
+      "id": "mistral/voxtral-small-latest",
+      "name": "Voxtral Small (latest)",
+      "context": 32000,
+      "max_output": 32000,
+      "cost": {
+        "input": 0.1,
+        "output": 0.3,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-07-15",
+      "knowledge": null
+    },
+    {
+      "id": "muse-glimmer-30b-tr",
+      "name": "Muse Glimmer 30B (TR)",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 2,
+        "output": 5,
+        "cache_read": 0.5,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-10",
+      "knowledge": "2026-01-04"
+    },
+    {
+      "id": "perplexity/sonar-deep-research",
+      "name": "Sonar Deep Research",
+      "context": 128000,
+      "max_output": 32768,
+      "cost": {
+        "input": 2,
+        "output": 8,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": "2025-02-01",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "poolside/laguna-xs-2.1",
+      "name": "Laguna XS 2.1",
+      "context": 262144,
+      "max_output": 32768,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-02",
+      "knowledge": null
+    },
+    {
+      "id": "publicai/apertus-70b-instruct",
+      "name": "Apertus 70B Instruct",
+      "context": 65536,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.82,
+        "output": 2.92,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-09-02",
+      "knowledge": "2025-09"
+    },
+    {
+      "id": "publicai/apertus-8b-instruct",
+      "name": "Apertus 8B Instruct",
+      "context": 65536,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.1,
+        "output": 0.2,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-09-02",
+      "knowledge": "2025-09"
+    },
+    {
+      "id": "qwen/qwen-flash",
+      "name": "Qwen Flash",
+      "context": 1000000,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.05,
+        "output": 0.4,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-07-28",
+      "knowledge": "2024-04"
+    },
+    {
+      "id": "qwen/qwen-plus",
+      "name": "Qwen Plus",
+      "context": 1000000,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.4,
+        "output": 1.2,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2024-01-25",
+      "knowledge": "2024-04"
+    },
+    {
+      "id": "qwen/qwen3-coder-flash",
+      "name": "Qwen3 Coder Flash",
+      "context": 1000000,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.3,
+        "output": 1.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-07-28",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen/qwen3-coder-plus",
+      "name": "Qwen3 Coder Plus",
+      "context": 1000000,
+      "max_output": 65536,
+      "cost": {
+        "input": 1,
+        "output": 5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-07-23",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen/qwen3-max",
+      "name": "Qwen3 Max",
+      "context": 256000,
+      "max_output": 65536,
+      "cost": {
+        "input": 1.2,
+        "output": 6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-09-23",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen/qwen3-vl-plus",
+      "name": "Qwen3-VL Plus",
+      "context": 256000,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.2,
+        "output": 1.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-09-23",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen/qwen3.5-397b-a17b",
+      "name": "Qwen3.5 397B-A17B",
+      "context": 256000,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.6,
+        "output": 3.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-15",
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.5-plus",
+      "name": "Qwen3.5 Plus",
+      "context": 1000000,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.4,
+        "output": 2.4,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-16",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen/qwen3.6-flash",
+      "name": "Qwen3.6 Flash",
+      "context": 1000000,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.25,
+        "output": 1.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-27",
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.6-plus",
+      "name": "Qwen3.6 Plus",
+      "context": 1000000,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.5,
+        "output": 3,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-02",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen/qwen3.7-plus",
+      "name": "Qwen3.7 Plus",
+      "context": 1000000,
+      "max_output": 64000,
+      "cost": {
+        "input": 0.4,
+        "output": 1.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-02",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen3-6-35b",
+      "name": "Qwen3.6 35B-A3B",
+      "context": 16384,
+      "max_output": 16384,
+      "cost": {
+        "input": 5,
+        "output": 10,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": "2026-04-17",
+      "knowledge": null
+    },
+    {
+      "id": "sakana/fugu-ultra",
+      "name": "Fugu Ultra",
+      "context": 1000000,
+      "max_output": 1000000,
+      "cost": {
+        "input": 5,
+        "output": 30,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-15",
+      "knowledge": null
+    },
+    {
+      "id": "thinkingmachines/inkling",
+      "name": "Inkling",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 1.87,
+        "output": 4.68,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-15",
+      "knowledge": null
+    },
+    {
+      "id": "thinkingmachines/inkling-small",
+      "name": "Inkling Small",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.58,
+        "output": 1.44,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-30",
+      "knowledge": null
+    },
+    {
+      "id": "trendyol-asure-12b",
+      "name": "Trendyol Asure 12B",
+      "context": 40960,
+      "max_output": 40960,
+      "cost": {
+        "input": 0.1,
+        "output": 0.5,
+        "cache_read": 0.025,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2026-02-19",
+      "knowledge": null
+    },
+    {
+      "id": "upstage/solar-pro2",
+      "name": "Solar Pro 2",
+      "context": 65536,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.15,
+        "output": 0.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-05-20",
+      "knowledge": "2025-03"
+    },
+    {
+      "id": "upstage/solar-pro3",
+      "name": "Solar Pro 3",
+      "context": 131072,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.15,
+        "output": 0.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-01",
+      "knowledge": "2025-03"
+    },
+    {
+      "id": "upstage/solar-pro4",
+      "name": "Solar Pro 4",
+      "context": 524288,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.03,
+        "output": 0.12,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-06",
+      "knowledge": "2026-02"
+    }
+  ]
+}

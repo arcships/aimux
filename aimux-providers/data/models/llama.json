@@ -1,0 +1,177 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "llama",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "cerebras-llama-4-maverick-17b-128e-instruct",
+      "name": "Cerebras-Llama-4-Maverick-17B-128E-Instruct",
+      "context": 128000,
+      "max_output": 4096,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04-05",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "cerebras-llama-4-scout-17b-16e-instruct",
+      "name": "Cerebras-Llama-4-Scout-17B-16E-Instruct",
+      "context": 128000,
+      "max_output": 4096,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04-05",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "groq-llama-4-maverick-17b-128e-instruct",
+      "name": "Groq-Llama-4-Maverick-17B-128E-Instruct",
+      "context": 128000,
+      "max_output": 4096,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04-05",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "llama-3.3-70b-instruct",
+      "name": "Llama-3.3-70B-Instruct",
+      "context": 128000,
+      "max_output": 4096,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-12-06",
+      "knowledge": "2023-12"
+    },
+    {
+      "id": "llama-3.3-8b-instruct",
+      "name": "Llama-3.3-8B-Instruct",
+      "context": 128000,
+      "max_output": 4096,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-12-06",
+      "knowledge": "2023-12"
+    },
+    {
+      "id": "llama-4-maverick-17b-128e-instruct-fp8",
+      "name": "Llama-4-Maverick-17B-128E-Instruct-FP8",
+      "context": 128000,
+      "max_output": 4096,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04-05",
+      "knowledge": "2024-08"
+    },
+    {
+      "id": "llama-4-scout-17b-16e-instruct-fp8",
+      "name": "Llama-4-Scout-17B-16E-Instruct-FP8",
+      "context": 128000,
+      "max_output": 4096,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04-05",
+      "knowledge": "2024-08"
+    }
+  ]
+}

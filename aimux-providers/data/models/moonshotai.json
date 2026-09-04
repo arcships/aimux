@@ -1,0 +1,257 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "moonshotai",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "kimi-k2-0711-preview",
+      "name": "Kimi K2 0711",
+      "context": 131072,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.6,
+        "output": 2.5,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-07-14",
+      "knowledge": "2024-10"
+    },
+    {
+      "id": "kimi-k2-0905-preview",
+      "name": "Kimi K2 0905",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.6,
+        "output": 2.5,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-09-05",
+      "knowledge": "2024-10"
+    },
+    {
+      "id": "kimi-k2-thinking",
+      "name": "Kimi K2 Thinking",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.6,
+        "output": 2.5,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-06",
+      "knowledge": "2024-08"
+    },
+    {
+      "id": "kimi-k2-thinking-turbo",
+      "name": "Kimi K2 Thinking Turbo",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 1.15,
+        "output": 8,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-06",
+      "knowledge": "2024-08"
+    },
+    {
+      "id": "kimi-k2-turbo-preview",
+      "name": "Kimi K2 Turbo",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 2.4,
+        "output": 10,
+        "cache_read": 0.6,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-09-05",
+      "knowledge": "2024-10"
+    },
+    {
+      "id": "kimi-k2.5",
+      "name": "Kimi K2.5",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.6,
+        "output": 3,
+        "cache_read": 0.1,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-01",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "kimi-k2.6",
+      "name": "Kimi K2.6",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.95,
+        "output": 4,
+        "cache_read": 0.16,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-21",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "kimi-k2.7-code",
+      "name": "Kimi K2.7 Code",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.95,
+        "output": 4,
+        "cache_read": 0.19,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-12",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "kimi-k2.7-code-highspeed",
+      "name": "Kimi K2.7 Code HighSpeed",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 1.9,
+        "output": 8,
+        "cache_read": 0.38,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-12",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "kimi-k3",
+      "name": "Kimi K3",
+      "context": 1048576,
+      "max_output": 131072,
+      "cost": {
+        "input": 3,
+        "output": 15,
+        "cache_read": 0.3,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-16",
+      "knowledge": null
+    }
+  ]
+}

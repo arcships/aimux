@@ -1,0 +1,189 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "trustedrouter",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "trustedrouter/auto",
+      "name": "Auto",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-01",
+      "knowledge": null
+    },
+    {
+      "id": "trustedrouter/cheap",
+      "name": "Cheap",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-01",
+      "knowledge": null
+    },
+    {
+      "id": "trustedrouter/e2e",
+      "name": "End-to-End Encrypted",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-01",
+      "knowledge": null
+    },
+    {
+      "id": "trustedrouter/fast",
+      "name": "Fast",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-01",
+      "knowledge": null
+    },
+    {
+      "id": "trustedrouter/synth",
+      "name": "Synth",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-20",
+      "knowledge": null
+    },
+    {
+      "id": "trustedrouter/synth-code",
+      "name": "Synth Code",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-20",
+      "knowledge": null
+    },
+    {
+      "id": "trustedrouter/zdr",
+      "name": "Zero Data Retention",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-01",
+      "knowledge": null
+    }
+  ]
+}

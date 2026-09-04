@@ -1,0 +1,521 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "neuralwatt",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "deepseek-v4-flash",
+      "name": "DeepSeek V4 Flash",
+      "context": 1048560,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.14,
+        "output": 0.28,
+        "cache_read": 0.028,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "deepseek-v4-flash-flex",
+      "name": "DeepSeek V4 Flash Flex",
+      "context": 1048560,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.091,
+        "output": 0.182,
+        "cache_read": 0.0182,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "deepseek-v4-pro",
+      "name": "DeepSeek V4 Pro",
+      "context": 1048560,
+      "max_output": 393216,
+      "cost": {
+        "input": 1,
+        "output": 3,
+        "cache_read": 0.1,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "gemma-4-31b",
+      "name": "Gemma 4 31B",
+      "context": 262128,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.144,
+        "output": 0.42,
+        "cache_read": 0.0144,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-02",
+      "knowledge": null
+    },
+    {
+      "id": "glm-5.2",
+      "name": "GLM 5.2",
+      "context": 1048560,
+      "max_output": 1048560,
+      "cost": {
+        "input": 1.45,
+        "output": 4.5,
+        "cache_read": 0.145,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-17",
+      "knowledge": null
+    },
+    {
+      "id": "glm-5.2-fast",
+      "name": "GLM 5.2 Fast",
+      "context": 1048560,
+      "max_output": 1048560,
+      "cost": {
+        "input": 1.45,
+        "output": 4.5,
+        "cache_read": 0.145,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-17",
+      "knowledge": null
+    },
+    {
+      "id": "glm-5.2-flex",
+      "name": "GLM 5.2 Flex",
+      "context": 1048560,
+      "max_output": 1048560,
+      "cost": {
+        "input": 0.9425,
+        "output": 2.925,
+        "cache_read": 0.09425,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-17",
+      "knowledge": null
+    },
+    {
+      "id": "glm-5.2-short",
+      "name": "GLM 5.2 Short",
+      "context": 199984,
+      "max_output": 32000,
+      "cost": {
+        "input": 1.45,
+        "output": 4.5,
+        "cache_read": 0.145,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-17",
+      "knowledge": null
+    },
+    {
+      "id": "glm-5.2-short-fast",
+      "name": "GLM 5.2 Short Fast",
+      "context": 199984,
+      "max_output": 32000,
+      "cost": {
+        "input": 1.45,
+        "output": 4.5,
+        "cache_read": 0.145,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-17",
+      "knowledge": null
+    },
+    {
+      "id": "glm-5.2-short-fast-flex",
+      "name": "GLM 5.2 Short Fast Flex",
+      "context": 199984,
+      "max_output": 32000,
+      "cost": {
+        "input": 0.9425,
+        "output": 2.925,
+        "cache_read": 0.09425,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-17",
+      "knowledge": null
+    },
+    {
+      "id": "glm-5.2-short-flex",
+      "name": "GLM 5.2 Short Flex",
+      "context": 199984,
+      "max_output": 32000,
+      "cost": {
+        "input": 0.9425,
+        "output": 2.925,
+        "cache_read": 0.09425,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-17",
+      "knowledge": null
+    },
+    {
+      "id": "glm-5.3",
+      "name": "GLM 5.3",
+      "context": 1048560,
+      "max_output": 1048560,
+      "cost": {
+        "input": 1.45,
+        "output": 4.5,
+        "cache_read": 0.145,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-14",
+      "knowledge": null
+    },
+    {
+      "id": "kimi-k2.7-code",
+      "name": "Kimi K2.7 Code",
+      "context": 262128,
+      "max_output": 262128,
+      "cost": {
+        "input": 0.95,
+        "output": 4,
+        "cache_read": 0.095,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-12",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "kimi-k2.7-code-fast",
+      "name": "Kimi K2.7 Code Fast",
+      "context": 262128,
+      "max_output": 262128,
+      "cost": {
+        "input": 0.95,
+        "output": 4,
+        "cache_read": 0.095,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-12",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "kimi-k2.7-code-flex",
+      "name": "Kimi K2.7 Code Flex",
+      "context": 262128,
+      "max_output": 262128,
+      "cost": {
+        "input": 0.6175,
+        "output": 2.6,
+        "cache_read": 0.06175,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-12",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "kimi-k3",
+      "name": "Kimi K3",
+      "context": 1048560,
+      "max_output": 1048560,
+      "cost": {
+        "input": 3,
+        "output": 15,
+        "cache_read": 0.3,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-16",
+      "knowledge": null
+    },
+    {
+      "id": "kimi-k3-fast",
+      "name": "Kimi K3 Fast",
+      "context": 1048560,
+      "max_output": 1048560,
+      "cost": {
+        "input": 3,
+        "output": 15,
+        "cache_read": 0.3,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-07-16",
+      "knowledge": null
+    },
+    {
+      "id": "kimi-k3-flex",
+      "name": "Kimi K3 Flex",
+      "context": 1048560,
+      "max_output": 1048560,
+      "cost": {
+        "input": 1.95,
+        "output": 9.75,
+        "cache_read": 0.195,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-16",
+      "knowledge": null
+    },
+    {
+      "id": "qwen-3.8-27b",
+      "name": "Qwen3.8 27B",
+      "context": 262128,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.45,
+        "output": 3.2,
+        "cache_read": 0.25,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-14",
+      "knowledge": null
+    },
+    {
+      "id": "qwen3.6-35b",
+      "name": "Qwen3.6 35B",
+      "context": 131056,
+      "max_output": 131056,
+      "cost": {
+        "input": 0.29,
+        "output": 1.15,
+        "cache_read": 0.029,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-17",
+      "knowledge": null
+    },
+    {
+      "id": "qwen3.6-35b-fast",
+      "name": "Qwen3.6 35B Fast",
+      "context": 131056,
+      "max_output": 131056,
+      "cost": {
+        "input": 0.29,
+        "output": 1.15,
+        "cache_read": 0.029,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-04-01",
+      "knowledge": null
+    }
+  ]
+}

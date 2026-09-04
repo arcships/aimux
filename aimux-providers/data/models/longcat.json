@@ -1,0 +1,31 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "longcat",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "LongCat-2.0",
+      "name": "LongCat-2.0",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.75,
+        "output": 2.95,
+        "cache_read": 0.015,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-30",
+      "knowledge": null
+    }
+  ]
+}

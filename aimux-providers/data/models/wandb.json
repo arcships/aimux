@@ -1,0 +1,639 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "wandb",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "JetBrains/Mellum2-12B-A2.5B-Instruct",
+      "name": "Mellum2 12B A2.5B",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.05,
+        "output": 0.1,
+        "cache_read": 0.05,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-06-01",
+      "knowledge": null
+    },
+    {
+      "id": "MiniMaxAI/MiniMax-M3",
+      "name": "MiniMax M3",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.23,
+        "output": 0.96,
+        "cache_read": 0.05,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-12",
+      "knowledge": null
+    },
+    {
+      "id": "OpenPipe/Qwen3-14B-Instruct",
+      "name": "Qwen3 14B Instruct",
+      "context": 32768,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.05,
+        "output": 0.22,
+        "cache_read": 0.05,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04-29",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+      "name": "Qwen3 30B A3B Instruct 2507",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.1,
+        "output": 0.3,
+        "cache_read": 0.1,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-07-29",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen/Qwen3.5-35B-A3B",
+      "name": "Qwen3.5-35B-A3B",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.25,
+        "output": 1.25,
+        "cache_read": 0.25,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-24",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen/Qwen3.6-27B",
+      "name": "Qwen3.6 27B",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.6,
+        "output": 3.6,
+        "cache_read": 0.12,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-22",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen/Qwen3.6-35B-A3B",
+      "name": "Qwen3.6 35B A3B",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.25,
+        "output": 1.25,
+        "cache_read": 0.25,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-15",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen/Qwen3.8-27B",
+      "name": "Qwen3.8 27B",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.4,
+        "output": 3,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-14",
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-V3.1",
+      "name": "DeepSeek V3.1",
+      "context": 161000,
+      "max_output": 161000,
+      "cost": {
+        "input": 0.55,
+        "output": 1.65,
+        "cache_read": 0.55,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-08-21",
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-V4-Flash",
+      "name": "DeepSeek V4 Flash",
+      "context": 1048576,
+      "max_output": 1048576,
+      "cost": {
+        "input": 0.14,
+        "output": 0.28,
+        "cache_read": 0.07,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-V4-Flash-0731",
+      "name": "DeepSeek V4 Flash 0731",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.13,
+        "output": 0.28,
+        "cache_read": 0.07,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-31",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-V4-Pro",
+      "name": "DeepSeek V4 Pro",
+      "context": 1048576,
+      "max_output": 1048576,
+      "cost": {
+        "input": 1.15,
+        "output": 2.55,
+        "cache_read": 0.2,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-V4-Pro-0813",
+      "name": "DeepSeek V4 Pro 0813",
+      "context": 1048576,
+      "max_output": 1048576,
+      "cost": {
+        "input": 1.31,
+        "output": 3.96,
+        "cache_read": 0.044,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-13",
+      "knowledge": null
+    },
+    {
+      "id": "google/gemma-4-31B-it",
+      "name": "Gemma 4 31B",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.1,
+        "output": 0.34,
+        "cache_read": 0.1,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-02",
+      "knowledge": null
+    },
+    {
+      "id": "ibm-granite/granite-4.1-8b",
+      "name": "Granite 4.1 8B",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.05,
+        "output": 0.1,
+        "cache_read": 0.05,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-04-29",
+      "knowledge": null
+    },
+    {
+      "id": "ibm-granite/granite-4.2-8b",
+      "name": "Granite 4.2 8B",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.1,
+        "output": 0.15,
+        "cache_read": 0.05,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-24",
+      "knowledge": null
+    },
+    {
+      "id": "meta-llama/Llama-3.1-70B-Instruct",
+      "name": "Llama 3.1 70B",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.8,
+        "output": 0.8,
+        "cache_read": 0.8,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-07-23",
+      "knowledge": null
+    },
+    {
+      "id": "meta-llama/Llama-3.1-8B-Instruct",
+      "name": "Llama 3.1 8B",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.22,
+        "output": 0.22,
+        "cache_read": 0.22,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-07-23",
+      "knowledge": "2023-12"
+    },
+    {
+      "id": "meta-llama/Llama-3.3-70B-Instruct",
+      "name": "Llama 3.3 70B",
+      "context": 128000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.71,
+        "output": 0.71,
+        "cache_read": 0.71,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-12-01",
+      "knowledge": "2023-12"
+    },
+    {
+      "id": "moonshotai/Kimi-K2.6",
+      "name": "Kimi K2.6",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.65,
+        "output": 3.41,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-20",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "moonshotai/Kimi-K2.7-Code",
+      "name": "Kimi K2.7 Code",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.71,
+        "output": 3.5,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-12",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B",
+      "name": "Nemotron 3 Ultra",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.75,
+        "output": 2.75,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-04",
+      "knowledge": null
+    },
+    {
+      "id": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B",
+      "name": "Nemotron 3.5 Lightning",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.1,
+        "output": 0.25,
+        "cache_read": 0.05,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-11",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "name": "gpt-oss-120b",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.03,
+        "output": 0.17,
+        "cache_read": 0.03,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-oss-20b",
+      "name": "gpt-oss-20b",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.03,
+        "output": 0.13,
+        "cache_read": 0.03,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "zai-org/GLM-5.2",
+      "name": "GLM 5.2",
+      "context": 1048576,
+      "max_output": 1048576,
+      "cost": {
+        "input": 0.76,
+        "output": 2.42,
+        "cache_read": 0.14,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-16",
+      "knowledge": null
+    }
+  ]
+}

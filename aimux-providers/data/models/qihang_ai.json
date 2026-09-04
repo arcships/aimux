@@ -1,0 +1,242 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "qihang_ai",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "claude-haiku-4-5-20251001",
+      "name": "Claude Haiku 4.5",
+      "context": 200000,
+      "max_output": 64000,
+      "cost": {
+        "input": 0.14,
+        "output": 0.71,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-10-01",
+      "knowledge": "2025-07-31"
+    },
+    {
+      "id": "claude-opus-4-5-20251101",
+      "name": "Claude Opus 4.5",
+      "context": 200000,
+      "max_output": 32000,
+      "cost": {
+        "input": 0.71,
+        "output": 3.57,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-01",
+      "knowledge": "2025-03"
+    },
+    {
+      "id": "claude-sonnet-4-5-20250929",
+      "name": "Claude Sonnet 4.5",
+      "context": 200000,
+      "max_output": 64000,
+      "cost": {
+        "input": 0.43,
+        "output": 2.14,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-09-29",
+      "knowledge": "2025-07-31"
+    },
+    {
+      "id": "gemini-2.5-flash",
+      "name": "Gemini 2.5 Flash",
+      "context": 1048576,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.09,
+        "output": 0.71,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-17",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "gemini-3-flash-preview",
+      "name": "Gemini 3 Flash Preview",
+      "context": 1048576,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.07,
+        "output": 0.43,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-17",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "gemini-3-pro-preview",
+      "name": "Gemini 3 Pro Preview",
+      "context": 1000000,
+      "max_output": 65000,
+      "cost": {
+        "input": 0.57,
+        "output": 3.43,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-19",
+      "knowledge": "2025-11"
+    },
+    {
+      "id": "gpt-5-mini",
+      "name": "GPT-5-Mini",
+      "context": 200000,
+      "max_output": 64000,
+      "cost": {
+        "input": 0.04,
+        "output": 0.29,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-09-15",
+      "knowledge": "2024-09-30"
+    },
+    {
+      "id": "gpt-5.2",
+      "name": "GPT-5.2",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.25,
+        "output": 2,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-11",
+      "knowledge": "2025-08-31"
+    },
+    {
+      "id": "gpt-5.2-codex",
+      "name": "GPT-5.2 Codex",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.14,
+        "output": 1.14,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-11",
+      "knowledge": "2025-08-31"
+    }
+  ]
+}

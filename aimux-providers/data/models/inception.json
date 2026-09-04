@@ -1,0 +1,55 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "inception",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "mercury-2",
+      "name": "Mercury 2",
+      "context": 128000,
+      "max_output": 50000,
+      "cost": {
+        "input": 0.25,
+        "output": 0.75,
+        "cache_read": 0.025,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-24",
+      "knowledge": "2025-01-01"
+    },
+    {
+      "id": "mercury-edit-2",
+      "name": "Mercury Edit 2",
+      "context": 128000,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.25,
+        "output": 0.75,
+        "cache_read": 0.025,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": "2026-03-30",
+      "knowledge": null
+    }
+  ]
+}

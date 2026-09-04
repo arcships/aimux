@@ -1,0 +1,129 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "atomic_chat",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "Meta-Llama-3_1-8B-Instruct-GGUF",
+      "name": "Meta Llama 3.1 8B Instruct (GGUF)",
+      "context": 131072,
+      "max_output": 4096,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-07-23",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen3_5-9B-MLX-4bit",
+      "name": "Qwen 3.5 9B (MLX 4-bit)",
+      "context": 32768,
+      "max_output": 8192,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-03-05",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen3_5-9B-Q4_K_M",
+      "name": "Qwen 3.5 9B (Q4_K_M)",
+      "context": 32768,
+      "max_output": 8192,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-03-05",
+      "knowledge": null
+    },
+    {
+      "id": "gemma-4-E4B-it-IQ4_XS",
+      "name": "Gemma 4 E4B Instruct (IQ4_XS)",
+      "context": 32768,
+      "max_output": 8192,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2026-04-02",
+      "knowledge": null
+    },
+    {
+      "id": "gemma-4-E4B-it-MLX-4bit",
+      "name": "Gemma 4 E4B Instruct (MLX 4-bit)",
+      "context": 32768,
+      "max_output": 8192,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2026-04-02",
+      "knowledge": null
+    }
+  ]
+}

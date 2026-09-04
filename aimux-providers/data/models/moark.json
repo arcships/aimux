@@ -1,0 +1,55 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "moark",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "GLM-4.7",
+      "name": "GLM-4.7",
+      "context": 204800,
+      "max_output": 131072,
+      "cost": {
+        "input": 3.5,
+        "output": 14,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-22",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "MiniMax-M2.1",
+      "name": "MiniMax-M2.1",
+      "context": 204800,
+      "max_output": 131072,
+      "cost": {
+        "input": 2.1,
+        "output": 8.4,
+        "cache_read": 2.1,
+        "cache_write": 8.4
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-23",
+      "knowledge": null
+    }
+  ]
+}

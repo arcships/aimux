@@ -1,0 +1,178 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "privatemode_ai",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "deepseek-ocr-2",
+      "name": "DeepSeek OCR 2",
+      "context": 8192,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.8897,
+        "output": 1.4675,
+        "cache_read": 0.0924,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2026-01-27",
+      "knowledge": null
+    },
+    {
+      "id": "gpt-oss-120b",
+      "name": "gpt-oss-120b",
+      "context": 128000,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.4969,
+        "output": 1.9644,
+        "cache_read": 0.0462,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "kimi-k2.6",
+      "name": "Kimi K2.6",
+      "context": 256000,
+      "max_output": 262144,
+      "cost": {
+        "input": 1.791,
+        "output": 8.9436,
+        "cache_read": 0.1733,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-21",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "kimi-latest",
+      "name": "Kimi (latest)",
+      "context": 256000,
+      "max_output": 262144,
+      "cost": {
+        "input": 1.791,
+        "output": 8.9436,
+        "cache_read": 0.1733,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-21",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "qwen3-embedding-4b",
+      "name": "Qwen3-Embedding 4B",
+      "context": 32000,
+      "max_output": 2560,
+      "cost": {
+        "input": 0.1502,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2025-06-06",
+      "knowledge": "2025-06"
+    },
+    {
+      "id": "voxtral-mini-3b",
+      "name": "Voxtral Mini 3B",
+      "context": 32000,
+      "max_output": 32000,
+      "cost": {
+        "input": 0.00462,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2025-07",
+      "knowledge": null
+    },
+    {
+      "id": "whisper-large-v3",
+      "name": "Whisper large-v3",
+      "context": 448,
+      "max_output": 4096,
+      "cost": {
+        "input": 0.01618,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2024-10-01",
+      "knowledge": null
+    }
+  ]
+}

@@ -1,0 +1,1045 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "doubao",
+  "source": "anya2a",
+  "models": [
+    {
+      "id": "deepseek-v4-flash-260425",
+      "name": "deepseek-v4-flash-260425",
+      "context": 1024000,
+      "max_output": 384000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-v4-flash-ga-260731",
+      "name": "deepseek-v4-flash-ga-260731",
+      "context": 1024000,
+      "max_output": 384000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-v4-pro-260425",
+      "name": "deepseek-v4-pro-260425",
+      "context": 1024000,
+      "max_output": 384000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-v4-pro-ga-260813",
+      "name": "deepseek-v4-pro-ga-260813",
+      "context": 1024000,
+      "max_output": 384000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-1-5-lite-32k-250115",
+      "name": "doubao-1-5-lite-32k-250115",
+      "context": 32000,
+      "max_output": 12000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-1-5-pro-32k-250115",
+      "name": "doubao-1-5-pro-32k-250115",
+      "context": 128000,
+      "max_output": 16000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-1-5-pro-32k-character-250715",
+      "name": "doubao-1-5-pro-32k-character-250715",
+      "context": 32000,
+      "max_output": 12000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-1-5-vision-pro-32k-250115",
+      "name": "doubao-1-5-vision-pro-32k-250115",
+      "context": 32000,
+      "max_output": 12000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-embedding-vision-250615",
+      "name": "doubao-embedding-vision-250615",
+      "context": 128000,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text",
+          "video"
+        ],
+        "output": [
+          "embedding"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-embedding-vision-251215",
+      "name": "doubao-embedding-vision-251215",
+      "context": 128000,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text",
+          "video"
+        ],
+        "output": [
+          "embedding"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-1-6-250615",
+      "name": "doubao-seed-1-6-250615",
+      "context": 256000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-1-6-251015",
+      "name": "doubao-seed-1-6-251015",
+      "context": 256000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-1-6-flash-250615",
+      "name": "doubao-seed-1-6-flash-250615",
+      "context": 256000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-1-6-flash-250828",
+      "name": "doubao-seed-1-6-flash-250828",
+      "context": 256000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-1-6-vision-250815",
+      "name": "doubao-seed-1-6-vision-250815",
+      "context": 256000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-1-8-251228",
+      "name": "doubao-seed-1-8-251228",
+      "context": 256000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-2-0-code-preview-260215",
+      "name": "doubao-seed-2-0-code-preview-260215",
+      "context": 256000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-2-0-lite-260215",
+      "name": "doubao-seed-2-0-lite-260215",
+      "context": 256000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-2-0-lite-260428",
+      "name": "doubao-seed-2-0-lite-260428",
+      "context": 256000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-2-0-mini-260215",
+      "name": "doubao-seed-2-0-mini-260215",
+      "context": 256000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-2-0-mini-260428",
+      "name": "doubao-seed-2-0-mini-260428",
+      "context": 256000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-2-0-pro-260215",
+      "name": "doubao-seed-2-0-pro-260215",
+      "context": 256000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-2-1-pro-260628",
+      "name": "doubao-seed-2-1-pro-260628",
+      "context": 256000,
+      "max_output": 256000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-2-1-turbo-260628",
+      "name": "doubao-seed-2-1-turbo-260628",
+      "context": 256000,
+      "max_output": 256000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-character-251128",
+      "name": "doubao-seed-character-251128",
+      "context": 128000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-character-260628",
+      "name": "doubao-seed-character-260628",
+      "context": 128000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-code-preview-251028",
+      "name": "doubao-seed-code-preview-251028",
+      "context": 256000,
+      "max_output": 32000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-evolving",
+      "name": "doubao-seed-evolving",
+      "context": 1024000,
+      "max_output": 256000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seed-translation-250915",
+      "name": "doubao-seed-translation-250915",
+      "context": 4000,
+      "max_output": 3000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seedance-1-0-pro-250528",
+      "name": "doubao-seedance-1-0-pro-250528",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seedance-1-0-pro-fast-251015",
+      "name": "doubao-seedance-1-0-pro-fast-251015",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seedance-1-5-pro-251215",
+      "name": "doubao-seedance-1-5-pro-251215",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seedance-2-0-260128",
+      "name": "doubao-seedance-2-0-260128",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "video"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seedance-2-0-fast-260128",
+      "name": "doubao-seedance-2-0-fast-260128",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "video"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seedance-2-0-mini-260615",
+      "name": "doubao-seedance-2-0-mini-260615",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "video"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seedance-2-5-260628",
+      "name": "doubao-seedance-2-5-260628",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "video"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seedream-4-0-250828",
+      "name": "doubao-seedream-4-0-250828",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seedream-4-5-251128",
+      "name": "doubao-seedream-4-5-251128",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seedream-5-0-260128",
+      "name": "doubao-seedream-5-0-260128",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "doubao-seedream-5-0-pro-260628",
+      "name": "doubao-seedream-5-0-pro-260628",
+      "context": null,
+      "max_output": null,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "glm-4-7-251222",
+      "name": "glm-4-7-251222",
+      "context": 200000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "glm-5-2-260617",
+      "name": "glm-5-2-260617",
+      "context": 1024000,
+      "max_output": 128000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": null,
+      "knowledge": null
+    }
+  ]
+}

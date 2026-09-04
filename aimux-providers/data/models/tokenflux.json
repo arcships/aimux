@@ -1,0 +1,4087 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "tokenflux",
+  "source": "anya2a",
+  "models": [
+    {
+      "id": "anthropic/claude-3-haiku",
+      "name": "anthropic/claude-3-haiku",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-fable-5",
+      "name": "anthropic/claude-fable-5",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-fable-5.1",
+      "name": "anthropic/claude-fable-5.1",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-haiku-4.5",
+      "name": "anthropic/claude-haiku-4.5",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-haiku-4.5-20251001",
+      "name": "anthropic/claude-haiku-4.5-20251001",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-4",
+      "name": "anthropic/claude-opus-4",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-4.1",
+      "name": "anthropic/claude-opus-4.1",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-4.5",
+      "name": "anthropic/claude-opus-4.5",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-4.6",
+      "name": "anthropic/claude-opus-4.6",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-4.7",
+      "name": "anthropic/claude-opus-4.7",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-4.8",
+      "name": "anthropic/claude-opus-4.8",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-5",
+      "name": "anthropic/claude-opus-5",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-sonnet-4",
+      "name": "anthropic/claude-sonnet-4",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.5",
+      "name": "anthropic/claude-sonnet-4.5",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.6",
+      "name": "anthropic/claude-sonnet-4.6",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-sonnet-5",
+      "name": "anthropic/claude-sonnet-5",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-chat",
+      "name": "deepseek/deepseek-chat",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-chat-v3-0324",
+      "name": "deepseek/deepseek-chat-v3-0324",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-chat-v3.1",
+      "name": "deepseek/deepseek-chat-v3.1",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-r1",
+      "name": "deepseek/deepseek-r1",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-r1-0528",
+      "name": "deepseek/deepseek-r1-0528",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-v3.1-terminus",
+      "name": "deepseek/deepseek-v3.1-terminus",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-v3.2",
+      "name": "deepseek/deepseek-v3.2",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-v3.2-exp",
+      "name": "deepseek/deepseek-v3.2-exp",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "name": "deepseek/deepseek-v4-flash",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-v4-flash-0731",
+      "name": "deepseek/deepseek-v4-flash-0731",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-v4-flash-vision-exp",
+      "name": "deepseek/deepseek-v4-flash-vision-exp",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-v4-pro",
+      "name": "deepseek/deepseek-v4-pro",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "deepseek/deepseek-v4-pro-0813",
+      "name": "deepseek/deepseek-v4-pro-0813",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-flash",
+      "name": "google/gemini-2.5-flash",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-flash-image",
+      "name": "google/gemini-2.5-flash-image",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "name": "google/gemini-2.5-flash-lite",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-pro",
+      "name": "google/gemini-2.5-pro",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-pro-preview",
+      "name": "google/gemini-2.5-pro-preview",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-pro-preview-05-06",
+      "name": "google/gemini-2.5-pro-preview-05-06",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3-flash-preview",
+      "name": "google/gemini-3-flash-preview",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3-pro-image",
+      "name": "google/gemini-3-pro-image",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3-pro-image-preview",
+      "name": "google/gemini-3-pro-image-preview",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.1-flash-image",
+      "name": "google/gemini-3.1-flash-image",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.1-flash-image-preview",
+      "name": "google/gemini-3.1-flash-image-preview",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.1-flash-lite",
+      "name": "google/gemini-3.1-flash-lite",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.1-flash-lite-image",
+      "name": "google/gemini-3.1-flash-lite-image",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.1-flash-lite-preview",
+      "name": "google/gemini-3.1-flash-lite-preview",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.1-pro-preview",
+      "name": "google/gemini-3.1-pro-preview",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.1-pro-preview-customtools",
+      "name": "google/gemini-3.1-pro-preview-customtools",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.5-flash",
+      "name": "google/gemini-3.5-flash",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.5-flash-lite",
+      "name": "google/gemini-3.5-flash-lite",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.6-flash",
+      "name": "google/gemini-3.6-flash",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.7-flash",
+      "name": "google/gemini-3.7-flash",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.8-flash",
+      "name": "google/gemini-3.8-flash",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemma-2-27b-it",
+      "name": "google/gemma-2-27b-it",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemma-3-12b-it",
+      "name": "google/gemma-3-12b-it",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemma-3-27b-it",
+      "name": "google/gemma-3-27b-it",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemma-3-4b-it",
+      "name": "google/gemma-3-4b-it",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemma-4-26b-a4b-it",
+      "name": "google/gemma-4-26b-a4b-it",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/gemma-4-31b-it",
+      "name": "google/gemma-4-31b-it",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/lyria-3-clip-preview",
+      "name": "google/lyria-3-clip-preview",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "google/lyria-3-pro-preview",
+      "name": "google/lyria-3-pro-preview",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "minimax/minimax-01",
+      "name": "minimax/minimax-01",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "minimax/minimax-m1",
+      "name": "minimax/minimax-m1",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "minimax/minimax-m2",
+      "name": "minimax/minimax-m2",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "minimax/minimax-m2-her",
+      "name": "minimax/minimax-m2-her",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "minimax/minimax-m2.1",
+      "name": "minimax/minimax-m2.1",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "minimax/minimax-m2.5",
+      "name": "minimax/minimax-m2.5",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "minimax/minimax-m2.7",
+      "name": "minimax/minimax-m2.7",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "minimax/minimax-m3",
+      "name": "minimax/minimax-m3",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "moonshotai/kimi-k2",
+      "name": "moonshotai/kimi-k2",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "moonshotai/kimi-k2-0905",
+      "name": "moonshotai/kimi-k2-0905",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "moonshotai/kimi-k2-thinking",
+      "name": "moonshotai/kimi-k2-thinking",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "moonshotai/kimi-k2.5",
+      "name": "moonshotai/kimi-k2.5",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "moonshotai/kimi-k2.6",
+      "name": "moonshotai/kimi-k2.6",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "moonshotai/kimi-k2.7-code",
+      "name": "moonshotai/kimi-k2.7-code",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "moonshotai/kimi-k3",
+      "name": "moonshotai/kimi-k3",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "morph/morph-v3-fast",
+      "name": "morph/morph-v3-fast",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "morph/morph-v3-large",
+      "name": "morph/morph-v3-large",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-3.5-turbo",
+      "name": "openai/gpt-3.5-turbo",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-3.5-turbo-0613",
+      "name": "openai/gpt-3.5-turbo-0613",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-3.5-turbo-16k",
+      "name": "openai/gpt-3.5-turbo-16k",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-3.5-turbo-instruct",
+      "name": "openai/gpt-3.5-turbo-instruct",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4",
+      "name": "openai/gpt-4",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4-turbo",
+      "name": "openai/gpt-4-turbo",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4-turbo-preview",
+      "name": "openai/gpt-4-turbo-preview",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4.1",
+      "name": "openai/gpt-4.1",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4.1-mini",
+      "name": "openai/gpt-4.1-mini",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4.1-nano",
+      "name": "openai/gpt-4.1-nano",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4o",
+      "name": "openai/gpt-4o",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4o-2024-05-13",
+      "name": "openai/gpt-4o-2024-05-13",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4o-2024-08-06",
+      "name": "openai/gpt-4o-2024-08-06",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4o-2024-11-20",
+      "name": "openai/gpt-4o-2024-11-20",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "name": "openai/gpt-4o-mini",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4o-mini-2024-07-18",
+      "name": "openai/gpt-4o-mini-2024-07-18",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5",
+      "name": "openai/gpt-5",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5-image",
+      "name": "openai/gpt-5-image",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5-image-mini",
+      "name": "openai/gpt-5-image-mini",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5-mini",
+      "name": "openai/gpt-5-mini",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5-nano",
+      "name": "openai/gpt-5-nano",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5-pro",
+      "name": "openai/gpt-5-pro",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.1",
+      "name": "openai/gpt-5.1",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.1-codex",
+      "name": "openai/gpt-5.1-codex",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.1-codex-max",
+      "name": "openai/gpt-5.1-codex-max",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.1-codex-mini",
+      "name": "openai/gpt-5.1-codex-mini",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.2",
+      "name": "openai/gpt-5.2",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.2-chat",
+      "name": "openai/gpt-5.2-chat",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.2-codex",
+      "name": "openai/gpt-5.2-codex",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.2-pro",
+      "name": "openai/gpt-5.2-pro",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.3-codex",
+      "name": "openai/gpt-5.3-codex",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.4",
+      "name": "openai/gpt-5.4",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.4-image-2",
+      "name": "openai/gpt-5.4-image-2",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.4-mini",
+      "name": "openai/gpt-5.4-mini",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.4-nano",
+      "name": "openai/gpt-5.4-nano",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.4-pro",
+      "name": "openai/gpt-5.4-pro",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.5",
+      "name": "openai/gpt-5.5",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.5-pro",
+      "name": "openai/gpt-5.5-pro",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.6-luna",
+      "name": "openai/gpt-5.6-luna",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.6-luna-pro",
+      "name": "openai/gpt-5.6-luna-pro",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.6-sol",
+      "name": "openai/gpt-5.6-sol",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.6-sol-pro",
+      "name": "openai/gpt-5.6-sol-pro",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.6-terra",
+      "name": "openai/gpt-5.6-terra",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.6-terra-pro",
+      "name": "openai/gpt-5.6-terra-pro",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-audio",
+      "name": "openai/gpt-audio",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-audio-mini",
+      "name": "openai/gpt-audio-mini",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-chat-latest",
+      "name": "openai/gpt-chat-latest",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "name": "openai/gpt-oss-120b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-oss-20b",
+      "name": "openai/gpt-oss-20b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-oss-safeguard-20b",
+      "name": "openai/gpt-oss-safeguard-20b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/o1",
+      "name": "openai/o1",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/o1-pro",
+      "name": "openai/o1-pro",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/o3",
+      "name": "openai/o3",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/o3-mini",
+      "name": "openai/o3-mini",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/o3-mini-high",
+      "name": "openai/o3-mini-high",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/o3-pro",
+      "name": "openai/o3-pro",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/o4-mini",
+      "name": "openai/o4-mini",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "openai/o4-mini-high",
+      "name": "openai/o4-mini-high",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen-2.5-72b-instruct",
+      "name": "qwen/qwen-2.5-72b-instruct",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen-2.5-7b-instruct",
+      "name": "qwen/qwen-2.5-7b-instruct",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen-2.5-coder-32b-instruct",
+      "name": "qwen/qwen-2.5-coder-32b-instruct",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen-plus",
+      "name": "qwen/qwen-plus",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen-plus-2025-07-28",
+      "name": "qwen/qwen-plus-2025-07-28",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen2.5-vl-72b-instruct",
+      "name": "qwen/qwen2.5-vl-72b-instruct",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-14b",
+      "name": "qwen/qwen3-14b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-235b-a22b",
+      "name": "qwen/qwen3-235b-a22b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-235b-a22b-2507",
+      "name": "qwen/qwen3-235b-a22b-2507",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-235b-a22b-thinking-2507",
+      "name": "qwen/qwen3-235b-a22b-thinking-2507",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-30b-a3b",
+      "name": "qwen/qwen3-30b-a3b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-30b-a3b-instruct-2507",
+      "name": "qwen/qwen3-30b-a3b-instruct-2507",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-30b-a3b-thinking-2507",
+      "name": "qwen/qwen3-30b-a3b-thinking-2507",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-32b",
+      "name": "qwen/qwen3-32b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-8b",
+      "name": "qwen/qwen3-8b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-coder",
+      "name": "qwen/qwen3-coder",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-coder-30b-a3b-instruct",
+      "name": "qwen/qwen3-coder-30b-a3b-instruct",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-coder-flash",
+      "name": "qwen/qwen3-coder-flash",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-coder-next",
+      "name": "qwen/qwen3-coder-next",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-coder-plus",
+      "name": "qwen/qwen3-coder-plus",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-max",
+      "name": "qwen/qwen3-max",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-max-thinking",
+      "name": "qwen/qwen3-max-thinking",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-next-80b-a3b-instruct",
+      "name": "qwen/qwen3-next-80b-a3b-instruct",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-next-80b-a3b-thinking",
+      "name": "qwen/qwen3-next-80b-a3b-thinking",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-235b-a22b-instruct",
+      "name": "qwen/qwen3-vl-235b-a22b-instruct",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-235b-a22b-thinking",
+      "name": "qwen/qwen3-vl-235b-a22b-thinking",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-30b-a3b-instruct",
+      "name": "qwen/qwen3-vl-30b-a3b-instruct",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-30b-a3b-thinking",
+      "name": "qwen/qwen3-vl-30b-a3b-thinking",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-32b-instruct",
+      "name": "qwen/qwen3-vl-32b-instruct",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-8b-instruct",
+      "name": "qwen/qwen3-vl-8b-instruct",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3-vl-8b-thinking",
+      "name": "qwen/qwen3-vl-8b-thinking",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.5-122b-a10b",
+      "name": "qwen/qwen3.5-122b-a10b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.5-27b",
+      "name": "qwen/qwen3.5-27b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.5-35b-a3b",
+      "name": "qwen/qwen3.5-35b-a3b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.5-397b-a17b",
+      "name": "qwen/qwen3.5-397b-a17b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.5-9b",
+      "name": "qwen/qwen3.5-9b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.5-flash-02-23",
+      "name": "qwen/qwen3.5-flash-02-23",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.5-plus-02-15",
+      "name": "qwen/qwen3.5-plus-02-15",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.5-plus-20260420",
+      "name": "qwen/qwen3.5-plus-20260420",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.6-27b",
+      "name": "qwen/qwen3.6-27b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.6-35b-a3b",
+      "name": "qwen/qwen3.6-35b-a3b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.6-flash",
+      "name": "qwen/qwen3.6-flash",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.6-max-preview",
+      "name": "qwen/qwen3.6-max-preview",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.6-plus",
+      "name": "qwen/qwen3.6-plus",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.7-flash",
+      "name": "qwen/qwen3.7-flash",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.7-max",
+      "name": "qwen/qwen3.7-max",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.7-plus",
+      "name": "qwen/qwen3.7-plus",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.8-2.4t-a95b",
+      "name": "qwen/qwen3.8-2.4t-a95b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.8-27b",
+      "name": "qwen/qwen3.8-27b",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.8-flash",
+      "name": "qwen/qwen3.8-flash",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "qwen/qwen3.8-max",
+      "name": "qwen/qwen3.8-max",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "x-ai/grok-4.20",
+      "name": "x-ai/grok-4.20",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "x-ai/grok-4.20-multi-agent",
+      "name": "x-ai/grok-4.20-multi-agent",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "x-ai/grok-4.3",
+      "name": "x-ai/grok-4.3",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "x-ai/grok-4.5",
+      "name": "x-ai/grok-4.5",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "x-ai/grok-4.6",
+      "name": "x-ai/grok-4.6",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "x-ai/grok-build-0.1",
+      "name": "x-ai/grok-build-0.1",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-4.5",
+      "name": "z-ai/glm-4.5",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-4.5-air",
+      "name": "z-ai/glm-4.5-air",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-4.5v",
+      "name": "z-ai/glm-4.5v",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-4.6",
+      "name": "z-ai/glm-4.6",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-4.6v",
+      "name": "z-ai/glm-4.6v",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-4.7",
+      "name": "z-ai/glm-4.7",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-4.7-flash",
+      "name": "z-ai/glm-4.7-flash",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-5",
+      "name": "z-ai/glm-5",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-5-turbo",
+      "name": "z-ai/glm-5-turbo",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-5.1",
+      "name": "z-ai/glm-5.1",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-5.2",
+      "name": "z-ai/glm-5.2",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-5.3",
+      "name": "z-ai/glm-5.3",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-5.3-flash",
+      "name": "z-ai/glm-5.3-flash",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    },
+    {
+      "id": "z-ai/glm-5v-turbo",
+      "name": "z-ai/glm-5v-turbo",
+      "context": 4096,
+      "max_output": 4096,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": null,
+        "output": null
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": null,
+      "knowledge": null
+    }
+  ]
+}

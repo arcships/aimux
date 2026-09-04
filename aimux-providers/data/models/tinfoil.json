@@ -1,0 +1,205 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "tinfoil",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "deepseek-v4-flash",
+      "name": "DeepSeek V4 Flash 0731",
+      "context": 1048576,
+      "max_output": 384000,
+      "cost": {
+        "input": 0.3,
+        "output": 0.7,
+        "cache_read": 0.06,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-31",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "gemma4-31b",
+      "name": "Gemma 4 31B IT",
+      "context": 262144,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.4,
+        "output": 1,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-02",
+      "knowledge": null
+    },
+    {
+      "id": "glm-5-3-flash",
+      "name": "GLM-5.3-Flash",
+      "context": 1048576,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.4,
+        "output": 1.25,
+        "cache_read": 0.1,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-26",
+      "knowledge": null
+    },
+    {
+      "id": "gpt-oss-120b",
+      "name": "gpt-oss-120b",
+      "context": 131072,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.15,
+        "output": 0.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": "2024-06"
+    },
+    {
+      "id": "gpt-oss-safeguard-120b",
+      "name": "gpt-oss-safeguard-120b",
+      "context": 131072,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.15,
+        "output": 0.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-10-29",
+      "knowledge": "2024-06"
+    },
+    {
+      "id": "kimi-k3",
+      "name": "Kimi K3",
+      "context": 262144,
+      "max_output": 131072,
+      "cost": {
+        "input": 4,
+        "output": 20,
+        "cache_read": 0.8,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-16",
+      "knowledge": null
+    },
+    {
+      "id": "llama3-3-70b",
+      "name": "Llama-3.3-70B-Instruct",
+      "context": 131072,
+      "max_output": 4096,
+      "cost": {
+        "input": 1.75,
+        "output": 2.75,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-12-06",
+      "knowledge": "2023-12"
+    },
+    {
+      "id": "nomic-embed-text",
+      "name": "Nomic Embed Text v1.5",
+      "context": 8192,
+      "max_output": 768,
+      "cost": {
+        "input": 0.05,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2024-02",
+      "knowledge": null
+    }
+  ]
+}

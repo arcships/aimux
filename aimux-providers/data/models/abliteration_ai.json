@@ -1,0 +1,80 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "abliteration_ai",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "abliterated-model",
+      "name": "Abliterated Model",
+      "context": 150000,
+      "max_output": 8192,
+      "cost": {
+        "input": 3,
+        "output": 3,
+        "cache_read": 0.3,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-01-06",
+      "knowledge": null
+    },
+    {
+      "id": "abliterated-model-large",
+      "name": "Abliterated Model Large",
+      "context": 1000000,
+      "max_output": 999990,
+      "cost": {
+        "input": 5,
+        "output": 5,
+        "cache_read": 0.5,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-25",
+      "knowledge": null
+    },
+    {
+      "id": "abliterated-model-large-v2",
+      "name": "Abliterated Model Large V2",
+      "context": 1000000,
+      "max_output": 999990,
+      "cost": {
+        "input": 5,
+        "output": 5,
+        "cache_read": 0.5,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-29",
+      "knowledge": null
+    }
+  ]
+}

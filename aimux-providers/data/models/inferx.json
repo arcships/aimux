@@ -1,0 +1,310 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "inferx",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "Agents-A1",
+      "name": "Agents-A1",
+      "context": 262000,
+      "max_output": 100000,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-26",
+      "knowledge": null
+    },
+    {
+      "id": "Devstral-2-123B-Instruct-2512-int4-AutoRound",
+      "name": "Devstral-2-123B-Instruct-2512-int4-AutoRound",
+      "context": 128000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-12-09",
+      "knowledge": "2025-12"
+    },
+    {
+      "id": "Ornith-1.0-35B-FP8",
+      "name": "Ornith-1.0-35B-FP8",
+      "context": 262000,
+      "max_output": 100000,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-25",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen3-Coder-Next-FP8",
+      "name": "Qwen3 Coder Next FP8",
+      "context": 256144,
+      "max_output": 65536,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-02-03",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "Qwen3-Coder-Next-FP8-no-thinking",
+      "name": "Qwen3-Coder-Next-FP8-no-thinking",
+      "context": 260000,
+      "max_output": 65536,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-02-03",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "Qwen3-Embedding-8B",
+      "name": "Qwen3-Embedding-8B",
+      "context": 32768,
+      "max_output": 0,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2025-06-05",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen3.6-27B-FP8",
+      "name": "Qwen3.6 27B FP8",
+      "context": 262144,
+      "max_output": 65536,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-22",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen3.6-35B-A3B-FP8",
+      "name": "Qwen3.6 35B A3B FP8",
+      "context": 262000,
+      "max_output": 65536,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-17",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen3.6-35B-A3B-fp8-no-thinking",
+      "name": "Qwen3.6-35B-A3B-fp8-no-thinking",
+      "context": 262000,
+      "max_output": 65536,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-04-17",
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-v4-flash",
+      "name": "deepseek-v4-flash",
+      "context": 1000000,
+      "max_output": 100000,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "gemma-4-31B-it-fp8",
+      "name": "Gemma 4 31B IT FP8",
+      "context": 262144,
+      "max_output": 32768,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-02",
+      "knowledge": null
+    },
+    {
+      "id": "mimo-v25",
+      "name": "mimo-v25",
+      "context": 1000000,
+      "max_output": 100000,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-22",
+      "knowledge": "2024-12"
+    }
+  ]
+}

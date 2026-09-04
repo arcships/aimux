@@ -1,0 +1,79 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "tencent_tokenhub",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "hy3",
+      "name": "Hy3",
+      "context": 256000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_write": 0
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-06",
+      "knowledge": null
+    },
+    {
+      "id": "hy3-preview",
+      "name": "Hy3 preview",
+      "context": 256000,
+      "max_output": 64000,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_write": 0
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-20",
+      "knowledge": null
+    },
+    {
+      "id": "hy4-preview",
+      "name": "Hy4 preview",
+      "context": 1024000,
+      "max_output": 64000,
+      "cost": {
+        "input": 0.834,
+        "output": 2.501,
+        "cache_read": 0.042,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-28",
+      "knowledge": null
+    }
+  ]
+}

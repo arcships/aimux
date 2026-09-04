@@ -1,0 +1,61 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "claudinio",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "claudinio",
+      "name": "Claudinio",
+      "context": 256000,
+      "max_output": 64000,
+      "cost": {
+        "input": 0.5,
+        "output": 2,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-12",
+      "knowledge": "2026-05"
+    },
+    {
+      "id": "claudius",
+      "name": "Claudius",
+      "context": 256000,
+      "max_output": 64000,
+      "cost": {
+        "input": 3,
+        "output": 8,
+        "cache_read": 0.9,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-12",
+      "knowledge": "2026-05"
+    }
+  ]
+}

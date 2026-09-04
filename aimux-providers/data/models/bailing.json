@@ -1,0 +1,55 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "bailing",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "Ling-1T",
+      "name": "Ling-1T",
+      "context": 128000,
+      "max_output": 32000,
+      "cost": {
+        "input": 0.57,
+        "output": 2.29,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-10",
+      "knowledge": "2024-06"
+    },
+    {
+      "id": "Ring-1T",
+      "name": "Ring-1T",
+      "context": 128000,
+      "max_output": 32000,
+      "cost": {
+        "input": 0.57,
+        "output": 2.29,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": "2025-10",
+      "knowledge": "2024-06"
+    }
+  ]
+}

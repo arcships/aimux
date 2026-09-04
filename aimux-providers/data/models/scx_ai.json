@@ -1,0 +1,105 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "scx_ai",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "GLM-5.2",
+      "name": "GLM-5.2",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.55,
+        "output": 1.784,
+        "cache_read": 0.111,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-13",
+      "knowledge": null
+    },
+    {
+      "id": "MiniMax-M2.7",
+      "name": "MiniMax-M2.7",
+      "context": 196608,
+      "max_output": 196608,
+      "cost": {
+        "input": 0.48,
+        "output": 1.79,
+        "cache_read": 0.05,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-18",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen3.8-Max",
+      "name": "Qwen3.8 Max",
+      "context": 1000000,
+      "max_output": 131072,
+      "cost": {
+        "input": 1.815,
+        "output": 5.4461,
+        "cache_read": 0.17,
+        "cache_write": 2.5
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-03",
+      "knowledge": null
+    },
+    {
+      "id": "gpt-oss-120b",
+      "name": "GPT OSS 120B",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.17,
+        "output": 0.55,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    }
+  ]
+}

@@ -1,0 +1,662 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "cloudflare_workers_ai",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "@cf/aisingapore/gemma-sea-lion-v4-27b-it",
+      "name": "Gemma Sea Lion V4 27B It",
+      "context": 128000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.351,
+        "output": 0.555,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2025-09-23",
+      "knowledge": null
+    },
+    {
+      "id": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+      "name": "Deepseek R1 Distill Qwen 32B",
+      "context": 80000,
+      "max_output": 80000,
+      "cost": {
+        "input": 0.497,
+        "output": 4.881,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": "2025-01-20",
+      "knowledge": "2024-07"
+    },
+    {
+      "id": "@cf/deepseek-ai/deepseek-v4-flash-0731",
+      "name": "DeepSeek V4 Flash 0731",
+      "context": 1310720,
+      "max_output": 1048576,
+      "cost": {
+        "input": 0.44,
+        "output": 1.32,
+        "cache_read": 0.014,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-31",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "@cf/deepseek-ai/deepseek-v4-pro-0813",
+      "name": "DeepSeek V4 Pro 0813",
+      "context": 1048576,
+      "max_output": 1048576,
+      "cost": {
+        "input": 1.32,
+        "output": 3.96,
+        "cache_read": 0.044,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-12",
+      "knowledge": null
+    },
+    {
+      "id": "@cf/google/gemma-4-26b-a4b-it",
+      "name": "Gemma 4 26B A4B IT",
+      "context": 256000,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.1,
+        "output": 0.3,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-02",
+      "knowledge": null
+    },
+    {
+      "id": "@cf/ibm-granite/granite-4.0-h-micro",
+      "name": "Granite 4.0 H Micro",
+      "context": 131000,
+      "max_output": 131000,
+      "cost": {
+        "input": 0.017,
+        "output": 0.112,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-10-07",
+      "knowledge": null
+    },
+    {
+      "id": "@cf/meta/llama-3.1-8b-instruct-fp8",
+      "name": "Llama 3.1 8B Instruct fp8",
+      "context": 32000,
+      "max_output": 32000,
+      "cost": {
+        "input": 0.152,
+        "output": 0.287,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2024-07-23",
+      "knowledge": "2023-12"
+    },
+    {
+      "id": "@cf/meta/llama-3.2-11b-vision-instruct",
+      "name": "Llama 3.2 11B Vision Instruct",
+      "context": 128000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.0485,
+        "output": 0.676,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2024-09-25",
+      "knowledge": "2023-12"
+    },
+    {
+      "id": "@cf/meta/llama-3.2-1b-instruct",
+      "name": "Llama 3.2 1B Instruct",
+      "context": 60000,
+      "max_output": 60000,
+      "cost": {
+        "input": 0.027,
+        "output": 0.201,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2024-09-25",
+      "knowledge": "2023-12"
+    },
+    {
+      "id": "@cf/meta/llama-3.2-3b-instruct",
+      "name": "Llama 3.2 3B Instruct",
+      "context": 80000,
+      "max_output": 80000,
+      "cost": {
+        "input": 0.0509,
+        "output": 0.335,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2024-09-25",
+      "knowledge": "2023-12"
+    },
+    {
+      "id": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "name": "Llama 3.3 70B Instruct fp8 Fast",
+      "context": 24000,
+      "max_output": 24000,
+      "cost": {
+        "input": 0.293,
+        "output": 2.253,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-12-06",
+      "knowledge": "2023-12"
+    },
+    {
+      "id": "@cf/meta/llama-4-scout-17b-16e-instruct",
+      "name": "Llama 4 Scout 17B 16E Instruct",
+      "context": 131000,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.27,
+        "output": 0.85,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04-05",
+      "knowledge": "2024-08"
+    },
+    {
+      "id": "@cf/meta/llama-guard-3-8b",
+      "name": "Llama Guard 3 8B",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.484,
+        "output": 0.03,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2024-07-23",
+      "knowledge": "2023-12"
+    },
+    {
+      "id": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+      "name": "Mistral Small 3.1 24B Instruct",
+      "context": 128000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.351,
+        "output": 0.555,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-03-18",
+      "knowledge": null
+    },
+    {
+      "id": "@cf/moonshotai/kimi-k2.6",
+      "name": "Kimi K2.6",
+      "context": 262144,
+      "max_output": 256000,
+      "cost": {
+        "input": 0.95,
+        "output": 4,
+        "cache_read": 0.16,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-21",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "@cf/moonshotai/kimi-k2.7-code",
+      "name": "Kimi K2.7 Code",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.95,
+        "output": 4,
+        "cache_read": 0.19,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-12",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "@cf/nvidia/nemotron-3-120b-a12b",
+      "name": "Nemotron 3 Super 120B",
+      "context": 256000,
+      "max_output": 256000,
+      "cost": {
+        "input": 0.5,
+        "output": 1.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-11",
+      "knowledge": null
+    },
+    {
+      "id": "@cf/openai/gpt-oss-120b",
+      "name": "GPT OSS 120B",
+      "context": 128000,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.35,
+        "output": 0.75,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "@cf/openai/gpt-oss-20b",
+      "name": "GPT OSS 20B",
+      "context": 128000,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.2,
+        "output": 0.3,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "@cf/qwen/qwen2.5-coder-32b-instruct",
+      "name": "Qwen2.5 Coder 32B Instruct",
+      "context": 32768,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.66,
+        "output": 1,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2024-11-12",
+      "knowledge": null
+    },
+    {
+      "id": "@cf/qwen/qwen3-30b-a3b-fp8",
+      "name": "Qwen3 30B A3b fp8",
+      "context": 32768,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.0509,
+        "output": 0.335,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-04-28",
+      "knowledge": null
+    },
+    {
+      "id": "@cf/qwen/qwen3.8-27b",
+      "name": "Qwen3.8 27B",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.45,
+        "output": 3.2,
+        "cache_read": 0.05,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-14",
+      "knowledge": null
+    },
+    {
+      "id": "@cf/qwen/qwq-32b",
+      "name": "Qwq 32B",
+      "context": 24000,
+      "max_output": 24000,
+      "cost": {
+        "input": 0.66,
+        "output": 1,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": "2025-03-05",
+      "knowledge": "2024-04"
+    },
+    {
+      "id": "@cf/zai-org/glm-4.7-flash",
+      "name": "GLM-4.7-Flash",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.0605,
+        "output": 0.4,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-01-19",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "@cf/zai-org/glm-5.2",
+      "name": "Glm 5.2",
+      "context": 262144,
+      "max_output": 256000,
+      "cost": {
+        "input": 1.4,
+        "output": 4.4,
+        "cache_read": 0.26,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-13",
+      "knowledge": null
+    },
+    {
+      "id": "@cf/zai-org/glm-5.3",
+      "name": "Glm 5.3",
+      "context": 1310720,
+      "max_output": 1310720,
+      "cost": {
+        "input": 1.4,
+        "output": 4.4,
+        "cache_read": 0.26,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-14",
+      "knowledge": null
+    },
+    {
+      "id": "@cf/zai-org/glm-5.3-flash",
+      "name": "Glm 5.3 Flash",
+      "context": 1310720,
+      "max_output": 1048576,
+      "cost": {
+        "input": 0.15,
+        "output": 0.5,
+        "cache_read": 0.03,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-26",
+      "knowledge": null
+    }
+  ]
+}

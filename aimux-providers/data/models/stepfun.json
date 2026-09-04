@@ -1,0 +1,225 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "stepfun",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "step-1-32k",
+      "name": "Step 1 (32K)",
+      "context": 32768,
+      "max_output": 32768,
+      "cost": {
+        "input": 2.05,
+        "output": 9.59,
+        "cache_read": 0.41,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-01-01",
+      "knowledge": "2024-06"
+    },
+    {
+      "id": "step-2-16k",
+      "name": "Step 2 (16K)",
+      "context": 16384,
+      "max_output": 8192,
+      "cost": {
+        "input": 5.21,
+        "output": 16.44,
+        "cache_read": 1.04,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-01-01",
+      "knowledge": "2024-06"
+    },
+    {
+      "id": "step-3.5-flash",
+      "name": "Step 3.5 Flash",
+      "context": 256000,
+      "max_output": 256000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-01-29",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "step-3.5-flash-2603",
+      "name": "Step 3.5 Flash 2603",
+      "context": 256000,
+      "max_output": 256000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-02",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "step-3.7-flash",
+      "name": "Step 3.7 Flash",
+      "context": 256000,
+      "max_output": 256000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-29",
+      "knowledge": "2026-03-01"
+    },
+    {
+      "id": "step-router-v1",
+      "name": "Step Router v1",
+      "context": 256000,
+      "max_output": 256000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-05-29",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "step-tts-2",
+      "name": "Step TTS 2",
+      "context": 0,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "audio"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2026-03-01",
+      "knowledge": null
+    },
+    {
+      "id": "stepaudio-2.5-asr",
+      "name": "StepAudio 2.5 ASR",
+      "context": 0,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2026-04-24",
+      "knowledge": null
+    },
+    {
+      "id": "stepaudio-2.5-tts",
+      "name": "StepAudio 2.5 TTS",
+      "context": 0,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "audio"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2026-04-16",
+      "knowledge": null
+    }
+  ]
+}

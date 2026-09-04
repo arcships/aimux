@@ -1,0 +1,468 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "meganova",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "MiniMaxAI/MiniMax-M2.1",
+      "name": "MiniMax M2.1",
+      "context": 196608,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.28,
+        "output": 1.2,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-23",
+      "knowledge": null
+    },
+    {
+      "id": "MiniMaxAI/MiniMax-M2.5",
+      "name": "MiniMax M2.5",
+      "context": 204800,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.3,
+        "output": 1.2,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-12",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen/Qwen2.5-VL-32B-Instruct",
+      "name": "Qwen2.5 VL 32B Instruct",
+      "context": 16384,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.2,
+        "output": 0.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-03-24",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "name": "Qwen3 235B A22B Instruct 2507",
+      "context": 262000,
+      "max_output": 262000,
+      "cost": {
+        "input": 0.09,
+        "output": 0.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-07-23",
+      "knowledge": null
+    },
+    {
+      "id": "Qwen/Qwen3.5-Plus",
+      "name": "Qwen3.5 Plus",
+      "context": 1000000,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.4,
+        "output": 2.4,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "XiaomiMiMo/MiMo-V2-Flash",
+      "name": "MiMo V2 Flash",
+      "context": 262144,
+      "max_output": 32000,
+      "cost": {
+        "input": 0.1,
+        "output": 0.3,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-17",
+      "knowledge": "2024-12-01"
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-R1-0528",
+      "name": "DeepSeek R1 0528",
+      "context": 163840,
+      "max_output": 64000,
+      "cost": {
+        "input": 0.5,
+        "output": 2.15,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": false,
+      "release_date": "2025-05-28",
+      "knowledge": "2024-07"
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-V3-0324",
+      "name": "DeepSeek V3 0324",
+      "context": 163840,
+      "max_output": 163840,
+      "cost": {
+        "input": 0.25,
+        "output": 0.88,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-03-24",
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-V3.1",
+      "name": "DeepSeek V3.1",
+      "context": 164000,
+      "max_output": 164000,
+      "cost": {
+        "input": 0.27,
+        "output": 1,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-08-25",
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-V3.2",
+      "name": "DeepSeek V3.2",
+      "context": 164000,
+      "max_output": 164000,
+      "cost": {
+        "input": 0.26,
+        "output": 0.38,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-12-03",
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-ai/DeepSeek-V3.2-Exp",
+      "name": "DeepSeek V3.2 Exp",
+      "context": 164000,
+      "max_output": 164000,
+      "cost": {
+        "input": 0.27,
+        "output": 0.4,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-10-10",
+      "knowledge": null
+    },
+    {
+      "id": "meta-llama/Llama-3.3-70B-Instruct",
+      "name": "Llama 3.3 70B Instruct",
+      "context": 131072,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.1,
+        "output": 0.3,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-12-06",
+      "knowledge": null
+    },
+    {
+      "id": "mistralai/Mistral-Nemo-Instruct-2407",
+      "name": "Mistral Nemo Instruct 2407",
+      "context": 131072,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.02,
+        "output": 0.04,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-07-18",
+      "knowledge": null
+    },
+    {
+      "id": "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+      "name": "Mistral Small 3.2 24B Instruct",
+      "context": 32768,
+      "max_output": 8192,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-06-20",
+      "knowledge": "2024-10"
+    },
+    {
+      "id": "moonshotai/Kimi-K2-Thinking",
+      "name": "Kimi K2 Thinking",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.6,
+        "output": 2.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-06",
+      "knowledge": "2024-08"
+    },
+    {
+      "id": "moonshotai/Kimi-K2.5",
+      "name": "Kimi K2.5",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.45,
+        "output": 2.8,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-01-27",
+      "knowledge": "2026-01"
+    },
+    {
+      "id": "zai-org/GLM-4.6",
+      "name": "GLM-4.6",
+      "context": 202752,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.45,
+        "output": 1.9,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-09-30",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "zai-org/GLM-4.7",
+      "name": "GLM-4.7",
+      "context": 202752,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.2,
+        "output": 0.8,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-22",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "zai-org/GLM-5",
+      "name": "GLM-5",
+      "context": 202752,
+      "max_output": 131072,
+      "cost": {
+        "input": 0.8,
+        "output": 2.56,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-11",
+      "knowledge": null
+    }
+  ]
+}

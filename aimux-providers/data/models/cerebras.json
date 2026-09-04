@@ -1,0 +1,56 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "cerebras",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "gemma-4-31b",
+      "name": "Gemma 4 31B IT",
+      "context": 131072,
+      "max_output": 40960,
+      "cost": {
+        "input": 0.99,
+        "output": 1.49,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-02",
+      "knowledge": null
+    },
+    {
+      "id": "gpt-oss-120b",
+      "name": "GPT OSS 120B",
+      "context": 131072,
+      "max_output": 40960,
+      "cost": {
+        "input": 0.35,
+        "output": 0.75,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    }
+  ]
+}

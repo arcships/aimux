@@ -1,0 +1,374 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "scaleway",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "bge-multilingual-gemma2",
+      "name": "BGE Multilingual Gemma2",
+      "context": 8191,
+      "max_output": 3072,
+      "cost": {
+        "input": 0.1,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2024-07-26",
+      "knowledge": null
+    },
+    {
+      "id": "deepseek-v4-flash-0731",
+      "name": "DeepSeek V4 Flash 0731",
+      "context": 256000,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.468,
+        "output": 0.936,
+        "cache_read": 0.0936,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-31",
+      "knowledge": "2025-05"
+    },
+    {
+      "id": "gemma-4-26b-a4b-it",
+      "name": "Gemma 4 26B A4B IT",
+      "context": 256000,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.25,
+        "output": 0.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-01",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "glm-5.2",
+      "name": "GLM-5.2",
+      "context": 256000,
+      "max_output": 16384,
+      "cost": {
+        "input": 1.8,
+        "output": 5.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-13",
+      "knowledge": null
+    },
+    {
+      "id": "gpt-oss-120b",
+      "name": "GPT-OSS 120B",
+      "context": 128000,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.15,
+        "output": 0.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2024-01-01",
+      "knowledge": null
+    },
+    {
+      "id": "llama-3.3-70b-instruct",
+      "name": "Llama-3.3-70B-Instruct",
+      "context": 100000,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.9,
+        "output": 0.9,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-12-06",
+      "knowledge": "2023-12"
+    },
+    {
+      "id": "mistral-medium-3.5-128b",
+      "name": "Mistral Medium 3.5 128B",
+      "context": 256000,
+      "max_output": 16384,
+      "cost": {
+        "input": 1.5,
+        "output": 7.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-29",
+      "knowledge": null
+    },
+    {
+      "id": "mistral-small-3.2-24b-instruct-2506",
+      "name": "Mistral Small 3.2 24B Instruct (2506)",
+      "context": 128000,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.15,
+        "output": 0.35,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-06-20",
+      "knowledge": "2025-03"
+    },
+    {
+      "id": "pixtral-12b-2409",
+      "name": "Pixtral 12B 2409",
+      "context": 128000,
+      "max_output": 4096,
+      "cost": {
+        "input": 0.2,
+        "output": 0.2,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-09-25",
+      "knowledge": "2024-09"
+    },
+    {
+      "id": "qwen3-235b-a22b-instruct-2507",
+      "name": "Qwen3 235B A22B Instruct 2507",
+      "context": 260000,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.75,
+        "output": 2.25,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-07-01",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen3-coder-30b-a3b-instruct",
+      "name": "Qwen3-Coder 30B-A3B Instruct",
+      "context": 128000,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.2,
+        "output": 0.8,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen3-embedding-8b",
+      "name": "Qwen3 Embedding 8B",
+      "context": 32768,
+      "max_output": 4096,
+      "cost": {
+        "input": 0.1,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2025-06-05",
+      "knowledge": null
+    },
+    {
+      "id": "qwen3.5-397b-a17b",
+      "name": "Qwen3.5 397B A17B",
+      "context": 256000,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.6,
+        "output": 3.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-17",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "qwen3.6-35b-a3b",
+      "name": "Qwen3.6 35B A3B",
+      "context": 128000,
+      "max_output": 16384,
+      "cost": {
+        "input": 0.25,
+        "output": 1.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-01",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "whisper-large-v3",
+      "name": "Whisper Large v3",
+      "context": 0,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.003,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2023-09-01",
+      "knowledge": "2023-09"
+    }
+  ]
+}

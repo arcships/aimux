@@ -1,0 +1,332 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "xpersona",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "claude-fable-5",
+      "name": "Claude Fable 5",
+      "context": 1000000,
+      "max_output": 128000,
+      "cost": {
+        "input": 3,
+        "output": 18.5,
+        "cache_read": 0.3,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-09",
+      "knowledge": "2026-01-31"
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "name": "Claude Haiku 4.5 (latest)",
+      "context": 200000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.6,
+        "output": 3.7,
+        "cache_read": 0.06,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-10-15",
+      "knowledge": "2025-02-28"
+    },
+    {
+      "id": "claude-opus-4-8",
+      "name": "Claude Opus 4.8",
+      "context": 200000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.5,
+        "output": 9.25,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-28",
+      "knowledge": "2026-01"
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "name": "Claude Sonnet 4.6",
+      "context": 200000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.9,
+        "output": 5.55,
+        "cache_read": 0.09,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-17",
+      "knowledge": "2025-08-31"
+    },
+    {
+      "id": "gemini-3.5-flash",
+      "name": "Gemini 3.5 Flash",
+      "context": 1000000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.55,
+        "output": 12.2,
+        "cache_read": 0.155,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-19",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "gpt-5.4",
+      "name": "GPT-5.4",
+      "context": 1050000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.75,
+        "output": 6,
+        "cache_read": 0.075,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-05",
+      "knowledge": "2025-08-31"
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "name": "GPT-5.4 mini",
+      "context": 272000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.375,
+        "output": 4,
+        "cache_read": 0.0375,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-17",
+      "knowledge": "2025-08-31"
+    },
+    {
+      "id": "gpt-5.5",
+      "name": "GPT-5.5",
+      "context": 1050000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.5,
+        "output": 12,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-23",
+      "knowledge": "2025-12-01"
+    },
+    {
+      "id": "gpt-5.6",
+      "name": "GPT-5.6",
+      "context": 372000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.5,
+        "output": 12,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-09",
+      "knowledge": "2026-02-16"
+    },
+    {
+      "id": "gpt-5.6-sol",
+      "name": "GPT-5.6 Sol",
+      "context": 372000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.5,
+        "output": 12,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-09",
+      "knowledge": "2026-02-16"
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "name": "GPT-5.6 Terra",
+      "context": 372000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.5,
+        "output": 2,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-09",
+      "knowledge": "2026-02-16"
+    },
+    {
+      "id": "xpersona-frieren-coder",
+      "name": "Xpersona Frieren 1",
+      "context": 1000000,
+      "max_output": 384000,
+      "cost": {
+        "input": 1.5,
+        "output": 6,
+        "cache_read": 0.15,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-01",
+      "knowledge": "2025-12-30"
+    },
+    {
+      "id": "xpersona-gpt-5.5",
+      "name": "GPT-5.5",
+      "context": 1000000,
+      "max_output": 128000,
+      "cost": {
+        "input": 3,
+        "output": 18,
+        "cache_read": 0.3,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-29",
+      "knowledge": "2025-12-30"
+    }
+  ]
+}

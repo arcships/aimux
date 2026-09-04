@@ -1,0 +1,3430 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "poe",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "anthropic/claude-haiku-3",
+      "name": "Claude-Haiku-3",
+      "context": 189096,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.21,
+        "output": 1.1,
+        "cache_read": 0.021,
+        "cache_write": 0.26
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-03-09",
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-haiku-3.5",
+      "name": "Claude-Haiku-3.5",
+      "context": 189096,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.68,
+        "output": 3.4,
+        "cache_read": 0.068,
+        "cache_write": 0.85
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-10-01",
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-haiku-4.5",
+      "name": "Claude-Haiku-4.5",
+      "context": 192000,
+      "max_output": 64000,
+      "cost": {
+        "input": 0.85,
+        "output": 4.3,
+        "cache_read": 0.085,
+        "cache_write": 1.1
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-10-15",
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-4",
+      "name": "Claude-Opus-4",
+      "context": 192512,
+      "max_output": 28672,
+      "cost": {
+        "input": 13,
+        "output": 64,
+        "cache_read": 1.3,
+        "cache_write": 16
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-05-21",
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-4.1",
+      "name": "Claude-Opus-4.1",
+      "context": 196608,
+      "max_output": 32000,
+      "cost": {
+        "input": 13,
+        "output": 64,
+        "cache_read": 1.3,
+        "cache_write": 16
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-4.5",
+      "name": "Claude-Opus-4.5",
+      "context": 196608,
+      "max_output": 64000,
+      "cost": {
+        "input": 4.3,
+        "output": 21,
+        "cache_read": 0.43,
+        "cache_write": 5.3
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-21",
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-4.6",
+      "name": "Claude-Opus-4.6",
+      "context": 983040,
+      "max_output": 128000,
+      "cost": {
+        "input": 4.3,
+        "output": 21,
+        "cache_read": 0.43,
+        "cache_write": 5.3
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-04",
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-4.7",
+      "name": "Claude-Opus-4.7",
+      "context": 1048576,
+      "max_output": 128000,
+      "cost": {
+        "input": 4.3,
+        "output": 21,
+        "cache_read": 0.43,
+        "cache_write": 5.4
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-15",
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-opus-4.8",
+      "name": "Claude-Opus-4.8",
+      "context": 1048576,
+      "max_output": 128000,
+      "cost": {
+        "input": 4.2929,
+        "output": 21.4646,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-28",
+      "knowledge": "2026-01"
+    },
+    {
+      "id": "anthropic/claude-sonnet-3.5",
+      "name": "Claude-Sonnet-3.5",
+      "context": 189096,
+      "max_output": 8192,
+      "cost": {
+        "input": 2.6,
+        "output": 13,
+        "cache_read": 0.26,
+        "cache_write": 3.2
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-06-05",
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-sonnet-3.5-june",
+      "name": "Claude-Sonnet-3.5-June",
+      "context": 189096,
+      "max_output": 8192,
+      "cost": {
+        "input": 2.6,
+        "output": 13,
+        "cache_read": 0.26,
+        "cache_write": 3.2
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-11-18",
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-sonnet-3.7",
+      "name": "Claude-Sonnet-3.7",
+      "context": 196608,
+      "max_output": 128000,
+      "cost": {
+        "input": 2.6,
+        "output": 13,
+        "cache_read": 0.26,
+        "cache_write": 3.2
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-02-19",
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-sonnet-4",
+      "name": "Claude-Sonnet-4",
+      "context": 983040,
+      "max_output": 64000,
+      "cost": {
+        "input": 2.6,
+        "output": 13,
+        "cache_read": 0.26,
+        "cache_write": 3.2
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-05-21",
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.5",
+      "name": "Claude-Sonnet-4.5",
+      "context": 983040,
+      "max_output": 32768,
+      "cost": {
+        "input": 2.6,
+        "output": 13,
+        "cache_read": 0.26,
+        "cache_write": 3.2
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-09-26",
+      "knowledge": null
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.6",
+      "name": "Claude-Sonnet-4.6",
+      "context": 983040,
+      "max_output": 128000,
+      "cost": {
+        "input": 2.6,
+        "output": 13,
+        "cache_read": 0.26,
+        "cache_write": 3.2
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-05",
+      "knowledge": null
+    },
+    {
+      "id": "cerebras/gpt-oss-120b-cs",
+      "name": "GPT-OSS-120B-CS",
+      "context": 128000,
+      "max_output": 0,
+      "cost": {
+        "input": 0.35,
+        "output": 0.75,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-06",
+      "knowledge": null
+    },
+    {
+      "id": "cerebras/llama-3.1-8b-cs",
+      "name": "Llama-3.1-8B-CS",
+      "context": 128000,
+      "max_output": 0,
+      "cost": {
+        "input": 0.1,
+        "output": 0.1,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-05-13",
+      "knowledge": null
+    },
+    {
+      "id": "cerebras/llama-3.3-70b-cs",
+      "name": "llama-3.3-70b-cs",
+      "context": 0,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2025-05-13",
+      "knowledge": null
+    },
+    {
+      "id": "cerebras/qwen3-235b-2507-cs",
+      "name": "qwen3-235b-2507-cs",
+      "context": 0,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-06",
+      "knowledge": null
+    },
+    {
+      "id": "cerebras/qwen3-32b-cs",
+      "name": "qwen3-32b-cs",
+      "context": 0,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-05-15",
+      "knowledge": null
+    },
+    {
+      "id": "elevenlabs/elevenlabs-music",
+      "name": "ElevenLabs-Music",
+      "context": 2000,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "audio"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-08-29",
+      "knowledge": null
+    },
+    {
+      "id": "elevenlabs/elevenlabs-v2.5-turbo",
+      "name": "ElevenLabs-v2.5-Turbo",
+      "context": 128000,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "audio"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-10-28",
+      "knowledge": null
+    },
+    {
+      "id": "elevenlabs/elevenlabs-v3",
+      "name": "ElevenLabs-v3",
+      "context": 128000,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "audio"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-06-05",
+      "knowledge": null
+    },
+    {
+      "id": "empiriolabs/deepseek-v4-flash-el",
+      "name": "DeepSeek-V4-Flash-EL",
+      "context": 1000000,
+      "max_output": 384000,
+      "cost": {
+        "input": 0.14,
+        "output": 0.28,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": null
+    },
+    {
+      "id": "empiriolabs/deepseek-v4-pro-el",
+      "name": "DeepSeek-V4-Pro-EL",
+      "context": 1000000,
+      "max_output": 384000,
+      "cost": {
+        "input": 1.67,
+        "output": 3.33,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-24",
+      "knowledge": null
+    },
+    {
+      "id": "fireworks-ai/kimi-k2.5-fw",
+      "name": "Kimi-K2.5-FW",
+      "context": 262144,
+      "max_output": 16384,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-01-27",
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.0-flash",
+      "name": "Gemini-2.0-Flash",
+      "context": 990000,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.1,
+        "output": 0.42,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-12-11",
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.0-flash-lite",
+      "name": "Gemini-2.0-Flash-Lite",
+      "context": 990000,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.052,
+        "output": 0.21,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-02-05",
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-flash",
+      "name": "Gemini-2.5-Flash",
+      "context": 1065535,
+      "max_output": 65535,
+      "cost": {
+        "input": 0.21,
+        "output": 1.8,
+        "cache_read": 0.021,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-04-26",
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "name": "Gemini-2.5-Flash-Lite",
+      "context": 1024000,
+      "max_output": 64000,
+      "cost": {
+        "input": 0.07,
+        "output": 0.28,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-06-19",
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-2.5-pro",
+      "name": "Gemini-2.5-Pro",
+      "context": 1065535,
+      "max_output": 65535,
+      "cost": {
+        "input": 0.87,
+        "output": 7,
+        "cache_read": 0.087,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-02-05",
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3-flash",
+      "name": "Gemini-3-Flash",
+      "context": 1048576,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.4,
+        "output": 2.4,
+        "cache_read": 0.04,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-10-07",
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3-pro",
+      "name": "Gemini-3-Pro",
+      "context": 1048576,
+      "max_output": 65536,
+      "cost": {
+        "input": 1.6,
+        "output": 9.6,
+        "cache_read": 0.16,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-10-22",
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.1-flash-lite",
+      "name": "Gemini-3.1-Flash-Lite",
+      "context": 1048576,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.25,
+        "output": 1.5,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-18",
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.1-pro",
+      "name": "Gemini-3.1-Pro",
+      "context": 1048576,
+      "max_output": 65536,
+      "cost": {
+        "input": 2,
+        "output": 12,
+        "cache_read": 0.2,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-19",
+      "knowledge": null
+    },
+    {
+      "id": "google/gemini-3.5-flash",
+      "name": "Gemini-3.5-Flash",
+      "context": 1048576,
+      "max_output": 65536,
+      "cost": {
+        "input": 1.5152,
+        "output": 9.0909,
+        "cache_read": 0.1515,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-05-19",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "google/gemini-deep-research",
+      "name": "gemini-deep-research",
+      "context": 1048576,
+      "max_output": 0,
+      "cost": {
+        "input": 1.6,
+        "output": 9.6,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-11",
+      "knowledge": null
+    },
+    {
+      "id": "google/gemma-4-31b",
+      "name": "Gemma-4-31B",
+      "context": 262144,
+      "max_output": 8192,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-04-02",
+      "knowledge": null
+    },
+    {
+      "id": "google/imagen-3",
+      "name": "Imagen-3",
+      "context": 480,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-10-15",
+      "knowledge": null
+    },
+    {
+      "id": "google/imagen-3-fast",
+      "name": "Imagen-3-Fast",
+      "context": 480,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-10-17",
+      "knowledge": null
+    },
+    {
+      "id": "google/imagen-4",
+      "name": "Imagen-4",
+      "context": 480,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-05-22",
+      "knowledge": null
+    },
+    {
+      "id": "google/imagen-4-fast",
+      "name": "Imagen-4-Fast",
+      "context": 480,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-06-25",
+      "knowledge": null
+    },
+    {
+      "id": "google/imagen-4-ultra",
+      "name": "Imagen-4-Ultra",
+      "context": 480,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-05-24",
+      "knowledge": null
+    },
+    {
+      "id": "google/lyria",
+      "name": "Lyria",
+      "context": 0,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "audio"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-06-04",
+      "knowledge": null
+    },
+    {
+      "id": "google/nano-banana",
+      "name": "Nano-Banana",
+      "context": 65536,
+      "max_output": 0,
+      "cost": {
+        "input": 0.21,
+        "output": 1.8,
+        "cache_read": 0.021,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text",
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-08-21",
+      "knowledge": null
+    },
+    {
+      "id": "google/nano-banana-pro",
+      "name": "Nano-Banana-Pro",
+      "context": 65536,
+      "max_output": 0,
+      "cost": {
+        "input": 2,
+        "output": 12,
+        "cache_read": 0.2,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-11-19",
+      "knowledge": null
+    },
+    {
+      "id": "google/veo-2",
+      "name": "Veo-2",
+      "context": 480,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-12-02",
+      "knowledge": null
+    },
+    {
+      "id": "google/veo-3",
+      "name": "Veo-3",
+      "context": 480,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-05-21",
+      "knowledge": null
+    },
+    {
+      "id": "google/veo-3-fast",
+      "name": "Veo-3-Fast",
+      "context": 480,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-10-13",
+      "knowledge": null
+    },
+    {
+      "id": "google/veo-3.1",
+      "name": "Veo-3.1",
+      "context": 480,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-10-15",
+      "knowledge": null
+    },
+    {
+      "id": "google/veo-3.1-fast",
+      "name": "Veo-3.1-Fast",
+      "context": 480,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-10-15",
+      "knowledge": null
+    },
+    {
+      "id": "ideogramai/ideogram",
+      "name": "Ideogram",
+      "context": 150,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-04-03",
+      "knowledge": null
+    },
+    {
+      "id": "ideogramai/ideogram-v2",
+      "name": "Ideogram-v2",
+      "context": 150,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-08-21",
+      "knowledge": null
+    },
+    {
+      "id": "ideogramai/ideogram-v2a",
+      "name": "Ideogram-v2a",
+      "context": 150,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-02-27",
+      "knowledge": null
+    },
+    {
+      "id": "ideogramai/ideogram-v2a-turbo",
+      "name": "Ideogram-v2a-Turbo",
+      "context": 150,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-02-27",
+      "knowledge": null
+    },
+    {
+      "id": "lumalabs/ray2",
+      "name": "Ray2",
+      "context": 5000,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-02-20",
+      "knowledge": null
+    },
+    {
+      "id": "novita/deepseek-v3.2",
+      "name": "DeepSeek-V3.2",
+      "context": 128000,
+      "max_output": 0,
+      "cost": {
+        "input": 0.27,
+        "output": 0.4,
+        "cache_read": 0.13,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-01",
+      "knowledge": null
+    },
+    {
+      "id": "novita/glm-4.6",
+      "name": "GLM-4.6",
+      "context": 0,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-09-30",
+      "knowledge": null
+    },
+    {
+      "id": "novita/glm-4.6v",
+      "name": "glm-4.6v",
+      "context": 131000,
+      "max_output": 32768,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-09",
+      "knowledge": null
+    },
+    {
+      "id": "novita/glm-4.7",
+      "name": "glm-4.7",
+      "context": 205000,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-22",
+      "knowledge": null
+    },
+    {
+      "id": "novita/glm-4.7-flash",
+      "name": "glm-4.7-flash",
+      "context": 200000,
+      "max_output": 65500,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-01-19",
+      "knowledge": null
+    },
+    {
+      "id": "novita/glm-4.7-n",
+      "name": "glm-4.7-n",
+      "context": 205000,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-22",
+      "knowledge": null
+    },
+    {
+      "id": "novita/glm-5",
+      "name": "GLM-5",
+      "context": 205000,
+      "max_output": 131072,
+      "cost": {
+        "input": 1,
+        "output": 3.2,
+        "cache_read": 0.2,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-15",
+      "knowledge": null
+    },
+    {
+      "id": "novita/kimi-k2-thinking",
+      "name": "kimi-k2-thinking",
+      "context": 256000,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-07",
+      "knowledge": null
+    },
+    {
+      "id": "novita/kimi-k2.5",
+      "name": "Kimi-K2.5",
+      "context": 128000,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.6,
+        "output": 3,
+        "cache_read": 0.1,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-01-27",
+      "knowledge": null
+    },
+    {
+      "id": "novita/kimi-k2.6",
+      "name": "Kimi-K2.6",
+      "context": 262144,
+      "max_output": 262144,
+      "cost": {
+        "input": 0.96,
+        "output": 4.04,
+        "cache_read": 0.16,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-20",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "novita/minimax-m2.1",
+      "name": "minimax-m2.1",
+      "context": 205000,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-26",
+      "knowledge": null
+    },
+    {
+      "id": "openai/chatgpt-4o-latest",
+      "name": "ChatGPT-4o-Latest",
+      "context": 128000,
+      "max_output": 8192,
+      "cost": {
+        "input": 4.5,
+        "output": 14,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-08-14",
+      "knowledge": null
+    },
+    {
+      "id": "openai/dall-e-3",
+      "name": "DALL-E-3",
+      "context": 800,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2023-11-06",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-3.5-turbo",
+      "name": "GPT-3.5-Turbo",
+      "context": 16384,
+      "max_output": 2048,
+      "cost": {
+        "input": 0.45,
+        "output": 1.4,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2023-09-13",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-3.5-turbo-instruct",
+      "name": "GPT-3.5-Turbo-Instruct",
+      "context": 3500,
+      "max_output": 1024,
+      "cost": {
+        "input": 1.4,
+        "output": 1.8,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2023-09-20",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-3.5-turbo-raw",
+      "name": "GPT-3.5-Turbo-Raw",
+      "context": 4524,
+      "max_output": 2048,
+      "cost": {
+        "input": 0.45,
+        "output": 1.4,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2023-09-27",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4-classic",
+      "name": "GPT-4-Classic",
+      "context": 8192,
+      "max_output": 4096,
+      "cost": {
+        "input": 27,
+        "output": 54,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-03-25",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4-classic-0314",
+      "name": "GPT-4-Classic-0314",
+      "context": 8192,
+      "max_output": 4096,
+      "cost": {
+        "input": 27,
+        "output": 54,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-08-26",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4-turbo",
+      "name": "GPT-4-Turbo",
+      "context": 128000,
+      "max_output": 4096,
+      "cost": {
+        "input": 9,
+        "output": 27,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2023-09-13",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4.1",
+      "name": "GPT-4.1",
+      "context": 1047576,
+      "max_output": 32768,
+      "cost": {
+        "input": 1.8,
+        "output": 7.2,
+        "cache_read": 0.45,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04-14",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4.1-mini",
+      "name": "GPT-4.1-mini",
+      "context": 1047576,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.36,
+        "output": 1.4,
+        "cache_read": 0.09,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04-15",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4.1-nano",
+      "name": "GPT-4.1-nano",
+      "context": 1047576,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.09,
+        "output": 0.36,
+        "cache_read": 0.022,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04-15",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4o",
+      "name": "GPT-4o",
+      "context": 128000,
+      "max_output": 8192,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-05-13",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4o-aug",
+      "name": "GPT-4o-Aug",
+      "context": 128000,
+      "max_output": 8192,
+      "cost": {
+        "input": 2.2,
+        "output": 9,
+        "cache_read": 1.1,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-11-21",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "name": "GPT-4o-mini",
+      "context": 124096,
+      "max_output": 4096,
+      "cost": {
+        "input": 0.14,
+        "output": 0.54,
+        "cache_read": 0.068,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-07-18",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4o-mini-search",
+      "name": "GPT-4o-mini-Search",
+      "context": 128000,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.14,
+        "output": 0.54,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-03-11",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-4o-search",
+      "name": "GPT-4o-Search",
+      "context": 128000,
+      "max_output": 8192,
+      "cost": {
+        "input": 2.2,
+        "output": 9,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-03-11",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5",
+      "name": "GPT-5",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.1,
+        "output": 9,
+        "cache_read": 0.11,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5-chat",
+      "name": "GPT-5-Chat",
+      "context": 128000,
+      "max_output": 16384,
+      "cost": {
+        "input": 1.1,
+        "output": 9,
+        "cache_read": 0.11,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-08-07",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5-codex",
+      "name": "GPT-5-Codex",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.1,
+        "output": 9,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-09-23",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5-mini",
+      "name": "GPT-5-mini",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.22,
+        "output": 1.8,
+        "cache_read": 0.022,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-06-25",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5-nano",
+      "name": "GPT-5-nano",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.045,
+        "output": 0.36,
+        "cache_read": 0.0045,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5-pro",
+      "name": "GPT-5-Pro",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 14,
+        "output": 110,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-10-06",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.1",
+      "name": "GPT-5.1",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.1,
+        "output": 9,
+        "cache_read": 0.11,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-12",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.1-codex",
+      "name": "GPT-5.1-Codex",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.1,
+        "output": 9,
+        "cache_read": 0.11,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-12",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.1-codex-max",
+      "name": "GPT-5.1-Codex-Max",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.1,
+        "output": 9,
+        "cache_read": 0.11,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-08",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.1-codex-mini",
+      "name": "GPT-5.1-Codex-Mini",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.22,
+        "output": 1.8,
+        "cache_read": 0.022,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-12",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.1-instant",
+      "name": "GPT-5.1-Instant",
+      "context": 128000,
+      "max_output": 16384,
+      "cost": {
+        "input": 1.1,
+        "output": 9,
+        "cache_read": 0.11,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-12",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.2",
+      "name": "GPT-5.2",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.6,
+        "output": 13,
+        "cache_read": 0.16,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-08",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.2-codex",
+      "name": "GPT-5.2-Codex",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.6,
+        "output": 13,
+        "cache_read": 0.16,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-01-14",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.2-instant",
+      "name": "GPT-5.2-Instant",
+      "context": 128000,
+      "max_output": 16384,
+      "cost": {
+        "input": 1.6,
+        "output": 13,
+        "cache_read": 0.16,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-12-11",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.2-pro",
+      "name": "GPT-5.2-Pro",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 19,
+        "output": 150,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-12-11",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.3-codex",
+      "name": "GPT-5.3-Codex",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 1.6,
+        "output": 13,
+        "cache_read": 0.16,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-10",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.3-codex-spark",
+      "name": "GPT-5.3-Codex-Spark",
+      "context": 128000,
+      "max_output": 16384,
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-04",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.3-instant",
+      "name": "GPT-5.3-Instant",
+      "context": 128000,
+      "max_output": 16384,
+      "cost": {
+        "input": 1.6,
+        "output": 13,
+        "cache_read": 0.16,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-03-03",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.4",
+      "name": "GPT-5.4",
+      "context": 1050000,
+      "max_output": 128000,
+      "cost": {
+        "input": 2.2,
+        "output": 14,
+        "cache_read": 0.22,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-26",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.4-mini",
+      "name": "GPT-5.4-Mini",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.68,
+        "output": 4,
+        "cache_read": 0.068,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-12",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.4-nano",
+      "name": "GPT-5.4-Nano",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.18,
+        "output": 1.1,
+        "cache_read": 0.018,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-11",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.4-pro",
+      "name": "GPT-5.4-Pro",
+      "context": 1050000,
+      "max_output": 128000,
+      "cost": {
+        "input": 27,
+        "output": 160,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-05",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-5.5",
+      "name": "GPT-5.5",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 4.5455,
+        "output": 27.2727,
+        "cache_read": 0.4545,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text",
+          "image"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-08",
+      "knowledge": "2025-12-01"
+    },
+    {
+      "id": "openai/gpt-5.5-pro",
+      "name": "GPT-5.5-Pro",
+      "context": 400000,
+      "max_output": 128000,
+      "cost": {
+        "input": 27.2727,
+        "output": 163.6364,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text",
+          "image"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-08",
+      "knowledge": "2025-12-01"
+    },
+    {
+      "id": "openai/gpt-image-1",
+      "name": "GPT-Image-1",
+      "context": 128000,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-03-31",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-image-1-mini",
+      "name": "GPT-Image-1-Mini",
+      "context": 0,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-08-26",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-image-1.5",
+      "name": "gpt-image-1.5",
+      "context": 128000,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2025-12-16",
+      "knowledge": null
+    },
+    {
+      "id": "openai/gpt-image-2",
+      "name": "GPT-Image-2",
+      "context": 0,
+      "max_output": 0,
+      "cost": {
+        "input": 5.0505,
+        "output": 32.3232,
+        "cache_read": 1.2626,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": false,
+      "release_date": "2026-04-21",
+      "knowledge": null
+    },
+    {
+      "id": "openai/o1",
+      "name": "o1",
+      "context": 200000,
+      "max_output": 100000,
+      "cost": {
+        "input": 14,
+        "output": 54,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2024-12-18",
+      "knowledge": null
+    },
+    {
+      "id": "openai/o1-pro",
+      "name": "o1-pro",
+      "context": 200000,
+      "max_output": 100000,
+      "cost": {
+        "input": 140,
+        "output": 540,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-03-19",
+      "knowledge": null
+    },
+    {
+      "id": "openai/o3",
+      "name": "o3",
+      "context": 200000,
+      "max_output": 100000,
+      "cost": {
+        "input": 1.8,
+        "output": 7.2,
+        "cache_read": 0.45,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-04-16",
+      "knowledge": null
+    },
+    {
+      "id": "openai/o3-deep-research",
+      "name": "o3-deep-research",
+      "context": 200000,
+      "max_output": 100000,
+      "cost": {
+        "input": 9,
+        "output": 36,
+        "cache_read": 2.2,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-06-27",
+      "knowledge": null
+    },
+    {
+      "id": "openai/o3-mini",
+      "name": "o3-mini",
+      "context": 200000,
+      "max_output": 100000,
+      "cost": {
+        "input": 0.99,
+        "output": 4,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-01-31",
+      "knowledge": null
+    },
+    {
+      "id": "openai/o3-mini-high",
+      "name": "o3-mini-high",
+      "context": 200000,
+      "max_output": 100000,
+      "cost": {
+        "input": 0.99,
+        "output": 4,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-01-31",
+      "knowledge": null
+    },
+    {
+      "id": "openai/o3-pro",
+      "name": "o3-pro",
+      "context": 200000,
+      "max_output": 100000,
+      "cost": {
+        "input": 18,
+        "output": 72,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-06-10",
+      "knowledge": null
+    },
+    {
+      "id": "openai/o4-mini",
+      "name": "o4-mini",
+      "context": 200000,
+      "max_output": 100000,
+      "cost": {
+        "input": 0.99,
+        "output": 4,
+        "cache_read": 0.25,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-04-16",
+      "knowledge": null
+    },
+    {
+      "id": "openai/o4-mini-deep-research",
+      "name": "o4-mini-deep-research",
+      "context": 200000,
+      "max_output": 100000,
+      "cost": {
+        "input": 1.8,
+        "output": 7.2,
+        "cache_read": 0.45,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-06-27",
+      "knowledge": null
+    },
+    {
+      "id": "openai/sora-2",
+      "name": "Sora-2",
+      "context": 0,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-10-06",
+      "knowledge": null
+    },
+    {
+      "id": "openai/sora-2-pro",
+      "name": "Sora-2-Pro",
+      "context": 0,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-10-06",
+      "knowledge": null
+    },
+    {
+      "id": "poetools/claude-code",
+      "name": "claude-code",
+      "context": 0,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-27",
+      "knowledge": null
+    },
+    {
+      "id": "runwayml/runway",
+      "name": "Runway",
+      "context": 256,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-10-11",
+      "knowledge": null
+    },
+    {
+      "id": "runwayml/runway-gen-4-turbo",
+      "name": "Runway-Gen-4-Turbo",
+      "context": 256,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-05-09",
+      "knowledge": null
+    },
+    {
+      "id": "stabilityai/stablediffusionxl",
+      "name": "StableDiffusionXL",
+      "context": 200,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2023-07-09",
+      "knowledge": null
+    },
+    {
+      "id": "topazlabs-co/topazlabs",
+      "name": "TopazLabs",
+      "context": 204,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-12-03",
+      "knowledge": null
+    },
+    {
+      "id": "trytako/tako",
+      "name": "Tako",
+      "context": 2048,
+      "max_output": 0,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2024-08-15",
+      "knowledge": null
+    },
+    {
+      "id": "xai/grok-3",
+      "name": "Grok 3",
+      "context": 131072,
+      "max_output": 8192,
+      "cost": {
+        "input": 3,
+        "output": 15,
+        "cache_read": 0.75,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-04-11",
+      "knowledge": null
+    },
+    {
+      "id": "xai/grok-3-mini",
+      "name": "Grok 3 Mini",
+      "context": 131072,
+      "max_output": 8192,
+      "cost": {
+        "input": 0.3,
+        "output": 0.5,
+        "cache_read": 0.075,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-04-11",
+      "knowledge": null
+    },
+    {
+      "id": "xai/grok-4",
+      "name": "Grok-4",
+      "context": 256000,
+      "max_output": 128000,
+      "cost": {
+        "input": 3,
+        "output": 15,
+        "cache_read": 0.75,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-07-10",
+      "knowledge": null
+    },
+    {
+      "id": "xai/grok-4-fast-non-reasoning",
+      "name": "Grok-4-Fast-Non-Reasoning",
+      "context": 2000000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.2,
+        "output": 0.5,
+        "cache_read": 0.05,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-09-16",
+      "knowledge": null
+    },
+    {
+      "id": "xai/grok-4-fast-reasoning",
+      "name": "Grok-4-Fast-Reasoning",
+      "context": 2000000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.2,
+        "output": 0.5,
+        "cache_read": 0.05,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-09-16",
+      "knowledge": null
+    },
+    {
+      "id": "xai/grok-4.1-fast-non-reasoning",
+      "name": "Grok-4.1-Fast-Non-Reasoning",
+      "context": 2000000,
+      "max_output": 30000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2025-11-19",
+      "knowledge": null
+    },
+    {
+      "id": "xai/grok-4.1-fast-reasoning",
+      "name": "Grok-4.1-Fast-Reasoning",
+      "context": 2000000,
+      "max_output": 30000,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-11-19",
+      "knowledge": null
+    },
+    {
+      "id": "xai/grok-4.20-multi-agent",
+      "name": "Grok-4.20-Multi-Agent",
+      "context": 128000,
+      "max_output": 0,
+      "cost": {
+        "input": 2,
+        "output": 6,
+        "cache_read": 0.2,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": false,
+      "tool_call": true,
+      "release_date": "2026-03-13",
+      "knowledge": null
+    },
+    {
+      "id": "xai/grok-code-fast-1",
+      "name": "Grok Code Fast 1",
+      "context": 256000,
+      "max_output": 128000,
+      "cost": {
+        "input": 0.2,
+        "output": 1.5,
+        "cache_read": 0.02,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-22",
+      "knowledge": null
+    }
+  ]
+}

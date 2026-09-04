@@ -1,0 +1,228 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "synthetic",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "hf:MiniMaxAI/MiniMax-M3",
+      "name": "MiniMax-M3",
+      "context": 524288,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.6,
+        "output": 1.2,
+        "cache_read": 0.6,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-12",
+      "knowledge": null
+    },
+    {
+      "id": "hf:Qwen/Qwen3.6-27B",
+      "name": "Qwen3.6 27B",
+      "context": 262144,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.45,
+        "output": 3.6,
+        "cache_read": 0.45,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-04-22",
+      "knowledge": null
+    },
+    {
+      "id": "hf:moonshotai/Kimi-K2.7-Code",
+      "name": "Kimi K2.7 Code",
+      "context": 262144,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.95,
+        "output": 4,
+        "cache_read": 0.95,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-12",
+      "knowledge": "2025-01"
+    },
+    {
+      "id": "hf:moonshotai/Kimi-K3",
+      "name": "Kimi K3",
+      "context": 524288,
+      "max_output": 65536,
+      "cost": {
+        "input": 3,
+        "output": 15,
+        "cache_read": 0.45,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-07-16",
+      "knowledge": null
+    },
+    {
+      "id": "hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+      "name": "Nemotron 3 Super 120B A12B",
+      "context": 262144,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.3,
+        "output": 1,
+        "cache_read": 0.3,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-03-11",
+      "knowledge": null
+    },
+    {
+      "id": "hf:openai/gpt-oss-120b",
+      "name": "GPT OSS 120B",
+      "context": 131072,
+      "max_output": 32768,
+      "cost": {
+        "input": 0.1,
+        "output": 0.1,
+        "cache_read": 0.1,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2025-08-05",
+      "knowledge": null
+    },
+    {
+      "id": "hf:zai-org/GLM-4.7-Flash",
+      "name": "GLM-4.7-Flash",
+      "context": 196608,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.1,
+        "output": 0.5,
+        "cache_read": 0.1,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-01-19",
+      "knowledge": "2025-04"
+    },
+    {
+      "id": "hf:zai-org/GLM-5.2",
+      "name": "GLM-5.2",
+      "context": 524288,
+      "max_output": 65536,
+      "cost": {
+        "input": 1.4,
+        "output": 4.4,
+        "cache_read": 1.4,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-06-13",
+      "knowledge": null
+    },
+    {
+      "id": "hf:zai-org/GLM-5.3-Flash",
+      "name": "GLM-5.3-Flash",
+      "context": 524288,
+      "max_output": 65536,
+      "cost": {
+        "input": 0.15,
+        "output": 0.5,
+        "cache_read": 0.04,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-08-26",
+      "knowledge": null
+    }
+  ]
+}

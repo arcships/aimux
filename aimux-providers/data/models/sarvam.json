@@ -1,0 +1,55 @@
+{
+  "_generated": "scripts/gen_models.py — do not edit; see aimux-providers/data/models.overrides.json",
+  "provider": "sarvam",
+  "source": "models.dev",
+  "models": [
+    {
+      "id": "sarvam-105b",
+      "name": "Sarvam-105B",
+      "context": 131072,
+      "max_output": 131072,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-18",
+      "knowledge": null
+    },
+    {
+      "id": "sarvam-30b",
+      "name": "Sarvam-30B",
+      "context": 65536,
+      "max_output": 65536,
+      "cost": {
+        "input": null,
+        "output": null,
+        "cache_read": null,
+        "cache_write": null
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "tool_call": true,
+      "release_date": "2026-02-18",
+      "knowledge": null
+    }
+  ]
+}
