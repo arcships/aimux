@@ -29,15 +29,44 @@ use aimux_provider_utils::RetryConfig;
 
 use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
 
+/// How much evidence backs a registry row (RFC-0033 L1).
+///
+/// Purely descriptive metadata: it never changes how a provider is
+/// constructed. `Unverified` is the serde default so a row (or an
+/// RFC-0020 external entry) that predates the field still loads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Tier {
+    /// Replayed against a recorded cassette under `tests/cassettes/<name>/`.
+    Verified,
+    /// Listed by an upstream catalogue (models.dev or anya2a), not replayed here.
+    Listed,
+    #[default]
+    /// Neither replayed nor listed upstream — the row is a lead, not a fact.
+    Unverified,
+}
+
 /// One entry of `provider-registry.json` (registry slice).
 #[derive(Debug, Clone, Deserialize)]
 struct RegistryEntry {
     name: String,
     display: String,
+    /// Evidence tier — read by `scripts/gen_providers_doc.py`, not by the runtime.
+    #[serde(default)]
+    #[allow(dead_code)]
+    tier: Tier,
     base_url: String,
     env_var: String,
     #[serde(default)]
     profile: ProviderProfile,
+    /// Why this row deviates from upstream. A row with a note is exempt from
+    /// the `sync_registry.py` base_url/env_var disagreement tables.
+    #[serde(default)]
+    #[allow(dead_code)]
+    note: Option<String>,
+    /// Reachability marker; the only accepted value is `"unreachable"`.
+    #[serde(default)]
+    status: Option<String>,
 }
 
 /// Provider capability profile, expressed as data (non-default fields only
@@ -106,6 +135,14 @@ fn registry() -> &'static [RegistryEntry] {
                 "registry entry '{}' missing env_var",
                 entry.name
             );
+            if let Some(status) = &entry.status {
+                assert_eq!(
+                    status, "unreachable",
+                    "registry entry '{}' has an unknown status {status:?} \
+                     (the only accepted value is \"unreachable\")",
+                    entry.name
+                );
+            }
         }
         entries
     })
@@ -661,6 +698,23 @@ mod tests {
             assert!(e.name.starts_with(|c: char| c.is_ascii_lowercase()));
             assert!(!e.base_url.is_empty());
             assert!(!e.env_var.is_empty());
+            if let Some(status) = &e.status {
+                assert_eq!(status, "unreachable", "bad status on '{}'", e.name);
+            }
+        }
+        // Every built-in row must carry an *explicit* tier: the serde default
+        // exists for external entries, not as a licence to omit it here.
+        let raw: Vec<serde_json::Map<String, Value>> =
+            serde_json::from_str(include_str!("provider_registry.json")).unwrap();
+        for row in &raw {
+            let name = row["name"].as_str().unwrap();
+            let tier = row
+                .get("tier")
+                .unwrap_or_else(|| panic!("registry entry '{name}' has no tier"));
+            assert!(
+                matches!(tier.as_str(), Some("verified" | "listed" | "unverified")),
+                "registry entry '{name}' has an invalid tier {tier}"
+            );
         }
     }
 
