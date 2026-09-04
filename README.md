@@ -340,6 +340,7 @@ Tests run on cassette playback — no network and no keys. See
 | [docs/api/reference.md](docs/api/reference.md) | **API reference** — public types & functions lookup |
 | [docs/api/providers.md](docs/api/providers.md) | **Provider list** — all 325 providers with entry points (generated) |
 | [docs/api/](docs/api/) | **Per-language API guides** — Node.js, Python, Rust, Go, C/C++, Swift, Kotlin, Flutter |
+| [docs/contributing/adding-a-provider.md](docs/contributing/adding-a-provider.md) | **Adding a provider** — the four-layer model and a checklist per case |
 | [docs/error-model.md](docs/error-model.md) | **错误模型** — 跨语言错误形态与兼容性约定 |
 | [docs/PROJECT-OVERVIEW.md](docs/PROJECT-OVERVIEW.md) | Project overview, design decisions, benchmarks |
 | [docs/PERF-RESULTS.md](docs/PERF-RESULTS.md) | Performance benchmark results |
