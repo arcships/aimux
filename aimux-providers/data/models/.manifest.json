@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-04T13:05:07Z",
+  "generated_at": "2026-09-04T13:09:34Z",
   "sources": {
     "models.dev": "https://models.dev/api.json",
     "anya2a": "https://raw.githubusercontent.com/ThinkInAIXYZ/PublicProviderConf/refs/heads/dev/dist/all.json"
   },
   "providers": 137,
-  "models": 4871,
-  "hash": "1efd961c95ff51b0478be4266de7d71bf1027b74ae6baaa5f5b05530af1db971"
+  "models": 4872,
+  "hash": "566a87de7cf1a047698ffad95701da90c9e44e9e478b1ccae5cb6a1a71f6055a"
 }

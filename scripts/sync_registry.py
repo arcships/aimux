@@ -40,7 +40,9 @@ LITELLM_ENV_RE = re.compile(
 
 
 def fetch(url):
-    with urllib.request.urlopen(url, timeout=60) as resp:  # noqa: S310 — https literals above
+    # models.dev answers 403 to urllib's default User-Agent.
+    req = urllib.request.Request(url, headers={"User-Agent": "aimux-provider-sync"})
+    with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310 — https literals above
         return json.loads(resp.read().decode("utf-8"))
 
 
