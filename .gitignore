@@ -32,7 +32,7 @@ bindings/node/artifacts/
 bindings/node/npm/
 bindings/node/bench/node_modules/
 bindings/node/bench/package-lock.json
-bindings/python/**/__pycache__/
+__pycache__/
 bindings/python/uv.lock
 bindings/kotlin/build/
 
