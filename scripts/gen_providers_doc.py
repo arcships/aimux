@@ -6,13 +6,16 @@ Single source of truth:
 - aimux-providers/src/lib.rs                   (non-registry modules + categories)
 
 Usage:
-    python scripts/gen_providers_doc.py
-    # writes docs/api/providers.md, prints the module count for verification
+    python scripts/gen_providers_doc.py            # write docs/api/providers.md
+    python scripts/gen_providers_doc.py --check    # fail if the file is stale
 """
 
 import json
 import pathlib
 import re
+import sys
+
+TIER_ORDER = {"verified": 0, "listed": 1, "unverified": 2}
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 REGISTRY = ROOT / "aimux-providers" / "src" / "provider_registry.json"
@@ -154,10 +157,25 @@ def main():
     w("")
     w(f"## Registry-backed (OpenAI-compatible) — {len(registry)}")
     w("")
-    w("| name | display | env var | base_url |")
-    w("|------|---------|---------|----------|")
-    for e in sorted(registry, key=lambda x: x["name"]):
-        w(f"| `{e['name']}` | {e.get('display', '')} | `{e.get('env_var', '')}` | `{e.get('base_url', '')}` |")
+    w(
+        "**Tier** records how much evidence backs a row. "
+        "`verified` — exercised against a recorded cassette in "
+        "`aimux-providers/tests/cassettes/`, so the base URL and the wire shape "
+        "are known-good. "
+        "`listed` — the provider appears in an upstream catalogue "
+        "(models.dev or anya2a) but aimux has no recording of it. "
+        "`unverified` — neither, so the row is a lead collected from vendor docs "
+        "and may be wrong or dead."
+    )
+    w("")
+    w("| name | display | tier | env var | base_url |")
+    w("|------|---------|------|---------|----------|")
+    for e in sorted(registry, key=lambda x: (TIER_ORDER.get(x.get("tier"), 3), x["name"])):
+        note = f" — {e['note']}" if e.get("note") else ""
+        w(
+            f"| `{e['name']}` | {e.get('display', '')} | {e.get('tier', '')} | "
+            f"`{e.get('env_var', '')}` | `{e.get('base_url', '')}`{note} |"
+        )
     w("")
     w("## Typed factories (non-registry)")
     w("")
@@ -187,12 +205,26 @@ def main():
         w("")
 
     out = "\n".join(lines)
-    OUT.write_text(out, encoding="utf-8")
-
     total = len(registry) + sum(len(m) for _, m in sections) - 2
+
+    if "--check" in sys.argv[1:]:
+        on_disk = OUT.read_text(encoding="utf-8") if OUT.is_file() else None
+        if on_disk != out:
+            print(f"STALE: {OUT.relative_to(ROOT)}", file=sys.stderr)
+            print(
+                "docs/api/providers.md is out of sync — "
+                "run scripts/gen_providers_doc.py and commit the result",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"{OUT.relative_to(ROOT)} up to date ({total} providers)")
+        return 0
+
+    OUT.write_text(out, encoding="utf-8")
     print(f"wrote {OUT}")
     print(f"registry={len(registry)}  non-registry modules={sum(len(m) for _, m in sections) - 2}  total={total}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
