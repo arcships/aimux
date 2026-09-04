@@ -117,7 +117,7 @@ A1 删掉的是"生成 provider 文件"的一次性脚本。它们的产物(薄�
 6. **`docs/contributing/adding-a-provider.md`** 照 pi-ai 清单分三种情况:OpenAI 兼容厂商(JSON 一行 → 两个生成器 → 派生 cassette → 流式/工具/abort/空消息/上下文溢出五项测试);新协议(`aimux-providers/src/<protocol>/` 新目录,JSON 加 `protocol`);单模态厂商(§8.2 执行器模式,只写两个转换函数)。
 7. **保留脚本的作废条件**:`generate_thin_wrapper_cassettes.py` 随 B2 删;`responses_similarity_audit.py` 随 B6 删;两个 cassette 转换器长期保留(测试数据来源);两个 LiteLLM 扫描脚本并入第 4 条的 sync 工具。
 
-一次性清账:27 个不一致 + 116 个缺失过一遍,是独立 issue。
+跟踪:sync / probe #170,一次性清账 #171,`gen_providers_doc.py --check` #172,adding-a-provider 文档 #173;A1 本身 #168 / PR #169。
 
 ## 5. 轨道 B · providers 协议化
 
@@ -279,7 +279,7 @@ RFC-0023 标为 IMPLEMENTED,但在四处停在 MVP 边界:mock 回放只解析 O
 
 pi-ai 的 `src/auth/`:`types.ts` 定义 `ApiKeyAuth` / `OAuthAuth` / `CredentialStore` / `AuthEvent`;`resolve.ts` 定解析顺序(显式 key → env → 凭据库);`oauth/` 8 个厂商的 device-code / PKCE 流程;`credential-store.ts` 内存实现供集成方替换。
 
-分三级,前两级做,第三级记 open question:
+分三级,前两级做(#174、#175),第三级记 open question:
 
 1. **数据描述(并入 B1 / B2,RFC-0032 §3.3 已有草案)。** `env_var` 升级为 `"auth": {"kind", "env", "header"?}`,kind ∈ `api_key`(`header` 缺省 Bearer,可选 `x-api-key` / `api-key` / `x-goog-api-key`)、`none`(本地服务,退役 33 处 `PLACEHOLDER_API_KEY`)、`sigv4`(`params` 带 region)、`bearer_token`(外部提供 access token,vertex)。provider-utils 加 `apply_auth(headers, &AuthSpec, &Credential)`,替掉 12 处手写 header。净删。
 2. **运行时解析与刷新(独立 PR)。** `Credential` 枚举(ApiKey / BearerToken{expires_at} / Aws{..});`resolve_credential(spec, explicit, env, store)` 固定顺序;`CredentialStore` trait + 内存默认实现;`codex_refresh` 泛化为 `TokenRefresher` 钩子,任何 `bearer_token` provider 遇 `TokenExpired` 走同一条刷新重试路径,vertex 可挂。对应 pi 的 `resolve.ts` + `credential-store.ts`,不含登录。
