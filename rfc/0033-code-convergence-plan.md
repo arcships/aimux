@@ -103,6 +103,22 @@ AiMuxError 13 个变体 + ApiCallError 6 个字段。C 侧 16 个 `aimux_error_*
 
 核实后**不做**:按模态加 cargo feature(一行不删,只加 CI 轴,`search` 那条会让默认 feature 的 `bindings/node` workspace 编译失败);删 `catalogue.rs` 的模型目录(产品功能,四种 binding 都暴露)。
 
+### 4.1 provider 维护流程(清理脚本之后的替代方案)
+
+A1 删掉的是"生成 provider 文件"的一次性脚本。它们的产物(薄封装 `.rs`)是 phase 4 之前的形态,注册表落地后加 provider 只改 `provider_registry.json` 一行(#22 InferenceHub 即如此)。但注册表本身没有维护机制:251 行只有带 cassette 的几十行被测试摸过,URL 失效、env 变量改名都不会被发现。2026-09-04 对 models.dev 的一次比对:97 行两边都有,其中 27 行 `base_url` 不一致(`claudinio`、`digitalocean` 缺 `/v1`,`fastrouter` 换域名),116 个 models.dev 厂商 aimux 没有。
+
+参照 pi-ai(`packages/ai`):协议实现在 `src/api/`,厂商是 `src/providers/<id>.ts` 十来行的 `createProvider({id, baseUrl, auth, models, api})`,模型目录由 `scripts/generate-models.ts` 从 models.dev 生成到 `data/<id>.json` + `<id>.models.ts`,生成物首行 "auto-generated / do not edit",`check-model-data.ts` 在 `build` 里校验,过期即构建失败;README 有七步 "Adding a New Provider" 清单。aimux 的对应:12 个原生目录 ⇔ `src/api/`,JSON 行 ⇔ `<id>.ts`(更薄,是数据不是代码)。缺的是纪律和流程,不是结构:
+
+1. **唯一事实源是 `provider_registry.json`,手工维护,不再从任何上游重新生成。** 它已被手改(94b50009 修 7 处错误 URL、b24e59e4 加 profile 字段),重生成会冲掉修正。B1 加 `protocol` 列后原生厂商也是行,B2 后仓库只剩协议目录 + 一份 JSON。
+2. **派生物只允许带 "do not edit" 标记且 CI 有 `--check` 的生成器。** `gen_provider_names.py` 已合规;`gen_providers_doc.py` 缺 `--check` 且 CI 不跑,补上。这条纪律就是判断"生成器还活着"的标准,也是 A1 删三个生成器的依据。
+3. **JSON 结构校验留在 Rust 测试**(`registry_entries_are_valid` 等四个已有),B1 后加 protocol 合法性。每个 PR 阻塞。
+4. **上游同步改 diff 不改生成。** `scripts/sync_registry.py --report`:拉 models.dev `api.json`(213 厂商,187 带 base URL,全部带 env 名),可选读本地 LiteLLM 检出,输出缺失厂商、`base_url` 不一致、`env_var` 不一致三张表。每周 GitHub Action 跑一次,结果写进固定 issue 或开带 diff 的 PR,人审后手工改行。aimux 有意与上游不同的行加 `"note"` 字段说明,避免每周重复报出。
+5. **存活探测。** `scripts/probe_registry.py` 每月一次,对每个 `base_url` 不带 key 请求 `/models`:401/403 视为存活,DNS 失败或 5xx 连续两个月标 `"status": "unreachable"`,不删行。非阻塞。
+6. **`docs/contributing/adding-a-provider.md`** 照 pi-ai 清单分三种情况:OpenAI 兼容厂商(JSON 一行 → 两个生成器 → 派生 cassette → 流式/工具/abort/空消息/上下文溢出五项测试);新协议(`aimux-providers/src/<protocol>/` 新目录,JSON 加 `protocol`);单模态厂商(§8.2 执行器模式,只写两个转换函数)。
+7. **保留脚本的作废条件**:`generate_thin_wrapper_cassettes.py` 随 B2 删;`responses_similarity_audit.py` 随 B6 删;两个 cassette 转换器长期保留(测试数据来源);两个 LiteLLM 扫描脚本并入第 4 条的 sync 工具。
+
+一次性清账:27 个不一致 + 116 个缺失过一遍,是独立 issue。
+
 ## 5. 轨道 B · providers 协议化
 
 骨架是 RFC-0032:17 个 `LanguageModel` 归成 6 到 7 个协议臂,注册表行加 `protocol` / `auth` / `params` / `models[]`,33 个 wrapper 退役,responses 家族合并。
@@ -256,6 +272,18 @@ RFC-0023 标为 IMPLEMENTED,但在四处停在 MVP 边界:mock 回放只解析 O
 | 模型目录(RFC-0027) | 906 | 4 种 binding 各自暴露 | `list_models` op + `catalogue` op |
 
 每一块的功能面不变;变的是它不再各自穿一遍 FFI 和 7 种语言。
+
+### 8.6 auth 层(今天不存在)
+
+注册表 251 行全是 `env_var`,语义只有"读环境变量当 API key 发 Bearer"。手写侧只有零件:`codex.rs` 的无状态 `codex_refresh`(RFC-0018 §3.2 把登录、持久化、刷新编排都留给集成方);`bedrock/sigv4.rs` 静态凭据签名,被 bedrock / anthropic_aws / aws_polly / bedrock_mantle 各自调用;`vertex/mod.rs` 读 `GOOGLE_VERTEX_ACCESS_TOKEN` 或 Express key,无 ADC、token 过期即死;azure(`api-key`)、google(`x-goog-api-key`)、lmnt / exa / parallel / you.com / tinyfish(`x-api-key`)各自拼 header。12 处 header 代码,没有共享函数。
+
+pi-ai 的 `src/auth/`:`types.ts` 定义 `ApiKeyAuth` / `OAuthAuth` / `CredentialStore` / `AuthEvent`;`resolve.ts` 定解析顺序(显式 key → env → 凭据库);`oauth/` 8 个厂商的 device-code / PKCE 流程;`credential-store.ts` 内存实现供集成方替换。
+
+分三级,前两级做,第三级记 open question:
+
+1. **数据描述(并入 B1 / B2,RFC-0032 §3.3 已有草案)。** `env_var` 升级为 `"auth": {"kind", "env", "header"?}`,kind ∈ `api_key`(`header` 缺省 Bearer,可选 `x-api-key` / `api-key` / `x-goog-api-key`)、`none`(本地服务,退役 33 处 `PLACEHOLDER_API_KEY`)、`sigv4`(`params` 带 region)、`bearer_token`(外部提供 access token,vertex)。provider-utils 加 `apply_auth(headers, &AuthSpec, &Credential)`,替掉 12 处手写 header。净删。
+2. **运行时解析与刷新(独立 PR)。** `Credential` 枚举(ApiKey / BearerToken{expires_at} / Aws{..});`resolve_credential(spec, explicit, env, store)` 固定顺序;`CredentialStore` trait + 内存默认实现;`codex_refresh` 泛化为 `TokenRefresher` 钩子,任何 `bearer_token` provider 遇 `TokenExpired` 走同一条刷新重试路径,vertex 可挂。对应 pi 的 `resolve.ts` + `credential-store.ts`,不含登录。
+3. **登录流程(不做,open question)。** pi-ai 把 device-code / PKCE 放进库;aimux RFC-0018 选了相反立场。aimux 跨 7 种 binding,交互式登录要每种语言暴露事件流,成本远高于单语言。维持 RFC-0018:第 2 级做完,集成方登录后把 token 放进 `CredentialStore` 即可。
 
 ### 8.5 测试策略(待定,先研究再动)
 
