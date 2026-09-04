@@ -1,0 +1,71 @@
+# Provider data maintenance (RFC-0033 §4.1). Nothing here edits
+# provider_registry.json — the reports land on issue #170 for a human, and the
+# generated L2 data lands on a PR.
+name: Registry maintenance
+
+on:
+  schedule:
+    - cron: "17 5 * * 1" # Mondays — upstream registry diff
+    - cron: "17 6 * * 1" # Mondays — refresh the generated model data
+    - cron: "17 7 1 * *" # 1st of the month — reachability probe
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  sync-report:
+    name: Upstream registry diff
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 5 * * 1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          {
+            echo "### Upstream registry diff — $(date -u +%Y-%m-%d)"
+            echo
+            python3 scripts/sync_registry.py --report
+          } > sync-report.md
+      - run: gh issue comment 170 --body-file sync-report.md
+
+  refresh-models:
+    name: Refresh model data
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 6 * * 1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/gen_models.py
+      - name: Commit and open/update the PR
+        run: |
+          if git diff --quiet aimux-providers/data; then
+            echo "model data unchanged"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B bot/refresh-model-data
+          git add aimux-providers/data
+          git commit -m "chore(data): refresh the generated model catalogue"
+          git push --force origin bot/refresh-model-data
+          gh pr create --base master --head bot/refresh-model-data \
+            --title "chore(data): refresh the generated model catalogue" \
+            --body "Automated \`scripts/gen_models.py\` run. Review the manifest counts, then merge." \
+            || gh pr edit bot/refresh-model-data --body "Automated \`scripts/gen_models.py\` run, refreshed $(date -u +%Y-%m-%d)."
+
+  probe:
+    name: Reachability probe
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 7 1 * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          {
+            echo "### Registry reachability probe — $(date -u +%Y-%m-%d)"
+            echo
+            python3 scripts/probe_registry.py --timeout 8 --concurrency 16
+          } > probe-report.md
+      - run: gh issue comment 170 --body-file probe-report.md

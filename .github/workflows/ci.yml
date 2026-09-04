@@ -398,6 +398,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: ProviderName generator drift (checked-in files must match generator output)
         run: python3 scripts/gen_provider_names.py --check
+      - name: Provider doc drift (docs/api/providers.md must match generator output)
+        run: python3 scripts/gen_providers_doc.py --check
+      - name: Model data drift (aimux-providers/data must match its manifest)
+        run: python3 scripts/gen_models.py --check
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4

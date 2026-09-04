@@ -74,6 +74,8 @@ fi
 if want contract; then
   section "contract: ProviderName drift + Rust/Node contract tests"
   if python3 scripts/gen_provider_names.py --check \
+     && python3 scripts/gen_providers_doc.py --check \
+     && python3 scripts/gen_models.py --check \
      && cargo test --test contract_test -p aimux-core --quiet \
      && node --experimental-strip-types contract-tests/run-node.ts | grep -q '0 failed'; then
     pass "contract"
