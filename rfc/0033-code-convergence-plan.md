@@ -103,21 +103,56 @@ AiMuxError 13 个变体 + ApiCallError 6 个字段。C 侧 16 个 `aimux_error_*
 
 核实后**不做**:按模态加 cargo feature(一行不删,只加 CI 轴,`search` 那条会让默认 feature 的 `bindings/node` workspace 编译失败);删 `catalogue.rs` 的模型目录(产品功能,四种 binding 都暴露)。
 
-### 4.1 provider 维护流程(清理脚本之后的替代方案)
+### 4.1 provider 数据管线(四层与分级)
 
-A1 删掉的是"生成 provider 文件"的一次性脚本。它们的产物(薄封装 `.rs`)是 phase 4 之前的形态,注册表落地后加 provider 只改 `provider_registry.json` 一行(#22 InferenceHub 即如此)。但注册表本身没有维护机制:251 行只有带 cassette 的几十行被测试摸过,URL 失效、env 变量改名都不会被发现。2026-09-04 对 models.dev 的一次比对:97 行两边都有,其中 27 行 `base_url` 不一致(`claudinio`、`digitalocean` 缺 `/v1`,`fastrouter` 换域名),116 个 models.dev 厂商 aimux 没有。
+A1 删掉的是"生成 provider 文件"的一次性脚本。它们的产物(薄封装 `.rs`)是 phase 4 之前的形态,注册表落地后加 provider 只改 `provider_registry.json` 一行(#22 InferenceHub 即如此)。但注册表本身没有维护机制,251 这个数字也不诚实:2026-09-04 的测量,只有 19 行有真实录音 cassette,97 行在 models.dev 有第二来源,81 行除 7 月那次 LiteLLM / mastra 扫描外没有任何来源;138 行只出现在 `openai_compatible_test.rs` 的表驱动 wiremock 测试里,共用同一份假响应。与 models.dev 比对,97 个共有名字里 27 个 `base_url` 不一致,116 个 models.dev 厂商 aimux 没有。
 
-参照 pi-ai(`packages/ai`):协议实现在 `src/api/`,厂商是 `src/providers/<id>.ts` 十来行的 `createProvider({id, baseUrl, auth, models, api})`,模型目录由 `scripts/generate-models.ts` 从 models.dev 生成到 `data/<id>.json` + `<id>.models.ts`,生成物首行 "auto-generated / do not edit",`check-model-data.ts` 在 `build` 里校验,过期即构建失败;README 有七步 "Adding a New Provider" 清单。aimux 的对应:12 个原生目录 ⇔ `src/api/`,JSON 行 ⇔ `<id>.ts`(更薄,是数据不是代码)。缺的是纪律和流程,不是结构:
+参照 pi-ai(`packages/ai`,39 个 provider):协议实现在 `src/api/`;厂商是 `src/providers/<id>.ts` 十来行手写工厂;模型知识由 `scripts/generate-models.ts` 从 models.dev 生成到 `data/<id>.json` + `<id>.models.ts`,生成物首行 "auto-generated / do not edit",`.manifest.json` 记 schema 版本与 hash,`check-model-data.ts` 在 `build` 第一步校验;README 有七步 "Adding a New Provider" 清单。**pi 从不生成 provider,它生成的是 model 数据。** pi 窄而深,aimux 宽而浅;宽是 aimux 的卖点,不砍,但要让宽度诚实。
 
-1. **唯一事实源是 `provider_registry.json`,手工维护,不再从任何上游重新生成。** 它已被手改(94b50009 修 7 处错误 URL、b24e59e4 加 profile 字段),重生成会冲掉修正。B1 加 `protocol` 列后原生厂商也是行,B2 后仓库只剩协议目录 + 一份 JSON。
-2. **派生物只允许带 "do not edit" 标记且 CI 有 `--check` 的生成器。** `gen_provider_names.py` 已合规;`gen_providers_doc.py` 缺 `--check` 且 CI 不跑,补上。这条纪律就是判断"生成器还活着"的标准,也是 A1 删三个生成器的依据。
-3. **JSON 结构校验留在 Rust 测试**(`registry_entries_are_valid` 等四个已有),B1 后加 protocol 合法性。每个 PR 阻塞。
-4. **上游同步改 diff 不改生成。** `scripts/sync_registry.py --report`:拉 models.dev `api.json`(213 厂商,187 带 base URL,全部带 env 名),可选读本地 LiteLLM 检出,输出缺失厂商、`base_url` 不一致、`env_var` 不一致三张表。每周 GitHub Action 跑一次,结果写进固定 issue 或开带 diff 的 PR,人审后手工改行。aimux 有意与上游不同的行加 `"note"` 字段说明,避免每周重复报出。
-5. **存活探测。** `scripts/probe_registry.py` 每月一次,对每个 `base_url` 不带 key 请求 `/models`:401/403 视为存活,DNS 失败或 5xx 连续两个月标 `"status": "unreachable"`,不删行。非阻塞。
-6. **`docs/contributing/adding-a-provider.md`** 照 pi-ai 清单分三种情况:OpenAI 兼容厂商(JSON 一行 → 两个生成器 → 派生 cassette → 流式/工具/abort/空消息/上下文溢出五项测试);新协议(`aimux-providers/src/<protocol>/` 新目录,JSON 加 `protocol`);单模态厂商(§8.2 执行器模式,只写两个转换函数)。
-7. **保留脚本的作废条件**:`generate_thin_wrapper_cassettes.py` 随 B2 删;`responses_similarity_audit.py` 随 B6 删;两个 cassette 转换器长期保留(测试数据来源);两个 LiteLLM 扫描脚本并入第 4 条的 sync 工具。
+#### 四层
 
-跟踪:sync / probe #170,一次性清账 #171,`gen_providers_doc.py --check` #172,adding-a-provider 文档 #173;A1 本身 #168 / PR #169。
+按"谁维护、变更走什么流程"划分,不按文件位置:
+
+| 层 | 内容 | 维护者 | 变更流程 | 门禁 |
+|---|---|---|---|---|
+| L0 协议实现 | `aimux-providers/src/<protocol>/`,12 个目录 | 人,手写 Rust | PR 审查 | cassette conformance |
+| L1 厂商身份 | `provider_registry.json`,一厂商一行:`name` / `display` / `tier` / `protocol`(B1)/ `base_url` / `auth`(#174)/ `profile` / `params` / `note` / `status` | 人,手写数据 | PR 审查;永不重生成 | `provider.rs` 的 Rust 测试校验结构;每周 diff 报告、每月探活(非阻塞) |
+| L2 模型知识 | `aimux-providers/data/models/<provider>.json` + `.manifest.json`,源 models.dev(主)、anya2a(辅),合并手写 `models.overrides.json` | 机器,`scripts/gen_models.py` | 每周 Action 重生成,有 diff 开 PR,人审合并 | `gen_models.py --check`(hash 比对,不联网),PR 阻塞 |
+| L3 派生物 | `ProviderName` ×8、`docs/api/providers.md`、ts-rs 类型 | 机器,三个生成器 | 跟随 L1 自动重生成 | 各自 `--check`,PR 阻塞 |
+
+依赖单向:L1 的 `protocol` 引用 L0;L2 按 `name` 挂在 L1 上;L3 从 L1 派生。L0 / L1 是人维护的事实源,L2 / L3 是机器维护的派生物。由此得到统一答案:
+
+- 只有 L2、L3 可以生成。A1 删的三个生成器错在想生成 L1。
+- 所有 L2、L3 产物必须带 do-not-edit 标记并有 CI `--check`;不满足的生成器不准进 `scripts/`。L1 是源,用测试校验结构,不用 `--check`。
+- PR CI 与构建永不联网;联网只在 Action 的定时任务里(L1 diff、L2 刷新、探活)。
+- RFC-0032 的 `models[]` 覆盖层归 L1(某模型的请求行为:协议、profile);L2 是知识(context、价格、能力)。两者按 model id 关联,不合并,RFC-0027 "runtime 与 spec 不合并"的决定不变。
+- auth(§8.6)描述在 L1 的 `auth` 字段,执行在 provider-utils 的 `apply_auth` / `resolve_credential`。
+- 运行时是四层的消费者:`provider(name)` 读 L1 找 L0;`catalogue()` 读 L2(静态,`include_str!` 或按需加载,另开 PR 接线),`get_model_specs(url)` 保留为显式刷新,对应 pi 的 `refresh()`。
+- 与 pi 的两处差别:L1 用数据不用代码(251 家对 39 家);L2 提交进仓库、定时 PR 刷新,而不是构建时联网(crate 发布与 7 种 binding 的 CI 都要离线可构建)。
+
+#### 分级
+
+L1 每行一个 `tier`,回答"凭什么在名单里":
+
+| tier | 定义 | 2026-09-04 | 升级路径 |
+|---|---|---|---|
+| `verified` | 有真实录音 cassette,探活通过 | 19 | — |
+| `listed` | 至少一个上游(models.dev / anya2a / LiteLLM)确认身份,探活通过,无真实录音 | 124 | 录一份 cassette |
+| `unverified` | 只有 7 月扫描一个来源 | 108 | 每周 diff 报告找到上游背书 |
+| `status: unreachable` | 探活连续两月失败,附加标记,不删行 | 0 | 人审后决定删除 |
+
+初始定级用 `catalogue.rs::normalize_provider_name` 把 models.dev / anya2a 的连字符 id 折到注册表的 snake_case 名字上(`alibaba-cn` + `alibaba`、四个 `stepfun*` 合并),否则 models.dev 几乎匹配不上。L2 首次生成:137 个厂商、4,872 个模型、2.7 MB,`data/` 从发布的 crate 里 `exclude`,直到 Rust 侧有消费者。
+
+文档表 `verified` 在前、`unverified` 默认折叠;`ProviderName` 枚举包含全部四级(不破坏 API)。aimux 有意与上游不同的行加 `note` 说明,diff 报告跳过带 `note` 的行。
+
+#### 脚本纪律与保留清单
+
+- 生成器:`gen_provider_names.py`、`gen_ts_types.py`(已合规)、`gen_providers_doc.py`(#172 补 `--check`)、`gen_models.py`(新)。
+- 维护:`sync_registry.py --report`(吸收 `extract_litellm_bases.py`、`scan_litellm_urls.py`)、`probe_registry.py`,由 `.github/workflows/registry-maintenance.yml` 定时驱动。
+- 过渡期保留:`generate_thin_wrapper_cassettes.py`(cassette 来源,随 B2 删)、`responses_similarity_audit.py`(随 B6 删)、两个 cassette 转换器(长期,测试数据来源)。
+- 流程:`docs/contributing/adding-a-provider.md`,三种情况各列要碰哪几层、跑哪几个命令。
+
+跟踪:管线 PR(本节全部)、一次性清账 #171、`gen_providers_doc.py --check` #172、adding-a-provider 文档 #173、原 #170 扩为 L1 diff + L2 刷新 + 探活;A1 本身 #168 / PR #169。
 
 ## 5. 轨道 B · providers 协议化
 

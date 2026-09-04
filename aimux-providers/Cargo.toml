@@ -10,7 +10,7 @@ documentation = "https://docs.rs/aimux-providers"
 # Cassette recordings for the integration tests are huge (88MB); they are not
 # needed by downstream consumers, so keep them out of the published crate
 # (crates.io limit is 10MB).
-exclude = ["tests/cassettes/**", "tests/cassettes"]
+exclude = ["tests/cassettes/**", "tests/cassettes", "data/**", "data"]
 
 [dependencies]
 aimux-core = { workspace = true }
