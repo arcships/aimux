@@ -295,8 +295,12 @@ fn aimux_error_object<'env>(env: &'env Env, error: &AiMuxError) -> NapiResult<Ob
         AiMuxError::NoSuchTool {
             tool_name,
             available_tools,
+            tool_input,
         } => {
             obj.set("toolName", tool_name.as_str())?;
+            if let Some(input) = tool_input {
+                obj.set("toolInput", input.as_str())?;
+            }
             if let Some(tools) = available_tools {
                 obj.set("availableTools", tools.clone())?;
             }

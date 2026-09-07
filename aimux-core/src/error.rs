@@ -188,6 +188,10 @@ pub enum AiMuxError {
         tool_name: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
+        /// Original argument text, when supplied by the provider. Absent in
+        /// older serialized errors and errors constructed without a call.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_input: Option<String>,
     },
 
     /// A tool call could not be parsed or did not satisfy its input schema.
@@ -198,7 +202,7 @@ pub enum AiMuxError {
         cause: String,
     },
 
-    /// The optional repair callback failed while handling an invalid call.
+    /// The repair callback failed or returned a call that was still invalid.
     #[error("Error repairing tool call: {cause}")]
     ToolCallRepair {
         original_error: Box<AiMuxError>,

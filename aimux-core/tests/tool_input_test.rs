@@ -209,8 +209,9 @@ async fn an_invalid_repair_is_not_repaired_again() {
     assert_eq!(call.invalid, Some(true));
     assert!(matches!(
         call.error,
-        Some(AiMuxError::InvalidToolInput { tool_input, .. })
-            if tool_input == r#"{"city":7}"#
+        Some(AiMuxError::ToolCallRepair { original_error, cause })
+            if matches!(*original_error, AiMuxError::InvalidToolInput { ref tool_input, .. } if tool_input == "{")
+                && matches!(*cause, AiMuxError::InvalidToolInput { ref tool_input, .. } if tool_input == r#"{"city":7}"#)
     ));
 }
 
@@ -630,4 +631,88 @@ async fn openai_stream_without_repair_preserves_provider_tool_input_deltas() {
         tool_calls[1].function.arguments.as_deref(),
         Some(r#"{"city":"Singapore"}"#)
     );
+}
+
+async fn assert_openai_arguments(
+    model: &RawToolModel,
+    options: GenerateTextOptions,
+    expected: &str,
+) {
+    let completion = generate_text_as_openai(model, "weather", options.clone())
+        .await
+        .unwrap();
+    let call = &completion.choices[0].message.tool_calls.as_ref().unwrap()[0];
+    assert_eq!(call.function.name, model.tool_name);
+    assert_eq!(call.function.arguments, expected);
+
+    let result = stream_text_as_openai(model, "weather", options, OpenAiStreamOptions::default())
+        .await
+        .unwrap();
+    let chunks = result
+        .stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let calls: Vec<_> = chunks
+        .iter()
+        .flat_map(|chunk| &chunk.choices)
+        .filter_map(|choice| choice.delta.tool_calls.as_ref())
+        .flatten()
+        .collect();
+    assert_eq!(
+        calls.iter().find_map(|call| call.function.name.as_deref()),
+        Some(model.tool_name)
+    );
+    let arguments: String = calls
+        .iter()
+        .filter_map(|call| call.function.arguments.as_deref())
+        .collect();
+    assert_eq!(arguments, expected);
+}
+
+#[tokio::test]
+async fn invalid_repair_keeps_original_arguments_with_original_name() {
+    for name in ["forecast", "weather"] {
+        let repair = ToolCallRepair::new(|context| async move {
+            Ok(Some(RawToolCall {
+                tool_name: "weather".into(),
+                input: r#"{"city":7}"#.into(),
+                ..context.tool_call
+            }))
+        });
+        let model = RawToolModel::new(r#"{"place":"Tokyo"}"#)
+            .named(name)
+            .with_streamed_input();
+        assert_openai_arguments(
+            &model,
+            GenerateTextOptions {
+                tools: Some(vec![weather_tool()]),
+                repair_tool_call: Some(repair),
+                ..Default::default()
+            },
+            r#"{"place":"Tokyo"}"#,
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn unknown_tool_preserves_raw_arguments_with_and_without_input_deltas() {
+    for input in [r#""hello""#, "hello", "null", " { \"city\": \"Tokyo\" } "] {
+        for deltas in [false, true] {
+            let mut model = RawToolModel::new(input).named("unknown");
+            model.stream_input = deltas;
+            assert_openai_arguments(
+                &model,
+                GenerateTextOptions {
+                    tools: Some(vec![weather_tool()]),
+                    ..Default::default()
+                },
+                input,
+            )
+            .await;
+        }
+    }
 }

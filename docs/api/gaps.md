@@ -204,6 +204,12 @@ the refactor therefore keeps loading, with no migration step.
 The parsed arguments still reach callers as a `Value`, on
 `GenerateTextResult.tool_calls[].input` — that field is unchanged.
 
+`NoSuchTool` now includes optional `tool_input` with the original argument text;
+older errors without this field still deserialize. If a repair callback returns
+an invalid replacement, `ToolCallRepair` retains the original lookup/validation
+error and the replacement failure as `cause`. The returned call and its OpenAI
+output keep the original name and arguments; only a validated repair replaces them.
+
 ---
 
 ## 建议实施顺序

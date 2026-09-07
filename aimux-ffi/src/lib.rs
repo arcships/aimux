@@ -774,12 +774,14 @@ pub extern "C" fn aimux_error_available_tools(err: *const aimux_error_t) -> *mut
     )
 }
 
-/// `AIMUX_E_INVALID_TOOL_INPUT`: the raw argument text the model produced.
+/// `AIMUX_E_INVALID_TOOL_INPUT` / `AIMUX_E_NO_SUCH_TOOL`: the raw argument
+/// text the model produced, or NULL when unavailable.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_error_tool_input(err: *const aimux_error_t) -> *mut c_char {
     opt_cstring(
         map_aimux_error(err, |e| match e {
             AiMuxError::InvalidToolInput { tool_input, .. } => Some(tool_input.clone()),
+            AiMuxError::NoSuchTool { tool_input, .. } => tool_input.clone(),
             _ => None,
         })
         .flatten(),
@@ -3713,6 +3715,7 @@ mod tests {
                 AiMuxError::NoSuchTool {
                     tool_name: s("t"),
                     available_tools: None,
+                    tool_input: None,
                 },
                 AIMUX_E_NO_SUCH_TOOL,
             ),
@@ -3729,6 +3732,7 @@ mod tests {
                     original_error: Box::new(AiMuxError::NoSuchTool {
                         tool_name: s("t"),
                         available_tools: None,
+                        tool_input: None,
                     }),
                     cause: Box::new(AiMuxError::Other(s("x"))),
                 },
@@ -3769,6 +3773,22 @@ mod tests {
             let (got, _) = expect_aimux_error(boxed(e));
             assert_eq!(got, code, "{expect}");
         }
+    }
+
+    #[test]
+    fn unknown_tool_error_exposes_original_argument_text() {
+        let raw = r#""hello""#;
+        let error = boxed(AiMuxError::NoSuchTool {
+            tool_name: "unknown".into(),
+            available_tools: None,
+            tool_input: Some(raw.into()),
+        });
+        let text = aimux_error_tool_input(error);
+        assert!(!text.is_null());
+        // The accessor returns an owned C string, released with the public API.
+        assert_eq!(unsafe { CStr::from_ptr(text) }.to_str().unwrap(), raw);
+        unsafe { aimux_free_string(text) };
+        aimux_error_free(error);
     }
 
     /// Interior NUL bytes must not corrupt or truncate the message.

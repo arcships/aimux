@@ -111,13 +111,15 @@ fn error_value_snapshots_plain_variants() {
             AiMuxError::NoSuchTool {
                 tool_name: "weathr".into(),
                 available_tools: Some(vec!["weather".into(), "search".into()]),
+                tool_input: Some(r#""hello""#.into()),
             },
-            r#"{"NoSuchTool":{"tool_name":"weathr","available_tools":["weather","search"]}}"#,
+            r#"{"NoSuchTool":{"tool_name":"weathr","available_tools":["weather","search"],"tool_input":"\"hello\""}}"#,
         ),
         (
             AiMuxError::NoSuchTool {
                 tool_name: "weathr".into(),
                 available_tools: None,
+                tool_input: None,
             },
             r#"{"NoSuchTool":{"tool_name":"weathr"}}"#,
         ),
@@ -134,6 +136,7 @@ fn error_value_snapshots_plain_variants() {
                 original_error: Box::new(AiMuxError::NoSuchTool {
                     tool_name: "weathr".into(),
                     available_tools: None,
+                    tool_input: None,
                 }),
                 cause: Box::new(AiMuxError::Other("repair model failed".into())),
             },
@@ -227,6 +230,7 @@ fn variant_set_is_exactly_sixteen() {
         AiMuxError::NoSuchTool {
             tool_name: "x".into(),
             available_tools: None,
+            tool_input: None,
         },
         AiMuxError::InvalidToolInput {
             tool_name: "x".into(),
@@ -237,6 +241,7 @@ fn variant_set_is_exactly_sixteen() {
             original_error: Box::new(AiMuxError::NoSuchTool {
                 tool_name: "x".into(),
                 available_tools: None,
+                tool_input: None,
             }),
             cause: Box::new(AiMuxError::Other("x".into())),
         },

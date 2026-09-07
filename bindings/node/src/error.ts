@@ -84,6 +84,8 @@ export class NoSuchToolError extends AimuxError {
   declare readonly toolName: string
   /** Tools that were available; absent if none were. */
   declare readonly availableTools?: string[]
+  /** Original argument text, when available. */
+  declare readonly toolInput?: string
 }
 /** A tool call's input failed to parse or violated the tool's schema (AI SDK `InvalidToolInputError`). */
 export class InvalidToolInputError extends AimuxError {
@@ -92,7 +94,7 @@ export class InvalidToolInputError extends AimuxError {
   /** The raw input text the model produced. */
   declare readonly toolInput: string
 }
-/** The repair callback failed while handling an invalid tool call (AI SDK `ToolCallRepairError`). */
+/** The repair callback failed or returned a call that was still invalid. */
 export class ToolCallRepairError extends AimuxError {
   /** The failure that triggered repair (a {@link NoSuchToolError} or {@link InvalidToolInputError}). */
   declare readonly originalError: NoSuchToolError | InvalidToolInputError

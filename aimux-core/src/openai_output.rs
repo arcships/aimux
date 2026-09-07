@@ -1093,26 +1093,13 @@ fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
-/// Recover the provider's raw argument text from an invalid call's typed
-/// error, when the error shape carries or implies it verbatim.
-///
-/// `InvalidToolInput` always sets `tool_input` to `RawToolCall.input`, the
-/// byte-for-byte provider text, whether the failure was a JSON parse error or
-/// a schema mismatch on already-valid JSON. `NoSuchTool` carries no text of
-/// its own — it fires purely off the tool name, before Core looks at the
-/// arguments — so it falls back to `input`, which holds the best-effort parse
-/// of that text: a string there is either malformed text kept verbatim (emit
-/// it as-is) or a genuine JSON string (whose quotes are then lost). The two
-/// are indistinguishable without a raw-text field on the error, and the
-/// malformed case is the one that actually occurs. `ToolCallRepair` wraps
-/// whichever of those the repair callback was invoked over; unwrap to reach it.
-fn raw_tool_call_text(error: &AiMuxError, input: &Value) -> Option<String> {
+// Rejected repairs retain the original call. Recover its text from the
+// original error, never from the replacement's validation failure.
+fn raw_tool_call_text(error: &AiMuxError) -> Option<String> {
     match error {
         AiMuxError::InvalidToolInput { tool_input, .. } => Some(tool_input.clone()),
-        AiMuxError::NoSuchTool { .. } => input.as_str().map(str::to_string),
-        AiMuxError::ToolCallRepair { original_error, .. } => {
-            raw_tool_call_text(original_error, input)
-        }
+        AiMuxError::NoSuchTool { tool_input, .. } => tool_input.clone(),
+        AiMuxError::ToolCallRepair { original_error, .. } => raw_tool_call_text(original_error),
         _ => None,
     }
 }
@@ -1121,15 +1108,8 @@ fn raw_tool_call_text(error: &AiMuxError, input: &Value) -> Option<String> {
 /// wire text: the provider's raw argument text verbatim for an invalid call,
 /// compact JSON of the parsed value otherwise.
 ///
-/// `input: Value` alone cannot carry this distinction: a syntactically valid
-/// JSON string like `"hello"` parses to `Value::String("hello")`, and so does
-/// malformed text (e.g. bare `hello`) that Core falls back to wrapping
-/// verbatim — both produce the identical `Value`, and `Value::Null` on a
-/// *valid* call must stay `null`, not get rewritten to `{}`. See
-/// `raw_tool_call_text` for how the ambiguity is resolved from the typed
-/// error. A call without a recoverable raw text (which should not currently
-/// happen — every invalid-call error variant is handled above) falls back to
-/// compact-serializing `input`.
+/// Older errors without raw argument text fall back to serializing the
+/// parsed input as JSON.
 pub(crate) fn parsed_tool_call_arguments(
     input: &Value,
     invalid: Option<bool>,
@@ -1137,7 +1117,7 @@ pub(crate) fn parsed_tool_call_arguments(
 ) -> String {
     if invalid == Some(true)
         && let Some(error) = error
-        && let Some(raw) = raw_tool_call_text(error, input)
+        && let Some(raw) = raw_tool_call_text(error)
     {
         // Blank text still fails validation against a schema with required
         // properties, but OpenAI's wire format has no representation for

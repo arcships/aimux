@@ -14,7 +14,12 @@ import type { ApiCallError } from "./ApiCallError";
  * (`ApiCallError { status_code: .., ..Default::default() }`), the same
  * shape as the AI SDK's named-options constructor.
  */
-export type AiMuxError = { "ApiCall": ApiCallError } | { "JsonParse": string } | { "InvalidResponseData": string } | { "NoSuchTool": { tool_name: string, available_tools?: Array<string> | null, } } | { "InvalidToolInput": { tool_name: string, tool_input: string, cause: string, } } | { "ToolCallRepair": { original_error: AiMuxError, cause: AiMuxError, } } | { "InvalidArgument": string } | { "InvalidPrompt": string } | { "TokenExpired": string } | { "UnsupportedFunctionality": string } | { "NoSuchModel": { model_id: string, 
+export type AiMuxError = { "ApiCall": ApiCallError } | { "JsonParse": string } | { "InvalidResponseData": string } | { "NoSuchTool": { tool_name: string, available_tools?: Array<string> | null, 
+/**
+ * Original argument text, when supplied by the provider. Absent in
+ * older serialized errors and errors constructed without a call.
+ */
+tool_input?: string | null, } } | { "InvalidToolInput": { tool_name: string, tool_input: string, cause: string, } } | { "ToolCallRepair": { original_error: AiMuxError, cause: AiMuxError, } } | { "InvalidArgument": string } | { "InvalidPrompt": string } | { "TokenExpired": string } | { "UnsupportedFunctionality": string } | { "NoSuchModel": { model_id: string, 
 /**
  * What kind of model was requested (`"languageModel"`,
  * `"imageModel"`, …), the AI SDK's `modelType`.

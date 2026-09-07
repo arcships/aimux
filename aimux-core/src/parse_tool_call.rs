@@ -120,6 +120,7 @@ pub async fn parse_tool_call(
             Err(AiMuxError::NoSuchTool {
                 tool_name: tool_call.tool_name.clone(),
                 available_tools: None,
+                tool_input: Some(tool_call.input.clone()),
             })
         };
         return match parsed {
@@ -144,7 +145,13 @@ pub async fn parse_tool_call(
                     Ok(Some(repaired)) => match parse_and_validate_tool_call(&repaired, tools) {
                         Ok((input, dynamic)) => return valid_tool_call(repaired, input, dynamic),
                         Err(repaired_error) => {
-                            return invalid_tool_call(tool_call, repaired_error);
+                            return invalid_tool_call(
+                                tool_call,
+                                AiMuxError::ToolCallRepair {
+                                    original_error: Box::new(original_error),
+                                    cause: Box::new(repaired_error),
+                                },
+                            );
                         }
                     },
                     Ok(None) => {}
@@ -181,6 +188,7 @@ fn parse_and_validate_tool_call(
         }
         return Err(AiMuxError::NoSuchTool {
             tool_name: tool_call.tool_name.clone(),
+            tool_input: Some(tool_call.input.clone()),
             available_tools: Some(
                 tools
                     .iter()

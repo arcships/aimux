@@ -330,9 +330,11 @@ fn variant_instance<'py>(py: Python<'py>, e: &AiMuxError) -> PyResult<Bound<'py,
         AiMuxError::NoSuchTool {
             tool_name,
             available_tools,
+            tool_input,
         } => {
             inst.setattr("tool_name", tool_name.as_str())?;
             inst.setattr("available_tools", available_tools.clone())?;
+            inst.setattr("tool_input", tool_input.as_deref())?;
         }
         AiMuxError::InvalidToolInput {
             tool_name,

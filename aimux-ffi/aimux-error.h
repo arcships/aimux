@@ -158,7 +158,7 @@ char *aimux_error_tool_name(const aimux_error_t *error);
  * or NULL when no tool set was supplied.
  */
 char *aimux_error_available_tools(const aimux_error_t *error);
-/** AIMUX_E_INVALID_TOOL_INPUT: the raw argument text the model produced. */
+/** AIMUX_E_INVALID_TOOL_INPUT / AIMUX_E_NO_SUCH_TOOL: raw argument text, or NULL if unavailable. */
 char *aimux_error_tool_input(const aimux_error_t *error);
 /**
  * AIMUX_E_TOOL_CALL_REPAIR: the original lookup/parse/validation error as
