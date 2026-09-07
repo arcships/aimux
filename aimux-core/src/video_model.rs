@@ -404,6 +404,17 @@ async fn start_and_poll(
     let last = options.n.div_ceil(max_per_call) - 1;
     let batches = (0..=last).map(|i| {
         let mut batch_options = options.clone();
+        if last > 0
+            && let Some(headers) = batch_options.headers.as_mut()
+        {
+            // Distinct batches must not deduplicate each other. Deriving the
+            // suffix from the batch index also keeps caller-key replays stable.
+            for (name, key) in headers.iter_mut() {
+                if name.eq_ignore_ascii_case("idempotency-key") {
+                    *key = format!("{key}:batch:{i}");
+                }
+            }
+        }
         batch_options.n = if i < last {
             max_per_call
         } else {
@@ -910,5 +921,39 @@ mod tests {
             .expect("start key capture lock should not be poisoned");
         let unique: std::collections::HashSet<_> = keys.iter().collect();
         assert_eq!(unique.len(), 3, "one key per batch: {keys:?}");
+    }
+
+    #[tokio::test]
+    async fn caller_key_is_distinct_per_batch_and_stable_across_retries_and_replays() {
+        let model = ScriptedVideoModel::new(vec![]).with_start_failures(1);
+        let mut options = fast_poll_options();
+        options.n = 3;
+        options
+            .headers
+            .get_or_insert_with(SharedHeaders::new)
+            .insert("Idempotency-Key".into(), "caller-request-1".into());
+        generate_video(&model, options.clone()).await.unwrap();
+        let unique = {
+            let keys = model.start_idempotency_keys.lock().unwrap();
+            let unique: std::collections::HashSet<_> = keys.iter().cloned().collect();
+            assert_eq!(unique.len(), 3, "distinct batches share keys: {keys:?}");
+            assert_eq!(
+                keys.len(),
+                4,
+                "the failed batch must reuse its key on retry"
+            );
+            unique
+        };
+
+        let replay = ScriptedVideoModel::new(vec![]);
+        generate_video(&replay, options).await.unwrap();
+        let replay_keys = replay.start_idempotency_keys.lock().unwrap();
+        assert_eq!(
+            replay_keys
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>(),
+            unique
+        );
     }
 }

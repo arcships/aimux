@@ -775,7 +775,9 @@ start/status 流），Core 拥有 poll 循环并分别 retry 两个阶段：
   切 batch，每个 batch 并发跑一次独立的 `do_start`/poll 流程并独立铸造
   idempotency key（AI SDK 用 `Promise.all`，Rust 侧 `try_join_all` 会在首个
   失败时 drop 其余 batch future——不影响正确性，两边都不会重连或取消已发出的
-  provider 任务）。`n == 0` 在任何网络调用之前返回 `InvalidArgument`。
+  provider 任务）。调用方提供 key 时，单批保持原键，多批按批次索引派生不同的
+  键；同批重试和同一调用方 key 的重放保持键稳定。`n == 0` 在任何网络调用
+  之前返回 `InvalidArgument`。
 
 ### 9.2 Router / MoA
 
