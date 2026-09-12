@@ -5,7 +5,6 @@ members = [
     "aimux-provider-utils",
     "aimux-providers",
     "aimux-stream",
-    "scripts/fix_tool",
     "tools/aimux-cli",
     "tools/aimux-replay",
     "tools/aimux-web",
@@ -66,14 +65,6 @@ url = "2"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Schema / validation
-schemars = "0.8"
-
-# Proc-macro support
-proc-macro2 = "1"
-syn = { version = "2", features = ["full"] }
-quote = "1"
 
 # Internal crates
 aimux-core = { path = "aimux-core", version = "0.3.0" }
