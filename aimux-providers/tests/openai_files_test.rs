@@ -279,3 +279,43 @@ async fn should_set_specification_version_and_provider() {
     assert_eq!(files.specification_version(), "v4");
     assert_eq!(files.provider(), "openai.files");
 }
+
+/// A transient 503 followed by 200 must succeed: `upload_file` retries the
+/// upload exchange using the provider's configured retry settings, the same
+/// way `list_models` already does.
+#[tokio::test]
+async fn transient_failure_is_retried_and_succeeds() {
+    let server = MockServer::start().await;
+    let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let responder_attempts = std::sync::Arc::clone(&attempts);
+    Mock::given(method("POST"))
+        .and(path("/files"))
+        .respond_with(move |_: &wiremock::Request| {
+            if responder_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                ResponseTemplate::new(503)
+                    .insert_header("retry-after-ms", "0")
+                    .set_body_json(json!({"error": {"message": "try again"}}))
+            } else {
+                ResponseTemplate::new(200).set_body_json(file_response_body("file-retried"))
+            }
+        })
+        .mount(&server)
+        .await;
+
+    let config = OpenAIConfig::new("test-api-key")
+        .with_base_url(server.uri())
+        .with_retry_config(aimux_core::retry::RetryConfig {
+            max_retries: 1,
+            ..Default::default()
+        });
+    let provider = OpenAIProvider::new(config);
+    let files = provider.files();
+
+    let result = files.upload_file(&upload_options(None)).await.unwrap();
+
+    assert_eq!(
+        result.provider_reference.get("openai"),
+        Some(&"file-retried".to_string())
+    );
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
+}

@@ -19,12 +19,27 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::provider::Provider;
+use aimux_core::retry;
 use aimux_core::shared::Warning;
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, send_validated,
-    without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
+
+fn recraft_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error").unwrap_or(data);
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: error
+                .get("type")
+                .or_else(|| error.get("code"))
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        }
+    })
+}
 
 const DEFAULT_BASE_URL: &str = "https://external.api.recraft.ai/v1";
 const ENV_VAR: &str = "RECRAFT_API_TOKEN";
@@ -211,7 +226,8 @@ fn build_generation_body(
 /// - If neither is present, returns an empty [`ImageOutputs::Base64`].
 async fn extract_images(
     response: &Value,
-    abort_signal: Option<aimux_core::shared::AbortSignal>,
+    retries: &retry::PreparedRetries,
+    abort_signal: Option<aimux_core::AbortSignal>,
     base_url: &str,
 ) -> Result<ImageOutputs, AiMuxError> {
     let items = response.get("data").and_then(|d| d.as_array());
@@ -242,25 +258,30 @@ async fn extract_images(
 
     let mut binaries = Vec::with_capacity(urls.len());
     for url in &urls {
-        // data[].url is a generated-image URL from the response body.
-        let resp = send_validated(
-            HttpRequest {
-                method: HttpMethod::Get,
-                url: url.clone(),
-                headers: vec![],
-                body: HttpBody::Empty,
+        // data[].url is a generated-image URL from the response body, so it
+        // goes through the SSRF download guard.
+        let resp = retries
+            .retry(|| {
+                aimux_provider_utils::get_from_api(
+                    HttpRequest {
+                        url: url.clone(),
+                        headers: vec![],
 
-                abort_signal: abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            Some(base_url),
-            Some(base_url),
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
-        )
-        .await?;
-        binaries.push(resp.body.to_vec());
+                        abort_signal: abort_signal.clone(),
+                        call_id: None,
+                        recording_context: None,
+                        response_timeout: None,
+                        max_json_response_bytes: None,
+                        validate_url: true,
+                        trusted_origin: Some(base_url.to_string()),
+                        credentialed_origin: Some(base_url.to_string()),
+                    },
+                    aimux_provider_utils::create_binary_response_handler(),
+                    recraft_failed_response_handler(),
+                )
+            })
+            .await?;
+        binaries.push(resp.value.to_vec());
     }
     Ok(ImageOutputs::Binary(binaries))
 }
@@ -298,27 +319,41 @@ impl ImageModel for RecraftImageModel {
         let headers = self.build_headers(options.headers.as_ref());
         let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.generations_endpoint(),
                 headers: header_list,
-                body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                response_timeout: None,
+                max_json_response_bytes: None,
+                validate_url: false,
+                trusted_origin: None,
+                credentialed_origin: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            Value::Object(body),
+            aimux_provider_utils::create_json_response_handler(),
+            recraft_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
-        let value: Value = serde_json::from_slice(&resp.body)?;
+        let response_headers = resp.response_headers;
+        let value: Value = resp.value;
+        let retries = retry::prepare_retries(
+            options.max_retries,
+            self.retry_config(),
+            options.abort_signal.clone(),
+        );
 
-        let images =
-            extract_images(&value, options.abort_signal.clone(), &self.config.base_url).await?;
+        let images = extract_images(
+            &value,
+            &retries,
+            options.abort_signal.clone(),
+            &self.config.base_url,
+        )
+        .await?;
 
         Ok(ImageResult {
             images,

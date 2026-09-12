@@ -78,6 +78,8 @@ data class EmbeddingResult(
 @Serializable
 data class EmbeddingCallOptions(
     val values: List<String> = emptyList(),
+    @SerialName("max_retries") val maxRetries: Long? = null,
+    val timeout: TimeoutConfiguration? = null,
     @SerialName("provider_options") val providerOptions: JsonElement? = null,
     val headers: Map<String, String>? = null,
 )
@@ -134,6 +136,8 @@ data class SpeechCallOptions(
     val instructions: String? = null,
     val speed: Double? = null,
     val language: String? = null,
+    @SerialName("max_retries") val maxRetries: Long? = null,
+    val timeout: TimeoutConfiguration? = null,
     @SerialName("provider_options") val providerOptions: JsonElement? = null,
     val headers: Map<String, String>? = null,
 )
@@ -193,6 +197,8 @@ data class ImageCallOptions(
     val seed: Long? = null,
     val files: List<JsonElement> = emptyList(),
     val mask: JsonElement? = null,
+    @SerialName("max_retries") val maxRetries: Long? = null,
+    val timeout: TimeoutConfiguration? = null,
     @SerialName("provider_options") val providerOptions: JsonElement? = null,
     val headers: Map<String, String>? = null,
 )
@@ -246,6 +252,8 @@ data class TranscriptionResult(
 data class TranscriptionCallOptions(
     val audio: JsonElement = JsonObject(emptyMap()),
     @SerialName("media_type") val mediaType: String = "",
+    @SerialName("max_retries") val maxRetries: Long? = null,
+    val timeout: TimeoutConfiguration? = null,
     @SerialName("provider_options") val providerOptions: JsonElement? = null,
     val headers: Map<String, String>? = null,
 )
@@ -286,6 +294,8 @@ data class RerankingCallOptions(
     val documents: JsonElement = JsonArray(emptyList()),
     val query: String = "",
     @SerialName("top_n") val topN: Int? = null,
+    @SerialName("max_retries") val maxRetries: Long? = null,
+    val timeout: TimeoutConfiguration? = null,
     @SerialName("provider_options") val providerOptions: JsonElement? = null,
     val headers: Map<String, String>? = null,
 )
@@ -350,6 +360,13 @@ data class VideoResult(
     val response: VideoResponse = VideoResponse(),
 )
 
+/** Per-call pacing overrides for the Core-owned video status poll loop. */
+@Serializable
+data class VideoPollOptions(
+    @SerialName("interval_ms") val intervalMs: Long? = null,
+    @SerialName("timeout_ms") val timeoutMs: Long? = null,
+)
+
 /** Options for video generation. */
 @Serializable
 data class VideoCallOptions(
@@ -358,6 +375,9 @@ data class VideoCallOptions(
     @SerialName("aspect_ratio") val aspectRatio: String? = null,
     val resolution: String? = null,
     val seed: Long? = null,
+    @SerialName("max_retries") val maxRetries: Long? = null,
+    val poll: VideoPollOptions? = null,
+    val timeout: TimeoutConfiguration? = null,
     @SerialName("provider_options") val providerOptions: JsonElement? = null,
     val headers: Map<String, String>? = null,
 )
@@ -402,6 +422,8 @@ data class SearchCallOptions(
     @SerialName("time_range") val timeRange: String? = null,
     @SerialName("include_domains") val includeDomains: List<String> = emptyList(),
     @SerialName("exclude_domains") val excludeDomains: List<String> = emptyList(),
+    @SerialName("max_retries") val maxRetries: Long? = null,
+    val timeout: TimeoutConfiguration? = null,
     @SerialName("provider_options") val providerOptions: JsonElement? = null,
     val headers: Map<String, String>? = null,
 )

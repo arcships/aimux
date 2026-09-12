@@ -30,10 +30,7 @@ use aimux_core::transcription_model::{
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, MultipartForm, media_type_to_extension, send,
-};
+use aimux_provider_utils::{HttpBody, HttpRequest, MultipartForm, media_type_to_extension};
 
 use super::OpenAIConfig;
 
@@ -269,6 +266,10 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     async fn do_generate(
         &self,
         options: &TranscriptionCallOptions,
@@ -342,27 +343,18 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         let headers = self.build_headers(options.headers.as_ref());
         let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
-        let resp = send(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
-                headers: header_list,
-                body: HttpBody::Bytes(body_bytes, content_type),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            self.config.retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
+        let resp = aimux_provider_utils::post_to_api(
+            HttpRequest::new(self.endpoint(), header_list, options),
+            HttpBody::Bytes(body_bytes, content_type),
+            aimux_provider_utils::create_json_response_handler::<OpenAITranscriptionResponse>(),
+            super::openai_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
-
-        let parsed: OpenAITranscriptionResponse = serde_json::from_slice(&resp.body)?;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let parsed = resp.value;
 
         // Map language name to ISO 639-1 code.
         let language = parsed
@@ -495,7 +487,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         // surface from do_stream's Result (clear contract: connect failure =
         // Err, not an in-stream error part).
         let req = WebSocketRequest {
-            url: ws_url,
+            url: ws_url.clone(),
             headers: std::mem::take(&mut header_list),
             subprotocols: Vec::new(),
             abort_signal: abort.clone(),
@@ -514,6 +506,8 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         let mut audio = options.audio;
         let mut audio_done = false;
         let mut committed = false;
+        let error_url = ws_url;
+        let error_request = session_update.clone();
 
         let stream = async_stream::stream! {
             yield Ok(TranscriptionStreamPart::StreamStart { warnings: vec![] });
@@ -580,11 +574,12 @@ impl TranscriptionModel for OpenAITranscriptionModel {
                                 // Peer closed. If we never got `completed`,
                                 // this is a truncated session — surface it
                                 // rather than ending silently.
-                                yield Err(AiMuxError::ApiCall(
-                                    aimux_core::error::ApiCallError {
-                                        message: "realtime transcription socket closed before completion".into(),
-                                        ..Default::default()
-                                    }));
+                                yield Err(AiMuxError::ApiCall(Box::new(
+                                    aimux_core::error::ApiCallError::new(
+                                        "realtime transcription socket closed before completion",
+                                        error_url.clone(),
+                                        error_request.clone(),
+                                    ))));
                                 break;
                             }
                             Some(Err(e)) => {
@@ -645,11 +640,15 @@ impl TranscriptionModel for OpenAITranscriptionModel {
                                         let msg = value.pointer("/error/message")
                                             .and_then(|v| v.as_str())
                                             .unwrap_or("realtime transcription error");
-                                        yield Err(AiMuxError::ApiCall(
+                                        yield Err(AiMuxError::ApiCall(Box::new(
                                             aimux_core::error::ApiCallError {
-                                                message: msg.to_string(),
-                                                ..Default::default()
-                                            }));
+                                                response_body: Some(value.to_string()),
+                                                ..aimux_core::error::ApiCallError::new(
+                                                    msg,
+                                                    error_url.clone(),
+                                                    error_request.clone(),
+                                                )
+                                            })));
                                         ws.close().await;
                                         break;
                                     }

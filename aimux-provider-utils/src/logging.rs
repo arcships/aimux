@@ -61,7 +61,7 @@ pub fn init_logging(level: &str) {
     init_once(Some(level));
 }
 
-/// Lazy env-driven auto-init, called at the HTTP throat (`send`/`send_stream`).
+/// Lazy env-driven auto-init, called by the shared API-call primitive.
 ///
 /// Cheap when already initialized (`Once::is_completed` is a single atomic
 /// load). Registers a subscriber only when an `AIMUX_LOG*` env var is present
@@ -117,44 +117,82 @@ fn truncate(body: &str) -> &str {
 }
 
 /// Redact a body for trace logging: JSON object keys whose lowercased name
-/// contains `authorization` / `api-key` / `apikey` / `key` / `token` have
-/// their (string) values replaced with `***`. Non-JSON bodies pass through
-/// unchanged. Always truncated to [`BODY_LOG_LIMIT`].
+/// match the shared recording sensitivity policy have their values replaced
+/// with `[REDACTED]`. Non-JSON bodies pass through unchanged. Always truncated
+/// to [`BODY_LOG_LIMIT`].
 #[must_use]
 pub fn redact_body(body: &str) -> String {
     let truncated = truncate(body);
     match serde_json::from_str::<serde_json::Value>(truncated) {
-        Ok(value) => {
-            serde_json::to_string(&redact_value(value)).unwrap_or_else(|_| truncated.to_owned())
-        }
+        Ok(value) => serde_json::to_string(&redact_error_context(value))
+            .unwrap_or_else(|_| truncated.to_owned()),
         Err(_) => truncated.to_owned(),
     }
 }
 
-fn redact_value(value: serde_json::Value) -> serde_json::Value {
+const ERROR_CONTEXT_MAX_DEPTH: usize = 8;
+const ERROR_CONTEXT_MAX_ITEMS: usize = 128;
+const ERROR_CONTEXT_MAX_STRING: usize = 4096;
+
+/// Redact and bound structured values before exposing them in an API error.
+#[must_use]
+pub fn redact_error_context(value: serde_json::Value) -> serde_json::Value {
+    redact_value(value, 0)
+}
+
+fn redact_value(value: serde_json::Value, depth: usize) -> serde_json::Value {
     use serde_json::Value;
+    if depth >= ERROR_CONTEXT_MAX_DEPTH {
+        return Value::String("[MAX_DEPTH]".to_owned());
+    }
     match value {
         Value::Object(map) => {
-            let mut out = serde_json::Map::with_capacity(map.len());
-            for (k, v) in map {
-                if is_sensitive_key(&k) {
-                    out.insert(k, Value::String("***".to_owned()));
+            let mut out = serde_json::Map::with_capacity(map.len().min(ERROR_CONTEXT_MAX_ITEMS));
+            for (index, (key, value)) in map.into_iter().enumerate() {
+                if index == ERROR_CONTEXT_MAX_ITEMS {
+                    out.insert("__truncated__".into(), Value::Bool(true));
+                    break;
+                }
+                if aimux_core::recording::is_sensitive_key(&key) {
+                    out.insert(key, Value::String("[REDACTED]".to_owned()));
                 } else {
-                    out.insert(k, redact_value(v));
+                    out.insert(key, redact_value(value, depth + 1));
                 }
             }
             Value::Object(out)
         }
-        Value::Array(items) => Value::Array(items.into_iter().map(redact_value).collect()),
+        Value::Array(items) => {
+            let original_len = items.len();
+            let mut items: Vec<_> = items
+                .into_iter()
+                .take(ERROR_CONTEXT_MAX_ITEMS)
+                .map(|value| redact_value(value, depth + 1))
+                .collect();
+            if original_len > ERROR_CONTEXT_MAX_ITEMS {
+                items.push(serde_json::json!({
+                    "__truncated_items__": original_len - ERROR_CONTEXT_MAX_ITEMS
+                }));
+            }
+            Value::Array(items)
+        }
+        Value::String(value) if value.len() > ERROR_CONTEXT_MAX_STRING => {
+            Value::String(format!("[STRING {} bytes]", value.len()))
+        }
         other => other,
     }
 }
 
-fn is_sensitive_key(key: &str) -> bool {
-    let k = key.to_ascii_lowercase();
-    ["authorization", "api-key", "apikey", "key", "token"]
-        .iter()
-        .any(|needle| k.contains(needle))
+/// Sanitize request values before storing them in a public `ApiCallError`.
+#[must_use]
+pub fn redact_request_values(body: &crate::http::HttpBody) -> serde_json::Value {
+    match body {
+        crate::http::HttpBody::Json(value) => redact_error_context(value.clone()),
+        crate::http::HttpBody::Bytes(bytes, content_type) => serde_json::json!({
+            "content_type": content_type,
+            "length": bytes.len(),
+        }),
+        crate::http::HttpBody::Empty => serde_json::json!({}),
+    }
 }
 
 /// Small helper used by tests to capture formatted output.
@@ -236,11 +274,11 @@ mod tests {
         assert!(!out.contains("sk-secret"), "api_key value leaked: {out}");
         assert!(!out.contains("Bearer xyz"), "authorization leaked: {out}");
         assert!(
-            out.contains("\"api_key\":\"***\""),
+            out.contains("\"api_key\":\"[REDACTED]\""),
             "api_key not redacted: {out}"
         );
         assert!(
-            out.contains("\"authorization\":\"***\""),
+            out.contains("\"authorization\":\"[REDACTED]\""),
             "authorization not redacted: {out}"
         );
         assert!(
@@ -254,6 +292,15 @@ mod tests {
         let body = "x".repeat(BODY_LOG_LIMIT + 500);
         let out = redact_body(&body);
         assert!(out.len() <= BODY_LOG_LIMIT);
+    }
+
+    #[test]
+    fn truncation_respects_utf8_char_boundaries() {
+        // A 3-byte char straddling the limit must be dropped whole, not split
+        // (a byte-index slice would panic mid-char).
+        let body = format!("{}中中", "x".repeat(BODY_LOG_LIMIT - 1));
+        let out = redact_body(&body);
+        assert_eq!(out, "x".repeat(BODY_LOG_LIMIT - 1));
     }
 
     #[test]

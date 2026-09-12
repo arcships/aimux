@@ -29,6 +29,53 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{RetryConfig, load_api_key, without_trailing_slash};
+use serde_json::Value;
+
+pub(crate) fn google_stream_error(
+    error: &types::GoogleError,
+    url: &str,
+    request_body_values: Value,
+    response_headers: std::collections::HashMap<String, String>,
+) -> AiMuxError {
+    let status_code = error
+        .code
+        .and_then(|status| u16::try_from(status).ok())
+        .filter(|status| (400..=599).contains(status));
+    let data = serde_json::json!({
+        "error": {
+            "code": error.code,
+            "message": error.message,
+            "status": error.status,
+        }
+    });
+    aimux_provider_utils::stream_error_api_call(
+        error.message.clone(),
+        error.status.clone(),
+        status_code,
+        &data,
+        url,
+        request_body_values,
+        response_headers,
+    )
+}
+
+pub(crate) fn google_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
+{
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error").unwrap_or(data);
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: error
+                .get("status")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        }
+    })
+}
 
 /// Configuration for the Google Gemini provider.
 #[derive(Debug, Clone)]
@@ -39,8 +86,7 @@ pub struct GoogleConfig {
     /// (config_snapshot 记为 "explicit");`Some("env:VAR")` = 来自环境变量。
     /// 不存明文之外的信息,仅用于回放重建。
     pub api_key_source: Option<String>,
-    /// 重试配置。默认 `RetryConfig::default()`（max_retries=2）。M1b:取代
-    /// 之前硬编码的 `RetryConfig::default()`,让 per-call `max_retries` 生效。
+    /// Retry settings used by Core model operations.
     pub retry_config: RetryConfig,
 }
 
@@ -90,7 +136,7 @@ impl GoogleConfig {
 
 /// Google Gemini provider — creates `GoogleModel` instances.
 ///
-/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct GoogleProvider {
     config: GoogleConfig,
@@ -180,24 +226,24 @@ impl Provider for GoogleProvider {
             let mut header_list: Vec<(String, String)> = headers.into_iter().collect();
             header_list.push(("Content-Type".to_string(), "application/json".to_string()));
 
-            use aimux_provider_utils::{
-                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send_timed,
-            };
-            let resp = send_timed(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url,
-                    headers: header_list,
-                    body: HttpBody::Empty,
-                    abort_signal: None,
-                    call_id: None,
-                    recording_context: None,
-                },
-                config.retry_config,
-                &DEFAULT_ERROR_STRUCTURE,
-                None,
-            )
-            .await?;
+            use aimux_provider_utils::HttpRequest;
+            // Retry rationale: see `openai::model::execute_list_models`.
+            let resp = aimux_core::retry::prepare_retries(None, config.retry_config, None)
+                .retry(|| {
+                    aimux_provider_utils::get_from_api(
+                        HttpRequest {
+                            url: url.clone(),
+                            headers: header_list.clone(),
+                            abort_signal: None,
+                            call_id: None,
+                            recording_context: None,
+                            ..Default::default()
+                        },
+                        aimux_provider_utils::create_json_response_handler(),
+                        google_failed_response_handler(),
+                    )
+                })
+                .await?;
 
             // Gemini response: { models: [{ name: "models/gemini-...", displayName, ... }] }
             #[derive(serde::Deserialize)]
@@ -211,7 +257,7 @@ impl Provider for GoogleProvider {
                 #[serde(default)]
                 display_name: Option<String>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)?;
+            let parsed: Resp = resp.value;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .models
                 .into_iter()

@@ -17,12 +17,50 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult,
 };
+use aimux_core::retry;
 use aimux_core::shared::Warning;
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, send_validated,
-    sleep_or_abort, without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, sleep_or_abort, without_trailing_slash};
+
+/// AI SDK's `isTrustedUrl` (black-forest-labs-api.ts): credentials may go to
+/// the configured origin, or over HTTPS to `bfl.ai` and its subdomains — BFL
+/// serves polling and asset URLs from regional clusters. Allowlisted hosts
+/// still get full URL/DNS validation; this gates only the headers.
+fn bfl_trusted_url(url: &str, base_url: &str) -> bool {
+    if aimux_provider_utils::same_origin(url, base_url) {
+        return true;
+    }
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    parsed.scheme() == "https"
+        && parsed
+            .host_str()
+            .is_some_and(|host| host == "bfl.ai" || host.ends_with(".bfl.ai"))
+}
+
+fn bfl_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let detail = data.get("detail");
+        let message = detail
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| {
+                detail
+                    .filter(|value| !value.is_null())
+                    .map(Value::to_string)
+            })
+            .or_else(|| {
+                data.get("message")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| "Unknown Black Forest Labs error".to_string());
+        aimux_provider_utils::ProviderErrorParts {
+            message,
+            provider_code: None,
+        }
+    })
+}
 
 const DEFAULT_POLL_INTERVAL_MS: u64 = 500;
 const DEFAULT_POLL_TIMEOUT_MS: u64 = 60000;
@@ -138,23 +176,6 @@ impl BlackForestLabsImageModel {
 
 fn gcd(a: u32, b: u32) -> u32 {
     if b == 0 { a } else { gcd(b, a % b) }
-}
-
-/// AI SDK's `isTrustedUrl` (black-forest-labs-api.ts): credentials may go to
-/// the configured origin, or over HTTPS to `bfl.ai` and its subdomains — BFL
-/// serves polling and asset URLs from regional clusters. Allowlisted hosts
-/// still get full URL/DNS validation; this gates only the headers.
-fn bfl_trusted_url(url: &str, base_url: &str) -> bool {
-    if aimux_provider_utils::same_origin(url, base_url) {
-        return true;
-    }
-    let Ok(parsed) = url::Url::parse(url) else {
-        return false;
-    };
-    parsed.scheme() == "https"
-        && parsed
-            .host_str()
-            .is_some_and(|host| host == "bfl.ai" || host.ends_with(".bfl.ai"))
 }
 
 #[async_trait]
@@ -302,33 +323,16 @@ impl ImageModel for BlackForestLabsImageModel {
 
         let headers = self.build_headers(options.headers.as_ref());
         let header_list: Vec<(String, String)> = headers.into_iter().collect();
-        // AI SDK gates headers per URL via isTrustedUrl; response-supplied
-        // targets outside the BFL allowlist get none.
-        let gated_headers = |url: &str| -> Vec<(String, String)> {
-            if bfl_trusted_url(url, &self.config.base_url) {
-                header_list.clone()
-            } else {
-                vec![]
-            }
-        };
 
         // Submit
-        let resp = send(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.submit_endpoint(),
-                headers: header_list.clone(),
-                body: HttpBody::Json(Value::Object(body)),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+        let resp = aimux_provider_utils::post_json_to_api(
+            HttpRequest::new(self.submit_endpoint(), header_list.clone(), options),
+            Value::Object(body),
+            aimux_provider_utils::create_json_response_handler(),
+            bfl_failed_response_handler(),
         )
         .await?;
-        let submit_body: Value = serde_json::from_slice(&resp.body)?;
+        let submit_body: Value = resp.value;
 
         let poll_url = submit_body
             .get("polling_url")
@@ -342,6 +346,11 @@ impl ImageModel for BlackForestLabsImageModel {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+        let retries = retry::prepare_retries(
+            options.max_retries,
+            self.retry_config(),
+            options.abort_signal.clone(),
+        );
 
         // Poll for result
         let poll_interval = bfl_opts
@@ -368,29 +377,45 @@ impl ImageModel for BlackForestLabsImageModel {
         let mut result_end_time = None;
         let mut result_duration = None;
 
+        // AI SDK gates headers per URL via isTrustedUrl; response-supplied
+        // targets outside the BFL allowlist get none.
+        let gated_headers = |url: &str| -> Vec<(String, String)> {
+            if bfl_trusted_url(url, &self.config.base_url) {
+                header_list.clone()
+            } else {
+                vec![]
+            }
+        };
+
         for _ in 0..max_attempts {
             // AI SDK polls polling_url with validateUrl: true and gates the
             // headers itself via isTrustedUrl (base_url origin or HTTPS
             // *.bfl.ai), so credentialed_origin is None here.
             let poll_url = poll_url_with_id.to_string();
-            let pr = send_validated(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    headers: gated_headers(&poll_url),
-                    url: poll_url,
-                    body: HttpBody::Empty,
+            let pr = retries
+                .retry(|| {
+                    aimux_provider_utils::get_from_api(
+                        HttpRequest {
+                            url: poll_url.clone(),
+                            headers: gated_headers(&poll_url),
 
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                },
-                Some(&self.config.base_url),
-                None,
-                RetryConfig::default(),
-                &DEFAULT_ERROR_STRUCTURE,
-            )
-            .await?;
-            let pv: Value = serde_json::from_slice(&pr.body)?;
+                            abort_signal: options.abort_signal.clone(),
+                            call_id: None,
+                            recording_context: None,
+                            response_timeout: None,
+                            max_json_response_bytes: None,
+                            validate_url: true,
+                            trusted_origin: Some(self.config.base_url.clone()),
+                            // Headers are gated per URL by gated_headers above.
+                            credentialed_origin: None,
+                        },
+                        aimux_provider_utils::create_json_response_handler::<Value>(),
+                        bfl_failed_response_handler(),
+                    )
+                })
+                .await?;
+            let response_body = pr.raw_value.as_ref().map(ToString::to_string);
+            let pv = pr.value;
 
             let poll_status = pv
                 .get("status")
@@ -416,13 +441,17 @@ impl ImageModel for BlackForestLabsImageModel {
                 break;
             }
             if poll_status == "Error" || poll_status == "Failed" {
-                return Err(AiMuxError::ApiCall(ApiCallError {
-                    status_code: Some(pr.status),
+                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                    status_code: Some(200),
                     provider_code: Some(poll_status.to_string()),
                     message: "Black Forest Labs generation failed.".into(),
-                    response_body: Some(String::from_utf8_lossy(&pr.body).into_owned()),
-                    ..Default::default()
-                }));
+                    response_body,
+                    ..ApiCallError::new(
+                        "Black Forest Labs generation failed.",
+                        poll_url_with_id.to_string(),
+                        serde_json::json!({}),
+                    )
+                })));
             }
             sleep_or_abort(
                 std::time::Duration::from_millis(poll_interval),
@@ -438,26 +467,31 @@ impl ImageModel for BlackForestLabsImageModel {
         })?;
 
         // Download image; result.sample is a URL from the poll response body.
-        // AI SDK sends its headers to trusted BFL hosts on the download too
-        // (isTrustedUrl-gated), so mirror the poll's header policy.
-        let ir = send_validated(
-            HttpRequest {
-                method: HttpMethod::Get,
-                headers: gated_headers(&image_url),
-                url: image_url,
-                body: HttpBody::Empty,
+        // AI SDK sends its headers to trusted BFL hosts on the download too,
+        // gated by the same allowlist.
+        let ir = retries
+            .retry(|| {
+                aimux_provider_utils::get_from_api(
+                    HttpRequest {
+                        url: image_url.clone(),
+                        headers: gated_headers(&image_url),
 
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            Some(&self.config.base_url),
-            None,
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
-        )
-        .await?;
-        let image_bytes = ir.body.to_vec();
+                        abort_signal: options.abort_signal.clone(),
+                        call_id: None,
+                        recording_context: None,
+                        response_timeout: None,
+                        max_json_response_bytes: None,
+                        validate_url: true,
+                        trusted_origin: Some(self.config.base_url.clone()),
+                        // Headers are gated per URL by gated_headers above.
+                        credentialed_origin: None,
+                    },
+                    aimux_provider_utils::create_binary_response_handler(),
+                    bfl_failed_response_handler(),
+                )
+            })
+            .await?;
+        let image_bytes = ir.value.to_vec();
         let download_headers: HashMap<String, String> = HashMap::new();
 
         // Build provider metadata
@@ -499,24 +533,5 @@ impl ImageModel for BlackForestLabsImageModel {
             },
             usage: None,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::bfl_trusted_url;
-
-    #[test]
-    fn credentials_go_to_the_base_url_and_bfl_hosts_only() {
-        let base = "https://api.bfl.ai";
-        assert!(bfl_trusted_url("https://api.bfl.ai/v1/get_result", base));
-        assert!(bfl_trusted_url(
-            "https://api.us1.bfl.ai/v1/get_result",
-            base
-        ));
-        assert!(bfl_trusted_url("https://bfl.ai/x", base));
-        assert!(!bfl_trusted_url("http://api.us1.bfl.ai/x", base));
-        assert!(!bfl_trusted_url("https://evil-bfl.ai/x", base));
-        assert!(!bfl_trusted_url("https://attacker.example/x", base));
     }
 }

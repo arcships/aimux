@@ -8,9 +8,20 @@ import type { TimingRecord } from "./TimingRecord";
  */
 export type HttpExchange = { 
 /**
- * 第几次重试(0=首次);per-attempt 递增。
+ * Composite step this exchange belongs to (e.g. `router[0]:openai/gpt-4o`
+ * or `moa.ref[1]:...`). `None` for a plain, non-composite operation.
  */
-attempt: number, request: HttpRecord, 
+step?: string | null, 
+/**
+ * Core operation attempt, starting at 1. Attempt numbers are unique
+ * across the whole call, including composite child steps, so
+ * `(attempt, exchange_index)` alone still identifies an exchange.
+ */
+attempt: number, 
+/**
+ * HTTP exchange within the operation attempt, starting at 1.
+ */
+exchange_index: number, request: HttpRecord, 
 /**
  * None = 请求失败未获响应。
  */

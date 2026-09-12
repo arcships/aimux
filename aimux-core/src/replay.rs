@@ -1102,7 +1102,9 @@ mod tests {
                 provider_options: None,
             },
             exchanges: vec![HttpExchange {
+                step: None,
                 attempt: 0,
+                exchange_index: 0,
                 request: HttpRecord {
                     method: "post".into(),
                     url: "https://api.openai.com/v1/chat/completions".into(),
@@ -1127,6 +1129,7 @@ mod tests {
                 status: crate::recording::OutcomeStatus::Success,
                 finish_reason: Some("stop".into()),
                 error: None,
+                error_value: None,
                 usage: None,
             },
             complete: true,
@@ -1835,7 +1838,9 @@ mod tests {
             "usage": {"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}
         });
         rec.exchanges.push(HttpExchange {
+            step: None,
             attempt: 1,
+            exchange_index: 1,
             request: HttpRecord {
                 method: "post".into(),
                 url: "https://api.openai.com/v1/chat/completions".into(),

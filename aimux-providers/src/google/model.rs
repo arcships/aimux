@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use aimux_core::error::{AiMuxError, ApiCallError};
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
@@ -16,30 +16,17 @@ use aimux_core::types::{
     FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
 };
 
-use aimux_provider_utils::response::{ErrorStructure, error_for_status};
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed};
-use aimux_stream::SseStream;
+use aimux_provider_utils::HttpRequest;
 
 use super::GoogleConfig;
 use super::convert::{
     build_request_body_with_warnings, convert_usage, extract_sources, parse_finish_reason,
 };
-use super::types::{
-    Candidate, GenerateContentResponse, GoogleErrorEnvelope, GoogleUsageMetadata, StreamChunk,
-};
-
-/// Google-specific error structure: `{ "error": { "message": "..." } }`.
-///
-/// Google uses `code` (HTTP status as a number) and `status` (a string like
-/// `INVALID_ARGUMENT`) instead of OpenAI's `type` field.
-const GOOGLE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["error", "message"],
-    type_path: &["error", "status"],
-};
+use super::types::{Candidate, GenerateContentResponse, GoogleStreamEvent};
 
 /// A Google Gemini language model.
 ///
-/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct GoogleModel {
     model_id: String,
@@ -110,6 +97,10 @@ impl LanguageModel for GoogleModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         use aimux_core::recording::ProviderRecord;
         ProviderRecord {
@@ -129,32 +120,21 @@ impl LanguageModel for GoogleModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_timed(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.generate_endpoint(),
-                headers: build_header_list(&headers),
-                body: HttpBody::Json(body.clone()),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-            },
-            retry_config,
-            &GOOGLE_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+        let resp = aimux_provider_utils::post_json_to_api(
+            HttpRequest::new(
+                self.generate_endpoint(),
+                build_header_list(&headers),
+                options,
+            ),
+            body.clone(),
+            aimux_provider_utils::create_json_response_handler(),
+            super::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let data: GenerateContentResponse =
-            serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
+        let data: GenerateContentResponse = resp.value;
 
         let candidate = data.candidates.into_iter().next().ok_or_else(|| {
             AiMuxError::InvalidResponseData("no candidates in response".to_string())
@@ -209,36 +189,38 @@ impl LanguageModel for GoogleModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_stream_timed(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.stream_endpoint(),
-                headers: build_header_list(&headers),
-                body: HttpBody::Json(body.clone()),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-            },
-            retry_config,
-            &GOOGLE_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+        let endpoint = self.stream_endpoint();
+        let resp = aimux_provider_utils::post_json_to_api(
+            HttpRequest::new(endpoint.clone(), build_header_list(&headers), options),
+            body.clone(),
+            aimux_provider_utils::create_event_source_response_handler::<GoogleStreamEvent>(),
+            super::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let sse_stream = SseStream::new(resp.body);
+        let mut sse_stream = resp.value;
+        let first_event = match sse_stream.next().await {
+            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+            first_event => first_event,
+        };
+        if let Some(Ok(GoogleStreamEvent::Error(error))) = first_event.as_ref() {
+            return Err(super::google_stream_error(
+                &error.error,
+                &endpoint,
+                body.clone(),
+                response_headers,
+            ));
+        }
+        let stream_error_url = endpoint.clone();
+        let stream_request_body = body.clone();
+        let stream_error_headers = response_headers.clone();
 
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: tool_warnings });
 
-            let mut sse_stream = sse_stream;
+            let mut sse_stream = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
             let mut text_id: Option<String> = None;
             let mut reasoning_id: Option<String> = None;
             let mut block_counter = 0usize;
@@ -272,32 +254,7 @@ impl LanguageModel for GoogleModel {
                     break;
                 }
                 match event {
-                    Ok(sse_event) => {
-                        // Parse as generic Value first to surface errors.
-                        let parsed: Value = match serde_json::from_str(&sse_event.data) {
-                            Ok(v) => v,
-                            Err(e) => {
-                                yield Ok(StreamPart::Error {
-                                    error: AiMuxError::from(e),
-                                });
-                                stream_errored = true;
-                                break;
-                            }
-                        };
-
-                        // Try to parse as a StreamChunk. The Google stream
-                        // is a sequence of independent JSON objects (one per
-                        // SSE event), not OpenAI-style delta fragments.
-                        let chunk: StreamChunk = match serde_json::from_value(parsed) {
-                            Ok(c) => c,
-                            Err(e) => {
-                                yield Ok(StreamPart::Error {
-                                    error: AiMuxError::from(e),
-                                });
-                                stream_errored = true;
-                                break;
-                            }
-                        };
+                    Ok(GoogleStreamEvent::Chunk(chunk)) => {
 
                         // Emit ResponseMetadata from the first chunk that has
                         // a responseId (matches TS behaviour).
@@ -630,12 +587,24 @@ impl LanguageModel for GoogleModel {
                                 Some(parse_finish_reason(reason, has_tool_calls));
                         }
                     }
-                    Err(e) => {
+                    Ok(GoogleStreamEvent::Error(error)) => {
                         yield Ok(StreamPart::Error {
-                            error: AiMuxError::InvalidResponseData(e.to_string()),
+                            error: super::google_stream_error(
+                                &error.error,
+                                &stream_error_url,
+                                stream_request_body.clone(),
+                                stream_error_headers.clone(),
+                            ),
                         });
                         stream_errored = true;
                         break;
+                    }
+                    Err(error) => {
+                        let recoverable = error.is_recoverable_stream_error();
+                        yield Err(error);
+                        if !recoverable {
+                            return;
+                        }
                     }
                 }
             }
@@ -917,42 +886,6 @@ fn set_provider_metadata(item: &mut GenerateContent, meta: ProviderMetadata) {
         }
     }
 }
-
-/// Parse a Google error JSON envelope into an `AiMuxError`. Used for
-/// mid-stream error objects (the Gemini SSE stream can carry `{ "error": … }`
-/// events). Kept for parity with the OpenAI provider even though the common
-/// error path goes through `parse_provider_error`.
-#[allow(dead_code)]
-fn parse_google_error_body(body: &str) -> AiMuxError {
-    if let Ok(env) = serde_json::from_str::<GoogleErrorEnvelope>(body) {
-        let msg = env.error.message;
-        let provider_code = env.error.status;
-        return match env.error.code {
-            Some(code) => error_for_status(
-                code as u16,
-                provider_code,
-                msg,
-                None,
-                Some(body.to_string()),
-            ),
-            None => AiMuxError::ApiCall(ApiCallError {
-                provider_code,
-                message: msg,
-                response_body: Some(body.to_string()),
-                ..Default::default()
-            }),
-        };
-    }
-    AiMuxError::ApiCall(ApiCallError {
-        message: body.to_string(),
-        response_body: Some(body.to_string()),
-        ..Default::default()
-    })
-}
-
-// Suppress unused warning for GoogleUsageMetadata (re-exported via convert).
-#[allow(unused_imports)]
-use GoogleUsageMetadata as _GoogleUsageMetadata;
 
 #[cfg(test)]
 mod tests {

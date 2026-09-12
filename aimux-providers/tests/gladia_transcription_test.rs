@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Gladia transcription model tests.
+//! Rust translation of the Gladia transcription model tests.
 //! Source: `reference/ai/packages/gladia/src/gladia-transcription-model.test.ts`
 
 use std::collections::HashMap;

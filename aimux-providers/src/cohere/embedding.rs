@@ -16,8 +16,7 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+use aimux_provider_utils::HttpRequest;
 
 use super::CohereConfig;
 
@@ -62,6 +61,10 @@ impl EmbeddingModel for CohereEmbeddingModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn max_embeddings_per_call(&self) -> Option<u32> {
         Some(96)
     }
@@ -104,25 +107,17 @@ impl EmbeddingModel for CohereEmbeddingModel {
             .collect();
         header_list.push(("Content-Type".to_string(), "application/json".to_string()));
 
-        let resp = send(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
-                headers: header_list,
-                body: HttpBody::Json(Value::Object(body)),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+        let resp = aimux_provider_utils::post_json_to_api(
+            HttpRequest::new(self.endpoint(), header_list, options),
+            Value::Object(body),
+            aimux_provider_utils::create_json_response_handler(),
+            super::cohere_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let raw_value: Value = serde_json::from_slice(&resp.body)?;
+        let raw_value: Value = resp.value;
 
         // Extract embeddings: response.embeddings.float
         let embeddings: Vec<Vec<f32>> = raw_value

@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Fal video model tests.
+//! Rust translation of the Fal video model tests.
 //! Source: `reference/ai/packages/fal/src/fal-video-model.test.ts`
 
 use std::collections::HashMap;
@@ -7,11 +7,20 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::video_model::{VideoCallOptions, VideoModel};
+use aimux_core::video_model::{VideoCallOptions, generate_video};
 use aimux_providers::{FalConfig, FalProvider};
 
+fn fast_poll() -> Option<aimux_core::video_model::VideoPollOptions> {
+    Some(aimux_core::video_model::VideoPollOptions {
+        interval_ms: Some(1),
+        timeout_ms: Some(10_000),
+    })
+}
+
 fn options(prompt: &str) -> VideoCallOptions {
-    VideoCallOptions::new(prompt)
+    let mut o = VideoCallOptions::new(prompt);
+    o.poll = fast_poll();
+    o
 }
 
 async fn mock_queue_and_result(server: &MockServer, result: &Value) {
@@ -37,7 +46,9 @@ async fn should_generate_video() {
     let provider = FalProvider::new(config);
     let model = provider.video("fal-ai/kling-video");
 
-    let r = model.do_generate(&options("A cat playing")).await.unwrap();
+    let r = generate_video(&model, options("A cat playing"))
+        .await
+        .unwrap();
     assert_eq!(r.videos.len(), 1);
 }
 
@@ -51,7 +62,9 @@ async fn should_pass_prompt() {
     let provider = FalProvider::new(config);
     let model = provider.video("fal-ai/kling-video");
 
-    model.do_generate(&options("A cat playing")).await.unwrap();
+    generate_video(&model, options("A cat playing"))
+        .await
+        .unwrap();
 
     let requests = server.received_requests().await.unwrap();
     let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
@@ -77,7 +90,7 @@ async fn should_pass_headers() {
     rh.insert("Custom-Request-Header".to_string(), "req-val".to_string());
     opts.headers = Some(rh);
 
-    model.do_generate(&opts).await.unwrap();
+    generate_video(&model, opts).await.unwrap();
 
     let requests = server.received_requests().await.unwrap();
     let h = &requests[0].headers;
@@ -96,7 +109,7 @@ async fn should_include_response_data() {
     let provider = FalProvider::new(config);
     let model = provider.video("fal-ai/kling-video");
 
-    let r = model.do_generate(&options("test")).await.unwrap();
+    let r = generate_video(&model, options("test")).await.unwrap();
     assert!(r.response.timestamp.is_some());
     assert_eq!(r.response.model_id, Some("fal-ai/kling-video".to_string()));
 }

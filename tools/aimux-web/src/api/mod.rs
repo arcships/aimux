@@ -62,7 +62,7 @@ pub fn err_response(e: AiMuxError) -> Response {
         | AiMuxError::NoSuchProvider { .. }
         | AiMuxError::NoSuchModel { .. } => StatusCode::BAD_REQUEST,
         AiMuxError::UnsupportedFunctionality(_) => StatusCode::NOT_IMPLEMENTED,
-        AiMuxError::Timeout(_) | AiMuxError::Aborted => StatusCode::GATEWAY_TIMEOUT,
+        AiMuxError::Timeout(_) | AiMuxError::Aborted(_) => StatusCode::GATEWAY_TIMEOUT,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     };
     (

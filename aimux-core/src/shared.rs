@@ -12,11 +12,11 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
-// Re-export the existing `Warning` so providers can import everything they
-// need from `crate::shared` in one place.
+// Keep the established shared-module paths while the canonical cancellation
+// implementation lives in its focused module.
+pub use crate::abort_signal::AbortSignal;
 pub use crate::types::Warning;
 
 /// Additional HTTP headers sent with a provider request.
@@ -78,56 +78,6 @@ pub enum FileData {
     Reference { reference: SharedProviderReference },
     /// Inline text content (e.g. an inline text document).
     Text { text: String },
-}
-
-/// A cancellation signal analogous to the Web `AbortSignal`.
-///
-/// Event-driven: backed by `tokio_util::sync::CancellationToken` (itself a
-/// `tokio::sync::Notify`). Consumers can poll [`is_aborted`](Self::is_aborted)
-/// synchronously, or await [`cancelled`](Self::cancelled) for prompt,
-/// notification-based wakeup — no polling loop needed.
-///
-/// This type is `Send + Sync` and cheap to clone.
-#[derive(Debug, Clone)]
-pub struct AbortSignal {
-    token: CancellationToken,
-}
-
-impl Default for AbortSignal {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl AbortSignal {
-    /// Create a fresh, un-aborted signal.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            token: CancellationToken::new(),
-        }
-    }
-
-    /// Request cancellation. All clones observe the aborted state and any
-    /// pending [`cancelled`](Self::cancelled) futures resolve.
-    pub fn abort(&self) {
-        self.token.cancel();
-    }
-
-    /// Returns `true` once [`abort`](Self::abort) has been called.
-    #[must_use]
-    pub fn is_aborted(&self) -> bool {
-        self.token.is_cancelled()
-    }
-
-    /// A future that resolves as soon as the signal is aborted.
-    ///
-    /// If the signal is already aborted, the future resolves immediately on
-    /// the first poll. Suitable for `tokio::select!` arms.
-    pub fn cancelled(&self) -> impl std::future::Future<Output = ()> + Send + 'static {
-        let token = self.token.clone();
-        async move { token.cancelled_owned().await }
-    }
 }
 
 /// Image/video size in `{width}x{height}` format (e.g. `"1024x1024"`).

@@ -419,6 +419,10 @@ pub fn to_chat_completion_stream(
         while let Some(part_result) = stream.next().await {
             let part = match part_result {
                 Ok(p) => p,
+                Err(e) if e.is_recoverable_stream_error() => {
+                    yield Err(e);
+                    continue;
+                }
                 Err(e) => {
                     // Emit error as a content delta + finish, then stop.
                     if let Some(chunk) = state.error_chunk(&e) {
@@ -1548,10 +1552,11 @@ mod tests {
                 provider_metadata: None,
             }),
             Ok(StreamPart::Error {
-                error: AiMuxError::ApiCall(crate::error::ApiCallError {
-                    message: "something went wrong".to_string(),
-                    ..Default::default()
-                }),
+                error: AiMuxError::ApiCall(Box::new(crate::error::ApiCallError::new(
+                    "something went wrong",
+                    "https://example.test/v1",
+                    serde_json::json!({}),
+                ))),
             }),
         ];
 
@@ -1584,6 +1589,51 @@ mod tests {
         // Final chunk should still have finish_reason.
         let last = chunks.last().unwrap();
         assert_eq!(last.choices[0].finish_reason.as_deref(), Some("stop"));
+    }
+
+    #[tokio::test]
+    async fn recoverable_frame_error_does_not_truncate_chat_completion_stream() {
+        let parts: Vec<Result<StreamPart, AiMuxError>> = vec![
+            Ok(StreamPart::StreamStart { warnings: vec![] }),
+            Err(AiMuxError::JsonParse("malformed SSE data".into())),
+            Ok(StreamPart::TextDelta {
+                id: "0".to_string(),
+                delta: "after-error".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(StreamPart::Finish {
+                finish_reason: FinishReason {
+                    unified: FinishReasonUnified::Stop,
+                    raw: Some("stop".into()),
+                },
+                usage: Usage::default(),
+                provider_metadata: None,
+            }),
+        ];
+
+        let result = to_chat_completion_stream(
+            Box::pin(futures::stream::iter(parts)),
+            "gpt-4o",
+            OpenAiStreamOptions::default(),
+        );
+        let outcomes: Vec<_> = result.stream.collect().await;
+        let error_index = outcomes
+            .iter()
+            .position(|outcome| matches!(outcome, Err(AiMuxError::JsonParse(_))))
+            .expect("parse error should be preserved as an error item");
+
+        assert!(outcomes[error_index + 1..].iter().any(|outcome| matches!(
+            outcome,
+            Ok(chunk)
+                if chunk.choices.first().and_then(|choice| choice.delta.content.as_deref())
+                    == Some("after-error")
+        )));
+        assert!(outcomes.iter().any(|outcome| matches!(
+            outcome,
+            Ok(chunk)
+                if chunk.choices.first().and_then(|choice| choice.finish_reason.as_deref())
+                    == Some("stop")
+        )));
     }
 
     #[tokio::test]

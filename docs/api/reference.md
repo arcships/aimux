@@ -11,10 +11,10 @@
 |------|-------------|----------------|-------|
 | `GenerateTextOptions` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextOptions.ts](../../bindings/node/src/types/GenerateTextOptions.ts) | per-call text options (temperature, tools, reasoning, timeout, …) |
 | `CallOptions` | [options.rs](../../aimux-core/src/options.rs) | [CallOptions.ts](../../bindings/node/src/types/CallOptions.ts) | base options for all modalities |
-| `TimeoutConfiguration` | [options.rs](../../aimux-core/src/options.rs) | [TimeoutConfiguration.ts](../../bindings/node/src/types/TimeoutConfiguration.ts) | `total_ms` / `first_chunk_ms` / `chunk_ms` |
+| `TimeoutConfiguration` | [options.rs](../../aimux-core/src/options.rs) | [TimeoutConfiguration.ts](../../bindings/node/src/types/TimeoutConfiguration.ts) | `total_ms` / `step_ms` / `first_chunk_ms` / `chunk_ms` |
 | `ResponseFormat` | [options.rs](../../aimux-core/src/options.rs) | [ResponseFormat.ts](../../bindings/node/src/types/ResponseFormat.ts) | text / json_object / json_schema |
 | `ReasoningEffort` | [types.rs](../../aimux-core/src/types.rs) | [ReasoningEffort.ts](../../bindings/node/src/types/ReasoningEffort.ts) | 7 levels, passed through verbatim |
-| `AbortSignal` | [shared.rs](../../aimux-core/src/shared.rs) | — (runtime handle) | Rust: options field; Node: `AbortBridge` + JS `AbortSignal` |
+| `AbortSignal` | [abort_signal.rs](../../aimux-core/src/abort_signal.rs) | — (runtime handle) | Rust: options field; Node: `AbortBridge` + JS `AbortSignal` |
 | `ProviderOptions` | [provider.rs](../../aimux-providers/src/provider.rs) | `ProviderConfig` (per binding) | `base_url` / `headers` / `organization` / `project` / `max_retries` / `body_overrides` |
 | `ProviderName` | [provider_name.rs](../../aimux-providers/src/provider_name.rs) | [ProviderName.ts](../../bindings/node/src/types/ProviderName.ts) | one constant per registry provider (251); also generated for Go / Python / Java / Kotlin / Swift / Dart (`scripts/gen_provider_names.py`) |
 | `GenerateTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextResult.ts](../../bindings/node/src/types/GenerateTextResult.ts) | `text`, `tool_calls`, `usage`, `warnings`, `raw` |

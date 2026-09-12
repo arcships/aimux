@@ -30,6 +30,63 @@ use aimux_core::provider::Provider;
 use aimux_provider_utils::{RetryConfig, load_api_key, without_trailing_slash};
 use serde_json::Value;
 
+pub(crate) fn openai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
+{
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error").unwrap_or(data);
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: error
+                .get("code")
+                .or_else(|| error.get("type"))
+                .and_then(|value| match value {
+                    Value::String(value) => Some(value.clone()),
+                    Value::Number(value) => Some(value.to_string()),
+                    _ => None,
+                }),
+        }
+    })
+}
+
+pub(crate) fn openai_stream_error(
+    error: &Value,
+    url: &str,
+    request_body_values: Value,
+    response_headers: std::collections::HashMap<String, String>,
+) -> AiMuxError {
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("OpenAI stream failed before any output was generated")
+        .to_owned();
+    let code = error.get("code").or_else(|| error.get("type"));
+    let provider_code = code.and_then(|value| match value {
+        Value::String(value) => Some(value.clone()),
+        Value::Number(value) => Some(value.to_string()),
+        _ => None,
+    });
+    // Only a numeric HTTP status in the payload is a status; a string code
+    // ("invalid_api_key") must not be laundered into a retryable 500.
+    let status_code = code
+        .and_then(Value::as_u64)
+        .filter(|status| (400..=599).contains(status))
+        .map(|status| status as u16);
+
+    aimux_provider_utils::stream_error_api_call(
+        message,
+        provider_code,
+        status_code,
+        error,
+        url,
+        request_body_values,
+        response_headers,
+    )
+}
+
 /// 描述 OpenAI 兼容厂商的差异。
 ///
 /// 薄封装填这个结构，共享的请求构造和响应解析读它决定行为。
@@ -163,9 +220,7 @@ pub struct OpenAIConfig {
     /// 厂商能力差异描述。默认 `full()`（支持全部能力）。
     /// 薄封装用 `with_profile()` 设置差异。
     pub profile: OpenAICompatProfile,
-    /// 重试配置。默认 `RetryConfig::default()`（max_retries=2）。
-    /// 测试中可用 `.with_retry_config(RetryConfig { max_retries: 0, .. })`
-    /// 关闭重试（RFC-0009 §4.2）。
+    /// Retry settings used by Core model operations.
     pub retry_config: RetryConfig,
     /// Provider 级请求体覆盖（RFC-0017）。在标准请求体 + 内置厂商 override
     /// 之后 deep-merge。per-call 的 `CallOptions.body_overrides` 在此之后
@@ -231,7 +286,7 @@ impl OpenAIConfig {
         self
     }
 
-    /// 设置重试配置。传入 `max_retries: 0` 可关闭重试。
+    /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
     #[must_use]
     pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
         self.retry_config = config;
@@ -265,7 +320,7 @@ impl OpenAIConfig {
 
 /// OpenAI provider — creates `OpenAIModel` instances.
 ///
-/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use
 /// the process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct OpenAIProvider {
     config: OpenAIConfig,
@@ -358,8 +413,7 @@ impl Provider for OpenAIProvider {
         Box::pin(async move {
             let headers = model::build_auth_headers(&config);
             let runtime =
-                model::execute_list_models(&config.base_url, &headers, &config.retry_config)
-                    .await?;
+                model::execute_list_models(&config.base_url, &headers, config.retry_config).await?;
             Ok(runtime)
         })
     }

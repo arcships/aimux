@@ -17,24 +17,14 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
-};
-use aimux_stream::SseStream;
+use aimux_provider_utils::{HttpRequest, RetryConfig};
 
 use crate::google::convert::{
     build_request_body, convert_usage, extract_sources, parse_finish_reason,
 };
-use crate::google::types::{Candidate, GenerateContentResponse, GoogleUsageMetadata, StreamChunk};
+use crate::google::types::{Candidate, GenerateContentResponse, GoogleStreamEvent};
 
 use super::VertexAuth;
-
-/// Google-specific error structure: `{ "error": { "message": "..." } }`.
-const GOOGLE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["error", "message"],
-    type_path: &["error", "status"],
-};
 
 /// Configuration for a Vertex model instance (cloned from the provider).
 #[derive(Debug, Clone)]
@@ -43,13 +33,13 @@ pub struct VertexConfig {
     pub auth: VertexAuth,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
-    /// 重试配置(M1b)。默认 `RetryConfig::default()`（max_retries=2）。
+    /// Retry settings used by Core model operations.
     pub retry_config: RetryConfig,
 }
 
 /// A Google Vertex AI language model.
 ///
-/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct VertexModel {
     model_id: String,
@@ -133,6 +123,10 @@ impl LanguageModel for VertexModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         use aimux_core::recording::ProviderRecord;
         // M2b: record identity + credential source + auth kind. Never serialize
@@ -160,32 +154,25 @@ impl LanguageModel for VertexModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let body = build_request_body(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_timed(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.generate_endpoint(),
                 headers,
-                body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
+                ..Default::default()
             },
-            retry_config,
-            &GOOGLE_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            body.clone(),
+            aimux_provider_utils::create_json_response_handler(),
+            crate::google::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let data: GenerateContentResponse =
-            serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
+        let data: GenerateContentResponse = resp.value;
 
         let candidate = data.candidates.into_iter().next().ok_or_else(|| {
             AiMuxError::InvalidResponseData("no candidates in response".to_string())
@@ -240,38 +227,48 @@ impl LanguageModel for VertexModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let body = build_request_body(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_stream_timed(
+        let endpoint = self.stream_endpoint();
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
-                url: self.stream_endpoint(),
+                url: endpoint.clone(),
                 headers,
-                body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
+                ..Default::default()
             },
-            retry_config,
-            &GOOGLE_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            body.clone(),
+            aimux_provider_utils::create_event_source_response_handler::<GoogleStreamEvent>(),
+            crate::google::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
         // Same source as the non-stream path: the response `Date` header.
         let response_timestamp = response_headers.get("date").cloned();
 
-        let sse_stream = SseStream::new(resp.body);
+        let mut sse_stream = resp.value;
+        let first_event = match sse_stream.next().await {
+            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+            first_event => first_event,
+        };
+        if let Some(Ok(GoogleStreamEvent::Error(error))) = first_event.as_ref() {
+            return Err(crate::google::google_stream_error(
+                &error.error,
+                &endpoint,
+                body.clone(),
+                response_headers,
+            ));
+        }
+        let stream_error_url = endpoint;
+        let stream_request_body = body.clone();
+        let stream_error_headers = response_headers.clone();
 
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: vec![] });
 
-            let mut sse_stream = sse_stream;
+            let mut sse_stream = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
             let mut text_id: Option<String> = None;
             let mut block_counter = 0usize;
             let mut final_usage: Usage = Usage::default();
@@ -305,28 +302,7 @@ impl LanguageModel for VertexModel {
                     break;
                 }
                 match event {
-                    Ok(sse_event) => {
-                        let parsed: Value = match serde_json::from_str(&sse_event.data) {
-                            Ok(v) => v,
-                            Err(e) => {
-                                yield Ok(StreamPart::Error {
-                                    error: AiMuxError::from(e),
-                                });
-                                stream_errored = true;
-                                break;
-                            }
-                        };
-
-                        let chunk: StreamChunk = match serde_json::from_value(parsed) {
-                            Ok(c) => c,
-                            Err(e) => {
-                                yield Ok(StreamPart::Error {
-                                    error: AiMuxError::from(e),
-                                });
-                                stream_errored = true;
-                                break;
-                            }
-                        };
+                    Ok(GoogleStreamEvent::Chunk(chunk)) => {
 
                         if !response_metadata_emitted
                             && let Some(id) = &chunk.response_id {
@@ -557,12 +533,24 @@ impl LanguageModel for VertexModel {
                                 Some(parse_finish_reason(reason, has_tool_calls));
                         }
                     }
-                    Err(e) => {
+                    Ok(GoogleStreamEvent::Error(error)) => {
                         yield Ok(StreamPart::Error {
-                            error: AiMuxError::InvalidResponseData(e.to_string()),
+                            error: crate::google::google_stream_error(
+                                &error.error,
+                                &stream_error_url,
+                                stream_request_body.clone(),
+                                stream_error_headers.clone(),
+                            ),
                         });
                         stream_errored = true;
                         break;
+                    }
+                    Err(error) => {
+                        let recoverable = error.is_recoverable_stream_error();
+                        yield Err(error);
+                        if !recoverable {
+                            return;
+                        }
                     }
                 }
             }
@@ -662,7 +650,3 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
 
     (content, has_tool_calls)
 }
-
-// Suppress unused warnings for types re-exported via convert.
-#[allow(unused_imports)]
-use GoogleUsageMetadata as _GoogleUsageMetadata;

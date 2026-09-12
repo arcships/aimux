@@ -7,6 +7,7 @@ import {
   initRecordingRing,
   recordingStop,
 } from '../src/native.ts'
+import type { VideoCallOptions, VideoPollOptions } from '../src/index.ts'
 
 // These tests verify the native module loads and the API surface works.
 // They do NOT make real API calls — they test error handling for invalid keys.
@@ -16,6 +17,12 @@ test('native module loads and exports functions', (t) => {
   t.is(typeof anthropic, 'function')
   t.is(typeof deepseek, 'function')
   t.is(typeof provider, 'function')
+})
+
+test('video poll options are exported from the public type barrel', (t) => {
+  const poll: VideoPollOptions = { interval_ms: 1_000, timeout_ms: 120_000 }
+  const options: Pick<VideoCallOptions, 'poll'> = { poll }
+  t.deepEqual(options.poll, poll)
 })
 
 test('openai() creates a model instance with valid key format', async (t) => {

@@ -817,6 +817,7 @@ class TimeoutConfiguration(BaseModel):
     """
 
     total_ms: Optional[int] = None
+    step_ms: Optional[int] = None
     first_chunk_ms: Optional[int] = None
     chunk_ms: Optional[int] = None
 

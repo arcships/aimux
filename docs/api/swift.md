@@ -107,7 +107,7 @@ have no Swift type — see "C ABI failures" below.
 Every fallible C function returns an opaque `aimux_error_t *`
 (`OpaquePointer?`): `NULL` = success (the result is in the trailing
 out-parameter), non-`NULL` = failure. One unified code selects `AimuxError`
-(1...13), `RecordingError` (100...105), or a C ABI failure (200...206).
+(1...14), `RecordingError` (100...105), or a C ABI failure (200...206).
 The three decoders enforce the range expected by each call and restore the
 Swift error type; 200...206 collapses to `DecodingError.dataCorrupted`.
 Every path copies its strings (freed with
@@ -131,6 +131,7 @@ and yields the invariant `DecodingError.dataCorrupted("aimux ffi: <context>:
 | `.noSuchModel` | `AIMUX_E_NO_SUCH_MODEL` (9) | Registry miss |
 | `.noSuchProvider` | `AIMUX_E_NO_SUCH_PROVIDER` (10) | Unknown provider id |
 | `.apiCall` | `AIMUX_E_API_CALL` (11) | Every HTTP-shaped failure; branch on `status` (401 auth, 404 model, 429 rate limit) |
+| `.retry` | `AIMUX_E_RETRY` (14) | Complete attempt history and stop reason |
 | `.timeout` | `AIMUX_E_TIMEOUT` (12) | Request timed out |
 | `.aborted` | `AIMUX_E_ABORTED` (13) | Request aborted |
 | `.other` | `AIMUX_E_OTHER` (1) | Unclassified core error |
@@ -145,7 +146,7 @@ with `DecodingError.dataCorrupted` from the decoder, not an error type.
 Every case carries `message`, `status` (`Int?` — `nil` when C reports no
 status), `retryMs` (`Int64?` — `nil` if none; `0` = retry now) and
 `retryable`. Three cases carry a
-typed payload as extra associated values: `.apiCall(providerCode:providerMessage:requestId:responseBody:)`
+typed payload as extra associated values: `.apiCall(providerCode:providerMessage:responseBody:url:requestBodyValues:responseHeaders:providerData:)`
 (all optional), `.noSuchModel(modelId:modelType:)` and
 `.noSuchProvider(providerId:)`; the same-named computed properties return
 `nil` on every other case. `e.code` returns the mapped `aimux_error_code_t`

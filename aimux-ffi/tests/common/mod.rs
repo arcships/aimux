@@ -6,8 +6,8 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 use aimux_ffi::{
-    AIMUX_E_ABORTED, AIMUX_E_FFI_CALLBACK_FAILURE, AIMUX_E_FFI_NULL_POINTER, AIMUX_E_OTHER,
-    AIMUX_E_RECORDING_INIT, AIMUX_E_RECORDING_WRITE, aimux_error_code, aimux_error_free,
+    AIMUX_E_FFI_CALLBACK_FAILURE, AIMUX_E_FFI_NULL_POINTER, AIMUX_E_OTHER, AIMUX_E_RECORDING_INIT,
+    AIMUX_E_RECORDING_WRITE, AIMUX_E_RETRY, aimux_error_code, aimux_error_free,
     aimux_error_message, aimux_error_t, aimux_free_string,
 };
 
@@ -48,7 +48,7 @@ pub fn ok(e: *mut aimux_error_t, name: &str) {
 pub fn expect_aimux_error(e: *mut aimux_error_t, name: &str) -> (i32, String) {
     assert!(!e.is_null(), "{name}: expected a returned error");
     let code = aimux_error_code(e);
-    if !(AIMUX_E_OTHER..=AIMUX_E_ABORTED).contains(&code) {
+    if !(AIMUX_E_OTHER..=AIMUX_E_RETRY).contains(&code) {
         panic!(
             "{name}: expected an AiMuxError code, got {code}: {}",
             msg(e)

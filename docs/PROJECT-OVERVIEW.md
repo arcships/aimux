@@ -163,7 +163,7 @@ aimux/
 │   ├── 251 OpenAI compatible #   registry-backed: provider-registry.json + provider(name, ...) entry (RFC-0017 phase 4)
 │   └── modalities/search     #   voice / image / video / search implementations
 ├── aimux-stream             # SSE / NDJSON streaming parsing
-├── aimux-provider-utils     # HTTP utilities: retry, backoff, error parsing, API key loading
+├── aimux-provider-utils     # One-exchange HTTP helpers, response handlers, API-key loading
 ├── aimux-ffi                # C ABI (FFI infrastructure, shared by all bindings)
 └── bindings/                # 6 language bindings
     ├── node/                #   napi-rs v3 + typed TS wrapper
@@ -234,7 +234,7 @@ Covers scenarios such as tool calling, multi-turn dialogue, reasoning/thinking, 
 
 - `shared_client()` connection pool sharing (providers no longer each establish their own connections)
 - TLS session reuse
-- Jitter backoff retry (referencing the catcher design)
+- Full Jitter backoff lives in `aimux-core::retry` as the `get_delay_ms` default (server retry hints are honored exactly, not jittered; RFC-0031)
 - Fixed timeout
 
 #### 6. Request-layer decoupling (RFC-0009 supplement)

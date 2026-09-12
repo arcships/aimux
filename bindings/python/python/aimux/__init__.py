@@ -10,6 +10,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Union
 from .aimux import (
     AimuxError,
     APICallError,
+    RetryError,
     JSONParseError,
     InvalidResponseDataError,
     ToolError,
@@ -80,6 +81,7 @@ from .aimux import (
 __all__ = [
     "AimuxError",
     "APICallError",
+    "RetryError",
     "JSONParseError",
     "InvalidResponseDataError",
     "ToolError",

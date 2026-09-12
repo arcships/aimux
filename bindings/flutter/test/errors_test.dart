@@ -74,6 +74,7 @@ void main() {
         AimuxErrorCode.timeout: AimuxTimeoutError,
         AimuxErrorCode.aborted: RequestAbortedError,
         AimuxErrorCode.other: OtherError,
+        AimuxErrorCode.retry: RetryError,
       };
       for (final entry in cases.entries) {
         final e = AimuxException.fromCode(entry.key, 'msg');
@@ -85,9 +86,73 @@ void main() {
     test('unknown code is rejected with StateError', () {
       // A code outside the published table is an ABI mismatch, not an error
       // kind. 1 is AIMUX_E_OTHER now because Other inherited the old UNKNOWN
-      // slot, so it resolves; 14 is the gap left behind.
+      // slot, so it resolves; 15 is the first unassigned value.
       expect(() => AimuxException.fromCode(999, 'future'), throwsStateError);
-      expect(() => AimuxException.fromCode(14, 'unused'), throwsStateError);
+      expect(() => AimuxException.fromCode(15, 'unused'), throwsStateError);
+    });
+
+    test('bare retry code synthesizes a single-attempt RetryError', () {
+      final e = AimuxException.fromCode(AimuxErrorCode.retry, 'gave up');
+      expect(e, isA<RetryError>());
+      final retry = e as RetryError;
+      expect(retry.reason, RetryErrorReason.maxRetriesExceeded);
+      expect(retry.errors, hasLength(1));
+      expect(retry.lastError, isA<OtherError>());
+    });
+  });
+
+  group('RetryError', () {
+    test('keeps the per-attempt history, oldest first', () {
+      final e = RetryError(
+        'Failed after 2 attempts. Last error: took too long',
+        reason: RetryErrorReason.maxRetriesExceeded,
+        errors: [
+          APICallError('API call error: HTTP 429: slow down',
+              status: 429, retryMs: 1500, retryable: true),
+          AimuxTimeoutError('took too long'),
+        ],
+      );
+      expect(e.code, AimuxErrorCode.retry);
+      expect(e.codeName, 'Retry');
+      expect(e.errors, hasLength(2));
+      expect(e.errors.first, isA<APICallError>());
+      expect(e.lastError, isA<AimuxTimeoutError>());
+      // The history is a snapshot, not a mutable list.
+      expect(() => e.errors.add(OtherError('x')), throwsUnsupportedError);
+    });
+
+    test('reason decodes from the core wire names', () {
+      expect(RetryErrorReason.fromWire('maxRetriesExceeded'),
+          RetryErrorReason.maxRetriesExceeded);
+      expect(RetryErrorReason.fromWire('errorNotRetryable'),
+          RetryErrorReason.errorNotRetryable);
+      // Defensive default for a missing/unknown wire value.
+      expect(
+          RetryErrorReason.fromWire(null), RetryErrorReason.maxRetriesExceeded);
+    });
+  });
+
+  group('APICallError', () {
+    test('carries the enriched request/response context', () {
+      final e = APICallError(
+        'API call error: HTTP 429: slow down',
+        status: 429,
+        retryMs: 1500,
+        retryable: true,
+        providerCode: 'rate_limit_exceeded',
+        providerMessage: 'slow down',
+        url: 'https://api.example',
+        requestBodyValues: {'model': 'm'},
+        responseHeaders: {'retry-after-ms': '1500'},
+        responseBody: '{"error":"slow down"}',
+        data: {'type': 'rate_limit'},
+      );
+      expect(e.retryable, isTrue);
+      expect(e.providerCode, 'rate_limit_exceeded');
+      expect(e.url, 'https://api.example');
+      expect(e.requestBodyValues, {'model': 'm'});
+      expect(e.responseHeaders?['retry-after-ms'], '1500');
+      expect(e.data, {'type': 'rate_limit'});
     });
   });
 
@@ -110,10 +175,11 @@ void main() {
       expect(AimuxErrorCode.noSuchProvider, 10);
       expect(AimuxErrorCode.name(AimuxErrorCode.noSuchProvider),
           'NoSuchProvider');
-      // The AIMUX_E_UNKNOWN catch-all is gone and Other took its slot, so the
-      // engine codes are contiguous 1–13.
+      // Engine codes are contiguous 1–14.
       expect(AimuxErrorCode.other, 1);
       expect(AimuxErrorCode.aborted, 13);
+      expect(AimuxErrorCode.retry, 14);
+      expect(AimuxErrorCode.name(AimuxErrorCode.retry), 'Retry');
     });
   });
 

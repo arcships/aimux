@@ -244,6 +244,33 @@ func TestE2E_VideoResultParsing(t *testing.T) {
 	}
 }
 
+func TestVideoPollOptionsWireFormat(t *testing.T) {
+	intervalMS := uint64(1_000)
+	timeoutMS := uint64(120_000)
+	opts := VideoCallOptions{
+		Poll: &VideoPollOptions{
+			IntervalMS: &intervalMS,
+			TimeoutMS:  &timeoutMS,
+		},
+	}
+
+	encoded, err := json.Marshal(opts)
+	if err != nil {
+		t.Fatalf("marshal video options: %v", err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		t.Fatalf("decode video options: %v", err)
+	}
+	poll, ok := wire["poll"].(map[string]any)
+	if !ok {
+		t.Fatalf("poll missing from wire format: %s", encoded)
+	}
+	if poll["interval_ms"] != float64(intervalMS) || poll["timeout_ms"] != float64(timeoutMS) {
+		t.Fatalf("unexpected poll wire format: %s", encoded)
+	}
+}
+
 // ── E2E: Search result parsing ───────────────────────────────────────────────
 
 func TestE2E_SearchResultParsing(t *testing.T) {

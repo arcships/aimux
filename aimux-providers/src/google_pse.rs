@@ -15,24 +15,36 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
-use aimux_core::error::{AiMuxError, ApiCallError};
+use aimux_core::error::AiMuxError;
 use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
 
 /// Fixed model ID for the Google PSE search model.
 const MODEL_ID: &str = "google-pse-search";
 
 /// Google PSE error response structure: `{ "error": { "code", "message" } }`.
-const GOOGLE_PSE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["error", "message"],
-    type_path: &["error", "code"],
-};
+fn google_pse_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error");
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .and_then(|value| value.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or("Google PSE request failed")
+                .to_string(),
+            provider_code: error.and_then(|value| value.get("code")).and_then(
+                |value| match value {
+                    Value::String(s) => Some(s.clone()),
+                    Value::Number(n) => Some(n.to_string()),
+                    _ => None,
+                },
+            ),
+        }
+    })
+}
 
 /// Configuration for the Google PSE provider.
 #[derive(Debug, Clone)]
@@ -214,10 +226,7 @@ impl SearchModel for GooglePseSearchModel {
             .unwrap_or_default();
 
         let mut url = url::Url::parse(&self.endpoint()).map_err(|e| {
-            AiMuxError::ApiCall(ApiCallError {
-                message: format!("invalid google_pse endpoint: {e}"),
-                ..Default::default()
-            })
+            AiMuxError::InvalidArgument(format!("invalid google_pse endpoint: {e}"))
         })?;
         {
             let mut qp = url.query_pairs_mut();
@@ -229,27 +238,25 @@ impl SearchModel for GooglePseSearchModel {
             }
         }
 
-        let resp = send(
+        let resp = aimux_provider_utils::get_from_api(
             HttpRequest {
-                method: HttpMethod::Get,
                 url: url.to_string(),
                 headers,
-                body: HttpBody::Empty,
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                ..Default::default()
             },
-            RetryConfig::default(),
-            &GOOGLE_PSE_ERROR_STRUCTURE,
+            aimux_provider_utils::create_json_response_handler::<GooglePseResponse>(),
+            google_pse_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let raw_body: Value = serde_json::from_slice(&resp.body)?;
-
-        let data: GooglePseResponse = serde_json::from_value(raw_body.clone())?;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let data = resp.value;
 
         Ok(SearchResult {
             results: map_results(data.items),

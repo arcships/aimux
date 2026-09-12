@@ -24,8 +24,45 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send};
+use aimux_provider_utils::{HttpBody, HttpRequest, load_api_key};
+
+/// ElevenLabs errors: `{"detail": {"status": "invalid_api_key", "message": ...}}`
+/// where `detail.status` is the machine code. FastAPI validation errors carry
+/// `detail` as a plain string or a `[{loc, msg, type}]` list instead.
+fn elevenlabs_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorParts {
+    let detail = data.get("detail");
+    let message = detail
+        .and_then(|value| value.get("message"))
+        .and_then(Value::as_str)
+        .or_else(|| detail.and_then(Value::as_str))
+        .or_else(|| {
+            detail
+                .and_then(Value::as_array)
+                .and_then(|items| items.first())
+                .and_then(|item| item.get("msg"))
+                .and_then(Value::as_str)
+        })
+        .or_else(|| {
+            data.get("error")
+                .and_then(|value| value.get("message"))
+                .and_then(Value::as_str)
+        })
+        .or_else(|| data.get("error").and_then(Value::as_str))
+        .or_else(|| data.get("message").and_then(Value::as_str))
+        .unwrap_or("ElevenLabs request failed")
+        .to_string();
+    aimux_provider_utils::ProviderErrorParts {
+        message,
+        provider_code: detail
+            .and_then(|value| value.get("status"))
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+    }
+}
+
+fn elevenlabs_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(elevenlabs_error_parts)
+}
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -168,27 +205,27 @@ impl SpeechModel for ElevenLabsSpeechModel {
             format!("{}?{}", self.endpoint(&voice_id), qs.join("&"))
         };
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url,
                 headers: headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-                body: HttpBody::Json(Value::Object(body.clone())),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                ..Default::default()
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            Value::Object(body.clone()),
+            aimux_provider_utils::create_binary_response_handler(),
+            elevenlabs_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
-        let audio_bytes = resp.body.to_vec();
+        let response_headers = resp.response_headers;
+        let audio_bytes = resp.value.to_vec();
 
         let timestamp = chrono::Utc::now().to_rfc3339();
 
@@ -640,29 +677,24 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
-                headers: headers
+        let resp = aimux_provider_utils::post_to_api(
+            HttpRequest::new(
+                self.endpoint(),
+                headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-                body: HttpBody::Bytes(body_bytes, content_type),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+                options,
+            ),
+            HttpBody::Bytes(body_bytes, content_type),
+            aimux_provider_utils::create_json_response_handler::<ElevenLabsTranscriptionResponse>(),
+            elevenlabs_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
-        let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
-
-        let parsed: ElevenLabsTranscriptionResponse = serde_json::from_value(raw_body.clone())?;
+        let response_headers = resp.response_headers;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let parsed = resp.value;
 
         let segments: Vec<TranscriptionSegment> = parsed
             .words

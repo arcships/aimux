@@ -184,10 +184,28 @@ public interface AimuxFFI extends Library {
     Pointer aimux_error_provider_message(Pointer err);
 
     /** AIMUX_E_API_CALL: owned string or NULL. */
-    Pointer aimux_error_request_id(Pointer err);
-
-    /** AIMUX_E_API_CALL: owned string or NULL. */
     Pointer aimux_error_response_body(Pointer err);
+
+    /** AIMUX_E_API_CALL: sanitized request URL; owned string or NULL. */
+    Pointer aimux_error_url(Pointer err);
+
+    /** AIMUX_E_API_CALL: sanitized request body values as a JSON string; owned or NULL. */
+    Pointer aimux_error_request_body_values(Pointer err);
+
+    /** AIMUX_E_API_CALL: response headers as one JSON object string of string→string pairs; owned or NULL. */
+    Pointer aimux_error_response_headers(Pointer err);
+
+    /** AIMUX_E_API_CALL: parsed provider error data as a JSON string; owned or NULL. */
+    Pointer aimux_error_provider_data(Pointer err);
+
+    /** AIMUX_E_RETRY: "maxRetriesExceeded" / "errorNotRetryable"; owned string or NULL. */
+    Pointer aimux_error_retry_reason(Pointer err);
+
+    /** AIMUX_E_RETRY: number of recorded attempt errors; 0 under any other code. */
+    int aimux_error_retry_count(Pointer err);
+
+    /** AIMUX_E_RETRY: attempt at index (0 = oldest) as a NEW OWNED error — release with {@link #aimux_error_free}; NULL when out of range or not Retry. */
+    Pointer aimux_error_retry_error_at(Pointer err, int index);
 
     /** AIMUX_E_NO_SUCH_MODEL: owned string or NULL. */
     Pointer aimux_error_model_id(Pointer err);

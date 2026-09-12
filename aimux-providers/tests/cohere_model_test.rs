@@ -11,6 +11,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -668,8 +669,14 @@ async fn should_send_streaming_request_body() {
 #[tokio::test]
 async fn should_handle_unparsable_stream_parts() {
     let server = MockServer::start().await;
-    let sse = "event: foo-message\ndata: {unparsable}\n\n";
-    mock_sse_response(&server, sse).await;
+    let sse = cohere_sse_body(&[
+        "{unparsable}",
+        r#"{"type":"content-start","index":0,"delta":{"message":{"content":{"type":"text","text":""}}}}"#,
+        r#"{"type":"content-delta","index":0,"delta":{"message":{"content":{"text":"after-error"}}}}"#,
+        r#"{"type":"content-end","index":0}"#,
+        r#"{"type":"message-end","delta":{"finish_reason":"COMPLETE","usage":{"billed_units":{"input_tokens":1,"output_tokens":1},"tokens":{"input_tokens":1,"output_tokens":1}}}}"#,
+    ]);
+    mock_sse_response(&server, &sse).await;
 
     let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
     let provider = CohereProvider::new(config);
@@ -680,16 +687,30 @@ async fn should_handle_unparsable_stream_parts() {
         .await
         .expect("do_stream should succeed");
 
-    let parts = collect_stream(result).await;
+    let outcomes: Vec<_> = result.stream.collect().await;
 
-    // Should have StreamStart, Error, Finish.
     assert!(matches!(
-        parts.first(),
-        Some(StreamPart::StreamStart { .. })
+        outcomes.first(),
+        Some(Ok(StreamPart::StreamStart { .. }))
     ));
-    assert!(parts.iter().any(|p| matches!(p, StreamPart::Error { .. })));
-    let finish = parts.last().expect("should have finish");
-    assert!(matches!(finish, StreamPart::Finish { .. }));
+    let error_index = outcomes
+        .iter()
+        .position(|outcome| {
+            matches!(
+                outcome,
+                Err(AiMuxError::JsonParse(_) | AiMuxError::InvalidResponseData(_))
+            )
+        })
+        .expect("malformed frame should surface as a parse error item");
+    assert!(outcomes[error_index + 1..].iter().any(|outcome| matches!(
+        outcome,
+        Ok(StreamPart::TextDelta { delta, .. }) if delta == "after-error"
+    )));
+    assert!(outcomes.iter().any(|outcome| matches!(
+        outcome,
+        Ok(StreamPart::Finish { finish_reason, .. })
+            if finish_reason.unified == FinishReasonUnified::Stop
+    )));
 }
 
 /// TS: "should handle 401 auth error"

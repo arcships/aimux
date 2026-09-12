@@ -56,11 +56,11 @@ if err != nil {
 | `Status` | HTTP status, or `-1` |
 | `RetryMs` | rate-limit hint, or `-1` (`0` = retry now) |
 | `Retryable` | the core's retry verdict; never derived from `Status` |
-| `ProviderCode`, `ProviderMessage`, `RequestID`, `ResponseBody` | `CodeAPICall` payload; empty under any other code |
+| `ProviderCode`, `ProviderMessage`, `ResponseBody`, `URL`, `RequestBodyValues`, `ResponseHeaders`, `Data` | `CodeAPICall` payload; empty under any other code (request-id evidence rides in `ResponseHeaders`) |
 | `ModelID`, `ModelType` | `CodeNoSuchModel` payload; empty under any other code |
 | `ProviderID` | `CodeNoSuchProvider` payload; empty under any other code |
 
-`Code` values 1..13 mirror aimux-core's `AiMuxError` variants. A code outside
+`Code` values 1..14 mirror aimux-core's `AiMuxError` variants. A code outside
 the enum is a header/library mismatch and fails with a `panic`, not an error
 type.
 
@@ -94,7 +94,7 @@ no Go type of their own; the binding maps them to native Go errors:
 
 Decoder: every fallible C call returns an opaque `aimux_error_t *` (NULL =
 success, result in the out-parameter). One `aimux_error_code()` distinguishes
-`AiMuxError` (1–13), `RecordingError` (100–105), and C ABI failures (200–206).
+`AiMuxError` (1–14), `RecordingError` (100–105), and C ABI failures (200–206).
 `expectAimuxError`, `expectRecordingError`, and `expectFfiError` enforce the
 range expected by each call; the first two restore `*Error` and
 `*RecordingError`, while 200–206 becomes a plain `error`. Every path frees the
@@ -111,12 +111,15 @@ design** — that one is opt-in, and every one of its five entry points has a
 |------------|--------------------------|
 | `aimux.go` `mustNew` — behind `OpenAI` / `OpenAIWithBase` / `Anthropic` / `AnthropicWithBase` / `DeepSeek` | **Yes, by design.** `regexp.MustCompile` convention: an `apiKey` / `modelID` / `baseURL` that is not valid UTF-8 or contains a NUL panics, as does any AiMuxError failure. Use `NewOpenAI` / `NewOpenAIWithBase` / `NewAnthropic` / `NewAnthropicWithBase` / `NewDeepSeek` for anything caller-supplied |
 | `aimux.go` `InitLogging` — `expectFfiError` returned an error | No. `level` is coerced first: empty, non-UTF-8, or NUL-bearing falls back to `"warn"`, which is what aimux-core does with an unparseable level anyway (`AIMUX_LOG` / `AIMUX_LOG_LEVEL` outrank it regardless). That leaves no documented failure for `aimux_init_logging`, so a non-nil error here is a header/library mismatch |
-| `aimux.go` `expectAimuxError` — `aimux_error_code_t` outside 1..13 | No. Header/library version mismatch |
+| `aimux.go` `expectAimuxError` — `aimux_error_code_t` outside 1..14 | No. Header/library version mismatch |
 | `aimux.go` `expectRecordingError` — `aimux_error_code_t` outside the enum | No. Header/library version mismatch |
 | `multimodal.go` `TranscriptionSession.NextPart` — unknown `aimux_transcription_next_part` state | No. Header/library version mismatch |
 
 The three mismatch panics are a contract violation the C header itself says to
 abort on, not an error to report.
+
+For `CodeRetry`, `Reason`, `Errors`, and `LastError()` preserve
+the concrete attempt history.
 
 ## Quick Start
 
@@ -324,6 +327,8 @@ Video generation typically returns a URL (not binary).
 ```go
 prompt := "A cat playing piano"
 n := 1
+pollIntervalMs := uint64(1_000)
+pollTimeoutMs := uint64(120_000)
 
 videor, err := aimux.NewGoogleVideo("sk-...", "veo-3.0")
 if err != nil {
@@ -334,6 +339,10 @@ defer videor.Close()
 resultJSON, err := videor.Generate(&aimux.VideoCallOptions{
     Prompt: &prompt,
     N:      &n,
+    Poll: &aimux.VideoPollOptions{
+        IntervalMS: &pollIntervalMs,
+        TimeoutMS:  &pollTimeoutMs,
+    },
 })
 if err != nil {
     log.Fatal(err)

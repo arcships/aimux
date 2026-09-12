@@ -7,6 +7,11 @@ import type { JsonValue } from "./serde_json/JsonValue";
  */
 export type OutcomeRecord = { status: OutcomeStatus, finish_reason: string | null, error: string | null, 
 /**
+ * Lossless structured domain error. In particular, `RetryError.errors`
+ * keeps the complete attempt history rather than only its display text.
+ */
+error_value: JsonValue | null, 
+/**
  * 序列化的 Usage。
  */
 usage: JsonValue | null, };

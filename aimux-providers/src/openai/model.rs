@@ -2,7 +2,7 @@
 //!
 //! The HTTP request/response handling lives in the free functions
 //! [`execute_generate`] and [`execute_stream`], which take an endpoint URL, a
-//! header map and a model id. They call `http::send` / `http::send_stream` —
+//! header map and a model id. They call the `aimux-provider-utils` API helpers —
 //! **no `reqwest` types cross this boundary**. This lets other providers that
 //! speak the OpenAI chat-completions wire format (notably Azure OpenAI) reuse
 //! the conversion + streaming logic while supplying their own URL and auth.
@@ -20,11 +20,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_stream_error};
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
-};
-use aimux_stream::SseStream;
+use aimux_provider_utils::HttpRequest;
 
 use super::OpenAIConfig;
 use super::convert::{RequestBodyResult, build_request_body_with_warnings, parse_finish_reason};
@@ -32,7 +28,7 @@ use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
 
 /// An OpenAI-compatible language model.
 ///
-/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct OpenAIModel {
     model_id: String,
@@ -84,26 +80,6 @@ pub fn build_auth_headers(config: &super::OpenAIConfig) -> HashMap<String, Strin
         }
     }
     headers
-}
-
-/// Resolve the effective `RetryConfig`: if the caller passed a per-call
-/// `max_retries` override, clone the provider config and substitute it;
-/// otherwise return the provider config as-is (RFC-0017).
-///
-/// Shared across the OpenAI-compatible chat path and the native providers
-/// (google/cohere/mistral/azure/bedrock) so per-call `max_retries` is honoured
-/// everywhere (M1b). `RetryConfig` is `Copy`, so this is cheap.
-pub(crate) fn resolve_retry_config(
-    provider: &RetryConfig,
-    max_retries_override: Option<u32>,
-) -> RetryConfig {
-    match max_retries_override {
-        Some(n) => RetryConfig {
-            max_retries: n,
-            ..*provider
-        },
-        None => *provider,
-    }
 }
 
 /// Merge provider-level `body_overrides` into the per-call options (RFC-0017).
@@ -224,13 +200,16 @@ impl LanguageModel for OpenAIModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         super::config_snapshot_from_config(&self.config.provider, &self.model_id, &self.config)
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config = resolve_retry_config(&self.config.retry_config, options.max_retries);
         let options = merge_body_overrides(options, &self.config.body_overrides);
         execute_generate(
             &self.endpoint(),
@@ -239,14 +218,12 @@ impl LanguageModel for OpenAIModel {
             &options,
             &self.config.provider,
             &self.config.profile,
-            &retry_config,
         )
         .await
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config = resolve_retry_config(&self.config.retry_config, options.max_retries);
         let options = merge_body_overrides(options, &self.config.body_overrides);
         execute_stream(
             &self.endpoint(),
@@ -255,7 +232,6 @@ impl LanguageModel for OpenAIModel {
             &options,
             &self.config.provider,
             &self.config.profile,
-            &retry_config,
         )
         .await
     }
@@ -297,35 +273,25 @@ pub async fn execute_generate(
     options: &CallOptions,
     provider: &str,
     profile: &super::OpenAICompatProfile,
-    retry_config: &RetryConfig,
 ) -> Result<GenerateResult, AiMuxError> {
     let request_result =
         build_request_body_with_warnings(model_id, options, false, provider, profile)?;
     let body = request_result.body;
 
-    let resp = send_timed(
-        HttpRequest {
-            method: HttpMethod::Post,
-            url: endpoint.to_string(),
-            headers: build_header_list(headers),
-            body: HttpBody::Json(body.clone()),
-
-            abort_signal: options.abort_signal.clone(),
-            call_id: options.call_id.clone(),
-            recording_context: options.recording_context.clone(),
-        },
-        *retry_config,
-        &DEFAULT_ERROR_STRUCTURE,
-        options.timeout.map(Into::into),
+    let resp = aimux_provider_utils::post_json_to_api(
+        HttpRequest::new(endpoint.to_string(), build_header_list(headers), options),
+        body.clone(),
+        aimux_provider_utils::create_json_response_handler::<ChatCompletionResponse>(),
+        super::openai_failed_response_handler(),
     )
     .await?;
 
-    let response_headers = resp.headers;
+    let response_headers = resp.response_headers;
 
     // Parse the raw body once: the `Value` keeps the provider's original
     // fields (incl. vendor-specific usage fields) for `Usage.raw` (M10).
-    let response_value: Value = serde_json::from_slice(&resp.body)?;
-    let data: ChatCompletionResponse = serde_json::from_value(response_value.clone())?;
+    let response_value = resp.raw_value.unwrap_or(Value::Null);
+    let data = resp.value;
 
     let choice = data
         .choices
@@ -460,7 +426,6 @@ pub async fn execute_stream(
     options: &CallOptions,
     provider: &str,
     profile: &super::OpenAICompatProfile,
-    retry_config: &RetryConfig,
 ) -> Result<StreamResult, AiMuxError> {
     let request_result =
         build_request_body_with_warnings(model_id, options, true, provider, profile)?;
@@ -468,36 +433,36 @@ pub async fn execute_stream(
     // they are emitted in `StreamStart` below instead of being dropped.
     let RequestBodyResult { body, warnings } = request_result;
 
-    let resp = send_stream_timed(
-        HttpRequest {
-            method: HttpMethod::Post,
-            url: endpoint.to_string(),
-            headers: build_header_list(headers),
-            body: HttpBody::Json(body.clone()),
-
-            abort_signal: options.abort_signal.clone(),
-            call_id: options.call_id.clone(),
-            recording_context: options.recording_context.clone(),
-        },
-        *retry_config,
-        &DEFAULT_ERROR_STRUCTURE,
-        options.timeout.map(Into::into),
+    let resp = aimux_provider_utils::post_json_to_api(
+        HttpRequest::new(endpoint.to_string(), build_header_list(headers), options),
+        body.clone(),
+        aimux_provider_utils::create_event_source_response_handler::<Value>(),
+        super::openai_failed_response_handler(),
     )
     .await?;
 
-    let response_headers = resp.headers;
+    let response_headers = resp.response_headers;
 
-    let mut sse_stream = SseStream::new(resp.body);
+    let mut sse_stream = resp.value;
 
-    // Peek at the first SSE event to detect early errors (before any output).
-    // The TS SDK rejects the doStream promise when the very first chunk is an
-    // error. We replicate that by reading one event here.
-    let first_event = sse_stream.next().await;
+    // Aimux checks only the first SSE event before returning the stream. The
+    // baseline OpenAI provider scans until semantic output; this narrower peek
+    // still keeps an immediately reported provider error inside Core's
+    // operation-retry boundary (RFC-0031 §8.3). A normal event is chained back
+    // below and is never consumed.
+    let first_event = match sse_stream.next().await {
+        Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+        first_event => first_event,
+    };
     if let Some(Ok(ref event)) = first_event
-        && let Ok(val) = serde_json::from_str::<Value>(&event.data)
-        && let Some(err_obj) = val.get("error")
+        && let Some(err_obj) = event.get("error")
     {
-        return Err(parse_stream_error(err_obj));
+        return Err(super::openai_stream_error(
+            err_obj,
+            endpoint,
+            body.clone(),
+            response_headers.clone(),
+        ));
     }
 
     // Capture the provider's stream usage key before entering the async stream
@@ -509,6 +474,9 @@ pub async fn execute_stream(
     // M2 (RFC-0016): capture whether raw chunks should be emitted — the
     // borrowed `options` cannot be moved into the generator.
     let emit_raw_chunks = options.include_raw_chunks == Some(true);
+    let stream_error_url = endpoint.to_owned();
+    let stream_error_body = body.clone();
+    let stream_response_headers = response_headers.clone();
 
     let stream = async_stream::stream! {
         // First part: StreamStart.
@@ -540,21 +508,7 @@ pub async fn execute_stream(
             }
 
             match event {
-                Ok(sse_event) => {
-                    if sse_event.data == "[DONE]" {
-                        break;
-                    }
-
-                    // Parse as generic Value first to detect errors.
-                    let parsed: Value = match serde_json::from_str(&sse_event.data) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            // Unparsable chunk — emit Error, then finish.
-                            yield Ok(StreamPart::Error { error: e.into() });
-                            stream_errored = true;
-                            break;
-                        }
-                    };
+                Ok(parsed) => {
 
                     // M2 (RFC-0016): emit the raw provider chunk for debugging
                     // before it is consumed below. JSON payloads only — the
@@ -568,7 +522,12 @@ pub async fn execute_stream(
                     // Check for mid-stream error.
                     if let Some(err_obj) = parsed.get("error") {
                         yield Ok(StreamPart::Error {
-                            error: parse_stream_error(err_obj),
+                            error: super::openai_stream_error(
+                                err_obj,
+                                &stream_error_url,
+                                stream_error_body.clone(),
+                                stream_response_headers.clone(),
+                            ),
                         });
                         stream_errored = true;
                         break;
@@ -593,9 +552,8 @@ pub async fn execute_stream(
                     let chunk: StreamChunk = match serde_json::from_value(parsed) {
                         Ok(c) => c,
                         Err(e) => {
-                            yield Ok(StreamPart::Error { error: e.into() });
-                            stream_errored = true;
-                            break;
+                            yield Err(e.into());
+                            continue;
                         }
                     };
 
@@ -804,12 +762,12 @@ pub async fn execute_stream(
                         }
                     }
                 }
-                Err(e) => {
-                    yield Ok(StreamPart::Error {
-                        error: AiMuxError::InvalidResponseData(e.to_string()),
-                    });
-                    stream_errored = true;
-                    break;
+                Err(error) => {
+                    let recoverable = error.is_recoverable_stream_error();
+                    yield Err(error);
+                    if !recoverable {
+                        return;
+                    }
                 }
             }
         }
@@ -928,29 +886,35 @@ struct ModelEntry {
 pub async fn execute_list_models(
     base_url: &str,
     headers: &HashMap<String, String>,
-    retry_config: &RetryConfig,
+    retry_config: aimux_core::retry::RetryConfig,
 ) -> Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError> {
     // Strip a trailing slash so we don't get `//models`.
     let base = base_url.trim_end_matches('/');
     let url = format!("{base}/models");
 
-    let resp = send_timed(
-        HttpRequest {
-            method: HttpMethod::Get,
-            url,
-            headers: build_header_list(headers),
-            body: HttpBody::Empty,
-            abort_signal: None,
-            call_id: None,
-            recording_context: None,
-        },
-        *retry_config,
-        &DEFAULT_ERROR_STRUCTURE,
-        None,
-    )
-    .await?;
+    // `list_models` is not a Core user operation, so nothing above this call
+    // retries it — apply the Core retry primitive here (a catalogue GET is
+    // idempotent) so a transient 429/503/transport failure behaves like every
+    // other exchange instead of failing on the first hiccup.
+    let retries = aimux_core::retry::prepare_retries(None, retry_config, None);
+    let resp = retries
+        .retry(|| {
+            aimux_provider_utils::get_from_api(
+                HttpRequest {
+                    url: url.clone(),
+                    headers: build_header_list(headers),
+                    abort_signal: None,
+                    call_id: None,
+                    recording_context: None,
+                    ..Default::default()
+                },
+                aimux_provider_utils::create_json_response_handler(),
+                super::openai_failed_response_handler(),
+            )
+        })
+        .await?;
 
-    let parsed: ModelsListResponse = serde_json::from_slice(&resp.body)?;
+    let parsed: ModelsListResponse = resp.value;
 
     Ok(parsed
         .data

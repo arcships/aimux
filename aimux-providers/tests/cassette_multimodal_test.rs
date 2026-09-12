@@ -95,6 +95,8 @@ async fn cassette_openai_embedding_documents() {
         abort_signal: None,
         provider_options: None,
         headers: None,
+        max_retries: None,
+        timeout: None,
     };
     let result = model.do_embed(&opts).await.expect("embed should succeed");
 
@@ -268,6 +270,8 @@ async fn cassette_xai_image_generation() {
         provider_options: std::collections::HashMap::new(),
         abort_signal: None,
         headers: None,
+        max_retries: None,
+        timeout: None,
     };
 
     let result = model

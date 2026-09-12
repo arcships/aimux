@@ -564,6 +564,8 @@ data class ModelMessage(
 data class TimeoutConfiguration(
     /** Overall timeout for the entire call (including retries and, for streaming, the whole stream), in milliseconds. */
     @SerialName("total_ms") val totalMs: Long? = null,
+    /** Timeout for one model operation attempt, in milliseconds. */
+    @SerialName("step_ms") val stepMs: Long? = null,
     /** Timeout waiting for the first stream chunk (streaming only). */
     @SerialName("first_chunk_ms") val firstChunkMs: Long? = null,
     /** Maximum idle time between consecutive stream chunks (streaming only). */

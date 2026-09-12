@@ -41,6 +41,8 @@ fn default_options(values: Vec<String>) -> EmbeddingCallOptions {
         abort_signal: None,
         provider_options: None,
         headers: None,
+        max_retries: None,
+        timeout: None,
     }
 }
 
@@ -277,6 +279,8 @@ async fn should_pass_output_dimension_cohere_v4() {
         abort_signal: None,
         provider_options: Some(provider_options),
         headers: None,
+        max_retries: None,
+        timeout: None,
     };
 
     let _ = model.do_embed(&options).await.expect("should succeed");
@@ -358,6 +362,8 @@ async fn should_pass_nova_embedding_dimension() {
         abort_signal: None,
         provider_options: Some(provider_options),
         headers: None,
+        max_retries: None,
+        timeout: None,
     };
 
     let _ = model.do_embed(&options).await.expect("should succeed");

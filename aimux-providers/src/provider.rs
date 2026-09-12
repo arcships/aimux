@@ -25,7 +25,6 @@ use serde_json::Value;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::RetryConfig;
 
 use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
 
@@ -490,10 +489,7 @@ fn build_resolved_config(
         config = config.with_project(project.clone());
     }
     if let Some(max_retries) = entry.max_retries {
-        config = config.with_retry_config(RetryConfig {
-            max_retries,
-            ..RetryConfig::default()
-        });
+        config.retry_config.max_retries = max_retries;
     }
     if let Some(overrides) = &entry.body_overrides {
         config = config.with_body_overrides(overrides.clone());
@@ -514,10 +510,7 @@ fn build_resolved_config(
             config = config.with_project(project);
         }
         if let Some(max_retries) = opts.max_retries {
-            config = config.with_retry_config(RetryConfig {
-                max_retries,
-                ..RetryConfig::default()
-            });
+            config.retry_config.max_retries = max_retries;
         }
         if let Some(overrides) = opts.body_overrides {
             config = config.with_body_overrides(overrides);

@@ -16,16 +16,36 @@ use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
+use aimux_core::retry;
 use aimux_core::shared::Warning;
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, MultipartForm, RetryConfig, load_api_key,
-    media_type_to_extension, send, sleep_or_abort, without_trailing_slash,
+    HttpRequest, MultipartForm, load_api_key, media_type_to_extension, sleep_or_abort,
+    without_trailing_slash,
 };
+
+fn revai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error");
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .and_then(|value| value.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or("Rev.ai request failed")
+                .to_string(),
+            provider_code: error.and_then(|value| value.get("code")).and_then(
+                |value| match value {
+                    Value::String(s) => Some(s.clone()),
+                    Value::Number(n) => Some(n.to_string()),
+                    _ => None,
+                },
+            ),
+        }
+    })
+}
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -204,40 +224,39 @@ impl TranscriptionModel for RevaiTranscriptionModel {
         let mut form = MultipartForm::new();
         form.file("media", &filename, &options.media_type, &audio_bytes)?;
         form.text("config", &config)?;
-        let (body_bytes, content_type) = form.finish();
-
         let headers = self.build_headers(options.headers.as_ref());
+        let submit_url = self.jobs_url();
 
         // Submit job.
-        let resp = send(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.jobs_url(),
-                headers: headers
+        let resp = aimux_provider_utils::post_form_data_to_api(
+            HttpRequest::new(
+                submit_url.clone(),
+                headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-                body: HttpBody::Bytes(body_bytes, content_type),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+                options,
+            ),
+            form,
+            aimux_provider_utils::create_json_response_handler::<RevaiJobResponse>(),
+            revai_failed_response_handler(),
         )
         .await?;
 
-        let submit_response: RevaiJobResponse = serde_json::from_slice(&resp.body)?;
+        let response_body = resp.raw_value.as_ref().map(ToString::to_string);
+        let submit_response: RevaiJobResponse = resp.value;
 
         if submit_response.status.as_deref() == Some("failed") {
-            return Err(AiMuxError::ApiCall(ApiCallError {
-                status_code: Some(resp.status),
+            return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                status_code: Some(200),
                 provider_code: Some("failed".to_string()),
-                message: "Failed to submit transcription job to Rev.ai".to_string(),
-                response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
-                ..Default::default()
-            }));
+                response_body,
+                ..ApiCallError::new(
+                    "Failed to submit transcription job to Rev.ai",
+                    submit_url,
+                    serde_json::json!({}),
+                )
+            })));
         }
 
         let job_id = submit_response.id.ok_or_else(|| {
@@ -246,6 +265,11 @@ impl TranscriptionModel for RevaiTranscriptionModel {
             )
         })?;
         let submission_language = submit_response.language;
+        let retries = retry::prepare_retries(
+            options.max_retries,
+            self.retry_config(),
+            options.abort_signal.clone(),
+        );
 
         // Poll for completion.
         let job_status: RevaiJobResponse;
@@ -256,66 +280,63 @@ impl TranscriptionModel for RevaiTranscriptionModel {
             )
             .await?;
 
-            let resp = send(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url: self.job_status_url(&job_id),
-                    headers: headers
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                    body: HttpBody::Empty,
+            let poll_url = self.job_status_url(&job_id);
+            let resp = retries
+                .retry(|| {
+                    aimux_provider_utils::get_from_api(
+                        HttpRequest::new(
+                            poll_url.clone(),
+                            headers
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect(),
+                            options,
+                        ),
+                        aimux_provider_utils::create_json_response_handler::<RevaiJobResponse>(),
+                        revai_failed_response_handler(),
+                    )
+                })
+                .await?;
 
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                },
-                RetryConfig::default(),
-                &DEFAULT_ERROR_STRUCTURE,
-            )
-            .await?;
-
-            let poll: RevaiJobResponse = serde_json::from_slice(&resp.body)?;
+            let response_body = resp.raw_value.as_ref().map(ToString::to_string);
+            let poll: RevaiJobResponse = resp.value;
 
             if poll.status.as_deref() == Some("transcribed") {
                 job_status = poll;
                 break;
             }
             if poll.status.as_deref() == Some("failed") {
-                return Err(AiMuxError::ApiCall(ApiCallError {
-                    status_code: Some(resp.status),
+                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                    status_code: Some(200),
                     provider_code: Some("failed".to_string()),
-                    message: "Transcription job failed".to_string(),
-                    response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
-                    ..Default::default()
-                }));
+                    response_body,
+                    ..ApiCallError::new("Transcription job failed", poll_url, serde_json::json!({}))
+                })));
             }
         }
         let _ = job_status;
 
         // Fetch transcript.
-        let resp = send(
-            HttpRequest {
-                method: HttpMethod::Get,
-                url: self.transcript_url(&job_id),
-                headers: headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                body: HttpBody::Empty,
+        let resp = retries
+            .retry(|| {
+                aimux_provider_utils::get_from_api(
+                    HttpRequest::new(
+                        self.transcript_url(&job_id),
+                        headers
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect(),
+                        options,
+                    ),
+                    aimux_provider_utils::create_json_response_handler::<RevaiTranscriptResponse>(),
+                    revai_failed_response_handler(),
+                )
+            })
+            .await?;
 
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
-        )
-        .await?;
-
-        let response_headers = resp.headers;
-        let raw_body: Value = serde_json::from_slice(&resp.body)?;
-        let parsed: RevaiTranscriptResponse = serde_json::from_value(raw_body.clone())?;
+        let response_headers = resp.response_headers;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let parsed = resp.value;
 
         // Process monologues to extract segments and text.
         let mut segments: Vec<TranscriptionSegment> = Vec::new();

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use std::time::Instant;
 
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::Instrument;
@@ -29,6 +29,19 @@ use crate::result::{
 use crate::stream_part::StreamPart;
 use crate::tool::Tool;
 use crate::types::{FinishReason, ReasoningEffort, Usage, Warning};
+use crate::{AbortSignal, retry, timeout};
+
+/// Matches the AI SDK's `isOutputChunk`: only chunks containing model output
+/// start or reset the first/chunk output timers.
+fn is_output_chunk(part: &StreamPart) -> bool {
+    match part {
+        StreamPart::TextDelta { delta, .. }
+        | StreamPart::ReasoningDelta { delta, .. }
+        | StreamPart::ToolInputDelta { delta, .. } => !delta.is_empty(),
+        StreamPart::ToolCall { .. } | StreamPart::File { .. } => true,
+        _ => false,
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // User-facing options
@@ -77,7 +90,7 @@ pub struct GenerateTextOptions {
     /// directly; the Node binding bridges a JS `AbortSignal` natively.
     #[serde(skip)]
     #[ts(skip)]
-    pub abort_signal: Option<crate::shared::AbortSignal>,
+    pub abort_signal: Option<AbortSignal>,
     /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
     pub include_raw_chunks: Option<bool>,
 }
@@ -229,16 +242,54 @@ impl StreamTextResult {
     /// Returns the stream's error part or transport error, propagated from the
     /// underlying model stream.
     pub async fn text(self) -> Result<String, AiMuxError> {
-        use futures::StreamExt;
         let mut result = String::new();
+        let mut saw_output = false;
+        let mut saw_finish = false;
+        let mut provider_error: Option<AiMuxError> = None;
         let mut stream = self.stream;
         while let Some(part) = stream.next().await {
-            match part? {
+            let part = match part {
+                Ok(part) => part,
+                // A recoverable frame error is data on this stream (core keeps
+                // the stream alive past it); fold it into the same first-error
+                // slot as a provider error event and keep consuming so the
+                // trailing Finish still lands (usage, recording).
+                Err(error) if error.is_recoverable_stream_error() => {
+                    if provider_error.is_none() {
+                        provider_error = Some(error);
+                    }
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            if is_output_chunk(&part) {
+                saw_output = true;
+            }
+            match part {
                 StreamPart::TextDelta { delta, .. } => result.push_str(&delta),
-                StreamPart::Finish { .. } => break,
-                StreamPart::Error { error } => return Err(error),
+                StreamPart::Finish { .. } => {
+                    saw_finish = true;
+                    break;
+                }
+                // Keep consuming after a provider error event: a trailing
+                // Finish still carries usage for the recording layer. The
+                // error is returned once the stream reaches its end.
+                StreamPart::Error { error } if provider_error.is_none() => {
+                    provider_error = Some(error);
+                }
                 _ => {}
             }
+        }
+        if let Some(error) = provider_error {
+            return Err(error);
+        }
+        // AI SDK semantics: an incomplete stream with no output at all is an
+        // error; an incomplete stream with partial output retains the partial
+        // result.
+        if !saw_finish && !saw_output {
+            return Err(AiMuxError::InvalidResponseData(
+                "No output generated. The model stream ended without a finish chunk.".into(),
+            ));
         }
         Ok(result)
     }
@@ -254,8 +305,6 @@ impl StreamTextResult {
     /// Returns the stream's error part or transport error, propagated from the
     /// underlying model stream.
     pub async fn consume(self) -> Result<StreamTextResultAggregated, AiMuxError> {
-        use futures::StreamExt;
-
         let mut text = String::new();
         let mut reasoning: Vec<ReasoningPart> = Vec::new();
         let mut reasoning_text_buf = String::new();
@@ -273,9 +322,29 @@ impl StreamTextResult {
         let mut response: Option<crate::types::ResponseMetadata> = None;
         let mut response_content_parts: Vec<ContentPart> = Vec::new();
 
+        let mut saw_output = false;
+        let mut saw_finish = false;
+        let mut provider_error: Option<AiMuxError> = None;
         let mut stream = self.stream;
         while let Some(part) = stream.next().await {
-            match part? {
+            let part = match part {
+                Ok(part) => part,
+                // A recoverable frame error is data on this stream (core keeps
+                // the stream alive past it); fold it into the same first-error
+                // slot as a provider error event and keep consuming so the
+                // trailing Finish still lands (usage, recording).
+                Err(error) if error.is_recoverable_stream_error() => {
+                    if provider_error.is_none() {
+                        provider_error = Some(error);
+                    }
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            if is_output_chunk(&part) {
+                saw_output = true;
+            }
+            match part {
                 StreamPart::TextDelta { delta, .. } => {
                     text.push_str(&delta);
                     // Accumulate for response_messages lazily (see Finish below).
@@ -372,9 +441,15 @@ impl StreamTextResult {
                     finish_reason = fr;
                     usage = u.clone();
                     finish_provider_metadata = pm;
+                    saw_finish = true;
                     break;
                 }
-                StreamPart::Error { error } => return Err(error),
+                // Keep consuming after a provider error event: a trailing
+                // Finish still carries usage for the recording layer. The
+                // error is returned once the stream reaches its end.
+                StreamPart::Error { error } if provider_error.is_none() => {
+                    provider_error = Some(error);
+                }
                 StreamPart::ResponseMetadata {
                     id,
                     timestamp,
@@ -388,6 +463,24 @@ impl StreamTextResult {
                 }
                 _ => {}
             }
+        }
+
+        if let Some(error) = provider_error {
+            return Err(error);
+        }
+        if !saw_finish {
+            // AI SDK semantics: an incomplete stream with no output at all is
+            // an error; an incomplete stream with partial output retains the
+            // partial result but must not claim a normal stop.
+            if !saw_output {
+                return Err(AiMuxError::InvalidResponseData(
+                    "No output generated. The model stream ended without a finish chunk.".into(),
+                ));
+            }
+            finish_reason = FinishReason {
+                unified: crate::types::FinishReasonUnified::Other,
+                raw: None,
+            };
         }
 
         // Build response_content_parts in provider order:
@@ -479,6 +572,14 @@ pub async fn generate_text(
 
     // 2. Build CallOptions.
     let mut call_options = options.into_call_options(lm_prompt);
+    let operation_timeout =
+        timeout::OperationTimeout::new(call_options.timeout.unwrap_or_default())?;
+    let abort_signal = call_options.abort_signal.clone();
+    let retries = retry::prepare_retries(
+        call_options.max_retries,
+        model.retry_config(),
+        abort_signal.clone(),
+    );
 
     // 2a. RFC-0023: 关闭时零成本(M2 评审)——仅在录制开启时生成 call_id
     //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier
@@ -486,10 +587,7 @@ pub async fn generate_text(
     let context = crate::recording::recorder().map(|recorder| {
         let call_id = crate::recording::new_call_id();
         call_options.call_id = Some(call_id.clone());
-        let ctx = crate::recording::RecordingContext {
-            call_id: call_id.clone(),
-            recorder,
-        };
+        let ctx = crate::recording::RecordingContext::new(call_id.clone(), recorder);
         call_options.recording_context = Some(ctx.clone());
         ctx.recorder.record_input(
             &ctx.call_id,
@@ -539,7 +637,13 @@ pub async fn generate_text(
         model = %model.model_id(),
         modality = "text",
     );
-    let result = match do_generate_with_logging(model, &call_options, span, started).await {
+    let operation = retries.retry(|| {
+        if let Some(context) = &context {
+            let _ = context.start_attempt();
+        }
+        do_generate_with_logging(model, &call_options, span.clone(), started)
+    });
+    let result = match timeout::run(operation, abort_signal.as_ref(), operation_timeout).await {
         Ok(r) => r,
         Err(e) => {
             if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
@@ -796,9 +900,10 @@ fn extract_reasoning_signature(provider_metadata: Option<&Value>) -> Option<Stri
 ///
 /// # Errors
 ///
-/// Returns the error produced by the model's `do_stream` call (provider API,
-/// network, or abort); errors raised mid-stream surface as `StreamPart::Error`
-/// items instead.
+/// Returns setup failures from the model's `do_stream` call. Provider error
+/// events surface as `Ok(StreamPart::Error { .. })`; transport failures,
+/// caller cancellation, and Core timeouts surface as `Err(AiMuxError)` stream
+/// items.
 pub async fn stream_text(
     model: &dyn LanguageModel,
     prompt: impl Into<ModelPrompt>,
@@ -810,6 +915,22 @@ pub async fn stream_text(
 
     // 2. Build CallOptions.
     let mut call_options = options.into_call_options(lm_prompt);
+    let stream_timeout = call_options.timeout.unwrap_or_default();
+    let operation_timeout = timeout::OperationTimeout::new(stream_timeout)?;
+    // Armed at operation start: providers await their first SSE event inside
+    // do_stream, so the first-chunk budget must already be counting there —
+    // a 200-then-silence server is otherwise unbounded when only
+    // first_chunk_ms is configured.
+    let first_chunk_deadline = stream_timeout
+        .first_chunk_ms
+        .map(|duration_ms| timeout::TimeoutDeadline::from_now("First chunk", duration_ms))
+        .transpose()?;
+    let abort_signal = call_options.abort_signal.clone();
+    let retries = retry::prepare_retries(
+        call_options.max_retries,
+        model.retry_config(),
+        abort_signal.clone(),
+    );
 
     // 2a. RFC-0023: 关闭时零成本(M2 评审)——仅在录制开启时生成 call_id
     //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier
@@ -817,10 +938,7 @@ pub async fn stream_text(
     let context = crate::recording::recorder().map(|recorder| {
         let call_id = crate::recording::new_call_id();
         call_options.call_id = Some(call_id.clone());
-        let ctx = crate::recording::RecordingContext {
-            call_id: call_id.clone(),
-            recorder,
-        };
+        let ctx = crate::recording::RecordingContext::new(call_id.clone(), recorder);
         call_options.recording_context = Some(ctx.clone());
         ctx.recorder.record_input(
             &ctx.call_id,
@@ -868,22 +986,127 @@ pub async fn stream_text(
         model = %model.model_id(),
         modality = "text",
     );
-    let result: StreamResult = match model.do_stream(&call_options).instrument(span).await {
-        Ok(r) => r,
-        Err(e) => {
-            if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
-                rec.record_outcome(call_id, &crate::recording::OutcomeRecord::from_error(&e));
-            }
-            return Err(e);
+    let operation = retries.retry(|| {
+        if let Some(context) = &context {
+            let _ = context.start_attempt();
         }
-    };
+        // Call-level retry boundary: once do_stream returns a stream, retry
+        // no longer recreates the provider request; the returned stream is
+        // consumed by the stream-step timeout logic below.
+        model.do_stream(&call_options).instrument(span.clone())
+    });
+    let setup_deadline = timeout::min_deadline(operation_timeout.deadline(), first_chunk_deadline);
+    let result: StreamResult =
+        match timeout::run_until(operation, abort_signal.as_ref(), setup_deadline).await {
+            Ok(r) => r,
+            Err(e) => {
+                if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
+                    rec.record_outcome(call_id, &crate::recording::OutcomeRecord::from_error(&e));
+                }
+                return Err(e);
+            }
+        };
     // 解构避免部分 move(result 各字段去向不同)。
     let StreamResult {
         stream,
         request_body,
         response_headers,
     } = result;
-    // 录制开启时才包装(终结时写 outcome + 传输封闭);关闭时零成本透传。
+
+    // The consumption phase keeps observing the same deadlines: the
+    // first-chunk budget armed at operation start continues until the first
+    // output chunk.
+    let operation_deadline = operation_timeout.deadline();
+    // A pump task drives the provider stream, so the deadlines below measure
+    // when provider output *arrives*: a deadline observed only inside
+    // `poll_next` keeps elapsing while nobody polls, charging the provider
+    // for the consumer's latency. The channel is unbounded so the pump never
+    // blocks on the consumer (which would put that latency back into the
+    // timers); the AI SDK's `streamText` consumes eagerly for the same
+    // reason, and buffering is bounded by the response itself.
+    //
+    // Spawned even with no abort signal or deadlines armed: the pump is also
+    // the stream's terminal fuse — `Finish` and non-recoverable errors must
+    // end the stream under every configuration, or a provider that keeps the
+    // connection open after `Finish` hangs a consumer reading to end-of-stream.
+    let stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>> = {
+        let mut stream = stream;
+        let chunk_ms = stream_timeout.chunk_ms;
+        let pump_abort = abort_signal.clone();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let pump = tokio::spawn(async move {
+            let mut chunk_deadline = first_chunk_deadline;
+
+            loop {
+                let next = tokio::select! {
+                    biased;
+                    // Dropping the provider stream cancels the in-flight HTTP
+                    // exchange; the consumer side reports the abort error.
+                    () = timeout::wait_for_abort(pump_abort.as_ref()) => break,
+                    () = timeout::wait_for_deadline(operation_deadline) => {
+                        let _ = tx.send(Err(operation_deadline
+                            .expect("operation deadline future only resolves for a deadline")
+                            .error()));
+                        break;
+                    }
+                    () = timeout::wait_for_deadline(chunk_deadline) => {
+                        let _ = tx.send(Err(chunk_deadline
+                            .expect("chunk deadline future only resolves for a deadline")
+                            .error()));
+                        break;
+                    }
+                    item = stream.next() => item,
+                };
+
+                let Some(item) = next else { break };
+                let terminal = is_terminal_item(&item);
+                if let Ok(part) = &item
+                    && is_output_chunk(part)
+                {
+                    chunk_deadline = match chunk_ms
+                        .map(|duration_ms| timeout::TimeoutDeadline::from_now("Chunk", duration_ms))
+                        .transpose()
+                    {
+                        Ok(deadline) => deadline,
+                        Err(error) => {
+                            let _ = tx.send(Err(error));
+                            break;
+                        }
+                    };
+                }
+
+                // A closed receiver means the consumer dropped the stream.
+                if tx.send(item).is_err() || terminal {
+                    break;
+                }
+            }
+        });
+        let pump = AbortOnDrop(pump);
+        Box::pin(async_stream::stream! {
+            let _pump = pump;
+            loop {
+                let next = tokio::select! {
+                    biased;
+                    () = timeout::wait_for_abort(abort_signal.as_ref()) => {
+                        yield Err(AiMuxError::from_abort_signal(
+                            abort_signal.as_ref().expect("abort future only resolves for a signal"),
+                        ));
+                        break;
+                    }
+                    item = rx.recv() => item,
+                };
+                let Some(item) = next else { break };
+                // Mirror the pump's fuse here so the stream ends right after
+                // the terminal item, ahead of a later abort or the channel
+                // close racing it.
+                let terminal = is_terminal_item(&item);
+                yield item;
+                if terminal {
+                    break;
+                }
+            }
+        })
+    };
     let stream = crate::recording::RecordingOutcomeStream::new(
         stream,
         recorder.clone(),
@@ -897,6 +1120,24 @@ pub async fn stream_text(
         request_body,
         response_headers,
     })
+}
+
+/// A malformed individual frame does not prove that the transport is dead:
+/// SSE framing lets a later event still be valid. `Finish` and transport/Core
+/// errors are terminal so the stream is not polled past a dead source.
+fn is_terminal_item(item: &Result<StreamPart, AiMuxError>) -> bool {
+    matches!(item, Ok(StreamPart::Finish { .. }))
+        || matches!(item, Err(error) if !error.is_recoverable_stream_error())
+}
+
+/// Aborts the stream pump task when the returned stream is dropped, so an
+/// abandoned stream leaves no task driving the provider connection.
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 /// Run `do_generate` inside the RFC-0014 `generate` span and emit the
@@ -1035,4 +1276,457 @@ pub async fn stream_text_as_openai(
         model.model_id(),
         stream_options,
     ))
+}
+
+#[cfg(test)]
+mod operation_retry_tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use async_trait::async_trait;
+
+    use super::*;
+    use crate::{ApiCallError, LanguageModel, prelude::StreamPart};
+
+    enum StreamBehavior {
+        Normal,
+        FinishThenPending,
+        ProviderErrorThenFinish,
+        ParseErrorThenEvent,
+        TransportErrorThenPending,
+        NeverReturns,
+        RetryableFirstError,
+        NonRetryableFirstError,
+    }
+
+    struct StreamModel {
+        behavior: StreamBehavior,
+        calls: AtomicUsize,
+    }
+
+    impl StreamModel {
+        fn new(behavior: StreamBehavior) -> Self {
+            Self {
+                behavior,
+                calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn api_error(status: u16, retryable: bool) -> AiMuxError {
+            AiMuxError::ApiCall(Box::new(ApiCallError {
+                status_code: Some(status),
+                response_headers: Some(HashMap::from([("retry-after-ms".into(), "0".into())])),
+                is_retryable: retryable,
+                ..ApiCallError::new(
+                    "stream setup failed",
+                    "https://example.test/stream",
+                    serde_json::json!({}),
+                )
+            }))
+        }
+
+        fn single_event_stream() -> StreamResult {
+            StreamResult {
+                stream: Box::pin(futures::stream::iter([Ok(StreamPart::TextDelta {
+                    id: "text-1".into(),
+                    delta: "hello".into(),
+                    provider_metadata: None,
+                })])),
+                request_body: None,
+                response_headers: None,
+            }
+        }
+
+        fn finish_stream() -> StreamResult {
+            let finish = StreamPart::Finish {
+                finish_reason: crate::types::FinishReason {
+                    unified: crate::types::FinishReasonUnified::Stop,
+                    raw: Some("stop".into()),
+                },
+                usage: Usage::default(),
+                provider_metadata: None,
+            };
+            StreamResult {
+                stream: Box::pin(
+                    futures::stream::iter([Ok(finish)]).chain(futures::stream::pending()),
+                ),
+                request_body: None,
+                response_headers: None,
+            }
+        }
+
+        fn provider_error_then_finish_stream() -> StreamResult {
+            let finish = StreamPart::Finish {
+                finish_reason: crate::types::FinishReason {
+                    unified: crate::types::FinishReasonUnified::Error,
+                    raw: None,
+                },
+                usage: Usage::default(),
+                provider_metadata: None,
+            };
+            StreamResult {
+                stream: Box::pin(
+                    futures::stream::iter([
+                        Ok(StreamPart::Error {
+                            error: AiMuxError::Other("provider error".into()),
+                        }),
+                        Ok(finish),
+                    ])
+                    .chain(futures::stream::pending()),
+                ),
+                request_body: None,
+                response_headers: None,
+            }
+        }
+
+        fn parse_error_then_event_stream() -> StreamResult {
+            StreamResult {
+                stream: Box::pin(futures::stream::iter([
+                    Err(AiMuxError::JsonParse("malformed SSE data".into())),
+                    Ok(StreamPart::TextDelta {
+                        id: "text-1".into(),
+                        delta: "after-error".into(),
+                        provider_metadata: None,
+                    }),
+                ])),
+                request_body: None,
+                response_headers: None,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl LanguageModel for StreamModel {
+        fn provider(&self) -> &str {
+            "test"
+        }
+
+        fn model_id(&self) -> &str {
+            "stream-model"
+        }
+
+        async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+            Err(AiMuxError::Other("unused".into()))
+        }
+
+        async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+            let attempt = self.calls.fetch_add(1, Ordering::SeqCst);
+            match self.behavior {
+                StreamBehavior::Normal => Ok(Self::single_event_stream()),
+                StreamBehavior::FinishThenPending => Ok(Self::finish_stream()),
+                StreamBehavior::ProviderErrorThenFinish => {
+                    Ok(Self::provider_error_then_finish_stream())
+                }
+                StreamBehavior::ParseErrorThenEvent => Ok(Self::parse_error_then_event_stream()),
+                StreamBehavior::TransportErrorThenPending => Ok(StreamResult {
+                    stream: Box::pin(
+                        futures::stream::iter([Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                            is_retryable: true,
+                            ..ApiCallError::new(
+                                "connection reset",
+                                "https://example.test/stream",
+                                serde_json::json!({}),
+                            )
+                        })))])
+                        .chain(futures::stream::pending()),
+                    ),
+                    request_body: None,
+                    response_headers: None,
+                }),
+                StreamBehavior::NeverReturns => std::future::pending().await,
+                StreamBehavior::RetryableFirstError if attempt == 0 => {
+                    Err(Self::api_error(429, true))
+                }
+                StreamBehavior::RetryableFirstError => Ok(Self::single_event_stream()),
+                StreamBehavior::NonRetryableFirstError => Err(Self::api_error(400, false)),
+            }
+        }
+    }
+
+    fn retry_options() -> GenerateTextOptions {
+        GenerateTextOptions {
+            max_retries: Some(2),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_setup_preserves_the_peeked_first_event() {
+        let model = StreamModel::new(StreamBehavior::Normal);
+        let mut result = stream_text(&model, "hello", retry_options()).await.unwrap();
+        let first = result.stream.next().await.unwrap().unwrap();
+        assert!(matches!(first, StreamPart::TextDelta { delta, .. } if delta == "hello"));
+        assert!(result.stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn late_consumer_still_receives_a_first_chunk_delivered_on_time() {
+        // The provider yields immediately; the first-chunk budget measures
+        // that arrival, not when the caller gets around to polling. Sleeping
+        // past the budget before the first poll must not turn delivered
+        // output into a timeout.
+        let model = StreamModel::new(StreamBehavior::Normal);
+        let options = GenerateTextOptions {
+            max_retries: Some(0),
+            timeout: Some(crate::options::TimeoutConfiguration {
+                first_chunk_ms: Some(1),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let mut result = stream_text(&model, "hello", options).await.unwrap();
+
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        assert!(matches!(
+            result.stream.next().await.unwrap().unwrap(),
+            StreamPart::TextDelta { delta, .. } if delta == "hello"
+        ));
+        assert!(result.stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn caller_abort_still_cancels_the_returned_stream() {
+        let model = StreamModel::new(StreamBehavior::Normal);
+        let abort_signal = AbortSignal::new();
+        let options = GenerateTextOptions {
+            max_retries: Some(0),
+            abort_signal: Some(abort_signal.clone()),
+            ..Default::default()
+        };
+        let mut result = stream_text(&model, "hello", options).await.unwrap();
+
+        abort_signal.abort();
+
+        assert!(matches!(
+            result.stream.next().await.unwrap(),
+            Err(AiMuxError::Aborted(message)) if message == "request aborted"
+        ));
+    }
+
+    #[tokio::test]
+    async fn terminal_stream_part_stops_stream_consumption() {
+        let model = StreamModel::new(StreamBehavior::FinishThenPending);
+        let options = GenerateTextOptions {
+            max_retries: Some(0),
+            timeout: Some(crate::options::TimeoutConfiguration {
+                total_ms: Some(50),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let mut result = stream_text(&model, "hello", options).await.unwrap();
+
+        assert!(matches!(
+            result.stream.next().await.unwrap().unwrap(),
+            StreamPart::Finish { .. }
+        ));
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        assert!(result.stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn provider_error_part_does_not_hide_the_final_finish() {
+        let model = StreamModel::new(StreamBehavior::ProviderErrorThenFinish);
+        let abort_signal = AbortSignal::new();
+        let options = GenerateTextOptions {
+            max_retries: Some(0),
+            abort_signal: Some(abort_signal.clone()),
+            ..Default::default()
+        };
+        let mut result = stream_text(&model, "hello", options).await.unwrap();
+
+        assert!(matches!(
+            result.stream.next().await.unwrap().unwrap(),
+            StreamPart::Error { .. }
+        ));
+        assert!(matches!(
+            result.stream.next().await.unwrap().unwrap(),
+            StreamPart::Finish { finish_reason, .. }
+                if finish_reason.unified == crate::types::FinishReasonUnified::Error
+        ));
+        abort_signal.abort();
+        assert!(result.stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn timeout_wrapper_continues_after_a_malformed_stream_frame() {
+        let model = StreamModel::new(StreamBehavior::ParseErrorThenEvent);
+        let options = GenerateTextOptions {
+            max_retries: Some(0),
+            timeout: Some(crate::options::TimeoutConfiguration {
+                total_ms: Some(1_000),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let mut result = stream_text(&model, "hello", options).await.unwrap();
+
+        assert!(matches!(
+            result.stream.next().await.unwrap(),
+            Err(AiMuxError::JsonParse(_))
+        ));
+        assert!(matches!(
+            result.stream.next().await.unwrap().unwrap(),
+            StreamPart::TextDelta { delta, .. } if delta == "after-error"
+        ));
+    }
+
+    #[tokio::test]
+    async fn abort_wrapper_continues_after_a_malformed_stream_frame() {
+        let model = StreamModel::new(StreamBehavior::ParseErrorThenEvent);
+        let options = GenerateTextOptions {
+            max_retries: Some(0),
+            abort_signal: Some(AbortSignal::new()),
+            ..Default::default()
+        };
+        let mut result = stream_text(&model, "hello", options).await.unwrap();
+
+        assert!(matches!(
+            result.stream.next().await.unwrap(),
+            Err(AiMuxError::JsonParse(_))
+        ));
+        assert!(matches!(
+            result.stream.next().await.unwrap().unwrap(),
+            StreamPart::TextDelta { delta, .. } if delta == "after-error"
+        ));
+    }
+
+    #[tokio::test]
+    async fn first_chunk_timeout_bounds_the_stream_setup_phase() {
+        // Providers await their first SSE event inside do_stream; a
+        // 200-then-silence server must be bounded by first_chunk_ms alone.
+        let model = StreamModel::new(StreamBehavior::NeverReturns);
+        let options = GenerateTextOptions {
+            max_retries: Some(0),
+            timeout: Some(crate::options::TimeoutConfiguration {
+                first_chunk_ms: Some(5),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let error = stream_text(&model, "hello", options).await.unwrap_err();
+        assert!(
+            matches!(error, AiMuxError::Timeout(ref message) if message == "First chunk timeout of 5ms exceeded"),
+            "got {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn transport_error_ends_the_wrapped_stream() {
+        let model = StreamModel::new(StreamBehavior::TransportErrorThenPending);
+        let abort_signal = AbortSignal::new();
+        let options = GenerateTextOptions {
+            max_retries: Some(0),
+            abort_signal: Some(abort_signal.clone()),
+            ..Default::default()
+        };
+        let mut result = stream_text(&model, "hello", options).await.unwrap();
+
+        assert!(matches!(
+            result.stream.next().await.unwrap(),
+            Err(AiMuxError::ApiCall(_))
+        ));
+        // Without treating Err as terminal this next() would hang on the
+        // pending tail of the dead source stream.
+        assert!(result.stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn retryable_first_stream_error_retries_before_returning_stream() {
+        let model = StreamModel::new(StreamBehavior::RetryableFirstError);
+        let mut result = stream_text(&model, "hello", retry_options()).await.unwrap();
+        assert_eq!(model.calls.load(Ordering::SeqCst), 2);
+        assert!(matches!(
+            result.stream.next().await.unwrap().unwrap(),
+            StreamPart::TextDelta { delta, .. } if delta == "hello"
+        ));
+    }
+
+    #[tokio::test]
+    async fn non_retryable_first_stream_error_is_returned_unchanged() {
+        let model = StreamModel::new(StreamBehavior::NonRetryableFirstError);
+        let error = stream_text(&model, "hello", retry_options())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, AiMuxError::ApiCall(ref detail) if detail.status_code == Some(400))
+        );
+        assert_eq!(model.calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(test)]
+mod stream_aggregation_tests {
+    use super::*;
+    use crate::types::FinishReasonUnified;
+
+    fn result_from(parts: Vec<Result<StreamPart, AiMuxError>>) -> StreamTextResult {
+        StreamTextResult {
+            stream: Box::pin(futures::stream::iter(parts)),
+            request_body: None,
+            response_headers: None,
+        }
+    }
+
+    fn delta(text: &str) -> StreamPart {
+        StreamPart::TextDelta {
+            id: "text-1".into(),
+            delta: text.into(),
+            provider_metadata: None,
+        }
+    }
+
+    fn finish() -> StreamPart {
+        StreamPart::Finish {
+            finish_reason: FinishReason {
+                unified: FinishReasonUnified::Stop,
+                raw: Some("stop".into()),
+            },
+            usage: Usage::default(),
+            provider_metadata: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn truncated_stream_with_partial_output_does_not_claim_a_normal_stop() {
+        let result = result_from(vec![Ok(delta("par"))]).consume().await.unwrap();
+        assert_eq!(result.text, "par");
+        assert_eq!(result.finish_reason.unified, FinishReasonUnified::Other);
+
+        // text() retains the partial result (AI SDK semantics).
+        let text = result_from(vec![Ok(delta("par"))]).text().await.unwrap();
+        assert_eq!(text, "par");
+    }
+
+    #[tokio::test]
+    async fn empty_incomplete_stream_is_an_error() {
+        let error = result_from(vec![]).consume().await.unwrap_err();
+        assert!(
+            matches!(&error, AiMuxError::InvalidResponseData(message) if message.contains("without a finish chunk"))
+        );
+        let error = result_from(vec![]).text().await.unwrap_err();
+        assert!(matches!(error, AiMuxError::InvalidResponseData(_)));
+    }
+
+    #[tokio::test]
+    async fn stream_with_finish_still_reports_the_provider_finish_reason() {
+        let result = result_from(vec![Ok(delta("hi")), Ok(finish())])
+            .consume()
+            .await
+            .unwrap();
+        assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
+    }
+
+    #[tokio::test]
+    async fn provider_error_still_wins_after_draining_a_trailing_finish() {
+        let parts = vec![
+            Ok(delta("partial")),
+            Ok(StreamPart::Error {
+                error: AiMuxError::Other("provider error".into()),
+            }),
+            Ok(finish()),
+        ];
+        let error = result_from(parts).consume().await.unwrap_err();
+        assert!(matches!(error, AiMuxError::Other(message) if message == "provider error"));
+    }
 }

@@ -1,15 +1,24 @@
 ﻿//! Rust translation of the Prodia video model tests.
 //! Source: `reference/ai/packages/prodia/src/prodia-video-model.test.ts`
 
-use aimux_core::video_model::{VideoCallOptions, VideoModel};
+use aimux_core::video_model::{VideoCallOptions, generate_video};
 use aimux_providers::{ProdiaConfig, ProdiaProvider};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+fn fast_poll() -> Option<aimux_core::video_model::VideoPollOptions> {
+    Some(aimux_core::video_model::VideoPollOptions {
+        interval_ms: Some(1),
+        timeout_ms: Some(10_000),
+    })
+}
+
 fn options(p: &str) -> VideoCallOptions {
-    VideoCallOptions::new(p)
+    let mut o = VideoCallOptions::new(p);
+    o.poll = fast_poll();
+    o
 }
 
 async fn mock_job_and_result(server: &MockServer, result: &Value) {
@@ -36,7 +45,7 @@ async fn should_generate_video() {
     let config = ProdiaConfig::new("test-api-key").with_base_url(server.uri());
     let provider = ProdiaProvider::new(config);
     let model = provider.video("svd-xt");
-    let r = model.do_generate(&options("A cat")).await.unwrap();
+    let r = generate_video(&model, options("A cat")).await.unwrap();
     assert_eq!(r.videos.len(), 1);
 }
 
@@ -51,7 +60,7 @@ async fn should_pass_model_type_and_prompt() {
     let config = ProdiaConfig::new("test-api-key").with_base_url(server.uri());
     let provider = ProdiaProvider::new(config);
     let model = provider.video("svd-xt");
-    model.do_generate(&options("A cat")).await.unwrap();
+    generate_video(&model, options("A cat")).await.unwrap();
     let requests = server.received_requests().await.unwrap();
     let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
     assert_eq!(body["type"], "svd-xt");
@@ -77,7 +86,7 @@ async fn should_pass_headers() {
     let mut rh = HashMap::new();
     rh.insert("Custom-Request-Header".to_string(), "req-val".to_string());
     opts.headers = Some(rh);
-    model.do_generate(&opts).await.unwrap();
+    generate_video(&model, opts).await.unwrap();
     let requests = server.received_requests().await.unwrap();
     let h = &requests[0].headers;
     assert_eq!(h.get("x-prodia-key").unwrap(), "test-api-key");
@@ -95,7 +104,7 @@ async fn should_include_response_data() {
     let config = ProdiaConfig::new("test-api-key").with_base_url(server.uri());
     let provider = ProdiaProvider::new(config);
     let model = provider.video("svd-xt");
-    let r = model.do_generate(&options("test")).await.unwrap();
+    let r = generate_video(&model, options("test")).await.unwrap();
     assert!(r.response.timestamp.is_some());
     assert_eq!(r.response.model_id, Some("svd-xt".to_string()));
 }

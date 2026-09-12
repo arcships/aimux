@@ -10,8 +10,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::shared::{AbortSignal, SharedHeaders, SharedProviderMetadata, SharedProviderOptions};
+use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions};
 use crate::types::Warning;
+use crate::{AbortSignal, retry, timeout};
 
 /// Options passed to [`SearchModel::do_search`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -44,6 +45,12 @@ pub struct SearchCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
+    /// Per-call retry override. `None` uses the model default.
+    pub max_retries: Option<u32>,
+
+    /// Per-call operation timeout.
+    pub timeout: Option<crate::options::TimeoutConfiguration>,
+
     /// Additional provider-specific options, keyed by provider name.
     pub provider_options: Option<SharedProviderOptions>,
 
@@ -62,6 +69,8 @@ impl SearchCallOptions {
             include_domains: None,
             exclude_domains: None,
             abort_signal: None,
+            max_retries: None,
+            timeout: None,
             provider_options: None,
             headers: None,
         }
@@ -141,8 +150,36 @@ pub trait SearchModel: Send + Sync {
     /// `"tavily-search"`; others accept endpoint-specific names).
     fn model_id(&self) -> &str;
 
+    fn retry_config(&self) -> crate::retry::RetryConfig {
+        crate::retry::RetryConfig::default()
+    }
+
     /// Execute a search query and return results.
     ///
     /// Naming: the `do_` prefix prevents accidental direct usage by users.
     async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError>;
+}
+
+/// User-facing search with Core-owned retry and timeout.
+///
+/// # Errors
+///
+/// Returns the provider failure, retry exhaustion, timeout, or caller abort.
+pub async fn search(
+    model: &dyn SearchModel,
+    options: SearchCallOptions,
+) -> Result<SearchResult, AiMuxError> {
+    let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
+    let abort_signal = options.abort_signal.clone();
+    let retries = retry::prepare_retries(
+        options.max_retries,
+        model.retry_config(),
+        abort_signal.clone(),
+    );
+    timeout::run(
+        retries.retry(|| model.do_search(&options)),
+        abort_signal.as_ref(),
+        timeout,
+    )
+    .await
 }

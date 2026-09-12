@@ -233,6 +233,21 @@ impl Model {
                                     break;
                                 }
                             }
+                            Err(e) if e.is_recoverable_stream_error() => {
+                                // Core keeps the stream alive across a malformed frame;
+                                // deliver it as a StreamPart::Error data item and keep
+                                // pumping.
+                                match serde_json::to_string(
+                                    &aimux_core::stream_part::StreamPart::Error { error: e },
+                                ) {
+                                    Ok(json) => {
+                                        if tx.send(Ok(json)).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                    Err(_) => break,
+                                }
+                            }
                             Err(e) => {
                                 let _ = tx.send(Err(e.into())).await;
                                 break;
@@ -336,6 +351,11 @@ impl Model {
                                 if tx.send(Ok(json)).await.is_err() {
                                     break;
                                 }
+                            }
+                            Err(e) if e.is_recoverable_stream_error() => {
+                                // Consumers type this path as ChatCompletionChunk; the
+                                // error cannot ride it — skip and keep pumping (full
+                                // fidelity lives on the StreamPart path).
                             }
                             Err(e) => {
                                 let _ = tx.send(Err(e.into())).await;

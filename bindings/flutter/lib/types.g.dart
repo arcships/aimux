@@ -267,6 +267,7 @@ TimeoutConfiguration _$TimeoutConfigurationFromJson(
         Map<String, dynamic> json) =>
     TimeoutConfiguration(
       totalMs: (json['total_ms'] as num?)?.toInt(),
+      stepMs: (json['step_ms'] as num?)?.toInt(),
       firstChunkMs: (json['first_chunk_ms'] as num?)?.toInt(),
       chunkMs: (json['chunk_ms'] as num?)?.toInt(),
     );
@@ -275,6 +276,7 @@ Map<String, dynamic> _$TimeoutConfigurationToJson(
         TimeoutConfiguration instance) =>
     <String, dynamic>{
       'total_ms': instance.totalMs,
+      'step_ms': instance.stepMs,
       'first_chunk_ms': instance.firstChunkMs,
       'chunk_ms': instance.chunkMs,
     };

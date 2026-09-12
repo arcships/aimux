@@ -20,10 +20,7 @@ use aimux_core::reranking_model::{
     RerankingResult,
 };
 use aimux_core::types::Warning;
-use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
 
 /// Jina AI error response structure: `{ "detail": "...", "code": "..." }`.
 ///
@@ -32,10 +29,18 @@ use aimux_provider_utils::{
 /// `ErrorResponse` (`detail` + optional `code`) and the FastAPI
 /// `HTTPValidationError` (`detail`) shapes are covered, since both surface
 /// the message under `detail`.
-const JINA_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["detail"],
-    type_path: &["code"],
-};
+fn jina_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        aimux_provider_utils::ProviderErrorParts {
+            message: data
+                .get("detail")
+                .and_then(Value::as_str)
+                .unwrap_or("Jina AI request failed")
+                .to_string(),
+            provider_code: data.get("code").and_then(Value::as_str).map(str::to_string),
+        }
+    })
+}
 
 /// Configuration for the Jina AI provider.
 #[derive(Debug, Clone)]
@@ -244,28 +249,27 @@ impl RerankingModel for JinaAiRerankingModel {
             .into_iter()
             .collect();
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers,
-                body: HttpBody::Json(body),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                ..Default::default()
             },
-            RetryConfig::default(),
-            &JINA_ERROR_STRUCTURE,
+            body,
+            aimux_provider_utils::create_json_response_handler::<JinaRerankingResponse>(),
+            jina_failed_response_handler(),
         )
         .await?;
 
         // Capture response headers.
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let raw_body: Value = serde_json::from_slice(&resp.body)?;
-
-        let data: JinaRerankingResponse = serde_json::from_value(raw_body.clone())?;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let data = resp.value;
 
         let model = data.model;
         let ranking: Vec<RerankingRank> = data

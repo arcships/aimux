@@ -21,7 +21,6 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_core::recording::ProviderRecord;
-use aimux_provider_utils::RetryConfig;
 
 use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
 use crate::provider::ProviderOptions;
@@ -83,10 +82,7 @@ pub fn rebuild_provider(
                 config = config.with_project(project);
             }
             if let Some(max_retries) = opts.max_retries {
-                config = config.with_retry_config(RetryConfig {
-                    max_retries,
-                    ..RetryConfig::default()
-                });
+                config.retry_config.max_retries = max_retries;
             }
             if let Some(overrides) = opts.body_overrides {
                 config = config.with_body_overrides(overrides);
@@ -440,6 +436,7 @@ mod tests {
                 status: aimux_core::recording::OutcomeStatus::Success,
                 finish_reason: Some("stop".into()),
                 error: None,
+                error_value: None,
                 usage: None,
             },
         );

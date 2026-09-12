@@ -1,4 +1,4 @@
-﻿//! Rust translation of the KlingAI video model tests.
+//! Rust translation of the KlingAI video model tests.
 //! Source: `reference/ai/packages/klingai/src/klingai-video-model.test.ts`
 
 use std::collections::HashMap;
@@ -7,11 +7,20 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::video_model::{VideoCallOptions, VideoModel};
+use aimux_core::video_model::{VideoCallOptions, VideoModel, generate_video};
 use aimux_providers::{KlingAIConfig, KlingAIProvider};
 
+fn fast_poll() -> Option<aimux_core::video_model::VideoPollOptions> {
+    Some(aimux_core::video_model::VideoPollOptions {
+        interval_ms: Some(1),
+        timeout_ms: Some(10_000),
+    })
+}
+
 fn options(prompt: &str) -> VideoCallOptions {
-    VideoCallOptions::new(prompt)
+    let mut o = VideoCallOptions::new(prompt);
+    o.poll = fast_poll();
+    o
 }
 
 async fn mock_task_and_result(
@@ -62,7 +71,9 @@ async fn should_generate_video_from_prompt() {
     let provider = KlingAIProvider::new(config);
     let model = provider.video("kling-v2.1-master-t2v");
 
-    let result = model.do_generate(&options("A cat playing")).await.unwrap();
+    let result = generate_video(&model, options("A cat playing"))
+        .await
+        .unwrap();
 
     assert_eq!(result.videos.len(), 1);
     match &result.videos[0] {
@@ -83,7 +94,9 @@ async fn should_pass_model_name_and_prompt() {
     let provider = KlingAIProvider::new(config);
     let model = provider.video("kling-v2.1-master-t2v");
 
-    model.do_generate(&options("A cat playing")).await.unwrap();
+    generate_video(&model, options("A cat playing"))
+        .await
+        .unwrap();
 
     let requests = server.received_requests().await.unwrap();
     let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
@@ -110,7 +123,7 @@ async fn should_pass_headers() {
     rh.insert("Custom-Request-Header".to_string(), "req-val".to_string());
     opts.headers = Some(rh);
 
-    model.do_generate(&opts).await.unwrap();
+    generate_video(&model, opts).await.unwrap();
 
     let requests = server.received_requests().await.unwrap();
     let h = &requests[0].headers;
@@ -134,7 +147,7 @@ async fn should_pass_seed_duration_and_aspect_ratio() {
     opts.duration = Some(5);
     opts.aspect_ratio = Some(aimux_core::shared::AspectRatio::new(16, 9));
 
-    model.do_generate(&opts).await.unwrap();
+    generate_video(&model, opts).await.unwrap();
 
     let requests = server.received_requests().await.unwrap();
     let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
@@ -153,7 +166,7 @@ async fn should_include_response_data() {
     let provider = KlingAIProvider::new(config);
     let model = provider.video("kling-v2.1-master-t2v");
 
-    let result = model.do_generate(&options("test")).await.unwrap();
+    let result = generate_video(&model, options("test")).await.unwrap();
 
     assert!(result.response.timestamp.is_some());
     assert_eq!(

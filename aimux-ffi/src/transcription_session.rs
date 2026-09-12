@@ -6,7 +6,7 @@
 //! push / input-done / next-part operations.
 //!
 //! ```text
-//! session_new ──► spawn tokio task ──► TranscriptionModel::do_stream(audio_rx)
+//! session_new ──► spawn tokio task ──► stream_transcribe(model, audio_rx)
 //!                                             │ parts flow out
 //! push_audio  ──► bounded mpsc sender         ▼
 //! input_done  ──► drop sender (= end of audio)
@@ -29,8 +29,8 @@ use std::time::Duration;
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
 
+use aimux_core::AbortSignal;
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::AbortSignal;
 use aimux_core::transcription_model::{
     AudioChunk, InputAudioFormat, TranscriptionModel, TranscriptionStreamOptions,
     TranscriptionStreamPart,
@@ -72,7 +72,7 @@ pub struct TranscriptionFfiSession {
 }
 
 impl TranscriptionFfiSession {
-    /// Spawn the driver for `model.do_stream` and return the session.
+    /// Spawn the live-transcription operation and return the session.
     ///
     /// `user_abort` (optional) and the internal drop token are both linked
     /// into the effective abort signal passed to the model: either firing
@@ -111,7 +111,8 @@ impl TranscriptionFfiSession {
                 include_raw_chunks: opts.include_raw_chunks,
                 timeout: opts.timeout,
             };
-            let result = model.do_stream(options).await;
+            let result =
+                aimux_core::transcription_model::stream_transcribe(model.as_ref(), options).await;
             match result {
                 Ok(stream_result) => {
                     let mut stream = stream_result.stream;

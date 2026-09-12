@@ -117,6 +117,15 @@ pub struct StreamChunk {
     pub model_version: Option<String>,
 }
 
+/// One Google SSE event. Error envelopes must be attempted before the very
+/// permissive chunk shape, whose fields are all optional.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum GoogleStreamEvent {
+    Error(GoogleErrorEnvelope),
+    Chunk(Box<StreamChunk>),
+}
+
 // ── Provider error response ──────────────────────────────────────────────────
 
 /// Google error envelope: `{ "error": { "code": 400, "message": "...", "status": "INVALID_ARGUMENT" } }`.

@@ -19,10 +19,7 @@ use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
 
 /// Fixed model ID for the Linkup search model.
 const MODEL_ID: &str = "linkup-search";
@@ -224,28 +221,27 @@ impl SearchModel for LinkupSearchModel {
             .into_iter()
             .collect();
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers,
-                body: HttpBody::Json(body),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                ..Default::default()
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            body,
+            aimux_provider_utils::create_json_response_handler::<LinkupResponse>(),
+            aimux_provider_utils::create_standard_json_error_response_handler(),
         )
         .await?;
 
         // Capture response headers.
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let raw_body: Value = serde_json::from_slice(&resp.body)?;
-
-        let data: LinkupResponse = serde_json::from_value(raw_body.clone())?;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let data = resp.value;
 
         // Prefer `results` (searchResults); fall back to `sources`
         // (sourcedAnswer), which also carries an `answer`.

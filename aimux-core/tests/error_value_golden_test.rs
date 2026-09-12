@@ -5,7 +5,11 @@
 //! cross-language contract: a field rename, a variant rename or a shape change
 //! breaks every binding, so it must break this test first.
 
-use aimux_core::{AiMuxError, ApiCallError};
+use aimux_core::{AiMuxError, ApiCallError, RetryError, RetryErrorReason};
+
+fn api_error(message: &str) -> ApiCallError {
+    ApiCallError::new(message, "https://example.test/v1", serde_json::json!({}))
+}
 
 fn golden(err: &AiMuxError, expected: &str) {
     let json = serde_json::to_string(err).unwrap();
@@ -16,59 +20,77 @@ fn golden(err: &AiMuxError, expected: &str) {
     assert_eq!(back.to_string(), err.to_string());
 }
 
-/// `ApiCall` carries the full `ApiCallError` field set (unboxed, like
-/// async-openai's `ApiError`); the classification is the `status_code`
+/// `ApiCall` carries the full `ApiCallError` field set. The Rust payload is
+/// boxed only to keep the enum compact; the classification is `status_code`
 /// field and the retry verdict the stored `is_retryable`.
 #[test]
 fn error_value_snapshots_api_call_shapes() {
     golden(
-        &AiMuxError::ApiCall(ApiCallError {
+        &AiMuxError::ApiCall(Box::new(ApiCallError {
             status_code: Some(500),
             provider_code: Some("server_error".into()),
-            message: "boom".into(),
-            response_body: None,
             is_retryable: true,
-            ..Default::default()
-        }),
-        r#"{"ApiCall":{"status_code":500,"provider_code":"server_error","message":"boom","response_body":null,"request_id":null,"retry_after_ms":null,"is_retryable":true}}"#,
+            ..api_error("boom")
+        })),
+        r#"{"ApiCall":{"url":"https://example.test/v1","request_body_values":{},"status_code":500,"provider_code":"server_error","message":"boom","response_body":null,"response_headers":null,"data":null,"is_retryable":true}}"#,
     );
     golden(
-        &AiMuxError::ApiCall(ApiCallError {
+        &AiMuxError::ApiCall(Box::new(ApiCallError {
             status_code: Some(500),
             provider_code: Some("server_error".into()),
-            message: "boom".into(),
             response_body: Some(r#"{"error":{"message":"boom","type":"server_error"}}"#.into()),
             is_retryable: true,
-            ..Default::default()
-        }),
-        r#"{"ApiCall":{"status_code":500,"provider_code":"server_error","message":"boom","response_body":"{\"error\":{\"message\":\"boom\",\"type\":\"server_error\"}}","request_id":null,"retry_after_ms":null,"is_retryable":true}}"#,
+            ..api_error("boom")
+        })),
+        r#"{"ApiCall":{"url":"https://example.test/v1","request_body_values":{},"status_code":500,"provider_code":"server_error","message":"boom","response_body":"{\"error\":{\"message\":\"boom\",\"type\":\"server_error\"}}","response_headers":null,"data":null,"is_retryable":true}}"#,
     );
     // A transport failure (no response arrived): no status, retryable —
     // exactly the AI SDK's handleFetchError shape.
     golden(
-        &AiMuxError::ApiCall(ApiCallError {
-            message: "connection reset".into(),
+        &AiMuxError::ApiCall(Box::new(ApiCallError {
             is_retryable: true,
-            ..Default::default()
-        }),
-        r#"{"ApiCall":{"status_code":null,"provider_code":null,"message":"connection reset","response_body":null,"request_id":null,"retry_after_ms":null,"is_retryable":true}}"#,
+            ..api_error("connection reset")
+        })),
+        r#"{"ApiCall":{"url":"https://example.test/v1","request_body_values":{},"status_code":null,"provider_code":null,"message":"connection reset","response_body":null,"response_headers":null,"data":null,"is_retryable":true}}"#,
     );
     // A 429 is an ApiCall error whose classification is the status field —
-    // there is no RateLimited variant; the hint rides `retry_after_ms`.
+    // there is no RateLimited variant; the hint remains in response headers.
     golden(
-        &AiMuxError::ApiCall(ApiCallError {
+        &AiMuxError::ApiCall(Box::new(ApiCallError {
             status_code: Some(429),
             provider_code: Some("rate_limit_exceeded".into()),
-            message: "slow down".into(),
-            retry_after_ms: Some(2500),
+            response_headers: Some(std::collections::HashMap::from([(
+                "retry-after-ms".into(),
+                "2500".into(),
+            )])),
             is_retryable: true,
-            ..Default::default()
-        }),
-        r#"{"ApiCall":{"status_code":429,"provider_code":"rate_limit_exceeded","message":"slow down","response_body":null,"request_id":null,"retry_after_ms":2500,"is_retryable":true}}"#,
+            ..api_error("slow down")
+        })),
+        r#"{"ApiCall":{"url":"https://example.test/v1","request_body_values":{},"status_code":429,"provider_code":"rate_limit_exceeded","message":"slow down","response_body":null,"response_headers":{"retry-after-ms":"2500"},"data":null,"is_retryable":true}}"#,
     );
     golden(
         &AiMuxError::TokenExpired("expired".into()),
         r#"{"TokenExpired":"expired"}"#,
+    );
+}
+
+#[test]
+fn error_value_snapshot_retry_history() {
+    golden(
+        &AiMuxError::Retry(RetryError {
+            reason: RetryErrorReason::MaxRetriesExceeded,
+            errors: vec![
+                AiMuxError::ApiCall(Box::new(ApiCallError {
+                    is_retryable: true,
+                    ..api_error("first")
+                })),
+                AiMuxError::ApiCall(Box::new(ApiCallError {
+                    is_retryable: true,
+                    ..api_error("second")
+                })),
+            ],
+        }),
+        r#"{"Retry":{"reason":"maxRetriesExceeded","errors":[{"ApiCall":{"url":"https://example.test/v1","request_body_values":{},"status_code":null,"provider_code":null,"message":"first","response_body":null,"response_headers":null,"data":null,"is_retryable":true}},{"ApiCall":{"url":"https://example.test/v1","request_body_values":{},"status_code":null,"provider_code":null,"message":"second","response_body":null,"response_headers":null,"data":null,"is_retryable":true}}]}}"#,
     );
 }
 
@@ -120,7 +142,10 @@ fn error_value_snapshots_plain_variants() {
             AiMuxError::Timeout("total timeout".into()),
             r#"{"Timeout":"total timeout"}"#,
         ),
-        (AiMuxError::Aborted, r#""Aborted""#),
+        (
+            AiMuxError::Aborted("request aborted".into()),
+            r#"{"Aborted":"request aborted"}"#,
+        ),
         (AiMuxError::Other("misc".into()), r#"{"Other":"misc"}"#),
     ] {
         golden(&err, expected);
@@ -128,20 +153,17 @@ fn error_value_snapshots_plain_variants() {
 }
 
 /// The variant set is a cross-language contract of its own: bindings switch on
-/// the wire tag. Adding or removing one is a breaking change (13 variants —
+/// the wire tag. Adding or removing one is a breaking change (14 variants —
 /// the per-status avatars `Auth`/`ModelNotFound`/`RateLimited` are gone, and
 /// `Http`/`Provider` folded into `ApiCall`: a failed exchange is an `ApiCall`
 /// error classified by `status_code`, transport failures included).
 #[test]
-fn variant_set_is_exactly_thirteen() {
+fn variant_set_is_exactly_fourteen() {
     let all = [
-        AiMuxError::ApiCall(ApiCallError {
-            message: "x".into(),
-            ..Default::default()
-        }),
-        AiMuxError::ApiCall(ApiCallError {
-            is_retryable: true,
-            ..Default::default()
+        AiMuxError::ApiCall(Box::new(api_error("x"))),
+        AiMuxError::Retry(RetryError {
+            reason: RetryErrorReason::MaxRetriesExceeded,
+            errors: vec![AiMuxError::ApiCall(Box::new(api_error("x")))],
         }),
         AiMuxError::JsonParse("x".into()),
         AiMuxError::InvalidResponseData("x".into()),
@@ -158,7 +180,7 @@ fn variant_set_is_exactly_thirteen() {
             provider_id: "x".into(),
         },
         AiMuxError::Timeout("x".into()),
-        AiMuxError::Aborted,
+        AiMuxError::Aborted("request aborted".into()),
         AiMuxError::Other("x".into()),
     ];
     // The wire tag IS the variant name (externally-tagged serde JSON).
@@ -184,6 +206,7 @@ fn variant_set_is_exactly_thirteen() {
             "NoSuchModel",
             "NoSuchProvider",
             "Other",
+            "Retry",
             "Timeout",
             "TokenExpired",
             "Tool",
@@ -193,21 +216,12 @@ fn variant_set_is_exactly_thirteen() {
     );
 }
 
-/// Field additions must stay *deserialization*-compatible: a payload written
-/// before the structured fields existed still loads (the `#[serde(default)]`
-/// contract, M6). Serialization always emits the full current shape.
+/// Request context is required. Payloads from the pre-context schema are
+/// deliberately rejected instead of silently fabricating an empty URL/body.
 #[test]
-fn structured_fields_deserialize_from_pre_field_payloads() {
+fn api_call_requires_request_context() {
     let old = r#"{"ApiCall":{"message":"boom"}}"#;
-    let err: AiMuxError = serde_json::from_str(old).unwrap();
-    let AiMuxError::ApiCall(ref detail) = err else {
-        panic!("expected ApiCall, got {err:?}")
-    };
-    assert_eq!(detail.status_code, None);
-    assert_eq!(detail.provider_code, None);
-    assert_eq!(detail.message, "boom");
-    assert!(!detail.is_retryable);
-    assert_eq!(err.status_code(), None);
+    assert!(serde_json::from_str::<AiMuxError>(old).is_err());
 
     // The removed variants no longer deserialize — a deliberate breaking
     // change pinned here so it cannot happen silently a second time.
@@ -239,11 +253,10 @@ fn structured_fields_deserialize_from_pre_field_payloads() {
 /// unchanged while no consumer has to parse it back out (H1).
 #[test]
 fn status_lives_in_the_field_and_display_composes_it() {
-    let err = AiMuxError::ApiCall(ApiCallError {
+    let err = AiMuxError::ApiCall(Box::new(ApiCallError {
         status_code: Some(429),
-        message: "quota exceeded".into(),
-        ..Default::default()
-    });
+        ..api_error("quota exceeded")
+    }));
     assert_eq!(err.status_code(), Some(429));
     let AiMuxError::ApiCall(ref detail) = err else {
         panic!("expected ApiCall, got {err:?}")
@@ -255,22 +268,18 @@ fn status_lives_in_the_field_and_display_composes_it() {
     assert_eq!(err.to_string(), "API call error: HTTP 429: quota exceeded");
 
     // Without a status there is nothing to compose.
-    let err = AiMuxError::ApiCall(ApiCallError {
-        message: "plain failure".into(),
-        ..Default::default()
-    });
+    let err = AiMuxError::ApiCall(Box::new(api_error("plain failure")));
     assert_eq!(err.to_string(), "API call error: plain failure");
 }
 
 /// `provider_code` is machine-readable and stays out of the human text.
 #[test]
 fn provider_code_is_readable_and_not_displayed() {
-    let err = AiMuxError::ApiCall(ApiCallError {
+    let err = AiMuxError::ApiCall(Box::new(ApiCallError {
         status_code: Some(400),
         provider_code: Some("invalid_request".into()),
-        message: "bad input".into(),
-        ..Default::default()
-    });
+        ..api_error("bad input")
+    }));
     let AiMuxError::ApiCall(ref detail) = err else {
         panic!("expected ApiCall, got {err:?}")
     };
@@ -283,19 +292,14 @@ fn provider_code_is_readable_and_not_displayed() {
 #[test]
 fn display_strings_are_unchanged_by_the_field_shape() {
     assert_eq!(
-        AiMuxError::ApiCall(ApiCallError {
-            message: "boom".into(),
-            ..Default::default()
-        })
-        .to_string(),
+        AiMuxError::ApiCall(Box::new(api_error("boom"))).to_string(),
         "API call error: boom"
     );
     assert_eq!(
-        AiMuxError::ApiCall(ApiCallError {
-            message: "reset".into(),
+        AiMuxError::ApiCall(Box::new(ApiCallError {
             is_retryable: true,
-            ..Default::default()
-        })
+            ..api_error("reset")
+        }))
         .to_string(),
         "API call error: reset"
     );
@@ -306,7 +310,7 @@ fn display_strings_are_unchanged_by_the_field_shape() {
 }
 
 /// `AiMuxError` rides in every `Result<T, AiMuxError>`. `ApiCall` carries its
-/// detail inline (unboxed, async-openai `ApiError` style); this guard pins the
+/// detail boxed; this guard pins the
 /// size so growth is a deliberate decision, and keeps it under clippy's
 /// `result_large_err` threshold (128 bytes).
 #[test]

@@ -50,12 +50,16 @@ import type {
 
   ModelSpec,
   RuntimeModel,
+  VideoCallOptions,
+  VideoPollOptions,
 } from './types'
 
 // Error hierarchy (throw/catch). Wire payload type `AiMuxError` lives under StreamPart only.
 export {
   AimuxError,
   APICallError,
+  RetryError,
+  type RetryErrorReason,
   JSONParseError,
   InvalidResponseDataError,
   ToolError,
@@ -147,6 +151,8 @@ export type {
 
   ModelSpec,
   RuntimeModel,
+  VideoCallOptions,
+  VideoPollOptions,
 }
 
 /**

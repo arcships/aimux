@@ -5,7 +5,7 @@ import type { Warning } from "./Warning";
 import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
- * The result of [`VideoModel::do_generate`].
+ * The final result of a video generation operation.
  *
  * Aligned with V4 `VideoModelV4Result`.
  */

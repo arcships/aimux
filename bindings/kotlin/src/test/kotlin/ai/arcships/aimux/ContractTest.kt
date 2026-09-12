@@ -147,6 +147,22 @@ class ContractTest {
         assertThat(opts.maxRetries).isEqualTo(3L)
     }
 
+    @Test
+    fun `video poll options use the core wire names`() {
+        val opts = VideoCallOptions(
+            prompt = "a cat",
+            poll = VideoPollOptions(intervalMs = 1_000L, timeoutMs = 120_000L),
+        )
+
+        val encoded = AimuxJson.encodeToString(VideoCallOptions.serializer(), opts)
+        assertThat(encoded).contains(
+            "\"poll\":{\"interval_ms\":1000,\"timeout_ms\":120000}",
+        )
+        val decoded = AimuxJson.decodeFromString<VideoCallOptions>(encoded)
+        assertThat(decoded.poll?.intervalMs).isEqualTo(1_000L)
+        assertThat(decoded.poll?.timeoutMs).isEqualTo(120_000L)
+    }
+
     /// RFC-0016 M10: `Usage.raw` with a vendor-specific field survives a
     /// Kotlin round-trip.
     @Test

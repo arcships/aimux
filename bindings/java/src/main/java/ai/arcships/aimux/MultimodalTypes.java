@@ -254,6 +254,8 @@ public final class MultimodalTypes {
         @JsonProperty("values") private List<String> values = new ArrayList<>();
         @JsonProperty("provider_options") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
+        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
         @JsonCreator
         EmbeddingCallOptions() {}
@@ -271,6 +273,8 @@ public final class MultimodalTypes {
         public List<String> getValues() { return values; }
         public JsonNode getProviderOptions() { return providerOptions; }
         public Map<String, String> getHeaders() { return headers; }
+        public Integer getMaxRetries() { return maxRetries; }
+        public Types.TimeoutConfiguration getTimeout() { return timeout; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -278,13 +282,20 @@ public final class MultimodalTypes {
             private List<String> values = new ArrayList<>();
             private JsonNode providerOptions;
             private Map<String, String> headers;
+            private Integer maxRetries;
+            private Types.TimeoutConfiguration timeout;
 
             public Builder values(List<String> v) { this.values = v; return this; }
             public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
             public Builder headers(Map<String, String> v) { this.headers = v; return this; }
+            public Builder maxRetries(Integer v) { this.maxRetries = v; return this; }
+            public Builder timeout(Types.TimeoutConfiguration v) { this.timeout = v; return this; }
 
             public EmbeddingCallOptions build() {
-                return new EmbeddingCallOptions(values, providerOptions, headers);
+                EmbeddingCallOptions result = new EmbeddingCallOptions(values, providerOptions, headers);
+                result.maxRetries = maxRetries;
+                result.timeout = timeout;
+                return result;
             }
         }
 
@@ -295,11 +306,13 @@ public final class MultimodalTypes {
             EmbeddingCallOptions that = (EmbeddingCallOptions) o;
             return Objects.equals(values, that.values)
                 && Objects.equals(providerOptions, that.providerOptions)
-                && Objects.equals(headers, that.headers);
+                && Objects.equals(headers, that.headers)
+                && Objects.equals(maxRetries, that.maxRetries)
+                && Objects.equals(timeout, that.timeout);
         }
 
         @Override
-        public int hashCode() { return Objects.hash(values, providerOptions, headers); }
+        public int hashCode() { return Objects.hash(values, providerOptions, headers, maxRetries, timeout); }
 
         @Override
         public String toString() { return "EmbeddingCallOptions(" + values + ")"; }
@@ -601,6 +614,8 @@ public final class MultimodalTypes {
         @JsonProperty("language") private String language;
         @JsonProperty("provider_options") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
+        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
         @JsonCreator
         SpeechCallOptions() {}
@@ -630,6 +645,8 @@ public final class MultimodalTypes {
         public String getLanguage() { return language; }
         public JsonNode getProviderOptions() { return providerOptions; }
         public Map<String, String> getHeaders() { return headers; }
+        public Integer getMaxRetries() { return maxRetries; }
+        public Types.TimeoutConfiguration getTimeout() { return timeout; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -642,6 +659,8 @@ public final class MultimodalTypes {
             private String language;
             private JsonNode providerOptions;
             private Map<String, String> headers;
+            private Integer maxRetries;
+            private Types.TimeoutConfiguration timeout;
 
             public Builder text(String v) { this.text = v; return this; }
             public Builder voice(String v) { this.voice = v; return this; }
@@ -651,10 +670,15 @@ public final class MultimodalTypes {
             public Builder language(String v) { this.language = v; return this; }
             public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
             public Builder headers(Map<String, String> v) { this.headers = v; return this; }
+            public Builder maxRetries(Integer v) { this.maxRetries = v; return this; }
+            public Builder timeout(Types.TimeoutConfiguration v) { this.timeout = v; return this; }
 
             public SpeechCallOptions build() {
-                return new SpeechCallOptions(text, voice, outputFormat, instructions,
+                SpeechCallOptions result = new SpeechCallOptions(text, voice, outputFormat, instructions,
                     speed, language, providerOptions, headers);
+                result.maxRetries = maxRetries;
+                result.timeout = timeout;
+                return result;
             }
         }
 
@@ -670,12 +694,14 @@ public final class MultimodalTypes {
                 && Objects.equals(speed, that.speed)
                 && Objects.equals(language, that.language)
                 && Objects.equals(providerOptions, that.providerOptions)
-                && Objects.equals(headers, that.headers);
+                && Objects.equals(headers, that.headers)
+                && Objects.equals(maxRetries, that.maxRetries)
+                && Objects.equals(timeout, that.timeout);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(text, voice, outputFormat, instructions, speed, language, providerOptions, headers);
+            return Objects.hash(text, voice, outputFormat, instructions, speed, language, providerOptions, headers, maxRetries, timeout);
         }
 
         @Override
@@ -1003,6 +1029,8 @@ public final class MultimodalTypes {
         @JsonProperty("mask") private JsonNode mask;
         @JsonProperty("provider_options") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
+        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
         @JsonCreator
         ImageCallOptions() {}
@@ -1035,6 +1063,8 @@ public final class MultimodalTypes {
         public JsonNode getMask() { return mask; }
         public JsonNode getProviderOptions() { return providerOptions; }
         public Map<String, String> getHeaders() { return headers; }
+        public Integer getMaxRetries() { return maxRetries; }
+        public Types.TimeoutConfiguration getTimeout() { return timeout; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -1048,6 +1078,8 @@ public final class MultimodalTypes {
             private JsonNode mask;
             private JsonNode providerOptions;
             private Map<String, String> headers;
+            private Integer maxRetries;
+            private Types.TimeoutConfiguration timeout;
 
             public Builder prompt(String v) { this.prompt = v; return this; }
             public Builder n(Integer v) { this.n = v; return this; }
@@ -1058,10 +1090,15 @@ public final class MultimodalTypes {
             public Builder mask(JsonNode v) { this.mask = v; return this; }
             public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
             public Builder headers(Map<String, String> v) { this.headers = v; return this; }
+            public Builder maxRetries(Integer v) { this.maxRetries = v; return this; }
+            public Builder timeout(Types.TimeoutConfiguration v) { this.timeout = v; return this; }
 
             public ImageCallOptions build() {
-                return new ImageCallOptions(prompt, n, size, aspectRatio, seed, files, mask,
+                ImageCallOptions result = new ImageCallOptions(prompt, n, size, aspectRatio, seed, files, mask,
                     providerOptions, headers);
+                result.maxRetries = maxRetries;
+                result.timeout = timeout;
+                return result;
             }
         }
 
@@ -1078,12 +1115,14 @@ public final class MultimodalTypes {
                 && Objects.equals(files, that.files)
                 && Objects.equals(mask, that.mask)
                 && Objects.equals(providerOptions, that.providerOptions)
-                && Objects.equals(headers, that.headers);
+                && Objects.equals(headers, that.headers)
+                && Objects.equals(maxRetries, that.maxRetries)
+                && Objects.equals(timeout, that.timeout);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(prompt, n, size, aspectRatio, seed, files, mask, providerOptions, headers);
+            return Objects.hash(prompt, n, size, aspectRatio, seed, files, mask, providerOptions, headers, maxRetries, timeout);
         }
 
         @Override
@@ -1355,6 +1394,8 @@ public final class MultimodalTypes {
         @JsonProperty("media_type") private String mediaType = "";
         @JsonProperty("provider_options") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
+        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
         @JsonCreator
         TranscriptionCallOptions() {}
@@ -1375,6 +1416,8 @@ public final class MultimodalTypes {
         public String getMediaType() { return mediaType; }
         public JsonNode getProviderOptions() { return providerOptions; }
         public Map<String, String> getHeaders() { return headers; }
+        public Integer getMaxRetries() { return maxRetries; }
+        public Types.TimeoutConfiguration getTimeout() { return timeout; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -1383,14 +1426,21 @@ public final class MultimodalTypes {
             private String mediaType = "";
             private JsonNode providerOptions;
             private Map<String, String> headers;
+            private Integer maxRetries;
+            private Types.TimeoutConfiguration timeout;
 
             public Builder audio(JsonNode v) { this.audio = v; return this; }
             public Builder mediaType(String v) { this.mediaType = v; return this; }
             public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
             public Builder headers(Map<String, String> v) { this.headers = v; return this; }
+            public Builder maxRetries(Integer v) { this.maxRetries = v; return this; }
+            public Builder timeout(Types.TimeoutConfiguration v) { this.timeout = v; return this; }
 
             public TranscriptionCallOptions build() {
-                return new TranscriptionCallOptions(audio, mediaType, providerOptions, headers);
+                TranscriptionCallOptions result = new TranscriptionCallOptions(audio, mediaType, providerOptions, headers);
+                result.maxRetries = maxRetries;
+                result.timeout = timeout;
+                return result;
             }
         }
 
@@ -1402,11 +1452,13 @@ public final class MultimodalTypes {
             return Objects.equals(audio, that.audio)
                 && Objects.equals(mediaType, that.mediaType)
                 && Objects.equals(providerOptions, that.providerOptions)
-                && Objects.equals(headers, that.headers);
+                && Objects.equals(headers, that.headers)
+                && Objects.equals(maxRetries, that.maxRetries)
+                && Objects.equals(timeout, that.timeout);
         }
 
         @Override
-        public int hashCode() { return Objects.hash(audio, mediaType, providerOptions, headers); }
+        public int hashCode() { return Objects.hash(audio, mediaType, providerOptions, headers, maxRetries, timeout); }
 
         @Override
         public String toString() { return "TranscriptionCallOptions(" + mediaType + ")"; }
@@ -1602,6 +1654,8 @@ public final class MultimodalTypes {
         @JsonProperty("top_n") private Integer topN;
         @JsonProperty("provider_options") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
+        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
         @JsonCreator
         RerankingCallOptions() {}
@@ -1624,6 +1678,8 @@ public final class MultimodalTypes {
         public Integer getTopN() { return topN; }
         public JsonNode getProviderOptions() { return providerOptions; }
         public Map<String, String> getHeaders() { return headers; }
+        public Integer getMaxRetries() { return maxRetries; }
+        public Types.TimeoutConfiguration getTimeout() { return timeout; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -1633,15 +1689,22 @@ public final class MultimodalTypes {
             private Integer topN;
             private JsonNode providerOptions;
             private Map<String, String> headers;
+            private Integer maxRetries;
+            private Types.TimeoutConfiguration timeout;
 
             public Builder documents(JsonNode v) { this.documents = v; return this; }
             public Builder query(String v) { this.query = v; return this; }
             public Builder topN(Integer v) { this.topN = v; return this; }
             public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
             public Builder headers(Map<String, String> v) { this.headers = v; return this; }
+            public Builder maxRetries(Integer v) { this.maxRetries = v; return this; }
+            public Builder timeout(Types.TimeoutConfiguration v) { this.timeout = v; return this; }
 
             public RerankingCallOptions build() {
-                return new RerankingCallOptions(documents, query, topN, providerOptions, headers);
+                RerankingCallOptions result = new RerankingCallOptions(documents, query, topN, providerOptions, headers);
+                result.maxRetries = maxRetries;
+                result.timeout = timeout;
+                return result;
             }
         }
 
@@ -1654,11 +1717,13 @@ public final class MultimodalTypes {
                 && Objects.equals(query, that.query)
                 && Objects.equals(topN, that.topN)
                 && Objects.equals(providerOptions, that.providerOptions)
-                && Objects.equals(headers, that.headers);
+                && Objects.equals(headers, that.headers)
+                && Objects.equals(maxRetries, that.maxRetries)
+                && Objects.equals(timeout, that.timeout);
         }
 
         @Override
-        public int hashCode() { return Objects.hash(documents, query, topN, providerOptions, headers); }
+        public int hashCode() { return Objects.hash(documents, query, topN, providerOptions, headers, maxRetries, timeout); }
 
         @Override
         public String toString() { return "RerankingCallOptions(" + query + ")"; }
@@ -2421,6 +2486,54 @@ public final class MultimodalTypes {
         public String toString() { return "VideoFrameImage(" + image + ", " + frameType + ")"; }
     }
 
+    /** Per-call pacing overrides for the Core-owned video status poll loop. */
+    public static class VideoPollOptions {
+        @JsonProperty("interval_ms") private Long intervalMs;
+        @JsonProperty("timeout_ms") private Long timeoutMs;
+
+        @JsonCreator
+        VideoPollOptions() {}
+
+        private VideoPollOptions(Long intervalMs, Long timeoutMs) {
+            this.intervalMs = intervalMs;
+            this.timeoutMs = timeoutMs;
+        }
+
+        public Long getIntervalMs() { return intervalMs; }
+        public Long getTimeoutMs() { return timeoutMs; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private Long intervalMs;
+            private Long timeoutMs;
+
+            public Builder intervalMs(Long v) { this.intervalMs = v; return this; }
+            public Builder timeoutMs(Long v) { this.timeoutMs = v; return this; }
+
+            public VideoPollOptions build() {
+                return new VideoPollOptions(intervalMs, timeoutMs);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof VideoPollOptions)) return false;
+            VideoPollOptions that = (VideoPollOptions) o;
+            return Objects.equals(intervalMs, that.intervalMs)
+                && Objects.equals(timeoutMs, that.timeoutMs);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(intervalMs, timeoutMs); }
+
+        @Override
+        public String toString() {
+            return "VideoPollOptions(" + intervalMs + ", " + timeoutMs + ")";
+        }
+    }
+
     /** Options for video generation. */
     public static class VideoCallOptions {
         @JsonProperty("prompt") private String prompt;
@@ -2428,7 +2541,7 @@ public final class MultimodalTypes {
         @JsonProperty("aspect_ratio") private String aspectRatio;
         @JsonProperty("resolution") private String resolution;
         @JsonProperty("duration") private Long duration;
-        @JsonProperty("fps") private Double fps;
+        @JsonProperty("fps") private Long fps;
         @JsonProperty("seed") private Long seed;
         @JsonProperty("image") private VideoFile image;
         @JsonProperty("frame_images") private List<VideoFrameImage> frameImages;
@@ -2436,15 +2549,20 @@ public final class MultimodalTypes {
         @JsonProperty("generate_audio") private Boolean generateAudio;
         @JsonProperty("provider_options") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
+        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("poll") private VideoPollOptions poll;
+        @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
         @JsonCreator
         VideoCallOptions() {}
 
         private VideoCallOptions(String prompt, Integer n, String aspectRatio, String resolution,
-                                 Long duration, Double fps, Long seed,
+                                 Long duration, Long fps, Long seed,
                                  VideoFile image, List<VideoFrameImage> frameImages,
                                  List<VideoFile> inputReferences, Boolean generateAudio,
-                                 JsonNode providerOptions, Map<String, String> headers) {
+                                 JsonNode providerOptions, Map<String, String> headers,
+                                 Integer maxRetries, VideoPollOptions poll,
+                                 Types.TimeoutConfiguration timeout) {
             this.prompt = prompt;
             this.n = n;
             this.aspectRatio = aspectRatio;
@@ -2458,11 +2576,14 @@ public final class MultimodalTypes {
             this.generateAudio = generateAudio;
             this.providerOptions = providerOptions;
             this.headers = headers;
+            this.maxRetries = maxRetries;
+            this.poll = poll;
+            this.timeout = timeout;
         }
 
         public static VideoCallOptions of(String prompt) {
             return new VideoCallOptions(prompt, null, null, null, null, null, null,
-                                        null, null, null, null, null, null);
+                                        null, null, null, null, null, null, null, null, null);
         }
 
         public String getPrompt() { return prompt; }
@@ -2470,7 +2591,7 @@ public final class MultimodalTypes {
         public String getAspectRatio() { return aspectRatio; }
         public String getResolution() { return resolution; }
         public Long getDuration() { return duration; }
-        public Double getFps() { return fps; }
+        public Long getFps() { return fps; }
         public Long getSeed() { return seed; }
         public VideoFile getImage() { return image; }
         public List<VideoFrameImage> getFrameImages() { return frameImages; }
@@ -2478,6 +2599,9 @@ public final class MultimodalTypes {
         public Boolean getGenerateAudio() { return generateAudio; }
         public JsonNode getProviderOptions() { return providerOptions; }
         public Map<String, String> getHeaders() { return headers; }
+        public Integer getMaxRetries() { return maxRetries; }
+        public VideoPollOptions getPoll() { return poll; }
+        public Types.TimeoutConfiguration getTimeout() { return timeout; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -2487,7 +2611,7 @@ public final class MultimodalTypes {
             private String aspectRatio;
             private String resolution;
             private Long duration;
-            private Double fps;
+            private Long fps;
             private Long seed;
             private VideoFile image;
             private List<VideoFrameImage> frameImages;
@@ -2495,13 +2619,16 @@ public final class MultimodalTypes {
             private Boolean generateAudio;
             private JsonNode providerOptions;
             private Map<String, String> headers;
+            private Integer maxRetries;
+            private VideoPollOptions poll;
+            private Types.TimeoutConfiguration timeout;
 
             public Builder prompt(String v) { this.prompt = v; return this; }
             public Builder n(Integer v) { this.n = v; return this; }
             public Builder aspectRatio(String v) { this.aspectRatio = v; return this; }
             public Builder resolution(String v) { this.resolution = v; return this; }
             public Builder duration(Long v) { this.duration = v; return this; }
-            public Builder fps(Double v) { this.fps = v; return this; }
+            public Builder fps(Long v) { this.fps = v; return this; }
             public Builder seed(Long v) { this.seed = v; return this; }
             public Builder image(VideoFile v) { this.image = v; return this; }
             public Builder frameImages(List<VideoFrameImage> v) { this.frameImages = v; return this; }
@@ -2509,11 +2636,14 @@ public final class MultimodalTypes {
             public Builder generateAudio(Boolean v) { this.generateAudio = v; return this; }
             public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
             public Builder headers(Map<String, String> v) { this.headers = v; return this; }
+            public Builder maxRetries(Integer v) { this.maxRetries = v; return this; }
+            public Builder poll(VideoPollOptions v) { this.poll = v; return this; }
+            public Builder timeout(Types.TimeoutConfiguration v) { this.timeout = v; return this; }
 
             public VideoCallOptions build() {
                 return new VideoCallOptions(prompt, n, aspectRatio, resolution, duration, fps, seed,
                                             image, frameImages, inputReferences, generateAudio,
-                                            providerOptions, headers);
+                                            providerOptions, headers, maxRetries, poll, timeout);
             }
         }
 
@@ -2534,14 +2664,17 @@ public final class MultimodalTypes {
                 && Objects.equals(inputReferences, that.inputReferences)
                 && Objects.equals(generateAudio, that.generateAudio)
                 && Objects.equals(providerOptions, that.providerOptions)
-                && Objects.equals(headers, that.headers);
+                && Objects.equals(headers, that.headers)
+                && Objects.equals(maxRetries, that.maxRetries)
+                && Objects.equals(poll, that.poll)
+                && Objects.equals(timeout, that.timeout);
         }
 
         @Override
         public int hashCode() {
             return Objects.hash(prompt, n, aspectRatio, resolution, duration, fps, seed,
                                 image, frameImages, inputReferences, generateAudio,
-                                providerOptions, headers);
+                                providerOptions, headers, maxRetries, poll, timeout);
         }
 
         @Override
@@ -2748,6 +2881,8 @@ public final class MultimodalTypes {
         @JsonProperty("exclude_domains") private List<String> excludeDomains = new ArrayList<>();
         @JsonProperty("provider_options") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
+        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
         @JsonCreator
         SearchCallOptions() {}
@@ -2779,6 +2914,8 @@ public final class MultimodalTypes {
         public List<String> getExcludeDomains() { return excludeDomains; }
         public JsonNode getProviderOptions() { return providerOptions; }
         public Map<String, String> getHeaders() { return headers; }
+        public Integer getMaxRetries() { return maxRetries; }
+        public Types.TimeoutConfiguration getTimeout() { return timeout; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -2791,6 +2928,8 @@ public final class MultimodalTypes {
             private List<String> excludeDomains = new ArrayList<>();
             private JsonNode providerOptions;
             private Map<String, String> headers;
+            private Integer maxRetries;
+            private Types.TimeoutConfiguration timeout;
 
             public Builder query(String v) { this.query = v; return this; }
             public Builder maxResults(Integer v) { this.maxResults = v; return this; }
@@ -2800,10 +2939,15 @@ public final class MultimodalTypes {
             public Builder excludeDomains(List<String> v) { this.excludeDomains = v; return this; }
             public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
             public Builder headers(Map<String, String> v) { this.headers = v; return this; }
+            public Builder maxRetries(Integer v) { this.maxRetries = v; return this; }
+            public Builder timeout(Types.TimeoutConfiguration v) { this.timeout = v; return this; }
 
             public SearchCallOptions build() {
-                return new SearchCallOptions(query, maxResults, includeRawContent, timeRange,
+                SearchCallOptions result = new SearchCallOptions(query, maxResults, includeRawContent, timeRange,
                     includeDomains, excludeDomains, providerOptions, headers);
+                result.maxRetries = maxRetries;
+                result.timeout = timeout;
+                return result;
             }
         }
 
@@ -2819,13 +2963,15 @@ public final class MultimodalTypes {
                 && Objects.equals(includeDomains, that.includeDomains)
                 && Objects.equals(excludeDomains, that.excludeDomains)
                 && Objects.equals(providerOptions, that.providerOptions)
-                && Objects.equals(headers, that.headers);
+                && Objects.equals(headers, that.headers)
+                && Objects.equals(maxRetries, that.maxRetries)
+                && Objects.equals(timeout, that.timeout);
         }
 
         @Override
         public int hashCode() {
             return Objects.hash(query, maxResults, includeRawContent, timeRange,
-                includeDomains, excludeDomains, providerOptions, headers);
+                includeDomains, excludeDomains, providerOptions, headers, maxRetries, timeout);
         }
 
         @Override
@@ -2976,10 +3122,6 @@ public final class MultimodalTypes {
         public String toString() { return "UploadFileCallOptions(" + mediaType + ")"; }
     }
 }
-
-
-
-
 
 
 

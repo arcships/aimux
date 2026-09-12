@@ -220,11 +220,13 @@ class AimuxExceptionTest {
             .isInstanceOf(AimuxException.RequestAbortedError.class);
         assertThat(AimuxException.of(AimuxException.AIMUX_E_OTHER, "m"))
             .isInstanceOf(AimuxException.OtherError.class);
+        assertThat(AimuxException.of(AimuxException.AIMUX_E_RETRY, "m"))
+            .isInstanceOf(AimuxException.RetryError.class);
     }
 
     @Test
     void codesOutsideTheRustEnumAreRejected() {
-        // Out-of-range (the old recording slot 15) is a header/library mismatch.
+        // Out-of-range (15, the first unassigned value) is a header/library mismatch.
         assertThatThrownBy(() -> AimuxException.of(15, ""))
             .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> AimuxException.of(999, "m"))
@@ -269,6 +271,7 @@ class AimuxExceptionTest {
     void codeNameCoversKnownCodes() {
         assertThat(AimuxException.codeName(AimuxException.AIMUX_OK)).isEqualTo("OK");
         assertThat(AimuxException.codeName(AimuxException.AIMUX_E_API_CALL)).isEqualTo("ApiCall");
+        assertThat(AimuxException.codeName(AimuxException.AIMUX_E_RETRY)).isEqualTo("Retry");
         assertThat(AimuxException.codeName(999)).startsWith("Code(");
     }
 
@@ -286,8 +289,26 @@ class AimuxExceptionTest {
         AimuxException.APICallError api = (AimuxException.APICallError)
             AimuxException.of(AimuxException.AIMUX_E_API_CALL, "x");
         assertThat(api.getProviderCode()).isNull();
-        assertThat(api.getRequestId()).isNull();
         assertThat(api.getResponseBody()).isNull();
+        assertThat(api.getUrl()).isNull();
+        assertThat(api.getRequestBodyValues()).isNull();
+        assertThat(api.getResponseHeaders()).isNull();
+        assertThat(api.getData()).isNull();
         assertThat(api.isRetryable()).isFalse();
+    }
+
+    /** Code 14 locally: reason defaults, the single-attempt fallback keeps the type total. */
+    @Test
+    void retryErrorCarriesReasonAndHistory() {
+        AimuxException.RetryError e = (AimuxException.RetryError)
+            AimuxException.of(AimuxException.AIMUX_E_RETRY, "Failed after 2 attempts. Last error: x");
+        assertThat(e.getCode()).isEqualTo(AimuxException.AIMUX_E_RETRY);
+        assertThat(e.getReason()).isEqualTo(AimuxException.RetryErrorReason.MAX_RETRIES_EXCEEDED);
+        assertThat(e.getErrors()).hasSize(1);
+        assertThat(e.getLastError()).isSameAs(e.getErrors().get(0));
+        assertThat(e.getStatusCode()).isEqualTo(-1);
+        assertThatThrownBy(() -> new AimuxException.RetryError(
+                "m", AimuxException.RetryErrorReason.ERROR_NOT_RETRYABLE, java.util.Collections.emptyList()))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 }

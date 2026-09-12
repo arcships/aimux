@@ -24,6 +24,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -757,6 +758,15 @@ async fn should_handle_streaming_errors() {
             r#"{"type":"response.output_item.added","output_index":0,"item":{"id":"msg_test","type":"message","role":"assistant"},"sequence_number":1}"#,
         ),
         "data:invalid json}\n\n".to_string(),
+        sse_event(
+            r#"{"type":"response.output_text.delta","item_id":"msg_test","output_index":0,"content_index":0,"delta":"after-error","sequence_number":2}"#,
+        ),
+        sse_event(
+            r#"{"type":"response.output_item.done","output_index":0,"item":{"id":"msg_test","type":"message","role":"assistant","status":"completed"},"sequence_number":3}"#,
+        ),
+        sse_event(
+            r#"{"type":"response.completed","response":{"id":"resp_test","status":"completed","incomplete_details":null,"usage":null},"sequence_number":4}"#,
+        ),
     ]);
     mock_sse(&server, chunks).await;
 
@@ -768,21 +778,25 @@ async fn should_handle_streaming_errors() {
         .await
         .expect("should succeed");
 
-    let parts = collect_stream(result).await;
-
-    let has_error = parts.iter().any(|p| matches!(p, StreamPart::Error { .. }));
-    assert!(has_error, "should have an Error part");
-
-    let finish = parts
+    let outcomes: Vec<_> = result.stream.collect().await;
+    let error_index = outcomes
         .iter()
-        .find(|p| matches!(p, StreamPart::Finish { .. }))
-        .expect("should have a Finish part");
-    match finish {
-        StreamPart::Finish { finish_reason, .. } => {
-            assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
-        }
-        _ => unreachable!(),
-    }
+        .position(|outcome| {
+            matches!(
+                outcome,
+                Err(AiMuxError::JsonParse(_) | AiMuxError::InvalidResponseData(_))
+            )
+        })
+        .expect("malformed frame should surface as a parse error item");
+    assert!(outcomes[error_index + 1..].iter().any(|outcome| matches!(
+        outcome,
+        Ok(StreamPart::TextDelta { delta, .. }) if delta == "after-error"
+    )));
+    assert!(outcomes.iter().any(|outcome| matches!(
+        outcome,
+        Ok(StreamPart::Finish { finish_reason, .. })
+            if finish_reason.unified == FinishReasonUnified::Stop
+    )));
 }
 
 /// TS: doStream › "should send correct streaming request"

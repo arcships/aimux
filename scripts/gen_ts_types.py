@@ -34,6 +34,11 @@ TYPES_TS = ROOT / "bindings" / "node" / "src" / "types.ts"
 EXCLUDED = {"ProviderName.ts"}
 
 
+def normalize_generated(content: str) -> str:
+    """Ignore ts-rs's incidental end-of-line spaces in generated output."""
+    return "\n".join(line.rstrip() for line in content.splitlines()) + "\n"
+
+
 def regenerate(export_dir: Path) -> None:
     """Run the ts-rs export tests, writing the .ts files into export_dir.
 
@@ -54,7 +59,7 @@ def regenerate(export_dir: Path) -> None:
 def manifest(root: Path, exclude: set[str] = frozenset()) -> dict[str, str]:
     """Map POSIX-style relative path -> content for every .ts under root."""
     return {
-        p.relative_to(root).as_posix(): p.read_text(encoding="utf-8")
+        p.relative_to(root).as_posix(): normalize_generated(p.read_text(encoding="utf-8"))
         for p in root.rglob("*.ts")
         if p.name not in exclude
     }
@@ -80,7 +85,10 @@ def sync(expected: dict[str, str]) -> None:
     for rel, content in expected.items():
         path = TYPES_DIR / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        # `content` is canonicalized by manifest(); compare the raw file so a
+        # normal regeneration also removes ts-rs's incidental EOL spaces.
+        if not path.exists() or path.read_text(encoding="utf-8") != content:
+            path.write_text(content, encoding="utf-8")
 
 
 def main() -> int:

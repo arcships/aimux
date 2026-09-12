@@ -1,4 +1,4 @@
-//! SSRF guard wiring tests for `send_validated`.
+//! SSRF guard wiring tests for `get_from_api` with `validate_url`.
 //!
 //! The guard must reject provider-supplied URLs that point at
 //! private/loopback/link-local space (before any connection is attempted),
@@ -13,19 +13,42 @@ use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::error::AiMuxError;
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_validated};
+use aimux_provider_utils::{
+    HttpRequest, create_binary_response_handler, create_json_response_handler,
+    create_status_code_error_response_handler, get_from_api,
+};
 
-fn request(url: String) -> HttpRequest {
+fn request(
+    url: String,
+    trusted_origin: Option<&str>,
+    credentialed_origin: Option<&str>,
+) -> HttpRequest {
     HttpRequest {
-        method: HttpMethod::Get,
         url,
         headers: vec![("authorization".into(), "Bearer test".into())],
-        body: HttpBody::Empty,
         abort_signal: None,
         call_id: None,
         recording_context: None,
+        response_timeout: None,
+        max_json_response_bytes: None,
+        validate_url: true,
+        trusted_origin: trusted_origin.map(str::to_owned),
+        credentialed_origin: credentialed_origin.map(str::to_owned),
     }
+}
+
+async fn download(
+    url: String,
+    trusted_origin: Option<&str>,
+    credentialed_origin: Option<&str>,
+) -> Result<bytes::Bytes, AiMuxError> {
+    get_from_api(
+        request(url, trusted_origin, credentialed_origin),
+        create_binary_response_handler(),
+        create_status_code_error_response_handler(),
+    )
+    .await
+    .map(|output| output.value)
 }
 
 #[tokio::test]
@@ -36,15 +59,9 @@ async fn rejects_non_public_literal_urls_before_connecting() {
         "http://[::ffff:169.254.169.254]/meta",
         "http://10.1.2.3/file",
     ] {
-        let error = send_validated(
-            request(url.into()),
-            None,
-            None,
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
-        )
-        .await
-        .expect_err("non-public literal must be rejected");
+        let error = download(url.into(), None, None)
+            .await
+            .expect_err("non-public literal must be rejected");
         assert!(
             matches!(error, AiMuxError::InvalidArgument(ref m) if m.contains("non-public")),
             "unexpected error for {url}: {error:?}"
@@ -63,20 +80,18 @@ async fn trusted_origin_download_succeeds_and_keeps_auth_headers() {
         .mount(&server)
         .await;
 
-    let response = send_validated(
-        request(format!("{}/generated/file", server.uri())),
-        Some(&server.uri()),
-        Some(&server.uri()),
-        RetryConfig::default(),
-        &DEFAULT_ERROR_STRUCTURE,
+    let output = get_from_api(
+        request(
+            format!("{}/generated/file", server.uri()),
+            Some(&server.uri()),
+            Some(&server.uri()),
+        ),
+        create_json_response_handler::<serde_json::Value>(),
+        create_status_code_error_response_handler(),
     )
     .await
     .unwrap();
-    assert_eq!(response.status, 200);
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&response.body).unwrap(),
-        json!({"value": "ok"})
-    );
+    assert_eq!(output.value, json!({"value": "ok"}));
 }
 
 #[tokio::test]
@@ -95,17 +110,14 @@ async fn follows_a_relative_redirect_within_the_trusted_origin() {
         .mount(&server)
         .await;
 
-    let response = send_validated(
-        request(format!("{}/start", server.uri())),
+    let body = download(
+        format!("{}/start", server.uri()),
         Some(&server.uri()),
         Some(&server.uri()),
-        RetryConfig::default(),
-        &DEFAULT_ERROR_STRUCTURE,
     )
     .await
     .unwrap();
-    assert_eq!(response.status, 200);
-    assert_eq!(response.body.as_ref(), b"done");
+    assert_eq!(body.as_ref(), b"done");
 }
 
 #[tokio::test]
@@ -120,12 +132,10 @@ async fn rejects_a_redirect_to_a_non_public_target() {
         .mount(&server)
         .await;
 
-    let error = send_validated(
-        request(format!("{}/start", server.uri())),
+    let error = download(
+        format!("{}/start", server.uri()),
         Some(&server.uri()),
         Some(&server.uri()),
-        RetryConfig::default(),
-        &DEFAULT_ERROR_STRUCTURE,
     )
     .await
     .expect_err("redirect to metadata IP must be rejected");
@@ -151,12 +161,10 @@ async fn rejects_a_redirect_onto_a_foreign_loopback_origin() {
         .mount(&server)
         .await;
 
-    let error = send_validated(
-        request(format!("{}/start", server.uri())),
+    let error = download(
+        format!("{}/start", server.uri()),
         Some(&server.uri()),
         Some(&server.uri()),
-        RetryConfig::default(),
-        &DEFAULT_ERROR_STRUCTURE,
     )
     .await
     .expect_err("foreign loopback origin must be rejected");
@@ -180,12 +188,10 @@ async fn rejects_a_redirect_to_a_data_url() {
         .mount(&server)
         .await;
 
-    let error = send_validated(
-        request(format!("{}/start", server.uri())),
+    let error = download(
+        format!("{}/start", server.uri()),
         Some(&server.uri()),
         Some(&server.uri()),
-        RetryConfig::default(),
-        &DEFAULT_ERROR_STRUCTURE,
     )
     .await
     .expect_err("redirect to a data: URL must be rejected");
@@ -205,16 +211,18 @@ async fn sanitizes_metadata_and_cookie_headers_from_download_requests() {
         .mount(&server)
         .await;
 
-    let mut req = request(format!("{}/file", server.uri()));
+    let mut req = request(
+        format!("{}/file", server.uri()),
+        Some(&server.uri()),
+        Some(&server.uri()),
+    );
     req.headers.push(("Cookie".into(), "session=secret".into()));
     req.headers
         .push(("Metadata-Flavor".into(), "Google".into()));
-    send_validated(
+    get_from_api(
         req,
-        Some(&server.uri()),
-        Some(&server.uri()),
-        RetryConfig::default(),
-        &DEFAULT_ERROR_STRUCTURE,
+        create_binary_response_handler(),
+        create_status_code_error_response_handler(),
     )
     .await
     .unwrap();

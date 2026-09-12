@@ -38,9 +38,11 @@ type EmbeddingResult struct {
 
 // EmbeddingCallOptions is the options for an embedding call.
 type EmbeddingCallOptions struct {
-	Values          []string          `json:"values,omitempty"`
-	ProviderOptions jsonObj           `json:"provider_options"`
-	Headers         map[string]string `json:"headers,omitempty"`
+	Values          []string              `json:"values,omitempty"`
+	MaxRetries      *uint32               `json:"max_retries,omitempty"`
+	Timeout         *TimeoutConfiguration `json:"timeout,omitempty"`
+	ProviderOptions jsonObj               `json:"provider_options"`
+	Headers         map[string]string     `json:"headers,omitempty"`
 }
 
 // ── Speech (TTS) ──────────────────────────────────────────────────────────────
@@ -78,14 +80,16 @@ type SpeechResult struct {
 
 // SpeechCallOptions is the options for speech generation.
 type SpeechCallOptions struct {
-	Text            string            `json:"text"`
-	Voice           *string           `json:"voice,omitempty"`
-	OutputFormat    *string           `json:"output_format,omitempty"`
-	Instructions    *string           `json:"instructions,omitempty"`
-	Speed           *float64          `json:"speed,omitempty"`
-	Language        *string           `json:"language,omitempty"`
-	ProviderOptions jsonObj           `json:"provider_options"`
-	Headers         map[string]string `json:"headers,omitempty"`
+	Text            string                `json:"text"`
+	Voice           *string               `json:"voice,omitempty"`
+	OutputFormat    *string               `json:"output_format,omitempty"`
+	Instructions    *string               `json:"instructions,omitempty"`
+	Speed           *float64              `json:"speed,omitempty"`
+	Language        *string               `json:"language,omitempty"`
+	MaxRetries      *uint32               `json:"max_retries,omitempty"`
+	Timeout         *TimeoutConfiguration `json:"timeout,omitempty"`
+	ProviderOptions jsonObj               `json:"provider_options"`
+	Headers         map[string]string     `json:"headers,omitempty"`
 }
 
 // ── Image ─────────────────────────────────────────────────────────────────────
@@ -121,15 +125,17 @@ type ImageResult struct {
 
 // ImageCallOptions is the options for image generation.
 type ImageCallOptions struct {
-	Prompt          *string           `json:"prompt,omitempty"`
-	N               *int              `json:"n,omitempty"`
-	Size            *string           `json:"size,omitempty"`
-	AspectRatio     *string           `json:"aspect_ratio,omitempty"`
-	Seed            *uint64           `json:"seed,omitempty"`
-	Files           []json.RawMessage `json:"files,omitempty"`
-	Mask            json.RawMessage   `json:"mask,omitempty"`
-	ProviderOptions jsonObj           `json:"provider_options"`
-	Headers         map[string]string `json:"headers,omitempty"`
+	Prompt          *string               `json:"prompt,omitempty"`
+	N               *int                  `json:"n,omitempty"`
+	Size            *string               `json:"size,omitempty"`
+	AspectRatio     *string               `json:"aspect_ratio,omitempty"`
+	Seed            *uint64               `json:"seed,omitempty"`
+	Files           []json.RawMessage     `json:"files,omitempty"`
+	Mask            json.RawMessage       `json:"mask,omitempty"`
+	MaxRetries      *uint32               `json:"max_retries,omitempty"`
+	Timeout         *TimeoutConfiguration `json:"timeout,omitempty"`
+	ProviderOptions jsonObj               `json:"provider_options"`
+	Headers         map[string]string     `json:"headers,omitempty"`
 }
 
 // ── Transcription (STT) ───────────────────────────────────────────────────────
@@ -172,10 +178,12 @@ type TranscriptionResult struct {
 
 // TranscriptionCallOptions is the options for transcription.
 type TranscriptionCallOptions struct {
-	Audio           json.RawMessage   `json:"audio"`
-	MediaType       string            `json:"media_type"`
-	ProviderOptions jsonObj           `json:"provider_options"`
-	Headers         map[string]string `json:"headers,omitempty"`
+	Audio           json.RawMessage       `json:"audio"`
+	MediaType       string                `json:"media_type"`
+	MaxRetries      *uint32               `json:"max_retries,omitempty"`
+	Timeout         *TimeoutConfiguration `json:"timeout,omitempty"`
+	ProviderOptions jsonObj               `json:"provider_options"`
+	Headers         map[string]string     `json:"headers,omitempty"`
 }
 
 // ── Reranking ────────────────────────────────────────────────────────────────
@@ -205,11 +213,13 @@ type RerankingResult struct {
 
 // RerankingCallOptions is the options for reranking.
 type RerankingCallOptions struct {
-	Documents       json.RawMessage   `json:"documents"`
-	Query           string            `json:"query"`
-	TopN            *int              `json:"top_n,omitempty"`
-	ProviderOptions jsonObj           `json:"provider_options"`
-	Headers         map[string]string `json:"headers,omitempty"`
+	Documents       json.RawMessage       `json:"documents"`
+	Query           string                `json:"query"`
+	TopN            *int                  `json:"top_n,omitempty"`
+	MaxRetries      *uint32               `json:"max_retries,omitempty"`
+	Timeout         *TimeoutConfiguration `json:"timeout,omitempty"`
+	ProviderOptions jsonObj               `json:"provider_options"`
+	Headers         map[string]string     `json:"headers,omitempty"`
 }
 
 // ── Video ───────────────────────────────────────────────────────────────────
@@ -255,15 +265,24 @@ type VideoResult struct {
 	Response         VideoResponse   `json:"response"`
 }
 
+// VideoPollOptions overrides Core's pacing for an asynchronous video job.
+type VideoPollOptions struct {
+	IntervalMS *uint64 `json:"interval_ms,omitempty"`
+	TimeoutMS  *uint64 `json:"timeout_ms,omitempty"`
+}
+
 // VideoCallOptions is the options for video generation.
 type VideoCallOptions struct {
-	Prompt          *string           `json:"prompt,omitempty"`
-	N               *int              `json:"n,omitempty"`
-	AspectRatio     *string           `json:"aspect_ratio,omitempty"`
-	Resolution      *string           `json:"resolution,omitempty"`
-	Seed            *uint64           `json:"seed,omitempty"`
-	ProviderOptions jsonObj           `json:"provider_options"`
-	Headers         map[string]string `json:"headers,omitempty"`
+	Prompt          *string               `json:"prompt,omitempty"`
+	N               *int                  `json:"n,omitempty"`
+	AspectRatio     *string               `json:"aspect_ratio,omitempty"`
+	Resolution      *string               `json:"resolution,omitempty"`
+	Seed            *uint64               `json:"seed,omitempty"`
+	MaxRetries      *uint32               `json:"max_retries,omitempty"`
+	Poll            *VideoPollOptions     `json:"poll,omitempty"`
+	Timeout         *TimeoutConfiguration `json:"timeout,omitempty"`
+	ProviderOptions jsonObj               `json:"provider_options"`
+	Headers         map[string]string     `json:"headers,omitempty"`
 }
 
 // ── Search ──────────────────────────────────────────────────────────────────
@@ -294,14 +313,16 @@ type SearchResult struct {
 
 // SearchCallOptions is the options for a search call.
 type SearchCallOptions struct {
-	Query             string            `json:"query"`
-	MaxResults        *int              `json:"max_results,omitempty"`
-	IncludeRawContent *bool             `json:"include_raw_content,omitempty"`
-	TimeRange         *string           `json:"time_range,omitempty"`
-	IncludeDomains    []string          `json:"include_domains,omitempty"`
-	ExcludeDomains    []string          `json:"exclude_domains,omitempty"`
-	ProviderOptions   jsonObj           `json:"provider_options"`
-	Headers           map[string]string `json:"headers,omitempty"`
+	Query             string                `json:"query"`
+	MaxResults        *int                  `json:"max_results,omitempty"`
+	IncludeRawContent *bool                 `json:"include_raw_content,omitempty"`
+	TimeRange         *string               `json:"time_range,omitempty"`
+	IncludeDomains    []string              `json:"include_domains,omitempty"`
+	ExcludeDomains    []string              `json:"exclude_domains,omitempty"`
+	MaxRetries        *uint32               `json:"max_retries,omitempty"`
+	Timeout           *TimeoutConfiguration `json:"timeout,omitempty"`
+	ProviderOptions   jsonObj               `json:"provider_options"`
+	Headers           map[string]string     `json:"headers,omitempty"`
 }
 
 // ── Files ───────────────────────────────────────────────────────────────────

@@ -76,7 +76,7 @@ shares a base with the other (both just `implements Exception`):
 
 | Source | Rust | Dart | C code |
 |---|---|---|---|
-| AiMux | `AiMuxError` | `AimuxException` hierarchy | 1..13 |
+| AiMux | `AiMuxError` | `AimuxException` hierarchy | 1..14 |
 | recorder | `RecordingError` | `RecordingException` | 100..105 |
 
 Every fallible C call returns an opaque `aimux_error_t *` (`NULL` =
@@ -84,7 +84,7 @@ success, result in the trailing out-parameter). The binding has one decoder
 (`errors.dart`): `expectAimuxError(e, context)` for model calls,
 `expectRecordingError(e, context)` for `initRecording` / `recordingTryFlush`,
 `expectFfiError(e, context)` for utilities that can only fail in the C ABI.
-One unified code selects 1..13, 100..105, or 200..206; each decoder copies the
+One unified code selects 1..14, 100..105, or 200..206; each decoder copies the
 relevant fields, releases the error with `aimux_error_free` exactly once, and
 throws the matching `AimuxException` subclass / `RecordingException`. Codes
 200..206 throw the native
@@ -103,6 +103,7 @@ Exception (implements)
       ├── UnsupportedFunctionalityError
       ├── NoSuchModelError / NoSuchProviderError
       ├── APICallError              // every HTTP-shaped failure; branch on status
+      ├── RetryError                // reason, errors, lastError
       ├── AimuxTimeoutError
       ├── RequestAbortedError
       └── OtherError
@@ -111,10 +112,15 @@ Exception (implements)
 Every instance has `message`, `code` (`AimuxErrorCode` constants matching C
 `aimux_error_code_t`), `status` (HTTP or `-1`), `retryMs` (hint or `-1`;
 `0` = retry now) and `retryable`. Per-code payload lives on the carrying
-subclass only: `APICallError.providerCode` / `.providerMessage` / `.requestId` / `.responseBody`
+subclass only: `APICallError.providerCode` / `.providerMessage` / `.responseBody`
 (`String?`), `NoSuchModelError.modelId` / `.modelType`, and
 `NoSuchProviderError.providerId`. A code outside the enum is a header/library
 mismatch and fails with `StateError`, not an error type.
+
+`APICallError` additionally exposes the sanitized URL/request values,
+response headers/body, parsed provider data/code, and retryability.
+`RetryError` preserves every concrete attempt error in `errors`, with
+`lastError` and `reason`.
 
 ```dart
 import 'package:aimux/aimux.dart'; // exports errors.dart

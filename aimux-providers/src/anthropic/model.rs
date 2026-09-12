@@ -17,7 +17,6 @@ use super::AnthropicConfig;
 use super::convert::build_request_body_with_warnings;
 use super::stream::{BodyEncoding, anthropic_generate_core, anthropic_stream_core};
 use super::tool_name_mapping::ToolNameMapping;
-use aimux_provider_utils::RetryConfig;
 
 /// An Anthropic language model (e.g. `claude-sonnet-4-20250514`).
 pub struct AnthropicModel {
@@ -91,6 +90,10 @@ impl LanguageModel for AnthropicModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         use aimux_core::recording::ProviderRecord;
         ProviderRecord {
@@ -121,16 +124,13 @@ impl LanguageModel for AnthropicModel {
         let req = build_request_body_with_warnings(&self.model_id, &options, false)?;
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref(), req.betas);
-        let retry_config = resolve_anthropic_retry(&self.config.retry_config, options.max_retries);
         anthropic_generate_core(
             &endpoint,
-            retry_config,
             req.body,
             req.warnings,
             build_headers,
             BodyEncoding::Json,
             options.abort_signal.clone(),
-            options.timeout.map(Into::into),
             options.recording_context.clone(),
             &ToolNameMapping::new(options.tools.as_deref()),
         )
@@ -142,34 +142,17 @@ impl LanguageModel for AnthropicModel {
         let req = build_request_body_with_warnings(&self.model_id, &options, true)?;
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref(), req.betas);
-        let retry_config = resolve_anthropic_retry(&self.config.retry_config, options.max_retries);
         anthropic_stream_core(
             &endpoint,
-            retry_config,
             req.body,
             req.warnings,
             build_headers,
             BodyEncoding::Json,
             options.abort_signal.clone(),
-            options.timeout.map(Into::into),
             options.recording_context.clone(),
             ToolNameMapping::new(options.tools.as_deref()),
         )
         .await
-    }
-}
-
-/// Resolve per-call max_retries override (RFC-0017). RetryConfig is Copy.
-fn resolve_anthropic_retry(
-    provider: &RetryConfig,
-    max_retries_override: Option<u32>,
-) -> RetryConfig {
-    match max_retries_override {
-        Some(n) => RetryConfig {
-            max_retries: n,
-            ..*provider
-        },
-        None => *provider,
     }
 }
 

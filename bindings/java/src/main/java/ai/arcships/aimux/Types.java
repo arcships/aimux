@@ -1605,19 +1605,22 @@ public final class Types {
      */
     public static class TimeoutConfiguration {
         @JsonProperty("total_ms") private Long totalMs;
+        @JsonProperty("step_ms") private Long stepMs;
         @JsonProperty("first_chunk_ms") private Long firstChunkMs;
         @JsonProperty("chunk_ms") private Long chunkMs;
 
         @JsonCreator
         TimeoutConfiguration() {}
 
-        private TimeoutConfiguration(Long totalMs, Long firstChunkMs, Long chunkMs) {
+        private TimeoutConfiguration(Long totalMs, Long stepMs, Long firstChunkMs, Long chunkMs) {
             this.totalMs = totalMs;
+            this.stepMs = stepMs;
             this.firstChunkMs = firstChunkMs;
             this.chunkMs = chunkMs;
         }
 
         public Long getTotalMs() { return totalMs; }
+        public Long getStepMs() { return stepMs; }
         public Long getFirstChunkMs() { return firstChunkMs; }
         public Long getChunkMs() { return chunkMs; }
 
@@ -1625,15 +1628,17 @@ public final class Types {
 
         public static class Builder {
             private Long totalMs;
+            private Long stepMs;
             private Long firstChunkMs;
             private Long chunkMs;
 
             public Builder totalMs(Long v) { this.totalMs = v; return this; }
+            public Builder stepMs(Long v) { this.stepMs = v; return this; }
             public Builder firstChunkMs(Long v) { this.firstChunkMs = v; return this; }
             public Builder chunkMs(Long v) { this.chunkMs = v; return this; }
 
             public TimeoutConfiguration build() {
-                return new TimeoutConfiguration(totalMs, firstChunkMs, chunkMs);
+                return new TimeoutConfiguration(totalMs, stepMs, firstChunkMs, chunkMs);
             }
         }
 
@@ -1643,13 +1648,14 @@ public final class Types {
             if (!(o instanceof TimeoutConfiguration)) return false;
             TimeoutConfiguration that = (TimeoutConfiguration) o;
             return Objects.equals(totalMs, that.totalMs)
+                && Objects.equals(stepMs, that.stepMs)
                 && Objects.equals(firstChunkMs, that.firstChunkMs)
                 && Objects.equals(chunkMs, that.chunkMs);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(totalMs, firstChunkMs, chunkMs);
+            return Objects.hash(totalMs, stepMs, firstChunkMs, chunkMs);
         }
     }
 

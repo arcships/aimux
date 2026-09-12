@@ -27,8 +27,7 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use aimux_provider_utils::response::{ErrorStructure, error_for_status};
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+use aimux_provider_utils::{HttpBody, HttpRequest};
 
 use crate::bedrock::sigv4::{AwsCredentials, sign_request};
 
@@ -61,10 +60,23 @@ const SUPPORTED_OUTPUT_FORMATS: &[&str] = &[
 
 /// AWS error shape: `{"__type": "...", "message": "..."}` (no `error` wrapper).
 /// Passed to `send` so the http layer extracts the right fields on non-2xx.
-const AWS_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["message"],
-    type_path: &["__type"],
-};
+fn aws_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(aws_error_parts)
+}
+
+fn aws_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorParts {
+    aimux_provider_utils::ProviderErrorParts {
+        message: data
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("Amazon Polly request failed")
+            .to_string(),
+        provider_code: data
+            .get("__type")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    }
+}
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -266,25 +278,25 @@ impl SpeechModel for AwsPollySpeechModel {
             &extra_headers,
         );
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url,
                 headers: signed.headers,
-                body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                ..Default::default()
             },
-            RetryConfig::default(),
-            &AWS_ERROR_STRUCTURE,
+            HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+            aimux_provider_utils::create_binary_response_handler(),
+            aws_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let audio_bytes = resp.body.to_vec();
+        let audio_bytes = resp.value.to_vec();
 
         let timestamp = chrono::Utc::now().to_rfc3339();
 
@@ -470,48 +482,6 @@ fn parse_polly_provider_options(
     })
 }
 
-// ── Error handling ───────────────────────────────────────────────────────────
-
-/// Parse an AWS Polly error response into an [`AiMuxError`].
-///
-/// AWS errors are JSON objects of the form
-/// `{"__type": "...", "message": "..."}`. Authentication failures surface as
-/// HTTP 401 or 403; both surface as [`AiMuxError::ApiCall`] with the status in `status_code`.
-///
-/// Live requests no longer call this — the shared http layer (`send`) maps
-/// non-2xx responses itself via [`AWS_ERROR_STRUCTURE`]. Retained (and
-/// exercised below) for unit-testing the AWS-specific 401/403 → `Auth` mapping,
-/// which the generic handler does not reproduce.
-#[allow(dead_code)]
-fn parse_polly_error(status: u16, body: &str) -> AiMuxError {
-    let message = extract_aws_error_message(body);
-    let provider_code = serde_json::from_str::<Value>(body)
-        .ok()
-        .and_then(|v| v.get("__type").and_then(|t| t.as_str()).map(String::from));
-    error_for_status(status, provider_code, message, None, Some(body.to_string()))
-}
-
-/// Extract a human-readable message from an AWS error JSON body.
-///
-/// Only used by [`parse_polly_error`] (which is itself test-only after the
-/// migration to the shared http layer), so marked `#[allow(dead_code)]`.
-#[allow(dead_code)]
-fn extract_aws_error_message(body: &str) -> String {
-    if let Ok(val) = serde_json::from_str::<Value>(body) {
-        if let Some(msg) = val.get("message").and_then(|v| v.as_str()) {
-            return msg.to_string();
-        }
-        if let Some(t) = val.get("__type").and_then(|v| v.as_str()) {
-            return t.to_string();
-        }
-    }
-    if body.is_empty() {
-        "HTTP error".to_string()
-    } else {
-        body.to_string()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -551,16 +521,25 @@ mod tests {
     }
 
     #[test]
-    fn parse_error_maps_401_to_auth() {
-        let body = r#"{"__type":"UnrecognizedClientException","message":"The security token included in the request is invalid."}"#;
-        let err = parse_polly_error(401, body);
-        assert!(matches!(err, ref e if e.status_code() == Some(401)));
+    fn extracts_aws_error_fields() {
+        let data = serde_json::json!({
+            "__type": "UnrecognizedClientException",
+            "message": "The security token included in the request is invalid."
+        });
+        let parts = aws_error_parts(&data);
+        assert_eq!(
+            parts.provider_code.as_deref(),
+            Some("UnrecognizedClientException")
+        );
+        assert_eq!(
+            parts.message,
+            "The security token included in the request is invalid."
+        );
     }
 
     #[test]
-    fn parse_error_keeps_the_observed_403() {
-        let body = r#"{"__type":"AccessDeniedException","message":"User is not authorized."}"#;
-        let err = parse_polly_error(403, body);
-        assert_eq!(err.status_code(), Some(403));
+    fn missing_aws_message_uses_provider_fallback() {
+        let parts = aws_error_parts(&serde_json::json!({ "__type": "AccessDeniedException" }));
+        assert_eq!(parts.message, "Amazon Polly request failed");
     }
 }

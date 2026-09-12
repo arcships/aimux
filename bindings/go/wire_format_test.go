@@ -218,10 +218,12 @@ func TestWireFormatConsistency(t *testing.T) {
 				if tc3.ChunkMs == nil || *tc3.ChunkMs != 500 {
 					t.Error("expected ChunkMs=500")
 				}
-				reencoded, _ := json.Marshal(tc3)
-				if string(reencoded) != wireJSON {
-					t.Errorf("round-trip mismatch: got %s, want %s", reencoded, wireJSON)
+				if tc3.StepMs != nil {
+					t.Error("expected nil StepMs")
 				}
+				// No byte round-trip here: the fixture spells Rust's explicit
+				// nulls, while the Go struct is omitempty by convention (same
+				// reasoning as the GenerateTextOptions branch above).
 
 			case "GenerateContent":
 				// Go keeps result content parts as raw JSON by design

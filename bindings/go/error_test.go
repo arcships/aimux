@@ -74,8 +74,11 @@ func TestPayloadEngineFailure(t *testing.T) {
 	if e.ProviderID != "no-such-provider" {
 		t.Fatalf("ProviderID: got %q", e.ProviderID)
 	}
-	if e.ProviderCode != "" || e.ProviderMessage != "" || e.RequestID != "" || e.ResponseBody != "" || e.ModelID != "" || e.ModelType != "" {
+	if e.ProviderCode != "" || e.ProviderMessage != "" || e.ResponseBody != "" || e.URL != "" || e.ModelID != "" || e.ModelType != "" {
 		t.Fatalf("payload fields of other codes must be empty: %+v", e)
+	}
+	if e.Reason != "" || len(e.Errors) != 0 || e.LastError() != nil {
+		t.Fatalf("retry payload of other codes must be empty: %+v", e)
 	}
 }
 
@@ -468,7 +471,8 @@ func TestEmbedRejectsRawPassThroughOpts(t *testing.T) {
 }
 
 func TestCodeFromCRejectsOutOfRange(t *testing.T) {
-	for _, bad := range []int{0, 14, 15, 999} {
+	// 15 is the first unassigned value.
+	for _, bad := range []int{0, 15, 16, 999} {
 		if _, ok := codeFromC(bad); ok {
 			t.Fatalf("%d is not an AiMuxError variant", bad)
 		}
@@ -479,5 +483,35 @@ func TestCodeFromCRejectsOutOfRange(t *testing.T) {
 	}
 	if c, ok := codeFromC(11); !ok || c != CodeAPICall {
 		t.Fatalf("11 → %v, %v", c, ok)
+	}
+	if c, ok := codeFromC(14); !ok || c != CodeRetry {
+		t.Fatalf("14 → %v, %v; want CodeRetry", c, ok)
+	}
+}
+
+// A CodeRetry error keeps the per-attempt history in order; LastError is the
+// final attempt. The reason values are the core's serde camelCase wire names.
+func TestRetryErrorHistory(t *testing.T) {
+	first := &Error{Code: CodeAPICall, Message: "API call error: HTTP 429: slow down", Status: 429, Retryable: true}
+	last := &Error{Code: CodeAPICall, Message: "API call error: HTTP 401: bad key", Status: 401}
+	e := &Error{
+		Code:    CodeRetry,
+		Message: "Failed after 2 attempts with non-retryable error: 'bad key'",
+		Status:  -1,
+		RetryMs: -1,
+		Reason:  RetryErrorNotRetryable,
+		Errors:  []*Error{first, last},
+	}
+	if e.Code.String() != "Retry" {
+		t.Fatalf("Code.String: %s", e.Code.String())
+	}
+	if e.LastError() != last {
+		t.Fatalf("LastError: got %v", e.LastError())
+	}
+	if e.Errors[0] != first || !e.Errors[0].Retryable {
+		t.Fatalf("attempt order lost: %+v", e.Errors)
+	}
+	if e.Reason != "errorNotRetryable" || RetryMaxRetriesExceeded != "maxRetriesExceeded" {
+		t.Fatalf("reason wire names changed: %q", e.Reason)
 	}
 }

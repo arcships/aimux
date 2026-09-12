@@ -20,23 +20,51 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures::StreamExt;
 
+use aimux_core::AbortSignal;
 use aimux_core::error::AiMuxError;
-use aimux_core::error::ApiCallError;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
-use aimux_core::shared::AbortSignal;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::Warning;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage};
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RequestTimeout, RetryConfig, send_stream_timed, send_timed,
-};
-use aimux_stream::SseStream;
+use aimux_provider_utils::{HttpBody, HttpRequest};
 use serde_json::{Value, json};
 
 use super::convert::parse_stop_reason;
 use super::tool_name_mapping::ToolNameMapping;
-use super::types::{AnthropicResponse, ContentBlock, StreamEvent};
+use super::types::{AnthropicResponse, ContentBlock, StreamErrorData, StreamEvent};
+
+pub(crate) fn anthropic_stream_error(
+    error: &StreamErrorData,
+    url: &str,
+    request_body_values: serde_json::Value,
+    response_headers: HashMap<String, String>,
+) -> AiMuxError {
+    // Documented Anthropic error types map to their documented statuses; an
+    // unknown type carries no status and is not retried (fabricating a 500
+    // here was the M3 bug).
+    let status_code = match error.error_type.as_deref() {
+        Some("rate_limit_error") => Some(429),
+        Some("overloaded_error") => Some(529),
+        Some("api_error") => Some(500),
+        _ => None,
+    };
+    let data = json!({
+        "type": "error",
+        "error": {
+            "type": error.error_type,
+            "message": error.message,
+        }
+    });
+    aimux_provider_utils::stream_error_api_call(
+        error.message.clone(),
+        error.error_type.clone(),
+        status_code,
+        &data,
+        url,
+        request_body_values,
+        response_headers,
+    )
+}
 
 /// How the request body is sent over the wire.
 #[derive(Debug, Clone, Copy)]
@@ -66,7 +94,7 @@ fn build_anthropic_request(
     body_encoding: BodyEncoding,
     abort_signal: Option<AbortSignal>,
     recording_context: Option<aimux_core::recording::RecordingContext>,
-) -> Result<HttpRequest, AiMuxError> {
+) -> Result<(HttpRequest, HttpBody), AiMuxError> {
     // Serialize once; the Bytes path sends these exact bytes and the closure
     // signs over them, guaranteeing signature/body agreement.
     let body_bytes = serde_json::to_vec(body).map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
@@ -77,15 +105,17 @@ fn build_anthropic_request(
         BodyEncoding::Bytes => HttpBody::Bytes(body_bytes, "application/json".to_string()),
     };
 
-    Ok(HttpRequest {
-        method: HttpMethod::Post,
-        url: endpoint.to_string(),
-        headers,
-        body: http_body,
-        abort_signal,
-        call_id: recording_context.as_ref().map(|c| c.call_id.clone()),
-        recording_context,
-    })
+    Ok((
+        HttpRequest {
+            url: endpoint.to_string(),
+            headers,
+            abort_signal,
+            call_id: recording_context.as_ref().map(|c| c.call_id.clone()),
+            recording_context,
+            ..Default::default()
+        },
+        http_body,
+    ))
 }
 
 /// Read a string field, dropping absent / non-string values.
@@ -681,17 +711,15 @@ pub(crate) fn parse_anthropic_content(
 #[allow(clippy::too_many_arguments)] // core plumbing: endpoint/retry/body/warnings/auth/encoding/abort/timeout
 pub(crate) async fn anthropic_generate_core(
     endpoint: &str,
-    retry_config: RetryConfig,
     body: serde_json::Value,
     warnings: Vec<Warning>,
     build_headers: impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError>,
     body_encoding: BodyEncoding,
     abort_signal: Option<AbortSignal>,
-    timeout: Option<RequestTimeout>,
     recording_context: Option<aimux_core::recording::RecordingContext>,
     tool_names: &ToolNameMapping,
 ) -> Result<GenerateResult, AiMuxError> {
-    let request = build_anthropic_request(
+    let (request, request_body) = build_anthropic_request(
         endpoint,
         &body,
         &build_headers,
@@ -699,9 +727,15 @@ pub(crate) async fn anthropic_generate_core(
         abort_signal,
         recording_context,
     )?;
-    let resp = send_timed(request, retry_config, &DEFAULT_ERROR_STRUCTURE, timeout).await?;
+    let resp = aimux_provider_utils::post_to_api(
+        request,
+        request_body,
+        aimux_provider_utils::create_json_response_handler(),
+        super::anthropic_failed_response_handler(),
+    )
+    .await?;
 
-    let data: AnthropicResponse = serde_json::from_slice(&resp.body)?;
+    let data: AnthropicResponse = resp.value;
 
     let content = parse_anthropic_content(&data.content, tool_names);
 
@@ -769,17 +803,15 @@ enum BlockState {
 #[allow(clippy::too_many_arguments)] // core plumbing: endpoint/retry/body/warnings/auth/encoding/abort/timeout
 pub(crate) async fn anthropic_stream_core(
     endpoint: &str,
-    retry_config: RetryConfig,
     body: serde_json::Value,
     warnings: Vec<Warning>,
     build_headers: impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError>,
     body_encoding: BodyEncoding,
     abort_signal: Option<AbortSignal>,
-    timeout: Option<RequestTimeout>,
     recording_context: Option<aimux_core::recording::RecordingContext>,
     tool_names: ToolNameMapping,
 ) -> Result<StreamResult, AiMuxError> {
-    let request = build_anthropic_request(
+    let (request, request_body) = build_anthropic_request(
         endpoint,
         &body,
         &build_headers,
@@ -787,16 +819,37 @@ pub(crate) async fn anthropic_stream_core(
         abort_signal,
         recording_context,
     )?;
-    let resp = send_stream_timed(request, retry_config, &DEFAULT_ERROR_STRUCTURE, timeout).await?;
+    let resp = aimux_provider_utils::post_to_api(
+        request,
+        request_body,
+        aimux_provider_utils::create_event_source_response_handler::<StreamEvent>(),
+        super::anthropic_failed_response_handler(),
+    )
+    .await?;
 
-    let response_headers = resp.headers;
-    let sse_stream = SseStream::new(resp.body);
+    let response_headers = resp.response_headers;
+    let mut sse_stream = resp.value;
+    let first_event = match sse_stream.next().await {
+        Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+        first_event => first_event,
+    };
+    if let Some(Ok(StreamEvent::Error { error })) = first_event.as_ref() {
+        return Err(anthropic_stream_error(
+            error,
+            endpoint,
+            body.clone(),
+            response_headers,
+        ));
+    }
+    let stream_error_url = endpoint.to_string();
+    let stream_request_body = body.clone();
+    let stream_response_headers = response_headers.clone();
 
     let stream = async_stream::stream! {
         // First part: StreamStart.
         yield Ok(StreamPart::StreamStart { warnings });
 
-        let mut sse = sse_stream;
+        let mut sse = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
         let mut blocks: HashMap<usize, BlockState> = HashMap::new();
         let mut final_usage = Usage::default();
         let mut final_finish_reason: Option<FinishReason> = None;
@@ -808,9 +861,9 @@ pub(crate) async fn anthropic_stream_core(
 
         while let Some(event) = sse.next().await {
             match event {
-                Ok(sse_event) => {
-                    match serde_json::from_str::<StreamEvent>(&sse_event.data) {
-                        Ok(StreamEvent::MessageStart { message }) => {
+                Ok(stream_event) => {
+                    match stream_event {
+                        StreamEvent::MessageStart { message } => {
                             if let Some(usage) = &message.usage {
                                 // RFC-0015 P0-2: full input side incl. cache
                                 // fields + raw (Anthropic reports cache only
@@ -826,7 +879,7 @@ pub(crate) async fn anthropic_stream_core(
                                 response_meta_emitted = true;
                             }
                         }
-                        Ok(StreamEvent::ContentBlockStart { index, content_block }) => {
+                        StreamEvent::ContentBlockStart { index, content_block } => {
                             match content_block {
                                 ContentBlock::Text { .. } => {
                                     blocks.insert(index, BlockState::Text { started: false });
@@ -921,7 +974,7 @@ pub(crate) async fn anthropic_stream_core(
                                 }
                             }
                         }
-                        Ok(StreamEvent::ContentBlockDelta { index, delta }) => {
+                        StreamEvent::ContentBlockDelta { index, delta } => {
                             if let Some(text) = delta.text {
                                 // Start the text segment on the first delta. The
                                 // text id is the stringified content-block
@@ -1022,7 +1075,7 @@ pub(crate) async fn anthropic_stream_core(
                                 }
                             }
                         }
-                        Ok(StreamEvent::ContentBlockStop { index }) => {
+                        StreamEvent::ContentBlockStop { index } => {
                             // Removing the block releases the borrow before any
                             // yield.
                             if let Some(state) = blocks.remove(&index) {
@@ -1080,7 +1133,7 @@ pub(crate) async fn anthropic_stream_core(
                                 }
                             }
                         }
-                        Ok(StreamEvent::MessageDelta { delta, usage }) => {
+                        StreamEvent::MessageDelta { delta, usage } => {
                             if let Some(reason) = delta.stop_reason {
                                 final_finish_reason = Some(parse_stop_reason(&reason));
                             }
@@ -1101,19 +1154,19 @@ pub(crate) async fn anthropic_stream_core(
                                 };
                             }
                         }
-                        Ok(StreamEvent::MessageStop) => break,
-                        Ok(StreamEvent::Error { error }) => {
+                        StreamEvent::MessageStop => break,
+                        StreamEvent::Error { error } => {
                             // Surface Anthropic in-stream errors (e.g.
                             // overloaded_error) as a `StreamPart::Error` and
                             // stop the stream, mirroring the TS "forward error
                             // chunks" / "forward overloaded error" behaviour.
                             yield Ok(StreamPart::Error {
-                                error: AiMuxError::ApiCall(ApiCallError {
-                                    provider_code: error.error_type,
-                                    message: error.message,
-                                    response_body: Some(sse_event.data.clone()),
-                                    ..Default::default()
-                                }),
+                                error: anthropic_stream_error(
+                                    &error,
+                                    &stream_error_url,
+                                    stream_request_body.clone(),
+                                    stream_response_headers.clone(),
+                                ),
                             });
                             // Finish is the final-chunk contract: it must
                             // still terminate the stream after an in-stream
@@ -1122,15 +1175,15 @@ pub(crate) async fn anthropic_stream_core(
                             stream_errored = true;
                             break;
                         }
-                        Ok(_) | Err(_) => {}
+                        _ => {}
                     }
                 }
-                Err(e) => {
-                    yield Ok(StreamPart::Error {
-                        error: AiMuxError::InvalidResponseData(e.to_string()),
-                    });
-                    stream_errored = true;
-                    break;
+                Err(error) => {
+                    let recoverable = error.is_recoverable_stream_error();
+                    yield Err(error);
+                    if !recoverable {
+                        return;
+                    }
                 }
             }
         }

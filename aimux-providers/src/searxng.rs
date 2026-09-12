@@ -15,14 +15,12 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::error::ApiCallError;
 use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::HttpRequest;
 use aimux_provider_utils::without_trailing_slash;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 /// Fixed model ID for the SearXNG search model.
 const MODEL_ID: &str = "searxng-search";
@@ -164,36 +162,30 @@ impl SearchModel for SearxngSearchModel {
             })
             .unwrap_or_default();
 
-        let mut url = url::Url::parse(&self.endpoint()).map_err(|e| {
-            AiMuxError::ApiCall(ApiCallError {
-                message: format!("invalid searxng endpoint: {e}"),
-                ..Default::default()
-            })
-        })?;
+        let mut url = url::Url::parse(&self.endpoint())
+            .map_err(|e| AiMuxError::InvalidArgument(format!("invalid searxng endpoint: {e}")))?;
         url.query_pairs_mut()
             .append_pair("q", &options.query)
             .append_pair("format", "json");
 
-        let resp = send(
+        let resp = aimux_provider_utils::get_from_api(
             HttpRequest {
-                method: HttpMethod::Get,
                 url: url.to_string(),
                 headers,
-                body: HttpBody::Empty,
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                ..Default::default()
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            aimux_provider_utils::create_json_response_handler::<SearxngResponse>(),
+            aimux_provider_utils::create_status_code_error_response_handler(),
         )
         .await?;
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let raw_body: Value = serde_json::from_slice(&resp.body)?;
-
-        let data: SearxngResponse = serde_json::from_value(raw_body.clone())?;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let data = resp.value;
 
         Ok(SearchResult {
             results: map_results(data.results),

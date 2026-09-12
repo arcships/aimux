@@ -8,9 +8,9 @@
 //! Design notes (RFC-0028 §3.1):
 //! - **Every await point is abort/timeout covered** — `connect`, `send`, and
 //!   event receives all `select!` against the abort token and the timeout
-//!   timers. This is the WS analogue of the HTTP layer's `send_timed` /
-//!   `TimeoutBodyStream` pattern (RFC-0016 R1–R4 precedent: a select on the
-//!   loop alone does not cover the send path).
+//!   timers. This is the WS analogue of the HTTP API-call primitive and
+//!   Core's semantic stream timeout (RFC-0016 R1–R4 precedent: a select on
+//!   the loop alone does not cover the send path).
 //! - **Backpressure is socket-level**: tungstenite's `send().await` drives
 //!   flush and pends while the socket write buffer is full.
 //! - **No proxy support**: tokio-tungstenite has no proxy parameter; WS
@@ -24,9 +24,9 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
+use aimux_core::AbortSignal;
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::options::TimeoutConfiguration;
-use aimux_core::shared::AbortSignal;
 
 /// A request to open a WebSocket connection.
 pub struct WebSocketRequest {
@@ -55,6 +55,7 @@ pub enum WsMessage {
 /// A connected WebSocket with abort/timeout enforcement built in.
 pub struct WsConnection {
     stream: WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+    url: String,
     abort: Option<AbortSignal>,
     /// Deadline for the first event (connect + session ack). Cleared after
     /// the first event arrives.
@@ -74,11 +75,22 @@ async fn abort_future(abort: &Option<AbortSignal>) {
     }
 }
 
-fn ws_error(msg: impl std::fmt::Display) -> AiMuxError {
-    AiMuxError::ApiCall(ApiCallError {
-        message: msg.to_string(),
-        ..Default::default()
-    })
+fn abort_error(abort: &Option<AbortSignal>) -> AiMuxError {
+    abort
+        .as_ref()
+        .map(AiMuxError::from_abort_signal)
+        .unwrap_or_else(|| AiMuxError::Aborted("request aborted".into()))
+}
+
+fn ws_error(url: &str, msg: impl std::fmt::Display) -> AiMuxError {
+    AiMuxError::ApiCall(Box::new(ApiCallError {
+        is_retryable: true,
+        ..ApiCallError::new(
+            msg.to_string(),
+            crate::http::sanitized_request_url(url),
+            serde_json::json!({}),
+        )
+    }))
 }
 
 enum ConnectError {
@@ -156,21 +168,43 @@ pub async fn ws_connect(req: &WebSocketRequest) -> Result<WsConnection, AiMuxErr
     let (stream, _response) = tokio::select! {
         biased;
         _ = abort_future(&req.abort_signal) => {
-            return Err(AiMuxError::Aborted);
+            return Err(abort_error(&req.abort_signal));
         }
         res = connect_with_timeout(http_req, connect_deadline.map(|d| d - tokio::time::Instant::now())) => match res {
             Ok(v) => v,
             Err(ConnectError::Timeout) => {
                 return Err(AiMuxError::Timeout("websocket connect timed out".into()));
             }
+            // An HTTP handshake rejection carries a real status: keep it and
+            // classify retryability by the shared rule instead of the blanket
+            // transport `is_retryable = true` (401/403 must not be retried).
+            Err(ConnectError::Tungstenite(tokio_tungstenite::tungstenite::Error::Http(
+                response,
+            ))) => {
+                let status = response.status().as_u16();
+                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                    status_code: Some(status),
+                    is_retryable: aimux_core::error::is_retryable_status(status),
+                    response_body: response
+                        .body()
+                        .as_ref()
+                        .map(|body| String::from_utf8_lossy(body).into_owned()),
+                    ..ApiCallError::new(
+                        format!("websocket connect rejected: HTTP {status}"),
+                        crate::http::sanitized_request_url(&req.url),
+                        serde_json::json!({}),
+                    )
+                })));
+            }
             Err(ConnectError::Tungstenite(e)) => {
-                return Err(ws_error(format!("websocket connect failed: {e}")));
+                return Err(ws_error(&req.url, format!("websocket connect failed: {e}")));
             }
         },
     };
 
     Ok(WsConnection {
         stream,
+        url: req.url.clone(),
         abort: req.abort_signal.clone(),
         // The REMAINING first-chunk budget (anchored before connect) — not a
         // fresh full window, so connect+ack can never exceed first_chunk_ms.
@@ -200,12 +234,12 @@ impl WsConnection {
     pub async fn send_text(&mut self, text: &str) -> Result<(), AiMuxError> {
         tokio::select! {
             biased;
-            _ = abort_future(&self.abort) => Err(AiMuxError::Aborted),
-            _ = total_deadline_future(&self.total_deadline), if self.total_deadline.is_some() => {
+            _ = abort_future(&self.abort) => Err(abort_error(&self.abort)),
+            _ = deadline_future(self.total_deadline), if self.total_deadline.is_some() => {
                 Err(AiMuxError::Timeout("websocket send exceeded total timeout".into()))
             }
             res = self.stream.send(Message::Text(text.to_string())) => {
-                res.map_err(|e| ws_error(format!("websocket send failed: {e}")))
+                res.map_err(|e| ws_error(&self.url, format!("websocket send failed: {e}")))
             }
         }
     }
@@ -220,12 +254,12 @@ impl WsConnection {
     pub async fn send_binary(&mut self, bytes: &[u8]) -> Result<(), AiMuxError> {
         tokio::select! {
             biased;
-            _ = abort_future(&self.abort) => Err(AiMuxError::Aborted),
-            _ = total_deadline_future(&self.total_deadline), if self.total_deadline.is_some() => {
+            _ = abort_future(&self.abort) => Err(abort_error(&self.abort)),
+            _ = deadline_future(self.total_deadline), if self.total_deadline.is_some() => {
                 Err(AiMuxError::Timeout("websocket send exceeded total timeout".into()))
             }
             res = self.stream.send(Message::Binary(bytes.to_vec())) => {
-                res.map_err(|e| ws_error(format!("websocket send failed: {e}")))
+                res.map_err(|e| ws_error(&self.url, format!("websocket send failed: {e}")))
             }
         }
     }
@@ -244,7 +278,7 @@ impl WsConnection {
         loop {
             tokio::select! {
                 biased;
-                _ = abort_future(&self.abort) => return Some(Err(AiMuxError::Aborted)),
+                _ = abort_future(&self.abort) => return Some(Err(abort_error(&self.abort))),
                 _ = deadline_future(self.first_chunk_deadline), if self.first_chunk_deadline.is_some() => {
                     return Some(Err(AiMuxError::Timeout("timed out waiting for first websocket event".into())));
                 }
@@ -275,12 +309,12 @@ impl WsConnection {
                         let detail = frame
                             .map(|f| format!(" (code {}: {})", u16::from(f.code), f.reason))
                             .unwrap_or_default();
-                        return Some(Err(ws_error(format!(
+                        return Some(Err(ws_error(&self.url, format!(
                             "websocket closed by peer{detail}"
                         ))));
                     }
                     Some(Err(e)) => {
-                        return Some(Err(ws_error(format!("websocket error: {e}"))));
+                        return Some(Err(ws_error(&self.url, format!("websocket error: {e}"))));
                     }
                 },
             }
@@ -325,13 +359,6 @@ impl WsConnection {
 async fn deadline_future(deadline: Option<tokio::time::Instant>) {
     match deadline {
         Some(d) => tokio::time::sleep_until(d).await,
-        None => pending().await,
-    }
-}
-
-async fn total_deadline_future(deadline: &Option<tokio::time::Instant>) {
-    match deadline {
-        Some(d) => tokio::time::sleep_until(*d).await,
         None => pending().await,
     }
 }

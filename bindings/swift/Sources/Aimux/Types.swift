@@ -27,7 +27,7 @@ import Foundation
 /// On this toolchain `Bool` and `Double` decode are mutually exclusive (a JSON
 /// bool fails `Double` decode and a JSON number fails `Bool` decode), so the
 /// scalar ordering below is unambiguous.
-public enum JSONValue: Codable, Equatable {
+public enum JSONValue: Codable, Equatable, Sendable {
     case null
     case bool(Bool)
     case number(Double)
@@ -1076,17 +1076,21 @@ public struct StreamTextResultAggregated: Codable, Equatable {
 /// backoff and the whole streamed response.
 public struct TimeoutConfiguration: Codable, Equatable {
     public var totalMs: UInt64?
+    public var stepMs: UInt64?
     public var firstChunkMs: UInt64?
     public var chunkMs: UInt64?
 
     enum CodingKeys: String, CodingKey {
         case totalMs = "total_ms"
+        case stepMs = "step_ms"
         case firstChunkMs = "first_chunk_ms"
         case chunkMs = "chunk_ms"
     }
 
-    public init(totalMs: UInt64? = nil, firstChunkMs: UInt64? = nil, chunkMs: UInt64? = nil) {
-        self.totalMs = totalMs; self.firstChunkMs = firstChunkMs; self.chunkMs = chunkMs
+    public init(totalMs: UInt64? = nil, stepMs: UInt64? = nil,
+                firstChunkMs: UInt64? = nil, chunkMs: UInt64? = nil) {
+        self.totalMs = totalMs; self.stepMs = stepMs
+        self.firstChunkMs = firstChunkMs; self.chunkMs = chunkMs
     }
 }
 

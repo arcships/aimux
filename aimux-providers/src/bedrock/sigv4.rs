@@ -61,7 +61,7 @@ pub fn sign_request(
     // The signed host must match the wire host: keep the port whenever the
     // URL carries a non-default one (Url::port() is Some only for non-default
     // ports). Signing a bare host diverges from the Host header reqwest would
-    // otherwise send, so gateways and proxies on non-standard ports reject the
+    // otherwise so gateways and proxies on non-standard ports reject the
     // signature (observed as 502 when an env proxy forwarded a signed
     // loopback request whose host lacked the port).
     let host = match parsed.port() {

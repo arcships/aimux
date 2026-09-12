@@ -10,9 +10,9 @@ import (
 )
 
 // Code is the machine-readable Aimux error code. Values match
-// aimux-ffi aimux_error_code_t (1..13 = core AiMuxError variants; 1 is the
-// catch-all Other).
-// A code outside that range is a header/library mismatch and expectAimuxError
+// aimux-ffi aimux_error_code_t (1..14 = core AiMuxError variants;
+// 1 is the catch-all Other, 14 = Retry).
+// A code outside that set is a header/library mismatch and expectAimuxError
 // panics rather than inventing an "unknown" variant. Recording failures are
 // a different type: see RecordingError.
 //
@@ -37,6 +37,7 @@ const (
 	CodeAPICall                  Code = 11
 	CodeTimeout                  Code = 12
 	CodeAborted                  Code = 13
+	CodeRetry                    Code = 14
 )
 
 // String returns the core error_type name (e.g. "ApiCall", "TokenExpired").
@@ -71,17 +72,20 @@ func (c Code) String() string {
 		return "Aborted"
 	case CodeOther:
 		return "Other"
+	case CodeRetry:
+		return "Retry"
 	default:
 		return fmt.Sprintf("Code(%d)", int(c))
 	}
 }
 
-// codeFromC maps a C aimux_error_code_t (1..13); false for any other value.
+// codeFromC maps a C aimux_error_code_t (1..14); false for any other
+// value.
 func codeFromC(code int) (Code, bool) {
-	if code < int(CodeOther) || code > int(CodeAborted) {
-		return 0, false
+	if code >= int(CodeOther) && code <= int(CodeRetry) {
+		return Code(code), true
 	}
-	return Code(code), true
+	return 0, false
 }
 
 // Error is the structured aimux failure type for Go (openai-go style: one
@@ -94,6 +98,7 @@ func codeFromC(code int) (Code, bool) {
 //	if errors.As(err, &e) {
 //	    // e.Code, e.Status, e.RetryMs, e.Retryable, e.Message
 //	    // e.Code == aimux.CodeAPICall && e.Status == 429 → rate limited
+//	    // e.Code == aimux.CodeRetry → e.Reason, e.Errors, e.LastError()
 //	}
 //
 // Fields mirror the aimux-ffi aimux_error_* getters / core helpers:
@@ -103,9 +108,12 @@ func codeFromC(code int) (Code, bool) {
 //   - RetryMs: rate-limit hint, or -1 (0 = retry now)
 //   - Retryable: the core's retry verdict, carried across the ABI
 //   - Message: human-readable text
-//   - ProviderCode / ProviderMessage / RequestID / ResponseBody: CodeAPICall payload
+//   - ProviderCode / ProviderMessage / ResponseBody / URL /
+//     RequestBodyValues / ResponseHeaders / Data: CodeAPICall payload
 //   - ModelID / ModelType: CodeNoSuchModel payload
 //   - ProviderID: CodeNoSuchProvider payload
+//   - Reason / Errors: CodeRetry payload — why retrying stopped, and the
+//     per-attempt history
 type Error struct {
 	Code    Code
 	Message string
@@ -121,11 +129,46 @@ type Error struct {
 	// field is set only under the Code named here and empty otherwise.
 	ProviderCode    string // CodeAPICall: provider's own error code, e.g. "insufficient_quota"
 	ProviderMessage string // CodeAPICall: the failure's own text without the composed prefix Message carries, e.g. "slow down"
-	RequestID       string // CodeAPICall: provider request id
 	ResponseBody    string // CodeAPICall: raw response body
-	ModelID         string // CodeNoSuchModel: the model id asked for
-	ModelType       string // CodeNoSuchModel: the model type it was asked for as
-	ProviderID      string // CodeNoSuchProvider: the provider id asked for
+	URL             string // CodeAPICall: sanitized request URL
+	// RequestBodyValues is the sanitized request body of the failed call,
+	// decoded from JSON (any JSON type). CodeAPICall only.
+	RequestBodyValues any
+	// ResponseHeaders is the sanitized response headers of the failed call.
+	// Provider request-id evidence, when present, is a header here — there
+	// is no separate request-id field. CodeAPICall only.
+	ResponseHeaders map[string]string
+	// Data is the provider's parsed error data, decoded from JSON.
+	// CodeAPICall only.
+	Data       any
+	ModelID    string // CodeNoSuchModel: the model id asked for
+	ModelType  string // CodeNoSuchModel: the model type it was asked for as
+	ProviderID string // CodeNoSuchProvider: the provider id asked for
+	// Reason says why retrying stopped; Errors preserves each attempt as a
+	// concrete *Error (oldest first; an attempt can itself be any Code,
+	// with the full per-code payload). CodeRetry only.
+	Reason RetryErrorReason
+	Errors []*Error
+}
+
+// RetryErrorReason explains why operation retry stopped. Values are the
+// core's serde camelCase wire names, as aimux_error_retry_reason returns them.
+type RetryErrorReason string
+
+const (
+	// RetryMaxRetriesExceeded: every permitted attempt failed with a
+	// retryable error.
+	RetryMaxRetriesExceeded RetryErrorReason = "maxRetriesExceeded"
+	// RetryErrorNotRetryable: an attempt failed with a non-retryable error.
+	RetryErrorNotRetryable RetryErrorReason = "errorNotRetryable"
+)
+
+// LastError returns the final attempt error, or nil for a non-retry error.
+func (e *Error) LastError() *Error {
+	if e == nil || len(e.Errors) == 0 {
+		return nil
+	}
+	return e.Errors[len(e.Errors)-1]
 }
 
 // Error implements the error interface.

@@ -14,7 +14,8 @@
 use std::sync::Arc;
 
 use crate::error::{
-    BindingError, AiMuxBindingError, binding_py_err, serialize_result, to_py_err, wire_json,
+    BindingError, AiMuxBindingError, binding_py_err, serialize_result, to_py_err, wire_error,
+    wire_json,
 };
 use aimux_core::AiMuxError;
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel as EmbeddingModelTrait};
@@ -29,6 +30,53 @@ use aimux_core::transcription_model::{
 };
 use aimux_core::video_model::{VideoCallOptions, VideoModel as VideoModelTrait};
 use pyo3::prelude::*;
+
+/// Fill in the fields the method's explicit arguments own, then deserialize.
+///
+/// Those fields are required on the Rust options struct, so a caller's
+/// options object on its own fails with `missing field` before the explicit
+/// arguments can be put back. The values inserted here are placeholders that
+/// satisfy the shape only; the caller overwrites each one from its own
+/// argument right after this returns. Pure JSON — no binding error types — so
+/// the parse contract is unit-testable without a Python interpreter.
+fn opts_with_args<T: serde::de::DeserializeOwned>(
+    json: &str,
+    owned_by_args: &[(&str, serde_json::Value)],
+) -> Result<T, serde_json::Error> {
+    let mut value: serde_json::Value = serde_json::from_str(json)?;
+    // A non-object body needs no filling; `from_value` reports it as the same
+    // invalid-type data error it always did.
+    if let Some(object) = value.as_object_mut() {
+        for (field, placeholder) in owned_by_args {
+            object.insert((*field).to_string(), placeholder.clone());
+        }
+    }
+    serde_json::from_value(value)
+}
+
+/// [`opts_with_args`] under `wire_json`'s error classification.
+fn parse_opts_json<T: serde::de::DeserializeOwned>(
+    argument: &'static str,
+    json: &str,
+    owned_by_args: &[(&str, serde_json::Value)],
+) -> PyResult<T> {
+    opts_with_args(json, owned_by_args).map_err(|e| wire_error(argument, &e))
+}
+
+/// Shape-only stand-in for `TranscriptionCallOptions::audio`, built from the
+/// real enum so a variant rename is a compile error rather than a runtime one.
+fn audio_placeholder() -> serde_json::Value {
+    serde_json::to_value(AudioInput::Base64(String::new()))
+        .expect("AudioInput always serializes")
+}
+
+/// Shape-only stand-in for `RerankingCallOptions::documents`.
+fn documents_placeholder() -> serde_json::Value {
+    serde_json::to_value(aimux_core::reranking_model::RerankingDocuments::Text {
+        values: Vec::new(),
+    })
+    .expect("RerankingDocuments always serializes")
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EmbeddingModel
@@ -54,7 +102,9 @@ impl EmbeddingModel {
         let values: Vec<String> = wire_json("values_json", values_json)?;
         opts.values = values;
 
-        let result = crate::runtime().block_on(async move { self.inner.do_embed(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::embedding_model::embed(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -79,7 +129,9 @@ impl SpeechModel {
     pub fn generate(&self, opts_json: &str) -> PyResult<String> {
         let opts: SpeechCallOptions = wire_json("opts_json", opts_json)?;
 
-        let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::speech_model::generate_speech(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -104,7 +156,9 @@ impl ImageModel {
     pub fn generate(&self, opts_json: &str) -> PyResult<String> {
         let opts: ImageCallOptions = wire_json("opts_json", opts_json)?;
 
-        let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::image_model::generate_image(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -140,15 +194,25 @@ impl TranscriptionModel {
         );
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: TranscriptionCallOptions = wire_json("opts_json", s)?;
-                // Keep audio and media_type from our explicit args.
-                if let Some(p) = &parsed.provider_options {
-                    opts.provider_options = Some(p.clone());
-                }
+                // Take every caller option; audio and media_type always come
+                // from the explicit args.
+                let mut parsed: TranscriptionCallOptions = parse_opts_json(
+                    "opts_json",
+                    s,
+                    &[
+                        ("audio", audio_placeholder()),
+                        ("media_type", serde_json::Value::from("")),
+                    ],
+                )?;
+                parsed.audio = opts.audio;
+                parsed.media_type = opts.media_type;
+                opts = parsed;
             }
         }
 
-        let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::transcription_model::transcribe(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -184,13 +248,25 @@ impl RerankingModel {
         let mut opts = RerankingCallOptions::new(query.to_string(), docs);
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: RerankingCallOptions = wire_json("opts_json", s)?;
-                opts.provider_options = parsed.provider_options;
-                opts.top_n = parsed.top_n;
+                // Take every caller option; query and documents always come
+                // from the explicit args.
+                let mut parsed: RerankingCallOptions = parse_opts_json(
+                    "opts_json",
+                    s,
+                    &[
+                        ("query", serde_json::Value::from("")),
+                        ("documents", documents_placeholder()),
+                    ],
+                )?;
+                parsed.query = opts.query;
+                parsed.documents = opts.documents;
+                opts = parsed;
             }
         }
 
-        let result = crate::runtime().block_on(async move { self.inner.do_rerank(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::reranking_model::rerank(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -215,7 +291,9 @@ impl VideoModel {
     pub fn generate(&self, opts_json: &str) -> PyResult<String> {
         let opts: VideoCallOptions = wire_json("opts_json", opts_json)?;
 
-        let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::video_model::generate_video(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -242,12 +320,21 @@ impl SearchModel {
         let mut opts = SearchCallOptions::new(query.to_string());
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: SearchCallOptions = wire_json("opts_json", s)?;
+                // Take every caller option; the query always comes from the
+                // explicit arg.
+                let mut parsed: SearchCallOptions = parse_opts_json(
+                    "opts_json",
+                    s,
+                    &[("query", serde_json::Value::from(""))],
+                )?;
+                parsed.query = opts.query;
                 opts = parsed;
             }
         }
 
-        let result = crate::runtime().block_on(async move { self.inner.do_search(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::search_model::search(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -528,7 +615,7 @@ pub struct TranscriptionSession {
     parts_rx: tokio::sync::Mutex<
         tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>,
     >,
-    token: aimux_core::shared::AbortSignal,
+    token: aimux_core::AbortSignal,
 }
 
 /// Start a streaming transcription session. `opts_json` (optional):
@@ -554,8 +641,8 @@ pub fn start_transcription_session(
         _ => SessionOpts::default(),
     };
 
-    let token = aimux_core::shared::AbortSignal::new();
-    let effective = aimux_core::shared::AbortSignal::new();
+    let token = aimux_core::AbortSignal::new();
+    let effective = aimux_core::AbortSignal::new();
     {
         let linked = effective.clone();
         let source = token.clone();
@@ -585,7 +672,8 @@ pub fn start_transcription_session(
             include_raw_chunks: opts.include_raw_chunks.unwrap_or(false),
             timeout: opts.timeout,
         };
-        let result = model.do_stream(options).await;
+        let result = aimux_core::transcription_model::stream_transcribe(model.as_ref(), options)
+            .await;
         match result {
             Ok(stream_result) => {
                 use futures::StreamExt;
@@ -770,5 +858,47 @@ impl TranscriptionSession {
             guard.take();
         }
         self.token.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A caller that passes any options at all must not trip `missing field`
+    /// on the data its explicit arguments already carry — that is what made
+    /// `max_retries` / `timeout` unreachable from Python for these modalities.
+    #[test]
+    fn options_parse_without_the_fields_the_explicit_args_own() {
+        let transcription: TranscriptionCallOptions = opts_with_args(
+            r#"{"max_retries":3,"timeout":{"total_ms":1000}}"#,
+            &[
+                ("audio", audio_placeholder()),
+                ("media_type", serde_json::Value::from("")),
+            ],
+        )
+        .expect("transcription options with no audio/media_type");
+        assert_eq!(transcription.max_retries, Some(3));
+
+        let rerank: RerankingCallOptions = opts_with_args(
+            r#"{"top_n":2,"max_retries":1}"#,
+            &[
+                ("query", serde_json::Value::from("")),
+                ("documents", documents_placeholder()),
+            ],
+        )
+        .expect("rerank options with no query/documents");
+        assert_eq!(rerank.top_n, Some(2));
+
+        // The placeholder is overwritten by the caller, so it must lose to
+        // whatever the explicit argument holds — never to the JSON.
+        let mut search: SearchCallOptions = opts_with_args(
+            r#"{"query":"dogs","max_results":5}"#,
+            &[("query", serde_json::Value::from(""))],
+        )
+        .expect("search options with no query");
+        assert_eq!(search.max_results, Some(5));
+        search.query = "cats".to_string();
+        assert_eq!(search.query, "cats");
     }
 }

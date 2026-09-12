@@ -21,8 +21,7 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send};
+use aimux_provider_utils::HttpRequest;
 
 use super::OpenAIConfig;
 
@@ -84,6 +83,10 @@ impl SpeechModel for OpenAISpeechModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     async fn do_generate(&self, options: &SpeechCallOptions) -> Result<SpeechResult, AiMuxError> {
         let (body, warnings) = build_request_body_and_warnings(options, &self.model_id)?;
 
@@ -94,27 +97,19 @@ impl SpeechModel for OpenAISpeechModel {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
-        let resp = send(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
-                headers: header_list,
-                body: HttpBody::Json(Value::Object(body.clone())),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            self.config.retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
+        let resp = aimux_provider_utils::post_json_to_api(
+            HttpRequest::new(self.endpoint(), header_list, options),
+            Value::Object(body.clone()),
+            aimux_provider_utils::create_binary_response_handler(),
+            super::openai_failed_response_handler(),
         )
         .await?;
 
         // send() returns Ok only for 2xx responses; non-2xx (incl. 408/409/429/5xx
         // after exhausting retries) is mapped to an AiMuxError internally.
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let audio_bytes = resp.body.to_vec();
+        let audio_bytes = resp.value.to_vec();
 
         let timestamp = chrono::Utc::now().to_rfc3339();
 

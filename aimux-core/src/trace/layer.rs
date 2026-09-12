@@ -517,6 +517,10 @@ impl LanguageModel for TraceLayer {
         self.inner.model_id()
     }
 
+    fn retry_config(&self) -> crate::retry::RetryConfig {
+        self.inner.retry_config()
+    }
+
     /// RFC-0023 §3.3: transparent decorators must forward the inner snapshot
     /// (otherwise recording sees the decorator's minimal record).
     fn config_snapshot(&self) -> crate::recording::ProviderRecord {

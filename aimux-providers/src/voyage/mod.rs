@@ -13,6 +13,20 @@ use aimux_core::error::AiMuxError;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{load_api_key, without_trailing_slash};
 
+pub(crate) fn voyage_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
+{
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        aimux_provider_utils::ProviderErrorParts {
+            message: data
+                .get("detail")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("Voyage request failed")
+                .to_owned(),
+            provider_code: None,
+        }
+    })
+}
+
 /// Configuration for the Voyage AI provider.
 #[derive(Debug, Clone)]
 pub struct VoyageConfig {

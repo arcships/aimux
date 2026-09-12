@@ -11,7 +11,7 @@ import Foundation
 //
 // Every fallible C function returns `aimux_error_t *` (`OpaquePointer?`):
 // NULL = success (result in the trailing out-param), non-NULL = failure. The
-// unified code is AiMuxError (1...13), RecordingError (100...105), or a C ABI
+// unified code is AiMuxError (1...14), RecordingError (100...105), or a C ABI
 // failure (200...206). The three `expect*` decoders copy the relevant fields, release
 // it with `aimux_error_free` (exactly once) and return the Swift error
 // to throw. Errors are not handles: never `aimux_drop_handle` one.
@@ -44,7 +44,7 @@ func expectFfiError(_ e: OpaquePointer, context: String) -> any Error {
     return invariant("aimux ffi: \(context): \(message)")
 }
 
-/// Decode a returned error from an `[AiMuxError]` call: 1...13 becomes
+/// Decode a returned error from an `[AiMuxError]` call: 1...14 become
 /// `AimuxError`; 200...206 is decoded by `expectFfiError`. Frees `e` once.
 func expectAimuxError(_ e: OpaquePointer, context: String) -> any Error {
     let code = aimux_error_code(e)
@@ -108,9 +108,18 @@ func ffiStringCall(
 // Errors
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Why a `.retry` failure stopped retrying. Raw values are the core's serde
+/// camelCase wire names (`aimux_error_retry_reason`).
+public enum RetryErrorReason: String, Equatable, Sendable {
+    /// Every permitted attempt failed with a retryable error.
+    case maxRetriesExceeded
+    /// A later attempt failed with an error not worth retrying.
+    case errorNotRetryable
+}
+
 /// Structured aimux failure type (Swift `Error`).
 ///
-/// Maps 1:1 from the 13 core `AiMuxError` variants. Every HTTP-shaped failure
+/// Maps 1:1 from the 14 core `AiMuxError` variants. Every HTTP-shaped failure
 /// is `.apiCall` (`AIMUX_E_API_CALL`). Only aimux-core produces these: a
 /// binding-local failure (raw JSON that does not parse, a typed value that
 /// fails to encode, library output that fails to decode) surfaces as the
@@ -146,8 +155,21 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
     /// ever observed — a missing API key, an error built without a request, or
     /// a transport failure; read `retryable` to tell those apart, `status`
     /// cannot.
-    case apiCall(message: String, status: Int, retryMs: Int64, retryable: Bool, providerCode: String? = nil, providerMessage: String? = nil, requestId: String? = nil, responseBody: String? = nil)
+    case apiCall(
+        message: String, status: Int, retryMs: Int64, retryable: Bool,
+        providerCode: String? = nil, providerMessage: String? = nil,
+        responseBody: String? = nil, url: String? = nil,
+        requestBodyValues: JSONValue? = nil, responseHeaders: [String: String]? = nil,
+        providerData: JSONValue? = nil
+    )
+    /// Retrying stopped (`AIMUX_E_RETRY`): `reason` says why, `errors` is the
+    /// per-attempt history (oldest first; `errors.last` is the final attempt,
+    /// each element any `AimuxError`, `.apiCall` with the full detail set
+    /// included), `message` the composed summary ("Failed after N attempts…").
+    case retry(message: String, reason: RetryErrorReason, errors: [AimuxError])
     case timeout(message: String, status: Int, retryMs: Int64, retryable: Bool)
+    /// `message` is the abort payload verbatim ("request aborted" for signal
+    /// aborts).
     case aborted(message: String, status: Int, retryMs: Int64, retryable: Bool)
     case other(message: String, status: Int, retryMs: Int64, retryable: Bool)
 
@@ -165,11 +187,15 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
              .unsupportedFunctionality(let m, let s, let r, let t),
              .noSuchModel(let m, let s, let r, let t, _, _),
              .noSuchProvider(let m, let s, let r, let t, _),
-             .apiCall(let m, let s, let r, let t, _, _, _, _),
+             .apiCall(let m, let s, let r, let t, _, _, _, _, _, _, _),
              .timeout(let m, let s, let r, let t),
              .aborted(let m, let s, let r, let t),
              .other(let m, let s, let r, let t):
             return (m, s, r, t)
+        case .retry(let m, _, _):
+            // Retrying already stopped: no single HTTP payload, and by
+            // definition not retryable.
+            return (m, -1, -1, false)
         }
     }
 
@@ -187,6 +213,7 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         case .noSuchModel: c = AIMUX_E_NO_SUCH_MODEL
         case .noSuchProvider: c = AIMUX_E_NO_SUCH_PROVIDER
         case .apiCall: c = AIMUX_E_API_CALL
+        case .retry: c = AIMUX_E_RETRY
         case .timeout: c = AIMUX_E_TIMEOUT
         case .aborted: c = AIMUX_E_ABORTED
         case .other: c = AIMUX_E_OTHER
@@ -216,27 +243,62 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
 
     /// `.apiCall` only: the provider's own error code (e.g. `"insufficient_quota"`).
     public var providerCode: String? {
-        if case .apiCall(_, _, _, _, let v, _, _, _) = self { return v }
+        if case .apiCall(_, _, _, _, let v, _, _, _, _, _, _) = self { return v }
         return nil
     }
 
     /// `.apiCall` only: the failure's own text without the composed prefix `message` carries (e.g. `"slow down"`).
     public var providerMessage: String? {
-        if case .apiCall(_, _, _, _, _, let v, _, _) = self { return v }
-        return nil
-    }
-
-    /// `.apiCall` only: the provider request id, for support tickets.
-    public var requestId: String? {
-        if case .apiCall(_, _, _, _, _, _, let v, _) = self { return v }
+        if case .apiCall(_, _, _, _, _, let v, _, _, _, _, _) = self { return v }
         return nil
     }
 
     /// `.apiCall` only: the raw response body.
     public var responseBody: String? {
-        if case .apiCall(_, _, _, _, _, _, _, let v) = self { return v }
+        if case .apiCall(_, _, _, _, _, _, let v, _, _, _, _) = self { return v }
         return nil
     }
+
+    /// `.apiCall` only: the sanitized request URL.
+    public var url: String? {
+        if case .apiCall(_, _, _, _, _, _, _, let v, _, _, _) = self { return v }
+        return nil
+    }
+
+    /// `.apiCall` only: the sanitized request body values (any JSON type).
+    public var requestBodyValues: JSONValue? {
+        if case .apiCall(_, _, _, _, _, _, _, _, let v, _, _) = self { return v }
+        return nil
+    }
+
+    /// `.apiCall` only: the sanitized response headers (includes the
+    /// retry-after evidence `retryMs` is derived from).
+    public var responseHeaders: [String: String]? {
+        if case .apiCall(_, _, _, _, _, _, _, _, _, let v, _) = self { return v }
+        return nil
+    }
+
+    /// `.apiCall` only: the provider's parsed error data (the AI SDK's
+    /// `APICallError.data`).
+    public var providerData: JSONValue? {
+        if case .apiCall(_, _, _, _, _, _, _, _, _, _, let v) = self { return v }
+        return nil
+    }
+
+    /// `.retry` only: why retrying stopped.
+    public var retryReason: RetryErrorReason? {
+        if case .retry(_, let v, _) = self { return v }
+        return nil
+    }
+
+    /// `.retry` only: the per-attempt history, oldest first.
+    public var retryErrors: [AimuxError]? {
+        if case .retry(_, _, let v) = self { return v }
+        return nil
+    }
+
+    /// `.retry` only: the final attempt's error (`retryErrors` last element).
+    public var lastError: AimuxError? { retryErrors?.last }
 
     /// `.noSuchModel` only: the model id that was asked for.
     public var modelId: String? {
@@ -308,8 +370,24 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
             return .apiCall(message: message, status: status, retryMs: retryMs, retryable: retryable,
                             providerCode: takeCString(aimux_error_provider_code(h)),
                             providerMessage: takeCString(aimux_error_provider_message(h)),
-                            requestId: takeCString(aimux_error_request_id(h)),
-                            responseBody: takeCString(aimux_error_response_body(h)))
+                            responseBody: takeCString(aimux_error_response_body(h)),
+                            url: takeCString(aimux_error_url(h)),
+                            requestBodyValues: takeJSONValue(aimux_error_request_body_values(h)),
+                            responseHeaders: takeHeaderMap(aimux_error_response_headers(h)),
+                            providerData: takeJSONValue(aimux_error_provider_data(h)))
+        case AIMUX_E_RETRY:
+            let reason = takeCString(aimux_error_retry_reason(h))
+                .flatMap(RetryErrorReason.init(rawValue:)) ?? .maxRetriesExceeded
+            var errors: [AimuxError] = []
+            for i in 0..<max(aimux_error_retry_count(h), 0) {
+                // Each attempt is a NEW owned error released independently of
+                // `h`; an attempt that fails to decode is dropped rather than
+                // failing the whole error.
+                guard let child = aimux_error_retry_error_at(h, i) else { continue }
+                defer { aimux_error_free(child) }
+                if let decoded = fromC(child) { errors.append(decoded) }
+            }
+            return .retry(message: message, reason: reason, errors: errors)
         case AIMUX_E_TIMEOUT:
             return .timeout(message: message, status: status, retryMs: retryMs, retryable: retryable)
         case AIMUX_E_ABORTED:
@@ -319,6 +397,20 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         default:
             return nil
         }
+    }
+
+    /// Decode a getter-owned JSON string (any JSON type) into `JSONValue`,
+    /// freeing the C allocation. `nil` when the getter returned NULL.
+    private static func takeJSONValue(_ p: UnsafeMutablePointer<CChar>?) -> JSONValue? {
+        guard let s = takeCString(p) else { return nil }
+        return try? JSONDecoder().decode(JSONValue.self, from: Data(s.utf8))
+    }
+
+    /// Decode a getter-owned JSON object of string→string pairs (the
+    /// response-headers shape), freeing the C allocation.
+    private static func takeHeaderMap(_ p: UnsafeMutablePointer<CChar>?) -> [String: String]? {
+        guard let s = takeCString(p) else { return nil }
+        return try? JSONDecoder().decode([String: String].self, from: Data(s.utf8))
     }
 }
 

@@ -18,16 +18,11 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::provider::Provider;
-use aimux_core::shared::Warning;
 use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoFrameType, VideoModel,
-    VideoResponse, VideoResult,
+    VideoOperationStart, VideoOperationStatus, VideoPollConfig, VideoResponse, VideoResult,
 };
-use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
-    without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
 
 const PROVIDER_NAME: &str = "runwayml";
 const DEFAULT_BASE_URL: &str = "https://api.dev.runwayml.com";
@@ -35,10 +30,18 @@ const ENV_VAR: &str = "RUNWAYML_API_SECRET";
 const RUNWAY_VERSION: &str = "2024-11-06";
 
 /// RunwayML returns errors as a flat `{"error": "<message>"}` object.
-const RUNWAYML_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["error"],
-    type_path: &[],
-};
+fn runwayml_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        aimux_provider_utils::ProviderErrorParts {
+            message: data
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("RunwayML request failed")
+                .to_string(),
+            provider_code: None,
+        }
+    })
+}
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -208,9 +211,17 @@ impl VideoModel for RunwaymlVideoModel {
         Some(1)
     }
 
-    async fn do_generate(&self, options: &VideoCallOptions) -> Result<VideoResult, AiMuxError> {
-        let warnings: Vec<Warning> = Vec::new();
+    fn poll_config(&self) -> VideoPollConfig {
+        VideoPollConfig {
+            interval: self.config.poll_interval,
+            timeout: self.config.timeout,
+        }
+    }
 
+    async fn do_start(
+        &self,
+        options: &VideoCallOptions,
+    ) -> Result<VideoOperationStart, AiMuxError> {
         // Image-to-video when an input image (or a first frame) is provided.
         let image_input: Option<String> = options
             .image
@@ -256,112 +267,104 @@ impl VideoModel for RunwaymlVideoModel {
         let submit_url = format!("{}{submit_path}", self.config.base_url);
 
         // Submit the task.
-        let resp = send(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: submit_url,
-                headers: header_list.clone(),
-                body: HttpBody::Json(Value::Object(body)),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            RetryConfig::default(),
-            &RUNWAYML_ERROR_STRUCTURE,
+        let resp = aimux_provider_utils::post_json_to_api(
+            HttpRequest::new(submit_url, header_list, options),
+            Value::Object(body),
+            aimux_provider_utils::create_json_response_handler(),
+            runwayml_failed_response_handler(),
         )
         .await?;
 
-        let task: RunwaymlTaskCreationResponse = serde_json::from_slice(&resp.body)?;
-        let task_id = task.id;
+        let response_headers = resp.response_headers;
+        let task: RunwaymlTaskCreationResponse = resp.value;
 
-        // Poll for completion.
-        let poll_url = format!("{}/v1/tasks/{}", self.config.base_url, task_id);
-        let deadline = tokio::time::Instant::now() + self.config.timeout;
-        // Assigned before the only `break` path that reaches the code after the
-        // loop, so they are always initialized before being read.
-        let mut response_headers: HashMap<String, String>;
-        let final_output: Vec<String>;
-
-        loop {
-            if tokio::time::Instant::now() >= deadline {
-                return Err(AiMuxError::Timeout(format!(
-                    "{PROVIDER_NAME} task {task_id} polling timed out after {:?}",
-                    self.config.timeout
-                )));
-            }
-
-            sleep_or_abort(self.config.poll_interval, options.abort_signal.as_ref()).await?;
-
-            let resp = send(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url: poll_url.clone(),
-                    headers: header_list.clone(),
-                    body: HttpBody::Empty,
-
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                },
-                RetryConfig::default(),
-                &RUNWAYML_ERROR_STRUCTURE,
-            )
-            .await?;
-
-            response_headers = resp.headers;
-
-            let task_details: RunwaymlTaskDetailsResponse = serde_json::from_slice(&resp.body)?;
-
-            let status_str = task_details.status.clone().unwrap_or_default();
-            match status_str.as_str() {
-                "SUCCEEDED" => {
-                    final_output =
-                        task_details
-                            .output
-                            .filter(|o| !o.is_empty())
-                            .ok_or_else(|| {
-                                AiMuxError::InvalidResponseData(format!(
-                                    "{PROVIDER_NAME} task {task_id} succeeded without output"
-                                ))
-                            })?;
-                    break;
-                }
-                "FAILED" | "CANCELLED" => {
-                    return Err(AiMuxError::ApiCall(ApiCallError {
-                        status_code: Some(resp.status),
-                        provider_code: Some(status_str.clone()),
-                        message: format!(
-                            "{PROVIDER_NAME} task {task_id} failed with status {status_str}"
-                        ),
-                        response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
-                        ..Default::default()
-                    }));
-                }
-                // PENDING / THROTTLED / RUNNING / unknown — keep polling.
-                _ => continue,
-            }
-        }
-
-        let videos: Vec<VideoData> = final_output
-            .into_iter()
-            .map(|url| VideoData::Url {
-                url,
-                media_type: "video/mp4".to_string(),
-            })
-            .collect();
-
-        let timestamp = chrono::Utc::now().to_rfc3339();
-
-        Ok(VideoResult {
-            videos,
-            warnings,
+        Ok(VideoOperationStart {
+            operation: json!({ "task_id": task.id }),
+            warnings: Vec::new(),
             provider_metadata: None,
             response: VideoResponse {
-                timestamp: Some(timestamp),
+                timestamp: Some(chrono::Utc::now().to_rfc3339()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },
         })
+    }
+
+    async fn do_status(
+        &self,
+        operation: &Value,
+        options: &VideoCallOptions,
+    ) -> Result<VideoOperationStatus, AiMuxError> {
+        let task_id = operation
+            .get("task_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                AiMuxError::InvalidArgument(format!(
+                    "{PROVIDER_NAME} operation reference is missing task_id"
+                ))
+            })?;
+
+        let headers = self.build_headers(options.headers.as_ref());
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let poll_url = format!("{}/v1/tasks/{}", self.config.base_url, task_id);
+
+        let resp = aimux_provider_utils::get_from_api(
+            HttpRequest::new(poll_url.clone(), header_list, options),
+            aimux_provider_utils::create_json_response_handler::<RunwaymlTaskDetailsResponse>(),
+            runwayml_failed_response_handler(),
+        )
+        .await?;
+
+        let response_headers = resp.response_headers.clone();
+        let response_body = resp.raw_value.as_ref().map(ToString::to_string);
+        let task_details: RunwaymlTaskDetailsResponse = resp.value;
+
+        let status_str = task_details.status.clone().unwrap_or_default();
+        match status_str.as_str() {
+            "SUCCEEDED" => {
+                let final_output =
+                    task_details
+                        .output
+                        .filter(|o| !o.is_empty())
+                        .ok_or_else(|| {
+                            AiMuxError::InvalidResponseData(format!(
+                                "{PROVIDER_NAME} task {task_id} succeeded without output"
+                            ))
+                        })?;
+
+                let videos: Vec<VideoData> = final_output
+                    .into_iter()
+                    .map(|url| VideoData::Url {
+                        url,
+                        media_type: "video/mp4".to_string(),
+                    })
+                    .collect();
+
+                Ok(VideoOperationStatus::Completed(VideoResult {
+                    videos,
+                    warnings: Vec::new(),
+                    provider_metadata: None,
+                    response: VideoResponse {
+                        timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                        model_id: Some(self.model_id.clone()),
+                        headers: Some(response_headers),
+                    },
+                }))
+            }
+            // A terminally failed task must be a non-retryable error, not
+            // Pending, so the Core poll loop stops immediately.
+            "FAILED" | "CANCELLED" => Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                status_code: Some(200),
+                provider_code: Some(status_str.clone()),
+                response_body,
+                ..ApiCallError::new(
+                    format!("{PROVIDER_NAME} task {task_id} failed with status {status_str}"),
+                    poll_url,
+                    serde_json::json!({}),
+                )
+            }))),
+            // PENDING / THROTTLED / RUNNING / unknown — keep polling.
+            _ => Ok(VideoOperationStatus::Pending),
+        }
     }
 }

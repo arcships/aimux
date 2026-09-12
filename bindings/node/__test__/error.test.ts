@@ -12,6 +12,7 @@ import {
   streamText,
   AimuxError,
   APICallError,
+  RetryError,
   InvalidArgumentError,
   NoSuchProviderError,
   RecordingError,
@@ -95,7 +96,8 @@ test('payload fields live on the subclass the core fills them for', async (t) =>
 
   // ApiCall-only fields are absent here — the core fills them for no other
   // variant, so they must not exist as always-empty properties.
-  for (const key of ['status', 'retryMs', 'providerCode', 'responseBody', 'requestId']) {
+  const apiCallOnly = ['status', 'retryMs', 'providerCode', 'responseBody', 'url', 'requestBodyValues', 'responseHeaders', 'data']
+  for (const key of apiCallOnly) {
     t.false(key in err, `${key} must not exist on ${err.name}`)
   }
   t.false('retryable' in err)
@@ -126,12 +128,52 @@ test('APICallError carries every field the response produced', async (t) => {
     t.is(err.retryMs, 1500)
     t.true(err.retryable)
     t.is(err.providerCode, 'rate_limit_exceeded')
-    t.is(err.requestId, 'req_abc123')
     t.is(err.responseBody, body)
+    // Request context is carried on the error itself.
+    t.true(err.url?.startsWith(url), `url should start with ${url}: ${err.url}`)
+    t.is((err.requestBodyValues as { model?: string }).model, 'gpt-4o')
+    // Sanitized response headers, as sent (retryMs above is derived from them).
+    t.is(err.responseHeaders?.['retry-after-ms'], '1500')
     // The provider's text on its own; `message` is the composed form.
     t.is(err.providerMessage, 'slow down')
     t.true(err.message.includes('slow down'))
     t.not(err.message, err.providerMessage)
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+test('exhausted retries throw RetryError with the per-attempt history', async (t) => {
+  const body = JSON.stringify({
+    error: { message: 'slow down', type: 'rate_limit_exceeded' },
+  })
+  const { server, url } = await startMockServer((_req, res) => {
+    // retry-after-ms 0 keeps the retry loop instant.
+    res.writeHead(429, { 'content-type': 'application/json', 'retry-after-ms': '0' })
+    res.end(body)
+  })
+  try {
+    const model = await native.openai('test-key', 'gpt-4o', { baseUrl: url, maxRetries: 1 })
+    const err = (await t.throwsAsync(() =>
+      model.generateText(JSON.stringify('hi')),
+    )) as RetryError
+    t.true(err instanceof RetryError)
+    t.true(err instanceof AimuxError)
+    t.false(err instanceof APICallError)
+    t.is(err.reason, 'maxRetriesExceeded')
+
+    // Complete per-attempt history, oldest first, each a full typed error.
+    t.is(err.errors.length, 2)
+    for (const attempt of err.errors) {
+      t.true(attempt instanceof APICallError)
+      t.is((attempt as APICallError).status, 429)
+      t.is((attempt as APICallError).providerCode, 'rate_limit_exceeded')
+    }
+    t.is(err.lastError, err.errors[1])
+    t.regex(err.message, /Failed after 2 attempts/)
+    // Retry exhaustion is not itself an API exchange: no ApiCall-only fields.
+    t.false('status' in err)
+    t.false('retryable' in err)
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }

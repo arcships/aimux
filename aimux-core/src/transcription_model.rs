@@ -1,4 +1,4 @@
-﻿//! The `TranscriptionModel` trait — the provider-facing interface for
+//! The `TranscriptionModel` trait — the provider-facing interface for
 //! speech-to-text.
 //!
 //! Aligned with Vercel AI SDK `TranscriptionModelV4`
@@ -6,7 +6,8 @@
 //!
 //! This is the only non-chat model type with an optional streaming method,
 //! [`TranscriptionModel::do_stream`]. The default implementation returns
-//! [`AiMuxError::UnsupportedFunctionality`]; providers override it as needed.
+//! [`AiMuxError::UnsupportedFunctionality`]; providers override it and users
+//! enter through [`stream_transcribe`].
 
 use std::pin::Pin;
 
@@ -16,9 +17,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::shared::{
-    AbortSignal, SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning,
-};
+use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning};
+use crate::{AbortSignal, retry, timeout};
 
 /// Audio input: raw bytes or a base64-encoded string.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -72,6 +72,12 @@ pub struct TranscriptionCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
+    /// Per-call retry override. `None` uses the model default.
+    pub max_retries: Option<u32>,
+
+    /// Per-call operation timeout.
+    pub timeout: Option<crate::options::TimeoutConfiguration>,
+
     /// Additional HTTP headers to send with the request.
     pub headers: Option<SharedHeaders>,
 }
@@ -84,6 +90,8 @@ impl TranscriptionCallOptions {
             media_type: media_type.into(),
             provider_options: None,
             abort_signal: None,
+            max_retries: None,
+            timeout: None,
             headers: None,
         }
     }
@@ -287,6 +295,10 @@ pub trait TranscriptionModel: Send + Sync {
     /// Provider-specific model ID, e.g. `"whisper-1"`.
     fn model_id(&self) -> &str;
 
+    fn retry_config(&self) -> crate::retry::RetryConfig {
+        crate::retry::RetryConfig::default()
+    }
+
     /// Generate a transcript.
     ///
     /// Naming: the `do_` prefix prevents accidental direct usage by users.
@@ -309,4 +321,44 @@ pub trait TranscriptionModel: Send + Sync {
             self.provider()
         )))
     }
+}
+
+/// User-facing non-streaming transcription with Core-owned retry and timeout.
+///
+/// # Errors
+///
+/// Returns the provider failure, retry exhaustion, timeout, or caller abort.
+pub async fn transcribe(
+    model: &dyn TranscriptionModel,
+    options: TranscriptionCallOptions,
+) -> Result<TranscriptionResult, AiMuxError> {
+    let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
+    let abort_signal = options.abort_signal.clone();
+    let retries = retry::prepare_retries(
+        options.max_retries,
+        model.retry_config(),
+        abort_signal.clone(),
+    );
+    timeout::run(
+        retries.retry(|| model.do_generate(&options)),
+        abort_signal.as_ref(),
+        timeout,
+    )
+    .await
+}
+
+/// Start user-facing live transcription.
+///
+/// The live audio stream cannot be replayed, so session setup is attempted
+/// once. The provider session applies the supplied abort signal and streaming
+/// timeouts throughout connect, send, and receive.
+///
+/// # Errors
+///
+/// Returns the provider's session-establishment error.
+pub async fn stream_transcribe(
+    model: &dyn TranscriptionModel,
+    options: TranscriptionStreamOptions,
+) -> Result<TranscriptionStreamResult, AiMuxError> {
+    model.do_stream(options).await
 }

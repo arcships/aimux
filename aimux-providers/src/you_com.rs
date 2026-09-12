@@ -14,17 +14,14 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
-use aimux_core::error::{AiMuxError, ApiCallError};
+use aimux_core::error::AiMuxError;
 use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
 use aimux_core::shared::SharedHeaders;
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
 
 /// Provider canonical name.
 const PROVIDER_NAME: &str = "you_com";
@@ -206,38 +203,32 @@ impl SearchModel for YouComSearchModel {
             .into_iter()
             .collect();
 
-        let mut url = url::Url::parse(&self.endpoint()).map_err(|e| {
-            AiMuxError::ApiCall(ApiCallError {
-                message: format!("invalid you_com endpoint: {e}"),
-                ..Default::default()
-            })
-        })?;
+        let mut url = url::Url::parse(&self.endpoint())
+            .map_err(|e| AiMuxError::InvalidArgument(format!("invalid you_com endpoint: {e}")))?;
         url.query_pairs_mut()
             .append_pair("query", &options.query)
             .append_pair("count", &count.to_string());
 
-        let resp = send(
+        let resp = aimux_provider_utils::get_from_api(
             HttpRequest {
-                method: HttpMethod::Get,
                 url: url.to_string(),
                 headers,
-                body: HttpBody::Empty,
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
+                ..Default::default()
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            aimux_provider_utils::create_json_response_handler::<YoucomSearchResponse>(),
+            aimux_provider_utils::create_standard_json_error_response_handler(),
         )
         .await?;
 
         // Capture response headers.
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers;
 
-        let raw_body: Value = serde_json::from_slice(&resp.body)?;
-
-        let data: YoucomSearchResponse = serde_json::from_value(raw_body.clone())?;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let data = resp.value;
 
         let results: Vec<SearchResultItem> = data.results.into_iter().map(map_result).collect();
 

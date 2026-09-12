@@ -8,7 +8,7 @@
  * JSON strings (base64 for binary), matching the C ABI wire format.
  *
  * Every fallible C call returns an `aimux_error_t *` (null = success) that
- * [expectAimuxError] decodes codes 1..13 as [AimuxException] and 200..206 as
+ * [expectAimuxError] decodes codes 1..14 as [AimuxException] and 200..206 as
  * [IllegalStateException] `"aimux ffi: …"` (malformed raw JSON is
  * caught before the C call by [requireJson] as [IllegalArgumentException]).
  * No JSON envelope on the primary path.
