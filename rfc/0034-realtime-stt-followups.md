@@ -73,7 +73,7 @@ RFC-0028 落地了 WS 基础设施 + OpenAI realtime 转写 + FFI 会话 + 8 语
 
 - 本地假 CONNECT 代理(`TcpListener` 手写:校验 CONNECT 目标行 → 200 → 透传到真实本地 WS server):断言 CONNECT 目标、握手成功、事件往返。
 - no_proxy 命中 → 断言未经过代理;`*` 通配;带端口条目。
-- SOCKS scheme → 明确错误;代理回 407 → ApiCall 且不可重试、503 → 可重试;CONNECT 阶段 abort → `Aborted`;代理不通 → 超时归入 `first_chunk_ms` 语义。(P1 全部落地于 `ws_proxy_test.rs`;另钉住 CONNECT 请求行/Host 头/无凭据时无 Proxy-Authorization 的 wire 形状、IPv6 代理 host 去方括号、错误信息脱敏。wss 隧道的 rustls 分支仅单元覆盖,端到端执行留待 P2 live smoke——本地无 TLS server 桩,注入根证书需要测试缝,不值当。)
+- SOCKS scheme → 明确错误;代理回 407 → ApiCall 且不可重试、503 → 可重试;CONNECT 阶段 abort → `Aborted`;代理不通 → 超时归入 `first_chunk_ms` 语义。(P1 全部落地于 `ws_proxy_test.rs`;另钉住 CONNECT 请求行/Host 头/无凭据时无 Proxy-Authorization 的 wire 形状、IPv6 代理 host 去方括号、错误信息脱敏。wss 隧道的 rustls 分支已由握手级 smoke 闭环:经本地 CONNECT 代理连真实 `wss://api.elevenlabs.io`,真实服务器应答握手即证明隧道+证书链全链路执行(`#[ignore]` 手动跑,`live_wss_handshake_through_connect_proxy`);完整转写 round-trip 仍需 provider key,见 §3.5。)
 
 ### 2.4 范围外
 
