@@ -179,6 +179,19 @@ pub fn ws__no_proxy_matches(no_proxy: &str, host: &str, port: u16) -> bool {
     no_proxy_matches(no_proxy, host, port)
 }
 
+/// Proxy URLs may carry credentials (`http://user:pass@proxy:8080`); error
+/// strings must never echo them (they travel to FFI callers and logs). Mask
+/// the userinfo portion the same way `sanitized_request_url` protects
+/// request URLs.
+fn sanitized_proxy_url(raw: &str) -> String {
+    if let Some((scheme, rest)) = raw.split_once("://")
+        && let Some((_userinfo, host_part)) = rest.split_once('@')
+    {
+        return format!("{scheme}://***@{host_part}");
+    }
+    raw.to_string()
+}
+
 /// Pick direct vs. tunneled for a WS target under the global proxy config.
 fn resolve_proxy(
     target: &url::Url,
@@ -192,21 +205,35 @@ fn resolve_proxy(
     let Some(raw) = raw else {
         return Ok(None);
     };
-    let proxy = url::Url::parse(&raw)
-        .map_err(|e| AiMuxError::InvalidArgument(format!("invalid proxy URL {raw}: {e}")))?;
+    let proxy = url::Url::parse(&raw).map_err(|e| {
+        AiMuxError::InvalidArgument(format!(
+            "invalid proxy URL {}: {e}",
+            sanitized_proxy_url(&raw)
+        ))
+    })?;
     let scheme = proxy.scheme().to_ascii_lowercase();
     if scheme != "http" {
         // SOCKS is untunnelable via CONNECT; `https` proxies need TLS to the
         // proxy itself (TLS-in-TLS) which has no demonstrated need. Both fail
         // loudly — never silently bypass a configured proxy (RFC-0034 D2).
         return Err(AiMuxError::UnsupportedFunctionality(format!(
-            "WebSocket proxy tunneling supports http proxies only, got {scheme:?} ({raw}); \
-             refusing to bypass the configured proxy with a direct connection"
+            "WebSocket proxy tunneling supports http proxies only, got {scheme:?} ({}); \
+             refusing to bypass the configured proxy with a direct connection",
+            sanitized_proxy_url(&raw)
         )));
     }
     let host = proxy
         .host_str()
-        .ok_or_else(|| AiMuxError::InvalidArgument(format!("proxy URL has no host: {raw}")))?
+        .ok_or_else(|| {
+            AiMuxError::InvalidArgument(format!(
+                "proxy URL has no host: {}",
+                sanitized_proxy_url(&raw)
+            ))
+        })?
+        // `host_str` returns IPv6 literals WITH brackets; the socket resolver
+        // wants the bare address.
+        .trim_start_matches('[')
+        .trim_end_matches(']')
         .to_string();
     let port = proxy.port().unwrap_or(80);
     let authorization = if proxy.username().is_empty() && proxy.password().is_none() {
@@ -235,8 +262,12 @@ fn resolve_proxy(
 /// `no_proxy` matching aligned with reqwest's `NoProxy::from_string`
 /// semantics (RFC-0034 §2.1): comma-separated entries; `*` matches
 /// everything; an entry matches by exact host or dot-suffix; an entry with
-/// an explicit `:port` additionally requires the port to match. IPv6
-/// literals are matched as raw strings (provider WS hosts are domains).
+/// an explicit `:port` additionally requires the port to match.
+///
+/// Known divergence: reqwest additionally supports IP/CIDR entries
+/// (`10.0.0.0/8`); those are matched here as literal strings only (they will
+/// not match a CIDR-style entry). Provider WS targets are DNS names, and a
+/// non-matching entry means "tunnel through the proxy" — the safe direction.
 fn no_proxy_matches(no_proxy: &str, host: &str, port: u16) -> bool {
     for entry in no_proxy.split(',') {
         let entry = entry.trim();
@@ -440,11 +471,18 @@ pub async fn ws_connect(req: &WebSocketRequest) -> Result<WsConnection, AiMuxErr
                 return Err(AiMuxError::Timeout("websocket connect timed out".into()));
             }
             Err(ConnectError::ProxyRejected { status, reason }) => {
-                // CONNECT rejections are auth/policy verdicts from the proxy:
-                // retrying the same tunnel cannot change the answer.
+                // Classify by the shared rule like the handshake rejection
+                // below: 407/403 are auth/policy verdicts (never retried),
+                // but a proxy 502/503/504 is transient — same as HTTP.
+                // `status == 0` (EOF before responding / oversized headers)
+                // behaves like a dropped connection: transient.
                 return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
                     status_code: (status != 0).then_some(status),
-                    is_retryable: false,
+                    is_retryable: if status == 0 {
+                        true
+                    } else {
+                        aimux_core::error::is_retryable_status(status)
+                    },
                     ..ApiCallError::new(
                         format!("proxy rejected websocket CONNECT: {reason}"),
                         crate::http::sanitized_request_url(&req.url),

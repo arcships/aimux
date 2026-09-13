@@ -1,6 +1,6 @@
 # RFC-0034: 实时转写收尾 —— WS 代理、ElevenLabs/Cartesia 实现
 
-> **Status**: DRAFT(设计稿,待评审)
+> **Status**: P1 已实现(#183);P2/P3/P4 待做。设计稿其余部分待评审
 > **Date**: 2026-09-13
 > **Scope**: 完成 RFC-0028 明确遗留的三件事:WS 代理隧道(全局 `ProxyConfig` 对 WS 生效)、ElevenLabs `scribe_v2_realtime` 与 Cartesia `ink-2` 的 `do_stream` 独立实现
 > **Related**: [RFC-0028](0028-transcription-streaming.md)(本 RFC 是其遗留项的收尾)、[#178](https://github.com/arcships/aimux/issues/178)(跟踪 issue,含研究记录)、[#157](https://github.com/arcships/aimux/pull/157)(Go 会话生命周期先例)
@@ -51,7 +51,8 @@ RFC-0028 落地了 WS 基础设施 + OpenAI realtime 转写 + FFI 会话 + 8 语
         Host: target_host:target_port\r\n
         [Proxy-Authorization: ...]\r\n \r\n
 3. 读至 \r\n\r\n(上限 8 KiB),校验状态行 2xx(非 2xx → ApiCall,报代理状态码与
-   status line,不可重试——认证/策略类判定重试无意义)
+   status line,按共享 `is_retryable_status` 规则分类——407/403 等认证/策略判定
+   不可重试,502/503/504 等瞬态可重试;无应答(EOF/超长, status 0)视为瞬态可重试)
 4. 将该 TcpStream 交给 tokio_tungstenite::client_async_tls_with_config(
         request, stream, None,
         Connector::Rustls(Arc<rustls::ClientConfig>)   ← wss 目标
@@ -66,13 +67,13 @@ RFC-0028 落地了 WS 基础设施 + OpenAI realtime 转写 + FFI 会话 + 8 语
 
 - `WsConnection.stream` 类型不变(`WebSocketStream<MaybeTlsStream<TcpStream>>`,`client_async_tls_with_config` 返回同型),对上层零感知。
 - `ws.rs` 头部文档的"**No proxy support**"段删除,替换为本节指针。
-- 依赖变更:workspace 已有 tokio-tungstenite 0.24;`aimux-provider-utils` 需显式引入 `rustls` + `webpki-roots`(版本对齐 tokio-tungstenite 0.24 传递的 rustls 0.23 系)。
+- 依赖变更:workspace 已有 tokio-tungstenite 0.24;`aimux-provider-utils` 需显式引入 `rustls` + `webpki-roots` + `base64`(Proxy-Authorization 编码;版本对齐 tokio-tungstenite 0.24 传递的 rustls 0.23 系)。
 
 ### 2.3 测试
 
 - 本地假 CONNECT 代理(`TcpListener` 手写:校验 CONNECT 目标行 → 200 → 透传到真实本地 WS server):断言 CONNECT 目标、握手成功、事件往返。
 - no_proxy 命中 → 断言未经过代理;`*` 通配;带端口条目。
-- SOCKS scheme → 明确错误;代理回 407 → ApiCall 且不可重试;CONNECT 阶段 abort → `Aborted`;代理不通 → 超时归入 `first_chunk_ms` 语义。
+- SOCKS scheme → 明确错误;代理回 407 → ApiCall 且不可重试、503 → 可重试;CONNECT 阶段 abort → `Aborted`;代理不通 → 超时归入 `first_chunk_ms` 语义。(P1 全部落地于 `ws_proxy_test.rs`;另钉住 CONNECT 请求行/Host 头/无凭据时无 Proxy-Authorization 的 wire 形状、IPv6 代理 host 去方括号、错误信息脱敏。wss 隧道的 rustls 分支仅单元覆盖,端到端执行留待 P2 live smoke——本地无 TLS server 桩,注入根证书需要测试缝,不值当。)
 
 ### 2.4 范围外
 
@@ -183,14 +184,14 @@ P2/P3 不依赖 P1,但排序在其后:live smoke 顺手验证代理路径。
 |---|---|---|
 | Cartesia turns API 文档在登录墙后,事件 schema 以 SDK 源码推断 | 中 | Open Question 1:实现时以官方 Python SDK 类型定义逐字段对齐,mock 测试断言 schema;schema 不符时报回本 RFC |
 | ElevenLabs 无显式结束事件,Finish 时机是推断的协议边界 | 中 | §3.3 定死:commit → 最后 committed → Finish + close;`chunk_ms` 静默兜底;live smoke 重点验证此边界 |
-| no_proxy 自实现与 reqwest 语义有细节差(端口/通配) | 低 | 单测直接对照 reqwest `NoProxy::from_string` 的行为用例;文档声明"语义对齐" |
+| no_proxy 自实现与 reqwest 语义有细节差 | 低 | reqwest 的匹配器非公开 API,无法程序化交叉验证——语义按其文档对齐并表格化单测;已知分歧(CIDR/IP 段条目仅按字面匹配,不展开网段)在 `ws.rs` docstring 与本表显式记录;非命中的安全方向是走代理 |
 | rustls ClientConfig 与 reqwest 侧 roots 不一致 | 低 | 锁同一 webpki-roots 版本;隧道内 TLS 由 tokio-tungstenite 握手 |
 | 两家 API 均为新/实验性,事件形状可能变 | 中 | 事件映射集中在各自文件一处(OpenAI 先例);版本变化只动映射 |
 
 ## 8. Open Questions
 
 1. **Cartesia turns WS 的准确路径与事件 schema**。旧 ink-whisper 时代为 `wss://api.cartesia.ai/stt/ws`;现 SDK 指向 turns 端点(docs 路径 `api-reference/stt/turns/websocket`,登录墙)。P3 动手前用官方 SDK 源码锁定 URL 与响应类型,结论记回本节。
-2. **WS connect 失败的重试**:不需要新设计——#164 后 Core 在 attempt 层重试 `do_stream`,连接失败大概率已被覆盖。P1 落一条测试断言验证(连接失败 → Core retry 重连),行为不符再补设计。
+2. **WS connect 失败的重试**(P1 已验证并关闭):`stream_transcribe` 直通 `do_stream`,**没有任何 attempt 级重试**;且不重试是当前正确行为——音频输入流在首次尝试即被消费,重放需要可重播的音频源(HTTP 流可重试是因为请求体可克隆),非免费能力。连接失败的补救属于上层会话重建(Non-goal 5)。若未来要重试,需先设计可重播音频源,另立 RFC。
 
 ## 9. 决策记录
 

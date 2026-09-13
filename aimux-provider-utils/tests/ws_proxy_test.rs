@@ -25,6 +25,8 @@ struct Fixture {
     /// WS server reached DIRECTLY (its port is a port-specific no_proxy entry).
     direct_port: u16,
     connect_authorities: Arc<Mutex<Vec<String>>>,
+    /// Full CONNECT request text (request line + headers), newest last.
+    connect_requests: Arc<Mutex<Vec<String>>>,
     proxy_connections: Arc<AtomicUsize>,
 }
 
@@ -33,10 +35,12 @@ static FIXTURE: OnceLock<Fixture> = OnceLock::new();
 fn fixture() -> &'static Fixture {
     FIXTURE.get_or_init(|| {
         let connect_authorities: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let connect_requests: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let proxy_connections = Arc::new(AtomicUsize::new(0));
 
         let (ready_tx, ready_rx) = std::sync::mpsc::channel::<(u16, u16, u16)>();
         let authorities_for_thread = Arc::clone(&connect_authorities);
+        let requests_for_thread = Arc::clone(&connect_requests);
         let conns_for_thread = Arc::clone(&proxy_connections);
         std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -48,6 +52,7 @@ fn fixture() -> &'static Fixture {
                 let direct_port = spawn_echo_server().await;
                 let proxy_port = spawn_fake_proxy(
                     Arc::clone(&authorities_for_thread),
+                    Arc::clone(&requests_for_thread),
                     Arc::clone(&conns_for_thread),
                 )
                 .await;
@@ -76,6 +81,7 @@ fn fixture() -> &'static Fixture {
             tunnel_port,
             direct_port,
             connect_authorities,
+            connect_requests,
             proxy_connections,
         }
     })
@@ -106,10 +112,12 @@ async fn spawn_echo_server() -> u16 {
     port
 }
 
-/// Minimal CONNECT proxy: records the CONNECT authority, 407s hosts starting
-/// with `reject.`, otherwise bridges to the real target.
+/// Minimal CONNECT proxy. Behavior by target-authority prefix:
+/// `reject.` → 407, `busy.` → 503, `hang.` → accepts and never answers
+/// (black hole); everything else → 200 + bridge to the real target.
 async fn spawn_fake_proxy(
     connect_authorities: Arc<Mutex<Vec<String>>>,
+    connect_requests: Arc<Mutex<Vec<String>>>,
     connections: Arc<AtomicUsize>,
 ) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -122,6 +130,7 @@ async fn spawn_fake_proxy(
                 continue;
             };
             let connect_authorities = Arc::clone(&connect_authorities);
+            let connect_requests = Arc::clone(&connect_requests);
             let connections = Arc::clone(&connections);
             tokio::spawn(async move {
                 connections.fetch_add(1, Ordering::SeqCst);
@@ -133,7 +142,7 @@ async fn spawn_fake_proxy(
                         Ok(n) => buffer.extend_from_slice(&chunk[..n]),
                     }
                 }
-                let request = String::from_utf8_lossy(&buffer);
+                let request = String::from_utf8_lossy(&buffer).into_owned();
                 let authority = request
                     .lines()
                     .next()
@@ -144,11 +153,25 @@ async fn spawn_fake_proxy(
                     .lock()
                     .expect("connect log mutex")
                     .push(authority.clone());
+                connect_requests
+                    .lock()
+                    .expect("connect request log mutex")
+                    .push(request);
                 if authority.starts_with("reject.") {
                     let _ = stream
                         .write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
                         .await;
                     return;
+                }
+                if authority.starts_with("busy.") {
+                    let _ = stream
+                        .write_all(b"HTTP/1.1 503 Service Unavailable\r\n\r\n")
+                        .await;
+                    return;
+                }
+                if authority.starts_with("hang.") {
+                    // Black hole: keep the connection open, never answer.
+                    std::future::pending::<()>().await;
                 }
                 if stream
                     .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
@@ -253,10 +276,122 @@ async fn proxy_rejection_surfaces_as_non_retryable_api_call() {
     match error {
         aimux_core::AiMuxError::ApiCall(api_call) => {
             assert_eq!(api_call.status_code, Some(407));
-            assert!(!api_call.is_retryable, "CONNECT verdicts must not retry");
+            assert!(
+                !api_call.is_retryable,
+                "407 is an auth verdict, not transient"
+            );
         }
         other => panic!("expected ApiCall, got {other:?}"),
     }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn transient_proxy_503_is_retryable() {
+    let fixture = fixture();
+    let error = match ws_connect(&ws_request(format!(
+        "ws://busy.local:{}",
+        fixture.tunnel_port
+    )))
+    .await
+    {
+        Err(error) => error,
+        Ok(_) => panic!("proxy answers 503, connect must fail"),
+    };
+    match error {
+        aimux_core::AiMuxError::ApiCall(api_call) => {
+            assert_eq!(api_call.status_code, Some(503));
+            assert!(
+                api_call.is_retryable,
+                "proxy 503 is transient — same rule as HTTP"
+            );
+        }
+        other => panic!("expected ApiCall, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn unresponsive_proxy_times_out_under_first_chunk_budget() {
+    let fixture = fixture();
+    let mut request = ws_request(format!("ws://hang.local:{}", fixture.tunnel_port));
+    request.timeout = Some(TimeoutConfiguration {
+        first_chunk_ms: Some(300),
+        chunk_ms: None,
+        step_ms: None,
+        total_ms: None,
+    });
+    let error = match ws_connect(&request).await {
+        Err(error) => error,
+        Ok(_) => panic!("proxy never answers, connect must time out"),
+    };
+    assert!(
+        matches!(error, aimux_core::AiMuxError::Timeout(_)),
+        "expected Timeout, got {error:?}"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn abort_during_connect_tunnel_surfaces_as_aborted() {
+    let fixture = fixture();
+    let abort = aimux_core::AbortSignal::new();
+    let fire = abort.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+        fire.abort();
+    });
+    let mut request = ws_request(format!("ws://hang.local:{}", fixture.tunnel_port));
+    request.abort_signal = Some(abort);
+    // Generous timeout: abort must win the race, not the timer.
+    let error = match ws_connect(&request).await {
+        Err(error) => error,
+        Ok(_) => panic!("aborted connect must not succeed"),
+    };
+    assert!(
+        matches!(error, aimux_core::AiMuxError::Aborted(_)),
+        "expected Aborted, got {error:?}"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn connect_request_wire_shape() {
+    let fixture = fixture();
+    let before = fixture
+        .connect_requests
+        .lock()
+        .expect("connect request log mutex")
+        .len();
+    let mut connection = ws_connect(&ws_request(format!(
+        "ws://127.0.0.1:{}",
+        fixture.tunnel_port
+    )))
+    .await
+    .expect("tunneled connect");
+    connection.close().await;
+    let requests = fixture
+        .connect_requests
+        .lock()
+        .expect("connect request log mutex")
+        .clone();
+    let request = &requests[before..]
+        .last()
+        .expect("this test's CONNECT request must be recorded");
+    let lines: Vec<&str> = request.lines().collect();
+    assert_eq!(
+        lines[0],
+        format!("CONNECT 127.0.0.1:{} HTTP/1.1", fixture.tunnel_port),
+        "CONNECT request line"
+    );
+    assert!(
+        lines.contains(&format!("Host: 127.0.0.1:{}", fixture.tunnel_port).as_str()),
+        "Host header must repeat the authority, got {request:?}"
+    );
+    assert!(
+        !request.to_ascii_lowercase().contains("proxy-authorization"),
+        "no credentials configured: no Proxy-Authorization expected, got {request:?}"
+    );
 }
 
 // ── Unit: proxy selection ────────────────────────────────────────────────────
@@ -350,6 +485,35 @@ fn proxy_userinfo_becomes_basic_authorization() {
         .expect("resolve")
         .expect("tunnel");
     assert_eq!(tunnel.authorization.as_deref(), Some("Basic dXNlcjpwYXNz"));
+}
+
+#[test]
+fn ipv6_proxy_host_brackets_are_stripped_for_the_socket() {
+    // `url::Url::host_str` returns "[::1]"; the resolver needs "::1".
+    let config = config_with(Some("http://[::1]:8080"), None, None);
+    let target = url::Url::parse("wss://api.example.test").unwrap();
+    let tunnel = aimux_provider_utils::ws::ws__proxy_decision_for(&target, &config)
+        .expect("resolve")
+        .expect("tunnel");
+    assert_eq!(tunnel.host, "::1");
+    assert!(tunnel.target_tls);
+}
+
+#[test]
+fn proxy_errors_do_not_leak_credentials() {
+    let config = config_with(Some("socks5://user:secret@p:1080"), None, None);
+    let target = url::Url::parse("wss://api.example.test").unwrap();
+    let error = aimux_provider_utils::ws::ws__proxy_decision_for(&target, &config)
+        .expect_err("must refuse");
+    let text = error.to_string();
+    assert!(
+        !text.contains("secret") && !text.contains("user:secret"),
+        "proxy credentials must be masked in errors, got: {text}"
+    );
+    assert!(
+        text.contains("socks5://***@p:1080"),
+        "masked URL expected, got: {text}"
+    );
 }
 
 // ── Unit: no_proxy matching (reqwest NoProxy semantics) ─────────────────────
