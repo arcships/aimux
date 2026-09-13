@@ -1,6 +1,6 @@
 # RFC-0034: 实时转写收尾 —— WS 代理、ElevenLabs/Cartesia 实现
 
-> **Status**: P1 已实现(#183);P2/P3/P4 待做。设计稿其余部分待评审
+> **Status**: P1 已实现(#183);P2 已实现(RFC-0034/elevenlabs-realtime 分支,PR 见 #184);P3 暂缓(D6);P4 待做
 > **Date**: 2026-09-13
 > **Scope**: 完成 RFC-0028 明确遗留的三件事:WS 代理隧道(全局 `ProxyConfig` 对 WS 生效)、ElevenLabs `scribe_v2_realtime` 与 Cartesia `ink-2` 的 `do_stream` 独立实现
 > **Related**: [RFC-0028](0028-transcription-streaming.md)(本 RFC 是其遗留项的收尾)、[#178](https://github.com/arcships/aimux/issues/178)(跟踪 issue,含研究记录)、[#157](https://github.com/arcships/aimux/pull/157)(Go 会话生命周期先例)
@@ -165,7 +165,7 @@ RFC-0028 落地了 WS 基础设施 + OpenAI realtime 转写 + FFI 会话 + 8 语
 | 阶段 | 内容 | 依赖 | PR |
 |------|------|------|----|
 | P1 | WS 代理隧道 + 测试 | 无 | ✅ #183(draft) |
-| P2 | ElevenLabs realtime 门控 + `do_stream` + mock 测试 + live smoke | 无(建议在 P1 后,便于 smoke 走代理验证) | 独立 |
+| P2 | ElevenLabs realtime 门控 + `do_stream` + mock 测试 + live smoke | 无(建议在 P1 后,便于 smoke 走代理验证) | ✅ 实现+mock 测试落地(live smoke 待 key,见 §3.5 注) |
 | P3 | Cartesia `do_stream` + mock 测试 + live smoke | 无(同上) | **暂缓**(2026-09-13 复议,触发条件见 §4;D6) |
 | P4 | RFC-0028 文档更新:状态行加 follow-up 指针、§3.4"骨架同构,按需加"修正为"各家独立实现(本 RFC §1.1)"、§9.2/§9.4 关闭指向本 RFC、§9.5 挂 #167 | P1-P3 | 随 P3 或单独 docs PR |
 
