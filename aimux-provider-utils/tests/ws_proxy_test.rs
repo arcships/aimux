@@ -70,7 +70,10 @@ fn fixture() -> &'static Fixture {
         // server's port, which is covered by a port-specific no_proxy entry.
         let configured = aimux_provider_utils::http::init_proxy(ProxyConfig {
             http_url: Some(format!("http://127.0.0.1:{proxy_port}")),
-            https_url: None,
+            // wss targets tunnel too — the live smoke relies on it to drive
+            // the rustls branch through the CONNECT proxy against the real
+            // endpoint.
+            https_url: Some(format!("http://127.0.0.1:{proxy_port}")),
             all_url: None,
             // Port-specific entry: also exercises the port-aware matching.
             no_proxy: Some(format!("127.0.0.1:{direct_port}")),
@@ -530,4 +533,67 @@ fn no_proxy_matching_rules() {
     assert!(!matches("api.example.test:9000", "api.example.test", 443));
     assert!(matches(" a.test , b.test", "b.test", 80));
     assert!(!matches("", "api.example.test", 443));
+}
+
+// ── Live handshake smoke (manual: `cargo test -- --ignored`) ─────────────────
+//
+// No API key needed: the target is the REAL wss endpoint, so TLS through the
+// CONNECT tunnel validates against a public CA chain and the server answers
+// the WebSocket handshake itself (rejecting unauthenticated callers). Either
+// outcome — an HTTP-status rejection from the handshake, or a connected
+// session whose first event is an auth error/close — proves the full
+// tunnel+rustls path executed against the real internet. A proxy/TLS/cert
+// failure would surface as a transport error instead, which this test
+// rejects.
+#[tokio::test]
+#[serial_test::serial]
+#[ignore = "network-dependent manual smoke (RFC-0034 §2.3): exercises the real TLS+proxy path"]
+async fn live_wss_handshake_through_connect_proxy() {
+    let fixture = fixture();
+    let mut request = WebSocketRequest {
+        url: "wss://api.elevenlabs.io/v1/speech-to-text/realtime\
+              ?model_id=scribe_v2_realtime&audio_format=pcm_16000&commit_strategy=manual"
+            .to_string(),
+        headers: Vec::new(),
+        subprotocols: Vec::new(),
+        abort_signal: None,
+        timeout: Some(TimeoutConfiguration {
+            first_chunk_ms: Some(10_000),
+            chunk_ms: Some(10_000),
+            step_ms: None,
+            total_ms: Some(20_000),
+        }),
+    };
+    let _ = &mut request;
+
+    let saw_server_response = match ws_connect(&request).await {
+        // Handshake rejected with a real HTTP status: tunnel + TLS + upgrade
+        // all executed; the server answered.
+        Err(aimux_core::AiMuxError::ApiCall(api_call)) => {
+            assert!(
+                api_call.status_code.is_some(),
+                "expected an HTTP status from the real endpoint, got {api_call:?}"
+            );
+            true
+        }
+        // Connected: the server accepted the socket. Without a key the first
+        // inbound event must be an auth-flavored error or a close — anything
+        // the real server sent. A transport/TLS failure is Err here and fails
+        // the match.
+        Ok(mut connection) => matches!(connection.next().await, Some(Ok(_)) | Some(Err(_))),
+        Err(other) => panic!("tunnel/TLS failure against the real endpoint: {other:?}"),
+    };
+    assert!(
+        saw_server_response,
+        "the real endpoint must answer the handshake"
+    );
+    let authorities = fixture
+        .connect_authorities
+        .lock()
+        .expect("connect log mutex")
+        .clone();
+    assert!(
+        authorities.contains(&"api.elevenlabs.io:443".to_string()),
+        "CONNECT must target the real host, saw {authorities:?}"
+    );
 }
