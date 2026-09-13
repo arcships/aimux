@@ -55,7 +55,11 @@ pub fn init_proxy(config: ProxyConfig) -> bool {
     GLOBAL_PROXY.set(config).is_ok()
 }
 
-fn global_proxy() -> ProxyConfig {
+/// Return the process-wide proxy configuration (empty default when
+/// `init_proxy` was never called). Read by both the HTTP client builder and
+/// the WebSocket connect path (RFC-0034 §2), so `ws://`/`wss://` traffic
+/// honors the same proxy/no_proxy settings as HTTP.
+pub(crate) fn global_proxy() -> ProxyConfig {
     GLOBAL_PROXY.get().cloned().unwrap_or_default()
 }
 

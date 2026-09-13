@@ -40,7 +40,7 @@ RFC-0028 落地了 WS 基础设施 + OpenAI realtime 转写 + FFI 会话 + 8 语
 
 1. **选代理**:`wss://` → `https_url`(`all_url` 兜底);`ws://` → `http_url`(`all_url` 兜底)。均无 → 直连(现状路径,零行为变化)。
 2. **no_proxy 匹配**:自实现,语义对齐 reqwest `NoProxy::from_string`(逗号分隔;后缀匹配;`*` 全匹配;带端口的条目要求端口相等)。命中 → 直连。
-3. **SOCKS 明确报错**:代理 URL scheme 为 `socks5`/`socks5h` 时返回 `AiMuxError::UnsupportedFunctionality("WebSocket proxy tunneling supports http/https proxies only, got socks5")`。**绝不静默直连**——静默直连等于绕过用户的网络边界。
+3. **非 http scheme 一律明确报错**:代理 URL scheme 为 `socks5`/`socks5h`(CONNECT 隧道不通)或 `https`(需要 TLS-to-proxy,TLS 套 TLS,无需求来源)时,返回 `AiMuxError::UnsupportedFunctionality`,消息注明拒绝直连原因。**绝不静默直连**——静默直连等于绕过用户的网络边界。
 4. **代理 URL 带 userinfo**(如 `http://user:pass@proxy:8080`)→ CONNECT 请求附 `Proxy-Authorization: Basic base64(user:pass)`。
 
 ### 2.2 隧道流程(全部 await 点在 `select!` 内与 abort + `first_chunk_ms` 竞争,沿用 RFC-0028 §3.1 强制模式)
@@ -50,12 +50,18 @@ RFC-0028 落地了 WS 基础设施 + OpenAI realtime 转写 + FFI 会话 + 8 语
 2. 写  CONNECT target_host:target_port HTTP/1.1\r\n
         Host: target_host:target_port\r\n
         [Proxy-Authorization: ...]\r\n \r\n
-3. 读至 \r\n\r\n,校验状态行 200(非 200 → ApiCall,报代理状态码与 reason,
-   不重试 CONNECT——认证类错误重试无意义)
+3. 读至 \r\n\r\n(上限 8 KiB),校验状态行 2xx(非 2xx → ApiCall,报代理状态码与
+   status line,不可重试——认证/策略类判定重试无意义)
 4. 将该 TcpStream 交给 tokio_tungstenite::client_async_tls_with_config(
-        request, stream, None, Connector::Rustls(Arc<rustls::ClientConfig>))
+        request, stream, None,
+        Connector::Rustls(Arc<rustls::ClientConfig>)   ← wss 目标
+        Connector::Plain)                              ← ws 目标
    ——与直连的 connect_async 不同点仅在 TLS 由我们自备:
-   ClientConfig 用 webpki-roots,与 reqwest 的 rustls-tls-webpki-roots 对齐。
+   ClientConfig 显式 ring provider + webpki-roots(与 reqwest 侧 roots 对齐;
+   显式 provider 避免多 CryptoProvider feature 合并时的隐式 default panic)。
+   CONNECT 应答的残余字节:代理在客户端发出 WS 握手请求前没有任何合法的
+   下行数据,故读到应答头结束即把 socket 交给握手是安全的(残余只可能来自
+   不守规矩的代理,丢弃无害)。
 ```
 
 - `WsConnection.stream` 类型不变(`WebSocketStream<MaybeTlsStream<TcpStream>>`,`client_async_tls_with_config` 返回同型),对上层零感知。
@@ -155,7 +161,7 @@ RFC-0028 落地了 WS 基础设施 + OpenAI realtime 转写 + FFI 会话 + 8 语
 
 | 阶段 | 内容 | 依赖 | PR |
 |------|------|------|----|
-| P1 | WS 代理隧道 + 测试 | 无 | 独立(先行,三家受益) |
+| P1 | WS 代理隧道 + 测试 | 无 | ✅ #183(draft) |
 | P2 | ElevenLabs realtime 门控 + `do_stream` + mock 测试 + live smoke | 无(建议在 P1 后,便于 smoke 走代理验证) | 独立 |
 | P3 | Cartesia `do_stream` + mock 测试 + live smoke | 无(同上) | 独立 |
 | P4 | RFC-0028 文档更新:状态行加 follow-up 指针、§3.4"骨架同构,按需加"修正为"各家独立实现(本 RFC §1.1)"、§9.2/§9.4 关闭指向本 RFC、§9.5 挂 #167 | P1-P3 | 随 P3 或单独 docs PR |
@@ -189,7 +195,7 @@ P2/P3 不依赖 P1,但排序在其后:live smoke 顺手验证代理路径。
 ## 9. 决策记录
 
 - **D1 不抽统一抽象**(§1.1):三家协议差异表为证;共享边界止于 `WsConnection`。
-- **D2 SOCKS 报错不直连**(§2.1.3):代理环境下静默直连 = 功能性错误(要么失败要么绕过网络边界),必须显式失败。
+- **D2 非 http 代理 scheme 报错不直连**(§2.1.3):SOCKS 隧道不通、https 代理需 TLS 套 TLS(无需求来源);代理环境下静默直连 = 功能性错误(要么失败要么绕过网络边界),必须显式失败。
 - **D3 ElevenLabs 固定 manual commit**(§3.4):manual 下 partial 事件持续流出,流式体验无损;vad 是第二条 Finish 语义分支,无需求不做。
 - **D4 Cartesia 只做 auto-finalize**(§4):manual finalize 是 push-to-talk 场景,无调用方;turn 阈值不透传,用服务端默认。
 - **D5 参数面最小化**(§3.2/§4):ElevenLabs 仅 languageCode/includeTimestamps,Cartesia 仅 language;每个额外参数都要映射+文档+测试,没有需求来源的一律不加,追加成本为零结构改动。
