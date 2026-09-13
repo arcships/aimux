@@ -131,7 +131,9 @@ RFC-0028 落地了 WS 基础设施 + OpenAI realtime 转写 + FFI 会话 + 8 语
 
 本地 WS mock:`session_started` → `partial×2` → `committed` → (commit) → `committed` → close,逐字段断言 query 参数、base64、`sample_rate`、commit 时机、事件序列、close code 1000、abort 中途取消、retryable 分类规则(retryable 三名 / 其余 false,各抽一个错误事件断言)。**live smoke 一次**(几秒 PCM,真实 key)——RFC-0028 D4 的教训:OpenAI 当年没跑真 API,wire 形状只被 mock 验证过。
 
-## 4. Phase 3 — Cartesia `ink-2`
+## 4. Phase 3 — Cartesia `ink-2`(**暂缓**,D6)
+
+> 2026-09-13 复议后暂缓:官方文档在登录墙后、turns API 年轻易变、事件 schema 只能从 SDK 推断、无 key 可验证、无需求信号——三家里出错风险最高,而暂缓成本为零(现状对 ink-2 返回的 UnsupportedFunctionality 是诚实信息)。触发条件三选一即重启:有人提需求 / 文档公开出墙 / 拿到 key 决定跑 smoke。`cartesia.rs` 门控注释已标注 deferred。
 
 门控已存在(`is_streaming_transcription_model_id`,L618),补 `do_stream`。结构与 §3 同型,差异点:
 
@@ -164,7 +166,7 @@ RFC-0028 落地了 WS 基础设施 + OpenAI realtime 转写 + FFI 会话 + 8 语
 |------|------|------|----|
 | P1 | WS 代理隧道 + 测试 | 无 | ✅ #183(draft) |
 | P2 | ElevenLabs realtime 门控 + `do_stream` + mock 测试 + live smoke | 无(建议在 P1 后,便于 smoke 走代理验证) | 独立 |
-| P3 | Cartesia `do_stream` + mock 测试 + live smoke | 无(同上) | 独立 |
+| P3 | Cartesia `do_stream` + mock 测试 + live smoke | 无(同上) | **暂缓**(2026-09-13 复议,触发条件见 §4;D6) |
 | P4 | RFC-0028 文档更新:状态行加 follow-up 指针、§3.4"骨架同构,按需加"修正为"各家独立实现(本 RFC §1.1)"、§9.2/§9.4 关闭指向本 RFC、§9.5 挂 #167 | P1-P3 | 随 P3 或单独 docs PR |
 
 P2/P3 不依赖 P1,但排序在其后:live smoke 顺手验证代理路径。
@@ -200,3 +202,4 @@ P2/P3 不依赖 P1,但排序在其后:live smoke 顺手验证代理路径。
 - **D3 ElevenLabs 固定 manual commit**(§3.4):manual 下 partial 事件持续流出,流式体验无损;vad 是第二条 Finish 语义分支,无需求不做。
 - **D4 Cartesia 只做 auto-finalize**(§4):manual finalize 是 push-to-talk 场景,无调用方;turn 阈值不透传,用服务端默认。
 - **D5 参数面最小化**(§3.2/§4):ElevenLabs 仅 languageCode/includeTimestamps,Cartesia 仅 language;每个额外参数都要映射+文档+测试,没有需求来源的一律不加,追加成本为零结构改动。
+- **D6 Cartesia(P3)暂缓**(§4):与 P2 的决定性差异是可验证性——ElevenLabs 有公开 API 参考,mock 断言的是文档事实;Cartesia 文档在登录墙后、schema 靠 SDK 反推、API 新且易变,叠加 D4 教训(mock-only 验证的 wire 可能是错的),推断+无验证的组合风险不可接受。暂缓不损失任何东西:能力缺失的报错是诚实的,且无消费者。
