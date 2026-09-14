@@ -11,8 +11,7 @@ import Foundation
 //
 // Every fallible C function returns `aimux_error_t *` (`OpaquePointer?`):
 // NULL = success (result in the trailing out-param), non-NULL = failure. The
-// unified code is AiMuxError (1...14), RecordingError (100...105), or a C ABI
-// unified code is AiMuxError (1...13, 15...17), RecordingError (100...105), or a C ABI
+// unified code is AiMuxError (1...17), RecordingError (100...105), or a C ABI
 // failure (200...206). The three `expect*` decoders copy the relevant fields, release
 // it with `aimux_error_free` (exactly once) and return the Swift error
 // to throw. Errors are not handles: never `aimux_drop_handle` one.
@@ -45,8 +44,7 @@ func expectFfiError(_ e: OpaquePointer, context: String) -> any Error {
     return invariant("aimux ffi: \(context): \(message)")
 }
 
-/// Decode a returned error from an `[AiMuxError]` call: 1...14 become
-/// Decode a returned error from an `[AiMuxError]` call: 1...13 / 15...17 becomes
+/// Decode a returned error from an `[AiMuxError]` call: 1...17 becomes
 /// `AimuxError`; 200...206 is decoded by `expectFfiError`. Frees `e` once.
 func expectAimuxError(_ e: OpaquePointer, context: String) -> any Error {
     let code = aimux_error_code(e)
@@ -121,8 +119,7 @@ public enum RetryErrorReason: String, Equatable, Sendable {
 
 /// Structured aimux failure type (Swift `Error`).
 ///
-/// Maps 1:1 from the 14 core `AiMuxError` variants. Every HTTP-shaped failure
-/// Maps 1:1 from the 15 core `AiMuxError` variants. Every HTTP-shaped failure
+/// Maps 1:1 from the 16 core `AiMuxError` variants. Every HTTP-shaped failure
 /// is `.apiCall` (`AIMUX_E_API_CALL`). Only aimux-core produces these: a
 /// binding-local failure (raw JSON that does not parse, a typed value that
 /// fails to encode, library output that fails to decode) surfaces as the

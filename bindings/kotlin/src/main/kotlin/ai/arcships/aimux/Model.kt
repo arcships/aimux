@@ -8,8 +8,7 @@
  * Errors: every fallible C call returns an `aimux_error_t *` ([Pointer]?):
  * null = success, result written to the trailing out-parameter
  * ([LongByReference] for handles, [PointerByReference] for JSON strings);
- * non-null = failure. Its unified code identifies [AimuxException] (1..14),
- * non-null = failure. Its unified code identifies [AimuxException] (1..13 / 15..17),
+ * non-null = failure. Its unified code identifies [AimuxException] (1..17),
  * [RecordingException] (100..105), or a C ABI failure (200..206). The last
  * range maps to `IllegalStateException("aimux ffi: …")`. A decoder releases
  * the returned pointer with `aimux_error_free`.
@@ -264,8 +263,7 @@ private fun ffiError(e: Pointer, prefix: String): IllegalStateException {
 }
 
 /**
- * Decode an error from a call that may return `AiMuxError`: 1..14 →
- * Decode an error from a call that may return `AiMuxError`: 1..13 / 15..17 →
+ * Decode an error from a call that may return `AiMuxError`: 1..17 →
  * [AimuxException]; 200..206 → [IllegalStateException]. Frees [e].
  */
 internal fun expectAimuxError(e: Pointer, context: String = ""): RuntimeException {

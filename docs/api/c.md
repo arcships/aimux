@@ -71,7 +71,7 @@ The code range identifies the source:
 
 | Range | Meaning |
 |---|---|
-| `1..14` | `AiMuxError` (14 = `Retry`) |
+| `1..17` | `AiMuxError` (4 retired, 14 = `Retry`) |
 | `100..105` | `RecordingError` |
 | `200..206` | failure detected by the C ABI |
 
@@ -139,19 +139,10 @@ it with these same getters — it can itself be any AiMuxError code, including
 `aimux_error_free` independently of the parent (free order is
 unconstrained).
 
-The unified `aimux_error_code_t` extends the AiMuxError values to 1–14
-(`AIMUX_E_RETRY` = 14 reclaims the slot the pre-unification `Other` vacated —
-the opaque-pointer ABI break means no old caller can misread it), adds
-RecordingError values 100–105, and assigns C ABI
-failures 200–206:
-`NULL_POINTER`, `INVALID_UTF8`, `INVALID_WIRE_JSON`, `INVALID_HANDLE`,
-`REENTRANT_CALL`, `RESULT_SERIALIZATION`, and `CALLBACK_FAILURE`. Values are
-never renumbered or reused. A code outside the enum is a header/library
-mismatch.
-The unified `aimux_error_code_t` maps AiMuxError variants to values 1–13 and
-15–17 (`AIMUX_E_NO_SUCH_TOOL` 15, `AIMUX_E_INVALID_TOOL_INPUT` 16,
+The unified `aimux_error_code_t` maps AiMuxError variants to values 1–17
+(`AIMUX_E_RETRY` 14, `AIMUX_E_NO_SUCH_TOOL` 15, `AIMUX_E_INVALID_TOOL_INPUT` 16,
 `AIMUX_E_TOOL_CALL_REPAIR` 17; 4 is retired — the legacy catch-all `Tool`
-variant, never produced — and 14 is reserved), adds RecordingError values
+variant, never produced), adds RecordingError values
 100–105, and assigns C ABI failures 200–206: `NULL_POINTER`, `INVALID_UTF8`,
 `INVALID_WIRE_JSON`, `INVALID_HANDLE`, `REENTRANT_CALL`,
 `RESULT_SERIALIZATION`, and `CALLBACK_FAILURE`. Values are never renumbered

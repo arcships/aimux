@@ -11,7 +11,7 @@ import java.util.Map;
 /**
  * AiMuxError hierarchy (OpenAI Java / Vercel AI SDK style).
  *
- * <p>Raised when a fallible C ABI call returns an AiMuxError code (1–13, 15–17).
+ * <p>Raised when a fallible C ABI call returns an AiMuxError code (1–17).
  * Recording failures use the
  * independent {@link RecordingException} type; C ABI failures (bad raw
  * wire JSON, use-after-close, re-entrant call) surface as plain
@@ -29,7 +29,7 @@ import java.util.Map;
  * }
  * }</pre>
  *
- * <p>Every instance carries {@link #getCode()} (C {@code aimux_error_code_t} 1–13, 15–17),
+ * <p>Every instance carries {@link #getCode()} (C {@code aimux_error_code_t} 1–17),
  * {@link #getStatusCode()} (HTTP or {@code -1}), {@link #getRetryMs()} (hint
  * or {@code -1}; {@code 0} = retry now) and {@link #isRetryable()}. Message
  * text comes from the C layer.
@@ -42,10 +42,8 @@ public class AimuxException extends RuntimeException {
     private static final long serialVersionUID = 1L;
 
     // ── aimux_error_code_t (aimux-error.h) ──────────────────────────────────
-    // 14 variant codes (1–14; 1 is the catch-all OTHER, 14 = RETRY reclaiming
-    // the slot the pre-unification Other vacated); every HTTP-shaped failure
-    // 15 variant codes (1–13 and 15–17; 1 is the catch-all OTHER; 4 is retired —
-    // the legacy Tool variant — and 14 is reserved); every HTTP-shaped failure
+    // 16 variant codes (1–17; 1 is the catch-all OTHER; 4 is retired — the
+    // legacy Tool variant; 14 = RETRY); every HTTP-shaped failure
     // arrives as AIMUX_E_API_CALL. A code outside that set is a header/library
     // mismatch and fails with IllegalStateException, never an AimuxException.
     // Recording failures are a different type: see RecordingException.
@@ -73,8 +71,7 @@ public class AimuxException extends RuntimeException {
     private final long retryMs;
 
     // Set once by the fromC construction path; false for local / synthesized
-    // failures. Not a constructor param so the subclass constructors keep
-    // failures. Not a constructor param so the 15 subclass constructors keep
+    // failures. Not a constructor param so the 16 subclass constructors keep
     // their public signatures.
     private boolean retryable;
 
@@ -106,8 +103,7 @@ public class AimuxException extends RuntimeException {
 
     // ── Accessors ───────────────────────────────────────────────────────────
 
-    /** C {@code aimux_error_code_t} value (1–14). */
-    /** C {@code aimux_error_code_t} value (1–13, 15–17). */
+    /** C {@code aimux_error_code_t} value (1–17). */
     public int getCode() {
         return code;
     }
@@ -144,9 +140,7 @@ public class AimuxException extends RuntimeException {
      * every returned string. Does not own the pointer: the caller
      * ({@link AimuxResult#expectAimuxError}) frees the returned error afterwards
      * (retry attempt errors are new owned copies and are freed here).
-     * A code outside 1–14 is a header/library mismatch →
-     * ({@link AimuxResult#expectAimuxError}) frees the returned error afterwards.
-     * A code outside 1–13 / 15–17 is a header/library mismatch →
+     * A code outside 1–17 is a header/library mismatch →
      * {@link IllegalStateException}.
      */
     static AimuxException fromC(Pointer error, String prefix) {

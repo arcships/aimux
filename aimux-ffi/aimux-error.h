@@ -6,7 +6,7 @@
  * trailing out-parameter, which remains at its documented sentinel on failure.
  *
  * Every non-NULL error has one non-zero `aimux_error_code_t` and one message.
- * Codes 1..14 come from `AiMuxError`, 100..105 from
+ * Codes 1..17 come from `AiMuxError`, 100..105 from
  * `RecordingError`, and 200..206 identify failures detected while crossing
  * the C ABI. Higher-level bindings reconstruct their native error types from
  * that code; they map all 200..206 codes to the language's existing

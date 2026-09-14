@@ -15,7 +15,7 @@
  * Getter strings are caller-owned (`aimux_free_string`). See aimux-error.h.
  *
  * Each prototype below identifies its expected high-level error:
- *   [AiMuxError]      codes 1..14
+ *   [AiMuxError]      codes 1..17
  *   [RecordingError]  codes 100..105
  *   [C ABI]           no expected high-level code
  * Every fallible call can additionally return a C ABI failure (200..206).

@@ -1,17 +1,17 @@
 package ai.arcships.aimux
 
 import com.sun.jna.Pointer
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.builtins.serializer
 
 /**
  * Machine-readable codes matching aimux-ffi `aimux_error_code_t` (aimux-error.h).
- * 1..13 and 15..17 mirror the 15 core variants (1 is the catch-all `Other`;
- * 4 is retired — the legacy `Tool` variant — and 14 is reserved). The
+ * 1..17 mirror the 16 core variants (1 is the catch-all `Other`;
+ * 4 is retired — the legacy `Tool` variant; 14 = `Retry`). The
  * per-status codes (Provider, Http, RateLimited, Auth, ModelNotFound) are
  * gone, every HTTP-shaped failure arrives as [AIMUX_E_API_CALL].
  */
@@ -55,8 +55,7 @@ const val AIMUX_E_RETRY: Int = 14
  * }
  * ```
  *
- * Transport: Rust → C `aimux_error_t *` with code 1..14 → [fromC].
- * Transport: Rust → C `aimux_error_t *` with code 1..13 / 15..17 → [fromC].
+ * Transport: Rust → C `aimux_error_t *` with code 1..17 → [fromC].
  * Primary path is not a JSON
  * error envelope.
  */
@@ -87,10 +86,7 @@ sealed class AimuxException(
          * string. Does not own the pointer: the caller ([expectAimuxError]) frees
          * the returned error afterwards (retry attempt errors are new owned
          * copies and are freed here). Code [AIMUX_OK] or a code outside
-         * 1..14 is a header/library mismatch and throws [IllegalStateException].
-         * the returned error afterwards. Code [AIMUX_OK] or a code outside
-         * 1..13 / 15..17 is a header/library mismatch and throws
-         * [IllegalStateException].
+         * 1..17 is a header/library mismatch and throws [IllegalStateException].
          */
         @JvmStatic
         internal fun fromC(error: Pointer, prefix: String = ""): AimuxException {
@@ -184,13 +180,16 @@ sealed class AimuxException(
             json?.let(Json::parseToJsonElement)
         } catch (_: Exception) {
             null
+        }
+
         /** Response headers arrive as one JSON object string of string→string pairs. */
         private fun headerMap(json: String?): Map<String, String>? =
             (parseJson(json) as? JsonObject)?.mapValues { (_, value) ->
                 (value as? JsonPrimitive)?.content ?: value.toString()
+            }
+
         /**
-         * Build the subclass for a core / C error code (1..14).
-         * Build the subclass for a core / C error code (1..13 / 15..17).
+         * Build the subclass for a core / C error code (1..17).
          *
          * Any other code — [AIMUX_OK] on a failure path or a code this binding
          * does not know — is a header/library mismatch and throws

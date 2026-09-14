@@ -12,7 +12,7 @@
 //! value on failure (the out-parameter is left at its sentinel: handle 0,
 //! pointer NULL). Every non-NULL error has one code from [`aimux_error_code`]
 //! and one message from [`aimux_error_message`], and is released exactly once
-//! with [`aimux_error_free`]. Codes 1..14 come from `AiMuxError`, 100..105
+//! with [`aimux_error_free`]. Codes 1..17 come from `AiMuxError`, 100..105
 //! from `RecordingError`, and 200..206 identify failures detected while
 //! crossing the C ABI.
 //!
@@ -3578,7 +3578,7 @@ mod tests {
         assert_eq!(aimux_error_code(e), AIMUX_E_ABORTED);
         assert_eq!(msg(e), "request aborted");
 
-        // Retry extends the contiguous run to 1..14.
+        // Retry fills slot 14 between Aborted and the tool-call codes.
         let e = boxed(AiMuxError::Retry(RetryError {
             reason: RetryErrorReason::ErrorNotRetryable,
             errors: vec![AiMuxError::Other("bad".into())],

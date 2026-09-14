@@ -27,7 +27,7 @@ const (
 	CodeOther               Code = 1
 	CodeJSONParse           Code = 2
 	CodeInvalidResponseData Code = 3
-	// 4 is retired (the legacy Tool variant); 14 is reserved.
+	// 4 is retired (the legacy Tool variant).
 	CodeInvalidArgument          Code = 5
 	CodeInvalidPrompt            Code = 6
 	CodeTokenExpired             Code = 7

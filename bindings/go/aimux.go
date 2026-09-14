@@ -1125,7 +1125,7 @@ func cstr(p *C.char) string {
 // ── Error decoding ───────────────────────────────────────────────────────────
 //
 // Every fallible C call returns *C.aimux_error_t: nil = success, non-nil
-// = failure. The unified code space distinguishes AiMuxError (1..14),
+// = failure. The unified code space distinguishes AiMuxError (1..17),
 // RecordingError (100..105), and failures detected by the C ABI (200..206).
 // The latter collapse to a plain error in Go; no public Go error type is added
 // for those implementation failures. Every helper frees the pointer once.
@@ -1150,8 +1150,7 @@ func expectFfiError(e *C.aimux_error_t) error {
 	return ffiError(e)
 }
 
-// expectAimuxError decodes an [AiMuxError] call: nil → nil; 1..14 →
-// expectAimuxError decodes an [AiMuxError] call: nil → nil; 1..13, 15..17 →
+// expectAimuxError decodes an [AiMuxError] call: nil → nil; 1..17 →
 // *Error; 200..206 → plain C ABI error. Any other code is an ABI contract
 // violation.
 func expectAimuxError(e *C.aimux_error_t) error {

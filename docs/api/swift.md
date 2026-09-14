@@ -107,8 +107,7 @@ have no Swift type — see "C ABI failures" below.
 Every fallible C function returns an opaque `aimux_error_t *`
 (`OpaquePointer?`): `NULL` = success (the result is in the trailing
 out-parameter), non-`NULL` = failure. One unified code selects `AimuxError`
-(1...14), `RecordingError` (100...105), or a C ABI failure (200...206).
-(1...13 and 15...17; 4 retired, 14 reserved), `RecordingError` (100...105),
+(1...17; 4 retired), `RecordingError` (100...105),
 or a C ABI failure (200...206).
 The three decoders enforce the range expected by each call and restore the
 Swift error type; 200...206 collapses to `DecodingError.dataCorrupted`.

@@ -215,14 +215,13 @@ class ErrorsTest {
         assertThat(noKey.retryable).isFalse()
     }
 
-    /** A code outside 1..14 is a header/library mismatch, not an error type. */
     /** A code outside the enum is a header/library mismatch, not an error type. */
     @Test
     fun `createByCode rejects codes outside the enum`() {
         assertThatThrownBy { AimuxException.createByCode(999, "?") }
             .isInstanceOf(IllegalStateException::class.java)
-        // 15 is the first unassigned value and is rejected.
-        assertThatThrownBy { AimuxException.createByCode(15, "?") }
+        // 18 is the first unassigned value and is rejected.
+        assertThatThrownBy { AimuxException.createByCode(18, "?") }
             .isInstanceOf(IllegalStateException::class.java)
         assertThatThrownBy { AimuxException.createByCode(AIMUX_OK, "?") }
             .isInstanceOf(IllegalStateException::class.java)

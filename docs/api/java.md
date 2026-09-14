@@ -87,8 +87,7 @@ Every instance has:
 | Field | Meaning |
 |-------|---------|
 | `getMessage()` | human-readable text from C |
-| `getCode()` | `aimux_error_code_t` value 1–14, where 14 = `Retry` (matches `aimux-error.h`) |
-| `getCode()` | `aimux_error_code_t` value 1–13 or 15–17 (4 retired, 14 reserved; matches `aimux-error.h`) |
+| `getCode()` | `aimux_error_code_t` value 1–17 (4 retired, 14 = `Retry`; matches `aimux-error.h`) |
 | `getStatusCode()` | HTTP status, or `-1` |
 | `getRetryMs()` | rate-limit hint, or `-1` (`0` = retry now) |
 | `isRetryable()` | the `AiMuxError` retry verdict (not derivable from status) |
@@ -154,8 +153,7 @@ types and share no base beyond `RuntimeException`.
 Transport: every fallible C call returns an opaque `aimux_error_t *`
 (JNA `Pointer`) — `null` on success with the result in a trailing out-parameter
 (`LongByReference` handle / `PointerByReference` JSON), non-null on failure.
-`AimuxResult` reads one unified code: 1–14 restores the matching
-`AimuxResult` reads one unified code: 1–13 / 15–17 restores the matching
+`AimuxResult` reads one unified code: 1–17 restores the matching
 `AimuxException` subclass, 100–105 restores `RecordingException`, and 200–206
 becomes `IllegalStateException("aimux ffi: …")`. Payload getters are read only
 under their owning AiMuxError code; a `RetryError`'s attempt errors are new

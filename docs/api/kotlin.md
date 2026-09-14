@@ -56,8 +56,7 @@ Two aimux exception types, each mirroring its own Rust type — **AiMux**
 (`AimuxException`) and **recorder** (`RecordingException`). They share no base
 beyond `RuntimeException`; catch each on its own. Every fallible C call returns
 an `aimux_error_t *` (null = success, result in the out-parameter). The
-binding reads one unified code: 1..14 restores an `AimuxException` subclass,
-binding reads one unified code: 1..13 / 15..17 restores an `AimuxException` subclass,
+binding reads one unified code: 1..17 restores an `AimuxException` subclass,
 100..105 restores `RecordingException`, and 200..206 becomes
 `IllegalStateException("aimux ffi: …")`. Payload getters are read only under
 their owning AiMuxError code.
@@ -108,8 +107,7 @@ try {
 
 | Field | Meaning |
 |-------|---------|
-| `code` | `AIMUX_E_*` matching C `aimux_error_code_t` (1..14, where 14 = `Retry`; 1 is the catch-all `Other`) |
-| `code` | `AIMUX_E_*` matching C `aimux_error_code_t` (1..13 and 15..17; 1 is the catch-all `Other`; 4 is retired — the legacy `Tool` variant — and 14 is reserved) |
+| `code` | `AIMUX_E_*` matching C `aimux_error_code_t` (1..17; 1 is the catch-all `Other`; 4 is retired — the legacy `Tool` variant; 14 = `Retry`) |
 | `status` | HTTP status when known; otherwise `-1` |
 | `retryMs` | Rate-limit hint in ms; `-1` if none; `0` = retry immediately |
 
