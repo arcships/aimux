@@ -22,6 +22,18 @@ pub struct AnthropicResponse {
     pub context_management: Option<Value>,
 }
 
+/// Origin of an Anthropic programmatic tool call.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum ToolCallCaller {
+    #[serde(rename = "code_execution_20250825")]
+    CodeExecution20250825 { tool_id: String },
+    #[serde(rename = "code_execution_20260120")]
+    CodeExecution20260120 { tool_id: String },
+    #[serde(rename = "direct")]
+    Direct,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum ContentBlock {
@@ -32,6 +44,8 @@ pub enum ContentBlock {
         id: String,
         name: String,
         input: Value,
+        #[serde(default)]
+        caller: Option<ToolCallCaller>,
     },
     /// Anthropic extended-thinking block. Carries the reasoning text and an
     /// opaque `signature` (required to send the thinking block back in a

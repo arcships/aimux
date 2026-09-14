@@ -20,7 +20,8 @@ use aimux_provider_utils::HttpRequest;
 
 use super::GoogleConfig;
 use super::convert::{
-    build_request_body_with_warnings, convert_usage, extract_sources, parse_finish_reason,
+    build_request_body_with_warnings, code_execution_tool_name, convert_usage, extract_sources,
+    parse_finish_reason,
 };
 use super::types::{Candidate, GenerateContentResponse, GoogleStreamEvent};
 
@@ -118,6 +119,7 @@ impl LanguageModel for GoogleModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
@@ -140,7 +142,8 @@ impl LanguageModel for GoogleModel {
             AiMuxError::InvalidResponseData("no candidates in response".to_string())
         })?;
 
-        let (content, has_tool_calls) = extract_content_from_candidate(&candidate);
+        let (content, has_tool_calls) =
+            extract_content_from_candidate(&candidate, &code_execution_tool_name);
 
         let finish_reason = candidate
             .finish_reason
@@ -187,6 +190,7 @@ impl LanguageModel for GoogleModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
         let endpoint = self.stream_endpoint();
@@ -431,10 +435,12 @@ impl LanguageModel for GoogleModel {
                                     yield Ok(StreamPart::ToolCall {
                                         tool_call_id: id,
                                         tool_name: name.to_string(),
-                                        input: args,
+                                        input: Value::String(args.to_string()),
                                         provider_executed: None,
                                         dynamic: None,
                                         thought_signature,
+                                        invalid: None,
+                                        error: None,
                                         provider_metadata: thought_sig_meta.clone(),
                                     });
                                     has_tool_calls = true;
@@ -450,21 +456,29 @@ impl LanguageModel for GoogleModel {
                                         block_counter += 1;
                                         last_code_execution_tool_call_id = Some(id.clone());
                                         yield Ok(StreamPart::ToolCall {
-                                            tool_call_id: id,
-                                            tool_name: "code_execution".to_string(),
-                                            input: ec.clone(),
-                                            provider_executed: None,
+                                            tool_call_id: id.clone(),
+                                            tool_name: code_execution_tool_name.clone(),
+                                            input: Value::String(ec.to_string()),
+                                            provider_executed: Some(true),
                                             dynamic: None,
                                             thought_signature: None,
-                                            provider_metadata: None,
+                                            invalid: None,
+                                            error: None,
+                                            provider_metadata: Some(server_tool_metadata(
+                                                &id,
+                                                "code_execution",
+                                                None,
+                                            )),
                                         });
                                         // provider-executed → does NOT set has_tool_calls
                                     }
                                 } else if let Some(cer) = part.get("codeExecutionResult") {
                                     // Result corresponds to the most recent
-                                    // executableCode part.
+                                    // executableCode part. Gemini may emit
+                                    // several results for that one call, so
+                                    // retain the association until a new call.
                                     if let Some(call_id) =
-                                        last_code_execution_tool_call_id.take()
+                                        last_code_execution_tool_call_id.as_ref()
                                     {
                                         let outcome =
                                             cer.get("outcome").cloned().unwrap_or(json!(null));
@@ -474,13 +488,17 @@ impl LanguageModel for GoogleModel {
                                             .map(std::string::ToString::to_string)
                                             .unwrap_or_default();
                                         yield Ok(StreamPart::ToolResult {
-                                            tool_call_id: call_id,
-                                            tool_name: "code_execution".to_string(),
+                                            tool_call_id: call_id.clone(),
+                                            tool_name: code_execution_tool_name.clone(),
                                             result: json!({ "outcome": outcome, "output": output }),
                                             is_error: None,
                                             preliminary: None,
                                             dynamic: None,
-                                            provider_metadata: None,
+                                            provider_metadata: Some(server_tool_metadata(
+                                                call_id,
+                                                "code_execution",
+                                                None,
+                                            )),
                                         });
                                     }
                                 } else if let Some(tc) = part.get("toolCall") {
@@ -506,10 +524,12 @@ impl LanguageModel for GoogleModel {
                                     yield Ok(StreamPart::ToolCall {
                                         tool_call_id: id,
                                         tool_name: format!("server:{tool_type}"),
-                                        input: args,
-                                        provider_executed: None,
-                                        dynamic: None,
+                                        input: Value::String(args.to_string()),
+                                        provider_executed: Some(true),
+                                        dynamic: Some(true),
                                         thought_signature: None,
+                                        invalid: None,
+                                        error: None,
                                         provider_metadata: Some(server_meta),
                                     });
                                     // provider-executed → does NOT set has_tool_calls
@@ -655,6 +675,21 @@ impl LanguageModel for GoogleModel {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+fn server_tool_metadata(
+    tool_call_id: &str,
+    server_tool_type: &str,
+    thought_signature: Option<&str>,
+) -> Value {
+    let mut payload = json!({
+        "serverToolCallId": tool_call_id,
+        "serverToolType": server_tool_type,
+    });
+    if let Some(signature) = thought_signature {
+        payload["thoughtSignature"] = json!(signature);
+    }
+    json!({ "google": payload })
+}
+
 /// Extract `GenerateContent` items from a non-streaming candidate.
 ///
 /// Returns `(content, has_tool_calls)` so the caller can disambiguate the
@@ -665,7 +700,10 @@ impl LanguageModel for GoogleModel {
 ///
 /// Sources extracted from `groundingMetadata.groundingChunks` are appended
 /// after the parts, matching the TS `extractSources` + `content.push(source)`.
-fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent>, bool) {
+fn extract_content_from_candidate(
+    candidate: &Candidate,
+    code_execution_tool_name: &str,
+) -> (Vec<GenerateContent>, bool) {
     let mut content = Vec::new();
     let mut has_tool_calls = false;
     let mut source_id = 0usize;
@@ -698,17 +736,18 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                     let id = format!("call-{}", content.len());
                     last_code_execution_tool_call_id = Some(id.clone());
                     content.push(GenerateContent::ToolCall {
-                        tool_call_id: id,
-                        tool_name: "code_execution".to_string(),
-                        input: ec.clone(),
-                        provider_executed: None,
+                        tool_call_id: id.clone(),
+                        tool_name: code_execution_tool_name.to_string(),
+                        input: ec.to_string(),
+                        provider_executed: Some(true),
                         dynamic: None,
                         thought_signature: None,
-                        provider_metadata: None,
+                        provider_metadata: Some(server_tool_metadata(&id, "code_execution", None)),
                     });
                 }
             } else if let Some(cer) = part.get("codeExecutionResult") {
-                if let Some(call_id) = last_code_execution_tool_call_id.take() {
+                // One executableCode may be followed by multiple results.
+                if let Some(call_id) = last_code_execution_tool_call_id.as_ref() {
                     let outcome = cer.get("outcome").cloned().unwrap_or(json!(null));
                     let output = cer
                         .get("output")
@@ -716,13 +755,17 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                         .map(std::string::ToString::to_string)
                         .unwrap_or_default();
                     content.push(GenerateContent::ToolResult {
-                        tool_call_id: call_id,
-                        tool_name: "code_execution".to_string(),
+                        tool_call_id: call_id.clone(),
+                        tool_name: code_execution_tool_name.to_string(),
                         result: json!({ "outcome": outcome, "output": output }),
                         is_error: None,
                         preliminary: None,
                         dynamic: None,
-                        provider_metadata: None,
+                        provider_metadata: Some(server_tool_metadata(
+                            call_id,
+                            "code_execution",
+                            None,
+                        )),
                     });
                 }
             } else if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
@@ -768,7 +811,7 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id,
                     tool_name: name,
-                    input,
+                    input: input.to_string(),
                     provider_executed: None,
                     dynamic: None,
                     thought_signature,
@@ -814,9 +857,9 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id,
                     tool_name: format!("server:{tool_type}"),
-                    input,
-                    provider_executed: None,
-                    dynamic: None,
+                    input: input.to_string(),
+                    provider_executed: Some(true),
+                    dynamic: Some(true),
                     thought_signature,
                     provider_metadata: Some(server_meta),
                 });

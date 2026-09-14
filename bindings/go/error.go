@@ -10,9 +10,9 @@ import (
 )
 
 // Code is the machine-readable Aimux error code. Values match
-// aimux-ffi aimux_error_code_t (1..14 = core AiMuxError variants;
-// 1 is the catch-all Other, 14 = Retry).
-// A code outside that set is a header/library mismatch and expectAimuxError
+// aimux-ffi aimux_error_code_t (1..3, 5..17; 4 is retired). Retry is 14;
+// tool-call errors occupy 15..17. A code outside that set is a header/library
+// mismatch and expectAimuxError
 // panics rather than inventing an "unknown" variant. Recording failures are
 // a different type: see RecordingError.
 //
@@ -23,11 +23,11 @@ import (
 type Code int
 
 const (
-	CodeOK                       Code = 0
-	CodeOther                    Code = 1
-	CodeJSONParse                Code = 2
-	CodeInvalidResponseData      Code = 3
-	CodeTool                     Code = 4
+	CodeOK                  Code = 0
+	CodeOther               Code = 1
+	CodeJSONParse           Code = 2
+	CodeInvalidResponseData Code = 3
+	// 4 is retired (the legacy Tool variant).
 	CodeInvalidArgument          Code = 5
 	CodeInvalidPrompt            Code = 6
 	CodeTokenExpired             Code = 7
@@ -38,6 +38,9 @@ const (
 	CodeTimeout                  Code = 12
 	CodeAborted                  Code = 13
 	CodeRetry                    Code = 14
+	CodeNoSuchTool               Code = 15
+	CodeInvalidToolInput         Code = 16
+	CodeToolCallRepair           Code = 17
 )
 
 // String returns the core error_type name (e.g. "ApiCall", "TokenExpired").
@@ -50,8 +53,6 @@ func (c Code) String() string {
 		return "JsonParse"
 	case CodeInvalidResponseData:
 		return "InvalidResponseData"
-	case CodeTool:
-		return "Tool"
 	case CodeInvalidArgument:
 		return "InvalidArgument"
 	case CodeInvalidPrompt:
@@ -70,6 +71,12 @@ func (c Code) String() string {
 		return "Timeout"
 	case CodeAborted:
 		return "Aborted"
+	case CodeNoSuchTool:
+		return "NoSuchTool"
+	case CodeInvalidToolInput:
+		return "InvalidToolInput"
+	case CodeToolCallRepair:
+		return "ToolCallRepair"
 	case CodeOther:
 		return "Other"
 	case CodeRetry:
@@ -79,10 +86,10 @@ func (c Code) String() string {
 	}
 }
 
-// codeFromC maps a C aimux_error_code_t (1..14); false for any other
-// value.
+// codeFromC maps a C aimux_error_code_t (1..3, 5..17); false for any other
+// value, including retired code 4.
 func codeFromC(code int) (Code, bool) {
-	if code >= int(CodeOther) && code <= int(CodeRetry) {
+	if code >= int(CodeOther) && code <= int(CodeToolCallRepair) && code != 4 {
 		return Code(code), true
 	}
 	return 0, false
@@ -114,6 +121,10 @@ func codeFromC(code int) (Code, bool) {
 //   - ProviderID: CodeNoSuchProvider payload
 //   - Reason / Errors: CodeRetry payload — why retrying stopped, and the
 //     per-attempt history
+//   - ToolName / AvailableTools: CodeNoSuchTool payload (ToolName is shared
+//     with CodeInvalidToolInput)
+//   - ToolInput: CodeInvalidToolInput payload
+//   - OriginalError: CodeToolCallRepair payload
 type Error struct {
 	Code    Code
 	Message string
@@ -149,6 +160,10 @@ type Error struct {
 	// with the full per-code payload). CodeRetry only.
 	Reason RetryErrorReason
 	Errors []*Error
+	ToolName        string // CodeNoSuchTool / CodeInvalidToolInput: tool name
+	AvailableTools  []string
+	ToolInput       string // CodeInvalidToolInput: raw argument text
+	OriginalError   json.RawMessage // CodeToolCallRepair: unrepaired error
 }
 
 // RetryErrorReason explains why operation retry stopped. Values are the

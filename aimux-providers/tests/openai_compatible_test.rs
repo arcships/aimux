@@ -595,7 +595,7 @@ macro_rules! openai_compatible_tool_tests {
                     GenerateContent::ToolCall { tool_call_id, tool_name, input, .. } => {
                         assert_eq!(tool_call_id, "call_abc");
                         assert_eq!(tool_name, "get-weather");
-                        assert_eq!(input, &json!({"city": "SF"}));
+                        assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
                     }
                     other => panic!("expected ToolCall, got {:?}", other),
                 }
@@ -638,7 +638,7 @@ macro_rules! openai_compatible_tool_tests {
                 let (id, name, input) = tool_call.expect("should have ToolCall");
                 assert_eq!(id, "call_abc");
                 assert_eq!(name, "get-weather");
-                assert_eq!(input, json!({"city": "SF"}));
+                assert_eq!(input, Value::String(r#"{"city":"SF"}"#.into()));
             }
         }
         }
@@ -691,7 +691,7 @@ macro_rules! openai_compatible_tool_tests {
                     GenerateContent::ToolCall { tool_call_id, tool_name, input, .. } => {
                         assert_eq!(tool_call_id, "call_abc");
                         assert_eq!(tool_name, "get-weather");
-                        assert_eq!(input, &json!({"city": "SF"}));
+                        assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
                     }
                     other => panic!("expected ToolCall, got {:?}", other),
                 }
@@ -734,7 +734,7 @@ macro_rules! openai_compatible_tool_tests {
                 let (id, name, input) = tool_call.expect("should have ToolCall");
                 assert_eq!(id, "call_abc");
                 assert_eq!(name, "get-weather");
-                assert_eq!(input, json!({"city": "SF"}));
+                assert_eq!(input, Value::String(r#"{"city":"SF"}"#.into()));
             }
         }
         }

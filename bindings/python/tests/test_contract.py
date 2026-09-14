@@ -10,7 +10,7 @@ Pure model-layer tests: no native library needed.
 import json
 from pathlib import Path
 
-from aimux.wrapper import GenerateContent, GenerateTextOptions, parse_stream_part
+from aimux.wrapper import GenerateContent, GenerateTextOptions, ModelMessage, parse_stream_part
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -95,7 +95,7 @@ def test_generate_content_fixtures_decode_into_typed_variants():
     # Source's optionals.
     tool_call = by_name["generate_content_tool_call"]
     assert tool_call.tool_call_id == "call_1"
-    assert tool_call.input == {"city": "Paris"}
+    assert tool_call.input == '{"city":"Paris"}'
     assert tool_call.provider_executed is True
 
     file_part = by_name["generate_content_file"]
@@ -104,3 +104,20 @@ def test_generate_content_fixtures_decode_into_typed_variants():
     source = by_name["generate_content_source_unset_optionals"]
     assert source.url is None
     assert source.title is None
+
+
+def test_provider_executed_tool_transcript_message_fixture_roundtrips():
+    message = ModelMessage.model_validate_json(
+        _fixture_json("model_message_provider_executed_tool_transcript")
+    )
+    call, result = message.content
+    assert call.provider_executed is True
+    assert call.tool_name == "search"
+    assert result.tool_name == "search"
+    assert result.is_error is False
+    assert result.preliminary is True
+    assert result.dynamic is True
+
+    reencoded = message.model_dump_json(exclude_none=True)
+    decoded = ModelMessage.model_validate_json(reencoded)
+    assert decoded == message

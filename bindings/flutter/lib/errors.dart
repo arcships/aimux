@@ -4,7 +4,7 @@
 // Transport (aimux-error.h): every fallible C call returns
 // `aimux_error_t *` — NULL on success (the result is in the trailing
 // out-param), non-NULL on failure (out-param at its sentinel: 0 / NULL). The
-// unified code selects AiMuxError (1..14), RecordingError (100..105), or a
+// unified code selects AiMuxError (1..17), RecordingError (100..105), or a
 // C ABI failure (200..206). The last range maps to
 // StateError('aimux ffi: …'); Dart does not expose seven additional classes.
 // Every field is copied before the error is released with `aimux_error_free`
@@ -22,9 +22,8 @@ import 'package:ffi/ffi.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Machine-readable codes. Values match C `aimux_error_code_t` / Go `Code`.
-/// 14 live variant codes: 1–14 (1 is the catch-all, [retry] at 14 reclaims
-/// the slot the pre-unification `Other` vacated). A code outside that
-/// set is a header/library mismatch and fails with [StateError], not an
+/// 16 variant codes: 1–17 (1 is the catch-all; 4 is retired). A code outside
+/// that set is a header/library mismatch and fails with [StateError], not an
 /// error type. Every HTTP-shaped failure
 /// arrives as [apiCall], classified
 /// by [AimuxException.status] (401 auth, 404 model, 429 rate limit;
@@ -34,7 +33,6 @@ abstract final class AimuxErrorCode {
   static const int ok = 0;
   static const int jsonParse = 2;
   static const int invalidResponseData = 3;
-  static const int tool = 4;
   static const int invalidArgument = 5;
   static const int invalidPrompt = 6;
   static const int tokenExpired = 7;
@@ -44,6 +42,9 @@ abstract final class AimuxErrorCode {
   static const int apiCall = 11;
   static const int timeout = 12;
   static const int aborted = 13;
+  static const int noSuchTool = 15;
+  static const int invalidToolInput = 16;
+  static const int toolCallRepair = 17;
   static const int other = 1;
   static const int retry = 14;
 
@@ -51,7 +52,6 @@ abstract final class AimuxErrorCode {
     ok: 'OK',
     jsonParse: 'JsonParse',
     invalidResponseData: 'InvalidResponseData',
-    tool: 'Tool',
     invalidArgument: 'InvalidArgument',
     invalidPrompt: 'InvalidPrompt',
     tokenExpired: 'TokenExpired',
@@ -61,6 +61,9 @@ abstract final class AimuxErrorCode {
     apiCall: 'ApiCall',
     timeout: 'Timeout',
     aborted: 'Aborted',
+    noSuchTool: 'NoSuchTool',
+    invalidToolInput: 'InvalidToolInput',
+    toolCallRepair: 'ToolCallRepair',
     other: 'Other',
     retry: 'Retry',
   };
@@ -75,7 +78,7 @@ abstract final class AimuxErrorCode {
 
 /// Decode the `aimux_error_t *` [e] returned by a call that can fail in
 /// `AiMuxError` (`[AiMuxError]` in aimux-ffi.h). NULL → returns (success).
-/// Codes 1..14 become [AimuxException]; 200..206 become [StateError].
+/// Codes 1..17 become [AimuxException]; 200..206 become [StateError].
 /// The returned error is always freed.
 void expectAimuxError(Pointer<Void> e, String context) {
   if (e == nullptr) return;
@@ -308,6 +311,10 @@ final Pointer<Void> Function(Pointer<Void>, int) _errorRetryErrorAt =
     _errLib.lookupFunction<Pointer<Void> Function(Pointer<Void>, Int32),
         Pointer<Void> Function(Pointer<Void>, int)>(
         'aimux_error_retry_error_at');
+final _StrOfPtr _errorToolName = _strGetter('aimux_error_tool_name');
+final _StrOfPtr _errorAvailableTools = _strGetter('aimux_error_available_tools');
+final _StrOfPtr _errorToolInput = _strGetter('aimux_error_tool_input');
+final _StrOfPtr _errorOriginalError = _strGetter('aimux_error_original_error');
 
 /// Read an owned getter string for [error]; frees it; null when absent.
 String? _errStr(_StrOfPtr getter, Pointer<Void> error) {
@@ -474,6 +481,8 @@ int construct2(
 /// `responseHeaders`/`responseBody`/`data`), [RetryError] (`reason`/`errors`),
 /// [NoSuchModelError] (`modelId`/`modelType`), [NoSuchProviderError]
 /// (`providerId`).
+/// [NoSuchToolError] (`toolName`/`availableTools`), [InvalidToolInputError]
+/// (`toolName`/`toolInput`), [ToolCallRepairError] (`originalError`).
 class AimuxException implements Exception {
   /// Human-readable failure text.
   final String message;
@@ -504,7 +513,7 @@ class AimuxException implements Exception {
   /// Build the typed subclass from a returned `const aimux_error_t *` [error]
   /// via the `aimux_error_*` getters (payload getters only under the owning
   /// code; getter strings freed here). The caller ([expectAimuxError])
-  /// frees it. A code outside the published set (1..14) is a
+  /// frees it. A code outside 1..17 is a
   /// contract violation and throws [StateError].
   factory AimuxException._decode(Pointer<Void> error, String context) {
     final code = _errorCode(error);
@@ -540,6 +549,25 @@ class AimuxException implements Exception {
         return NoSuchProviderError(message,
             retryable: retryable,
             providerId: _errStr(_errorProviderId, error) ?? '');
+      case AimuxErrorCode.noSuchTool:
+        // The accessor delivers the tool set as a JSON string array, or NULL
+        // when no tool set was supplied.
+        final tools = _errStr(_errorAvailableTools, error);
+        return NoSuchToolError(message,
+            retryable: retryable,
+            toolName: _errStr(_errorToolName, error) ?? '',
+            availableTools:
+                tools == null ? null : (jsonDecode(tools) as List).cast<String>());
+      case AimuxErrorCode.invalidToolInput:
+        return InvalidToolInputError(message,
+            retryable: retryable,
+            toolName: _errStr(_errorToolName, error) ?? '',
+            toolInput: _errStr(_errorToolInput, error) ?? '');
+      case AimuxErrorCode.toolCallRepair:
+        final original = _errStr(_errorOriginalError, error);
+        return ToolCallRepairError(message,
+            retryable: retryable,
+            originalError: original == null ? null : jsonDecode(original));
       default:
         try {
           return AimuxException.fromCode(code, message, retryable: retryable);
@@ -562,8 +590,6 @@ class AimuxException implements Exception {
         return JSONParseError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.invalidResponseData:
         return InvalidResponseDataError(message, status: status, retryMs: retryMs, retryable: retryable);
-      case AimuxErrorCode.tool:
-        return ToolError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.invalidArgument:
         return InvalidArgumentError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.invalidPrompt:
@@ -595,6 +621,12 @@ class AimuxException implements Exception {
         return AimuxTimeoutError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.aborted:
         return RequestAbortedError(message, status: status, retryMs: retryMs, retryable: retryable);
+      case AimuxErrorCode.noSuchTool:
+        return NoSuchToolError(message, status: status, retryMs: retryMs, retryable: retryable);
+      case AimuxErrorCode.invalidToolInput:
+        return InvalidToolInputError(message, status: status, retryMs: retryMs, retryable: retryable);
+      case AimuxErrorCode.toolCallRepair:
+        return ToolCallRepairError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.other:
         return OtherError(message, status: status, retryMs: retryMs, retryable: retryable);
       default:
@@ -624,10 +656,50 @@ class InvalidResponseDataError extends AimuxException {
       : super(code: AimuxErrorCode.invalidResponseData);
 }
 
-/// Tool-related failure.
-class ToolError extends AimuxException {
-  ToolError(super.message, {super.status, super.retryMs, super.retryable})
-      : super(code: AimuxErrorCode.tool);
+/// The model called a tool that is not in the supplied tool set.
+class NoSuchToolError extends AimuxException {
+  /// The tool name the model called.
+  final String toolName;
+
+  /// The available tool names, or null when no tool set was supplied.
+  final List<String>? availableTools;
+
+  NoSuchToolError(super.message,
+      {super.status,
+      super.retryMs,
+      super.retryable,
+      this.toolName = '',
+      this.availableTools})
+      : super(code: AimuxErrorCode.noSuchTool);
+}
+
+/// The model produced tool arguments that fail to parse or validate.
+class InvalidToolInputError extends AimuxException {
+  /// The tool name the model called.
+  final String toolName;
+
+  /// The raw argument text the model produced.
+  final String toolInput;
+
+  InvalidToolInputError(super.message,
+      {super.status,
+      super.retryMs,
+      super.retryable,
+      this.toolName = '',
+      this.toolInput = ''})
+      : super(code: AimuxErrorCode.invalidToolInput);
+}
+
+/// A `repairToolCall` hook itself failed.
+class ToolCallRepairError extends AimuxException {
+  /// The original lookup/parse/validation error the hook was repairing,
+  /// decoded from its externally-tagged wire JSON (the same shape as
+  /// `ToolCall.error`).
+  final dynamic originalError;
+
+  ToolCallRepairError(super.message,
+      {super.status, super.retryMs, super.retryable, this.originalError})
+      : super(code: AimuxErrorCode.toolCallRepair);
 }
 
 /// Invalid argument (null args, invalid or expired handles, …).

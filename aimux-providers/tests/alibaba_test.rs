@@ -304,6 +304,7 @@ async fn converts_tool_call_and_tool_result_messages() {
                 tool_call_id: "call-1".to_string(),
                 tool_name: "get_weather".to_string(),
                 input: json!({"location": "SF"}),
+                provider_executed: None,
                 thought_signature: None,
                 provider_options: None,
             }],
@@ -531,7 +532,7 @@ async fn do_generate_extracts_tool_call() {
         } => {
             assert_eq!(tool_call_id, "call_abc");
             assert_eq!(tool_name, "get-weather");
-            assert_eq!(input, &json!({"city": "SF"}));
+            assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }

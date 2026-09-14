@@ -105,9 +105,42 @@ fn error_value_snapshots_plain_variants() {
             AiMuxError::InvalidResponseData("eof".into()),
             r#"{"InvalidResponseData":"eof"}"#,
         ),
+        // NoSuchTool is pinned in both shapes: `skip_serializing_if` makes
+        // the wire payload vary with `available_tools`.
         (
-            AiMuxError::Tool("tool blew up".into()),
-            r#"{"Tool":"tool blew up"}"#,
+            AiMuxError::NoSuchTool {
+                tool_name: "weathr".into(),
+                available_tools: Some(vec!["weather".into(), "search".into()]),
+                tool_input: Some(r#""hello""#.into()),
+            },
+            r#"{"NoSuchTool":{"tool_name":"weathr","available_tools":["weather","search"],"tool_input":"\"hello\""}}"#,
+        ),
+        (
+            AiMuxError::NoSuchTool {
+                tool_name: "weathr".into(),
+                available_tools: None,
+                tool_input: None,
+            },
+            r#"{"NoSuchTool":{"tool_name":"weathr"}}"#,
+        ),
+        (
+            AiMuxError::InvalidToolInput {
+                tool_name: "weather".into(),
+                tool_input: "{".into(),
+                cause: "JSON parsing failed".into(),
+            },
+            r#"{"InvalidToolInput":{"tool_name":"weather","tool_input":"{","cause":"JSON parsing failed"}}"#,
+        ),
+        (
+            AiMuxError::ToolCallRepair {
+                original_error: Box::new(AiMuxError::NoSuchTool {
+                    tool_name: "weathr".into(),
+                    available_tools: None,
+                    tool_input: None,
+                }),
+                cause: Box::new(AiMuxError::Other("repair model failed".into())),
+            },
+            r#"{"ToolCallRepair":{"original_error":{"NoSuchTool":{"tool_name":"weathr"}},"cause":{"Other":"repair model failed"}}}"#,
         ),
         (
             AiMuxError::InvalidArgument("bad arg".into()),
@@ -153,12 +186,39 @@ fn error_value_snapshots_plain_variants() {
 }
 
 /// The variant set is a cross-language contract of its own: bindings switch on
-/// the wire tag. Adding or removing one is a breaking change (14 variants —
-/// the per-status avatars `Auth`/`ModelNotFound`/`RateLimited` are gone, and
-/// `Http`/`Provider` folded into `ApiCall`: a failed exchange is an `ApiCall`
-/// error classified by `status_code`, transport failures included).
+/// the wire tag. Adding or removing one is a breaking change (16 variants —
+/// the per-status avatars `Auth`/`ModelNotFound`/`RateLimited` are gone,
+/// `Http`/`Provider` folded into `ApiCall` (a failed exchange is an `ApiCall`
+/// error classified by `status_code`, transport failures included), and the
+/// legacy catch-all `Tool` — never constructed anywhere — is replaced by the
+/// typed `NoSuchTool`/`InvalidToolInput`/`ToolCallRepair`).
+/// Compile-time pin: adding an `AiMuxError` variant breaks this match, so
+/// the wire-tag list below and every binding's switch must be updated in the
+/// same change (the runtime assertion alone cannot see additions).
+#[allow(dead_code)]
+fn variant_addition_breaks_this_match(error: &AiMuxError) {
+    match error {
+        AiMuxError::ApiCall(_)
+        | AiMuxError::Retry(_)
+        | AiMuxError::JsonParse(_)
+        | AiMuxError::InvalidResponseData(_)
+        | AiMuxError::NoSuchTool { .. }
+        | AiMuxError::InvalidToolInput { .. }
+        | AiMuxError::ToolCallRepair { .. }
+        | AiMuxError::InvalidArgument(_)
+        | AiMuxError::InvalidPrompt(_)
+        | AiMuxError::TokenExpired(_)
+        | AiMuxError::UnsupportedFunctionality(_)
+        | AiMuxError::NoSuchModel { .. }
+        | AiMuxError::NoSuchProvider { .. }
+        | AiMuxError::Timeout(_)
+        | AiMuxError::Aborted(_)
+        | AiMuxError::Other(_) => {}
+    }
+}
+
 #[test]
-fn variant_set_is_exactly_fourteen() {
+fn variant_set_is_exactly_sixteen() {
     let all = [
         AiMuxError::ApiCall(Box::new(api_error("x"))),
         AiMuxError::Retry(RetryError {
@@ -167,7 +227,24 @@ fn variant_set_is_exactly_fourteen() {
         }),
         AiMuxError::JsonParse("x".into()),
         AiMuxError::InvalidResponseData("x".into()),
-        AiMuxError::Tool("x".into()),
+        AiMuxError::NoSuchTool {
+            tool_name: "x".into(),
+            available_tools: None,
+            tool_input: None,
+        },
+        AiMuxError::InvalidToolInput {
+            tool_name: "x".into(),
+            tool_input: "{}".into(),
+            cause: "x".into(),
+        },
+        AiMuxError::ToolCallRepair {
+            original_error: Box::new(AiMuxError::NoSuchTool {
+                tool_name: "x".into(),
+                available_tools: None,
+                tool_input: None,
+            }),
+            cause: Box::new(AiMuxError::Other("x".into())),
+        },
         AiMuxError::InvalidArgument("x".into()),
         AiMuxError::InvalidPrompt("x".into()),
         AiMuxError::TokenExpired("x".into()),
@@ -202,14 +279,16 @@ fn variant_set_is_exactly_fourteen() {
             "InvalidArgument",
             "InvalidPrompt",
             "InvalidResponseData",
+            "InvalidToolInput",
             "JsonParse",
             "NoSuchModel",
             "NoSuchProvider",
+            "NoSuchTool",
             "Other",
             "Retry",
             "Timeout",
             "TokenExpired",
-            "Tool",
+            "ToolCallRepair",
             "UnsupportedFunctionality",
         ],
         "variant set changed"

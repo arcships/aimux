@@ -109,6 +109,12 @@ type ToolCall struct {
 	ProviderExecuted *bool           `json:"provider_executed,omitempty"`
 	Dynamic          *bool           `json:"dynamic,omitempty"`
 	ThoughtSignature *string         `json:"thought_signature,omitempty"`
+	// ProviderMetadata carries provider-specific data associated with this call.
+	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
+	// Invalid is set by Core when the tool call stays invalid after optional repair.
+	Invalid *bool `json:"invalid,omitempty"`
+	// Error is the typed lookup, parse, schema, or repair failure for an invalid call.
+	Error json.RawMessage `json:"error,omitempty"`
 }
 
 // ContentPart is a single content part in the raw response.

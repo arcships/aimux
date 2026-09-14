@@ -742,7 +742,7 @@ mod do_generate {
             } => {
                 assert_eq!(tool_call_id, "call_O17Uplv4lJvD6DVdIvFFeRMw");
                 assert_eq!(tool_name, "test-tool");
-                assert_eq!(input, &json!({"value": "Spark"}));
+                assert_eq!(input, &Value::String(r#"{"value":"Spark"}"#.into()));
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
@@ -991,7 +991,7 @@ mod do_stream {
             matches!(p, StreamPart::ToolCall { tool_call_id, tool_name, input, .. }
                 if tool_call_id == "call_O17Uplv4lJvD6DVdIvFFeRMw"
                 && tool_name == "test-tool"
-                && input == &json!({"value": "Sparkle Day"}))
+                && input == &Value::String(r#"{"value":"Sparkle Day"}"#.into()))
         });
         assert!(
             tool_call.is_some(),
@@ -1071,7 +1071,7 @@ mod do_stream {
         let tool_call = parts.iter().find(|p| {
             matches!(p, StreamPart::ToolCall { tool_call_id, input, .. }
                 if tool_call_id == "call_O17Uplv4lJvD6DVdIvFFeRMw"
-                && input == &json!({"value": "Sparkle Day"}))
+                && input == &Value::String(r#"{"value":"Sparkle Day"}"#.into()))
         });
         assert!(
             tool_call.is_some(),
@@ -1150,7 +1150,10 @@ mod do_stream {
                     "chatcmpl-tool-b3b307239370432d9910d4b79b4dbbaa"
                 );
                 assert_eq!(tool_name, "searchGoogle");
-                assert_eq!(input, &json!({"query": "latest news on ai"}));
+                assert_eq!(
+                    input,
+                    &Value::String(r#"{"query": "latest news on ai"}"#.into())
+                );
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
@@ -1174,10 +1177,10 @@ mod do_stream {
                 r#"{"id":"chatcmpl-early","object":"chat.completion.chunk","created":1733162241,"model":"gpt-4","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":""}}]},"finish_reason":null}]}"#,
             ),
             &sse_event(
-                r#"{"id":"chatcmpl-early","object":"chat.completion.chunk","created":1733162241,"model":"gpt-4","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":", \"limit\": 10}"}}]},"finish_reason":null}]}"#,
+                r#"{"id":"chatcmpl-early","object":"chat.completion.chunk","created":1733162241,"model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#,
             ),
             &sse_event(
-                r#"{"id":"chatcmpl-early","object":"chat.completion.chunk","created":1733162241,"model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#,
+                r#"{"id":"chatcmpl-early","object":"chat.completion.chunk","created":1733162241,"model":"gpt-4","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":", \"limit\": 10}"}}]},"finish_reason":null}]}"#,
             ),
         ]);
         mock_sse_response(&server, &body).await;
@@ -1265,7 +1268,7 @@ mod do_stream {
         let tool_call = parts.iter().find(|p| {
             matches!(p, StreamPart::ToolCall { tool_call_id, input, .. }
                 if tool_call_id == "call_abc123"
-                && input == &json!({"value": "hello"}))
+                && input == &Value::String(r#"{"value":"hello"}"#.into()))
         });
         assert!(
             tool_call.is_some(),
@@ -1322,7 +1325,7 @@ mod do_stream {
         assert!(parts.iter().any(|p| {
             matches!(p, StreamPart::ToolCall { tool_call_id, input, .. }
                 if tool_call_id == "call_O17Uplv4lJvD6DVdIvFFeRMw"
-                && input == &json!({"value": "Sparkle Day"}))
+                && input == &Value::String(r#"{"value":"Sparkle Day"}"#.into()))
         }));
     }
 

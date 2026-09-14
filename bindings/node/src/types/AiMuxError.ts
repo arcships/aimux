@@ -9,7 +9,12 @@ import type { RetryError } from "./RetryError";
  * failure came from. `ApiCallError` is boxed only to keep the Rust enum
  * compact; serde and every binding still observe the same object shape.
  */
-export type AiMuxError = { "ApiCall": ApiCallError } | { "Retry": RetryError } | { "JsonParse": string } | { "InvalidResponseData": string } | { "Tool": string } | { "InvalidArgument": string } | { "InvalidPrompt": string } | { "TokenExpired": string } | { "UnsupportedFunctionality": string } | { "NoSuchModel": { model_id: string, 
+export type AiMuxError = { "ApiCall": ApiCallError } | { "Retry": RetryError } | { "JsonParse": string } | { "InvalidResponseData": string } | { "NoSuchTool": { tool_name: string, available_tools?: Array<string> | null, 
+/**
+ * Original argument text, when supplied by the provider. Absent in
+ * older serialized errors and errors constructed without a call.
+ */
+tool_input?: string | null, } } | { "InvalidToolInput": { tool_name: string, tool_input: string, cause: string, } } | { "ToolCallRepair": { original_error: AiMuxError, cause: AiMuxError, } } | { "InvalidArgument": string } | { "InvalidPrompt": string } | { "TokenExpired": string } | { "UnsupportedFunctionality": string } | { "NoSuchModel": { model_id: string,
 /**
  * What kind of model was requested (`"languageModel"`,
  * `"imageModel"`, …), the AI SDK's `modelType`.

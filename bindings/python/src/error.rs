@@ -43,7 +43,24 @@ create_exception!(
     AimuxError,
     "Invalid response data"
 );
-create_exception!(aimux, ToolError, AimuxError, "Tool-related failure");
+create_exception!(
+    aimux,
+    NoSuchToolError,
+    AimuxError,
+    "Model called a tool that was not provided"
+);
+create_exception!(
+    aimux,
+    InvalidToolInputError,
+    AimuxError,
+    "Tool call input failed to parse or violated the tool's schema"
+);
+create_exception!(
+    aimux,
+    ToolCallRepairError,
+    AimuxError,
+    "Repair callback failed while handling an invalid tool call"
+);
 create_exception!(aimux, InvalidArgumentError, AimuxError, "Invalid argument");
 create_exception!(aimux, InvalidPromptError, AimuxError, "Invalid prompt");
 create_exception!(aimux, TokenExpiredError, AimuxError, "Access token expired");
@@ -210,22 +227,23 @@ fn recording_py_err(e: &CoreRecordingError) -> PyErr {
 }
 
 pub(crate) fn to_py_err(e: &AiMuxError) -> PyErr {
-    Python::with_gil(|py| match exception_instance(py, e) {
+    Python::with_gil(|py| match variant_instance(py, e) {
         Ok(instance) => PyErr::from_value_bound(instance),
         Err(e) => e,
     })
 }
 
-fn exception_instance<'py>(
-    py: Python<'py>,
-    e: &AiMuxError,
-) -> PyResult<Bound<'py, PyAny>> {
+/// The exception instance for a variant, so `ToolCallRepair` can nest its
+/// `original_error` as a real exception instance.
+fn variant_instance<'py>(py: Python<'py>, e: &AiMuxError) -> PyResult<Bound<'py, PyAny>> {
     let typ = match e {
         AiMuxError::ApiCall(_) => py.get_type_bound::<APICallError>(),
         AiMuxError::Retry(_) => py.get_type_bound::<RetryError>(),
         AiMuxError::JsonParse(_) => py.get_type_bound::<JSONParseError>(),
         AiMuxError::InvalidResponseData(_) => py.get_type_bound::<InvalidResponseDataError>(),
-        AiMuxError::Tool(_) => py.get_type_bound::<ToolError>(),
+        AiMuxError::NoSuchTool { .. } => py.get_type_bound::<NoSuchToolError>(),
+        AiMuxError::InvalidToolInput { .. } => py.get_type_bound::<InvalidToolInputError>(),
+        AiMuxError::ToolCallRepair { .. } => py.get_type_bound::<ToolCallRepairError>(),
         AiMuxError::InvalidArgument(_) => py.get_type_bound::<InvalidArgumentError>(),
         AiMuxError::InvalidPrompt(_) => py.get_type_bound::<InvalidPromptError>(),
         AiMuxError::TokenExpired(_) => py.get_type_bound::<TokenExpiredError>(),
@@ -276,7 +294,7 @@ fn exception_instance<'py>(
             // exception instance (recursing through this same projection).
             let errors = PyList::empty_bound(py);
             for error in &retry.errors {
-                errors.append(exception_instance(py, error)?)?;
+                errors.append(variant_instance(py, error)?)?;
             }
             inst.setattr(
                 "reason",
@@ -309,6 +327,26 @@ fn exception_instance<'py>(
         AiMuxError::NoSuchProvider { provider_id } => {
             inst.setattr("provider_id", provider_id.as_str())?;
         }
+        AiMuxError::NoSuchTool {
+            tool_name,
+            available_tools,
+            tool_input,
+        } => {
+            inst.setattr("tool_name", tool_name.as_str())?;
+            inst.setattr("available_tools", available_tools.clone())?;
+            inst.setattr("tool_input", tool_input.as_deref())?;
+        }
+        AiMuxError::InvalidToolInput {
+            tool_name,
+            tool_input,
+            ..
+        } => {
+            inst.setattr("tool_name", tool_name.as_str())?;
+            inst.setattr("tool_input", tool_input.as_str())?;
+        }
+        AiMuxError::ToolCallRepair { original_error, .. } => {
+            inst.setattr("original_error", variant_instance(py, original_error)?)?;
+        }
         _ => {}
     }
     Ok(inst)
@@ -335,7 +373,15 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "InvalidResponseDataError",
         py.get_type_bound::<InvalidResponseDataError>(),
     )?;
-    m.add("ToolError", py.get_type_bound::<ToolError>())?;
+    m.add("NoSuchToolError", py.get_type_bound::<NoSuchToolError>())?;
+    m.add(
+        "InvalidToolInputError",
+        py.get_type_bound::<InvalidToolInputError>(),
+    )?;
+    m.add(
+        "ToolCallRepairError",
+        py.get_type_bound::<ToolCallRepairError>(),
+    )?;
     m.add(
         "InvalidArgumentError",
         py.get_type_bound::<InvalidArgumentError>(),

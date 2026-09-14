@@ -19,7 +19,9 @@ const ERROR_CLASS_NAMES: &[&str] = &[
     "RetryError",
     "JSONParseError",
     "InvalidResponseDataError",
-    "ToolError",
+    "NoSuchToolError",
+    "InvalidToolInputError",
+    "ToolCallRepairError",
     "InvalidArgumentError",
     "InvalidPromptError",
     "TokenExpiredError",
@@ -176,7 +178,9 @@ fn aimux_error_class_name(error: &AiMuxError) -> &'static str {
         AiMuxError::Retry(_) => "RetryError",
         AiMuxError::JsonParse(_) => "JSONParseError",
         AiMuxError::InvalidResponseData(_) => "InvalidResponseDataError",
-        AiMuxError::Tool(_) => "ToolError",
+        AiMuxError::NoSuchTool { .. } => "NoSuchToolError",
+        AiMuxError::InvalidToolInput { .. } => "InvalidToolInputError",
+        AiMuxError::ToolCallRepair { .. } => "ToolCallRepairError",
         AiMuxError::InvalidArgument(_) => "InvalidArgumentError",
         AiMuxError::InvalidPrompt(_) => "InvalidPromptError",
         AiMuxError::TokenExpired(_) => "TokenExpiredError",
@@ -225,12 +229,12 @@ fn new_registered_error<'env>(
 
 /// Build the exact JS subclass registered for this core variant.
 fn create_aimux_throwable(env: &Env, error: &AiMuxError) -> NapiResult<Error> {
-    Ok(Error::from(create_aimux_error_object(env, error)?.to_unknown()))
+    Ok(Error::from(aimux_error_object(env, error)?.to_unknown()))
 }
 
-/// Instantiate the registered subclass and fill its variant-owned fields.
-/// Recursive: a `Retry` error carries its attempt history as full instances.
-fn create_aimux_error_object<'env>(env: &'env Env, error: &AiMuxError) -> NapiResult<Object<'env>> {
+/// The error instance as an `Object`, so `ToolCallRepair` can nest its
+/// `originalError` as a real registered subclass instance.
+fn aimux_error_object<'env>(env: &'env Env, error: &AiMuxError) -> NapiResult<Object<'env>> {
     let message = error.to_string();
     let mut obj = new_registered_error(env, aimux_error_class_name(error), &message)?;
     if let Some(status) = error.status_code() {
@@ -272,7 +276,7 @@ fn create_aimux_error_object<'env>(env: &'env Env, error: &AiMuxError) -> NapiRe
             obj.set("reason", reason)?;
             let mut attempts = Vec::with_capacity(retry.errors.len());
             for attempt in &retry.errors {
-                attempts.push(create_aimux_error_object(env, attempt)?);
+                attempts.push(aimux_error_object(env, attempt)?);
             }
             obj.set("errors", attempts)?;
         }
@@ -287,6 +291,30 @@ fn create_aimux_error_object<'env>(env: &'env Env, error: &AiMuxError) -> NapiRe
         }
         AiMuxError::NoSuchProvider { provider_id } => {
             obj.set("providerId", provider_id.as_str())?;
+        }
+        AiMuxError::NoSuchTool {
+            tool_name,
+            available_tools,
+            tool_input,
+        } => {
+            obj.set("toolName", tool_name.as_str())?;
+            if let Some(input) = tool_input {
+                obj.set("toolInput", input.as_str())?;
+            }
+            if let Some(tools) = available_tools {
+                obj.set("availableTools", tools.clone())?;
+            }
+        }
+        AiMuxError::InvalidToolInput {
+            tool_name,
+            tool_input,
+            ..
+        } => {
+            obj.set("toolName", tool_name.as_str())?;
+            obj.set("toolInput", tool_input.as_str())?;
+        }
+        AiMuxError::ToolCallRepair { original_error, .. } => {
+            obj.set("originalError", &aimux_error_object(env, original_error)?)?;
         }
         _ => {}
     }

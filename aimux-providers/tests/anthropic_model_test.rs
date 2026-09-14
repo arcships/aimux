@@ -26,13 +26,14 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
+use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::message::{MessageContent, Role};
 use aimux_core::options::{CallOptions, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
+use aimux_core::tool::{FunctionTool, ProviderTool};
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::anthropic::AnthropicConfig;
@@ -132,7 +133,7 @@ fn as_text(item: &GenerateContent) -> &str {
 }
 
 /// Helper to destructure a `GenerateContent::ToolCall`.
-fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
+fn as_tool_call(item: &GenerateContent) -> (&str, &str, &str) {
     match item {
         GenerateContent::ToolCall {
             tool_call_id,
@@ -298,7 +299,7 @@ mod do_generate {
         let (id, name, input) = as_tool_call(&result.content[1]);
         assert_eq!(id, "toolu_1");
         assert_eq!(name, "test-tool");
-        assert_eq!(input, &json!({ "value": "example value" }));
+        assert_eq!(input, &json!(r#"{"value":"example value"}"#));
 
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
         assert_eq!(result.finish_reason.raw.as_deref(), Some("tool_use"));
@@ -459,11 +460,11 @@ mod do_generate {
         let (id_a, name_a, input_a) = as_tool_call(&result.content[0]);
         assert_eq!(id_a, "toolu_a");
         assert_eq!(name_a, "tool-a");
-        assert_eq!(input_a, &json!({ "x": 1 }));
+        assert_eq!(input_a, &json!(r#"{"x":1}"#));
         let (id_b, name_b, input_b) = as_tool_call(&result.content[1]);
         assert_eq!(id_b, "toolu_b");
         assert_eq!(name_b, "tool-b");
-        assert_eq!(input_b, &json!({ "y": 2 }));
+        assert_eq!(input_b, &json!(r#"{"y":2}"#));
     }
 
     /// Tool input may be a nested object.
@@ -502,10 +503,7 @@ mod do_generate {
         let (_, _, input) = as_tool_call(&result.content[0]);
         assert_eq!(
             input,
-            &json!({
-                "nested": { "arr": [1, 2, 3], "flag": true },
-                "items": ["a", "b"],
-            })
+            &json!(r#"{"nested":{"arr":[1,2,3],"flag":true},"items":["a","b"]}"#)
         );
     }
 
@@ -782,6 +780,68 @@ mod do_generate {
         let body = gen_body(default_options(test_prompt())).await;
         assert!(body.get("tools").is_none());
         assert!(body.get("tool_choice").is_none());
+    }
+
+    #[tokio::test]
+    async fn programmatic_tool_caller_reaches_the_public_result() {
+        let server = MockServer::start().await;
+        mock_json(
+            &server,
+            200,
+            json!({
+                "id": "msg_programmatic",
+                "type": "message",
+                "role": "assistant",
+                "content": [{
+                    "type": "tool_use",
+                    "id": "toolu_programmatic",
+                    "name": "test-tool",
+                    "input": { "value": "from code" },
+                    "caller": {
+                        "type": "code_execution_20250825",
+                        "tool_id": "srvtoolu_code",
+                    },
+                }],
+                "model": "claude-3-haiku-20240307",
+                "stop_reason": "tool_use",
+                "usage": { "input_tokens": 100, "output_tokens": 50 },
+            }),
+        )
+        .await;
+        let model = make_model(&server);
+
+        let result = generate_text(
+            &model,
+            "Run the tool",
+            GenerateTextOptions {
+                tools: Some(vec![value_tool()]),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let metadata = result.tool_calls[0]
+            .provider_metadata
+            .as_ref()
+            .expect("caller metadata");
+        assert_eq!(
+            metadata["anthropic"]["caller"],
+            json!({
+                "type": "code_execution_20250825",
+                "toolId": "srvtoolu_code",
+            })
+        );
+        let response_metadata = match &result.response_messages[0].content {
+            MessageContent::Parts(parts) => parts.iter().find_map(|part| match part {
+                ContentPart::ToolCall {
+                    provider_options, ..
+                } => provider_options.as_ref(),
+                _ => None,
+            }),
+            MessageContent::Text(_) => None,
+        };
+        assert_eq!(response_metadata, Some(metadata));
     }
 }
 
@@ -1113,7 +1173,7 @@ mod do_stream {
                 if id == "toolu_01DBsB4vvYLnBDzZ5rBSxSLs"
         )));
 
-        // Final ToolCall carries the parsed accumulated JSON object.
+        // Provider output stays raw until the Core stream wrapper parses it.
         let tool_call = parts
             .iter()
             .find_map(|p| match p {
@@ -1128,7 +1188,10 @@ mod do_stream {
             .expect("a ToolCall part");
         assert_eq!(tool_call.0, "toolu_01DBsB4vvYLnBDzZ5rBSxSLs");
         assert_eq!(tool_call.1, "test-tool");
-        assert_eq!(tool_call.2, &json!({ "value": "Sparkle Day" }));
+        assert_eq!(
+            tool_call.2,
+            &Value::String(r#"{"value":"Sparkle Day"}"#.into())
+        );
 
         // Finish reason reflects tool_use.
         let finish = parts
@@ -1145,6 +1208,188 @@ mod do_stream {
         assert_eq!(finish.0.unified, FinishReasonUnified::ToolCalls);
         assert_eq!(finish.1.input_tokens.total, Some(441));
         assert_eq!(finish.1.output_tokens.total, Some(65));
+    }
+
+    #[tokio::test]
+    async fn renamed_client_provider_tool_is_consistent_across_stream_boundary() {
+        let server = MockServer::start().await;
+        let sse_body = sse_stream(&[
+            json!({
+                "type": "message_start",
+                "message": {
+                    "id": "msg_1",
+                    "model": "claude-3-5-sonnet-latest",
+                    "usage": { "input_tokens": 10, "output_tokens": 1 },
+                },
+            }),
+            json!({
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {
+                    "type": "tool_use",
+                    "id": "tool_1",
+                    "name": "computer",
+                    "input": {},
+                },
+            }),
+            json!({
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {
+                    "type": "input_json_delta",
+                    "partial_json": "{\"action\":\"screenshot\"}",
+                },
+            }),
+            json!({ "type": "content_block_stop", "index": 0 }),
+            json!({
+                "type": "message_delta",
+                "delta": { "stop_reason": "tool_use" },
+                "usage": { "output_tokens": 8 },
+            }),
+            json!({ "type": "message_stop" }),
+        ]);
+        mock_sse(&server, &sse_body).await;
+        let model = make_model(&server);
+        let tool = Tool::Provider(ProviderTool {
+            id: "anthropic.computer_20250124".to_string(),
+            name: "myComputer".to_string(),
+            args: json!({ "displayWidthPx": 1280, "displayHeightPx": 720 }),
+        });
+        let raw_options = CallOptions {
+            tools: Some(vec![tool.clone()]),
+            ..default_options(test_prompt())
+        };
+
+        let raw_parts = collect_stream(model.do_stream(&raw_options).await.unwrap()).await;
+        assert!(raw_parts.iter().any(|part| matches!(
+            part,
+            StreamPart::ToolInputStart { tool_name, .. } if tool_name == "myComputer"
+        )));
+        assert!(raw_parts.iter().any(|part| matches!(
+            part,
+            StreamPart::ToolCall { tool_name, .. } if tool_name == "myComputer"
+        )));
+
+        let result = stream_text(
+            &model,
+            "Take a screenshot",
+            GenerateTextOptions {
+                tools: Some(vec![tool]),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .expect("stream_text should start")
+        .consume()
+        .await
+        .expect("renamed provider tool should pass Core validation");
+        let call = result.tool_calls.first().expect("computer tool call");
+        assert_eq!(call.tool_name, "myComputer");
+        assert_eq!(call.input, json!({ "action": "screenshot" }));
+        assert_eq!(call.invalid, None);
+    }
+
+    #[tokio::test]
+    async fn implicit_streamed_code_execution_is_dynamic_and_keeps_partial_input() {
+        let server = MockServer::start().await;
+        let sse_body = sse_stream(&[
+            json!({
+                "type": "message_start",
+                "message": {
+                    "id": "msg_1",
+                    "model": "claude-sonnet-4-5",
+                    "usage": { "input_tokens": 10, "output_tokens": 1 },
+                },
+            }),
+            json!({
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {
+                    "type": "server_tool_use",
+                    "id": "tool_1",
+                    "name": "code_execution",
+                    "input": {},
+                },
+            }),
+            json!({
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {
+                    "type": "input_json_delta",
+                    "partial_json": "{\"code\":\"print(2)\"}",
+                },
+            }),
+            json!({ "type": "content_block_stop", "index": 0 }),
+            json!({
+                "type": "message_delta",
+                "delta": { "stop_reason": "end_turn" },
+                "usage": { "output_tokens": 8 },
+            }),
+            json!({ "type": "message_stop" }),
+        ]);
+        mock_sse(&server, &sse_body).await;
+        let model = make_model(&server);
+        let web_tool = Tool::Provider(ProviderTool {
+            id: "anthropic.web_search_20260209".to_string(),
+            name: "mySearch".to_string(),
+            args: json!({}),
+        });
+        let options = CallOptions {
+            tools: Some(vec![web_tool.clone()]),
+            ..default_options(test_prompt())
+        };
+
+        let raw_parts = collect_stream(model.do_stream(&options).await.unwrap()).await;
+        assert!(raw_parts.iter().any(|part| matches!(
+            part,
+            StreamPart::ToolInputStart {
+                provider_executed: Some(true),
+                dynamic: Some(true),
+                ..
+            }
+        )));
+        let raw_call = raw_parts
+            .iter()
+            .find_map(|part| match part {
+                StreamPart::ToolCall {
+                    tool_name,
+                    input,
+                    dynamic,
+                    ..
+                } => Some((tool_name, input, dynamic)),
+                _ => None,
+            })
+            .expect("code execution tool call");
+        assert_eq!(raw_call.0, "code_execution");
+        let raw_input: Value = serde_json::from_str(
+            raw_call
+                .1
+                .as_str()
+                .expect("provider input remains raw JSON"),
+        )
+        .expect("valid tool input JSON");
+        assert_eq!(raw_input["type"], "programmatic-tool-call");
+        assert_eq!(raw_input["code"], "print(2)");
+        assert_eq!(raw_call.2, &Some(true));
+
+        let result = stream_text(
+            &model,
+            "Search and analyze",
+            GenerateTextOptions {
+                tools: Some(vec![web_tool]),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .expect("stream_text should start")
+        .consume()
+        .await
+        .expect("dynamic code execution should bypass local lookup");
+        let call = result.tool_calls.first().expect("code execution call");
+        assert_eq!(call.tool_name, "code_execution");
+        assert_eq!(call.input["type"], "programmatic-tool-call");
+        assert_eq!(call.dynamic, Some(true));
+        assert_eq!(call.invalid, None);
     }
 
     /// TS: "should support tools with empty parameters in streaming" — a
@@ -1192,7 +1437,7 @@ mod do_stream {
                 _ => None,
             })
             .expect("a ToolCall part");
-        assert_eq!(tool_call, json!({}));
+        assert_eq!(tool_call, Value::String("{}".into()));
     }
 
     // ── misc SSE scenarios ──────────────────────────────────────────────────
@@ -1347,7 +1592,7 @@ mod do_stream {
             .unwrap();
         assert_eq!(tool_call.0, "toolu_1");
         assert_eq!(tool_call.1, "test-tool");
-        assert_eq!(tool_call.2, &json!({ "value": "x" }));
+        assert_eq!(tool_call.2, &Value::String(r#"{"value":"x"}"#.into()));
     }
 
     /// Two parallel tool_use blocks (index 0 and index 1) each produce their
@@ -1396,9 +1641,9 @@ mod do_stream {
             .collect();
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[0].0, "toolu_a");
-        assert_eq!(tool_calls[0].1, json!({ "a": 1 }));
+        assert_eq!(tool_calls[0].1, Value::String(r#"{"a":1}"#.into()));
         assert_eq!(tool_calls[1].0, "toolu_b");
-        assert_eq!(tool_calls[1].1, json!({ "b": 2 }));
+        assert_eq!(tool_calls[1].1, Value::String(r#"{"b":2}"#.into()));
     }
 
     // ── pre-stream HTTP errors ──────────────────────────────────────────────
@@ -1551,6 +1796,170 @@ mod do_stream {
         assert_eq!(
             meta["anthropic"]["signature"].as_str(),
             Some("sig-part-1sig-part-2")
+        );
+    }
+
+    #[tokio::test]
+    async fn streamed_tool_search_results_follow_their_call_ids() {
+        let server = MockServer::start().await;
+        let sse_body = sse_stream(&[
+            json!({
+                "type": "message_start",
+                "message": {
+                    "id": "msg_tool_search",
+                    "model": "claude-sonnet-4-5",
+                    "usage": { "input_tokens": 10 },
+                },
+            }),
+            json!({
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {
+                    "type": "server_tool_use",
+                    "id": "bm25_call",
+                    "name": "tool_search_tool_bm25",
+                    "input": { "query": "weather" },
+                },
+            }),
+            json!({ "type": "content_block_stop", "index": 0 }),
+            json!({
+                "type": "content_block_start",
+                "index": 1,
+                "content_block": {
+                    "type": "tool_search_tool_result",
+                    "tool_use_id": "bm25_call",
+                    "content": {
+                        "type": "tool_search_tool_search_result",
+                        "tool_references": [{
+                            "type": "tool_reference",
+                            "tool_name": "get_weather",
+                        }],
+                    },
+                },
+            }),
+            json!({ "type": "content_block_stop", "index": 1 }),
+            json!({
+                "type": "content_block_start",
+                "index": 2,
+                "content_block": {
+                    "type": "server_tool_use",
+                    "id": "regex_call",
+                    "name": "tool_search_tool_regex",
+                    "input": { "pattern": "forecast.*" },
+                },
+            }),
+            json!({ "type": "content_block_stop", "index": 2 }),
+            json!({
+                "type": "content_block_start",
+                "index": 3,
+                "content_block": {
+                    "type": "tool_search_tool_result",
+                    "tool_use_id": "regex_call",
+                    "content": {
+                        "type": "tool_search_tool_search_result",
+                        "tool_references": [{
+                            "type": "tool_reference",
+                            "tool_name": "get_forecast",
+                        }],
+                    },
+                },
+            }),
+            json!({ "type": "content_block_stop", "index": 3 }),
+            json!({
+                "type": "message_delta",
+                "delta": { "stop_reason": "end_turn" },
+                "usage": { "output_tokens": 20 },
+            }),
+            json!({ "type": "message_stop" }),
+        ]);
+        mock_sse(&server, &sse_body).await;
+        let model = make_model(&server);
+        let options = CallOptions {
+            tools: Some(vec![
+                Tool::Provider(ProviderTool {
+                    id: "anthropic.tool_search_regex_20251119".to_string(),
+                    name: "regexSearch".to_string(),
+                    args: json!({}),
+                }),
+                Tool::Provider(ProviderTool {
+                    id: "anthropic.tool_search_bm25_20251119".to_string(),
+                    name: "semanticSearch".to_string(),
+                    args: json!({}),
+                }),
+            ]),
+            ..default_options(test_prompt())
+        };
+
+        let parts = collect_stream(model.do_stream(&options).await.unwrap()).await;
+        let result_names: std::collections::HashMap<&str, &str> = parts
+            .iter()
+            .filter_map(|part| match part {
+                StreamPart::ToolResult {
+                    tool_call_id,
+                    tool_name,
+                    ..
+                } => Some((tool_call_id.as_str(), tool_name.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(result_names.get("bm25_call"), Some(&"semanticSearch"));
+        assert_eq!(result_names.get("regex_call"), Some(&"regexSearch"));
+    }
+
+    #[tokio::test]
+    async fn streamed_programmatic_tool_call_keeps_caller_metadata() {
+        let server = MockServer::start().await;
+        let sse_body = sse_stream(&[
+            json!({
+                "type": "message_start",
+                "message": {
+                    "id": "msg_programmatic",
+                    "model": "claude-3-haiku-20240307",
+                    "usage": { "input_tokens": 100 },
+                },
+            }),
+            json!({
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {
+                    "type": "tool_use",
+                    "id": "toolu_programmatic",
+                    "name": "test-tool",
+                    "input": { "value": "from code" },
+                    "caller": {
+                        "type": "code_execution_20260120",
+                        "tool_id": "srvtoolu_code",
+                    },
+                },
+            }),
+            json!({ "type": "content_block_stop", "index": 0 }),
+            json!({
+                "type": "message_delta",
+                "delta": { "stop_reason": "tool_use" },
+                "usage": { "output_tokens": 50 },
+            }),
+            json!({ "type": "message_stop" }),
+        ]);
+        mock_sse(&server, &sse_body).await;
+        let model = make_model(&server);
+        let options = CallOptions {
+            tools: Some(vec![value_tool()]),
+            ..default_options(test_prompt())
+        };
+
+        let parts = collect_stream(model.do_stream(&options).await.unwrap()).await;
+        let metadata = parts.iter().find_map(|part| match part {
+            StreamPart::ToolCall {
+                provider_metadata, ..
+            } => provider_metadata.as_ref(),
+            _ => None,
+        });
+        assert_eq!(
+            metadata.expect("caller metadata")["anthropic"]["caller"],
+            json!({
+                "type": "code_execution_20260120",
+                "toolId": "srvtoolu_code",
+            })
         );
     }
 }

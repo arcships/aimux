@@ -256,6 +256,22 @@ class TypedModelTest {
 // ─────────────────────────────────────────────────────────────────────────────
 class TypedModelRoundTripTest {
 
+    @Test
+    fun `top-level ToolCall provider metadata round-trips`() {
+        val original = ToolCall(
+            toolCallId = "call_1",
+            toolName = "get_weather",
+            input = JsonObject(mapOf("city" to JsonPrimitive("Paris"))),
+            providerMetadata = JsonObject(
+                mapOf("openai" to JsonObject(mapOf("itemId" to JsonPrimitive("item_1")))),
+            ),
+        )
+        val json = AimuxJson.encodeToString(ToolCall.serializer(), original)
+        assertThat(json).contains("\"provider_metadata\"")
+        val decoded = AimuxJson.decodeFromString(ToolCall.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+    }
+
     // ── GenerateContent (externally tagged) ──────────────────────────────
 
     @Test
@@ -368,12 +384,14 @@ class TypedModelRoundTripTest {
             toolCallId = "call_1",
             toolName = "get_weather",
             input = JsonObject(mapOf("location" to JsonPrimitive("Tokyo"))),
+            providerExecuted = true,
             providerOptions = null,
         )
         val json = AimuxJson.encodeToString(ContentPart.serializer(), original)
         val decoded = AimuxJson.decodeFromString(ContentPart.serializer(), json)
         assertThat(decoded).isEqualTo(original)
         assertThat(json).contains("\"tool_call\"")
+        assertThat(json).contains("\"provider_executed\":true")
     }
 
     @Test

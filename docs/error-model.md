@@ -20,7 +20,7 @@
 - C ABI 成功时返回 `NULL` 并写入出参；失败时返回一个由调用方释放一次的
   不透明 `aimux_error_t *`。
 - Go、Java、Kotlin、Swift 和 Flutter 将 C 错误还原为本语言错误。错误码
-  `1..14` 属于核心，`100..105` 属于录制，`200..206` 属于绑定边界。
+  `1..17` 属于核心，`100..105` 属于录制，`200..206` 属于绑定边界。
 
 结构化字段只放在真正拥有它的错误上。例如，HTTP 状态和响应头属于
 `APICallError`，不放进通用基类（retry hint 与 request id 从 `response_headers` 读取）。

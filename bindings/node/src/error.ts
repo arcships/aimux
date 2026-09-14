@@ -78,7 +78,27 @@ export class RetryError extends AimuxError {
 
 export class JSONParseError extends AimuxError {}
 export class InvalidResponseDataError extends AimuxError {}
-export class ToolError extends AimuxError {}
+/** The model called a tool that was not provided (AI SDK `NoSuchToolError`). */
+export class NoSuchToolError extends AimuxError {
+  /** The tool name the model tried to call. */
+  declare readonly toolName: string
+  /** Tools that were available; absent if none were. */
+  declare readonly availableTools?: string[]
+  /** Original argument text, when available. */
+  declare readonly toolInput?: string
+}
+/** A tool call's input failed to parse or violated the tool's schema (AI SDK `InvalidToolInputError`). */
+export class InvalidToolInputError extends AimuxError {
+  /** The tool whose input was invalid. */
+  declare readonly toolName: string
+  /** The raw input text the model produced. */
+  declare readonly toolInput: string
+}
+/** The repair callback failed or returned a call that was still invalid. */
+export class ToolCallRepairError extends AimuxError {
+  /** The failure that triggered repair (a {@link NoSuchToolError} or {@link InvalidToolInputError}). */
+  declare readonly originalError: NoSuchToolError | InvalidToolInputError
+}
 export class InvalidArgumentError extends AimuxError {}
 export class InvalidPromptError extends AimuxError {}
 export class TokenExpiredError extends AimuxError {

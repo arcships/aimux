@@ -63,7 +63,6 @@ void main() {
       final cases = <int, Type>{
         AimuxErrorCode.jsonParse: JSONParseError,
         AimuxErrorCode.invalidResponseData: InvalidResponseDataError,
-        AimuxErrorCode.tool: ToolError,
         AimuxErrorCode.invalidArgument: InvalidArgumentError,
         AimuxErrorCode.invalidPrompt: InvalidPromptError,
         AimuxErrorCode.tokenExpired: TokenExpiredError,
@@ -73,6 +72,9 @@ void main() {
         AimuxErrorCode.apiCall: APICallError,
         AimuxErrorCode.timeout: AimuxTimeoutError,
         AimuxErrorCode.aborted: RequestAbortedError,
+        AimuxErrorCode.noSuchTool: NoSuchToolError,
+        AimuxErrorCode.invalidToolInput: InvalidToolInputError,
+        AimuxErrorCode.toolCallRepair: ToolCallRepairError,
         AimuxErrorCode.other: OtherError,
         AimuxErrorCode.retry: RetryError,
       };
@@ -86,9 +88,10 @@ void main() {
     test('unknown code is rejected with StateError', () {
       // A code outside the published table is an ABI mismatch, not an error
       // kind. 1 is AIMUX_E_OTHER now because Other inherited the old UNKNOWN
-      // slot, so it resolves; 15 is the first unassigned value.
+      // slot, so it resolves; 4 is retired and 18 is the first unassigned value.
       expect(() => AimuxException.fromCode(999, 'future'), throwsStateError);
-      expect(() => AimuxException.fromCode(15, 'unused'), throwsStateError);
+      expect(() => AimuxException.fromCode(4, 'retired'), throwsStateError);
+      expect(() => AimuxException.fromCode(18, 'unassigned'), throwsStateError);
     });
 
     test('bare retry code synthesizes a single-attempt RetryError', () {
@@ -175,11 +178,20 @@ void main() {
       expect(AimuxErrorCode.noSuchProvider, 10);
       expect(AimuxErrorCode.name(AimuxErrorCode.noSuchProvider),
           'NoSuchProvider');
-      // Engine codes are contiguous 1–14.
-      expect(AimuxErrorCode.other, 1);
-      expect(AimuxErrorCode.aborted, 13);
       expect(AimuxErrorCode.retry, 14);
       expect(AimuxErrorCode.name(AimuxErrorCode.retry), 'Retry');
+      // The AIMUX_E_UNKNOWN catch-all is gone and Other took its slot; the
+      // engine codes are 1–17 (4 retired).
+      expect(AimuxErrorCode.other, 1);
+      expect(AimuxErrorCode.aborted, 13);
+      expect(AimuxErrorCode.noSuchTool, 15);
+      expect(AimuxErrorCode.name(AimuxErrorCode.noSuchTool), 'NoSuchTool');
+      expect(AimuxErrorCode.invalidToolInput, 16);
+      expect(AimuxErrorCode.name(AimuxErrorCode.invalidToolInput),
+          'InvalidToolInput');
+      expect(AimuxErrorCode.toolCallRepair, 17);
+      expect(AimuxErrorCode.name(AimuxErrorCode.toolCallRepair),
+          'ToolCallRepair');
     });
   });
 

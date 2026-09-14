@@ -57,6 +57,7 @@ fn provider_tool_name(id: &str) -> Option<&'static str> {
 pub struct ToolNameMapping {
     custom_to_provider: HashMap<String, String>,
     provider_to_custom: HashMap<String, String>,
+    mark_code_execution_dynamic: bool,
 }
 
 impl ToolNameMapping {
@@ -64,18 +65,27 @@ impl ToolNameMapping {
     #[must_use]
     pub fn new(tools: Option<&[Tool]>) -> Self {
         let mut mapping = ToolNameMapping::default();
+        let mut has_web_tool_20260209 = false;
+        let mut has_code_execution = false;
         for tool in tools.unwrap_or(&[]) {
-            if let Tool::Provider(pt) = tool
-                && let Some(provider_name) = provider_tool_name(&pt.id)
-            {
-                mapping
-                    .custom_to_provider
-                    .insert(pt.name.clone(), provider_name.to_string());
-                mapping
-                    .provider_to_custom
-                    .insert(provider_name.to_string(), pt.name.clone());
+            if let Tool::Provider(pt) = tool {
+                has_web_tool_20260209 |= matches!(
+                    pt.id.as_str(),
+                    "anthropic.web_search_20260209" | "anthropic.web_fetch_20260209"
+                );
+                has_code_execution |= pt.id.starts_with("anthropic.code_execution_");
+
+                if let Some(provider_name) = provider_tool_name(&pt.id) {
+                    mapping
+                        .custom_to_provider
+                        .insert(pt.name.clone(), provider_name.to_string());
+                    mapping
+                        .provider_to_custom
+                        .insert(provider_name.to_string(), pt.name.clone());
+                }
             }
         }
+        mapping.mark_code_execution_dynamic = has_web_tool_20260209 && !has_code_execution;
         mapping
     }
 
@@ -93,6 +103,12 @@ impl ToolNameMapping {
             .get(provider_name)
             .map(String::as_str)
             .unwrap_or(provider_name)
+    }
+
+    /// Whether code execution may be invoked implicitly by a 2026 web tool.
+    #[must_use]
+    pub fn mark_code_execution_dynamic(&self) -> bool {
+        self.mark_code_execution_dynamic
     }
 }
 
@@ -149,6 +165,21 @@ mod tests {
                 "{id} must map to the code_execution provider name"
             );
         }
+    }
+
+    #[test]
+    fn marks_implicit_code_execution_dynamic_only_for_2026_web_tools() {
+        let web_only = vec![provider_tool("anthropic.web_search_20260209", "search")];
+        assert!(ToolNameMapping::new(Some(&web_only)).mark_code_execution_dynamic());
+
+        let web_and_code = vec![
+            provider_tool("anthropic.web_search_20260209", "search"),
+            provider_tool("anthropic.code_execution_20260120", "runCode"),
+        ];
+        assert!(!ToolNameMapping::new(Some(&web_and_code)).mark_code_execution_dynamic());
+
+        let old_web = vec![provider_tool("anthropic.web_search_20250305", "search")];
+        assert!(!ToolNameMapping::new(Some(&old_web)).mark_code_execution_dynamic());
     }
 
     /// Every provider tool id this crate can build a request for must also be

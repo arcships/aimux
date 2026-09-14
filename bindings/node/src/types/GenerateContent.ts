@@ -5,7 +5,19 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * A content item in the generation result.
  */
-export type GenerateContent = { "Text": { text: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": { tool_call_id: string, tool_name: string, input: JsonValue, 
+export type GenerateContent = { "Text": { text: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": { tool_call_id: string, tool_name: string, 
+/**
+ * The model's raw argument text, exactly as the provider delivered
+ * it (possibly malformed). Providers never parse it — `generate_text`
+ * owns parsing, schema validation, and repair.
+ *
+ * Always serializes as a JSON string. Deserializes a JSON string
+ * (the current wire shape) unchanged, and also re-serializes the
+ * pre-refactor shape — an already-parsed JSON value — to its compact
+ * JSON text, so a `GenerateResult` persisted before this field
+ * became a `String` keeps loading. See docs/api/gaps.md §9.
+ */
+input: string, 
 /**
  * Whether the tool call will be executed by the provider.
  * If false/unset, the tool call is executed by the client.

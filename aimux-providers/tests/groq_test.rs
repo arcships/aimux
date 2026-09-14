@@ -1736,7 +1736,7 @@ mod do_stream {
         let (id, name, input) = tool_call.expect("should have tool call");
         assert_eq!(id, "call_abc");
         assert_eq!(name, "test-tool");
-        assert_eq!(input, json!({"value": "Sparkle Day"}));
+        assert_eq!(input, Value::String(r#"{"value":"Sparkle Day"}"#.into()));
 
         // Should have tool-calls finish reason
         let finish = parts.iter().find_map(|p| match p {
@@ -1793,7 +1793,10 @@ mod do_stream {
             StreamPart::ToolCall { input, .. } => Some(input.clone()),
             _ => None,
         });
-        assert_eq!(tool_call.unwrap(), json!({"value": "Sparkle Day"}));
+        assert_eq!(
+            tool_call.unwrap(),
+            Value::String(r#"{"value":"Sparkle Day"}"#.into())
+        );
     }
 
     /// TS: "should stream usage from x_groq.usage"

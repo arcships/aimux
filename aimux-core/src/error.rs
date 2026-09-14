@@ -178,8 +178,36 @@ pub enum AiMuxError {
     #[error("invalid response data: {0}")]
     InvalidResponseData(String),
 
-    #[error("tool error: {0}")]
-    Tool(String),
+    /// A model requested a tool that was not present in the call's tool set.
+    /// Message templates for the three tool variants match the AI SDK verbatim
+    /// (`NoSuchToolError` / `InvalidToolInputError` / `ToolCallRepairError`):
+    /// the AI SDK feeds these strings back to the model as tool-error content,
+    /// so the wording — including the available-tools list — is contract.
+    #[error("Model tried to call unavailable tool '{tool_name}'. {}", no_such_tool_availability(.available_tools))]
+    NoSuchTool {
+        tool_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        available_tools: Option<Vec<String>>,
+        /// Original argument text, when supplied by the provider. Absent in
+        /// older serialized errors and errors constructed without a call.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_input: Option<String>,
+    },
+
+    /// A tool call could not be parsed or did not satisfy its input schema.
+    #[error("Invalid input for tool {tool_name}: {cause}")]
+    InvalidToolInput {
+        tool_name: String,
+        tool_input: String,
+        cause: String,
+    },
+
+    /// The repair callback failed or returned a call that was still invalid.
+    #[error("Error repairing tool call: {cause}")]
+    ToolCallRepair {
+        original_error: Box<AiMuxError>,
+        cause: Box<AiMuxError>,
+    },
 
     #[error("invalid argument: {0}")]
     InvalidArgument(String),
@@ -226,6 +254,13 @@ pub enum AiMuxError {
 
     #[error("{0}")]
     Other(String),
+}
+
+fn no_such_tool_availability(available_tools: &Option<Vec<String>>) -> String {
+    match available_tools {
+        Some(tools) => format!("Available tools: {}.", tools.join(", ")),
+        None => "No tools are available.".to_string(),
+    }
 }
 
 /// Canonical serde classification: syntactically broken/truncated JSON is a

@@ -372,7 +372,9 @@ class TestStructuredContent:
             assert tc is not None, "raw.content must contain a ToolCall variant"
             assert tc["ToolCall"]["tool_name"] == "get_weather"
             assert tc["ToolCall"]["tool_call_id"] == "call_abc"
-            assert tc["ToolCall"]["input"] == {"location": "Tokyo"}
+            # raw content keeps the provider's argument text; parsing happens
+            # at the Core boundary (top-level tool_calls carry the object).
+            assert tc["ToolCall"]["input"] == '{"location":"Tokyo"}'
 
     def test_multi_role_messages_reach_provider(self):
         with RecordingMockServer(OPENAI_CHAT) as mock:

@@ -91,6 +91,8 @@ Error
       ├── APICallError              // provider call/transport failure; status when observed
       ├── RetryError                // the retry loop gave up; reason, errors (oldest first), lastError
       ├── JSONParseError / InvalidResponseDataError / ToolError
+      ├── JSONParseError / InvalidResponseDataError
+      ├── NoSuchToolError / InvalidToolInputError / ToolCallRepairError  // tool-contract errors
       ├── InvalidArgumentError / InvalidPromptError
       ├── TokenExpiredError
       ├── UnsupportedFunctionalityError
@@ -257,6 +259,10 @@ if (result.tool_calls.length > 0) {
   console.log(call.input)         // { location: "Tokyo" }
 }
 ```
+
+> The `repair_tool_call` callback is Rust-core-only (it cannot cross the FFI
+> boundary); tool calls that stay invalid arrive with `invalid: true` and a
+> typed `error` on the tool call.
 
 ### Tool Selection Strategy
 

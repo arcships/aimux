@@ -98,8 +98,8 @@
   {
     "name": "generate_content_tool_call",
     "type": "GenerateContent",
-    "json": "{\"ToolCall\":{\"tool_call_id\":\"call_1\",\"tool_name\":\"get_weather\",\"input\":{\"city\":\"Paris\"},\"provider_executed\":true,\"thought_signature\":\"sig_abc\"}}",
-    "description": "Tool call with provider_executed and thought_signature set; dynamic and provider_metadata unset and therefore absent. `input` is an object here — the ticket that moves tool-call input to a JSON string will change this fixture, which is the point."
+    "json": "{\"ToolCall\":{\"tool_call_id\":\"call_1\",\"tool_name\":\"get_weather\",\"input\":\"{\\\"city\\\":\\\"Paris\\\"}\",\"provider_executed\":true,\"thought_signature\":\"sig_abc\"}}",
+    "description": "Raw provider tool call with provider_executed and thought_signature set; dynamic and provider_metadata unset and therefore absent. `input` is the provider's serialized JSON argument text; Core parses it before exposing the top-level ToolCall."
   },
   {
     "name": "generate_content_source",
@@ -148,6 +148,12 @@
     "type": "ModelMessage",
     "json": "{\"role\":\"user\",\"content\":\"Hello\"}",
     "description": "ModelMessage with text content"
+  },
+  {
+    "name": "model_message_provider_executed_tool_transcript",
+    "type": "ModelMessage",
+    "json": "{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_call\",\"tool_call_id\":\"srv_1\",\"tool_name\":\"search\",\"input\":{\"query\":\"Rust\"},\"provider_executed\":true,\"thought_signature\":\"sig_provider\",\"provider_options\":{\"anthropic\":{\"type\":\"mcp-tool-use\",\"serverName\":\"docs\"}}},{\"type\":\"tool_result\",\"tool_call_id\":\"srv_1\",\"result\":{\"answer\":42},\"tool_name\":\"search\",\"is_error\":false,\"preliminary\":true,\"dynamic\":true,\"provider_options\":{\"anthropic\":{\"resultId\":\"result_1\"}}}]}",
+    "description": "Provider-executed tool call and result stay together in an assistant message for replay. ToolCall carries provider_executed (but no dynamic field in the prompt contract); ToolResult carries replay metadata."
   },
   {
     "name": "finish_reason_unified_stop",

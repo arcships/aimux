@@ -171,17 +171,20 @@ void main() {
         toolCallId: 'call_1',
         toolName: 'get_weather',
         input: {'location': 'Tokyo'},
+        providerExecuted: true,
       );
       final json = original.toJson();
       expect(json['type'], 'tool_call');
       expect(json['tool_call_id'], 'call_1');
       expect(json['tool_name'], 'get_weather');
+      expect(json['provider_executed'], true);
       final decoded = ContentPart.fromJson(json);
       expect(decoded, isA<ContentPartToolCall>());
       final d = decoded as ContentPartToolCall;
       expect(d.toolCallId, 'call_1');
       expect(d.toolName, 'get_weather');
       expect(d.input, {'location': 'Tokyo'});
+      expect(d.providerExecuted, true);
     });
 
     test('ToolResult variant — uses result, not output', () {
