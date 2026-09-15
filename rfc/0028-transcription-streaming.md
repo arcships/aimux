@@ -1,6 +1,6 @@
 # RFC-0028: Transcription 流式支持(实时 STT)
 
-> **Status**: 已实现(2026-08-14,三个 Phase 一次性落地;实现细节与本文差异见 §10)
+> **Status**: 已实现(2026-08-14,三个 Phase 一次性落地;实现细节与本文差异见 §10)。遗留项(P1 期明确延后的部分)由 [RFC-0034](0034-realtime-stt-followups.md) 收尾:WS 代理已落地、ElevenLabs 已落地、Cartesia 暂缓(触发条件见其 §4/D6)
 > **Date**: 2026-08-14
 > **Scope**: 为 `TranscriptionModel::do_stream` 落地完整实现 —— WebSocket 传输基础设施 + OpenAI realtime provider 实现(Rust 核心),以及后续 FFI 会话式 API + 8 语言绑定
 > **Related**: [RFC-0008](0008-multimodal-bindings.md) §2.3 Mode C(当初 defer 的决策)、[#43](https://github.com/arcships/aimux/issues/43)、[RFC-0016](0016-align-with-aisdk.md) H1(abort 基础设施)
@@ -158,7 +158,7 @@ pub async fn ws_connect(req: WebSocketRequest) -> Result<WsConnection, AiMuxErro
 
 ### 3.4 Phase 1 范围外
 
-- 其他 provider(ElevenLabs/Cartesia 等)的 WS 实现 —— 骨架同构,后续按需加
+- 其他 provider 的 WS 实现 —— ~~骨架同构,后续按需加~~(2026-09 修正:骨架与协议细节交织,并无公共层可复用;RFC-0034 §1.1 定案为各家独立实现。ElevenLabs 已实现(RFC-0034 P2),Cartesia 暂缓(RFC-0034 D6))
 - FFI / 绑定 —— Phase 2/3
 
 ---
@@ -271,10 +271,10 @@ Node/Python 的 native 路径不走 Phase 2 的 FFI 会话(直连 core,与 gener
 ## 9. Open Questions
 
 1. **channel 容量**:FFI push_audio 的有界 channel 容量(草案 64 chunk)是否需要可配?MVP 固定,文档标注。
-2. **WS proxy 隧道**:tokio-tungstenite 无 proxy 支持(§3.1);企业 mTLS/代理场景需要手动 CONNECT 隧道 + 自备 rustls ClientConfig + no_proxy 匹配。Phase 1 直连,后续按需求实现。
+2. **WS proxy 隧道**:✅ 已解决(RFC-0034 P1,#183)——全局 `ProxyConfig` 对 WS 生效,CONNECT 隧道 + 自实现 no_proxy(语义对齐 reqwest,已知 CIDR 分歧记录在案);SOCKS/https 代理明确报错不直连。
 3. **next_part 的零拷贝变体**:是否需要 `aimux_transcription_next_part_into(session, buf, len)`(调用方提供缓冲避免 JSON 字符串分配)?MVP 用 JSON 字符串(与全仓 wire 一致),性能需求出现再加。
-4. **ElevenLabs/Cartesia 等其他 realtime provider**:骨架同构但协议各异,是否在 Phase 1 一起做?建议 Phase 1 只做 OpenAI(验证骨架),其余按需。
-5. **录制支持**(RFC-0023):转录会话暂不录制(chat 流式有层 A 录制;transcription 无 core 入口是现状起点);若要,session 内部生成 call_id + recording_context 接线 —— 留待需求。
+4. **ElevenLabs/Cartesia 等其他 realtime provider**:ElevenLabs `scribe_v2_realtime` 已实现(RFC-0034 P2,#184,mock 验证 + 真实握手级 smoke);Cartesia `ink-2` 暂缓,触发条件与理由见 RFC-0034 §4/D6。xAI 无公开端点,出局。
+5. **录制支持**(RFC-0023):转录会话暂不录制;若做,应随 [#167](https://github.com/arcships/aimux/issues/167) 的传输层回放机制一起(WS 交换挂同一 mock transport),单独接线不划算 —— 留待需求。
 
 ---
 

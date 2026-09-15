@@ -5,7 +5,7 @@
 //! realtime APIs are WebSocket-based (OpenAI `gpt-realtime-whisper`
 //! transcription today).
 //!
-//! Design notes (RFC-0028 §3.1):
+//! Design notes (RFC-0028 §3.1, RFC-0034 §2):
 //! - **Every await point is abort/timeout covered** — `connect`, `send`, and
 //!   event receives all `select!` against the abort token and the timeout
 //!   timers. This is the WS analogue of the HTTP API-call primitive and
@@ -13,8 +13,13 @@
 //!   the loop alone does not cover the send path).
 //! - **Backpressure is socket-level**: tungstenite's `send().await` drives
 //!   flush and pends while the socket write buffer is full.
-//! - **No proxy support**: tokio-tungstenite has no proxy parameter; WS
-//!   connections are direct (see RFC-0028 §3.1 / Open Questions).
+//! - **Proxy support (RFC-0034 §2)**: the global `ProxyConfig` that governs
+//!   HTTP also governs `ws://`/`wss://` — `wss` uses `https_url` (or
+//!   `all_url`), `ws` uses `http_url` (or `all_url`), `no_proxy` entries are
+//!   honored, and tunneled connections are established with a manual HTTP
+//!   CONNECT before the WebSocket handshake. tokio-tungstenite has no proxy
+//!   support (and will not add it), so the tunnel is ours. SOCKS proxies are
+//!   rejected loudly rather than silently bypassed.
 
 use std::future::pending;
 
@@ -96,6 +101,13 @@ fn ws_error(url: &str, msg: impl std::fmt::Display) -> AiMuxError {
 enum ConnectError {
     Timeout,
     Tungstenite(tokio_tungstenite::tungstenite::Error),
+    /// The proxy rejected the CONNECT tunnel with a non-2xx status.
+    /// Carries the status and the proxy's response line so the surfaced
+    /// error says what the proxy said (407 auth, 403 policy, …).
+    ProxyRejected {
+        status: u16,
+        reason: String,
+    },
 }
 
 // Rust 1.98 clippy: tungstenite::Error makes the Err variant ~136 bytes.
@@ -104,6 +116,7 @@ enum ConnectError {
 #[allow(clippy::result_large_err)]
 async fn connect_with_timeout(
     request: tokio_tungstenite::tungstenite::http::Request<()>,
+    proxy: Option<ProxyTunnel>,
     timeout: Option<std::time::Duration>,
 ) -> Result<
     (
@@ -112,14 +125,277 @@ async fn connect_with_timeout(
     ),
     ConnectError,
 > {
-    let fut = tokio_tungstenite::connect_async(request);
+    let fut = async {
+        let Some(proxy) = proxy else {
+            return tokio_tungstenite::connect_async(request)
+                .await
+                .map_err(ConnectError::Tungstenite);
+        };
+        connect_through_proxy(request, &proxy).await
+    };
     match timeout {
         Some(d) => match tokio::time::timeout(d, fut).await {
-            Ok(inner) => inner.map_err(ConnectError::Tungstenite),
+            Ok(inner) => inner,
             Err(_) => Err(ConnectError::Timeout),
         },
-        None => fut.await.map_err(ConnectError::Tungstenite),
+        None => fut.await,
     }
+}
+
+/// A resolved proxy tunnel: where to TCP-connect and how to authenticate the
+/// CONNECT request (RFC-0034 §2). Public fields are read by the proxy
+/// integration tests only (`ws_proxy_test.rs`).
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct ProxyTunnel {
+    pub host: String,
+    pub port: u16,
+    /// `Proxy-Authorization` value (`Basic …`) when the proxy URL carried
+    /// userinfo.
+    pub authorization: Option<String>,
+    /// The TARGET is `wss://` — the tunnel stream needs a TLS upgrade before
+    /// the WebSocket handshake.
+    pub target_tls: bool,
+    /// `host:port` of the WS target as it must appear in the CONNECT line.
+    pub target_authority: String,
+}
+
+/// Test-only exposure of [`resolve_proxy`] (integration tests construct
+/// arbitrary configs without the set-once global).
+#[doc(hidden)]
+#[allow(non_snake_case)]
+pub fn ws__proxy_decision_for(
+    target: &url::Url,
+    config: &crate::http::ProxyConfig,
+) -> Result<Option<ProxyTunnel>, AiMuxError> {
+    resolve_proxy(target, config)
+}
+
+/// Test-only exposure of [`no_proxy_matches`].
+#[doc(hidden)]
+#[allow(non_snake_case)]
+#[must_use]
+pub fn ws__no_proxy_matches(no_proxy: &str, host: &str, port: u16) -> bool {
+    no_proxy_matches(no_proxy, host, port)
+}
+
+/// Proxy URLs may carry credentials (`http://user:pass@proxy:8080`); error
+/// strings must never echo them (they travel to FFI callers and logs). Mask
+/// the userinfo portion the same way `sanitized_request_url` protects
+/// request URLs.
+fn sanitized_proxy_url(raw: &str) -> String {
+    if let Some((scheme, rest)) = raw.split_once("://")
+        && let Some((_userinfo, host_part)) = rest.split_once('@')
+    {
+        return format!("{scheme}://***@{host_part}");
+    }
+    raw.to_string()
+}
+
+/// Pick direct vs. tunneled for a WS target under the global proxy config.
+fn resolve_proxy(
+    target: &url::Url,
+    config: &crate::http::ProxyConfig,
+) -> Result<Option<ProxyTunnel>, AiMuxError> {
+    let raw = match target.scheme() {
+        "wss" => config.https_url.clone().or_else(|| config.all_url.clone()),
+        "ws" => config.http_url.clone().or_else(|| config.all_url.clone()),
+        _ => None,
+    };
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let proxy = url::Url::parse(&raw).map_err(|e| {
+        AiMuxError::InvalidArgument(format!(
+            "invalid proxy URL {}: {e}",
+            sanitized_proxy_url(&raw)
+        ))
+    })?;
+    let scheme = proxy.scheme().to_ascii_lowercase();
+    if scheme != "http" {
+        // SOCKS is untunnelable via CONNECT; `https` proxies need TLS to the
+        // proxy itself (TLS-in-TLS) which has no demonstrated need. Both fail
+        // loudly — never silently bypass a configured proxy (RFC-0034 D2).
+        return Err(AiMuxError::UnsupportedFunctionality(format!(
+            "WebSocket proxy tunneling supports http proxies only, got {scheme:?} ({}); \
+             refusing to bypass the configured proxy with a direct connection",
+            sanitized_proxy_url(&raw)
+        )));
+    }
+    let host = proxy
+        .host_str()
+        .ok_or_else(|| {
+            AiMuxError::InvalidArgument(format!(
+                "proxy URL has no host: {}",
+                sanitized_proxy_url(&raw)
+            ))
+        })?
+        // `host_str` returns IPv6 literals WITH brackets; the socket resolver
+        // wants the bare address.
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_string();
+    let port = proxy.port().unwrap_or(80);
+    let authorization = if proxy.username().is_empty() && proxy.password().is_none() {
+        None
+    } else {
+        let credentials = format!("{}:{}", proxy.username(), proxy.password().unwrap_or(""));
+        use base64::Engine as _;
+        Some(format!(
+            "Basic {}",
+            base64::engine::general_purpose::STANDARD.encode(credentials)
+        ))
+    };
+    let target_host = target.host_str().unwrap_or_default();
+    let target_port = target
+        .port_or_known_default()
+        .unwrap_or(if target.scheme() == "wss" { 443 } else { 80 });
+    Ok(Some(ProxyTunnel {
+        host,
+        port,
+        authorization,
+        target_tls: target.scheme() == "wss",
+        target_authority: format!("{target_host}:{target_port}"),
+    }))
+}
+
+/// `no_proxy` matching aligned with reqwest's `NoProxy::from_string`
+/// semantics (RFC-0034 §2.1): comma-separated entries; `*` matches
+/// everything; an entry matches by exact host or dot-suffix; an entry with
+/// an explicit `:port` additionally requires the port to match.
+///
+/// Known divergence: reqwest additionally supports IP/CIDR entries
+/// (`10.0.0.0/8`); those are matched here as literal strings only (they will
+/// not match a CIDR-style entry). Provider WS targets are DNS names, and a
+/// non-matching entry means "tunnel through the proxy" — the safe direction.
+fn no_proxy_matches(no_proxy: &str, host: &str, port: u16) -> bool {
+    for entry in no_proxy.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        if entry == "*" {
+            return true;
+        }
+        let (name, port_entry) = match entry.rsplit_once(':') {
+            Some((name, digits))
+                if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                (name, Some(digits))
+            }
+            _ => (entry, None),
+        };
+        let name = name.trim_start_matches('.').to_ascii_lowercase();
+        let host = host.to_ascii_lowercase();
+        if (host == name || host.ends_with(&format!(".{name}")))
+            && port_entry.is_none_or(|p| p.parse::<u16>() == Ok(port))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// TCP-connect to the proxy, issue CONNECT, validate the 2xx response, then
+/// run the WebSocket handshake (with TLS for `wss://` targets) over the
+/// tunnel stream. Every step is bounded by the caller's timeout; abort is
+/// enforced by `ws_connect`'s select dropping this future.
+// Same cold-path rationale as `connect_with_timeout` above.
+#[allow(clippy::result_large_err)]
+async fn connect_through_proxy(
+    request: tokio_tungstenite::tungstenite::http::Request<()>,
+    proxy: &ProxyTunnel,
+) -> Result<
+    (
+        WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+        tokio_tungstenite::tungstenite::http::Response<Option<Vec<u8>>>,
+    ),
+    ConnectError,
+> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut stream = tokio::net::TcpStream::connect((proxy.host.as_str(), proxy.port))
+        .await
+        .map_err(|e| ConnectError::Tungstenite(tokio_tungstenite::tungstenite::Error::Io(e)))?;
+
+    let mut connect_request = format!(
+        "CONNECT {} HTTP/1.1\r\nHost: {}\r\n",
+        proxy.target_authority, proxy.target_authority
+    );
+    if let Some(authorization) = &proxy.authorization {
+        connect_request.push_str(&format!("Proxy-Authorization: {authorization}\r\n"));
+    }
+    connect_request.push_str("\r\n");
+    stream
+        .write_all(connect_request.as_bytes())
+        .await
+        .map_err(|e| ConnectError::Tungstenite(tokio_tungstenite::tungstenite::Error::Io(e)))?;
+
+    // Read until end of headers, bounded (a hostile proxy must not be able to
+    // feed us an unbounded "response").
+    let mut response = Vec::with_capacity(256);
+    let mut chunk = [0u8; 512];
+    while !response.windows(4).any(|w| w == b"\r\n\r\n") {
+        let n = stream
+            .read(&mut chunk)
+            .await
+            .map_err(|e| ConnectError::Tungstenite(tokio_tungstenite::tungstenite::Error::Io(e)))?;
+        if n == 0 {
+            return Err(ConnectError::ProxyRejected {
+                status: 0,
+                reason: "proxy closed the connection before responding to CONNECT".into(),
+            });
+        }
+        response.extend_from_slice(&chunk[..n]);
+        if response.len() > 8 * 1024 {
+            return Err(ConnectError::ProxyRejected {
+                status: 0,
+                reason: "proxy CONNECT response headers exceed 8 KiB".into(),
+            });
+        }
+    }
+    let response_text = String::from_utf8_lossy(&response);
+    let status_line = response_text.lines().next().unwrap_or_default();
+    // "HTTP/1.1 200 Connection established" → parse the middle token.
+    let status = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse::<u16>().ok())
+        .unwrap_or(0);
+    if !(200..300).contains(&status) {
+        return Err(ConnectError::ProxyRejected {
+            status,
+            reason: status_line.to_string(),
+        });
+    }
+
+    // TLS upgrade for wss targets: same roots as the reqwest client
+    // (webpki-roots), explicit ring provider so a build where multiple
+    // rustls CryptoProvider features unify cannot panic on the implicit
+    // default.
+    let connector = if proxy.target_tls {
+        let provider = std::sync::Arc::new(rustls::crypto::ring::default_provider());
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let config = rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .map_err(|e| {
+                ConnectError::Tungstenite(tokio_tungstenite::tungstenite::Error::Io(
+                    std::io::Error::other(format!("building rustls client config: {e}")),
+                ))
+            })?
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        tokio_tungstenite::Connector::Rustls(std::sync::Arc::new(config))
+    } else {
+        tokio_tungstenite::Connector::Plain
+    };
+
+    let (websocket, response) =
+        tokio_tungstenite::client_async_tls_with_config(request, stream, None, Some(connector))
+            .await
+            .map_err(ConnectError::Tungstenite)?;
+    Ok((websocket, response))
 }
 
 /// Open a WebSocket connection. The connect phase races abort and the
@@ -165,15 +441,54 @@ pub async fn ws_connect(req: &WebSocketRequest) -> Result<WsConnection, AiMuxErr
         .map(|ms| tokio::time::Instant::now() + tokio::time::Duration::from_millis(ms));
     let connect_deadline = first_chunk_deadline;
 
+    // Proxy resolution (RFC-0034 §2): the global ProxyConfig governs WS too.
+    // no_proxy hits and a proxy-less config keep the direct path unchanged.
+    let target = url::Url::parse(&req.url)
+        .map_err(|e| AiMuxError::InvalidArgument(format!("invalid WebSocket URL: {e}")))?;
+    let proxy = {
+        let config = crate::http::global_proxy();
+        let target_host = target.host_str().unwrap_or_default();
+        let target_port = target.port_or_known_default().unwrap_or(80);
+        if config
+            .no_proxy
+            .as_deref()
+            .is_some_and(|list| no_proxy_matches(list, target_host, target_port))
+        {
+            None
+        } else {
+            resolve_proxy(&target, &config)?
+        }
+    };
+
     let (stream, _response) = tokio::select! {
         biased;
         _ = abort_future(&req.abort_signal) => {
             return Err(abort_error(&req.abort_signal));
         }
-        res = connect_with_timeout(http_req, connect_deadline.map(|d| d - tokio::time::Instant::now())) => match res {
+        res = connect_with_timeout(http_req, proxy, connect_deadline.map(|d| d - tokio::time::Instant::now())) => match res {
             Ok(v) => v,
             Err(ConnectError::Timeout) => {
                 return Err(AiMuxError::Timeout("websocket connect timed out".into()));
+            }
+            Err(ConnectError::ProxyRejected { status, reason }) => {
+                // Classify by the shared rule like the handshake rejection
+                // below: 407/403 are auth/policy verdicts (never retried),
+                // but a proxy 502/503/504 is transient — same as HTTP.
+                // `status == 0` (EOF before responding / oversized headers)
+                // behaves like a dropped connection: transient.
+                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                    status_code: (status != 0).then_some(status),
+                    is_retryable: if status == 0 {
+                        true
+                    } else {
+                        aimux_core::error::is_retryable_status(status)
+                    },
+                    ..ApiCallError::new(
+                        format!("proxy rejected websocket CONNECT: {reason}"),
+                        crate::http::sanitized_request_url(&req.url),
+                        serde_json::json!({}),
+                    )
+                })));
             }
             // An HTTP handshake rejection carries a real status: keep it and
             // classify retryability by the shared rule instead of the blanket

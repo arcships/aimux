@@ -51,11 +51,20 @@ static SHARED: OnceLock<Mutex<HashMap<Option<tokio::runtime::Id>, Client>>> = On
 const SHARED_CLIENT_CAP: usize = 8;
 
 /// Set proxy configuration before the first HTTP operation.
+///
+/// The HTTP client snapshots this config when it is first built; the
+/// WebSocket connect path (RFC-0034 §2) re-reads it live on every connect,
+/// so a late `init_proxy` can affect WS while HTTP keeps its first-built
+/// client. Set it before any traffic either way.
 pub fn init_proxy(config: ProxyConfig) -> bool {
     GLOBAL_PROXY.set(config).is_ok()
 }
 
-fn global_proxy() -> ProxyConfig {
+/// Return the process-wide proxy configuration (empty default when
+/// `init_proxy` was never called). Read by both the HTTP client builder and
+/// the WebSocket connect path (RFC-0034 §2), so `ws://`/`wss://` traffic
+/// honors the same proxy/no_proxy settings as HTTP.
+pub(crate) fn global_proxy() -> ProxyConfig {
     GLOBAL_PROXY.get().cloned().unwrap_or_default()
 }
 

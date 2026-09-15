@@ -27,14 +27,21 @@ chrono = "0.4"
 
 # WebSocket client (RFC-0028 realtime transcription). Optional: enabled via
 # the `ws` feature so consumers without realtime needs compile it out.
+# rustls/webpki-roots build the TLS ClientConfig for the proxy-tunnel path
+# (RFC-0034 §2); base64 encodes Proxy-Authorization credentials.
 tokio-tungstenite = { workspace = true, optional = true }
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+], optional = true }
+webpki-roots = { version = "0.26", optional = true }
+base64 = { version = "0.22", optional = true }
 
 [features]
-ws = ["dep:tokio-tungstenite"]
+ws = ["dep:tokio-tungstenite", "dep:rustls", "dep:webpki-roots", "dep:base64"]
 
 [dev-dependencies]
 aimux-core = { workspace = true }
-tokio = { workspace = true, features = ["test-util", "macros", "rt", "time"] }
+tokio = { workspace = true, features = ["test-util", "macros", "rt", "time", "net", "io-util"] }
 serial_test = { workspace = true }
 wiremock = "0.6"
 
