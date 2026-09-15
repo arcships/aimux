@@ -621,6 +621,13 @@ fn audio_input_to_bytes_stt(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
     }
 }
 
+/// Realtime streaming model IDs (`scribe_v2_realtime*`) use the WebSocket
+/// realtime endpoint; every other model uses the batch REST endpoint.
+/// Wire shape per the public API reference (2026-09, RFC-0034 §3).
+fn is_realtime_transcription_model_id(model_id: &str) -> bool {
+    model_id == "scribe_v2_realtime" || model_id.starts_with("scribe_v2_realtime-")
+}
+
 #[async_trait]
 impl TranscriptionModel for ElevenLabsTranscriptionModel {
     fn provider(&self) -> &str {
@@ -635,6 +642,14 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
         &self,
         options: &TranscriptionCallOptions,
     ) -> Result<TranscriptionResult, AiMuxError> {
+        if is_realtime_transcription_model_id(&self.model_id) {
+            return Err(AiMuxError::UnsupportedFunctionality(format!(
+                "non-streaming transcription is not supported by `{}` \
+                 (realtime models stream over a WebSocket session)",
+                self.model_id
+            )));
+        }
+
         let warnings: Vec<Warning> = Vec::new();
 
         let audio_bytes = audio_input_to_bytes_stt(&options.audio)?;
@@ -734,5 +749,387 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
             },
             provider_metadata: None,
         })
+    }
+    /// Streaming transcription over the ElevenLabs realtime WebSocket
+    /// (RFC-0034 §3, wire shape per the public API reference 2026-09).
+    ///
+    /// Config travels on the URL (no `session.update` message); audio rides
+    /// base64 in `input_audio_chunk` JSON frames; `commit_strategy` is fixed
+    /// to `manual` (D3) so the stream ends when the caller's audio ends —
+    /// the final chunk carries `commit: true`, the resulting
+    /// `committed_transcript` is THE final, then the client closes (1000).
+    /// A settle window (`chunk_ms`, default 5s) bounds the wait for that
+    /// final event so the stream always terminates.
+    ///
+    /// Live-API smoke pending (no key at implementation time); the wire
+    /// shape is pinned field-by-field against the documented reference by
+    /// the local mock-server tests — same posture as RFC-0028 D4.
+    #[cfg(feature = "realtime")]
+    async fn do_stream(
+        &self,
+        options: aimux_core::transcription_model::TranscriptionStreamOptions,
+    ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError> {
+        use aimux_core::transcription_model::{TranscriptionStreamPart, TranscriptionStreamResult};
+        use aimux_provider_utils::ws::{WebSocketRequest, WsMessage, ws_connect};
+        use futures::StreamExt;
+
+        if !is_realtime_transcription_model_id(&self.model_id) {
+            return Err(AiMuxError::UnsupportedFunctionality(format!(
+                "streaming transcription is not supported by `{}` \
+                 (realtime models such as scribe_v2_realtime only)",
+                self.model_id
+            )));
+        }
+
+        // Parameter surface is deliberately minimal (RFC-0034 D5):
+        // languageCode + includeTimestamps. Anything else waits for a user.
+        let mut language_code: Option<String> = None;
+        let mut include_timestamps = false;
+        if let Some(ref po) = options.provider_options
+            && let Some(el) = po.get("elevenlabs")
+        {
+            if let Some(v) = el.get("languageCode").and_then(serde_json::Value::as_str) {
+                language_code = Some(v.to_string());
+            }
+            if let Some(v) = el
+                .get("includeTimestamps")
+                .and_then(serde_json::Value::as_bool)
+            {
+                include_timestamps = v;
+            }
+        }
+
+        // Audio format: the realtime endpoint takes pcm_{rate} / ulaw_{rate}.
+        let default_rate = if options.input_audio_format.format_type == "audio/pcmu" {
+            8_000
+        } else {
+            16_000
+        };
+        let sample_rate = options.input_audio_format.rate.unwrap_or(default_rate);
+        let audio_format = match options.input_audio_format.format_type.as_str() {
+            "audio/pcm" => format!("pcm_{sample_rate}"),
+            "audio/pcmu" => format!("ulaw_{sample_rate}"),
+            other => {
+                return Err(AiMuxError::UnsupportedFunctionality(format!(
+                    "ElevenLabs realtime accepts audio/pcm or audio/pcmu input, got {other}"
+                )));
+            }
+        };
+
+        let base = self.config.base_url.trim_end_matches('/');
+        let (scheme, host) = if let Some(rest) = base.strip_prefix("https://") {
+            ("wss", rest)
+        } else if let Some(rest) = base.strip_prefix("http://") {
+            ("ws", rest)
+        } else {
+            ("wss", base)
+        };
+        // Scoped: the serializer is not `Send`; keep it inside this block so
+        // nothing non-Send is alive across the connect await below.
+        let ws_url = {
+            let mut query = url::form_urlencoded::Serializer::new(String::new());
+            query
+                .append_pair("model_id", &self.model_id)
+                .append_pair("audio_format", &audio_format)
+                .append_pair("commit_strategy", "manual");
+            if let Some(code) = &language_code {
+                query.append_pair("language_code", code);
+            }
+            if include_timestamps {
+                query.append_pair("include_timestamps", "true");
+            }
+            format!(
+                "{scheme}://{host}/v1/speech-to-text/realtime?{}",
+                query.finish()
+            )
+        };
+
+        let header_list: Vec<(String, String)> = self
+            .build_headers(options.headers.as_ref())
+            .into_iter()
+            .collect();
+
+        // Connect BEFORE the stream so connect failures surface from
+        // do_stream's Result (same contract as the OpenAI realtime path).
+        let req = WebSocketRequest {
+            url: ws_url.clone(),
+            headers: header_list,
+            subprotocols: Vec::new(),
+            abort_signal: options.abort_signal.clone(),
+            timeout: options.timeout,
+        };
+        let mut ws = ws_connect(&req).await?;
+
+        // Settle window for the post-commit final event: the server does not
+        // close the session (RFC-0034 §3.3), so an empty Finish must be
+        // possible. chunk_ms when configured, otherwise 5s.
+        let settle = options
+            .timeout
+            .as_ref()
+            .and_then(|t| t.chunk_ms)
+            .map(tokio::time::Duration::from_millis)
+            .unwrap_or(tokio::time::Duration::from_secs(5));
+
+        let include_raw = options.include_raw_chunks;
+        let model_id = self.model_id.clone();
+        let error_url = ws_url.clone();
+        let mut audio = options.audio;
+
+        let stream = async_stream::stream! {
+            // One held chunk: the commit flag must ride the LAST real audio
+            // chunk, so each incoming chunk flushes the previous one and the
+            // stream-end flushes the held one with commit=true. An
+            // empty-audio stream commits via a single empty chunk.
+            let mut held: Option<String> = None;
+            let mut audio_done = false;
+            let mut commit_deadline: Option<tokio::time::Instant> = None;
+            // Audio is not sent before the session is established: the
+            // server confirms configuration with session_started first.
+            let mut session_started = false;
+
+            loop {
+                let audio_next = async {
+                    if audio_done || !session_started {
+                        std::future::pending::<()>().await;
+                        None
+                    } else {
+                        audio.next().await
+                    }
+                };
+
+                tokio::select! {
+                    biased;
+
+                    chunk = audio_next => {
+                        // Hold-one-chunk pipeline: the commit flag must ride
+                        // the LAST real chunk. A new chunk flushes the
+                        // previously held one (commit=false); the stream end
+                        // flushes the held one with commit=true; an
+                        // empty-audio stream commits a single empty chunk.
+                        let (payload, commit) = match chunk {
+                            None => {
+                                audio_done = true;
+                                commit_deadline = Some(tokio::time::Instant::now() + settle);
+                                (held.take().unwrap_or_default(), true)
+                            }
+                            Some(aimux_core::transcription_model::AudioChunk::Binary(bytes)) => {
+                                use base64::Engine as _;
+                                let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+                                match held.replace(b64) {
+                                    Some(previous) => (previous, false),
+                                    // First chunk: hold it, nothing to send yet.
+                                    None => continue,
+                                }
+                            }
+                            Some(aimux_core::transcription_model::AudioChunk::Base64(b64)) => {
+                                match held.replace(b64) {
+                                    Some(previous) => (previous, false),
+                                    None => continue,
+                                }
+                            }
+                        };
+                        let message = serde_json::json!({
+                            "message_type": "input_audio_chunk",
+                            "audio_base_64": payload,
+                            "commit": commit,
+                            "sample_rate": sample_rate,
+                        });
+                        if let Err(e) = ws.send_text(&message.to_string()).await {
+                            yield Err(e);
+                            break;
+                        }
+                    }
+
+                    _ = async {
+                        match commit_deadline {
+                            Some(d) => tokio::time::sleep_until(d).await,
+                            None => std::future::pending::<()>().await,
+                        }
+                    } => {
+                        // Server went silent after commit: an empty Finish
+                        // beats hanging (RFC-0034 §3.3.3).
+                        yield Ok(TranscriptionStreamPart::Finish {
+                            text: String::new(),
+                            segments: vec![],
+                            language: language_code.clone(),
+                            duration_in_seconds: None,
+                            provider_metadata: None,
+                        });
+                        ws.close().await;
+                        break;
+                    }
+
+                    event = ws.next() => {
+                        match event {
+                            None => {
+                                yield Err(AiMuxError::ApiCall(Box::new(
+                                    aimux_core::error::ApiCallError::new(
+                                        "realtime transcription socket closed before the committed transcript",
+                                        error_url.clone(),
+                                        serde_json::json!({}),
+                                    ),
+                                )));
+                                break;
+                            }
+                            Some(Err(e)) => {
+                                yield Err(e);
+                                break;
+                            }
+                            Some(Ok(WsMessage::Binary(_))) => {}
+                            Some(Ok(WsMessage::Text(text))) => {
+                                let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+                                    continue;
+                                };
+                                if include_raw {
+                                    yield Ok(TranscriptionStreamPart::Raw {
+                                        raw_value: value.clone(),
+                                    });
+                                }
+                                let event_type = value.get("message_type")
+                                    .and_then(|t| t.as_str()).unwrap_or("");
+                                match event_type {
+                                    "session_started" => {
+                                        session_started = true;
+                                        yield Ok(TranscriptionStreamPart::StreamStart {
+                                            warnings: vec![],
+                                        });
+                                    }
+                                    "partial_transcript" => {
+                                        yield Ok(TranscriptionStreamPart::TranscriptPartial {
+                                            id: None,
+                                            text: value.get("text")
+                                                .and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                            start_second: None,
+                                            duration_in_seconds: None,
+                                            channel_index: None,
+                                            provider_metadata: None,
+                                        });
+                                    }
+                                    // include_timestamps=true swaps the event
+                                    // shape; both carry `text`, the timestamps
+                                    // variant adds `words[]`.
+                                    "committed_transcript"
+                                    | "committed_transcript_with_timestamps" => {
+                                        let text = value.get("text")
+                                            .and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                        let segments = value.get("words")
+                                            .and_then(|v| v.as_array())
+                                            .map(|words| {
+                                                words.iter().filter_map(|w| {
+                                                    let word = w.get("text")
+                                                        .and_then(|v| v.as_str())?;
+                                                    // Spacing-type entries are
+                                                    // layout, not content.
+                                                    if word.trim().is_empty() {
+                                                        return None;
+                                                    }
+                                                    Some(TranscriptionSegment {
+                                                        text: word.to_string(),
+                                                        start_second: w.get("start")
+                                                            .and_then(serde_json::Value::as_f64).unwrap_or(0.0),
+                                                        end_second: w.get("end")
+                                                            .and_then(serde_json::Value::as_f64).unwrap_or(0.0),
+                                                    })
+                                                }).collect::<Vec<_>>()
+                                            })
+                                            .unwrap_or_default();
+                                        let duration = segments.last().map(|s| s.end_second);
+                                        yield Ok(TranscriptionStreamPart::TranscriptFinal {
+                                            id: None,
+                                            text: text.clone(),
+                                            start_second: segments.first()
+                                                .map(|s| s.start_second),
+                                            end_second: segments.last()
+                                                .map(|s| s.end_second),
+                                            channel_index: None,
+                                            provider_metadata: None,
+                                        });
+                                        // Manual strategy commits exactly once
+                                        // (on our final flag): this committed
+                                        // transcript IS the finish.
+                                        yield Ok(TranscriptionStreamPart::Finish {
+                                            text,
+                                            segments,
+                                            language: language_code.clone(),
+                                            duration_in_seconds: duration,
+                                            provider_metadata: None,
+                                        });
+                                        ws.close().await;
+                                        break;
+                                    }
+                                    "warning" => {
+                                        // No part mapping (StreamStart already
+                                        // went out); visible via Raw when
+                                        // include_raw_chunks is set.
+                                    }
+                                    other if matches!(
+                                        other,
+                                        "error" | "auth_error" | "quota_exceeded"
+                                        | "commit_throttled" | "unaccepted_terms"
+                                        | "rate_limited" | "queue_overflow"
+                                        | "resource_exhausted"
+                                        | "session_time_limit_exceeded"
+                                        | "input_error" | "invalid_request"
+                                        | "chunk_size_exceeded"
+                                        | "insufficient_audio_activity"
+                                        | "transcriber_error"
+                                    ) => {
+                                        let message = value.get("error")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("realtime transcription error");
+                                        // Retryable classification (RFC-0034
+                                        // §3.2): three transient names, the
+                                        // rest are terminal verdicts.
+                                        let is_retryable = matches!(
+                                            other,
+                                            "rate_limited" | "queue_overflow"
+                                            | "resource_exhausted"
+                                        );
+                                        yield Err(AiMuxError::ApiCall(Box::new(
+                                            aimux_core::error::ApiCallError {
+                                                is_retryable,
+                                                response_body: Some(value.to_string()),
+                                                ..aimux_core::error::ApiCallError::new(
+                                                    format!("elevenlabs realtime: {message}"),
+                                                    error_url.clone(),
+                                                    serde_json::json!({}),
+                                                )
+                                            },
+                                        )));
+                                        ws.close().await;
+                                        break;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        Ok(TranscriptionStreamResult {
+            stream: Box::pin(stream),
+            request: Some(TranscriptionRequest { body: Some(ws_url) }),
+            response: Some(TranscriptionResponse {
+                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                model_id: Some(model_id),
+                headers: None,
+                body: None,
+            }),
+        })
+    }
+
+    /// Without the `realtime` feature the WebSocket path is compiled out.
+    #[cfg(not(feature = "realtime"))]
+    async fn do_stream(
+        &self,
+        _options: aimux_core::transcription_model::TranscriptionStreamOptions,
+    ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError> {
+        Err(AiMuxError::UnsupportedFunctionality(format!(
+            "streaming transcription with `{}` requires building aimux-providers \
+             with the `realtime` feature",
+            self.model_id
+        )))
     }
 }

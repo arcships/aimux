@@ -617,6 +617,11 @@ use serde::Deserialize;
 
 /// Streaming transcription model IDs start with `ink-2` and only support the
 /// WebSocket streaming endpoint, not the REST batch endpoint.
+///
+/// `do_stream` for these IDs is intentionally NOT implemented — deferred
+/// with explicit triggers (RFC-0034 §4/D6: docs behind a login wall, young
+/// turns API, schema inferable from the SDK only). Until it lands, both
+/// paths return `UnsupportedFunctionality`.
 fn is_streaming_transcription_model_id(model_id: &str) -> bool {
     model_id == "ink-2" || model_id.starts_with("ink-2-")
 }
