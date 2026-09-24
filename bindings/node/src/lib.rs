@@ -23,12 +23,15 @@ use crate::error::{
 };
 use aimux_core::AiMuxError;
 use aimux_core::generate::{
-    GenerateTextOptions, generate_object, generate_text, generate_text_as_openai, stream_text,
+    GenerateTextOptions, GenerateTextResult, generate_object, generate_text,
+    generate_text_as_openai, generate_text_result_to_chat_completion, stream_text,
     stream_text_as_openai,
 };
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
 use aimux_core::openai_output::OpenAiStreamOptions;
+use aimux_core::parse_tool_call::{ToolCallRepairReply, tool_call_repair_inputs};
+use aimux_core::tool::ToolCall;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
@@ -418,6 +421,23 @@ impl Model {
             .await;
             __r
         })
+    }
+
+    /// Convert a serialized `GenerateTextResult` into a serialized
+    /// `ChatCompletion` — the conversion half of `generateTextAsOpenai`.
+    ///
+    /// For repairing on the host (RFC-0035): patch the native result, then
+    /// convert it, so the completion's tool calls are the repaired ones. This
+    /// model only supplies the fallback model id.
+    #[napi]
+    pub fn generate_text_result_as_openai(&self, result_json: String) -> AimuxResult<String> {
+        AimuxResult((|| -> crate::error::MResult<String> {
+            let result: GenerateTextResult = parse_wire_json("result_json", &result_json)?;
+            serialize_result(&generate_text_result_to_chat_completion(
+                &result,
+                self.inner.model_id(),
+            ))
+        })())
     }
 
     /// Stream text as OpenAI Chat Completion chunks.
@@ -1570,4 +1590,107 @@ fn parse_opts(json: Option<&str>) -> MResult<GenerateTextOptions> {
             parse_wire_json("opts_json", s)
         }
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Host-side tool-call repair (RFC-0035)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Build the repair argument for one invalid tool call.
+///
+/// `toolCallJson` is a `GenerateTextResult.tool_calls` entry with
+/// `invalid: true`. `prompt` and `optsJson` are **the same two strings the
+/// call was generated with** (`generateText` / `streamText`); messages,
+/// instructions, and the tool set are derived from them here, so no caller
+/// repeats that derivation.
+///
+/// Returns `{tool_call, error, input_schema, tools, messages, instructions}`
+/// — the AI SDK `repairToolCall` argument, with `tool_call.input` the
+/// provider's raw argument text — or the JSON literal `"null"` when the
+/// options carried no tools: as in the AI SDK, a call made without a tool set
+/// is never repaired, and the caller skips it. `"null"` is a success.
+///
+/// Pure and synchronous: no model, no network. Throws `InvalidArgumentError`
+/// when the call is not an invalid one.
+#[napi]
+pub fn tool_call_repair_context(
+    tool_call_json: String,
+    prompt: String,
+    opts_json: Option<String>,
+) -> AimuxResult<String> {
+    AimuxResult((|| -> crate::error::MResult<String> {
+        let tool_call: ToolCall = parse_wire_json("tool_call_json", &tool_call_json)?;
+        let prompt = parse_prompt(&prompt)?;
+        let opts = parse_opts(opts_json.as_deref())?;
+        let (messages, instructions, tools) = tool_call_repair_inputs(prompt, &opts);
+        let context = aimux_core::parse_tool_call::tool_call_repair_context(
+            &tool_call,
+            tools,
+            &messages,
+            instructions,
+        )
+        .map_err(|e| AiMuxBindingError::from(&e))?;
+        serialize_result(&context)
+    })())
+}
+
+/// Resolve one invalid tool call against a host's repair reply.
+///
+/// `optsJson` is the same string the call was generated with; the tool set
+/// comes from it. `replyJson` is `{"type":"repaired","tool_call":{…}}`,
+/// `{"type":"unchanged"}`, or `{"type":"failed","message":"…"}`. Returns the
+/// resulting `ToolCall` JSON — valid, or invalid carrying a nested
+/// `ToolCallRepairError`.
+///
+/// Options carrying no tools throw `InvalidArgumentError`: such a call is not
+/// repairable, and `toolCallRepairContext` already said so by returning
+/// `"null"`.
+#[napi]
+pub fn apply_tool_call_repair(
+    tool_call_json: String,
+    opts_json: Option<String>,
+    reply_json: String,
+) -> AimuxResult<String> {
+    AimuxResult((|| -> crate::error::MResult<String> {
+        let tool_call: ToolCall = parse_wire_json("tool_call_json", &tool_call_json)?;
+        let opts = parse_opts(opts_json.as_deref())?;
+        let reply: ToolCallRepairReply = parse_wire_json("reply_json", &reply_json)?;
+        let repaired = aimux_core::parse_tool_call::apply_tool_call_repair(
+            &tool_call,
+            opts.tools.as_deref(),
+            reply,
+        )
+        .map_err(|e| AiMuxBindingError::from(&e))?;
+        serialize_result(&repaired)
+    })())
+}
+
+/// Apply a repair reply to a serialized `GenerateTextResult` or
+/// `GenerateObjectResult`, rewriting both `tool_calls` and the matching
+/// `response_messages` tool-call part. `optsJson` is the same string the call
+/// was generated with.
+///
+/// The OpenAI-shaped result has no equivalent: it carries no `invalid` /
+/// `error`, so repair is driven from the native result, which
+/// `Model.generateTextResultAsOpenai` then converts.
+#[napi]
+pub fn apply_tool_call_repair_to_result(
+    result_json: String,
+    opts_json: Option<String>,
+    tool_call_id: String,
+    reply_json: String,
+) -> AimuxResult<String> {
+    AimuxResult((|| -> crate::error::MResult<String> {
+        let result: serde_json::Value = parse_wire_json("result_json", &result_json)?;
+        let opts = parse_opts(opts_json.as_deref())?;
+        let reply: ToolCallRepairReply = parse_wire_json("reply_json", &reply_json)?;
+        let patched = aimux_core::parse_tool_call::apply_tool_call_repair_to_result(
+            &result,
+            opts.tools.as_deref(),
+            &tool_call_id,
+            reply,
+        )
+        .map_err(|e| AiMuxBindingError::from(&e))?;
+        serialize_result(&patched)
+    })())
 }

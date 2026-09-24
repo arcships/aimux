@@ -69,8 +69,8 @@ pub mod prelude {
     pub use crate::files_model::{Files, UploadFileCallOptions, UploadFileResult};
     pub use crate::generate::{
         GenerateObjectResult, GenerateTextOptions, GenerateTextResult, StreamTextResult,
-        generate_object, generate_text, generate_text_as_openai, stream_text,
-        stream_text_as_openai,
+        generate_object, generate_text, generate_text_as_openai,
+        generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
     };
     pub use crate::image_model::{ImageCallOptions, ImageModel, ImageResult, generate_image};
     pub use crate::language_model::LanguageModel;
@@ -87,7 +87,11 @@ pub mod prelude {
         encode_chunk_sse, to_chat_completion, to_chat_completion_stream,
     };
     pub use crate::options::{CallOptions, ResponseFormat, ToolChoice};
-    pub use crate::parse_tool_call::{RawToolCall, ToolCallRepair, ToolCallRepairContext};
+    pub use crate::parse_tool_call::{
+        RawToolCall, ToolCallRepair, ToolCallRepairContext, ToolCallRepairReply,
+        apply_tool_call_repair, apply_tool_call_repair_to_result, tool_call_repair_context,
+        tool_call_repair_inputs,
+    };
     pub use crate::provider::Provider;
     pub use crate::reranking_model::{
         RerankingCallOptions, RerankingModel, RerankingResult, rerank,

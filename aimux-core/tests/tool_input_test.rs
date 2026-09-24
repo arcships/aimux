@@ -523,8 +523,11 @@ async fn openai_outputs_preserve_invalid_raw_tool_arguments() {
     assert_eq!(arguments, raw_input);
 }
 
+/// RFC-0035: the non-streaming OpenAI output reflects repair; the stream does
+/// not — tool-input deltas are the provider's text, forwarded as they arrive,
+/// exactly as in the AI SDK.
 #[tokio::test]
-async fn openai_outputs_use_repaired_tool_name_and_input_for_complete_calls() {
+async fn openai_repair_shows_in_the_completion_but_not_in_the_stream() {
     let repair = ToolCallRepair::new(|context| async move {
         Ok(Some(RawToolCall {
             tool_name: "weather".into(),
@@ -571,26 +574,20 @@ async fn openai_outputs_use_repaired_tool_name_and_input_for_complete_calls() {
         .filter_map(|choice| choice.delta.tool_calls.as_ref())
         .flatten()
         .collect::<Vec<_>>();
-    assert_eq!(
-        stream_calls.len(),
-        1,
-        "provider input frames must stay buffered when repair can replace them"
-    );
-    let stream_call = stream_calls[0];
-
     assert_eq!(non_stream_call.function.name, "weather");
     assert_eq!(
         non_stream_call.function.arguments,
         r#"{"city":"Singapore","days":3}"#
     );
-    assert_eq!(
-        stream_call.function.name.as_deref(),
-        Some(non_stream_call.function.name.as_str())
-    );
-    assert_eq!(
-        stream_call.function.arguments.as_deref(),
-        Some(non_stream_call.function.arguments.as_str())
-    );
+
+    // The stream opened on the provider's name before repair could run, and
+    // its deltas carry the provider's own text.
+    assert_eq!(stream_calls[0].function.name.as_deref(), Some("forecast"));
+    let streamed_arguments = stream_calls
+        .iter()
+        .filter_map(|call| call.function.arguments.as_deref())
+        .collect::<String>();
+    assert_eq!(streamed_arguments, r#"{"place":"Singapore"}"#);
 }
 
 #[tokio::test]

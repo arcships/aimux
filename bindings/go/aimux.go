@@ -945,6 +945,30 @@ func (m *Model) GenerateTextAsOpenAI(promptJson, optsJson string) (string, error
 	})
 }
 
+// GenerateTextResultAsOpenAI converts a GenerateTextResult JSON string into a
+// ChatCompletion JSON string: the conversion half of GenerateTextAsOpenAI.
+//
+// For repairing on the host (RFC-0035): patch the native result, then convert
+// it, so the completion's tool calls are the repaired ones. The model only
+// supplies the fallback model id; no generation happens.
+func (m *Model) GenerateTextResultAsOpenAI(resultJson string) (string, error) {
+	if err := requireJSON("result_json", resultJson); err != nil {
+		return "", err
+	}
+	handle, err := m.handle()
+	if err != nil {
+		return "", err
+	}
+	defer runtime.KeepAlive(m)
+
+	cResult := C.CString(resultJson)
+	defer C.free(unsafe.Pointer(cResult))
+
+	return ffiString(func(out **C.char) *C.aimux_error_t {
+		return C.aimux_generate_text_result_as_openai(C.uint64_t(handle), cResult, out)
+	})
+}
+
 // ── Streaming generation ─────────────────────────────────────────────────────
 
 // Stream is a handle to an in-progress or completed stream. It must be fully

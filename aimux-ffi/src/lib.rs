@@ -56,14 +56,20 @@ use serde::de::DeserializeOwned;
 use aimux_core::AbortSignal;
 use aimux_core::AiMuxError;
 use aimux_core::generate::{
-    GenerateTextOptions, generate_object, generate_text, generate_text_as_openai, stream_text,
+    GenerateTextOptions, GenerateTextResult, generate_object, generate_text,
+    generate_text_as_openai, generate_text_result_to_chat_completion, stream_text,
     stream_text_as_openai,
 };
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
 use aimux_core::openai_output::OpenAiStreamOptions;
+use aimux_core::parse_tool_call::{
+    ToolCallRepairReply, apply_tool_call_repair, apply_tool_call_repair_to_result,
+    tool_call_repair_context, tool_call_repair_inputs,
+};
 use aimux_core::provider::Provider;
 use aimux_core::recording::RecordingError;
+use aimux_core::tool::ToolCall;
 use aimux_core::trace::{RingTraceStore, TraceFilter, TraceLayer};
 use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
 use aimux_providers::anthropic_aws::{AnthropicAwsProvider, AnthropicAwsProviderConfig};
@@ -1720,8 +1726,136 @@ pub extern "C" fn aimux_stream_text_with_abort(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// C ABI: host-side tool-call repair (RFC-0035)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Build the repair argument for one invalid tool call (RFC-0035).
+///
+/// `tool_call_json` is one entry of `GenerateTextResult.tool_calls` with
+/// `"invalid": true`. `prompt_json` and `opts_json` are **the same two
+/// strings the call was generated with** ([`aimux_generate_text`] /
+/// [`aimux_stream_text`]); messages, instructions, and the tool set are
+/// derived from them here, so no host repeats that derivation.
+///
+/// Writes `{tool_call, error, input_schema, tools, messages, instructions}` —
+/// the AI SDK `repairToolCall` argument — to `*out_json`, or the JSON literal
+/// `null` when `opts_json` carried no tools: as in the AI SDK, a call made
+/// without a tool set is never repaired, and the host skips it. `null` is a
+/// success, not an error.
+///
+/// Pure: no model handle, no runtime, no I/O. Safe to call from inside a
+/// stream callback (the re-entrancy guard only covers runtime `block_on`).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_tool_call_repair_context(
+    tool_call_json: *const c_char,
+    prompt_json: *const c_char,
+    opts_json: *const c_char,
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let tool_call: ToolCall = parse_json_arg(tool_call_json, "tool_call_json")?;
+        let prompt = parse_prompt_arg(prompt_json)?;
+        let opts = parse_opts_arg(opts_json)?;
+        let (messages, instructions, tools) = tool_call_repair_inputs(prompt, &opts);
+        to_json(&tool_call_repair_context(
+            &tool_call,
+            tools,
+            &messages,
+            instructions,
+        )?)
+    })
+}
+
+/// Resolve one invalid tool call against a host's repair reply (RFC-0035).
+///
+/// `opts_json` is the same string the call was generated with; the tool set
+/// comes from it. `reply_json` is `{"type":"repaired","tool_call":{…}}`,
+/// `{"type":"unchanged"}`, or `{"type":"failed","message":"…"}`. Writes the
+/// resulting `ToolCall` — valid, or invalid with the AI SDK's nested
+/// `ToolCallRepairError` — to `*out_json`. Same purity as
+/// [`aimux_tool_call_repair_context`].
+///
+/// Options carrying no tools are `AIMUX_E_INVALID_ARGUMENT`: such a call is
+/// not repairable, and `aimux_tool_call_repair_context` already said so by
+/// writing `null`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_apply_tool_call_repair(
+    tool_call_json: *const c_char,
+    opts_json: *const c_char,
+    reply_json: *const c_char,
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let tool_call: ToolCall = parse_json_arg(tool_call_json, "tool_call_json")?;
+        let opts = parse_opts_arg(opts_json)?;
+        let reply: ToolCallRepairReply = parse_json_arg(reply_json, "reply_json")?;
+        to_json(&apply_tool_call_repair(
+            &tool_call,
+            opts.tools.as_deref(),
+            reply,
+        )?)
+    })
+}
+
+/// Apply a repair reply to a whole result document (RFC-0035).
+///
+/// `result_json` is a serialized `GenerateTextResult` or
+/// `GenerateObjectResult`; `opts_json` is the same string the call was
+/// generated with. Both `tool_calls` and the matching `response_messages`
+/// tool-call part are rewritten. The OpenAI-shaped
+/// `ChatCompletion` is not supported — it carries no `invalid`/`error`, so
+/// repair is driven from the native result, which
+/// [`aimux_generate_text_result_as_openai`] then converts. Same purity as
+/// [`aimux_tool_call_repair_context`].
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_apply_tool_call_repair_to_result(
+    result_json: *const c_char,
+    opts_json: *const c_char,
+    tool_call_id: *const c_char,
+    reply_json: *const c_char,
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let result: serde_json::Value = parse_json_arg(result_json, "result_json")?;
+        let opts = parse_opts_arg(opts_json)?;
+        let tool_call_id = str_arg(tool_call_id, "tool_call_id")?;
+        let reply: ToolCallRepairReply = parse_json_arg(reply_json, "reply_json")?;
+        to_json(&apply_tool_call_repair_to_result(
+            &result,
+            opts.tools.as_deref(),
+            &tool_call_id,
+            reply,
+        )?)
+    })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // C ABI: OpenAI-compatible output (RFC-0026)
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Convert a serialized `GenerateTextResult` into a serialized `ChatCompletion`.
+///
+/// The conversion half of [`aimux_generate_text_as_openai`], for hosts that
+/// repair a native result themselves (RFC-0035) and then want the OpenAI
+/// shape: tool calls come from `result_json`'s `tool_calls`, so a patched
+/// result converts to a completion that reflects the repair. `handle` only
+/// supplies the model id fallback for `ChatCompletion.model`; no runtime work,
+/// so this is safe from inside a stream callback.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_generate_text_result_as_openai(
+    handle: u64,
+    result_json: *const c_char,
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let model = model_of(handle)?;
+        let result: GenerateTextResult = parse_json_arg(result_json, "result_json")?;
+        to_json(&generate_text_result_to_chat_completion(
+            &result,
+            model.model_id(),
+        ))
+    })
+}
 
 /// Non-streaming text generation with OpenAI Chat Completions output.
 ///

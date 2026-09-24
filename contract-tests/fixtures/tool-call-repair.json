@@ -1,0 +1,1295 @@
+{
+  "description": "Host-side tool-call repair (RFC-0035). Every case is pure: feed `input`, expect `expected` (deep-equal) or the named `expected_error` variant. `prompt` and `opts` are the SAME values the call was generated with; a host serializes them to JSON strings before passing them. A `null` `opts` means defaults. An `expected` of null is the literal JSON null the context function writes for a call made without a tool set.",
+  "cases": [
+    {
+      "name": "context_string_prompt",
+      "function": "tool_call_repair_context",
+      "description": "A bare string prompt becomes the single user message the model saw; `instructions` comes from the options, not from the prompt.",
+      "input": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": {
+            "town": "Singapore"
+          },
+          "dynamic": true,
+          "invalid": true,
+          "error": {
+            "InvalidToolInput": {
+              "tool_name": "weather",
+              "tool_input": "{\"town\":\"Singapore\"}",
+              "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+            }
+          }
+        },
+        "prompt": "weather in Singapore?",
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "instructions": "be terse"
+        }
+      },
+      "expected": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": "{\"town\":\"Singapore\"}",
+          "dynamic": true
+        },
+        "error": {
+          "InvalidToolInput": {
+            "tool_name": "weather",
+            "tool_input": "{\"town\":\"Singapore\"}",
+            "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city"
+          ],
+          "additionalProperties": false
+        },
+        "tools": [
+          {
+            "type": "function",
+            "name": "weather",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": "weather in Singapore?"
+          }
+        ],
+        "instructions": "be terse"
+      }
+    },
+    {
+      "name": "context_messages_prompt",
+      "function": "tool_call_repair_context",
+      "description": "A messages prompt is passed through as-is.",
+      "input": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": {
+            "town": "Singapore"
+          },
+          "dynamic": true,
+          "invalid": true,
+          "error": {
+            "InvalidToolInput": {
+              "tool_name": "weather",
+              "tool_input": "{\"town\":\"Singapore\"}",
+              "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+            }
+          }
+        },
+        "prompt": [
+          {
+            "role": "user",
+            "content": "weather in Singapore?"
+          }
+        ],
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": "{\"town\":\"Singapore\"}",
+          "dynamic": true
+        },
+        "error": {
+          "InvalidToolInput": {
+            "tool_name": "weather",
+            "tool_input": "{\"town\":\"Singapore\"}",
+            "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city"
+          ],
+          "additionalProperties": false
+        },
+        "tools": [
+          {
+            "type": "function",
+            "name": "weather",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": "weather in Singapore?"
+          }
+        ],
+        "instructions": null
+      }
+    },
+    {
+      "name": "context_prompt_wrapper",
+      "function": "tool_call_repair_context",
+      "description": "The single-key {\"prompt\": …} wrapper is accepted wherever a prompt is, by the C ABI and by node and python alike — all three share one parse_prompt.",
+      "input": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": {
+            "town": "Singapore"
+          },
+          "dynamic": true,
+          "invalid": true,
+          "error": {
+            "InvalidToolInput": {
+              "tool_name": "weather",
+              "tool_input": "{\"town\":\"Singapore\"}",
+              "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+            }
+          }
+        },
+        "prompt": {
+          "prompt": "weather in Singapore?"
+        },
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "instructions": "be terse"
+        }
+      },
+      "expected": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": "{\"town\":\"Singapore\"}",
+          "dynamic": true
+        },
+        "error": {
+          "InvalidToolInput": {
+            "tool_name": "weather",
+            "tool_input": "{\"town\":\"Singapore\"}",
+            "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city"
+          ],
+          "additionalProperties": false
+        },
+        "tools": [
+          {
+            "type": "function",
+            "name": "weather",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": "weather in Singapore?"
+          }
+        ],
+        "instructions": "be terse"
+      }
+    },
+    {
+      "name": "context_without_tools",
+      "function": "tool_call_repair_context",
+      "description": "Options with no tool set yield JSON null, NOT an error: the AI SDK never repairs such a call, so the host skips it.",
+      "input": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": {
+            "town": "Singapore"
+          },
+          "dynamic": true,
+          "invalid": true,
+          "error": {
+            "InvalidToolInput": {
+              "tool_name": "weather",
+              "tool_input": "{\"town\":\"Singapore\"}",
+              "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+            }
+          }
+        },
+        "prompt": "weather in Singapore?",
+        "opts": {
+          "instructions": "be terse"
+        }
+      },
+      "expected": null
+    },
+    {
+      "name": "context_null_opts",
+      "function": "tool_call_repair_context",
+      "description": "Absent options (null / empty string / omitted) are defaults, which carry no tools — so also null.",
+      "input": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": {
+            "town": "Singapore"
+          },
+          "dynamic": true,
+          "invalid": true,
+          "error": {
+            "InvalidToolInput": {
+              "tool_name": "weather",
+              "tool_input": "{\"town\":\"Singapore\"}",
+              "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+            }
+          }
+        },
+        "prompt": "weather in Singapore?",
+        "opts": null
+      },
+      "expected": null
+    },
+    {
+      "name": "reply_repaired_validates",
+      "function": "apply_tool_call_repair",
+      "description": "A replacement that satisfies the schema yields a valid tool call: no `invalid`, no `error`, no `dynamic`.",
+      "input": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": {
+            "town": "Singapore"
+          },
+          "dynamic": true,
+          "invalid": true,
+          "error": {
+            "InvalidToolInput": {
+              "tool_name": "weather",
+              "tool_input": "{\"town\":\"Singapore\"}",
+              "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+            }
+          }
+        },
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "instructions": "be terse"
+        },
+        "reply": {
+          "type": "repaired",
+          "tool_call": {
+            "tool_call_id": "call-1",
+            "tool_name": "weather",
+            "input": "{\"city\":\"Singapore\"}"
+          }
+        }
+      },
+      "expected": {
+        "tool_call_id": "call-1",
+        "tool_name": "weather",
+        "input": {
+          "city": "Singapore"
+        }
+      }
+    },
+    {
+      "name": "reply_repaired_still_invalid",
+      "function": "apply_tool_call_repair",
+      "description": "A replacement that still fails validation keeps the ORIGINAL call and reports ToolCallRepair{original_error, cause}.",
+      "input": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": {
+            "town": "Singapore"
+          },
+          "dynamic": true,
+          "invalid": true,
+          "error": {
+            "InvalidToolInput": {
+              "tool_name": "weather",
+              "tool_input": "{\"town\":\"Singapore\"}",
+              "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+            }
+          }
+        },
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "instructions": "be terse"
+        },
+        "reply": {
+          "type": "repaired",
+          "tool_call": {
+            "tool_call_id": "call-1",
+            "tool_name": "weather",
+            "input": "{\"city\":42}"
+          }
+        }
+      },
+      "expected": {
+        "tool_call_id": "call-1",
+        "tool_name": "weather",
+        "input": {
+          "town": "Singapore"
+        },
+        "dynamic": true,
+        "invalid": true,
+        "error": {
+          "ToolCallRepair": {
+            "original_error": {
+              "InvalidToolInput": {
+                "tool_name": "weather",
+                "tool_input": "{\"town\":\"Singapore\"}",
+                "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+              }
+            },
+            "cause": {
+              "InvalidToolInput": {
+                "tool_name": "weather",
+                "tool_input": "{\"city\":42}",
+                "cause": "Type validation failed: Value: {\"city\":42}.\nError message: 42 is not of type \"string\""
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "reply_unchanged",
+      "function": "apply_tool_call_repair",
+      "description": "`unchanged` reproduces the input call byte for byte, original error included.",
+      "input": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": {
+            "town": "Singapore"
+          },
+          "dynamic": true,
+          "invalid": true,
+          "error": {
+            "InvalidToolInput": {
+              "tool_name": "weather",
+              "tool_input": "{\"town\":\"Singapore\"}",
+              "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+            }
+          }
+        },
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "instructions": "be terse"
+        },
+        "reply": {
+          "type": "unchanged"
+        }
+      },
+      "expected": {
+        "tool_call_id": "call-1",
+        "tool_name": "weather",
+        "input": {
+          "town": "Singapore"
+        },
+        "dynamic": true,
+        "invalid": true,
+        "error": {
+          "InvalidToolInput": {
+            "tool_name": "weather",
+            "tool_input": "{\"town\":\"Singapore\"}",
+            "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+          }
+        }
+      }
+    },
+    {
+      "name": "reply_failed",
+      "function": "apply_tool_call_repair",
+      "description": "A host-side failure becomes ToolCallRepair{cause: Other(message)} — a host error has no typed counterpart in core.",
+      "input": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": {
+            "town": "Singapore"
+          },
+          "dynamic": true,
+          "invalid": true,
+          "error": {
+            "InvalidToolInput": {
+              "tool_name": "weather",
+              "tool_input": "{\"town\":\"Singapore\"}",
+              "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+            }
+          }
+        },
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "instructions": "be terse"
+        },
+        "reply": {
+          "type": "failed",
+          "message": "repair model unavailable"
+        }
+      },
+      "expected": {
+        "tool_call_id": "call-1",
+        "tool_name": "weather",
+        "input": {
+          "town": "Singapore"
+        },
+        "dynamic": true,
+        "invalid": true,
+        "error": {
+          "ToolCallRepair": {
+            "original_error": {
+              "InvalidToolInput": {
+                "tool_name": "weather",
+                "tool_input": "{\"town\":\"Singapore\"}",
+                "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+              }
+            },
+            "cause": {
+              "Other": "repair model unavailable"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "apply_without_tools",
+      "function": "apply_tool_call_repair",
+      "description": "Applying a reply to a call made without a tool set is a caller error — the context call already answered null for it.",
+      "input": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": {
+            "town": "Singapore"
+          },
+          "dynamic": true,
+          "invalid": true,
+          "error": {
+            "InvalidToolInput": {
+              "tool_name": "weather",
+              "tool_input": "{\"town\":\"Singapore\"}",
+              "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+            }
+          }
+        },
+        "opts": {
+          "instructions": "be terse"
+        },
+        "reply": {
+          "type": "unchanged"
+        }
+      },
+      "expected_error": "InvalidArgument"
+    },
+    {
+      "name": "reject_valid_tool_call",
+      "function": "apply_tool_call_repair",
+      "description": "Repairing a call that is not invalid is a caller error, not a no-op.",
+      "input": {
+        "tool_call": {
+          "tool_call_id": "call-1",
+          "tool_name": "weather",
+          "input": {
+            "city": "Singapore"
+          }
+        },
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "instructions": "be terse"
+        },
+        "reply": {
+          "type": "unchanged"
+        }
+      },
+      "expected_error": "InvalidArgument"
+    },
+    {
+      "name": "patch_result",
+      "function": "apply_tool_call_repair_to_result",
+      "description": "Both `tool_calls` and the matching `response_messages` tool-call part are rewritten; everything else is untouched.",
+      "input": {
+        "result": {
+          "text": "",
+          "tool_calls": [
+            {
+              "tool_call_id": "call-1",
+              "tool_name": "weather",
+              "input": {
+                "town": "Singapore"
+              },
+              "dynamic": true,
+              "invalid": true,
+              "error": {
+                "InvalidToolInput": {
+                  "tool_name": "weather",
+                  "tool_input": "{\"town\":\"Singapore\"}",
+                  "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+                }
+              }
+            }
+          ],
+          "response_messages": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "checking"
+                },
+                {
+                  "type": "tool_call",
+                  "tool_call_id": "call-1",
+                  "tool_name": "weather",
+                  "input": {
+                    "town": "Singapore"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "instructions": "be terse"
+        },
+        "tool_call_id": "call-1",
+        "reply": {
+          "type": "repaired",
+          "tool_call": {
+            "tool_call_id": "call-1",
+            "tool_name": "weather",
+            "input": "{\"city\":\"Singapore\"}"
+          }
+        }
+      },
+      "expected": {
+        "text": "",
+        "tool_calls": [
+          {
+            "tool_call_id": "call-1",
+            "tool_name": "weather",
+            "input": {
+              "city": "Singapore"
+            }
+          }
+        ],
+        "response_messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "checking"
+              },
+              {
+                "type": "tool_call",
+                "tool_call_id": "call-1",
+                "tool_name": "weather",
+                "input": {
+                  "city": "Singapore"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "patch_result_renamed_call",
+      "function": "apply_tool_call_repair_to_result",
+      "description": "A repair may hand back a different tool_call_id; the transcript part must follow it, or the replayed message points at a call that is no longer there.",
+      "input": {
+        "result": {
+          "text": "",
+          "tool_calls": [
+            {
+              "tool_call_id": "call-1",
+              "tool_name": "weather",
+              "input": {
+                "town": "Singapore"
+              },
+              "dynamic": true,
+              "invalid": true,
+              "error": {
+                "InvalidToolInput": {
+                  "tool_name": "weather",
+                  "tool_input": "{\"town\":\"Singapore\"}",
+                  "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+                }
+              }
+            }
+          ],
+          "response_messages": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "checking"
+                },
+                {
+                  "type": "tool_call",
+                  "tool_call_id": "call-1",
+                  "tool_name": "weather",
+                  "input": {
+                    "town": "Singapore"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "instructions": "be terse"
+        },
+        "tool_call_id": "call-1",
+        "reply": {
+          "type": "repaired",
+          "tool_call": {
+            "tool_call_id": "call-2",
+            "tool_name": "weather",
+            "input": "{\"city\":\"Singapore\"}"
+          }
+        }
+      },
+      "expected": {
+        "text": "",
+        "tool_calls": [
+          {
+            "tool_call_id": "call-2",
+            "tool_name": "weather",
+            "input": {
+              "city": "Singapore"
+            }
+          }
+        ],
+        "response_messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "checking"
+              },
+              {
+                "type": "tool_call",
+                "tool_call_id": "call-2",
+                "tool_name": "weather",
+                "input": {
+                  "city": "Singapore"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "patch_result_unknown_id",
+      "function": "apply_tool_call_repair_to_result",
+      "description": "A tool_call_id the document does not carry is an error, never a silent no-op.",
+      "input": {
+        "result": {
+          "text": "",
+          "tool_calls": [
+            {
+              "tool_call_id": "call-1",
+              "tool_name": "weather",
+              "input": {
+                "town": "Singapore"
+              },
+              "dynamic": true,
+              "invalid": true,
+              "error": {
+                "InvalidToolInput": {
+                  "tool_name": "weather",
+                  "tool_input": "{\"town\":\"Singapore\"}",
+                  "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+                }
+              }
+            }
+          ],
+          "response_messages": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "checking"
+                },
+                {
+                  "type": "tool_call",
+                  "tool_call_id": "call-1",
+                  "tool_name": "weather",
+                  "input": {
+                    "town": "Singapore"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "instructions": "be terse"
+        },
+        "tool_call_id": "call-9",
+        "reply": {
+          "type": "unchanged"
+        }
+      },
+      "expected_error": "InvalidArgument"
+    },
+    {
+      "name": "patch_result_generate_object",
+      "function": "apply_tool_call_repair_to_result",
+      "description": "A GenerateObjectResult carries the text result under `raw`; the patch reaches into it and leaves `object` alone.",
+      "input": {
+        "result": {
+          "object": {
+            "ok": true
+          },
+          "finish_reason": {
+            "unified": "tool-calls",
+            "raw": null
+          },
+          "raw": {
+            "text": "",
+            "tool_calls": [
+              {
+                "tool_call_id": "call-1",
+                "tool_name": "weather",
+                "input": {
+                  "town": "Singapore"
+                },
+                "dynamic": true,
+                "invalid": true,
+                "error": {
+                  "InvalidToolInput": {
+                    "tool_name": "weather",
+                    "tool_input": "{\"town\":\"Singapore\"}",
+                    "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+                  }
+                }
+              }
+            ],
+            "response_messages": [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "checking"
+                  },
+                  {
+                    "type": "tool_call",
+                    "tool_call_id": "call-1",
+                    "tool_name": "weather",
+                    "input": {
+                      "town": "Singapore"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "instructions": "be terse"
+        },
+        "tool_call_id": "call-1",
+        "reply": {
+          "type": "repaired",
+          "tool_call": {
+            "tool_call_id": "call-1",
+            "tool_name": "weather",
+            "input": "{\"city\":\"Singapore\"}"
+          }
+        }
+      },
+      "expected": {
+        "object": {
+          "ok": true
+        },
+        "finish_reason": {
+          "unified": "tool-calls",
+          "raw": null
+        },
+        "raw": {
+          "text": "",
+          "tool_calls": [
+            {
+              "tool_call_id": "call-1",
+              "tool_name": "weather",
+              "input": {
+                "city": "Singapore"
+              }
+            }
+          ],
+          "response_messages": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "checking"
+                },
+                {
+                  "type": "tool_call",
+                  "tool_call_id": "call-1",
+                  "tool_name": "weather",
+                  "input": {
+                    "city": "Singapore"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "patch_result_duplicated_id",
+      "function": "apply_tool_call_repair_to_result",
+      "description": "Two tool calls sharing the target id make the patch ambiguous: an error, never a guess.",
+      "input": {
+        "result": {
+          "text": "",
+          "tool_calls": [
+            {
+              "tool_call_id": "call-1",
+              "tool_name": "weather",
+              "input": {
+                "town": "Singapore"
+              },
+              "dynamic": true,
+              "invalid": true,
+              "error": {
+                "InvalidToolInput": {
+                  "tool_name": "weather",
+                  "tool_input": "{\"town\":\"Singapore\"}",
+                  "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+                }
+              }
+            },
+            {
+              "tool_call_id": "call-1",
+              "tool_name": "weather",
+              "input": {
+                "town": "Singapore"
+              },
+              "dynamic": true,
+              "invalid": true,
+              "error": {
+                "InvalidToolInput": {
+                  "tool_name": "weather",
+                  "tool_input": "{\"town\":\"Singapore\"}",
+                  "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+                }
+              }
+            }
+          ],
+          "response_messages": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "checking"
+                },
+                {
+                  "type": "tool_call",
+                  "tool_call_id": "call-1",
+                  "tool_name": "weather",
+                  "input": {
+                    "town": "Singapore"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "instructions": "be terse"
+        },
+        "tool_call_id": "call-1",
+        "reply": {
+          "type": "unchanged"
+        }
+      },
+      "expected_error": "InvalidArgument"
+    },
+    {
+      "name": "patch_result_renamed_onto_existing_id",
+      "function": "apply_tool_call_repair_to_result",
+      "description": "A repair may rename the call, but not onto an id another call in the document already has.",
+      "input": {
+        "result": {
+          "text": "",
+          "tool_calls": [
+            {
+              "tool_call_id": "call-1",
+              "tool_name": "weather",
+              "input": {
+                "town": "Singapore"
+              },
+              "dynamic": true,
+              "invalid": true,
+              "error": {
+                "InvalidToolInput": {
+                  "tool_name": "weather",
+                  "tool_input": "{\"town\":\"Singapore\"}",
+                  "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+                }
+              }
+            },
+            {
+              "tool_call_id": "call-2",
+              "tool_name": "weather",
+              "input": {
+                "town": "Singapore"
+              },
+              "dynamic": true,
+              "invalid": true,
+              "error": {
+                "InvalidToolInput": {
+                  "tool_name": "weather",
+                  "tool_input": "{\"town\":\"Singapore\"}",
+                  "cause": "Type validation failed: Value: {\"town\":\"Singapore\"}.\nError message: Additional properties are not allowed ('town' was unexpected)"
+                }
+              }
+            }
+          ],
+          "response_messages": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "checking"
+                },
+                {
+                  "type": "tool_call",
+                  "tool_call_id": "call-1",
+                  "tool_name": "weather",
+                  "input": {
+                    "town": "Singapore"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "opts": {
+          "tools": [
+            {
+              "type": "function",
+              "name": "weather",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "instructions": "be terse"
+        },
+        "tool_call_id": "call-1",
+        "reply": {
+          "type": "repaired",
+          "tool_call": {
+            "tool_call_id": "call-2",
+            "tool_name": "weather",
+            "input": "{\"city\":\"Singapore\"}"
+          }
+        }
+      },
+      "expected_error": "InvalidArgument"
+    }
+  ]
+}

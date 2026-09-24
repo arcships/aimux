@@ -17,6 +17,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.Transient
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
@@ -615,6 +616,32 @@ data class GenerateTextOptions(
     @SerialName("timeout") val timeout: TimeoutConfiguration? = null,
     /** Session identifier (RFC-0024): groups consecutive calls into a session. */
     @SerialName("session_id") val sessionId: String? = null,
+    /**
+     * One repair attempt per invalid tool call (RFC-0035), run on the JVM after
+     * the call returns. Mirrors AI SDK `repairToolCall`.
+     *
+     * [Transient]: a function cannot be serialized, and core never sees it —
+     * [TypedModel] runs it host-side. Honoured by `generateText`,
+     * `generateObject`, `consumeStreamText`, `streamText` and
+     * `generateTextAsOpenAI` (which repairs the native result before
+     * converting it); `streamTextAsOpenAI` ignores it, because the OpenAI
+     * stream forwards provider argument deltas verbatim. The raw JSON-string
+     * [Model] ignores it too — it never sees typed options.
+     *
+     * If a repair fails at the boundary while streaming (not in the hook — a
+     * throwing hook is a `ToolCallRepair` error on the call), `onError` is told
+     * and the unrepaired part is still delivered. The stream waits for the
+     * hook, without a timeout.
+     *
+     * While streaming, the hook runs on a worker thread that is lent the
+     * stream's read hold on this model, so it may call this same model even
+     * against a concurrent `close()`. The lend is valid only while the stream
+     * thread blocks holding that read lock, and only on the thread the hook is
+     * invoked on: extra threads the hook starts itself take the lock normally
+     * and would deadlock against a concurrent `close()`. Call the model from
+     * the thread the hook is invoked on.
+     */
+    @Transient val repairToolCall: RepairToolCall? = null,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

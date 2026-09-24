@@ -18,6 +18,8 @@
 //   - Usage / TokenUsage   (types.rs:33, types.rs:44)
 //   - FinishReason         (types.rs:10)
 
+import 'dart:async';
+
 import 'package:json_annotation/json_annotation.dart';
 
 part 'types.g.dart';
@@ -185,6 +187,153 @@ class ToolCall {
       _$ToolCallFromJson(json);
   Map<String, dynamic> toJson() => _$ToolCallToJson(this);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool-call repair (RFC-0035)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A tool call as the model emitted it: [input] is the provider's raw argument
+/// **text**, not a decoded object.
+///
+/// Both the call handed to a [RepairToolCall] hook
+/// ([ToolCallRepairContext.toolCall]) and the replacement it returns. The
+/// replacement is re-parsed and re-validated against the tool's schema, so
+/// [input] must be the argument text the tool expects (usually a JSON object
+/// literal); returning text that still fails validation leaves the call
+/// invalid, now carrying a [ToolCallRepairError].
+class RawToolCall {
+  final String toolCallId;
+  final String toolName;
+
+  /// The provider's raw argument text (e.g. `'{"city":"Singapore"}'`).
+  final String input;
+
+  /// Whether the provider executes the call itself. The core adopts the
+  /// replacement as returned, so a hook must carry this over (as
+  /// `copyWith` does) or the call turns into a client-executed one.
+  final bool? providerExecuted;
+
+  /// Whether the call targets a dynamic tool. `dynamic` is a Dart built-in
+  /// identifier, so the field is `isDynamic` and maps to the `dynamic` key.
+  final bool? isDynamic;
+
+  /// Provider-assigned thought signature (e.g. Gemini `thoughtSignature`),
+  /// echoed back verbatim on the next turn.
+  final String? thoughtSignature;
+
+  /// Additional provider-specific metadata associated with this call.
+  final dynamic providerMetadata;
+
+  const RawToolCall({
+    required this.toolCallId,
+    required this.toolName,
+    required this.input,
+    this.providerExecuted,
+    this.isDynamic,
+    this.thoughtSignature,
+    this.providerMetadata,
+  });
+
+  factory RawToolCall.fromJson(Map<String, dynamic> json) => RawToolCall(
+        toolCallId: json['tool_call_id'] as String,
+        toolName: json['tool_name'] as String,
+        input: json['input'] as String,
+        providerExecuted: json['provider_executed'] as bool?,
+        isDynamic: json['dynamic'] as bool?,
+        thoughtSignature: json['thought_signature'] as String?,
+        providerMetadata: json['provider_metadata'],
+      );
+
+  /// A copy with [input] (and optionally the id or name) replaced and every
+  /// provider field kept — the usual shape of a repair.
+  RawToolCall copyWith({String? toolCallId, String? toolName, String? input}) =>
+      RawToolCall(
+        toolCallId: toolCallId ?? this.toolCallId,
+        toolName: toolName ?? this.toolName,
+        input: input ?? this.input,
+        providerExecuted: providerExecuted,
+        isDynamic: isDynamic,
+        thoughtSignature: thoughtSignature,
+        providerMetadata: providerMetadata,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'tool_call_id': toolCallId,
+        'tool_name': toolName,
+        'input': input,
+        if (providerExecuted != null) 'provider_executed': providerExecuted,
+        if (isDynamic != null) 'dynamic': isDynamic,
+        if (thoughtSignature != null) 'thought_signature': thoughtSignature,
+        if (providerMetadata != null) 'provider_metadata': providerMetadata,
+      };
+}
+
+/// The argument a [RepairToolCall] hook receives: one invalid tool call plus
+/// everything needed to ask a model to fix it.
+///
+/// Built by the core from the same prompt and options the call was generated
+/// with, so [tools], [messages] and [instructions] are exactly what the model
+/// saw — the host never re-derives them.
+class ToolCallRepairContext {
+  /// The invalid call, with the provider's raw argument text.
+  final RawToolCall toolCall;
+
+  /// The lookup, parse or validation failure, externally tagged
+  /// (`{"InvalidToolInput": {...}}`). Weak type — same shape as
+  /// [ToolCall.error].
+  final Object? error;
+
+  /// The schema [toolCall] failed to satisfy; null when the tool is unknown.
+  final Map<String, dynamic>? inputSchema;
+
+  /// The full tool set the call was generated with.
+  final List<Tool> tools;
+
+  /// The messages the model saw.
+  final List<ModelMessage> messages;
+
+  /// The system instructions the call was generated with, if any.
+  final String? instructions;
+
+  const ToolCallRepairContext({
+    required this.toolCall,
+    this.error,
+    this.inputSchema,
+    this.tools = const [],
+    this.messages = const [],
+    this.instructions,
+  });
+
+  factory ToolCallRepairContext.fromJson(Map<String, dynamic> json) =>
+      ToolCallRepairContext(
+        toolCall:
+            RawToolCall.fromJson(json['tool_call'] as Map<String, dynamic>),
+        error: json['error'],
+        inputSchema: json['input_schema'] as Map<String, dynamic>?,
+        tools: (json['tools'] as List<dynamic>? ?? const [])
+            .map((t) => Tool.fromJson(t as Map<String, dynamic>))
+            .toList(),
+        messages: (json['messages'] as List<dynamic>? ?? const [])
+            .map((m) => ModelMessage.fromJson(m as Map<String, dynamic>))
+            .toList(),
+        instructions: json['instructions'] as String?,
+      );
+}
+
+/// A host-side hook that repairs one invalid tool call (RFC-0035), mirroring
+/// the AI SDK's `repairToolCall`. See [GenerateTextOptions.repairToolCall].
+///
+/// Return a [RawToolCall] to replace the call, or null to leave it as it is.
+/// Throwing means the repair failed: the call stays invalid and carries a
+/// [ToolCallRepairError] whose cause is the thrown object's `toString()`.
+///
+/// The hook runs on the caller's isolate, after the native call has returned,
+/// so it may itself call back into aimux (including another model call).
+/// A `Future` return is only awaited on the streaming path, which is the only
+/// asynchronous entry point; the synchronous entry points
+/// ([TypedModel.generateText] and friends) reject one with a [StateError].
+typedef RepairToolCall = FutureOr<RawToolCall?> Function(
+    ToolCallRepairContext context);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tools
@@ -808,6 +957,24 @@ class GenerateTextOptions {
   @JsonKey(name: 'session_id')
   final String? sessionId;
 
+  /// Repair a tool call the model got wrong (RFC-0035), mirroring the AI SDK's
+  /// `repairToolCall`.
+  ///
+  /// Runs host-side, after generation: every call in the result with
+  /// `invalid == true` is offered to the hook once, in order, and the reply is
+  /// re-validated by the core. A call made without [tools] is never offered —
+  /// the hook is not invoked for it.
+  ///
+  /// Honoured by [TypedModel]'s `generateText` / `generateObject` /
+  /// `consumeStreamText` / `streamText`, and by `generateTextAsOpenAI`, which
+  /// repairs the native result before converting it. `streamTextAsOpenAI`
+  /// does not reflect repair: the chunk stream forwards the provider's
+  /// argument deltas verbatim, as in the AI SDK.
+  ///
+  /// Never serialized — it is a host closure, not part of the wire options.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final RepairToolCall? repairToolCall;
+
   GenerateTextOptions({
     this.maxOutputTokens,
     this.temperature,
@@ -829,6 +996,7 @@ class GenerateTextOptions {
     this.timeout,
     this.includeRawChunks,
     this.sessionId,
+    this.repairToolCall,
   });
 
   factory GenerateTextOptions.fromJson(Map<String, dynamic> json) {

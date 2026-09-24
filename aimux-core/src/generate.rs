@@ -1203,7 +1203,7 @@ async fn do_generate_with_logging(
 /// If the prompt is messages, they are used as-is.
 /// Instructions are passed through separately (they get prepended by
 /// `convert_to_language_model_prompt`).
-fn split_prompt(
+pub(crate) fn split_prompt(
     prompt: ModelPrompt,
     instructions: Option<&str>,
 ) -> (Vec<ModelMessage>, Option<&str>) {
@@ -1220,7 +1220,6 @@ fn split_prompt(
 use crate::openai_output::{
     ChatCompletion, ChatCompletionFunction, ChatCompletionStream, ChatCompletionToolCall,
     OpenAiStreamOptions, parsed_tool_call_arguments, to_chat_completion, to_chat_completion_stream,
-    to_chat_completion_stream_with_deferred_tool_calls,
 };
 
 /// Generate text and return the result as an OpenAI Chat Completion.
@@ -1261,7 +1260,28 @@ pub async fn generate_text_as_openai(
     options: GenerateTextOptions,
 ) -> Result<ChatCompletion, AiMuxError> {
     let result = generate_text(model, prompt, options).await?;
-    let mut completion = to_chat_completion(&result.raw, model.model_id());
+    Ok(generate_text_result_to_chat_completion(
+        &result,
+        model.model_id(),
+    ))
+}
+
+/// Convert a [`GenerateTextResult`] into an OpenAI [`ChatCompletion`].
+///
+/// The pure half of [`generate_text_as_openai`]: tool calls come from
+/// `result.tool_calls` (so they reflect Core parsing and any repair already
+/// applied to the result), everything else from `result.raw` via
+/// [`to_chat_completion`]. Hosts that repair a result themselves (RFC-0035)
+/// convert it with this afterwards.
+///
+/// `model_id` is the fallback for `ChatCompletion.model` when the provider
+/// response carries no model id.
+#[must_use]
+pub fn generate_text_result_to_chat_completion(
+    result: &GenerateTextResult,
+    model_id: &str,
+) -> ChatCompletion {
+    let mut completion = to_chat_completion(&result.raw, model_id);
     if let Some(choice) = completion.choices.first_mut() {
         choice.message.tool_calls = if result.tool_calls.is_empty() {
             None
@@ -1286,7 +1306,7 @@ pub async fn generate_text_as_openai(
             )
         };
     }
-    Ok(completion)
+    completion
 }
 
 /// Stream text and return the result as a stream of OpenAI Chat Completion chunks.
@@ -1297,6 +1317,12 @@ pub async fn generate_text_as_openai(
 ///
 /// Works with **any** provider (OpenAI, Anthropic, Google, …) — the output is
 /// always standard OpenAI Chat Completions streaming chunks.
+///
+/// Tool-call argument deltas are the provider's text, forwarded verbatim as it
+/// arrives, so this stream does **not** reflect tool-call repair — aligned
+/// with the AI SDK, which likewise never withholds input deltas. Use
+/// [`generate_text_as_openai`] or the native `stream_text` when repaired calls
+/// are required.
 ///
 /// # Example
 ///
@@ -1333,22 +1359,12 @@ pub async fn stream_text_as_openai(
     options: GenerateTextOptions,
     stream_options: OpenAiStreamOptions,
 ) -> Result<ChatCompletionStream, AiMuxError> {
-    // `parse_tool_call` only invokes repair when a tool set was supplied.
-    let defer_tool_calls = options.repair_tool_call.is_some() && options.tools.is_some();
     let result = stream_text(model, prompt, options).await?;
-    if defer_tool_calls {
-        Ok(to_chat_completion_stream_with_deferred_tool_calls(
-            result.stream,
-            model.model_id(),
-            stream_options,
-        ))
-    } else {
-        Ok(to_chat_completion_stream(
-            result.stream,
-            model.model_id(),
-            stream_options,
-        ))
-    }
+    Ok(to_chat_completion_stream(
+        result.stream,
+        model.model_id(),
+        stream_options,
+    ))
 }
 
 #[cfg(test)]

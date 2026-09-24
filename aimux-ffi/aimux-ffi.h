@@ -361,6 +361,89 @@ aimux_error_t *aimux_stream_text_as_openai_with_abort(uint64_t handle, uint64_t 
                                                           void (*on_done)(void *stream_ctx),
                                                           void *stream_ctx);
 
+/**
+ * [AiMuxError] Convert a serialized GenerateTextResult into a serialized
+ * ChatCompletion — the conversion half of aimux_generate_text_as_openai. For
+ * hosts that repair a native result themselves (RFC-0035): tool calls come
+ * from the result's tool_calls, so a patched result converts to a completion
+ * that reflects the repair. handle only supplies the fallback model id; no
+ * runtime work, so this is safe from inside a stream callback.
+ */
+aimux_error_t *aimux_generate_text_result_as_openai(uint64_t handle, const char *result_json,
+                                                        char **out_json);
+
+/* ── Host-side tool-call repair (RFC-0035) ─────────────────────────────── */
+
+/*
+ * These three take data only — no model handle, no tokio runtime, no I/O — so
+ * they are safe to call from inside an aimux_stream_text callback (the
+ * re-entrancy guard only rejects nested runtime work).
+ *
+ * The loop: run generation, find a tool call with "invalid": true in
+ * GenerateTextResult.tool_calls, build its repair argument with
+ * aimux_tool_call_repair_context, produce a reply in your own language, then
+ * apply it with aimux_apply_tool_call_repair (one call) or
+ * aimux_apply_tool_call_repair_to_result (the whole document).
+ *
+ * prompt_json and opts_json are the SAME two strings you passed to
+ * aimux_generate_text / aimux_stream_text: messages, instructions, and the
+ * tool set are derived from them inside the library, so no host reimplements
+ * that. opts_json follows the usual rule — NULL, empty, or "null" means
+ * defaults.
+ *
+ * reply_json is one of:
+ *   {"type":"repaired","tool_call":{"tool_call_id":…,"tool_name":…,"input":"<raw text>"}}
+ *   {"type":"unchanged"}
+ *   {"type":"failed","message":"…"}
+ *
+ * The OpenAI-shaped output has no equivalent: ChatCompletion carries no
+ * invalid/error field, and aimux_stream_text_as_openai forwards the provider's
+ * argument deltas verbatim. Drive repair from the native result.
+ */
+
+/**
+ * [AiMuxError] Build the repair argument for one invalid tool call.
+ *
+ * @param tool_call_json One GenerateTextResult.tool_calls entry, "invalid": true.
+ * @param prompt_json    The prompt the call was generated with (same wire
+ *                       format as aimux_generate_text, {"prompt": …} wrapper
+ *                       included).
+ * @param opts_json      The options the call was generated with (may be NULL).
+ * @param out_json       {tool_call, error, input_schema, tools, messages,
+ *                       instructions} — the AI SDK repairToolCall argument.
+ *                       tool_call.input is the provider's raw argument text.
+ *                       The JSON literal null when opts_json carried no tools:
+ *                       such a call is never repaired (AI SDK rule), so skip
+ *                       it. That is a SUCCESS, not an error.
+ */
+aimux_error_t *aimux_tool_call_repair_context(const char *tool_call_json,
+                                                  const char *prompt_json,
+                                                  const char *opts_json, char **out_json);
+
+/**
+ * [AiMuxError] Resolve one invalid tool call against a repair reply. Writes
+ * the resulting ToolCall — valid, or invalid carrying a nested
+ * ToolCallRepairError. Options carrying no tools are
+ * AIMUX_E_INVALID_ARGUMENT: aimux_tool_call_repair_context already wrote null
+ * for such a call.
+ */
+aimux_error_t *aimux_apply_tool_call_repair(const char *tool_call_json,
+                                                const char *opts_json,
+                                                const char *reply_json, char **out_json);
+
+/**
+ * [AiMuxError] Apply a repair reply to a serialized GenerateTextResult,
+ * GenerateObjectResult, or StreamTextResultAggregated (the output of
+ * aimux_consume_stream_text). Both tool_calls and the matching response_messages
+ * tool-call part are rewritten (tool_call_id included — a repair may rename
+ * the call); everything else is left as-is.
+ */
+aimux_error_t *aimux_apply_tool_call_repair_to_result(const char *result_json,
+                                                          const char *opts_json,
+                                                          const char *tool_call_id,
+                                                          const char *reply_json,
+                                                          char **out_json);
+
 /* ── Resource management ────────────────────────────────────────────────── */
 
 /**

@@ -70,7 +70,9 @@ public class TypedModel implements Closeable {
      * @return Decoded {@link Types.GenerateTextResult}.
      */
     public Types.GenerateTextResult generateText(String prompt, Types.GenerateTextOptions options) {
-        return decodeResult(raw.generateText(encode(prompt), encodeOptions(options)));
+        String promptJson = encode(prompt);
+        String optsJson = encodeOptions(options);
+        return decodeResult(repaired(raw.generateText(promptJson, optsJson), promptJson, optsJson, options));
     }
 
     /**
@@ -91,7 +93,9 @@ public class TypedModel implements Closeable {
      * @return Decoded {@link Types.GenerateTextResult}.
      */
     public Types.GenerateTextResult generateText(List<Types.ModelMessage> messages, Types.GenerateTextOptions options) {
-        return decodeResult(raw.generateText(encode(messages), encodeOptions(options)));
+        String promptJson = encode(messages);
+        String optsJson = encodeOptions(options);
+        return decodeResult(repaired(raw.generateText(promptJson, optsJson), promptJson, optsJson, options));
     }
 
     private Types.GenerateTextResult decodeResult(String resultJson) {
@@ -124,7 +128,9 @@ public class TypedModel implements Closeable {
      * @return Decoded {@link Types.GenerateObjectResult}.
      */
     public Types.GenerateObjectResult generateObject(String prompt, Types.GenerateTextOptions options) {
-        return decodeObjectResult(raw.generateObject(encode(prompt), encodeOptions(options)));
+        String promptJson = encode(prompt);
+        String optsJson = encodeOptions(options);
+        return decodeObjectResult(repaired(raw.generateObject(promptJson, optsJson), promptJson, optsJson, options));
     }
 
     /**
@@ -145,7 +151,9 @@ public class TypedModel implements Closeable {
      * @return Decoded {@link Types.GenerateObjectResult}.
      */
     public Types.GenerateObjectResult generateObject(List<Types.ModelMessage> messages, Types.GenerateTextOptions options) {
-        return decodeObjectResult(raw.generateObject(encode(messages), encodeOptions(options)));
+        String promptJson = encode(messages);
+        String optsJson = encodeOptions(options);
+        return decodeObjectResult(repaired(raw.generateObject(promptJson, optsJson), promptJson, optsJson, options));
     }
 
     private Types.GenerateObjectResult decodeObjectResult(String resultJson) {
@@ -178,7 +186,9 @@ public class TypedModel implements Closeable {
      * @return Decoded {@link Types.StreamTextResultAggregated}.
      */
     public Types.StreamTextResultAggregated consumeStreamText(String prompt, Types.GenerateTextOptions options) {
-        return decodeAggregated(raw.consumeStreamText(encode(prompt), encodeOptions(options)));
+        String promptJson = encode(prompt);
+        String optsJson = encodeOptions(options);
+        return decodeAggregated(repaired(raw.consumeStreamText(promptJson, optsJson), promptJson, optsJson, options));
     }
 
     /**
@@ -201,7 +211,9 @@ public class TypedModel implements Closeable {
      * @return Decoded {@link Types.StreamTextResultAggregated}.
      */
     public Types.StreamTextResultAggregated consumeStreamText(List<Types.ModelMessage> messages, Types.GenerateTextOptions options) {
-        return decodeAggregated(raw.consumeStreamText(encode(messages), encodeOptions(options)));
+        String promptJson = encode(messages);
+        String optsJson = encodeOptions(options);
+        return decodeAggregated(repaired(raw.consumeStreamText(promptJson, optsJson), promptJson, optsJson, options));
     }
 
     private Types.StreamTextResultAggregated decodeAggregated(String resultJson) {
@@ -244,7 +256,7 @@ public class TypedModel implements Closeable {
     public void streamText(String prompt, Types.GenerateTextOptions options,
                            Consumer<Types.StreamPart> onPart,
                            Runnable onDone, Consumer<String> onError) {
-        streamTextParts(encode(prompt), encodeOptions(options), onPart, onDone, onError);
+        streamTextParts(encode(prompt), encodeOptions(options), hook(options), onPart, onDone, onError);
     }
 
     /**
@@ -272,15 +284,29 @@ public class TypedModel implements Closeable {
     public void streamText(List<Types.ModelMessage> messages, Types.GenerateTextOptions options,
                            Consumer<Types.StreamPart> onPart,
                            Runnable onDone, Consumer<String> onError) {
-        streamTextParts(encode(messages), encodeOptions(options), onPart, onDone, onError);
+        streamTextParts(encode(messages), encodeOptions(options), hook(options), onPart, onDone, onError);
     }
 
-    private void streamTextParts(String promptJson, String optsJson,
+    private void streamTextParts(final String promptJson, final String optsJson,
+                                 final ToolCallRepair hook,
                                  Consumer<Types.StreamPart> onPart,
                                  Runnable onDone, Consumer<String> onError) {
         raw.streamText(
             promptJson, optsJson,
-            partJson -> {
+            rawPartJson -> {
+                // Repair runs on the stream thread, between the native part
+                // and the consumer, so the consumer only ever sees the
+                // repaired call. The three repair functions are pure data
+                // calls, safe to make from inside the native callback. A
+                // repair that fails at the boundary (rather than in the hook,
+                // which core turns into a ToolCallRepair error) must not drop
+                // the call: report it and deliver the unrepaired part.
+                String partJson = rawPartJson;
+                try {
+                    partJson = ToolCallRepairs.repairStreamPart(rawPartJson, promptJson, optsJson, hook, raw);
+                } catch (RuntimeException e) {
+                    onError.accept("failed to repair tool call: " + e.getMessage());
+                }
                 try {
                     onPart.accept(decodePart(partJson));
                 } catch (RuntimeException e) {
@@ -316,7 +342,7 @@ public class TypedModel implements Closeable {
      * @return Lazy stream of decoded parts.
      */
     public Stream<Types.StreamPart> streamTextStream(String prompt, Types.GenerateTextOptions options) {
-        return streamTextStreamParts(encode(prompt), encodeOptions(options));
+        return streamTextStreamParts(encode(prompt), encodeOptions(options), hook(options));
     }
 
     /**
@@ -337,10 +363,11 @@ public class TypedModel implements Closeable {
      * @return Lazy stream of decoded parts.
      */
     public Stream<Types.StreamPart> streamTextStream(List<Types.ModelMessage> messages, Types.GenerateTextOptions options) {
-        return streamTextStreamParts(encode(messages), encodeOptions(options));
+        return streamTextStreamParts(encode(messages), encodeOptions(options), hook(options));
     }
 
-    private Stream<Types.StreamPart> streamTextStreamParts(final String promptJson, final String optsJson) {
+    private Stream<Types.StreamPart> streamTextStreamParts(final String promptJson, final String optsJson,
+                                                           final ToolCallRepair hook) {
         // Sentinel for end-of-stream. Java's LinkedBlockingQueue rejects null
         // elements, so use a unique object instead of Kotlin's null sentinel.
         final Object END = new Object();
@@ -356,7 +383,7 @@ public class TypedModel implements Closeable {
                 public boolean tryAdvance(Consumer<? super Types.StreamPart> action) {
                     if (!started.getAndSet(true)) {
                         try {
-                            streamTextParts(promptJson, optsJson,
+                            streamTextParts(promptJson, optsJson, hook,
                                 parts::add,
                                 () -> parts.add(END), // sentinel = end of stream
                                 err -> {
@@ -413,7 +440,7 @@ public class TypedModel implements Closeable {
      * @return Decoded {@link Types.ChatCompletion}.
      */
     public Types.ChatCompletion generateTextAsOpenAI(String prompt, Types.GenerateTextOptions options) {
-        return decodeChatCompletion(raw.generateTextAsOpenAI(encode(prompt), encodeOptions(options)));
+        return generateTextAsOpenAIParts(encode(prompt), encodeOptions(options), options);
     }
 
     /**
@@ -434,7 +461,21 @@ public class TypedModel implements Closeable {
      * @return Decoded {@link Types.ChatCompletion}.
      */
     public Types.ChatCompletion generateTextAsOpenAI(List<Types.ModelMessage> messages, Types.GenerateTextOptions options) {
-        return decodeChatCompletion(raw.generateTextAsOpenAI(encode(messages), encodeOptions(options)));
+        return generateTextAsOpenAIParts(encode(messages), encodeOptions(options), options);
+    }
+
+    /**
+     * A {@code ChatCompletion} has no {@code invalid} marker to repair from, so
+     * with a hook the native result is generated, repaired, then converted —
+     * its tool calls carry the repaired arguments.
+     */
+    private Types.ChatCompletion generateTextAsOpenAIParts(String promptJson, String optsJson,
+                                                           Types.GenerateTextOptions options) {
+        if (hook(options) == null) {
+            return decodeChatCompletion(raw.generateTextAsOpenAI(promptJson, optsJson));
+        }
+        String resultJson = repaired(raw.generateText(promptJson, optsJson), promptJson, optsJson, options);
+        return decodeChatCompletion(raw.generateTextResultAsOpenAI(resultJson));
     }
 
     private Types.ChatCompletion decodeChatCompletion(String resultJson) {
@@ -647,6 +688,19 @@ public class TypedModel implements Closeable {
     }
 
     // ── helpers ───────────────────────────────────────────────────────────
+
+    /**
+     * Host-side tool-call repair (RFC-0035) over a result document, before it
+     * is decoded. Without a hook the JSON is returned untouched.
+     */
+    private static String repaired(String resultJson, String promptJson, String optsJson,
+                                   Types.GenerateTextOptions options) {
+        return ToolCallRepairs.repairResult(resultJson, promptJson, optsJson, hook(options));
+    }
+
+    private static ToolCallRepair hook(Types.GenerateTextOptions options) {
+        return options == null ? null : options.getRepairToolCall();
+    }
 
     private static String encodeOptions(Types.GenerateTextOptions options) {
         return options == null ? null : encode(options);

@@ -47,7 +47,7 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
     fun generateText(prompt: String, options: GenerateTextOptions? = null): GenerateTextResult {
         val promptJson = AimuxJson.encodeToString(prompt)
         val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
-        val resultJson = raw.generateText(promptJson, optsJson)
+        val resultJson = repaired(raw.generateText(promptJson, optsJson), promptJson, optsJson, options)
         return decodeResult(resultJson)
     }
 
@@ -64,8 +64,24 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
             messages,
         )
         val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
-        val resultJson = raw.generateText(promptJson, optsJson)
+        val resultJson = repaired(raw.generateText(promptJson, optsJson), promptJson, optsJson, options)
         return decodeResult(resultJson)
+    }
+
+    /**
+     * Give every invalid tool call in a result one repair attempt (RFC-0035),
+     * before the JSON is decoded — the patched document is what the caller
+     * sees, transcript included. A no-op unless [GenerateTextOptions.repairToolCall]
+     * is set.
+     */
+    private fun repaired(
+        resultJson: String,
+        promptJson: String,
+        optsJson: String?,
+        options: GenerateTextOptions?,
+    ): String {
+        val repair = options?.repairToolCall ?: return resultJson
+        return repairToolCallsInResult(resultJson, promptJson, optsJson, repair)
     }
 
     private fun decodeResult(resultJson: String): GenerateTextResult {
@@ -93,7 +109,7 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
     fun generateObject(prompt: String, options: GenerateTextOptions? = null): GenerateObjectResult {
         val promptJson = AimuxJson.encodeToString(prompt)
         val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
-        val resultJson = raw.generateObject(promptJson, optsJson)
+        val resultJson = repaired(raw.generateObject(promptJson, optsJson), promptJson, optsJson, options)
         return decodeObjectResult(resultJson)
     }
 
@@ -110,7 +126,7 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
             messages,
         )
         val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
-        val resultJson = raw.generateObject(promptJson, optsJson)
+        val resultJson = repaired(raw.generateObject(promptJson, optsJson), promptJson, optsJson, options)
         return decodeObjectResult(resultJson)
     }
 
@@ -138,7 +154,7 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
     fun consumeStreamText(prompt: String, options: GenerateTextOptions? = null): StreamTextResultAggregated {
         val promptJson = AimuxJson.encodeToString(prompt)
         val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
-        val resultJson = raw.consumeStreamText(promptJson, optsJson)
+        val resultJson = repaired(raw.consumeStreamText(promptJson, optsJson), promptJson, optsJson, options)
         return decodeAggregated(resultJson)
     }
 
@@ -156,7 +172,7 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
             messages,
         )
         val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
-        val resultJson = raw.consumeStreamText(promptJson, optsJson)
+        val resultJson = repaired(raw.consumeStreamText(promptJson, optsJson), promptJson, optsJson, options)
         return decodeAggregated(resultJson)
     }
 
@@ -230,10 +246,24 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
         onError: (String) -> Unit,
     ) {
         val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
+        // Off the callback thread: the native re-entrancy guard is thread-local
+        // (see offCallbackThread), so a hook calling aimux would fail with 204.
+        val repair = options?.repairToolCall?.let { offCallbackThread(raw, it) }
         raw.streamText(
             promptJson = promptJson,
             optsJson = optsJson,
-            onPart = { partJson ->
+            onPart = { rawPartJson ->
+                // Only an invalid ToolCall part is rewritten; tool-input deltas
+                // pass through untouched and immediately. A repair that fails
+                // at the boundary (rather than in the user's function, which
+                // core turns into a ToolCallRepair error) must not kill the
+                // stream: report it and deliver the unrepaired part.
+                val partJson = if (repair == null) rawPartJson else try {
+                    repairToolCallStreamPart(rawPartJson, promptJson, optsJson, repair)
+                } catch (error: Exception) {
+                    onError("failed to repair tool call: ${error.message ?: error::class.simpleName}")
+                    rawPartJson
+                }
                 try {
                     onPart(AimuxJson.decodeFromString(StreamPartSerializer, partJson))
                 } catch (error: Exception) {
@@ -317,8 +347,7 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
     fun generateTextAsOpenAI(prompt: String, options: GenerateTextOptions? = null): ChatCompletion {
         val promptJson = AimuxJson.encodeToString(prompt)
         val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
-        val resultJson = raw.generateTextAsOpenAI(promptJson, optsJson)
-        return decodeChatCompletion(resultJson)
+        return generateTextAsOpenAIParts(promptJson, optsJson, options)
     }
 
     /**
@@ -337,8 +366,24 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
             messages,
         )
         val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
-        val resultJson = raw.generateTextAsOpenAI(promptJson, optsJson)
-        return decodeChatCompletion(resultJson)
+        return generateTextAsOpenAIParts(promptJson, optsJson, options)
+    }
+
+    /**
+     * A `ChatCompletion` has no `invalid` marker to repair from, so with a
+     * [GenerateTextOptions.repairToolCall] the native result is generated,
+     * repaired, then converted — its tool calls carry the repaired arguments.
+     */
+    private fun generateTextAsOpenAIParts(
+        promptJson: String,
+        optsJson: String?,
+        options: GenerateTextOptions?,
+    ): ChatCompletion {
+        if (options?.repairToolCall == null) {
+            return decodeChatCompletion(raw.generateTextAsOpenAI(promptJson, optsJson))
+        }
+        val resultJson = repaired(raw.generateText(promptJson, optsJson), promptJson, optsJson, options)
+        return decodeChatCompletion(raw.generateTextResultAsOpenAI(resultJson))
     }
 
     private fun decodeChatCompletion(resultJson: String): ChatCompletion {

@@ -110,9 +110,47 @@ if len(result["tool_calls"]) > 0:
     print(call["input"])          # {"location": "Tokyo"}
 ```
 
-> The `repair_tool_call` callback is Rust-core-only (it cannot cross the FFI
-> boundary); tool calls that stay invalid arrive with `invalid: true` and a
-> typed `error` on the tool call.
+### Repairing Invalid Tool Calls
+
+A tool call the model got wrong never fails generation: it comes back with
+`invalid: true` and a typed `error`. Pass `repair_tool_call` to get one shot at
+fixing it (RFC-0035, the equivalent of the AI SDK `repairToolCall`):
+
+```python
+def repair(ctx):
+    # ctx = {tool_call, error, input_schema, tools, messages, instructions};
+    # ctx["tool_call"]["input"] is the provider's raw argument text.
+    args = json.loads(ctx["tool_call"]["input"])
+    if "location" not in args:
+        return None                      # None = leave the call invalid
+    return dict(ctx["tool_call"], input=json.dumps({"city": args["location"]}))
+
+result = generate_text(model, "What's the weather in Tokyo?",
+                       {"tools": tools, "repair_tool_call": repair})
+print(result["tool_calls"][0]["input"])   # {"city": "Tokyo"}
+```
+
+The function is called once per invalid call, after generation, and its result
+is re-validated against the tool's schema: a call that is still wrong — and one
+whose repair raises — comes back invalid with a `ToolCallRepair` error carrying
+the original one. Returning `None` leaves the call untouched. It runs on the
+Python side, outside any native call, so it may itself call `generate_text` to
+ask a model for better arguments. Both `tool_calls` and `response_messages` are
+patched, so the next turn replays the repaired arguments.
+
+The same option exists on the typed wrapper's `GenerateTextOptions`, where it
+takes a `ToolCallRepairContext` and returns a `RawToolCall`. It applies to
+`generate_text`, `generate_object`, `consume_stream_text` and `stream_text`
+(which yields the repaired `ToolCall` part; tool-input deltas are the
+provider's own text and pass through untouched), and to
+`generate_text_as_openai`: a `chat.completion` carries no `invalid` marker, so
+it repairs the native result and converts it
+(`Model.generate_text_result_as_openai`). `stream_text_as_openai` does not
+reflect repair — its argument deltas are the provider's text, as in the AI SDK.
+
+Only an exception raised by the repair function itself means "failed". An
+error in the binding's own decoding or encoding — including a typed hook that
+returns something other than a `RawToolCall` or `None` — propagates as itself.
 
 ### Tool Selection Strategy
 
@@ -307,6 +345,13 @@ The `aimux` package has two layers:
 | `Files` | `openai_files(api_key, base_url=None)` | `upload_file(data_base64, media_type, opts_json=None)` |
 | `StreamIterator` | returned by `Model.stream_text` | `__iter__` / `__next__` of `StreamPart` JSON strings |
 
+Three module-level native functions back tool-call repair (all pure and
+synchronous, JSON in / JSON out): `tool_call_repair_context(tool_call_json,
+prompt_json, opts_json=None)`, `apply_tool_call_repair(tool_call_json,
+opts_json, reply_json)` and `apply_tool_call_repair_to_result(result_json,
+opts_json, tool_call_id, reply_json)`. The `repair_tool_call` option drives
+them for you; call them directly only to build your own loop.
+
 All factories accept an optional `base_url` and return instances synchronously
 (no `await`). The typed wrapper adds five functions: `generate_text` (returns a
 pydantic `GenerateTextResult`), `stream_text` (yields parsed `StreamPart`
@@ -328,6 +373,7 @@ from aimux.wrapper import (
     TokenUsage, Usage, FinishReason, ResponseMetadata, ToolCall,
     ModelMessage, FunctionTool, ProviderTool, TextContentPart,
     GenerateTextOptions, GenerateTextResult, GenerateResult,
+    RawToolCall, ToolCallRepairContext, RepairToolCall,
     # functions
     generate_text, stream_text, parse_stream_part,
 )

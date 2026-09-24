@@ -328,6 +328,77 @@ high-level range. Any fallible call can additionally return 200..206.
 | `aimux_stream_text_as_openai(…)` / `_with_abort(…)` | [AiMuxError] `ChatCompletionChunk` per part; same shapes as `aimux_stream_text` / `_with_abort` |
 | `uint64_t aimux_abort_signal_new(void)` / `void aimux_abort_signal_abort(h)` / `void aimux_abort_signal_drop(h)` | Stream cancellation; infallible |
 
+### Tool-call repair (RFC-0035)
+
+Core never fails a generation on a bad tool call: it comes back as a
+`tool_calls[]` entry with `"invalid": true` and an `error`. These three
+functions let a host repair such a call in its own language. They take JSON
+and return JSON — **no model handle, no tokio runtime, no I/O** — so they are
+also safe to call from inside an `aimux_stream_text` callback, where a
+blocking `aimux_*` call would be rejected as a re-entrant call.
+
+The loop: generate → find an entry with `"invalid": true` →
+`aimux_tool_call_repair_context` → produce a reply in your own language →
+`aimux_apply_tool_call_repair` (one call) or
+`aimux_apply_tool_call_repair_to_result` (the whole document).
+
+`prompt_json` and `opts_json` are **the same two strings you already passed to
+`aimux_generate_text` / `aimux_stream_text`** — messages, instructions, and the
+tool set are derived from them inside the library, including the
+`{"prompt": …}` wrapper and the usual `opts_json` rule (NULL / empty /
+`"null"` means defaults). No host reimplements that.
+
+`reply_json` is one of:
+
+```jsonc
+{"type": "repaired", "tool_call": {"tool_call_id": "call-1",
+                                   "tool_name": "weather",
+                                   "input": "{\"city\":\"Singapore\"}"}}
+{"type": "unchanged"}                       // keep the original error
+{"type": "failed", "message": "…"}          // your repair attempt failed
+```
+
+`tool_call.input` is the provider's raw argument **text**, not a parsed
+object — the same thing a model emits. A `repaired` reply is parsed and
+schema-validated from scratch; if it still fails, the call stays invalid and
+its error becomes `ToolCallRepair { original_error, cause }`. `failed` reports
+`cause` as `Other(message)`.
+
+| Function | Description |
+|------|------|
+| `aimux_tool_call_repair_context(tool_call_json, prompt_json, opts_json, char **out_json)` | [AiMuxError] `{tool_call, error, input_schema, tools, messages, instructions}` — the AI SDK `repairToolCall` argument — **or the JSON literal `null`** |
+| `aimux_apply_tool_call_repair(tool_call_json, opts_json, reply_json, char **out_json)` | [AiMuxError] Resolve one call; writes the resulting `ToolCall` JSON |
+| `aimux_apply_tool_call_repair_to_result(result_json, opts_json, tool_call_id, reply_json, char **out_json)` | [AiMuxError] Patch a `GenerateTextResult` / `GenerateObjectResult` / `StreamTextResultAggregated`: rewrites `tool_calls` **and** the matching `response_messages` tool-call part (its `tool_call_id` included — a repair may rename the call) |
+
+**`opts_json` with no `tools` is not an error for the context call**: it writes
+the JSON literal `null`, which means "this call is not repairable — skip it".
+That is the AI SDK rule (a call made without a tool set is never repaired),
+decided once in the library so every host agrees. The two `apply_*` functions
+reject such options with `AIMUX_E_INVALID_ARGUMENT`, because a host that
+honoured the `null` never reaches them.
+
+They also reject a call that is not invalid, and
+`aimux_apply_tool_call_repair_to_result` rejects a `tool_call_id` the document
+does not carry — again `AIMUX_E_INVALID_ARGUMENT`, never a silent no-op.
+
+The OpenAI-compatible output has no equivalent. `ChatCompletion` carries no
+`invalid` / `error` field, so a host cannot tell from it that a call needs
+repairing, and `aimux_stream_text_as_openai` forwards the provider's argument
+deltas verbatim as they arrive (aligned with the AI SDK, which likewise never
+withholds input deltas). Drive repair from `aimux_generate_text`, then convert
+the patched result:
+
+```c
+// [AiMuxError] GenerateTextResult JSON → ChatCompletion JSON. The handle only
+// supplies the fallback model id; no runtime work.
+aimux_error_t *aimux_generate_text_result_as_openai(uint64_t handle, const char *result_json,
+                                                        char **out_json);
+```
+
+The completion's `tool_calls` then carry the repaired arguments — the same
+output `aimux_generate_text_as_openai` gives a Rust caller with a repair
+closure.
+
 ### Embedding / speech / image / video / rerank / search / files / transcription
 
 Constructors are `[C ABI]` (they only store config); the calls are `[AiMuxError]`.

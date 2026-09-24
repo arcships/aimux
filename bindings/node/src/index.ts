@@ -15,8 +15,11 @@
 import * as native from './native.ts'
 import {
   AbortBridge,
+  applyToolCallRepair,
+  applyToolCallRepairToResult,
   createProvider as rawCreateProvider,
   getModelSpecs as rawGetModelSpecs,
+  toolCallRepairContext,
 } from './native.ts'
 import type { Model, ProviderConfig, ProviderHandle as RawProviderHandle } from './native.ts'
 
@@ -52,6 +55,10 @@ import type {
   RuntimeModel,
   VideoCallOptions,
   VideoPollOptions,
+  AiMuxError,
+  JsonValue,
+  RawToolCall,
+  ToolCallRepairReply,
 } from './types'
 
 // Error hierarchy (throw/catch). Wire payload type `AiMuxError` lives under StreamPart only.
@@ -155,6 +162,8 @@ export type {
   RuntimeModel,
   VideoCallOptions,
   VideoPollOptions,
+  RawToolCall,
+  ToolCallRepairReply,
 }
 
 /**
@@ -166,16 +175,126 @@ export type {
  */
 export type RawModel = Model
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool-call repair (RFC-0035) — host-side, mirroring AI SDK `repairToolCall`
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The argument passed to a {@link RepairToolCall} function. */
+export type ToolCallRepairContext = {
+  tool_call: RawToolCall
+  /** The lookup / parse / validation failure that made the call invalid. */
+  error: AiMuxError
+  /** JSON Schema of the called tool; the empty-object schema when unknown. */
+  input_schema: JsonValue
+  tools: Tool[]
+  messages: ModelMessage[]
+  instructions: string | null
+}
+
+/**
+ * Repairs one invalid tool call, mirroring the AI SDK's `repairToolCall`.
+ *
+ * Return a replacement call, or `null` to leave the call invalid with its
+ * original error. Throwing marks the repair as failed: the call stays invalid
+ * and carries a {@link ToolCallRepairError} whose cause is the thrown message.
+ * A returned call is re-parsed and re-validated; if it still does not match the
+ * schema the result is likewise a {@link ToolCallRepairError}.
+ *
+ * Runs outside any native call, so it may itself call back into aimux (the
+ * usual implementation asks a model to rewrite the arguments). It is invoked at
+ * most once per tool call, and never for a call made without a tool set.
+ */
+export type RepairToolCall = (
+  context: ToolCallRepairContext,
+) => RawToolCall | null | Promise<RawToolCall | null>
+
+/**
+ * {@link GenerateTextOptions} plus the host-side `repairToolCall` function.
+ *
+ * `repairToolCall` is a function, so `JSON.stringify` drops it — it never
+ * reaches the provider request. It does **not** apply to the OpenAI-format
+ * entry points (`generateTextAsOpenai` / `streamTextAsOpenai`): that shape
+ * carries no `invalid` marker, so there is nothing to drive repair from.
+ */
+export type GenerateTextOptionsWithRepair = GenerateTextOptions & {
+  repairToolCall?: RepairToolCall
+}
+
+/**
+ * The AI SDK's `getErrorMessage`, so a thrown value renders exactly as it
+ * would in the SDK's own `ToolCallRepairError` message: strings verbatim,
+ * `Error` instances via `toString()` (name included), anything else as JSON.
+ */
+function errorMessage(e: unknown): string {
+  if (e == null) return 'unknown error'
+  if (typeof e === 'string') return e
+  if (e instanceof Error) return e.toString()
+  return JSON.stringify(e)
+}
+
+/**
+ * Run the user's repair function for one invalid call and turn its outcome
+ * into the wire reply. Returns `null` when the call is not repairable at all
+ * (no tool set — the AI SDK rule, decided in core).
+ */
+async function repairReplyFor(
+  call: unknown,
+  promptJson: string,
+  optsJson: string | undefined,
+  repair: RepairToolCall,
+): Promise<string | null> {
+  const context = JSON.parse(
+    toolCallRepairContext(JSON.stringify(call), promptJson, optsJson),
+  ) as ToolCallRepairContext | null
+  if (context === null) return null
+
+  let reply: ToolCallRepairReply
+  try {
+    const replacement = await repair(context)
+    reply = replacement ? { type: 'repaired', tool_call: replacement } : { type: 'unchanged' }
+  } catch (e) {
+    reply = { type: 'failed', message: errorMessage(e) }
+  }
+  return JSON.stringify(reply)
+}
+
+/**
+ * Repair every invalid call in a serialized result, before it is decoded.
+ * `tool_calls` sits at the top level of a generate-text result and under `raw`
+ * in a generate-object one.
+ */
+async function repairResultJson(
+  resultJson: string,
+  promptJson: string,
+  optsJson: string | undefined,
+  repair: RepairToolCall,
+): Promise<string> {
+  const result = JSON.parse(resultJson) as {
+    tool_calls?: ToolCall[]
+    raw?: { tool_calls?: ToolCall[] }
+  }
+  const calls = result.tool_calls ?? result.raw?.tool_calls ?? []
+
+  let patched = resultJson
+  for (const call of calls) {
+    if (call.invalid !== true) continue
+    const reply = await repairReplyFor(call, promptJson, optsJson, repair)
+    if (reply === null) continue
+    patched = applyToolCallRepairToResult(patched, optsJson, call.tool_call_id, reply)
+  }
+  return patched
+}
+
 /**
  * Generate text (non-streaming). Returns a typed {@link GenerateTextResult}.
  *
  * @param model   - A raw model instance from `openai()`, `anthropic()`, etc.
  * @param prompt  - A plain string or an array of typed chat messages.
  * @param options - Optional typed generation options (tools, tool_choice,
- *                  temperature, response_format, …). The Rust `repair_tool_call`
- *                  callback is core-only (it cannot cross the FFI boundary);
- *                  invalid tool calls arrive with `invalid`/`error` set on the
- *                  tool call.
+ *                  temperature, response_format, …). Invalid tool calls arrive
+ *                  with `invalid`/`error` set on the tool call; pass
+ *                  {@link RepairToolCall | `repairToolCall`} to fix them up
+ *                  before the result is decoded.
  * @param signal  - Optional `AbortSignal`; aborting it cancels the call.
  *
  * Internally calls the raw
@@ -193,12 +312,16 @@ export type RawModel = Model
 export async function generateText(
   model: RawModel,
   prompt: string | ModelMessage[],
-  options?: GenerateTextOptions,
+  options?: GenerateTextOptionsWithRepair,
   signal?: AbortSignal,
 ): Promise<GenerateTextResult> {
+  const promptJson = JSON.stringify(prompt)
   const optsJson = options ? JSON.stringify(options) : undefined
   const bridge = signal ? new AbortBridge(signal) : undefined
-  const resultJson = await model.generateText(JSON.stringify(prompt), optsJson, bridge)
+  let resultJson = await model.generateText(promptJson, optsJson, bridge)
+  if (options?.repairToolCall) {
+    resultJson = await repairResultJson(resultJson, promptJson, optsJson, options.repairToolCall)
+  }
   return JSON.parse(resultJson) as GenerateTextResult
 }
 
@@ -226,14 +349,30 @@ export async function generateText(
 export async function* streamText(
   model: RawModel,
   prompt: string | ModelMessage[],
-  options?: GenerateTextOptions,
+  options?: GenerateTextOptionsWithRepair,
   signal?: AbortSignal,
 ): AsyncGenerator<StreamPart> {
+  const promptJson = JSON.stringify(prompt)
   const optsJson = options ? JSON.stringify(options) : undefined
   const bridge = signal ? new AbortBridge(signal) : undefined
-  const gen = await model.streamText(JSON.stringify(prompt), optsJson, bridge)
+  const repair = options?.repairToolCall
+  const gen = await model.streamText(promptJson, optsJson, bridge)
   for await (const json of gen) {
-    yield JSON.parse(json) as StreamPart
+    const part = JSON.parse(json) as StreamPart
+    // Only the settled ToolCall part is repairable; ToolInputDelta parts are
+    // the provider's raw text and pass through immediately (AI SDK behaviour).
+    if (repair && 'ToolCall' in part && part.ToolCall.invalid === true) {
+      const reply = await repairReplyFor(part.ToolCall, promptJson, optsJson, repair)
+      if (reply !== null) {
+        yield {
+          ToolCall: JSON.parse(
+            applyToolCallRepair(JSON.stringify(part.ToolCall), optsJson, reply),
+          ) as Extract<StreamPart, { ToolCall: unknown }>['ToolCall'],
+        }
+        continue
+      }
+    }
+    yield part
   }
 }
 
@@ -261,6 +400,11 @@ export function getSessions(): SessionView[] {
  * Works with **any** provider — the result is always a standard OpenAI
  * `ChatCompletion` object.
  *
+ * With {@link RepairToolCall | `repairToolCall`}, invalid calls are repaired
+ * on the native result first and the completion is converted from it, so its
+ * `tool_calls` carry the repaired arguments (a `ChatCompletion` has no
+ * `invalid` marker to repair from).
+ *
  * @example
  * ```ts
  * import { openai, generateTextAsOpenai } from 'aimux'
@@ -272,12 +416,18 @@ export function getSessions(): SessionView[] {
 export async function generateTextAsOpenai(
   model: RawModel,
   prompt: string | ModelMessage[],
-  options?: GenerateTextOptions,
+  options?: GenerateTextOptionsWithRepair,
   signal?: AbortSignal,
 ): Promise<ChatCompletion> {
+  const promptJson = JSON.stringify(prompt)
   const optsJson = options ? JSON.stringify(options) : undefined
   const bridge = signal ? new AbortBridge(signal) : undefined
-  const resultJson = await model.generateTextAsOpenai(JSON.stringify(prompt), optsJson, bridge)
+  if (options?.repairToolCall) {
+    let resultJson = await model.generateText(promptJson, optsJson, bridge)
+    resultJson = await repairResultJson(resultJson, promptJson, optsJson, options.repairToolCall)
+    return JSON.parse(model.generateTextResultAsOpenai(resultJson)) as ChatCompletion
+  }
+  const resultJson = await model.generateTextAsOpenai(promptJson, optsJson, bridge)
   return JSON.parse(resultJson) as ChatCompletion
 }
 

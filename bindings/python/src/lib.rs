@@ -18,12 +18,15 @@ use crate::error::{
 };
 use aimux_core::AiMuxError;
 use aimux_core::generate::{
-    GenerateTextOptions, generate_object, generate_text, generate_text_as_openai, stream_text,
+    GenerateTextOptions, GenerateTextResult, generate_object, generate_text,
+    generate_text_as_openai, generate_text_result_to_chat_completion, stream_text,
     stream_text_as_openai,
 };
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
 use aimux_core::openai_output::OpenAiStreamOptions;
+use aimux_core::parse_tool_call::{ToolCallRepairReply, tool_call_repair_inputs};
+use aimux_core::tool::ToolCall;
 use pyo3::prelude::*;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -286,6 +289,20 @@ impl Model {
             Ok(r) => serialize_result(&r),
             Err(e) => Err(to_py_err(&e)),
         }
+    }
+
+    /// Convert a serialized GenerateTextResult into a serialized
+    /// ChatCompletion — the conversion half of `generate_text_as_openai`.
+    ///
+    /// For repairing on the host (RFC-0035): patch the native result, then
+    /// convert it, so the completion's tool calls are the repaired ones. This
+    /// model only supplies the fallback model id.
+    fn generate_text_result_as_openai(&self, result_json: &str) -> PyResult<String> {
+        let result: GenerateTextResult = wire_json("result_json", result_json)?;
+        serialize_result(&generate_text_result_to_chat_completion(
+            &result,
+            self.inner.model_id(),
+        ))
     }
 
     /// Stream text as OpenAI Chat Completion chunks (RFC-0026).
@@ -1033,6 +1050,106 @@ struct RouterFfiConfig {
     model_id: Option<String>,
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Host-side tool-call repair (RFC-0035)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Build the repair argument for one invalid tool call.
+///
+/// `tool_call_json` is a ``GenerateTextResult.tool_calls`` entry with
+/// ``"invalid": true``. `prompt_json` and `opts_json` are **the same two
+/// strings the call was generated with** (``generate_text`` /
+/// ``stream_text``); messages, instructions, and the tool set are derived
+/// from them here, so no caller repeats that derivation.
+///
+/// Returns ``{tool_call, error, input_schema, tools, messages, instructions}``
+/// — the AI SDK ``repairToolCall`` argument, with ``tool_call.input`` the
+/// provider's raw argument text — or the JSON literal ``"null"`` when the
+/// options carried no tools: as in the AI SDK, a call made without a tool set
+/// is never repaired, and the caller skips it. ``"null"`` is a success.
+///
+/// Pure and synchronous: no model, no network. Raises
+/// ``InvalidArgumentError`` when the call is not an invalid one.
+#[pyfunction]
+#[pyo3(signature = (tool_call_json, prompt_json, opts_json=None))]
+fn tool_call_repair_context(
+    tool_call_json: &str,
+    prompt_json: &str,
+    opts_json: Option<&str>,
+) -> PyResult<String> {
+    let tool_call: ToolCall = wire_json("tool_call_json", tool_call_json)?;
+    let prompt = parse_prompt(prompt_json)?;
+    let opts = parse_opts(opts_json)?;
+    let (messages, instructions, tools) = tool_call_repair_inputs(prompt, &opts);
+    let context = aimux_core::parse_tool_call::tool_call_repair_context(
+        &tool_call,
+        tools,
+        &messages,
+        instructions,
+    )
+    .map_err(|e| to_py_err(&e))?;
+    serialize_result(&context)
+}
+
+/// Resolve one invalid tool call against a host's repair reply.
+///
+/// `opts_json` is the same string the call was generated with; the tool set
+/// comes from it. `reply_json` is ``{"type":"repaired","tool_call":{…}}``,
+/// ``{"type":"unchanged"}``, or ``{"type":"failed","message":"…"}``. Returns
+/// the resulting ``ToolCall`` JSON — valid, or invalid carrying a nested
+/// ``ToolCallRepairError``.
+///
+/// Options carrying no tools raise ``InvalidArgumentError``: such a call is
+/// not repairable, and ``tool_call_repair_context`` already said so by
+/// returning ``"null"``.
+#[pyfunction]
+#[pyo3(signature = (tool_call_json, opts_json, reply_json))]
+fn apply_tool_call_repair(
+    tool_call_json: &str,
+    opts_json: Option<&str>,
+    reply_json: &str,
+) -> PyResult<String> {
+    let tool_call: ToolCall = wire_json("tool_call_json", tool_call_json)?;
+    let opts = parse_opts(opts_json)?;
+    let reply: ToolCallRepairReply = wire_json("reply_json", reply_json)?;
+    let repaired = aimux_core::parse_tool_call::apply_tool_call_repair(
+        &tool_call,
+        opts.tools.as_deref(),
+        reply,
+    )
+    .map_err(|e| to_py_err(&e))?;
+    serialize_result(&repaired)
+}
+
+/// Apply a repair reply to a serialized ``GenerateTextResult`` or
+/// ``GenerateObjectResult``, rewriting both ``tool_calls`` and the matching
+/// ``response_messages`` tool-call part. `opts_json` is the same string the
+/// call was generated with.
+///
+/// The OpenAI-shaped result has no equivalent: it carries no ``invalid`` /
+/// ``error``, so repair is driven from the native result, which
+/// ``Model.generate_text_result_as_openai`` then converts.
+#[pyfunction]
+#[pyo3(signature = (result_json, opts_json, tool_call_id, reply_json))]
+fn apply_tool_call_repair_to_result(
+    result_json: &str,
+    opts_json: Option<&str>,
+    tool_call_id: &str,
+    reply_json: &str,
+) -> PyResult<String> {
+    let result: serde_json::Value = wire_json("result_json", result_json)?;
+    let opts = parse_opts(opts_json)?;
+    let reply: ToolCallRepairReply = wire_json("reply_json", reply_json)?;
+    let patched = aimux_core::parse_tool_call::apply_tool_call_repair_to_result(
+        &result,
+        opts.tools.as_deref(),
+        tool_call_id,
+        reply,
+    )
+    .map_err(|e| to_py_err(&e))?;
+    serialize_result(&patched)
+}
+
 #[pymodule]
 fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::error::register(m)?;
@@ -1071,6 +1188,9 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(provider, m)?)?;
     m.add_function(wrap_pyfunction!(create_provider, m)?)?;
     m.add_function(wrap_pyfunction!(get_model_specs, m)?)?;
+    m.add_function(wrap_pyfunction!(tool_call_repair_context, m)?)?;
+    m.add_function(wrap_pyfunction!(apply_tool_call_repair, m)?)?;
+    m.add_function(wrap_pyfunction!(apply_tool_call_repair_to_result, m)?)?;
     m.add_class::<ProviderHandle>()?;
 
     // Multimodal classes.

@@ -221,6 +221,54 @@ if err := stream.Err(); err != nil {
 > Drain `Parts()` before calling `Err()`. If you stop reading early, call
 > `Cancel()` so the native stream does not keep running.
 
+## Tool-Call Repair
+
+A tool call the model got wrong does not fail generation: it comes back with
+`Invalid == true` and an `Error`. Set `RepairToolCall` on the options to fix
+such a call in Go, before the result is decoded. It is the Go equivalent of
+the AI SDK `repairToolCall`.
+
+```go
+opts := &aimux.GenerateTextOptions{
+    Tools: []aimux.Tool{weatherTool},
+    RepairToolCall: func(ctx *aimux.ToolCallRepairContext) (*aimux.RawToolCall, error) {
+        // ctx carries the raw argument text, the error, the tool's schema,
+        // the tool set, and the transcript the model saw.
+        fixed, err := fixArguments(ctx.ToolCall.Input, ctx.InputSchema)
+        if err != nil {
+            return nil, err // recorded as a failed repair
+        }
+        return &aimux.RawToolCall{
+            ToolCallID: ctx.ToolCall.ToolCallID,
+            ToolName:   ctx.ToolCall.ToolName,
+            Input:      fixed, // raw argument TEXT, not an object
+        }, nil
+    },
+}
+result, err := model.Generate("weather in Singapore?", opts)
+```
+
+Return value:
+
+| Return | Result |
+|------|------|
+| a `*RawToolCall` | re-parsed and re-validated; a still-invalid call carries a `ToolCallRepair` error |
+| `nil, nil` | the call is left as it was, with its original error |
+| `nil, err` | the call stays invalid, carrying a `ToolCallRepair` error whose cause is `err.Error()` |
+
+The function runs after the model call, outside any native call, so it may
+itself call aimux — e.g. ask a model to rewrite the arguments. Each call is
+repaired at most once.
+
+It applies to the typed entry points `Generate`, `GenerateObj`,
+`ConsumeStream` and `Stream` (which delivers the repaired `ToolCall` part;
+input deltas are always forwarded verbatim), and to `GenerateAsOpenAI`: a
+`ChatCompletion` carries no invalid marker, so it repairs the native result
+and converts it (`Model.GenerateTextResultAsOpenAI`). `StreamAsOpenAI` does
+not reflect repair — its argument deltas are the provider's text, as in the
+AI SDK. The raw JSON-string methods (`GenerateText`, `StreamText`) take no
+options struct and are likewise unaffected.
+
 ## Vector Embedding
 
 Converts text into a vector representation.
@@ -511,7 +559,8 @@ Typed structs live in `bindings/go/types.go` (text) and
 `GenerateTextResult`, `StreamPart`, `ModelMessage`, `Tool`, `ToolChoice`
 (with helpers `ToolChoiceAuto()` / `ToolChoiceNone()`), `ToolCall`,
 `ToolResult`, `Usage`, `FinishReason`, `Role`, `MessageContent`, `ContentPart`,
-`ResponseFormat`, `ReasoningEffort`, `Warning`, `GenerateResult`, plus
+`ResponseFormat`, `ReasoningEffort`, `Warning`, `GenerateResult`,
+`RawToolCall`, `ToolCallRepairContext`, `RepairToolCallFunc`, plus
 `EmbeddingCallOptions/Result`, `SpeechCallOptions/Result`,
 `ImageCallOptions/Result`, `TranscriptionCallOptions/Result`,
 `VideoCallOptions/Result`, `RerankingCallOptions/Result`,

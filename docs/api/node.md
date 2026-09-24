@@ -260,9 +260,43 @@ if (result.tool_calls.length > 0) {
 }
 ```
 
-> The `repair_tool_call` callback is Rust-core-only (it cannot cross the FFI
-> boundary); tool calls that stay invalid arrive with `invalid: true` and a
-> typed `error` on the tool call.
+> Tool calls that fail lookup, JSON parsing, or schema validation never fail
+> generation: they arrive with `invalid: true` and a typed `error` on the tool
+> call. Pass `repairToolCall` to fix them up.
+
+### Repairing Invalid Tool Calls
+
+`repairToolCall` mirrors the AI SDK option of the same name. It runs in
+JavaScript, after the model call and before the result is decoded, so it can
+`await` anything — including another `generateText`:
+
+```typescript
+const result = await generateText(model, "What's the weather in Tokyo?", {
+  tools,
+  repairToolCall: async ({ tool_call, error, input_schema, messages }) => {
+    // tool_call.input is the model's raw argument TEXT, not a parsed object.
+    const fixed = await generateText(model, [
+      ...messages,
+      { role: 'user', content: `Rewrite these arguments to match ${JSON.stringify(input_schema)}: ${tool_call.input}` },
+    ])
+    return { ...tool_call, input: fixed.text }   // null → leave the call invalid
+  },
+})
+```
+
+Return `null` to keep the call invalid with its original error. Throwing marks
+the repair failed; the call then carries a `ToolCallRepair` error whose cause is
+the thrown message, as does a replacement that still does not match the schema.
+Each invalid call is repaired at most once, and a call made without a tool set
+is never repaired.
+
+Both `generateText` and `streamText` support it — in the stream, the settled
+`ToolCall` part is replaced, while `ToolInputDelta` parts are the provider's raw
+text and pass through untouched. `generateTextAsOpenai` supports it too: the
+OpenAI shape carries no `invalid` marker, so it repairs the native result and
+converts it (`Model.generateTextResultAsOpenai`). `streamTextAsOpenai` does not
+reflect repair — its argument deltas are the provider's text, as in the AI SDK.
+`RawToolCall` and `ToolCallRepairReply` are exported from the package root.
 
 ### Tool Selection Strategy
 

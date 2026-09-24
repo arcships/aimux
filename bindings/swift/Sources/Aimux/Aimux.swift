@@ -972,6 +972,17 @@ public final class Model: @unchecked Sendable {
         return try ffiStringCall { aimux_generate_text_as_openai(handle, prompt, options, $0) }
     }
 
+    /// Convert a serialized GenerateTextResult into a serialized ChatCompletion —
+    /// the conversion half of `generateTextAsOpenAI`.
+    ///
+    /// For repairing on the host (RFC-0035): patch the native result, then
+    /// convert it, so the completion's tool calls are the repaired ones. This
+    /// model only supplies the fallback model id; nothing is generated.
+    public func generateTextResultAsOpenAI(_ result: String) throws -> String {
+        try validateJson(result, parameter: "result")
+        return try ffiStringCall { aimux_generate_text_result_as_openai(handle, result, $0) }
+    }
+
     /// Stream text from the model.
     ///
     /// The C ABI returns NULL after `onDone`, or a returned error on failure

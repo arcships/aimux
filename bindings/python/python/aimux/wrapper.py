@@ -20,10 +20,11 @@ internally by custom serializers.
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Dict, Iterator, List, Literal, Optional, Union
+from typing import Annotated, Any, Callable, Dict, Iterator, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_serializer, model_validator
 
+from . import _repair
 from .aimux import Model
 
 __all__ = [
@@ -48,6 +49,9 @@ __all__ = [
     "FinishReason",
     "ResponseMetadata",
     "ToolCall",
+    "RawToolCall",
+    "ToolCallRepairContext",
+    "RepairToolCall",
     "ModelMessage",
     "FunctionTool",
     "ProviderTool",
@@ -154,6 +158,23 @@ class ToolCall(BaseModel):
     provider_metadata: Optional[Any] = None
     invalid: Optional[bool] = None
     error: Optional[AiMuxErrorValue] = None
+
+
+class RawToolCall(BaseModel):
+    """A tool call as the provider emitted it (Rust ``RawToolCall``).
+
+    Unlike :class:`ToolCall`, ``input`` is the **raw argument text** — the
+    string the model produced, parsed by nobody yet. This is both what a
+    repair function is shown and what it returns.
+    """
+
+    tool_call_id: str
+    tool_name: str
+    input: str
+    provider_executed: Optional[bool] = None
+    dynamic: Optional[bool] = None
+    thought_signature: Optional[str] = None
+    provider_metadata: Optional[Any] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -828,15 +849,37 @@ class TimeoutConfiguration(BaseModel):
     chunk_ms: Optional[int] = None
 
 
+class ToolCallRepairContext(BaseModel):
+    """What a ``repair_tool_call`` function is given (RFC-0035).
+
+    Mirrors the AI SDK ``repairToolCall`` argument: the offending call with its
+    raw argument text, the error it failed with, the schema it was checked
+    against, and the tools, messages and instructions the call was generated
+    with.
+    """
+
+    tool_call: RawToolCall
+    error: AiMuxErrorValue
+    input_schema: Any = None
+    tools: List[Tool] = Field(default_factory=list)
+    messages: List[ModelMessage] = Field(default_factory=list)
+    instructions: Optional[str] = None
+
+
+#: A ``repair_tool_call`` function: return a replacement :class:`RawToolCall`
+#: to re-validate, or ``None`` to leave the call invalid. Raising marks the
+#: repair failed, with the exception message as the cause.
+RepairToolCall = Callable[[ToolCallRepairContext], Optional[RawToolCall]]
+
+
 class GenerateTextOptions(BaseModel):
     """User-facing options for ``generate_text`` / ``stream_text``.
 
     Mirrors Rust ``GenerateTextOptions``. All fields are optional; unset fields
     default to ``None`` (Rust treats absent / ``null`` as ``None``).
 
-    The Rust ``repair_tool_call`` callback is core-only (it cannot cross the
-    FFI boundary); invalid tool calls arrive with ``invalid``/``error`` set on
-    the tool call.
+    Invalid tool calls arrive with ``invalid``/``error`` set on the tool call;
+    set :attr:`repair_tool_call` to get a shot at fixing them.
     """
 
     max_output_tokens: Optional[int] = None
@@ -865,6 +908,26 @@ class GenerateTextOptions(BaseModel):
     """
     timeout: Optional[TimeoutConfiguration] = None
     include_raw_chunks: Optional[bool] = None
+
+    repair_tool_call: Optional[RepairToolCall] = Field(default=None, exclude=True)
+    """One-shot repair for tool calls that came back ``invalid`` (RFC-0035).
+
+    Called once per invalid call, after generation and before the result is
+    decoded, with a :class:`ToolCallRepairContext`. Return a
+    :class:`RawToolCall` to re-validate, or ``None`` to leave the call as it
+    is; raising marks the repair failed and the call keeps its original error
+    with the exception message as the cause.
+
+    It runs outside the native call and may itself call back into aimux (e.g.
+    ask a model to rewrite the arguments). A call generated without ``tools``
+    is never repaired. ``generate_text_as_openai`` repairs the native result
+    before converting it; ``stream_text_as_openai`` does not reflect repair
+    (its tool-argument deltas are the provider's text, as in the AI SDK).
+    Only an exception raised by this function means "failed"; returning
+    something other than a :class:`RawToolCall` or ``None`` is an error.
+    Host-only: it is never serialized into the options sent across the
+    boundary.
+    """
 
 
 class GenerateResult(BaseModel):
@@ -1127,6 +1190,22 @@ def _opts_to_json(options: Optional[GenerateTextOptions]) -> Optional[str]:
     return options.model_dump_json(exclude_none=True, by_alias=True)
 
 
+def _repair_adapter(options: Optional[GenerateTextOptions]):
+    """Bridge the typed repair function to the JSON-level loop in ``_repair``."""
+    fn = options.repair_tool_call if options is not None else None
+    if fn is None:
+        return None
+
+    def adapter(context: dict) -> Optional[dict]:
+        typed = ToolCallRepairContext.model_validate(context)
+        replacement = _repair.run_hook(fn, typed)
+        if replacement is None:
+            return None
+        return replacement.model_dump(mode="json", exclude_none=True)
+
+    return adapter
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Typed API
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1150,6 +1229,9 @@ def generate_text(
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
     result_json = model.generate_text(prompt_json, opts_json)
+    repair = _repair_adapter(options)
+    if repair is not None:
+        result_json = _repair.repair_result(result_json, prompt_json, opts_json, repair)
     return GenerateTextResult.model_validate_json(result_json)
 
 
@@ -1172,7 +1254,12 @@ def stream_text(
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
+    repair = _repair_adapter(options)
     for part_json in model.stream_text(prompt_json, opts_json):
+        if repair is not None:
+            part_json = _repair.repair_stream_part(
+                part_json, prompt_json, opts_json, repair
+            )
         yield json.loads(part_json)
 
 
@@ -1199,11 +1286,16 @@ def generate_text_as_openai(
 
     Returns:
         A :class:`ChatCompletion` with ``.id``, ``.choices``, ``.usage``, …
+
+    With ``options.repair_tool_call``, invalid calls are repaired on the
+    native result first and the completion is converted from it, so its
+    ``tool_calls`` carry the repaired arguments.
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
-    result_json = model.generate_text_as_openai(prompt_json, opts_json)
-    return ChatCompletion.model_validate_json(result_json)
+    return ChatCompletion.model_validate_json(
+        _repair.generate_openai_with_repair(model, prompt_json, opts_json, _repair_adapter(options))
+    )
 
 
 def stream_text_as_openai(

@@ -2,6 +2,7 @@ package ai.arcships.aimux;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
@@ -1715,6 +1716,98 @@ public final class Types {
      * default; combined with NON_NULL inclusion, only the fields the caller
      * sets are serialized onto the wire.
      */
+    // ── Host-side tool-call repair (RFC-0035) ───────────────────────────────
+
+    /**
+     * A tool call as the provider emitted it: {@code input} is the raw argument
+     * TEXT, not the parsed object. This is what a {@link ToolCallRepair}
+     * inspects and what it returns as the replacement.
+     */
+    public static class RawToolCall {
+        @JsonProperty("tool_call_id") private String toolCallId = "";
+        @JsonProperty("tool_name") private String toolName = "";
+        @JsonProperty("input") private String input = "";
+        @JsonProperty("provider_executed") private Boolean providerExecuted;
+        @JsonProperty("dynamic") private Boolean dynamic;
+        @JsonProperty("thought_signature") private String thoughtSignature;
+        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+
+        @JsonCreator
+        RawToolCall() {}
+
+        private RawToolCall(String toolCallId, String toolName, String input, Boolean providerExecuted,
+                            Boolean dynamic, String thoughtSignature, JsonNode providerMetadata) {
+            this.toolCallId = toolCallId;
+            this.toolName = toolName;
+            this.input = input;
+            this.providerExecuted = providerExecuted;
+            this.dynamic = dynamic;
+            this.thoughtSignature = thoughtSignature;
+            this.providerMetadata = providerMetadata;
+        }
+
+        public String getToolCallId() { return toolCallId; }
+        public String getToolName() { return toolName; }
+        /** The provider's raw argument text (e.g. {@code {"city":"Singapore"}}). */
+        public String getInput() { return input; }
+        public Boolean getProviderExecuted() { return providerExecuted; }
+        public Boolean getDynamic() { return dynamic; }
+        public String getThoughtSignature() { return thoughtSignature; }
+        public JsonNode getProviderMetadata() { return providerMetadata; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String toolCallId = "";
+            private String toolName = "";
+            private String input = "";
+            private Boolean providerExecuted;
+            private Boolean dynamic;
+            private String thoughtSignature;
+            private JsonNode providerMetadata;
+
+            public Builder toolCallId(String v) { this.toolCallId = v; return this; }
+            public Builder toolName(String v) { this.toolName = v; return this; }
+            public Builder input(String v) { this.input = v; return this; }
+            public Builder providerExecuted(Boolean v) { this.providerExecuted = v; return this; }
+            public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
+            public Builder thoughtSignature(String v) { this.thoughtSignature = v; return this; }
+            public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
+
+            public RawToolCall build() {
+                return new RawToolCall(toolCallId, toolName, input, providerExecuted, dynamic,
+                    thoughtSignature, providerMetadata);
+            }
+        }
+    }
+
+    /**
+     * The argument handed to a {@link ToolCallRepair} — the aimux equivalent of
+     * the AI SDK {@code repairToolCall} context. Built by the library from the
+     * invalid call plus the prompt and options the call was generated with, so
+     * {@link #getMessages()} is the conversation the model actually saw.
+     */
+    public static class ToolCallRepairContext {
+        @JsonProperty("tool_call") private RawToolCall toolCall;
+        @JsonProperty("error") private JsonNode error;
+        @JsonProperty("input_schema") private JsonNode inputSchema;
+        @JsonProperty("tools") private List<Tool> tools;
+        @JsonProperty("messages") private List<ModelMessage> messages;
+        @JsonProperty("instructions") private String instructions;
+
+        @JsonCreator
+        ToolCallRepairContext() {}
+
+        public RawToolCall getToolCall() { return toolCall; }
+        /** Why the call was rejected (lookup / parse / schema failure), as sent on the wire. */
+        public JsonNode getError() { return error; }
+        /** The called tool's input schema, or {@code null} when the tool is unknown. */
+        public JsonNode getInputSchema() { return inputSchema; }
+        public List<Tool> getTools() { return tools; }
+        public List<ModelMessage> getMessages() { return messages; }
+        public String getInstructions() { return instructions; }
+    }
+
     public static class GenerateTextOptions {
         @JsonProperty("max_output_tokens") private Long maxOutputTokens;
         @JsonProperty("temperature") private Double temperature;
@@ -1736,6 +1829,9 @@ public final class Types {
         @JsonProperty("include_raw_chunks") private Boolean includeRawChunks;
         @JsonProperty("timeout") private TimeoutConfiguration timeout;
         @JsonProperty("session_id") private String sessionId;
+        // Host-side only (RFC-0035): a function cannot cross the C ABI, and the
+        // native layer must never see this key.
+        @JsonIgnore private ToolCallRepair repairToolCall;
 
         @JsonCreator
         GenerateTextOptions() {}
@@ -1790,6 +1886,29 @@ public final class Types {
         public TimeoutConfiguration getTimeout() { return timeout; }
         public String getSessionId() { return sessionId; }
 
+        /**
+         * Host-side one-shot repair for invalid tool calls (RFC-0035), the
+         * aimux equivalent of the AI SDK {@code repairToolCall}.
+         *
+         * <p>Applies to {@link TypedModel} calls only and is never serialized
+         * into the options JSON. {@code generateTextAsOpenAI} repairs the
+         * native result before converting it; {@code streamTextAsOpenAI} does
+         * not reflect repair (its tool-argument deltas are the provider's
+         * text, as in the AI SDK).
+         *
+         * <p>If a repair fails at the boundary while streaming (not in the
+         * hook — a throwing hook is a {@code ToolCallRepair} error on the
+         * call), {@code onError} is told and the unrepaired part is still
+         * delivered. The stream waits for the hook, without a timeout.
+         *
+         * <p>A stream hook may call back into the model being streamed, but
+         * only from the thread it is invoked on: that thread borrows the
+         * stream's read hold on the model, while extra threads the hook starts
+         * itself do not and would deadlock against a concurrent
+         * {@link Model#close()}.
+         */
+        public ToolCallRepair getRepairToolCall() { return repairToolCall; }
+
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
@@ -1813,6 +1932,7 @@ public final class Types {
             private Boolean includeRawChunks;
             private TimeoutConfiguration timeout;
             private String sessionId;
+            private ToolCallRepair repairToolCall;
 
             public Builder maxOutputTokens(Long v) { this.maxOutputTokens = v; return this; }
             public Builder temperature(Double v) { this.temperature = v; return this; }
@@ -1834,12 +1954,18 @@ public final class Types {
             public Builder includeRawChunks(Boolean v) { this.includeRawChunks = v; return this; }
             public Builder timeout(TimeoutConfiguration v) { this.timeout = v; return this; }
             public Builder sessionId(String v) { this.sessionId = v; return this; }
+            /** See {@link GenerateTextOptions#getRepairToolCall()} (RFC-0035). */
+            public Builder repairToolCall(ToolCallRepair v) { this.repairToolCall = v; return this; }
 
             public GenerateTextOptions build() {
-                return new GenerateTextOptions(maxOutputTokens, temperature, stopSequences, topP, topK,
-                    presencePenalty, frequencyPenalty, responseFormat, seed, tools, toolChoice, headers,
-                    providerOptions, reasoning, instructions, bodyOverrides, maxRetries, includeRawChunks,
-                    timeout, sessionId);
+                GenerateTextOptions options = new GenerateTextOptions(maxOutputTokens, temperature,
+                    stopSequences, topP, topK, presencePenalty, frequencyPenalty, responseFormat, seed,
+                    tools, toolChoice, headers, providerOptions, reasoning, instructions, bodyOverrides,
+                    maxRetries, includeRawChunks, timeout, sessionId);
+                // Set outside the constructor: the hook is host-side state, not
+                // part of the serialized option set.
+                options.repairToolCall = repairToolCall;
+                return options;
             }
         }
 

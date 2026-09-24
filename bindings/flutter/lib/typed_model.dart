@@ -9,6 +9,7 @@
 import 'dart:async';
 
 import 'package:aimux/aimux.dart';
+import 'package:aimux/tool_call_repair.dart';
 import 'package:aimux/types.dart';
 
 /// A typed facade over [Model].
@@ -43,7 +44,8 @@ class TypedModel {
     GenerateTextOptions? options,
   ]) {
     final result = _raw.generateText(prompt, options?.toJson());
-    return GenerateTextResult.fromJson(result);
+    return GenerateTextResult.fromJson(
+        repairResultToolCalls(result, prompt, options));
   }
 
   /// Generate text from a list of typed [ModelMessage]s (multi-turn).
@@ -56,7 +58,8 @@ class TypedModel {
   ]) {
     final prompt = messages.map((m) => m.toJson()).toList();
     final result = _raw.generateText(prompt, options?.toJson());
-    return GenerateTextResult.fromJson(result);
+    return GenerateTextResult.fromJson(
+        repairResultToolCalls(result, prompt, options));
   }
 
   // ── generateObject (M12, RFC-0016) ──────────────────────────────────────
@@ -72,7 +75,8 @@ class TypedModel {
     GenerateTextOptions? options,
   ]) {
     final result = _raw.generateObject(prompt, options?.toJson());
-    return GenerateObjectResult.fromJson(result);
+    return GenerateObjectResult.fromJson(
+        repairResultToolCalls(result, prompt, options));
   }
 
   /// Generate a structured JSON object from a list of typed [ModelMessage]s
@@ -83,7 +87,8 @@ class TypedModel {
   ]) {
     final prompt = messages.map((m) => m.toJson()).toList();
     final result = _raw.generateObject(prompt, options?.toJson());
-    return GenerateObjectResult.fromJson(result);
+    return GenerateObjectResult.fromJson(
+        repairResultToolCalls(result, prompt, options));
   }
 
   // ── consumeStreamText (M11, RFC-0016) ───────────────────────────────────
@@ -95,7 +100,8 @@ class TypedModel {
     GenerateTextOptions? options,
   ]) {
     final result = _raw.consumeStreamText(prompt, options?.toJson());
-    return StreamTextResultAggregated.fromJson(result);
+    return StreamTextResultAggregated.fromJson(
+        repairResultToolCalls(result, prompt, options));
   }
 
   /// Consume a stream to completion from a list of typed [ModelMessage]s
@@ -106,7 +112,8 @@ class TypedModel {
   ]) {
     final prompt = messages.map((m) => m.toJson()).toList();
     final result = _raw.consumeStreamText(prompt, options?.toJson());
-    return StreamTextResultAggregated.fromJson(result);
+    return StreamTextResultAggregated.fromJson(
+        repairResultToolCalls(result, prompt, options));
   }
 
   /// Stream text, yielding typed [StreamPart]s.
@@ -118,7 +125,9 @@ class TypedModel {
     Object prompt, [
     GenerateTextOptions? options,
   ]) {
-    return _raw.streamText(prompt, options?.toJson()).map(StreamPart.fromJson);
+    return repairStreamToolCalls(
+            _raw.streamText(prompt, options?.toJson()), prompt, options)
+        .map(StreamPart.fromJson);
   }
 
   // ── OpenAI-compatible output (RFC-0026) ─────────────────────────────────
@@ -130,8 +139,7 @@ class TypedModel {
     String prompt, [
     GenerateTextOptions? options,
   ]) {
-    final result = _raw.generateTextAsOpenAI(prompt, options?.toJson());
-    return ChatCompletion.fromJson(result);
+    return _generateTextAsOpenAI(prompt, options);
   }
 
   /// Generate text from a list of typed [ModelMessage]s with OpenAI Chat
@@ -141,8 +149,21 @@ class TypedModel {
     GenerateTextOptions? options,
   ]) {
     final prompt = messages.map((m) => m.toJson()).toList();
-    final result = _raw.generateTextAsOpenAI(prompt, options?.toJson());
-    return ChatCompletion.fromJson(result);
+    return _generateTextAsOpenAI(prompt, options);
+  }
+
+  /// A [ChatCompletion] has no invalid marker to repair from, so with a
+  /// [GenerateTextOptions.repairToolCall] the native result is generated,
+  /// repaired, then converted — its tool calls carry the repaired arguments.
+  ChatCompletion _generateTextAsOpenAI(
+      Object prompt, GenerateTextOptions? options) {
+    if (options?.repairToolCall == null) {
+      return ChatCompletion.fromJson(
+          _raw.generateTextAsOpenAI(prompt, options?.toJson()));
+    }
+    final result = repairResultToolCalls(
+        _raw.generateText(prompt, options!.toJson()), prompt, options);
+    return ChatCompletion.fromJson(_raw.generateTextResultAsOpenAI(result));
   }
 
   /// Stream text with OpenAI Chat Completions output, yielding typed

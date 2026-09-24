@@ -194,6 +194,55 @@ println(result.usage?.inputTokens?.total)
 `TypedModel` is `Closeable` (use `use { }`); `AiMuxError` values surface as
 typed `AimuxException` subclasses (see [Errors](#errors)).
 
+## Tool-Call Repair
+
+A tool call whose arguments do not parse or do not match the schema never fails
+generation — it comes back as `ToolCall(invalid = true, error = …)`. Set
+`GenerateTextOptions.repairToolCall` to get one repair attempt per invalid call
+(RFC-0035, the AI SDK's `repairToolCall`). It runs on the JVM after the call
+returns, so it may block and may itself call aimux:
+
+```kotlin
+val options = GenerateTextOptions(
+    tools = listOf(weatherTool),
+    repairToolCall = { context ->
+        // context.toolCall.input is the RAW argument text the model emitted;
+        // context.error, .inputSchema, .tools, .messages, .instructions describe the failure.
+        val fixed = repairModel.generateText("Fix these arguments: ${context.toolCall.input}")
+        context.toolCall.copy(input = fixed.text)   // null = leave the call invalid
+    },
+)
+val result = typedModel.generateText("weather in Singapore?", options)
+```
+
+| Return / throw | Result |
+|---|---|
+| a `RawToolCall` | re-parsed and re-validated; a still-invalid repair carries `ToolCallRepair` |
+| `null` | the call stays invalid with its original error |
+| throws | the call carries `ToolCallRepair` with the exception's message as cause |
+
+Honoured by `generateText`, `generateObject`, `consumeStreamText` and
+`streamText` / `streamTextSequence` (the invalid `StreamPart.ToolCall` is
+replaced; tool-input deltas are the provider's text and pass through
+untouched). On the streaming path the function runs on a worker thread rather
+than the stream-callback thread — the native re-entrancy guard is thread-local,
+so a hook calling aimux from the callback thread would fail; the stream simply
+waits for it, so part order is unaffected. That worker is lent the stream's
+read hold on the streaming model, so the hook may call that same model even
+while another thread calls `close()`; the lend is valid only while the stream
+thread blocks holding the read lock, and only on the thread the hook is invoked
+on — extra threads the hook starts itself take the lock normally and would
+deadlock against a concurrent `close()`, so call the model from the thread the
+hook is invoked on. Do not call `close()` on the streaming model from inside
+the hook (it deadlocks, as from a stream callback); the stream waits for the
+hook without a timeout. `generateTextAsOpenAI` honours it by repairing the
+native result and converting it (`Model.generateTextResultAsOpenAI`), since a
+`ChatCompletion` carries no `invalid` marker; `streamTextAsOpenAI` does not
+reflect repair. The raw JSON-string `Model` never
+sees typed options; to drive repair from it, call `toolCallRepairContext`,
+`applyToolCallRepair` and `applyToolCallRepairToResult` directly — they are
+pure JSON-in / JSON-out functions.
+
 ## Streaming Transcription (STT)
 
 Realtime transcription models (e.g. OpenAI `gpt-realtime-whisper`) support

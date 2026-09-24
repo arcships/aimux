@@ -158,7 +158,10 @@ FFI 调用仅 8 个符号。[Types.swift](../../bindings/swift/Sources/Aimux/Typ
 `GenerateTextOptions.repair_tool_call` 是 Rust core 独有的回调字段
 (`#[serde(skip)]`),无法跨 JSON/FFI 边界,因此**不会**出现在任何语言绑定里。
 这不是缺口:各绑定统一通过 tool call 上的 `invalid: true` + 类型化 `error`
-字段(lookup / parse / schema / repair 失败)获知修复失败的调用。
+字段(lookup / parse / schema / repair 失败)获知修复失败的调用。修复**能力**本身
+以纯函数和宿主侧后处理的形式提供给所有宿主,见
+[RFC-0035](../../rfc/0035-host-side-tool-call-repair.md) 与
+[c.md](c.md#tool-call-repair-rfc-0035)。
 
 同一契约下的其它设计内差异(均为有意为之,非缺口):
 

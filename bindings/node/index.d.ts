@@ -134,6 +134,15 @@ export declare class Model {
    */
   generateTextAsOpenai(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
   /**
+   * Convert a serialized `GenerateTextResult` into a serialized
+   * `ChatCompletion` — the conversion half of `generateTextAsOpenai`.
+   *
+   * For repairing on the host (RFC-0035): patch the native result, then
+   * convert it, so the completion's tool calls are the repaired ones. This
+   * model only supplies the fallback model id.
+   */
+  generateTextResultAsOpenai(resultJson: string): AimuxResult<string>
+  /**
    * Stream text as OpenAI Chat Completion chunks.
    *
    * Returns an `AsyncGenerator<string>` yielding `ChatCompletionChunk` JSON
@@ -277,6 +286,33 @@ export declare function anthropic(apiKey: string, modelId: string, config?: stri
 
 /** Create an Anthropic-on-AWS language model instance (API key + region). */
 export declare function anthropicAws(apiKey: string, region: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<AimuxResult<Model>>
+
+/**
+ * Resolve one invalid tool call against a host's repair reply.
+ *
+ * `optsJson` is the same string the call was generated with; the tool set
+ * comes from it. `replyJson` is `{"type":"repaired","tool_call":{…}}`,
+ * `{"type":"unchanged"}`, or `{"type":"failed","message":"…"}`. Returns the
+ * resulting `ToolCall` JSON — valid, or invalid carrying a nested
+ * `ToolCallRepairError`.
+ *
+ * Options carrying no tools throw `InvalidArgumentError`: such a call is not
+ * repairable, and `toolCallRepairContext` already said so by returning
+ * `"null"`.
+ */
+export declare function applyToolCallRepair(toolCallJson: string, optsJson: string | undefined | null, replyJson: string): AimuxResult<string>
+
+/**
+ * Apply a repair reply to a serialized `GenerateTextResult` or
+ * `GenerateObjectResult`, rewriting both `tool_calls` and the matching
+ * `response_messages` tool-call part. `optsJson` is the same string the call
+ * was generated with.
+ *
+ * The OpenAI-shaped result has no equivalent: it carries no `invalid` /
+ * `error`, so repair is driven from the native result, which
+ * `Model.generateTextResultAsOpenai` then converts.
+ */
+export declare function applyToolCallRepairToResult(resultJson: string, optsJson: string | undefined | null, toolCallId: string, replyJson: string): AimuxResult<string>
 
 /**
  * Create an Azure OpenAI language model instance (API key + resource name).
@@ -504,6 +540,26 @@ export declare function startTranscriptionSession(model: TranscriptionModel, opt
 
 /** Create a Tavily search model instance. */
 export declare function tavilySearch(apiKey: string, baseUrl?: string | undefined | null): Promise<AimuxResult<SearchModel>>
+
+/**
+ * Build the repair argument for one invalid tool call.
+ *
+ * `toolCallJson` is a `GenerateTextResult.tool_calls` entry with
+ * `invalid: true`. `prompt` and `optsJson` are **the same two strings the
+ * call was generated with** (`generateText` / `streamText`); messages,
+ * instructions, and the tool set are derived from them here, so no caller
+ * repeats that derivation.
+ *
+ * Returns `{tool_call, error, input_schema, tools, messages, instructions}`
+ * — the AI SDK `repairToolCall` argument, with `tool_call.input` the
+ * provider's raw argument text — or the JSON literal `"null"` when the
+ * options carried no tools: as in the AI SDK, a call made without a tool set
+ * is never repaired, and the caller skips it. `"null"` is a success.
+ *
+ * Pure and synchronous: no model, no network. Throws `InvalidArgumentError`
+ * when the call is not an invalid one.
+ */
+export declare function toolCallRepairContext(toolCallJson: string, prompt: string, optsJson?: string | undefined | null): AimuxResult<string>
 
 /** Create a Vertex AI language model instance (GCP bearer token). */
 export declare function vertex(accessToken: string, project: string, location: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<AimuxResult<Model>>

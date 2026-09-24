@@ -84,6 +84,51 @@ model.streamText(prompt: "\"Write a haiku\"") { part in
 }
 ```
 
+## Tool-Call Repair
+
+When the model gets a tool call's arguments wrong, aimux does not fail the
+generation: the call comes back with `invalid == true` and an `error`. Set
+`GenerateTextOptions.repairToolCall` to get one shot at fixing it, mirroring
+the AI SDK's `repairToolCall`. It may issue a second aimux request of its own —
+on the streaming path the binding runs it off the native callback thread for
+exactly that reason, since the FFI re-entrancy guard is thread-local.
+
+```swift
+var options = GenerateTextOptions(tools: [weatherTool])
+options.repairToolCall = { context in
+    // context.toolCall.input is the model's raw argument TEXT,
+    // context.error the failure, context.inputSchema the tool's schema.
+    let fixed = try model.generateText(
+        prompt: .text("Fix these arguments: \(context.toolCall.input)")
+    )
+    return RawToolCall(toolCallId: context.toolCall.toolCallId,
+                       toolName: context.toolCall.toolName,
+                       input: fixed.text) // nil instead: leave the call as it is
+}
+let result = try model.generateText(prompt: .text("weather in Singapore?"), options: options)
+```
+
+Return a `RawToolCall` to replace the call (it is re-validated — a replacement
+that still fails validation stays `invalid`, now carrying a `ToolCallRepair`
+error), `nil` to keep the call and its original error, or throw to fail the
+repair with the thrown error's message as cause. A call generated without a
+tool set is never repaired and the function is not invoked for it.
+
+Applies to `generateText`, `generateObject`, `consumeStreamText` (patching
+`toolCalls` **and** the replayed `responseMessages`) and to `streamText`, whose
+`.toolCall` part arrives repaired while the `.toolInputDelta` parts before it
+are the provider's own, forwarded verbatim. It does **not** apply to the
+OpenAI-format outputs (`generateTextAsOpenAI` / `streamTextAsOpenAI`):
+`ChatCompletion` carries no `invalid` marker, so there is nothing to drive a
+repair from. The function is host-side only — it never reaches the library as
+part of the options JSON.
+
+The three pure functions behind it are public as well, for hosts driving the
+loop themselves: `toolCallRepairContext(toolCall:prompt:options:)` (returns the
+JSON literal `"null"` for a call made without tools),
+`applyToolCallRepair(toolCall:options:reply:)` and
+`applyToolCallRepairToResult(result:options:toolCallId:reply:)`.
+
 ## API Surface
 
 | API | Signature | Description |
@@ -93,6 +138,7 @@ model.streamText(prompt: "\"Write a haiku\"") { part in
 | `generateText` | `func generateText(prompt: String, options: String? = nil) throws -> String` | Non-streaming; returns `GenerateResult` JSON |
 | `streamText` | `func streamText(prompt: String, options: String? = nil, onPart: @escaping (String) -> Void, onDone: @escaping () -> Void, onError: @escaping (any Error) -> Void)` | Streaming via push callbacks |
 | `streamTextAsync` | `func streamTextAsync(prompt: String, options: String? = nil) -> AsyncThrowingStream<String, Error>` | Streaming as an `AsyncSequence` |
+| `repairToolCall` | `var repairToolCall: RepairToolCall?` on `GenerateTextOptions`, i.e. `(ToolCallRepairContext) throws -> RawToolCall?` | One-shot host-side repair of invalid tool calls (see above); `generateTextAsOpenAI` repairs the native result then converts it, `streamTextAsOpenAI` does not reflect repair |
 | `generate` | `func generate(prompt: String, options: [String: Any]? = nil) throws -> [String: Any]` | Convenience: parses `generateText` into a dictionary |
 | `Model.initRecording` | `static func initRecording(dir: String) throws` | Start JSONL recording; throws `RecordingError` (`.initFailed` / `.openFile` / `.spawn`) when the recorder cannot be constructed; the previous recorder stays in place |
 | `Model.recordingTryFlush` | `static func recordingTryFlush() throws` | Checked recorder flush; throws `RecordingError` (own type, see below). Legacy `recordingFlush()` stays and never reports |
@@ -222,7 +268,8 @@ mirroring the shared JSON shape — usable with the JSON-string APIs:
 `Tool`, `ToolChoice`, `ResponseFormat`, `ContentPart`, `MessageContent`,
 `ModelMessage`, `ModelPrompt`, `ToolCall`, `FileBytes`, `FileData`,
 `GenerateContent`, `GenerateResult`, `GenerateTextResult`,
-`GenerateTextOptions`, `StreamPart` (all `Codable, Equatable`).
+`GenerateTextOptions`, `StreamPart`, `RawToolCall`, `ToolCallRepairContext`
+(all `Codable, Equatable`).
 
 `ToolCall` (top-level and `StreamPart.toolCall`) carries `providerMetadata`
 plus `invalid` (set by Core when tool lookup, input parse, or schema validation

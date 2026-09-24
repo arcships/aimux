@@ -34,6 +34,7 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
+use crate::parse_tool_call::raw_tool_call_text;
 use crate::result::GenerateContent;
 use crate::result::GenerateResult;
 use crate::shared::FileData;
@@ -403,41 +404,21 @@ impl std::fmt::Debug for ChatCompletionStream {
 /// the first chunk carries `delta.role = "assistant"`, content/reasoning/tool
 /// deltas follow, and the final chunk carries `finish_reason` (and `usage` if
 /// `include_usage` is set).
+///
+/// Tool-input deltas are forwarded as the provider sends them, as in the AI
+/// SDK; they are never held back. See `stream_text_as_openai`.
 #[must_use]
 pub fn to_chat_completion_stream(
     stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>>,
     model: &str,
     options: OpenAiStreamOptions,
 ) -> ChatCompletionStream {
-    to_chat_completion_stream_impl(stream, model, options, false)
-}
-
-/// Convert a Core stream after tool-call repair has been enabled.
-///
-/// A repair callback may replace both the tool name and its full input after
-/// the provider's input deltas have arrived. Holding those deltas until the
-/// parsed `ToolCall` prevents the OpenAI stream from exposing values that
-/// cannot be corrected by a later delta.
-pub(crate) fn to_chat_completion_stream_with_deferred_tool_calls(
-    stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>>,
-    model: &str,
-    options: OpenAiStreamOptions,
-) -> ChatCompletionStream {
-    to_chat_completion_stream_impl(stream, model, options, true)
-}
-
-fn to_chat_completion_stream_impl(
-    stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>>,
-    model: &str,
-    options: OpenAiStreamOptions,
-    defer_tool_calls: bool,
-) -> ChatCompletionStream {
     let model = model.to_string();
     let include_usage = options.include_usage;
     let include_reasoning = options.include_reasoning;
 
     let chunk_stream = async_stream::stream! {
-        let mut state = StreamState::new(model.clone(), defer_tool_calls);
+        let mut state = StreamState::new(model.clone());
 
         use futures::StreamExt;
         let mut stream = stream;
@@ -495,8 +476,6 @@ struct StreamState {
     next_tool_index: u32,
     /// Whether each tool_call_id has had its opening chunk emitted.
     tool_call_opened: std::collections::HashSet<String>,
-    /// Hold provider input frames until Core emits the parsed/repaired call.
-    defer_tool_calls: bool,
     final_usage: Option<Usage>,
     final_finish_reason: Option<FinishReason>,
     finish_emitted: bool,
@@ -512,7 +491,7 @@ struct ToolCallAccum {
 }
 
 impl StreamState {
-    fn new(model: String, defer_tool_calls: bool) -> Self {
+    fn new(model: String) -> Self {
         Self {
             id: format!("chatcmpl-{}", random_id()),
             model,
@@ -522,7 +501,6 @@ impl StreamState {
             tool_call_order: Vec::new(),
             next_tool_index: 0,
             tool_call_opened: std::collections::HashSet::new(),
-            defer_tool_calls,
             final_usage: None,
             final_finish_reason: None,
             finish_emitted: false,
@@ -652,29 +630,27 @@ impl StreamState {
                     self.tool_call_order.push(id.clone());
                     idx
                 };
-                if !self.defer_tool_calls {
-                    self.tool_call_opened.insert(id.clone());
+                self.tool_call_opened.insert(id.clone());
 
-                    let mut chunk = self.base_chunk();
-                    chunk.choices = vec![ChatCompletionChunkChoice {
-                        index: 0,
-                        delta: ChatCompletionDelta {
-                            tool_calls: Some(vec![ChatCompletionChunkToolCall {
-                                index,
-                                id: Some(id.clone()),
-                                tool_type: Some("function".to_string()),
-                                function: ChatCompletionChunkFunction {
-                                    name: Some(tool_name.clone()),
-                                    arguments: Some(String::new()),
-                                },
-                            }]),
-                            ..Default::default()
-                        },
-                        finish_reason: None,
-                        logprobs: None,
-                    }];
-                    chunks.push(chunk);
-                }
+                let mut chunk = self.base_chunk();
+                chunk.choices = vec![ChatCompletionChunkChoice {
+                    index: 0,
+                    delta: ChatCompletionDelta {
+                        tool_calls: Some(vec![ChatCompletionChunkToolCall {
+                            index,
+                            id: Some(id.clone()),
+                            tool_type: Some("function".to_string()),
+                            function: ChatCompletionChunkFunction {
+                                name: Some(tool_name.clone()),
+                                arguments: Some(String::new()),
+                            },
+                        }]),
+                        ..Default::default()
+                    },
+                    finish_reason: None,
+                    logprobs: None,
+                }];
+                chunks.push(chunk);
             }
             StreamPart::ToolInputDelta { id, delta, .. } => {
                 // Ensure started (shouldn't happen without Start, but be safe).
@@ -704,27 +680,25 @@ impl StreamState {
                     }
                 };
 
-                if !self.defer_tool_calls {
-                    let mut chunk = self.base_chunk();
-                    chunk.choices = vec![ChatCompletionChunkChoice {
-                        index: 0,
-                        delta: ChatCompletionDelta {
-                            tool_calls: Some(vec![ChatCompletionChunkToolCall {
-                                index,
-                                id: None,
-                                tool_type: None,
-                                function: ChatCompletionChunkFunction {
-                                    name: None,
-                                    arguments: Some(delta.clone()),
-                                },
-                            }]),
-                            ..Default::default()
-                        },
-                        finish_reason: None,
-                        logprobs: None,
-                    }];
-                    chunks.push(chunk);
-                }
+                let mut chunk = self.base_chunk();
+                chunk.choices = vec![ChatCompletionChunkChoice {
+                    index: 0,
+                    delta: ChatCompletionDelta {
+                        tool_calls: Some(vec![ChatCompletionChunkToolCall {
+                            index,
+                            id: None,
+                            tool_type: None,
+                            function: ChatCompletionChunkFunction {
+                                name: None,
+                                arguments: Some(delta.clone()),
+                            },
+                        }]),
+                        ..Default::default()
+                    },
+                    finish_reason: None,
+                    logprobs: None,
+                }];
+                chunks.push(chunk);
             }
             StreamPart::ToolInputEnd { .. } => {}
 
@@ -740,56 +714,7 @@ impl StreamState {
                 // A provider may carry all input on its start frame and emit no
                 // deltas. In that case the final call is the first point where
                 // the OpenAI adapter can forward those arguments.
-                if self.defer_tool_calls {
-                    if let Some(c) = self.ensure_started() {
-                        chunks.push(c);
-                    }
-                    let index = if let Some(acc) = self.tool_calls.get_mut(tool_call_id) {
-                        acc.name.clone_from(tool_name);
-                        acc.arguments = parsed_tool_call_arguments(input, *invalid, error.as_ref());
-                        acc.index
-                    } else {
-                        let index = self.next_tool_index;
-                        self.next_tool_index += 1;
-                        self.tool_calls.insert(
-                            tool_call_id.clone(),
-                            ToolCallAccum {
-                                index,
-                                id: tool_call_id.clone(),
-                                name: tool_name.clone(),
-                                arguments: parsed_tool_call_arguments(
-                                    input,
-                                    *invalid,
-                                    error.as_ref(),
-                                ),
-                            },
-                        );
-                        self.tool_call_order.push(tool_call_id.clone());
-                        index
-                    };
-                    self.tool_call_opened.insert(tool_call_id.clone());
-                    let arguments = self.tool_calls[tool_call_id].arguments.clone();
-
-                    let mut chunk = self.base_chunk();
-                    chunk.choices = vec![ChatCompletionChunkChoice {
-                        index: 0,
-                        delta: ChatCompletionDelta {
-                            tool_calls: Some(vec![ChatCompletionChunkToolCall {
-                                index,
-                                id: Some(tool_call_id.clone()),
-                                tool_type: Some("function".to_string()),
-                                function: ChatCompletionChunkFunction {
-                                    name: Some(tool_name.clone()),
-                                    arguments: Some(arguments),
-                                },
-                            }]),
-                            ..Default::default()
-                        },
-                        finish_reason: None,
-                        logprobs: None,
-                    }];
-                    chunks.push(chunk);
-                } else if self.tool_call_opened.contains(tool_call_id) {
+                if self.tool_call_opened.contains(tool_call_id) {
                     let full_arguments =
                         parsed_tool_call_arguments(input, *invalid, error.as_ref());
                     let missing_arguments = self
@@ -1095,15 +1020,6 @@ fn now_unix() -> u64 {
 
 // Rejected repairs retain the original call. Recover its text from the
 // original error, never from the replacement's validation failure.
-fn raw_tool_call_text(error: &AiMuxError) -> Option<String> {
-    match error {
-        AiMuxError::InvalidToolInput { tool_input, .. } => Some(tool_input.clone()),
-        AiMuxError::NoSuchTool { tool_input, .. } => tool_input.clone(),
-        AiMuxError::ToolCallRepair { original_error, .. } => raw_tool_call_text(original_error),
-        _ => None,
-    }
-}
-
 /// Render a Core-parsed `StreamPart::ToolCall`'s arguments as OpenAI-compatible
 /// wire text: the provider's raw argument text verbatim for an invalid call,
 /// compact JSON of the parsed value otherwise.

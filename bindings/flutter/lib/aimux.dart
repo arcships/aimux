@@ -106,6 +106,12 @@ typedef _GenerateTextC = _Err Function(Uint64 handle, Pointer<Utf8> promptJson,
 typedef _GenerateTextDart = _Err Function(int handle, Pointer<Utf8> promptJson,
     Pointer<Utf8>? optsJson, Pointer<Pointer<Utf8>> outJson);
 
+// (handle, result_json, out_json) → error: aimux_generate_text_result_as_openai.
+typedef _ResultAsOpenAIC = _Err Function(
+    Uint64 handle, Pointer<Utf8> resultJson, Pointer<Pointer<Utf8>> outJson);
+typedef _ResultAsOpenAIDart = _Err Function(
+    int handle, Pointer<Utf8> resultJson, Pointer<Pointer<Utf8>> outJson);
+
 typedef _DropHandleC = Void Function(Uint64);
 typedef _DropHandleDart = void Function(int);
 
@@ -249,6 +255,9 @@ final class _AimuxFFI {
   late final generateTextAsOpenAI = _lib
       .lookupFunction<_GenerateTextC, _GenerateTextDart>(
           'aimux_generate_text_as_openai');
+  late final generateTextResultAsOpenAI = _lib
+      .lookupFunction<_ResultAsOpenAIC, _ResultAsOpenAIDart>(
+          'aimux_generate_text_result_as_openai');
   late final streamTextAsOpenAI = _lib
       .lookupFunction<_StreamTextC, _StreamTextDart>(
           'aimux_stream_text_as_openai');
@@ -565,6 +574,23 @@ class Model implements Finalizable {
       _callJson(_ffi.generateTextAsOpenAI, 'generate_text_as_openai', prompt,
           options);
 
+  /// Convert a GenerateTextResult map into a ChatCompletion map — the
+  /// conversion half of [generateTextAsOpenAI].
+  ///
+  /// For repairing on the host (RFC-0035): patch the native result, then
+  /// convert it, so the completion's tool calls are the repaired ones. This
+  /// model only supplies the fallback model id; nothing is generated.
+  Map<String, dynamic> generateTextResultAsOpenAI(Map<String, dynamic> result) {
+    _checkOpen();
+    final resultJson = encodeJson(result, 'result');
+    final completion = withUtf8(
+        resultJson,
+        (resultPtr) => takeString(
+            (out) => _ffi.generateTextResultAsOpenAI(_handle, resultPtr, out),
+            'generate_text_result_as_openai'));
+    return jsonDecode(completion) as Map<String, dynamic>;
+  }
+
   /// Shared body of the four `(handle, prompt_json, opts_json, out_json)`
   /// calls: encode, call, [expectAimuxError] (via [takeString]), decode.
   Map<String, dynamic> _callJson(
@@ -574,7 +600,7 @@ class Model implements Finalizable {
     Map<String, dynamic>? options,
   ) {
     _checkOpen();
-    final promptJson = _promptToJson(prompt);
+    final promptJson = promptToJson(prompt);
     final optsJson = options != null ? encodeJson(options, 'options') : null;
 
     final resultStr = withUtf8(promptJson, (promptPtr) {
@@ -635,7 +661,7 @@ class Model implements Finalizable {
     Object prompt,
     Map<String, dynamic>? options,
   ) {
-    final promptJson = _promptToJson(prompt);
+    final promptJson = promptToJson(prompt);
     final optsJson = options != null ? encodeJson(options, 'options') : null;
 
     final controller = StreamController<Map<String, dynamic>>();
@@ -873,7 +899,11 @@ String getModelSpecs(String? sourceUrl) {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-String _promptToJson(Object prompt) {
+/// The `prompt_json` string every generate/stream call sends: a bare string
+/// prompt is encoded as-is, anything else goes inside the `{"prompt": …}`
+/// wrapper the C ABI accepts. Public because tool-call repair must pass the
+/// same string the call was generated with (RFC-0035 §3.0).
+String promptToJson(Object prompt) {
   if (prompt is String) return encodeJson(prompt, 'prompt');
   return encodeJson({'prompt': prompt}, 'prompt');
 }
