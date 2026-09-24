@@ -1,12 +1,12 @@
 # RFC-0016: 对齐 Vercel AI SDK 能力缺口
 
-> **Status**: DRAFT (pending review) — 实施状态与下游 wrapper 影响见 [§7](#7-实施状态截至-2026-08-02)(2026-08-02 更新)
+> **Status**: IMPLEMENTED (2026-09-24 核定) — §2 缺口绝大多数落地:H1/H2/H3、M1-M7、M9-M12 经 #99(2026-08-13,M6 proxy/M7 聚合/M11 流聚合/M12 generateObject)、#164(2026-09-12,请求管线对齐:重试分层/错误域/超时)、#165(工具输入解析边界)落地;M13 经核不做、H4 明确不做;工具调用修复由 [RFC-0035](0035-host-side-tool-call-repair.md) 扩展。未落地余项(M8 StreamPart 变体等)逐条追踪见 [§7.2](#72-未落地清单逐条追踪)
 > **Date**: 2026-08-01
 > **Scope**: 系统对比 aimux 0.1.2 与 Vercel AI SDK (`@ai-sdk/openai` / `@ai-sdk/openai-compatible` / `@ai-sdk/provider` V4) 的接口与实现,识别能力缺口,并按优先级规划补齐路径
 > **Related**: [RFC-0009](0009-request-resilience.md) request resilience(retry/timeout,本 RFC 的 abortSignal/timeout 缺口与之相关),[RFC-0014](0014-logging.md) 统一日志体系(可观测性缺口依赖本 RFC 的 span 树)
 >
 > **Request-pipeline sections are superseded by
-> [RFC-0031](0031-ai-sdk-request-pipeline.md)**: retry/timeout ownership moved
+> [RFC-0031](../docs/ai-sdk-request-pipeline.md)**: retry/timeout ownership moved
 > to Core, provider-utils now exposes one-exchange API helpers plus response
 > handlers, and the old `send_timed` / `send_stream_timed` implementation was
 > removed. RFC-0016 M3's first-SSE-event peek is intentionally retained as
@@ -190,12 +190,12 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 > 逐项用户影响、范围修正与实施排序见 [§7.8](#78-中优先级缺口复审2026-08-02双-review-后逐项核定)(2026-08-02 核定:M6 缩窄为 proxy、M7 实锤差距、M11/M12 澄清、M13 拆分)
 - ~~**M2** includeRawChunks~~ — 已落地,见 [§7.1](#71-已落地相对本-rfc-起草时)(2026-08-05)
 - ~~**M3** logprobs 请求~~ — 已落地,见 [§7.1](#71-已落地相对本-rfc-起草时)(2026-08-05)
-- **M6** 自定义 fetch / proxy — 仍是进程级共享 reqwest client
-- **M7** 顶层结果聚合 — `GenerateTextResult` 仅 text/tool_calls([generate.rs:96](../aimux-core/src/generate.rs#L96));reasoning/files/sources 在 `raw.content`,无 `responseMessages`
+- ~~**M6** 自定义 fetch / proxy~~ — 已落地(缩窄形态:proxy 配置):`aimux_init_proxy` / `ProxyConfig`(FFI + bindings 透传),env 代理始终自动生效;自定义 fetch 经核不做(§7.8 范围修正)(#99,2026-08-13)
+- ~~**M7** 顶层结果聚合~~ — 已落地:`GenerateTextResult` / `StreamTextResultAggregated` 顶层携带 `reasoning`/`reasoning_text`/`sources`/`files`/`response_messages`([result.rs](../aimux-core/src/result.rs))(#99,2026-08-13)
 - **M8** 缺 variant — `tool-approval-request`/`custom`/`reasoning-file` 均无;`source` 无 document 子类型([stream_part.rs:156](../aimux-core/src/stream_part.rs#L156))
 - ~~**M10** usage.raw~~ — 已落地,见 [§7.1](#71-已落地相对本-rfc-起草时)(2026-08-05)
-- **M11** streamText 聚合器 — Node 仍 yield 原始 StreamPart JSON([lib.rs:63](../bindings/node/src/lib.rs#L63));core 仅 `StreamTextResult::text()`
-- **M12** 结构化 output / generateObject — 无
+- ~~**M11** streamText 聚合器~~ — 已落地:`consume_stream_text` → `StreamTextResultAggregated`(FFI + bindings)(#99,2026-08-13)
+- ~~**M12** 结构化 output / generateObject~~ — 已落地:`generate_object` + `GenerateObjectResult`(core/FFI/bindings)(#99,2026-08-13)
 - ~~**M13** 生命周期 callbacks~~ — **经核对不做**(2026-08-14)。onStart/onEnd 为编排层语法糖,用户外包调用(非流式)或 `consume()`(流式,§7.1)零成本等价。AI SDK 该设计服务于其多步循环 + telemetry 生态(参见 `GenerateTextStartEvent` 携带 `activeTools`/`toolOrder`/`steps`、与 OTel dispatcher 绑定);前者 aimux 不做(H4 §7.5),后者已有 RFC-0014 `tracing` span 覆盖。做它需 FFI 宿主回调 wire 改动 + 8 语言 wrapper(类别②最高成本),收益无新能力。
 
 **低优先级(2026-08-14 核对 AI SDK 源码后逐项核定):**

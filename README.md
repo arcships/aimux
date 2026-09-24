@@ -4,12 +4,12 @@
   <img src="assets/aimux-banner.png" alt="aimux banner" width="100%">
 </p>
 
-> **A unified LLM access layer written in Rust. One API for 329 AI providers.**
+> **A unified LLM access layer written in Rust. One API for [327 AI providers](docs/api/providers.md).**
 
 [![CI](https://github.com/arcships/aimux/actions/workflows/ci.yml/badge.svg)](https://github.com/arcships/aimux/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
-[![Providers](https://img.shields.io/badge/providers-329-green.svg)](docs/api/providers.md)
+[![Providers](https://img.shields.io/badge/providers-327-green.svg)](docs/api/providers.md)
 [![Bindings](https://img.shields.io/badge/bindings-8-9cf.svg)](bindings/)
 [![crates.io](https://img.shields.io/crates/v/aimux-core)](https://crates.io/crates/aimux-core)
 [![npm](https://img.shields.io/npm/v/@arcships/aimux)](https://www.npmjs.com/package/@arcships/aimux)
@@ -30,12 +30,13 @@ difference: aimux is an access layer, those are orchestration layers.
 
 ## Why aimux
 
-- **329 provider modules** — 251 registry-backed OpenAI-compatible
-  (unified `provider(name, ...)` entry) + 10 native protocol
-  implementations (OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere,
-  Mistral, xAI, Anthropic-AWS) + 68 standalone/modality/local/search providers
-  (OpenRouter, DeepSeek, Ollama, vLLM, ElevenLabs, KlingAI, Tavily, …).
-  Full list: [docs/api/providers.md](docs/api/providers.md).
+- **327 providers** (as of 2026-09-24) — 251 registry-backed OpenAI-compatible
+  (unified `provider(name, ...)` entry) + 76 typed providers (native protocol
+  implementations such as OpenAI/Anthropic/Google/Bedrock/Vertex, local
+  engines like Ollama/vLLM, and speech/image/video/search modality providers).
+  Counts by category and the full list live in
+  [docs/api/providers.md](docs/api/providers.md) — generated, and the single
+  source of truth for provider counts (only the badge above repeats the total).
 - **Unified, object-safe interface** — the `LanguageModel` trait supports
   `Box<dyn>` so providers are interchangeable without changing call sites.
 - **Full multimodal** — text, streaming, tool calling, embeddings, image,
@@ -49,7 +50,7 @@ difference: aimux is an access layer, those are orchestration layers.
   fallback (RFC-0021); `MoaModel` aggregates parallel reference models
   mixture-of-agents style (RFC-0022). Both are plain `LanguageModel`s.
 - **Config-driven provider registry** — `provider-registry.json` describes
-  each of the 251 OpenAI-compatible providers (base URL, env var, profile
+  each registry-backed OpenAI-compatible provider (base URL, env var, profile
   quirks: top_k, tools, response_format, streaming usage, max_tokens key);
   one unified `provider(name, ...)` entry in every binding.
 - **Fast and small** — Rust core, release profile tuned for binary size
@@ -96,7 +97,7 @@ middleware, and telemetry per request).
 ```
 aimux/
 ├── aimux-core            # Core abstractions: LanguageModel / Provider / Message / StreamPart
-├── aimux-providers       # 329 provider implementations (251 registry-backed + native)
+├── aimux-providers       # Provider implementations — registry-backed + typed (docs/api/providers.md)
 ├── aimux-stream          # SSE / NDJSON stream parsing
 ├── aimux-provider-utils  # One-exchange HTTP helpers, response handlers, API-key loading
 ├── aimux-ffi             # C ABI (opaque handles + JSON results + owned aimux_error_t *) for non-native bindings
@@ -120,7 +121,7 @@ cargo add aimux-core aimux-providers
 | Crate | Description | crates.io |
 |-------|-------------|-----------|
 | `aimux-core` | Core abstractions: `LanguageModel` / `Provider` / `Message` / `StreamPart` | [crates.io](https://crates.io/crates/aimux-core) |
-| `aimux-providers` | 325 provider implementations | [crates.io](https://crates.io/crates/aimux-providers) |
+| `aimux-providers` | Provider implementations — [registry-backed + typed](docs/api/providers.md) | [crates.io](https://crates.io/crates/aimux-providers) |
 | `aimux-stream` | SSE / NDJSON stream parsing | [crates.io](https://crates.io/crates/aimux-stream) |
 | `aimux-provider-utils` | One-exchange HTTP helpers and typed response handlers | [crates.io](https://crates.io/crates/aimux-provider-utils) |
 | `aimux-ffi` | C ABI for non-native bindings | [crates.io](https://crates.io/crates/aimux-ffi) |
@@ -283,8 +284,9 @@ let model = provider_from_env("deepseek", "deepseek-chat", None)?;
 // model usage is identical — it's all dyn LanguageModel
 ```
 
-All 251 OpenAI-compatible providers are registry-backed: `provider(name, ...)`
-in every binding, with typed `ProviderName` (enum/union/consts per language).
+All registry-backed OpenAI-compatible providers share one entry:
+`provider(name, ...)` in every binding, with typed `ProviderName`
+(enum/union/consts per language).
 The retired per-provider shell types (`XxxConfig`/`XxxProvider`) are gone —
 see [docs/API.md](docs/API.md#providers).
 
@@ -294,17 +296,19 @@ see [docs/API.md](docs/API.md#providers).
 
 ## Provider coverage
 
-| Type | Count | Examples |
-|------|:-----:|----------|
-| Native protocol | 10 | OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI, Anthropic-AWS |
-| OpenAI-compatible (registry) | 251 | Groq, Fireworks, Together, Perplexity, Ollama Cloud, DeepSeek, Alibaba Tongyi, Zhipu, Baidu, Tencent, Moonshot, SiliconFlow… |
-| OpenAI-compatible (standalone + Vertex-hosted) | 35 | OpenRouter, Hugging Face, Ollama, vLLM, SGLang, Llama.cpp, LiteLLM Proxy, Vertex-hosted DeepSeek/Qwen/Llama… |
-| Speech / transcription | 10 | ElevenLabs, Deepgram, AssemblyAI, AWS Polly, Cartesia, Hume, Gladia, RevAI, LMNT, Fal |
-| Image / video | 8 | Black Forest Labs, Replicate, Luma, Prodia, KlingAI, Recraft, Stability, RunwayML |
-| Embeddings / rerank / search | 13 | Voyage, Jina, Tavily, Exa, Firecrawl, Serper, SearXNG, You.com… |
-| Other (Responses API, Bedrock/Mantle) | 2 | generic Responses API wrapper, Bedrock Mantle |
+Counts by category live in
+[docs/api/providers.md](docs/api/providers.md#totals) — generated from the
+registry and `lib.rs`, and the single source of truth. The rough shape of
+the roster:
 
-Full list: [rfc/0004-provider-inventory.md](rfc/0004-provider-inventory.md).
+- **Native protocol** — OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI, Anthropic-AWS, Voyage, Codex, OpenRouter
+- **OpenAI-compatible (registry-backed)** — Groq, Fireworks, Together, Perplexity, Ollama Cloud, DeepSeek, Alibaba Tongyi, Zhipu, Baidu, Tencent, Moonshot, SiliconFlow…
+- **OpenAI-compatible (standalone + Vertex-hosted)** — Hugging Face, Ollama, vLLM, SGLang, Llama.cpp, LiteLLM Proxy, Vertex-hosted DeepSeek/Qwen/Llama…
+- **Speech / transcription** — ElevenLabs, Deepgram, AssemblyAI, AWS Polly, Cartesia, Hume, Gladia, RevAI, LMNT, Fal
+- **Image / video** — Black Forest Labs, Replicate, Luma, Prodia, KlingAI, Recraft, Stability, RunwayML
+- **Embeddings / rerank / search** — Voyage, Jina, Tavily, Exa, Firecrawl, Serper, SearXNG, You.com…
+
+Full list with per-category counts: [docs/api/providers.md](docs/api/providers.md).
 
 ## Language bindings
 
@@ -338,7 +342,8 @@ Tests run on cassette playback — no network and no keys. See
 |-----|----------|
 | [docs/API.md](docs/API.md) | **API overview** — shared reference + links to per-language guides |
 | [docs/api/reference.md](docs/api/reference.md) | **API reference** — public types & functions lookup |
-| [docs/api/providers.md](docs/api/providers.md) | **Provider list** — all 325 providers with entry points (generated) |
+| [docs/contributing/adding-a-provider.md](docs/contributing/adding-a-provider.md) | **Adding a provider** — the three-case checklist (registry row / new protocol / single modality) |
+| [docs/api/providers.md](docs/api/providers.md) | **Provider list** — every provider with entry points and the canonical counts (generated) |
 | [docs/api/](docs/api/) | **Per-language API guides** — Node.js, Python, Rust, Go, C/C++, Swift, Kotlin, Flutter |
 | [docs/error-model.md](docs/error-model.md) | **错误模型** — 跨语言错误形态与兼容性约定 |
 | [docs/PROJECT-OVERVIEW.md](docs/PROJECT-OVERVIEW.md) | Project overview, design decisions, benchmarks |

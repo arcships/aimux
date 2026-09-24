@@ -1,6 +1,6 @@
 # RFC 0005: Rename to aimux
 
-> **Status**: Decided plan, pending execution
+> **Status**: EXECUTED (2026-08 完成 — 仓库 / crates / FFI 符号均为 aimux,无旧名残留;本文正文亦随之批量替换,故部分前后文读作同义反复)
 > **Decision**: Error type `AiMuxError` · repository name `aimux` · brand positioning "inspired by Vercel AI SDK" · script batch execution + verification
 
 ## 1. Background and Motivation

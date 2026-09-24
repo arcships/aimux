@@ -5,14 +5,24 @@ Single source of truth:
 - aimux-providers/src/provider_registry.json  (registry of OpenAI-compatible entries)
 - aimux-providers/src/lib.rs                   (non-registry modules + categories)
 
+A `pub mod` in lib.rs counts as a provider module iff its `pub use` re-exports
+a typed surface (`*Provider` / `*Config` / `*Model`). Registry machinery
+(`provider`, `provider_name`), `replay` and `catalogue` export none of these
+and are excluded without a hand-kept list.
+
+The generated page carries the provider totals (registry rows, per-category
+typed providers, grand total); other docs reference it instead of repeating
+numbers (#177).
+
 Usage:
-    python scripts/gen_providers_doc.py
-    # writes docs/api/providers.md, prints the module count for verification
+    python scripts/gen_providers_doc.py           # writes docs/api/providers.md
+    python scripts/gen_providers_doc.py --check   # exit 1 if the page is stale
 """
 
 import json
 import pathlib
 import re
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 REGISTRY = ROOT / "aimux-providers" / "src" / "provider_registry.json"
@@ -117,6 +127,17 @@ def module_exports(module):
     return exports
 
 
+def is_provider_module(module):
+    """True when the module re-exports a typed provider surface.
+
+    A provider module exposes `*Provider` / `*Config` / `*Model` types.
+    Registry machinery (`provider`, `provider_name`), `replay` and
+    `catalogue` re-export none of these, so they are excluded without a
+    hand-kept deny-list (#177).
+    """
+    return any(e.endswith(("Provider", "Config", "Model")) for e in module_exports(module))
+
+
 def display_from_exports(exports):
     """Derive a human name: AnthropicProvider / AnthropicConfig -> Anthropic."""
     for prefix in ("ProviderConfig", "Provider", "Config", "Model"):
@@ -126,29 +147,52 @@ def display_from_exports(exports):
     return None
 
 
-def main():
+def build_page():
+    """Return (page_text, totals) without touching the filesystem."""
     registry = load_registry()
-    sections = parse_lib_rs()
+    sections = [
+        (title, [m for m in mods if is_provider_module(m)])
+        for title, mods in parse_lib_rs()
+    ]
+    sections = [(title, mods) for title, mods in sections if mods]
 
     registry_names = {e["name"] for e in registry}
-    lines = []
-    w = lines.append
-
     # Overlap sanity check: a module name should not also be a registry entry.
     for _, mods in sections:
         for m in mods:
             if m in registry_names:
                 print(f"WARNING: module `{m}` also exists in provider_registry.json")
 
+    non_registry = sum(len(mods) for _, mods in sections)
+    total = len(registry) + non_registry
+
+    lines = []
+    w = lines.append
+
     w("# aimux providers")
     w("")
     w("> **GENERATED** by `scripts/gen_providers_doc.py` — do not edit by hand.")
     w("> Regenerate with: `python scripts/gen_providers_doc.py`")
+    w("> CI verifies with `--check`; the totals below are the one source of")
+    w("> truth for provider counts (#177).")
+    w("")
+    w("## Totals")
+    w("")
+    w("| category | count |")
+    w("|----------|-------|")
+    w(f"| Registry-backed OpenAI-compatible (`provider(name, ...)` / `ProviderName`) | {len(registry)} |")
+    for title, mods in sections:
+        # First sentence only — some lib.rs section comments run on; the full
+        # title stays on the section heading below. The lookahead keeps
+        # abbreviations such as "e.g." from ending the "sentence".
+        short = re.split(r"(?<=[.!?])\s(?=[A-Z0-9])", title, maxsplit=1)[0].rstrip(".")
+        w(f"| Non-registry: {short} | {len(mods)} |")
+    w(f"| **Total providers** | **{total}** |")
     w("")
     w(
         f"**{len(registry)} registry-backed OpenAI-compatible providers** "
         f"(construct via `provider(name, ...)` / `ProviderName`) + "
-        f"**{sum(len(m) for _, m in sections) - 2} non-registry providers** "
+        f"**{non_registry} non-registry providers** "
         "(construct via the typed factories listed below)."
     )
     w("")
@@ -169,10 +213,7 @@ def main():
     )
     w("")
     for title, mods in sections:
-        mods = [m for m in mods if m not in ("provider", "provider_name")]
-        if not mods:
-            continue
-        w(f"### {title}")
+        w(f"### {title} — {len(mods)}")
         w("")
         w("| module | typed entry points |")
         w("|--------|--------------------|")
@@ -186,13 +227,42 @@ def main():
             w(f"| `{mod}` | {cols} |")
         w("")
 
-    out = "\n".join(lines)
-    OUT.write_text(out, encoding="utf-8")
+    page = "\n".join(lines) + "\n"
+    totals = {
+        "registry": len(registry),
+        "non_registry": non_registry,
+        "total": total,
+    }
+    return page, totals
 
-    total = len(registry) + sum(len(m) for _, m in sections) - 2
+
+def main() -> int:
+    check = "--check" in sys.argv[1:]
+    page, totals = build_page()
+    if check:
+        on_disk = OUT.read_text(encoding="utf-8") if OUT.is_file() else None
+        if on_disk != page:
+            print(
+                f"STALE: {OUT.relative_to(ROOT)} — run "
+                "scripts/gen_providers_doc.py and commit the result",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            f"{OUT.relative_to(ROOT)} up to date "
+            f"(registry={totals['registry']}  non-registry={totals['non_registry']}  "
+            f"total={totals['total']})"
+        )
+        return 0
+    OUT.write_text(page, encoding="utf-8")
     print(f"wrote {OUT}")
-    print(f"registry={len(registry)}  non-registry modules={sum(len(m) for _, m in sections) - 2}  total={total}")
+    print(
+        f"registry={totals['registry']}  "
+        f"non-registry modules={totals['non_registry']}  "
+        f"total={totals['total']}"
+    )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

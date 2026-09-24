@@ -1,6 +1,6 @@
 # RFC-0021: Composite Model 与 Model 路由
 
-> **Status**: DRAFT (pending review)
+> **Status**: IMPLEMENTED (RouterModel + composite 骨架落地于 #100(2026-08-14);后续随 #164 请求管线对齐更新)
 > **Date**: 2026-08-05
 > **Scope**: `aimux-core` 新增 composite model 基础设施(实现 `LanguageModel` trait 的组合模型)+ `RouterModel`(规则路由 / fallback / 可插拔策略)+ 内置策略(RuleRouter / LLM 分类器 / 视觉分流)
 > **Related**: [RFC-0022](0022-moa-single-fanout.md) MoA(共用 composite 骨架)、[RFC-0016](0016-align-with-aisdk.md) AISDK 对齐、[RFC-0005](0005-protocol-conversion.md) 定位边界

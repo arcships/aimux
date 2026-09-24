@@ -1,6 +1,6 @@
 # RFC-0022: MoA 单次扇出聚合
 
-> **Status**: DRAFT (pending review)
+> **Status**: IMPLEMENTED (MoaModel 落地于 #100(2026-08-14),与 RFC-0021 共用 composite 骨架;后续随 #164 请求管线对齐更新)
 > **Date**: 2026-08-05
 > **Scope**: `aimux-core` 新增 `MoaModel`——实现 `LanguageModel` trait 的 Mixture-of-Agents 单次扇出聚合模型(reference models 并行跑 → 输出拼进 aggregator prompt → aggregator 跑 → 返回),不含 agent loop
 > **Related**: [RFC-0021](0021-composite-model-routing.md) Composite Model 骨架(共用)、[RFC-0016](0016-align-with-aisdk.md) H4 边界(不做多步循环)

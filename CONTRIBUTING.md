@@ -8,7 +8,7 @@ to set up a development environment, run the tests, and submit changes.
 ```
 aimux/
 ├── aimux-core/            # Core abstractions: LanguageModel / Provider / Message / StreamPart
-├── aimux-providers/       # 325 provider implementations + cassettes
+├── aimux-providers/       # provider implementations + cassettes (counts: docs/api/providers.md)
 ├── aimux-stream/          # SSE / NDJSON stream parsing
 ├── aimux-provider-utils/  # HTTP utilities: retry, backoff, error parsing, API-key loading
 ├── aimux-ffi/             # C ABI (opaque handle + JSON + push callback) for non-native bindings
@@ -71,6 +71,9 @@ aimux distinguishes three kinds of providers:
    request-body post-processing) so the thin wrapper does not erase
    provider-specific behavior.
 3. **Modality-specific** — speech, image, video, transcription, etc.
+
+Step-by-step checklists (with the generator and CI rules) live in
+[docs/contributing/adding-a-provider.md](docs/contributing/adding-a-provider.md).
 
 Before submitting a provider, read `rfc/0006-provider-development.md` for the
 minimum acceptance criteria, core contracts, and required tests.
