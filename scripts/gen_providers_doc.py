@@ -8,11 +8,16 @@ Single source of truth:
 Usage:
     python scripts/gen_providers_doc.py
     # writes docs/api/providers.md, prints the module count for verification
+    python scripts/gen_providers_doc.py --check
+    # exits nonzero on drift without modifying docs/api/providers.md
 """
 
+import argparse
+import difflib
 import json
 import pathlib
 import re
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 REGISTRY = ROOT / "aimux-providers" / "src" / "provider_registry.json"
@@ -127,6 +132,11 @@ def display_from_exports(exports):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--check", action="store_true", help="Check for drift without writing files"
+    )
+    args = parser.parse_args()
     registry = load_registry()
     sections = parse_lib_rs()
 
@@ -187,12 +197,32 @@ def main():
         w("")
 
     out = "\n".join(lines)
+    if args.check:
+        current = OUT.read_text(encoding="utf-8") if OUT.exists() else None
+        if current == out:
+            print(f"up to date: {OUT.relative_to(ROOT)}")
+            return 0
+        print(
+            "Provider docs are out of date. Run: python3 scripts/gen_providers_doc.py",
+            file=sys.stderr,
+        )
+        sys.stderr.writelines(
+            difflib.unified_diff(
+                (current or "").splitlines(keepends=True),
+                out.splitlines(keepends=True),
+                fromfile=str(OUT.relative_to(ROOT)) if current is not None else "/dev/null",
+                tofile="generated providers.md",
+            )
+        )
+        return 1
+
     OUT.write_text(out, encoding="utf-8")
 
     total = len(registry) + sum(len(m) for _, m in sections) - 2
     print(f"wrote {OUT}")
     print(f"registry={len(registry)}  non-registry modules={sum(len(m) for _, m in sections) - 2}  total={total}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
