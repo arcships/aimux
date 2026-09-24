@@ -186,6 +186,12 @@ Examples: [Node.js](api/node.md#streaming-generation) · [Python](api/python.md#
 | `Error` | Stream error |
 | `Raw` | Provider raw chunk (for debugging, when `include_raw_chunks` is set) |
 
+Setting `include_raw_chunks` forwards one `Raw` part per provider stream event,
+carrying the parsed JSON payload of that event, emitted immediately before the
+parts parsed from it (off by default). Honored by the OpenAI-compatible
+providers (`openai`, `azure`, the OpenAI-compatible registry providers) and by
+the Anthropic providers (`anthropic`, `anthropic-aws`).
+
 ### Request Cancellation (abort)
 
 Calls can be cancelled mid-flight. Cancellation covers the whole request

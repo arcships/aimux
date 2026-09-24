@@ -151,6 +151,7 @@ impl LanguageModel for AnthropicModel {
             options.abort_signal.clone(),
             options.recording_context.clone(),
             ToolNameMapping::new(options.tools.as_deref()),
+            options.include_raw_chunks == Some(true),
         )
         .await
     }

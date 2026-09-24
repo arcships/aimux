@@ -161,8 +161,10 @@ pub struct CallOptions {
     /// before the parsed parts. Excludes the `[DONE]` sentinel; unparsable
     /// chunks emit only `Error`. `null`/`Some(false)` = off.
     /// Currently honored by the OpenAI-compatible family (openai / azure /
-    /// openai-compatible registry providers); other provider families ignore
-    /// it for now (RFC-0016 M2).
+    /// openai-compatible registry providers) and by the Anthropic family
+    /// (anthropic / anthropic-aws; the Vertex MaaS Anthropic wrapper rides the
+    /// OpenAI-compatible path); other provider families ignore it for now
+    /// (RFC-0016 M2).
     pub include_raw_chunks: Option<bool>,
 }
 

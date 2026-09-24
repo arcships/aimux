@@ -906,6 +906,17 @@ enum BlockState {
     },
 }
 
+/// Deserialize one Anthropic SSE event payload into [`StreamEvent`].
+///
+/// Split out of the SSE handler so the raw JSON payload can be forwarded before
+/// the event is interpreted (RFC-0016 M2). A payload that is valid JSON but does
+/// not match the event schema keeps the classification the handler produced
+/// (`InvalidResponseData`, a recoverable frame error), matching the AI SDK's
+/// `chunk.success == false` path.
+fn stream_event_from_value(value: &Value) -> Result<StreamEvent, AiMuxError> {
+    serde_json::from_value(value.clone()).map_err(AiMuxError::from)
+}
+
 /// Shared Anthropic streaming core.
 ///
 /// Builds and sends the request (using `build_headers` for auth and
@@ -915,7 +926,12 @@ enum BlockState {
 /// `build_headers` receives the serialized body bytes and the endpoint URL —
 /// the standard path returns a Bearer/x-api-key header set (ignoring the body),
 /// the AWS path returns a SigV4-signed header set (signing over the body).
-#[allow(clippy::too_many_arguments)] // core plumbing: endpoint/retry/body/warnings/auth/encoding/abort/timeout
+///
+/// With `include_raw_chunks` the loop forwards every parsed SSE event as a
+/// [`StreamPart::Raw`] before the parts derived from that same event, matching
+/// the AI SDK's `{ type: 'raw', rawValue }` enqueue ahead of its parse switch
+/// (`anthropic-language-model.ts:1740`).
+#[allow(clippy::too_many_arguments)] // core plumbing: endpoint/retry/body/warnings/auth/encoding/abort/timeout/raw
 pub(crate) async fn anthropic_stream_core(
     endpoint: &str,
     body: serde_json::Value,
@@ -925,6 +941,7 @@ pub(crate) async fn anthropic_stream_core(
     abort_signal: Option<AbortSignal>,
     recording_context: Option<aimux_core::recording::RecordingContext>,
     tool_names: ToolNameMapping,
+    include_raw_chunks: bool,
 ) -> Result<StreamResult, AiMuxError> {
     let (request, request_body) = build_anthropic_request(
         endpoint,
@@ -934,10 +951,13 @@ pub(crate) async fn anthropic_stream_core(
         abort_signal,
         recording_context,
     )?;
+    // The SSE events are parsed to JSON first so the raw payload can be
+    // forwarded verbatim (RFC-0016 M2) before it is deserialized into
+    // `StreamEvent`; the shape errors keep their existing classification.
     let resp = aimux_provider_utils::post_to_api(
         request,
         request_body,
-        aimux_provider_utils::create_event_source_response_handler::<StreamEvent>(),
+        aimux_provider_utils::create_event_source_response_handler::<Value>(),
         super::anthropic_failed_response_handler(),
     )
     .await?;
@@ -948,9 +968,11 @@ pub(crate) async fn anthropic_stream_core(
         Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
         first_event => first_event,
     };
-    if let Some(Ok(StreamEvent::Error { error })) = first_event.as_ref() {
+    if let Some(Ok(value)) = first_event.as_ref()
+        && let Ok(StreamEvent::Error { error }) = stream_event_from_value(value)
+    {
         return Err(anthropic_stream_error(
-            error,
+            &error,
             endpoint,
             body.clone(),
             response_headers,
@@ -979,7 +1001,25 @@ pub(crate) async fn anthropic_stream_core(
 
         while let Some(event) = sse.next().await {
             match event {
-                Ok(stream_event) => {
+                Ok(value) => {
+                    // RFC-0016 M2: forward the raw provider event before its
+                    // semantic parts, exactly like the AI SDK enqueues
+                    // `{ type: 'raw', rawValue }` ahead of its parse switch.
+                    if include_raw_chunks {
+                        yield Ok(StreamPart::Raw {
+                            raw_value: value.clone(),
+                        });
+                    }
+                    let stream_event = match stream_event_from_value(&value) {
+                        Ok(stream_event) => stream_event,
+                        Err(error) => {
+                            // Same recoverable frame-error contract as the
+                            // previous `StreamEvent` handler: the event is
+                            // reported and later events still reduce.
+                            yield Err(error);
+                            continue;
+                        }
+                    };
                     match stream_event {
                         StreamEvent::MessageStart { message } => {
                             if let Some(usage) = &message.usage {
