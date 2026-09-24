@@ -291,7 +291,8 @@ mod prepare_tools {
         let body = build_request_body(
             "gemini-2.5-flash",
             &options_with_tools(test_prompt(), vec![google_search_tool()]),
-        );
+        )
+        .expect("valid prompt");
         assert_eq!(body["tools"], json!([{ "googleSearch": {} }]));
         assert!(body.get("toolConfig").is_none());
     }
@@ -313,7 +314,8 @@ mod prepare_tools {
                     ),
                 ],
             ),
-        );
+        )
+        .expect("valid prompt");
         assert_eq!(
             body["tools"],
             json!([
@@ -331,7 +333,8 @@ mod prepare_tools {
         let body = build_request_body(
             "gemini-2.5-flash",
             &options_with_tools(test_prompt(), vec![code_execution_tool()]),
-        );
+        )
+        .expect("valid prompt");
         assert_eq!(body["tools"], json!([{ "codeExecution": {} }]));
         assert!(body.get("toolConfig").is_none());
     }
@@ -342,7 +345,8 @@ mod prepare_tools {
         let body = build_request_body(
             "gemini-2.5-flash",
             &options_with_tools(test_prompt(), vec![url_context_tool()]),
-        );
+        )
+        .expect("valid prompt");
         assert_eq!(body["tools"], json!([{ "urlContext": {} }]));
         assert!(body.get("toolConfig").is_none());
     }
@@ -353,7 +357,8 @@ mod prepare_tools {
         let body = build_request_body(
             "gemini-2.5-flash",
             &options_with_tools(test_prompt(), vec![google_maps_tool()]),
-        );
+        )
+        .expect("valid prompt");
         assert_eq!(body["tools"], json!([{ "googleMaps": {} }]));
         assert!(body.get("toolConfig").is_none());
     }
@@ -371,7 +376,8 @@ mod prepare_tools {
                     json!({ "searchTypes": { "webSearch": {}, "imageSearch": {} } }),
                 )],
             ),
-        );
+        )
+        .expect("valid prompt");
         assert_eq!(
             body["tools"],
             json!([{ "googleSearch": { "searchTypes": { "webSearch": {}, "imageSearch": {} } } }])
@@ -396,7 +402,8 @@ mod prepare_tools {
                     }),
                 )],
             ),
-        );
+        )
+        .expect("valid prompt");
         assert_eq!(
             body["tools"][0]["googleSearch"]["timeRangeFilter"],
             json!({
@@ -423,7 +430,8 @@ mod prepare_tools {
         let body = build_request_body(
             "gemini-3.1-flash-lite-preview",
             &options_with_tools(test_prompt(), vec![google_search_tool(), function_tool]),
-        );
+        )
+        .expect("valid prompt");
         assert_eq!(
             body["tools"],
             json!([
@@ -476,7 +484,8 @@ mod prepare_tools {
                     function_tool,
                 ],
             ),
-        );
+        )
+        .expect("valid prompt");
         assert_eq!(
             body["tools"],
             json!([
@@ -1227,7 +1236,7 @@ mod do_generate {
         messages.push(ModelMessage::user("Continue"));
         let mut next_options = CallOptions::new(convert_to_language_model_prompt(&messages, None));
         next_options.tools = Some(vec![tool]);
-        let replay = build_request_body("gemini-2.0-pro", &next_options);
+        let replay = build_request_body("gemini-2.0-pro", &next_options).expect("valid prompt");
         let assistant = replay["contents"]
             .as_array()
             .unwrap()
@@ -1999,7 +2008,7 @@ mod do_stream {
         messages.push(ModelMessage::user("Continue"));
         let mut next_options = CallOptions::new(convert_to_language_model_prompt(&messages, None));
         next_options.tools = Some(vec![tool]);
-        let replay = build_request_body("gemini-2.0-pro", &next_options);
+        let replay = build_request_body("gemini-2.0-pro", &next_options).expect("valid prompt");
         let assistant = replay["contents"]
             .as_array()
             .unwrap()

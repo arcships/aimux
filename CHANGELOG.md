@@ -5,6 +5,23 @@ All notable changes to aimux are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Breaking
+
+**Rust (aimux-providers)**
+
+- Google / Vertex Gemini prompt conversion is now fallible: a system message
+  that appears after a non-system message is rejected with
+  `AiMuxError::UnsupportedFunctionality` (matching the AI SDK's
+  `UnsupportedFunctionalityError`) instead of being silently dropped.
+  `google::convert::convert_to_google_messages`,
+  `google::convert::build_request_body` and
+  `google::convert::build_request_body_with_warnings` now return
+  `Result<…, AiMuxError>`; `do_generate` / `do_stream` propagate the error
+  before issuing any HTTP request. Leading system messages are still
+  aggregated into `systemInstruction` unchanged.
+
 ## [0.3.0] - 2026-08-17
 
 **Breaking release.** 196 commits since 0.2.1: observability primitives

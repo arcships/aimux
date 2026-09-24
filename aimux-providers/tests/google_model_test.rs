@@ -1771,6 +1771,7 @@ mod error_handling {
         assert!(matches!(err, ref e if e.status_code() == Some(404)));
     }
 }
+
 // ════════════════════════════════════════════════════════════════════════════
 
 mod request_body {
@@ -1793,7 +1794,7 @@ mod request_body {
             },
         ];
         let options = default_options(prompt);
-        let body = build_request_body("gemini-2.0-flash", &options);
+        let body = build_request_body("gemini-2.0-flash", &options).expect("valid prompt");
 
         // systemInstruction is a top-level field, NOT in contents.
         assert_eq!(
@@ -1810,7 +1811,8 @@ mod request_body {
 
     #[test]
     fn no_system_message_omits_system_instruction() {
-        let body = build_request_body("gemini-2.0-flash", &default_options(test_prompt()));
+        let body = build_request_body("gemini-2.0-flash", &default_options(test_prompt()))
+            .expect("valid prompt");
         assert!(body.get("systemInstruction").is_none());
     }
 
@@ -1830,7 +1832,8 @@ mod request_body {
                 ..Default::default()
             },
         ];
-        let body = build_request_body("gemini-2.0-flash", &default_options(prompt));
+        let body =
+            build_request_body("gemini-2.0-flash", &default_options(prompt)).expect("valid prompt");
 
         assert_eq!(body["contents"][1]["role"], "model");
         assert_eq!(body["contents"][1]["parts"][0]["text"], "Hi there");
@@ -1856,7 +1859,8 @@ mod request_body {
                 ..Default::default()
             },
         ];
-        let body = build_request_body("gemini-2.0-flash", &default_options(prompt));
+        let body =
+            build_request_body("gemini-2.0-flash", &default_options(prompt)).expect("valid prompt");
 
         let fc = &body["contents"][1]["parts"][0]["functionCall"];
         assert_eq!(fc["id"], "call-1");
@@ -1895,7 +1899,8 @@ mod request_body {
                 ..Default::default()
             },
         ];
-        let body = build_request_body("gemini-2.5-pro", &default_options(prompt));
+        let body =
+            build_request_body("gemini-2.5-pro", &default_options(prompt)).expect("valid prompt");
 
         // The signature must be a SIBLING of `functionCall` on the part
         // (matching the response shape), not nested inside `functionCall`.
@@ -1952,7 +1957,8 @@ mod request_body {
             },
         ];
 
-        let body = build_request_body("gemini-3-pro-preview", &default_options(prompt));
+        let body = build_request_body("gemini-3-pro-preview", &default_options(prompt))
+            .expect("valid prompt");
         assert_eq!(
             body["contents"][1]["parts"],
             json!([
@@ -2004,7 +2010,8 @@ mod request_body {
                 ..Default::default()
             },
         ];
-        let body = build_request_body("gemini-2.0-flash", &default_options(prompt));
+        let body =
+            build_request_body("gemini-2.0-flash", &default_options(prompt)).expect("valid prompt");
 
         // The tool message becomes a user-role message with a functionResponse part.
         let tool_msg = &body["contents"][2];
@@ -2035,7 +2042,8 @@ mod request_body {
             }],
             ..Default::default()
         }];
-        let body = build_request_body("gemini-2.0-flash", &default_options(prompt));
+        let body =
+            build_request_body("gemini-2.0-flash", &default_options(prompt)).expect("valid prompt");
 
         let fr = &body["contents"][0]["parts"][0]["functionResponse"];
         assert_eq!(fr["id"], "call-9");
@@ -2062,7 +2070,8 @@ mod request_body {
             }],
             ..Default::default()
         }];
-        let body = build_request_body("gemini-2.0-flash", &default_options(prompt));
+        let body =
+            build_request_body("gemini-2.0-flash", &default_options(prompt)).expect("valid prompt");
         let fr = &body["contents"][0]["parts"][0]["functionResponse"];
         assert_eq!(fr["name"], "call-blank");
     }
@@ -2074,7 +2083,8 @@ mod request_body {
         let body = build_request_body(
             "gemini-2.0-flash",
             &options_with_tools(test_prompt(), vec![weather_tool()]),
-        );
+        )
+        .expect("valid prompt");
 
         let tools = body["tools"].as_array().unwrap();
         assert_eq!(tools.len(), 1);
@@ -2097,7 +2107,8 @@ mod request_body {
         let body = build_request_body(
             "gemini-2.0-flash",
             &options_with_tools(test_prompt(), vec![weather_tool()]),
-        );
+        )
+        .expect("valid prompt");
         assert_eq!(body["toolConfig"]["functionCallingConfig"]["mode"], "AUTO");
     }
 
@@ -2107,7 +2118,7 @@ mod request_body {
     fn tool_choice_required_becomes_any_mode() {
         let mut opts = options_with_tools(test_prompt(), vec![weather_tool()]);
         opts.tool_choice = ToolChoice::Required;
-        let body = build_request_body("gemini-2.0-flash", &opts);
+        let body = build_request_body("gemini-2.0-flash", &opts).expect("valid prompt");
         assert_eq!(body["toolConfig"]["functionCallingConfig"]["mode"], "ANY");
     }
 
@@ -2119,7 +2130,7 @@ mod request_body {
         opts.tool_choice = ToolChoice::Tool {
             tool_name: "weather".to_string(),
         };
-        let body = build_request_body("gemini-2.0-flash", &opts);
+        let body = build_request_body("gemini-2.0-flash", &opts).expect("valid prompt");
         assert_eq!(body["toolConfig"]["functionCallingConfig"]["mode"], "ANY");
         let allowed = body["toolConfig"]["functionCallingConfig"]["allowedFunctionNames"]
             .as_array()
@@ -2141,7 +2152,7 @@ mod request_body {
             stop_sequences: Some(vec!["STOP".to_string()]),
             ..default_options(test_prompt())
         };
-        let body = build_request_body("gemini-2.0-flash", &opts);
+        let body = build_request_body("gemini-2.0-flash", &opts).expect("valid prompt");
         let gc = &body["generationConfig"];
         assert_eq!(gc["maxOutputTokens"], 256);
         assert_eq!(gc["temperature"], 0.5);
@@ -2166,7 +2177,7 @@ mod request_body {
             name: None,
             description: None,
         });
-        let body = build_request_body("gemini-2.0-flash", &opts);
+        let body = build_request_body("gemini-2.0-flash", &opts).expect("valid prompt");
         assert_eq!(
             body["generationConfig"]["responseMimeType"],
             "application/json"
@@ -2182,7 +2193,7 @@ mod request_body {
         let mut opts = default_options(test_prompt());
         opts.seed = Some(123);
         opts.temperature = Some(0.5);
-        let body = build_request_body("gemini-2.0-flash", &opts);
+        let body = build_request_body("gemini-2.0-flash", &opts).expect("valid prompt");
         assert_eq!(body["generationConfig"]["seed"], 123);
         assert_eq!(body["generationConfig"]["temperature"], 0.5);
     }
@@ -2194,7 +2205,7 @@ mod request_body {
         let mut opts = default_options(test_prompt());
         opts.presence_penalty = Some(0.5);
         opts.frequency_penalty = Some(0.3);
-        let body = build_request_body("gemini-2.0-flash", &opts);
+        let body = build_request_body("gemini-2.0-flash", &opts).expect("valid prompt");
         // f32 -> f64 round-trip introduces tiny error; compare with tolerance.
         let pp = body["generationConfig"]["presencePenalty"]
             .as_f64()
@@ -2210,7 +2221,8 @@ mod request_body {
 
     #[test]
     fn should_omit_generation_config_when_empty() {
-        let body = build_request_body("gemini-2.0-flash", &default_options(test_prompt()));
+        let body = build_request_body("gemini-2.0-flash", &default_options(test_prompt()))
+            .expect("valid prompt");
         // The Rust impl omits generationConfig when empty (unlike TS which sends {}).
         assert!(body.get("generationConfig").is_none());
     }
@@ -2225,7 +2237,7 @@ mod request_body {
             name: None,
             description: None,
         });
-        let body = build_request_body("gemini-2.0-flash", &opts);
+        let body = build_request_body("gemini-2.0-flash", &opts).expect("valid prompt");
         assert_eq!(
             body["generationConfig"]["responseMimeType"],
             "application/json"
@@ -2329,7 +2341,7 @@ mod convert_messages {
             content: vec![ContentPart::text("Hello"), ContentPart::text("World")],
             ..Default::default()
         }];
-        let gp = convert_to_google_messages(&prompt);
+        let gp = convert_to_google_messages(&prompt).expect("valid prompt");
         assert!(gp.system_instruction.is_none());
         assert_eq!(gp.contents.len(), 1);
         assert_eq!(gp.contents[0]["role"], "user");
@@ -2360,7 +2372,7 @@ mod convert_messages {
                 ..Default::default()
             },
         ];
-        let gp = convert_to_google_messages(&prompt);
+        let gp = convert_to_google_messages(&prompt).expect("valid prompt");
         let sys = gp.system_instruction.expect("system instruction");
         let parts = sys["parts"].as_array().unwrap();
         assert_eq!(parts.len(), 2);
@@ -2369,14 +2381,15 @@ mod convert_messages {
         assert_eq!(gp.contents.len(), 1);
     }
 
-    // ── system message after a user message is dropped ──────────────────────
+    // ── system message after a user message is rejected ─────────────────────
 
     #[test]
-    fn system_message_after_user_is_dropped() {
-        // The TS SDK throws `UnsupportedFunctionalityError` for this ordering.
-        // We can't return an error (function returns GooglePrompt, not Result),
-        // so the late system message is dropped rather than folded into
-        // `systemInstruction` (which would make Gemini treat it as a global rule).
+    fn system_message_after_user_is_rejected() {
+        // The TS SDK throws `UnsupportedFunctionalityError` for this ordering:
+        // `systemInstruction` is conversation-level, so a mid-conversation
+        // system message is not representable. Silently dropping it (the old
+        // behaviour) lost caller intent, and folding it into
+        // `systemInstruction` would make Gemini treat it as a global rule.
         let prompt: LanguageModelPrompt = vec![
             LanguageModelPromptMessage {
                 role: Role::User,
@@ -2389,14 +2402,16 @@ mod convert_messages {
                 ..Default::default()
             },
         ];
-        let gp = convert_to_google_messages(&prompt);
-        // The late system message must NOT appear in systemInstruction.
+        let err =
+            convert_to_google_messages(&prompt).expect_err("late system message must be rejected");
         assert!(
-            gp.system_instruction.is_none(),
-            "late system message must not leak into systemInstruction"
+            matches!(err, AiMuxError::UnsupportedFunctionality(_)),
+            "expected UnsupportedFunctionality, got {err:?}"
         );
-        assert_eq!(gp.contents.len(), 1);
-        assert_eq!(gp.contents[0]["role"], "user");
+        assert_eq!(
+            err.to_string(),
+            "unsupported functionality: system messages are only supported at the beginning of the conversation"
+        );
     }
 
     // ── image part → inlineData ───────────────────────────────────────────────
@@ -2411,7 +2426,7 @@ mod convert_messages {
             )],
             ..Default::default()
         }];
-        let gp = convert_to_google_messages(&prompt);
+        let gp = convert_to_google_messages(&prompt).expect("valid prompt");
         let part = &gp.contents[0]["parts"][0];
         assert_eq!(part["inlineData"]["mimeType"], "image/png");
         // base64 of [1,2,3,4] = "AQIDBA=="
@@ -2428,7 +2443,7 @@ mod convert_messages {
             content: vec![ContentPart::file(vec![0, 1, 2, 3], "image/png".to_string())],
             ..Default::default()
         }];
-        let gp = convert_to_google_messages(&prompt);
+        let gp = convert_to_google_messages(&prompt).expect("valid prompt");
         assert!(gp.system_instruction.is_none());
         assert_eq!(gp.contents.len(), 1);
         let part = &gp.contents[0]["parts"][0];
@@ -2450,7 +2465,7 @@ mod convert_messages {
             )],
             ..Default::default()
         }];
-        let gp = convert_to_google_messages(&prompt);
+        let gp = convert_to_google_messages(&prompt).expect("valid prompt");
         assert_eq!(gp.contents.len(), 1);
         assert_eq!(gp.contents[0]["role"], "user");
         let fr = &gp.contents[0]["parts"][0]["functionResponse"];
@@ -2471,7 +2486,7 @@ mod convert_messages {
             ],
             ..Default::default()
         }];
-        let gp = convert_to_google_messages(&prompt);
+        let gp = convert_to_google_messages(&prompt).expect("valid prompt");
         assert_eq!(gp.contents.len(), 1);
         let parts = gp.contents[0]["parts"].as_array().unwrap();
         assert_eq!(parts.len(), 2);
@@ -2488,7 +2503,7 @@ mod convert_messages {
             content: vec![ContentPart::text("")],
             ..Default::default()
         }];
-        let gp = convert_to_google_messages(&prompt);
+        let gp = convert_to_google_messages(&prompt).expect("valid prompt");
         // Empty assistant text → no parts → no contents entry.
         assert!(gp.contents.is_empty());
     }
@@ -2503,7 +2518,7 @@ mod convert_messages {
             content: vec![ContentPart::text("You are a robot.")],
             ..Default::default()
         }];
-        let gp = convert_to_google_messages(&prompt);
+        let gp = convert_to_google_messages(&prompt).expect("valid prompt");
         let sys = gp.system_instruction.expect("system instruction");
         assert_eq!(sys["parts"][0]["text"], "You are a robot.");
         assert!(gp.contents.is_empty());
@@ -2522,7 +2537,7 @@ mod convert_messages {
             )],
             ..Default::default()
         }];
-        let gp = convert_to_google_messages(&prompt);
+        let gp = convert_to_google_messages(&prompt).expect("valid prompt");
         let fc = &gp.contents[0]["parts"][0]["functionCall"];
         assert_eq!(fc["name"], "weather");
         assert_eq!(fc["args"]["location"], "SF");
@@ -2546,7 +2561,7 @@ mod convert_messages {
             ],
             ..Default::default()
         }];
-        let gp = convert_to_google_messages(&prompt);
+        let gp = convert_to_google_messages(&prompt).expect("valid prompt");
         assert_eq!(gp.contents[0]["role"], "model");
         let parts = gp.contents[0]["parts"].as_array().unwrap();
         assert_eq!(parts.len(), 2);

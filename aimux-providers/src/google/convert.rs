@@ -5,7 +5,10 @@
 //! request shape is fundamentally different from OpenAI/Anthropic:
 //!
 //! - System messages are lifted out of `contents` into a top-level
-//!   `systemInstruction` field (a `{ parts: [{ text }] }` object).
+//!   `systemInstruction` field (a `{ parts: [{ text }] }` object). System
+//!   messages are only representable at the *start* of the conversation: a
+//!   later one is rejected with `AiMuxError::UnsupportedFunctionality`,
+//!   mirroring the TS SDK's `UnsupportedFunctionalityError`.
 //! - Assistant messages become `role: "model"`.
 //! - Tool results become `functionResponse` parts inside a `role: "user"`
 //!   message (Gemini has no `tool` role).
@@ -19,6 +22,7 @@
 //! provider-executed tool parts.
 
 use aimux_core::content::ContentPart;
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
@@ -87,6 +91,17 @@ fn read_provider_options(
 
 // ── convertToGoogleMessages ──────────────────────────────────────────────────
 
+/// The upstream error raised when a prompt cannot be represented in Gemini's
+/// wire format: a system message that appears after a non-system message.
+///
+/// Mirrors the TS SDK's `UnsupportedFunctionalityError` message verbatim
+/// (`convert-to-google-messages.ts`, `case 'system'`).
+fn late_system_message_error() -> AiMuxError {
+    AiMuxError::UnsupportedFunctionality(
+        "system messages are only supported at the beginning of the conversation".to_string(),
+    )
+}
+
 /// Convert a provider-facing prompt into Google's `{ systemInstruction, contents }`.
 ///
 /// Mirrors `convertToGoogleMessages` in the TS SDK with the simplifications
@@ -103,15 +118,25 @@ fn read_provider_options(
 /// Thought signatures: `ContentPart::ToolCall.thought_signature` is echoed
 /// back as a `thoughtSignature` sibling of the `functionCall` part (required
 /// by Gemini thinking models on follow-up turns).
-#[must_use]
-pub fn convert_to_google_messages(prompt: &LanguageModelPrompt) -> GooglePrompt {
+///
+/// # Errors
+///
+/// Returns [`AiMuxError::UnsupportedFunctionality`] when a system message
+/// appears after a non-system message. Gemini's `systemInstruction` is a
+/// conversation-level field, so a mid-conversation instruction cannot be
+/// represented: promoting it to a global rule or dropping it would both
+/// silently change the caller's intent. Leading system messages are still
+/// aggregated into a single `systemInstruction` (in order).
+pub fn convert_to_google_messages(
+    prompt: &LanguageModelPrompt,
+) -> Result<GooglePrompt, AiMuxError> {
     convert_to_google_messages_for_namespace(prompt, ProviderMetadataNamespace::Google)
 }
 
 fn convert_to_google_messages_for_namespace(
     prompt: &LanguageModelPrompt,
     namespace: ProviderMetadataNamespace,
-) -> GooglePrompt {
+) -> Result<GooglePrompt, AiMuxError> {
     let mut system_parts: Vec<Value> = Vec::new();
     let mut contents: Vec<Value> = Vec::new();
     let mut system_messages_allowed = true;
@@ -122,13 +147,12 @@ fn convert_to_google_messages_for_namespace(
                 if !system_messages_allowed {
                     // The TS SDK throws `UnsupportedFunctionalityError` here:
                     // system messages are only valid at the start of the
-                    // conversation. This function returns `GooglePrompt` (not
-                    // `Result`), so we cannot propagate an error. Dropping the
-                    // late system message is safer than folding it into
-                    // `systemInstruction` (which would make Gemini treat a
-                    // mid-conversation instruction as a global rule).
-                    // TODO: change the signature to `Result` to match TS semantics.
-                    continue;
+                    // conversation. Folding a late system message into
+                    // `systemInstruction` would make Gemini treat a
+                    // mid-conversation instruction as a global rule, and
+                    // dropping it loses caller intent — so the prompt is
+                    // rejected instead.
+                    return Err(late_system_message_error());
                 }
                 for part in &msg.content {
                     if let ContentPart::Text { text, .. } = part {
@@ -168,10 +192,10 @@ fn convert_to_google_messages_for_namespace(
         Some(json!({ "parts": system_parts }))
     };
 
-    GooglePrompt {
+    Ok(GooglePrompt {
         system_instruction,
         contents,
-    }
+    })
 }
 
 /// Convert user-role content parts into Google parts.
@@ -1004,31 +1028,45 @@ fn is_empty_object_schema(obj: &Map<String, Value>) -> bool {
 ///
 /// This is the request-body-only entry point; warnings about unsupported tools
 /// are discarded. Use [`build_request_body_with_warnings`] to surface them.
-#[must_use]
-pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
-    build_request_body_with_warnings(model_id, options).0
+///
+/// # Errors
+///
+/// Same as [`convert_to_google_messages`]: the prompt is rejected when a system
+/// message appears after a non-system message.
+pub fn build_request_body(model_id: &str, options: &CallOptions) -> Result<Value, AiMuxError> {
+    Ok(build_request_body_with_warnings(model_id, options)?.0)
 }
 
 /// Build a Vertex Gemini request body using Vertex's provider-metadata
 /// namespaces when replaying response parts.
-#[must_use]
-pub(crate) fn build_vertex_request_body(model_id: &str, options: &CallOptions) -> Value {
-    build_request_body_with_warnings_for_namespace(
+///
+/// # Errors
+///
+/// Same as [`build_request_body`].
+pub(crate) fn build_vertex_request_body(
+    model_id: &str,
+    options: &CallOptions,
+) -> Result<Value, AiMuxError> {
+    Ok(build_request_body_with_warnings_for_namespace(
         model_id,
         options,
         ProviderMetadataNamespace::Vertex,
-    )
-    .0
+    )?
+    .0)
 }
 
 /// Build the Gemini `generateContent` request body **and** collect the tool
 /// warnings (e.g. unsupported provider-defined tools, mixed function+provider
 /// tools on pre-Gemini-3 models).
-#[must_use]
+///
+/// # Errors
+///
+/// Same as [`convert_to_google_messages`]: the prompt is rejected when a system
+/// message appears after a non-system message.
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
-) -> (Value, Vec<Warning>) {
+) -> Result<(Value, Vec<Warning>), AiMuxError> {
     build_request_body_with_warnings_for_namespace(
         model_id,
         options,
@@ -1040,11 +1078,11 @@ fn build_request_body_with_warnings_for_namespace(
     model_id: &str,
     options: &CallOptions,
     namespace: ProviderMetadataNamespace,
-) -> (Value, Vec<Warning>) {
+) -> Result<(Value, Vec<Warning>), AiMuxError> {
     let GooglePrompt {
         system_instruction,
         contents,
-    } = convert_to_google_messages_for_namespace(&options.prompt, namespace);
+    } = convert_to_google_messages_for_namespace(&options.prompt, namespace)?;
 
     let mut generation_config = Map::new();
 
@@ -1112,7 +1150,7 @@ fn build_request_body_with_warnings_for_namespace(
     // the TS SDK. (Some callers include it; the API ignores extra fields.)
     let _ = model_id;
 
-    (Value::Object(body), prepared.warnings)
+    Ok((Value::Object(body), prepared.warnings))
 }
 
 // ── finish reason ────────────────────────────────────────────────────────────
@@ -1346,7 +1384,8 @@ mod tests {
         ]);
 
         let converted =
-            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex);
+            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex)
+                .expect("valid prompt");
         assert_eq!(
             converted.contents[0]["parts"],
             json!([
@@ -1374,14 +1413,16 @@ mod tests {
         let prompt = assistant_prompt(vec![content]);
 
         let vertex =
-            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex);
+            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex)
+                .expect("valid prompt");
         assert_eq!(
             vertex.contents[0]["parts"][0]["thoughtSignature"],
             "google-vertex"
         );
 
         let google =
-            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Google);
+            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Google)
+                .expect("valid prompt");
         assert_eq!(google.contents[0]["parts"][0]["thoughtSignature"], "google");
     }
 
@@ -1399,10 +1440,93 @@ mod tests {
         }]);
 
         let converted =
-            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex);
+            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex)
+                .expect("valid prompt");
         assert_eq!(
             converted.contents[0]["parts"][0]["thoughtSignature"],
             "gateway-signature"
         );
+    }
+
+    // ── late system messages are rejected (upstream UnsupportedFunctionality) ──
+
+    #[test]
+    fn late_system_message_is_rejected_for_both_namespaces() {
+        let prompt: LanguageModelPrompt = vec![
+            LanguageModelPromptMessage {
+                role: Role::User,
+                content: vec![ContentPart::text("Hi")],
+                ..Default::default()
+            },
+            LanguageModelPromptMessage {
+                role: Role::System,
+                content: vec![ContentPart::text("Late rule")],
+                ..Default::default()
+            },
+        ];
+
+        for namespace in [
+            ProviderMetadataNamespace::Google,
+            ProviderMetadataNamespace::Vertex,
+        ] {
+            let err = convert_to_google_messages_for_namespace(&prompt, namespace)
+                .expect_err("late system message must be rejected");
+            assert!(
+                matches!(err, AiMuxError::UnsupportedFunctionality(_)),
+                "expected UnsupportedFunctionality, got {err:?}"
+            );
+            assert_eq!(
+                err.to_string(),
+                "unsupported functionality: system messages are only supported at the beginning of the conversation"
+            );
+        }
+    }
+
+    #[test]
+    fn assistant_turn_also_closes_the_system_message_window() {
+        let prompt: LanguageModelPrompt = vec![
+            LanguageModelPromptMessage {
+                role: Role::Assistant,
+                content: vec![ContentPart::text("Hello")],
+                ..Default::default()
+            },
+            LanguageModelPromptMessage {
+                role: Role::System,
+                content: vec![ContentPart::text("Late rule")],
+                ..Default::default()
+            },
+        ];
+
+        let err =
+            convert_to_google_messages(&prompt).expect_err("late system message must be rejected");
+        assert!(matches!(err, AiMuxError::UnsupportedFunctionality(_)));
+    }
+
+    #[test]
+    fn leading_system_messages_are_still_aggregated() {
+        let prompt: LanguageModelPrompt = vec![
+            LanguageModelPromptMessage {
+                role: Role::System,
+                content: vec![ContentPart::text("Rule 1")],
+                ..Default::default()
+            },
+            LanguageModelPromptMessage {
+                role: Role::System,
+                content: vec![ContentPart::text("Rule 2")],
+                ..Default::default()
+            },
+            LanguageModelPromptMessage {
+                role: Role::User,
+                content: vec![ContentPart::text("Hi")],
+                ..Default::default()
+            },
+        ];
+
+        let converted = convert_to_google_messages(&prompt).expect("valid prompt");
+        assert_eq!(
+            converted.system_instruction,
+            Some(json!({ "parts": [{ "text": "Rule 1" }, { "text": "Rule 2" }] }))
+        );
+        assert_eq!(converted.contents.len(), 1);
     }
 }
