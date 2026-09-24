@@ -50,6 +50,22 @@ pub fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, Stri
     list
 }
 
+/// Whether the **effective request body** asks the API to store the response
+/// (`store: true`).
+///
+/// The streaming reducer uses it to decide when reasoning summary parts are
+/// concluded. It is read from the built body — not from `provider_options` —
+/// so body overrides (provider level and per call, RFC-0017) cannot make the
+/// request and the stream decisions diverge.
+///
+/// An omitted `store` keeps the historical "not explicitly stored" behavior
+/// (`false`), matching the previous provider-options-only read even though the
+/// API's own default is `true`.
+#[must_use]
+pub fn store_requested(body: &Value) -> bool {
+    body.get("store").and_then(Value::as_bool) == Some(true)
+}
+
 // -- Non-streaming output parsing --------------------------------------------
 
 /// Parse a non-streaming Responses API JSON body into a [`GenerateResult`].

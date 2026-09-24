@@ -38,9 +38,12 @@ use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_provider_utils::{HttpRequest, with_user_agent_suffix, without_trailing_slash};
 
 use crate::azure::{AzureAuth, AzureConfig};
-use crate::openai::responses::convert::build_responses_request_body;
+use crate::openai::responses::convert::{
+    ResponsesRequestConfig, build_responses_request_body_with_config,
+};
 use crate::openai::responses::responses_convert::{
     build_header_list, build_responses_event_stream, build_responses_generate_result,
+    store_requested,
 };
 
 /// The file-ID prefix Azure uses for uploaded files.
@@ -138,6 +141,16 @@ impl AzureResponsesModel {
 
         with_user_agent_suffix(&mut headers, "azure");
         Ok(headers)
+    }
+
+    /// The provider-level request configuration: the Azure provider-options
+    /// namespace and no provider-level body overrides (`AzureConfig` has no
+    /// `body_overrides` field).
+    fn request_config() -> ResponsesRequestConfig<'static> {
+        ResponsesRequestConfig {
+            provider_options_name: provider_key(),
+            body_overrides: None,
+        }
     }
 
     /// Post-process the request body to apply the Azure `assistant-` file-ID
@@ -263,7 +276,12 @@ impl LanguageModel for AzureResponsesModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
-        let request_result = build_responses_request_body(&self.deployment, options, false);
+        let request_result = build_responses_request_body_with_config(
+            &self.deployment,
+            options,
+            false,
+            Self::request_config(),
+        );
         let mut body = request_result.body;
 
         // Apply Azure assistant- file ID prefix passthrough.
@@ -300,7 +318,12 @@ impl LanguageModel for AzureResponsesModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
-        let request_result = build_responses_request_body(&self.deployment, options, true);
+        let request_result = build_responses_request_body_with_config(
+            &self.deployment,
+            options,
+            true,
+            Self::request_config(),
+        );
         let mut body = request_result.body;
         let warnings = request_result.warnings;
         let provider_key = provider_key().to_string();
@@ -308,15 +331,10 @@ impl LanguageModel for AzureResponsesModel {
         // Apply Azure assistant- file ID prefix passthrough.
         Self::apply_file_id_prefixes(&mut body);
 
-        // The `store` request option (None by default). Used to decide when
-        // reasoning summary parts are concluded.
-        let store_flag = options
-            .provider_options
-            .as_ref()
-            .and_then(|m| m.get("openai"))
-            .and_then(|o| o.get("store"))
-            .and_then(serde_json::Value::as_bool)
-            == Some(true);
+        // Whether the effective body stores the response. Used to decide when
+        // reasoning summary parts are concluded; derived from the body so
+        // overrides cannot diverge from the request.
+        let store_flag = store_requested(&body);
 
         let endpoint = self.endpoint();
         let resp = aimux_provider_utils::post_json_to_api(

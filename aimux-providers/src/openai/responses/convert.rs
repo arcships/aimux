@@ -39,13 +39,36 @@ pub use crate::openai::convert_common::SystemMessageMode as ResponsesSystemMessa
 
 // -- Provider options helper -------------------------------------------------
 
-/// Get a value from `provider_options.openai.<key>`.
-fn openai_option(options: &Option<HashMap<String, Value>>, key: &str) -> Option<Value> {
-    options
-        .as_ref()
-        .and_then(|m| m.get("openai"))
-        .and_then(|o| o.get(key))
-        .cloned()
+/// Resolve the request-level provider-options object for a provider-options
+/// namespace.
+///
+/// Mirrors the TS `parseProviderOptions({ provider: providerOptionsName })`
+/// lookup in `openai-responses-language-model.ts` plus its fallback: the
+/// provider's own namespace (`"azure"` for Azure, `"openai"` otherwise) wins;
+/// when it is absent and the name is not `"openai"`, the `"openai"` namespace
+/// is used. The fallback is per namespace, not per key — a present `azure`
+/// object is used exclusively, exactly as the TS object is.
+///
+/// The returned object is the effective `openaiOptions` equivalent; `None`
+/// means no provider options apply.
+#[must_use]
+pub(crate) fn resolve_provider_options(
+    options: &Option<HashMap<String, Value>>,
+    provider_options_name: &str,
+) -> Option<Value> {
+    let options = options.as_ref()?;
+    if let Some(own) = options.get(provider_options_name).filter(|v| !v.is_null()) {
+        return Some(own.clone());
+    }
+    if provider_options_name == "openai" {
+        return None;
+    }
+    options.get("openai").filter(|v| !v.is_null()).cloned()
+}
+
+/// Get a value from the resolved provider-options object.
+fn provider_option(options: Option<&Value>, key: &str) -> Option<Value> {
+    options.and_then(|o| o.get(key)).cloned()
 }
 
 // -- Input conversion --------------------------------------------------------
@@ -513,26 +536,27 @@ fn push_unsupported_call_option_warnings(options: &CallOptions, warnings: &mut V
 /// wins over top-level `reasoning`), `reasoningSummary` (defaults to "detailed"
 /// when an effort other than "none" applies), and whether the model reasons.
 fn resolve_responses_reasoning(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: Option<&Value>,
     options: &CallOptions,
     caps: &ModelCapabilities,
 ) -> (Option<String>, Option<String>, bool) {
-    let resolved_reasoning_effort: Option<String> = openai_option(provider_opts, "reasoningEffort")
-        .map(|v| {
-            v.as_str()
-                .map(std::string::ToString::to_string)
-                .unwrap_or_else(|| v.to_string())
-        })
-        .or_else(|| {
-            if options.reasoning.is_some_and(ReasoningEffort::is_custom) {
-                options.reasoning.map(|r| r.to_string())
-            } else {
-                None
-            }
-        });
+    let resolved_reasoning_effort: Option<String> =
+        provider_option(provider_opts, "reasoningEffort")
+            .map(|v| {
+                v.as_str()
+                    .map(std::string::ToString::to_string)
+                    .unwrap_or_else(|| v.to_string())
+            })
+            .or_else(|| {
+                if options.reasoning.is_some_and(ReasoningEffort::is_custom) {
+                    options.reasoning.map(|r| r.to_string())
+                } else {
+                    None
+                }
+            });
 
     let resolved_reasoning_summary: Option<String> =
-        openai_option(provider_opts, "reasoningSummary")
+        provider_option(provider_opts, "reasoningSummary")
             .map(|v| {
                 v.as_str()
                     .map(std::string::ToString::to_string)
@@ -549,7 +573,7 @@ fn resolve_responses_reasoning(
                 }
             });
 
-    let is_reasoning_model = openai_option(provider_opts, "forceReasoning")
+    let is_reasoning_model = provider_option(provider_opts, "forceReasoning")
         .map(|v| v.as_bool().unwrap_or(false))
         .unwrap_or(caps.is_reasoning_model);
 
@@ -561,12 +585,9 @@ fn resolve_responses_reasoning(
 }
 
 /// Warn when `conversation` and `previousResponseId` are both set.
-fn warn_conversation_conflict(
-    provider_opts: &Option<HashMap<String, Value>>,
-    warnings: &mut Vec<Warning>,
-) {
-    let has_conversation = openai_option(provider_opts, "conversation").is_some();
-    let has_previous_response_id = openai_option(provider_opts, "previousResponseId").is_some();
+fn warn_conversation_conflict(provider_opts: Option<&Value>, warnings: &mut Vec<Warning>) {
+    let has_conversation = provider_option(provider_opts, "conversation").is_some();
+    let has_previous_response_id = provider_option(provider_opts, "previousResponseId").is_some();
     if has_conversation && has_previous_response_id {
         warnings.push(Warning::Unsupported {
             feature: "conversation".to_string(),
@@ -578,11 +599,11 @@ fn warn_conversation_conflict(
 }
 
 fn resolve_responses_system_message_mode(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: Option<&Value>,
     is_reasoning_model: bool,
     caps: &ModelCapabilities,
 ) -> SystemMessageMode {
-    openai_option(provider_opts, "systemMessageMode")
+    provider_option(provider_opts, "systemMessageMode")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string))
         .map(|s| match s.as_str() {
             "developer" => SystemMessageMode::Developer,
@@ -600,7 +621,7 @@ fn resolve_responses_system_message_mode(
 fn apply_responses_sampling(
     body: &mut Value,
     options: &CallOptions,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: Option<&Value>,
     caps: &ModelCapabilities,
     is_reasoning_model: bool,
     resolved_reasoning_effort: &Option<String>,
@@ -635,7 +656,7 @@ fn apply_responses_sampling(
             "reasoningMode",
             "reasoningContext",
         ] {
-            if openai_option(provider_opts, key).is_some() {
+            if provider_option(provider_opts, key).is_some() {
                 warnings.push(Warning::Unsupported {
                     feature: key.to_string(),
                     details: Some(format!("{key} is not supported for non-reasoning models")),
@@ -656,7 +677,7 @@ fn apply_responses_sampling(
 fn apply_responses_text_format(
     body: &mut Value,
     options: &CallOptions,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: Option<&Value>,
 ) {
     if let Some(ref rf) = options.response_format {
         match rf {
@@ -669,7 +690,7 @@ fn apply_responses_text_format(
                 let mut text = json!({});
                 match schema {
                     Some(schema) => {
-                        let strict_json = openai_option(provider_opts, "strictJsonSchema")
+                        let strict_json = provider_option(provider_opts, "strictJsonSchema")
                             .and_then(|v| v.as_bool())
                             .unwrap_or(true);
                         text["format"] = json!({
@@ -689,7 +710,7 @@ fn apply_responses_text_format(
         }
     }
 
-    if let Some(verbosity) = openai_option(provider_opts, "textVerbosity") {
+    if let Some(verbosity) = provider_option(provider_opts, "textVerbosity") {
         let text = body.get_mut("text").and_then(|t| t.as_object_mut());
         match text {
             Some(obj) => {
@@ -705,11 +726,11 @@ fn apply_responses_text_format(
 /// The computed `include` list (store=false on reasoning models adds
 /// `reasoning.encrypted_content`).
 fn resolve_responses_include(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: Option<&Value>,
     is_reasoning_model: bool,
 ) -> Option<Vec<Value>> {
     let mut include: Option<Vec<Value>> =
-        openai_option(provider_opts, "include").and_then(|v| v.as_array().cloned());
+        provider_option(provider_opts, "include").and_then(|v| v.as_array().cloned());
 
     let add_include = |key: &str, inc: &mut Option<Vec<Value>>| {
         let already = inc
@@ -724,7 +745,7 @@ fn resolve_responses_include(
     };
 
     // store defaults to true; only the explicit `false` triggers encrypted_content.
-    let store_explicit = openai_option(provider_opts, "store").and_then(|v| v.as_bool());
+    let store_explicit = provider_option(provider_opts, "store").and_then(|v| v.as_bool());
     if store_explicit == Some(false) && is_reasoning_model {
         add_include("reasoning.encrypted_content", &mut include);
     }
@@ -734,12 +755,9 @@ fn resolve_responses_include(
 
 /// Pass-through of the remaining Responses provider options (only sent when
 /// set).
-fn apply_responses_provider_options(
-    body: &mut Value,
-    provider_opts: &Option<HashMap<String, Value>>,
-) {
+fn apply_responses_provider_options(body: &mut Value, provider_opts: Option<&Value>) {
     let mut set = |key: &str, body_key: &str| {
-        if let Some(v) = openai_option(provider_opts, key) {
+        if let Some(v) = provider_option(provider_opts, key) {
             body[body_key] = v;
         }
     };
@@ -760,11 +778,11 @@ fn apply_responses_provider_options(
 /// `service_tier` with model-capability validation.
 fn apply_responses_service_tier(
     body: &mut Value,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: Option<&Value>,
     caps: &ModelCapabilities,
     warnings: &mut Vec<Warning>,
 ) {
-    if let Some(st) = openai_option(provider_opts, "serviceTier")
+    if let Some(st) = provider_option(provider_opts, "serviceTier")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string))
     {
         match st.as_str() {
@@ -793,7 +811,7 @@ fn apply_responses_service_tier(
 /// `reasoning` block for reasoning models.
 fn apply_responses_reasoning_block(
     body: &mut Value,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: Option<&Value>,
     is_reasoning_model: bool,
     resolved_reasoning_effort: &Option<String>,
     resolved_reasoning_summary: &Option<String>,
@@ -803,9 +821,9 @@ fn apply_responses_reasoning_block(
     }
     let effort = resolved_reasoning_effort.as_ref();
     let summary = resolved_reasoning_summary.as_ref();
-    let mode = openai_option(provider_opts, "reasoningMode")
+    let mode = provider_option(provider_opts, "reasoningMode")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string));
-    let context = openai_option(provider_opts, "reasoningContext")
+    let context = provider_option(provider_opts, "reasoningContext")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string));
 
     if effort.is_some() || summary.is_some() || mode.is_some() || context.is_some() {
@@ -826,19 +844,77 @@ fn apply_responses_reasoning_block(
     }
 }
 
-/// Build the OpenAI Responses API request body (without warnings).
+/// Provider-level inputs the Responses request builder needs beyond
+/// [`CallOptions`].
+#[derive(Debug, Clone, Copy)]
+pub struct ResponsesRequestConfig<'a> {
+    /// The provider-options namespace: `"azure"` when the provider name
+    /// contains `azure`, `"openai"` otherwise (the AI SDK
+    /// `providerOptionsName`). Reads fall back to the `"openai"` namespace when
+    /// the provider's own namespace is absent — see
+    /// [`resolve_provider_options`].
+    pub provider_options_name: &'a str,
+    /// Provider-level `body_overrides` (RFC-0017), applied to the built body
+    /// **before** the per-call `CallOptions.body_overrides`.
+    pub body_overrides: Option<&'a Value>,
+}
+
+impl<'a> ResponsesRequestConfig<'a> {
+    /// The `"openai"` namespace with no provider-level body overrides — the
+    /// configuration of a bare OpenAI Responses model.
+    #[must_use]
+    pub fn openai() -> Self {
+        Self {
+            provider_options_name: "openai",
+            body_overrides: None,
+        }
+    }
+}
+
+/// Build the OpenAI Responses API request body for the `"openai"`
+/// provider-options namespace with no provider-level body overrides.
 ///
-/// Splits the original ~380-line function into focused helpers (issue M11);
-/// behavior is unchanged.
+/// Convenience wrapper for [`build_responses_request_body_with_config`];
+/// providers with a different provider-options namespace or provider-level
+/// `body_overrides` call the explicit variant.
 #[must_use]
 pub fn build_responses_request_body(
     model_id: &str,
     options: &CallOptions,
     stream: bool,
 ) -> ResponsesRequestBodyResult {
+    build_responses_request_body_with_config(
+        model_id,
+        options,
+        stream,
+        ResponsesRequestConfig::openai(),
+    )
+}
+
+/// Build the OpenAI Responses API request body (without warnings).
+///
+/// Splits the original ~380-line function into focused helpers (issue M11);
+/// behavior is unchanged.
+///
+/// Body overrides (RFC-0017) are applied **sequentially**: the provider-level
+/// patch in `config` first, then the per-call `options.body_overrides`, each
+/// deep-merged into the body built so far with `null` deleting keys. Composing
+/// the two patches first would not be equivalent — e.g. provider
+/// `{"text": null}` followed by per-call `{"text": {"verbosity": "low"}}` must
+/// leave `text = {"verbosity": "low"}`, not resurrect the generated
+/// `text.format`.
+#[must_use]
+pub fn build_responses_request_body_with_config(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+    config: ResponsesRequestConfig<'_>,
+) -> ResponsesRequestBodyResult {
     let mut warnings: Vec<Warning> = Vec::new();
     let caps = get_model_capabilities(model_id);
-    let provider_opts = &options.provider_options;
+    let provider_opts =
+        resolve_provider_options(&options.provider_options, config.provider_options_name);
+    let provider_opts = provider_opts.as_ref();
 
     // -- Warnings for unsupported call options --
     push_unsupported_call_option_warnings(options, &mut warnings);
@@ -855,10 +931,10 @@ pub fn build_responses_request_body(
         resolve_responses_system_message_mode(provider_opts, is_reasoning_model, &caps);
 
     // -- Input conversion --
-    let store_bool = openai_option(provider_opts, "store")
+    let store_bool = provider_option(provider_opts, "store")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
-    let has_previous_response_id = openai_option(provider_opts, "previousResponseId").is_some();
+    let has_previous_response_id = provider_option(provider_opts, "previousResponseId").is_some();
     let input_result = convert_to_responses_input(
         &options.prompt,
         system_message_mode,
@@ -902,7 +978,7 @@ pub fn build_responses_request_body(
     }
 
     // -- store (only sent when explicitly set) --
-    if let Some(s) = openai_option(provider_opts, "store").and_then(|v| v.as_bool()) {
+    if let Some(s) = provider_option(provider_opts, "store").and_then(|v| v.as_bool()) {
         body["store"] = json!(s);
     }
 
@@ -931,6 +1007,19 @@ pub fn build_responses_request_body(
     }
     for tw in prepared.tool_warnings {
         warnings.push(tw);
+    }
+
+    // Request body overrides (RFC-0017), applied sequentially to the body
+    // built so far — provider level first, per-call last, so a per-call
+    // override sees the provider override's result. `null` deletes the
+    // corresponding key at each step. Applied last so users can override
+    // anything, including the fields derived from standard call options above
+    // — the chat-path contract.
+    if let Some(provider_overrides) = config.body_overrides {
+        crate::openai::convert::deep_merge_json(&mut body, provider_overrides);
+    }
+    if let Some(ref overrides) = options.body_overrides {
+        crate::openai::convert::deep_merge_json(&mut body, overrides);
     }
 
     ResponsesRequestBodyResult { body, warnings }
@@ -1042,5 +1131,68 @@ pub fn map_responses_finish_reason(
     FinishReason {
         unified,
         raw: finish_reason.map(std::string::ToString::to_string),
+    }
+}
+
+#[cfg(test)]
+mod provider_options_tests {
+    use super::*;
+
+    fn options(pairs: &[(&str, Value)]) -> Option<HashMap<String, Value>> {
+        let mut map = HashMap::new();
+        for (k, v) in pairs {
+            map.insert((*k).to_string(), v.clone());
+        }
+        Some(map)
+    }
+
+    /// The provider's own namespace is used when present.
+    #[test]
+    fn own_namespace_is_resolved() {
+        let opts = options(&[("azure", json!({ "store": false }))]);
+        assert_eq!(
+            resolve_provider_options(&opts, "azure"),
+            Some(json!({ "store": false }))
+        );
+    }
+
+    /// The AI SDK fallback: `openai` when the provider's own namespace is
+    /// absent.
+    #[test]
+    fn falls_back_to_openai_namespace() {
+        let opts = options(&[("openai", json!({ "store": false }))]);
+        assert_eq!(
+            resolve_provider_options(&opts, "azure"),
+            Some(json!({ "store": false }))
+        );
+    }
+
+    /// A present `azure` namespace is used exclusively — the fallback is per
+    /// namespace, not per key.
+    #[test]
+    fn own_namespace_shadows_openai_namespace() {
+        let opts = options(&[
+            ("azure", json!({ "store": false })),
+            ("openai", json!({ "maxToolCalls": 9 })),
+        ]);
+        assert_eq!(
+            resolve_provider_options(&opts, "azure"),
+            Some(json!({ "store": false }))
+        );
+    }
+
+    /// `openai` never falls back to itself; absent or `null` options resolve to
+    /// `None`.
+    #[test]
+    fn openai_namespace_and_missing_options() {
+        assert_eq!(resolve_provider_options(&None, "openai"), None);
+        assert_eq!(
+            resolve_provider_options(&options(&[("azure", json!({}))]), "openai"),
+            None
+        );
+        assert_eq!(
+            resolve_provider_options(&options(&[("openai", json!(null))]), "azure"),
+            None
+        );
     }
 }

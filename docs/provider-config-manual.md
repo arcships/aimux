@@ -107,6 +107,36 @@ await generateText(model, prompt, { bodyOverrides: { enable_thinking: false } })
 await generateText(model, prompt, { bodyOverrides: { 'reasoning_effort': null } })
 ```
 
+### 5.1 Responses API（`/v1/responses`）的配置行为
+
+Responses 模型（`openai.responsesModel(...)` / Azure Responses / Codex）不会因为换协议
+而丢弃配置，但两条路径的配置来源不同：
+
+**`OpenAIConfig`（OpenAI Responses / Codex 等）**
+
+| 配置 | 行为 |
+|---|---|
+| provider 级 `headers` | 发送；per-call `headers` 覆盖同名项 |
+| `organization` / `project` | 分别发送 `OpenAI-Organization` / `OpenAI-Project` |
+| provider 级 `bodyOverrides` | 与 per-call `bodyOverrides` **依次** deep-merge 到已构建的请求体（见下） |
+| per-call `bodyOverrides` | 最后应用，覆盖 provider 级；`null` 删除字段 |
+| `providerOptions` 命名空间 | 由 provider 名推导：含 `azure` → `azure`，否则 `openai`；读取时自身命名空间缺失则回退 `openai`（与 AI SDK `parseProviderOptions` 一致）。响应 `providerMetadata` 用同一命名空间 |
+| `store` | 请求体的 `store`（由 provider option 或 bodyOverrides 决定）同时决定流式 reasoning summary 的收尾时机；省略 `store` 时按"未显式存储"处理（历史行为） |
+
+**Azure Responses（`AzureConfig`）**：认证走 Azure 自己的 `api_key` / `token_provider`
+（`api-key` 或 `Authorization`）。provider 级只有 `extra_headers`（每次请求合并，
+per-call `headers` 覆盖同名项）——**没有** `organization` / `project` /
+provider 级 `body_overrides` 字段。它与 OpenAI Responses 共用同一套请求构建与
+`providerOptions` 命名空间解析：per-call `bodyOverrides` 生效，命名空间为 `azure`
+（缺失时回退 `openai`），响应 `providerMetadata` 也用 `azure`。
+
+> **顺序语义**（provider 级 → per-call，逐步 deep-merge，不是先合成一个 patch）：
+> provider 级 `{ text: null }` + per-call `{ text: { verbosity: 'low' } }` 的结果是
+> `text = { verbosity: 'low' }` —— 通用路径生成的 `text.format` 已被删除，不会被
+> per-call 的合并"复活"。这与 chat 路径的 patch 合成实现**不同**（后者先合并两个
+> patch 再应用，遇到同类嵌套替换会保留被删除的字段）；Responses 采用更精确的
+> 逐步应用语义，详见 `aimux-providers/src/openai/responses/convert.rs`。
+
 ## 6. 核实日期与来源
 
 - 手册条目核实日期：2026-08-02
