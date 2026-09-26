@@ -5,7 +5,7 @@
 > **Scope**: `aimux-provider-utils` references three specific design points from catcher (connection-pool config, jitter backoff, fixed timeouts) and implements request-layer optimization using reqwest natively + the existing retry.rs, without introducing a catcher-http dependency
 > **Related**: [RFC-0002](0002-provider-improvements.md) provider adapter layer improvements, [RFC-0003](0003-test-cassette.md) test cassette plan
 >
-> **Superseded in part by [RFC-0031](0031-ai-sdk-request-pipeline.md)**:
+> **Superseded in part by [RFC-0031](../docs/ai-sdk-request-pipeline.md)**:
 > shared client/pool/connect-timeout remain, but HTTP-layer retry and fixed
 > whole-response timeout no longer describe the current architecture. Retry
 > and operation deadlines now belong to Core; provider-utils performs one

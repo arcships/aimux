@@ -1,5 +1,7 @@
 # Provider Adapter Layer Improvements
 
+> **Status**: IMPLEMENTED (2026-07-28 — OpenAICompatProfile 差异描述 + 145 个 thin wrapper 集成,见下方 Implementation Progress;"配置即数据"的后续演进为 [RFC-0017](0017-provider-config-dx.md) 的 provider registry;cassette 测试独立为 [RFC-0003](0003-test-cassette.md))
+
 ## Current Problems
 
 Thin-wrapper providers differ only in URL and environment variables, with no customization points. DeepSeek's reasoning field is dropped directly, as the code comments themselves admit.

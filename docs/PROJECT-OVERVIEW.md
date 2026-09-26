@@ -19,7 +19,7 @@ aimux does not do agent loops, RAG, or orchestration — it focuses solely on un
 | Metric | Value |
 |------|------|
 | Rust code | 144,500+ lines |
-| AI providers | 329 (251 registry-backed OpenAI-compatible + 10 native protocols + 38 standalone/local/speech/image/video) |
+| AI providers | 327 (251 registry-backed OpenAI-compatible + 76 typed; counts by category in [api/providers.md](api/providers.md), generated) |
 | Modality traits | 8 (text/embedding/image/video/speech/transcription/reranking/search) |
 | Test cassettes | 2,650 recorded replays |
 | Test files | 118 |
@@ -102,7 +102,7 @@ The comparison between aimux and the OpenAI official SDK is truly equivalent —
 
 | Trait | Capability | Example Providers |
 |-------|------|-------------|
-| `LanguageModel` | Text generation + streaming + tool calling | OpenAI / Anthropic / Google / DeepSeek / 325 providers |
+| `LanguageModel` | Text generation + streaming + tool calling | OpenAI / Anthropic / Google / DeepSeek / all providers ([providers.md](api/providers.md)) |
 | `EmbeddingModel` | Vector embeddings | OpenAI / Cohere / Voyage / generic-compatible |
 | `ImageModel` | Image generation | Black Forest Labs / Replicate / Fal / KlingAI |
 | `VideoModel` | Video generation | Google Veo / Replicate |
@@ -113,15 +113,18 @@ The comparison between aimux and the OpenAI official SDK is truly equivalent —
 
 ### Categorization of providers
 
-| Type | Count | Representatives |
-|------|:---:|------|
-| Native protocol | 11 | OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI, DeepSeek |
-| OpenAI-compatible (registry) | 251 | Groq, Fireworks, Together, Perplexity, Ollama, OpenRouter, Alibaba Tongyi, Zhipu, Baidu, Tencent, iFlytek, Moonshot AI, SiliconFlow… |
-| Voice/transcription | 7 | ElevenLabs, Deepgram, AssemblyAI, Cartesia… |
-| Image/video | 8 | Black Forest Labs, Replicate, Fal, KlingAI… |
-| Search | 11 | Tavily, Exa, Serper, Firecrawl… |
+Counts by category live in [api/providers.md](api/providers.md#totals)
+(generated — the single source of truth). Representatives:
 
-See [rfc/0004-provider-inventory.md](../rfc/0004-provider-inventory.md) for the full list.
+| Type | Representatives |
+|------|------|
+| Native protocol | OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI, Codex, OpenRouter |
+| OpenAI-compatible (registry) | Groq, Fireworks, Together, Perplexity, Ollama, Alibaba Tongyi, Zhipu, Baidu, Tencent, Moonshot AI, SiliconFlow… |
+| Voice/transcription | ElevenLabs, Deepgram, AssemblyAI, Cartesia… |
+| Image/video | Black Forest Labs, Replicate, Fal, KlingAI… |
+| Search | Tavily, Exa, Serper, Firecrawl… |
+
+See [api/providers.md](api/providers.md) for the full list with counts.
 All registry providers are accessed via the unified `provider(name, ...)` entry point
 — see [API.md](API.md#providers).
 
@@ -158,10 +161,10 @@ aimux/
 │   ├── ImageModel / VideoModel
 │   ├── SpeechModel / TranscriptionModel
 │   └── RerankingModel / SearchModel
-├── aimux-providers          # 325 provider implementations
-│   ├── 11 native protocols   #   standalone model + convert, handles provider-specific differences
-│   ├── 251 OpenAI compatible #   registry-backed: provider-registry.json + provider(name, ...) entry (RFC-0017 phase 4)
-│   └── modalities/search     #   voice / image / video / search implementations
+├── aimux-providers          # provider implementations (canonical counts: docs/api/providers.md)
+│   ├── native protocols     #   standalone model + convert, handles provider-specific differences
+│   ├── OpenAI compatible    #   registry-backed: provider-registry.json + provider(name, ...) entry (RFC-0017 phase 4)
+│   └── modalities/search    #   voice / image / video / search implementations
 ├── aimux-stream             # SSE / NDJSON streaming parsing
 ├── aimux-provider-utils     # One-exchange HTTP helpers, response handlers, API-key loading
 ├── aimux-ffi                # C ABI (FFI infrastructure, shared by all bindings)
@@ -270,10 +273,10 @@ Fundamental difference: **aimux is an access layer, LangChain/Mastra is an orche
 Your app
   └── Orchestration layer (LangChain / Mastra / custom loop)
         └── Access layer (aimux) ← here
-              └── 325 AI providers
+              └── AI providers (count: docs/api/providers.md)
 ```
 
-aimux does not compete with LangChain; instead it serves as the layer beneath LangChain — LangChain handles the agent loop / RAG / chain, while aimux handles unified access to 325 providers. Running the access layer in Rust delivers performance and memory behavior far exceeding a JS-implemented access layer.
+aimux does not compete with LangChain; instead it serves as the layer beneath LangChain — LangChain handles the agent loop / RAG / chain, while aimux handles unified access to every provider ([providers.md](api/providers.md)). Running the access layer in Rust delivers performance and memory behavior far exceeding a JS-implemented access layer.
 
 ### aimux vs rig / rust-genai
 
@@ -405,7 +408,7 @@ Not a single trick, but systematic design choices:
 | Does not do | Zod validation / middleware / telemetry | Does | Extra CPU per request |
 | Compilation | AOT compiled to native code | JIT | Cold start + steady state |
 
-### 3. The way to unify 325 providers
+### 3. The way to unify all providers
 
 Don't write an independent model for each provider — that would explode. Use `OpenAICompatProfile` to describe the differences:
 
@@ -420,7 +423,7 @@ let profile = OpenAICompatProfile {
 };
 ```
 
-The 11 native protocols have independent models + convert (handling differences such as Anthropic message format / Google generateContent / Bedrock SigV4), while the 251 OpenAI-compatible providers are registry-backed (provider-registry.json + unified provider(name, ...) entry, RFC-0017 phase 4).
+The native protocol providers have independent models + convert (handling differences such as Anthropic message format / Google generateContent / Bedrock SigV4), while the OpenAI-compatible providers are registry-backed (provider-registry.json + unified provider(name, ...) entry, RFC-0017 phase 4).
 
 ### 4. Recorded testing with 2650 cassettes
 
@@ -436,7 +439,7 @@ aimux's type design directly targets Vercel AI SDK V4 provider types — the `Ge
 
 ### Completed
 
-- [x] 329 providers integrated (10 native + 251 registry-backed OpenAI-compatible + voice/image/video/search)
+- [x] 327 providers integrated (registry-backed OpenAI-compatible + native/modality typed; counts by category in [providers.md](api/providers.md), generated)
 - [x] 8 modality traits (text/embedding/image/video/speech/transcription/reranking/search)
 - [x] 7 language bindings (Node/Python/Swift/Kotlin/Flutter/C/Rust)
 - [x] 2650 cassette recorded tests

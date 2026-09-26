@@ -8,7 +8,7 @@ Public documentation for aimux — a unified LLM access layer written in Rust.
 |-----|----------|
 | [API.md](API.md) | **API overview** — features, shared reference tables, factory functions, coverage matrix |
 | [api/reference.md](api/reference.md) | **API reference** — all public types & functions, with sources |
-| [api/providers.md](api/providers.md) | **Provider list** — all 325 providers with entry points (generated) |
+| [api/providers.md](api/providers.md) | **Provider list** — every provider with entry points and the canonical counts (generated) |
 | [api/gaps.md](api/gaps.md) | **Binding API gaps** — per-binding missing API tracking (Swift/Kotlin/Flutter multimodal, Go base_url, search factories, C ABI `_with_base`), with C ABI function mapping and reference implementations |
 | [api/](api/) | **Per-language guides** — Node.js, Python, Rust, Go, C/C++, Swift, Kotlin, Flutter, Java |
 | [error-model.md](error-model.md) | **错误模型** — 错误来源、跨语言映射、所有权与兼容性约定 |

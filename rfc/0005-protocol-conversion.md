@@ -1,5 +1,7 @@
 # Protocol Conversion and Adapter Layer Design
 
+> **Status**: ACCEPTED (调研定案 2026-07-28 — 不做跨协议转换,那是网关的职责;aimux 只做"统一接口调用各 provider"的 SDK。适配层差异表达的落地路线为 [RFC-0002](0002-provider-improvements.md) 的配置描述结构,后由 [RFC-0017](0017-provider-config-dx.md) registry 延续)
+
 > Scanned 104 projects under reference/, recording each project's protocol-conversion logic and provider adapter layer design.
 > The focus is not the provider list (see [0004-provider-inventory.md](0004-provider-inventory.md)), but **how to unify different providers' protocols**.
 

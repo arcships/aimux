@@ -1,5 +1,6 @@
 # RFC-0027 list_models 覆盖跟踪
 
+> **Status**: IMPLEMENTED (真 LLM provider 292/292 覆盖,基线 2026-08-06;本页为基线快照,新增 provider 的覆盖随 registry 演进,不再逐家更新)
 > 目标:覆盖全部**真 LLM provider**(有 chat/completions 能力、语义上有"模型列表"的 provider)。
 > modality-only(speech/image/embed/search)不在范围,保留 trait 默认 `Unsupported`。
 >

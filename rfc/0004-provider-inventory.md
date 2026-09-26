@@ -1,5 +1,7 @@
 # Provider Inventory and Implementation Status
 
+> **Status**: SUPERSEDED (2026-07-28 快照,数字不再维护 — 现行事实来源为 [provider_registry.json](../aimux-providers/src/provider_registry.json)([RFC-0017](0017-provider-config-dx.md));与 models.dev 的对账跟踪见 #171)
+
 ## 1. Providers Currently Implemented in aimux
 
 **A total of 172 provider modules** (as of 2026-07-28).

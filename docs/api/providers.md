@@ -2,8 +2,33 @@
 
 > **GENERATED** by `scripts/gen_providers_doc.py` — do not edit by hand.
 > Regenerate with: `python scripts/gen_providers_doc.py`
+> CI verifies with `--check`; the totals below are the one source of
+> truth for provider counts (#177).
 
-**251 registry-backed OpenAI-compatible providers** (construct via `provider(name, ...)` / `ProviderName`) + **78 non-registry providers** (construct via the typed factories listed below).
+## Totals
+
+| category | count |
+|----------|-------|
+| Registry-backed OpenAI-compatible (`provider(name, ...)` / `ProviderName`) | 251 |
+| Non-registry: Native protocol providers | 13 |
+| Non-registry: OpenAI-compatible thin wrappers (second batch) | 5 |
+| Non-registry: Speech-only providers (TTS) | 4 |
+| Non-registry: Transcription-only providers (STT) | 5 |
+| Non-registry: Image-only providers | 4 |
+| Non-registry: Video-only providers | 1 |
+| Non-registry: Generic Responses API wrapper | 1 |
+| Non-registry: Bulk-generated thin-wrapper providers | 16 |
+| Non-registry: Modality-specific providers (non-language, e.g. rerank-only) | 1 |
+| Non-registry: AWS Polly speech (TTS) provider — SigV4 authenticated, speech modality only | 1 |
+| Non-registry: Recraft image provider (OpenAI Images-compatible + Recraft extension fields) | 1 |
+| Non-registry: Stability image provider (image modality only) | 1 |
+| Non-registry: Video-only provider (runwayml) | 1 |
+| Non-registry: P1 thin-wrapper providers (provider-research batch) | 1 |
+| Non-registry: Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers) | 10 |
+| Non-registry: Search-only providers (web search modality) | 11 |
+| **Total providers** | **327** |
+
+**251 registry-backed OpenAI-compatible providers** (construct via `provider(name, ...)` / `ProviderName`) + **76 non-registry providers** (construct via the typed factories listed below).
 
 ## Registry-backed (OpenAI-compatible) — 251
 
@@ -265,12 +290,10 @@
 
 These providers are **not** name-addressable: `provider("anthropic", ...)` fails with `NoSuchProvider`. Use the typed entry points below (Rust type names; per-binding constructors: see [reference.md](reference.md)).
 
-### Native protocol providers
+### Native protocol providers — 13
 
 | module | typed entry points |
 |--------|--------------------|
-| `replay` | — |
-| `catalogue` | `Catalogue` |
 | `anthropic` | `AnthropicConfig` / `AnthropicProvider` |
 | `anthropic_aws` | `AnthropicAwsConfig` / `AnthropicAwsProvider` |
 | `azure` | `AzureConfig` / `AzureProvider` |
@@ -285,7 +308,7 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `openrouter` | `OpenRouterConfig` / `OpenRouterProvider` |
 | `xai` | `XAIConfig` / `XAIProvider` |
 
-### OpenAI-compatible thin wrappers (second batch)
+### OpenAI-compatible thin wrappers (second batch) — 5
 
 | module | typed entry points |
 |--------|--------------------|
@@ -295,7 +318,7 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `mistralrs` | `MistralrsConfig` / `MistralrsProvider` |
 | `ollama` | `OllamaConfig` / `OllamaProvider` |
 
-### Speech-only providers (TTS)
+### Speech-only providers (TTS) — 4
 
 | module | typed entry points |
 |--------|--------------------|
@@ -304,7 +327,7 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `hume` | `HumeConfig` / `HumeProvider` |
 | `lmnt` | `LMNTConfig` / `LMNTProvider` |
 
-### Transcription-only providers (STT)
+### Transcription-only providers (STT) — 5
 
 | module | typed entry points |
 |--------|--------------------|
@@ -314,7 +337,7 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `gladia` | `GladiaConfig` / `GladiaProvider` |
 | `revai` | `RevaiConfig` / `RevaiProvider` |
 
-### Image-only providers
+### Image-only providers — 4
 
 | module | typed entry points |
 |--------|--------------------|
@@ -323,19 +346,19 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `prodia` | `ProdiaConfig` / `ProdiaProvider` |
 | `replicate` | `ReplicateConfig` / `ReplicateProvider` |
 
-### Video-only providers
+### Video-only providers — 1
 
 | module | typed entry points |
 |--------|--------------------|
 | `klingai` | `KlingAIConfig` / `KlingAIProvider` |
 
-### Generic Responses API wrapper
+### Generic Responses API wrapper — 1
 
 | module | typed entry points |
 |--------|--------------------|
 | `open_responses` | `OpenResponsesConfig` / `OpenResponsesProvider` |
 
-### Bulk-generated thin-wrapper providers
+### Bulk-generated thin-wrapper providers — 16
 
 | module | typed entry points |
 |--------|--------------------|
@@ -356,43 +379,43 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `vllm` | `VllmConfig` / `VllmProvider` |
 | `xinference` | `XinferenceConfig` / `XinferenceProvider` |
 
-### Modality-specific providers (non-language, e.g. rerank-only)
+### Modality-specific providers (non-language, e.g. rerank-only) — 1
 
 | module | typed entry points |
 |--------|--------------------|
 | `jina_ai` | `JinaAiConfig` / `JinaAiProvider` |
 
-### AWS Polly speech (TTS) provider — SigV4 authenticated, speech modality only
+### AWS Polly speech (TTS) provider — SigV4 authenticated, speech modality only — 1
 
 | module | typed entry points |
 |--------|--------------------|
 | `aws_polly` | `AwsPollyConfig` / `AwsPollyProvider` |
 
-### Recraft image provider (OpenAI Images-compatible + Recraft extension fields)
+### Recraft image provider (OpenAI Images-compatible + Recraft extension fields) — 1
 
 | module | typed entry points |
 |--------|--------------------|
 | `recraft` | `RecraftConfig` / `RecraftProvider` |
 
-### Stability image provider (image modality only)
+### Stability image provider (image modality only) — 1
 
 | module | typed entry points |
 |--------|--------------------|
 | `stability` | `StabilityConfig` / `StabilityProvider` |
 
-### Video-only provider (runwayml)
+### Video-only provider (runwayml) — 1
 
 | module | typed entry points |
 |--------|--------------------|
 | `runwayml` | `RunwaymlConfig` / `RunwaymlProvider` |
 
-### P1 thin-wrapper providers (provider-research batch)
+### P1 thin-wrapper providers (provider-research batch) — 1
 
 | module | typed entry points |
 |--------|--------------------|
 | `bedrock_mantle` | `BedrockMantleConfig` / `BedrockMantleProvider` |
 
-### Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers). Each wraps the shared OpenAIProvider against the Vertex AI MaaS OpenAPI endpoint, authenticating with a Google Cloud Bearer token
+### Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers). Each wraps the shared OpenAIProvider against the Vertex AI MaaS OpenAPI endpoint, authenticating with a Google Cloud Bearer token — 10
 
 | module | typed entry points |
 |--------|--------------------|
@@ -407,7 +430,7 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `vertex_ai_qwen_models` | `VertexAiQwenModelsConfig` / `VertexAiQwenModelsProvider` |
 | `vertex_ai_zai_models` | `VertexAiZaiModelsConfig` / `VertexAiZaiModelsProvider` |
 
-### Search-only providers (web search modality)
+### Search-only providers (web search modality) — 11
 
 | module | typed entry points |
 |--------|--------------------|
@@ -422,3 +445,4 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `tavily` | `TavilyConfig` / `TavilyProvider` |
 | `tinyfish` | `TinyfishConfig` / `TinyfishProvider` |
 | `you_com` | `YouComConfig` / `YouComProvider` |
+

@@ -1,5 +1,7 @@
 # Test cassette proposal
 
+> **Status**: IMPLEMENTED (in force — cassette 回放是 provider 测试的标准路径,`aimux-providers/tests/cassettes/` 持续扩充;录制/回放机制的补全跟踪见 #167)
+
 ## Goal
 
 Tests do not depend on the network or keys. When running tests, replay cassette files instead of making real calls to provider APIs.
