@@ -5,6 +5,177 @@ All notable changes to aimux are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-27
+
+**Breaking release.** 13 PRs since 0.3.0: the cross-language error model
+stabilized behind one opaque C-ABI error pointer, the request pipeline
+aligned with the AI SDK (core-owned retries, timeouts, stream lifecycle,
+video start/status split), tool inputs parsed and validated at the Core
+boundary with host-side repair in every binding, WebSocket proxy support
+plus ElevenLabs realtime transcription, and SSRF hardening for
+provider-supplied download URLs.
+
+### Breaking
+
+**Rust (aimux-core / aimux-provider-utils)**
+
+- Request pipeline aligned with the AI SDK (#164): retries, timeouts and
+  the stream lifecycle moved from the HTTP layer into the user operations.
+  `RetryError { maxRetriesExceeded | errorNotRetryable }` preserves the
+  full attempt history; Full Jitter drives the exponential branch; server
+  `retry-after` hints are honored exactly. Providers declare policy
+  through `retry_config()`; Core executes it around
+  `do_generate`/`do_stream`. `stream_text` now requires a tokio runtime
+  (its pump task spawns unconditionally).
+- `VideoModel` splits into `do_start`/`do_status` with a Core-owned poll
+  loop; `generate_video` validates `n` (0 is `InvalidArgument` before any
+  network call), batches by `max_videos_per_call` concurrently, and mints
+  one idempotency key per batch — billable starts replay safely.
+- Tool inputs are parsed and validated at the Core boundary (#165):
+  providers deliver raw argument text; Core owns JSON parsing and
+  JSON-Schema validation per the AI SDK `parseToolCall` contract. Invalid
+  calls return as tool calls marked `invalid: true` with a typed error
+  (`NoSuchTool` / `InvalidToolInput` / `ToolCallRepair`; 16-variant
+  contract, compile-time exhaustive). `GenerateContent::ToolCall.input`
+  is `String` (was `serde_json::Value`); a compatibility deserializer
+  accepts the legacy object shape.
+- The deferred-tool-call stream mode is removed
+  (`to_chat_completion_stream_with_deferred_tool_calls`, the
+  `defer_tool_calls` flag): the OpenAI stream always forwards provider
+  tool-input deltas and does not reflect repair (#192).
+- aimux-provider-utils: `send` / `send_timed` / `send_stream_timed` /
+  `send_with_retry_raw` and the JSON-path `ErrorStructure` are replaced
+  by single-exchange helpers (`post_json_to_api`, `post_form_data_to_api`,
+  `post_to_api`, `get_from_api`) dispatching to typed response handlers —
+  exactly one fetch attempt and one recorded exchange per call; retry,
+  timeouts and backoff belong to Core (#164).
+
+**C ABI**
+
+- Error transport switched to one opaque `aimux_error_t *` (#158): every
+  fallible function returns NULL on success (result in a trailing
+  out-parameter) or one owned error, released exactly once with
+  `aimux_error_free()`. The caller-allocated `AimuxError` struct,
+  `aimux_error_clear` and the `error_value` projection are removed. One
+  unified code space: `AiMuxError` 1–17 (4 retired slots, 14 = `Retry`),
+  `RecordingError` 100–105, C-boundary failures 200–206; a non-NULL error
+  never reports code 0.
+- New error-context getters carry the pipeline's retry/timeout state
+  (retryable flag, retry-ms hint, provider code/message, response body,
+  sanitized url/request, response headers, provider data);
+  `aimux_error_request_id` is removed — request ids ride in response
+  headers (#164).
+- Stateless tool-call repair (RFC-0035) (#192): three pure
+  JSON-in/JSON-out entry points (`aimux_tool_call_repair_context`,
+  `aimux_apply_tool_call_repair`,
+  `aimux_apply_tool_call_repair_to_result`) let any host repair an
+  invalid call in its own language; safe to call from inside a stream
+  callback.
+
+**Node / Python (native bindings)**
+
+- Errors are thrown as native runtime exceptions (napi-rs canonical JS
+  constructors / PyO3 exception classes), preserving `instanceof` across
+  sync throws, promise rejections, streams and workers; the serialized
+  `errorValue`/`error_value` companion is removed (#158).
+
+**All eight bindings**
+
+- Typed error context from the pipeline (retryable, retry_ms, provider
+  code/message, request id, response body) and the `VideoPollOptions`
+  surface (#164); recoverable stream-frame errors keep the stream alive
+  (forwarded as data on the plain path, skipped on the chunk-typed
+  OpenAI path).
+- Host-side `repairToolCall` (RFC-0035) (#192): the binding runs the
+  user's repair function in the host language and re-validates through
+  the pure core functions; non-streaming results are patched before
+  decoding, OpenAI-format outputs repaired then converted.
+
+**Go**
+
+- `Close` is no longer a join (#157): every native owner is an atomic
+  handle; `Close` never waits for an in-flight C call, and owners must
+  not be copied after first use (`go vet` flags it). Router/Moa
+  constructors reject any invalid member handle instead of silently
+  dropping it.
+
+### Added
+
+- **WebSocket proxy support** (RFC-0034 P1) (#183) — `ws_connect` honors
+  the global `ProxyConfig` (HTTP CONNECT tunnel with Basic proxy auth,
+  `no_proxy` suffix matching); SOCKS and https-scheme proxies fail loudly
+  as `UnsupportedFunctionality`; wss tunnels run rustls with webpki-roots.
+  Proxy credentials never reach error strings; IPv6 proxy hosts work.
+- **ElevenLabs `scribe_v2_realtime` streaming transcription**
+  (RFC-0034 P2) (#184) — realtime WS sessions with commit-on-last-chunk
+  semantics, partial/committed transcript mapping, timestamped finals,
+  and 14 documented error events classified retry/terminal; non-pcm/ulaw
+  formats fail fast without connecting.
+- **SSRF hardening for provider-supplied URLs** (#163) — every fetch of a
+  URL taken from a response body or header (Black Forest Labs, Gladia,
+  Luma, Recraft, Replicate, fal downloads, Google Files upload) is
+  validated against AI SDK blocklists (http/https only, localhost/.local
+  rejected, IPv4-embedded IPv6 forms caught), DNS-pinned to validated
+  answers (defeats TTL-0 rebinding), follows redirects manually
+  hop-by-hop, and sends caller headers only to strictly same-origin
+  targets.
+
+### Changed
+
+- Provider error mappers match each provider's documented error format
+  instead of assuming OpenAI's `{error:{message,code}}` (ElevenLabs
+  FastAPI, AssemblyAI, Deepgram, fal, Hume) (#164).
+- The shared HTTP client is keyed by tokio runtime with a capped cache —
+  a finished runtime no longer strands dead pooled connections (#164).
+- Recording distinguishes operation attempts from exchange indices,
+  records Router/MoA children as steps, and widens sensitive-key
+  redaction to camelCase/kebab-case tokens (#164).
+- Stream timeouts are measured at the producer: a pump task owns the
+  first-chunk/chunk deadlines, so a slow consumer no longer eats the
+  provider's output budget (#164).
+- Docs: the provider count has a single source of truth (generated
+  totals in providers.md — 251 registry + 76 typed = 327), RFC statuses
+  swept to match reality, and a contributing checklist for adding a
+  provider (#193).
+
+### Fixed
+
+- **Go lifecycle deadlocks** (#157): read locks held across blocking C
+  calls formed real wait cycles (`TranscriptionSession.Close` vs
+  `NextPart(-1)`, a backpressured stream vs `Model.Close`); FFI
+  Router/MoA silently dropped dead member handles mid-construction.
+- **Release artifacts**: the console-build matrix entries sat at the
+  wrong YAML level (GitHub silently dropped the jobs), so v0.3.0 shipped
+  without aimux-web / aimux-cli / aimux-replay binaries; aimux-cli is now
+  staged under its release name (`aimux`) (#155/#156).
+- Invalid tool calls keep the provider's verbatim argument text on every
+  path (failed repair, unknown tool, schema-rejected), and blank
+  arguments render as `{}` on the OpenAI wire instead of invalid JSON
+  (#165).
+- Cohere streaming no longer parses tool-call arguments itself — a
+  malformed streamed call reaches Core as an `invalid: true` call instead
+  of aborting the stream (#165).
+- xAI Responses streams end on a terminal in-stream error (previously
+  hung against a server holding the connection open); negative
+  `Retry-After` HTTP-date hints no longer read as "absent" through the
+  C ABI (#164).
+- Node/Python `transcribe` / `rerank` / `search` accept options
+  (`max_retries`, `timeout` were unreachable), and
+  `search("cats", {query: "dogs"})` no longer silently searches for dogs
+  (#164).
+- Java/Kotlin repair hooks run on their own thread with the stream's
+  read hold lent, so a queued fair-lock `close()` no longer deadlocks the
+  three threads (#192).
+- Benchmark scripts run on machines other than the one they were written
+  on (napi artifact resolved from platform/arch, SDKs from npm) (#160).
+
+### Removed
+
+- Sixteen one-shot migration scripts, the `fix_tool` crate, and unused
+  workspace deps (schemars, proc-macro2, syn, quote) (#169).
+- `aimux_error_request_id` (C ABI) — request ids ride in response
+  headers (#164).
+
 ## [0.3.0] - 2026-08-17
 
 **Breaking release.** 196 commits since 0.2.1: observability primitives
@@ -389,7 +560,8 @@ cancellation + timeout control. See [Removed](#removed) for migration.
 - RFC-0011 Go bindings (cgo static link + push callback → channel streaming)
 - RFC-0012 Source dedup (product source 68K → 51K lines, −25%)
 
-[Unreleased]: https://github.com/arcships/aimux/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/arcships/aimux/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/arcships/aimux/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/arcships/aimux/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/arcships/aimux/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/arcships/aimux/compare/v0.1.5...v0.2.0
