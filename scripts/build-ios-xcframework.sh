@@ -21,7 +21,7 @@ cd "$ROOT"
 # archive: cargo passes -C embed-bitcode=yes and every codegen unit carries
 # its full LLVM bitcode (~80% of each slice, ~256MB uncompressed past
 # pub.dev's package limit since 0.5.0). The ios-release profile turns LTO
-# off for this build only; bitcode_strip below is belt-and-braces.
+# off for this build only; the size gate below fails loudly if that regresses.
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 cargo build -p aimux-ffi --profile ios-release --target aarch64-apple-ios
 cargo build -p aimux-ffi --profile ios-release --target aarch64-apple-ios-sim
@@ -36,13 +36,17 @@ for triple in aarch64-apple-ios aarch64-apple-ios-sim; do
   esac
   mkdir -p "$TMP/$slice/aimux_ffi.framework"
   cp "target/$triple/ios-release/libaimux_ffi.a" "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
-  # Strip debug + local symbols, keep globals (force_load in aimux.podspec
-  # resolves against them). Then drop any __LLVM bitcode sections: Apple
-  # tooling ignores them (App Store stopped accepting bitcode with Xcode 14)
-  # and on the 0.3.0-era builds they were ~80% of each slice.
+  # Strip debug + local symbols; global symbols stay (force_load in
+  # aimux.podspec resolves against them).
   strip -Sx "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
-  xcrun bitcode_strip -r -o "$TMP/$slice/aimux_ffi.framework/aimux_ffi" \
-    "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
+  # Fail loudly on a size regression instead of letting a fat slice slip
+  # through and blow pub.dev's 256MiB package limit again: a healthy slice
+  # is ~15-30MB; an LTO/bitcode regression lands near 128MB.
+  SLICE_BYTES=$(stat -f%z "$TMP/$slice/aimux_ffi.framework/aimux_ffi")
+  if [ "$SLICE_BYTES" -gt 67108864 ]; then
+    echo "slice $triple is $SLICE_BYTES bytes (> 64MiB) — bitcode/LTO regression?" >&2
+    exit 1
+  fi
   cat > "$TMP/$slice/aimux_ffi.framework/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
