@@ -13,11 +13,18 @@ set -euo pipefail
 
 OUT="${1:?usage: build-ios-xcframework.sh <output-dir>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION="$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')"
 cd "$ROOT"
 
+# A staticlib is never linked here — the consumer's Xcode link step runs
+# after LTO stops mattering — so the workspace's fat-LTO only bloats the
+# archive: cargo passes -C embed-bitcode=yes and every codegen unit carries
+# its full LLVM bitcode (~80% of each slice, ~256MB uncompressed past
+# pub.dev's package limit since 0.5.0). The ios-release profile turns LTO
+# off for this build only; the size gate below fails loudly if that regresses.
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-cargo build -p aimux-ffi --release --target aarch64-apple-ios
-cargo build -p aimux-ffi --release --target aarch64-apple-ios-sim
+cargo build -p aimux-ffi --profile ios-release --target aarch64-apple-ios
+cargo build -p aimux-ffi --profile ios-release --target aarch64-apple-ios-sim
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -28,7 +35,18 @@ for triple in aarch64-apple-ios aarch64-apple-ios-sim; do
     aarch64-apple-ios-sim) slice=sim ;;
   esac
   mkdir -p "$TMP/$slice/aimux_ffi.framework"
-  cp "target/$triple/release/libaimux_ffi.a" "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
+  cp "target/$triple/ios-release/libaimux_ffi.a" "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
+  # Strip debug + local symbols; global symbols stay (force_load in
+  # aimux.podspec resolves against them).
+  strip -Sx "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
+  # Fail loudly on a size regression instead of letting a fat slice slip
+  # through and blow pub.dev's 256MiB package limit again: a healthy slice
+  # is ~15-30MB; an LTO/bitcode regression lands near 128MB.
+  SLICE_BYTES=$(stat -f%z "$TMP/$slice/aimux_ffi.framework/aimux_ffi")
+  if [ "$SLICE_BYTES" -gt 67108864 ]; then
+    echo "slice $triple is $SLICE_BYTES bytes (> 64MiB) — bitcode/LTO regression?" >&2
+    exit 1
+  fi
   cat > "$TMP/$slice/aimux_ffi.framework/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -39,7 +57,7 @@ for triple in aarch64-apple-ios aarch64-apple-ios-sim; do
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>aimux_ffi</string>
   <key>CFBundlePackageType</key><string>FMWK</string>
-  <key>CFBundleShortVersionString</key><string>0.2.0</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>1</string>
 </dict></plist>
 EOF

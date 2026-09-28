@@ -168,6 +168,12 @@ provider-supplied download URLs.
   three threads (#192).
 - Benchmark scripts run on machines other than the one they were written
   on (napi artifact resolved from platform/arch, SDKs from npm) (#160).
+- **Flutter package size**: the iOS static-lib slices carried fat-LTO
+  LLVM bitcode (~80% of each slice) plus debug symbols because a
+  `staticlib` never goes through cargo's link step — the 0.5.0 xcframework
+  hit pub.dev's 256MiB uncompressed package limit and was rejected. The
+  iOS build now uses an LTO-off profile and strips debug/local symbols:
+  each slice drops from ~128MB to ~15MB.
 
 ### Removed
 

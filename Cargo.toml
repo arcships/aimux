@@ -31,6 +31,15 @@ panic = "abort"
 strip = true
 opt-level = "z"
 
+# staticlib archives (.a) never reach a link step under cargo — the
+# consumer's toolchain links them — so fat-LTO only embeds every crate's
+# LLVM bitcode into the archive (.llvmbc on ELF, __LLVM,__bitcode on
+# Mach-O): ~80% of each iOS xcframework slice, past pub.dev's 256MiB
+# package limit since 0.5.0. Used by scripts/build-ios-xcframework.sh.
+[profile.ios-release]
+inherits = "release"
+lto = false
+
 [workspace.dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
