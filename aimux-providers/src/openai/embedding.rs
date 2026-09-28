@@ -211,7 +211,7 @@ fn parse_openai_provider_options(
 /// are decoded from base64, then reinterpreted as little-endian f32.
 // Rust 1.98 clippy suggests `as_chunks::<4>()`, stabilized in 1.88; the
 // workspace MSRV is 1.85. Drop when the MSRV moves past 1.88.
-#[allow(clippy::chunks_exact_to_as_chunks)]
+#[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
 fn decode_base64_embedding(s: &str) -> Option<Vec<f32>> {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD.decode(s).ok()?;

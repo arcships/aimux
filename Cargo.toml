@@ -12,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.3.0"
+version = "0.5.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/arcships/aimux"
@@ -70,10 +70,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 jsonschema = { version = "0.50.1", default-features = false }
 
 # Internal crates
-aimux-core = { path = "aimux-core", version = "0.3.0" }
-aimux-providers = { path = "aimux-providers", version = "0.3.0" }
-aimux-stream = { path = "aimux-stream", version = "0.3.0" }
-aimux-provider-utils = { path = "aimux-provider-utils", version = "0.3.0" }
+aimux-core = { path = "aimux-core", version = "0.5.0" }
+aimux-providers = { path = "aimux-providers", version = "0.5.0" }
+aimux-stream = { path = "aimux-stream", version = "0.5.0" }
+aimux-provider-utils = { path = "aimux-provider-utils", version = "0.5.0" }
 
 # HTTP date parsing (Retry-After header)
 httpdate = "1"
