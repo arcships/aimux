@@ -2,8 +2,8 @@
 import { onMounted, ref, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client'
-import type { SessionView } from '../../../../../bindings/node/src/types/SessionView'
-import type { Recording } from '../../../../../bindings/node/src/types/Recording'
+import type { SessionView } from '@aimux/types/SessionView'
+import type { Recording } from '@aimux/types/Recording'
 import Badge from '../components/ui/Badge.vue'
 import Skeleton from '../components/ui/Skeleton.vue'
 
