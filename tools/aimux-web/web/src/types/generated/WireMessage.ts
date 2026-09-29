@@ -4,7 +4,7 @@ import type { WireContentPart } from "./WireContentPart";
 /**
  * A chat message in the wire format.
  */
-export type WireMessage = { 
+export type WireMessage = {
 /**
  * "system" | "user" | "assistant" | "tool".
  */

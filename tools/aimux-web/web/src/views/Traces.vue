@@ -3,7 +3,7 @@ import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import { api } from '../api/client'
-import type { Recording } from '../../../../../bindings/node/src/types/Recording'
+import type { Recording } from '@aimux/types/Recording'
 import Button from '../components/ui/Button.vue'
 import Input from '../components/ui/Input.vue'
 import Textarea from '../components/ui/Textarea.vue'
@@ -15,7 +15,7 @@ import Dialog from '../components/ui/Dialog.vue'
 import Skeleton from '../components/ui/Skeleton.vue'
 import JsonViewer from '../components/JsonViewer.vue'
 import Waterfall, { type WaterfallItem } from '../components/Waterfall.vue'
-import type { WireMeta } from '../types/WireMeta'
+import type { WireMeta } from '@/types/generated/WireMeta'
 
 const store = useAppStore()
 const route = useRoute()
