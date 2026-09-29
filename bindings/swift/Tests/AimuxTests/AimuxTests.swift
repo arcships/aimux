@@ -28,15 +28,6 @@ final class AimuxTests: XCTestCase {
         XCTAssertNotNil(model)
     }
 
-    func testProviderModelCreationWithProviderName() throws {
-        // Recommended typed spelling: ProviderName enum case (key is
-        // validated on the first API call, not construction).
-        let model = try Model.provider(
-            name: ProviderName.Groq.rawValue, apiKey: "sk-test-fake-key", modelId: "llama-3.3-70b"
-        )
-        XCTAssertNotNil(model)
-    }
-
     func testInvalidPromptThrows() throws {
         let model = try Model.openai(apiKey: "sk-test-fake-key", modelId: "gpt-4o-mini")
         XCTAssertThrowsError(try model.generateText(prompt: "{invalid json}"))

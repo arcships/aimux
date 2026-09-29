@@ -344,18 +344,15 @@ await generateText(model, prompt, {
 
 **目标**:把"新增/修正 provider"从库行为变成纯用户行为;补上绑定层(除 Rust 外)对 250 家 registry 的暴露缺口(现状:Node/Python/Go 等只有 openai/anthropic/deepseek 三个工厂)。
 
-**架构定稿(2026-08-02, v2)**:`provider-registry.json` 是**唯一数据源**——内置 provider 的构造数据(base_url/env_var/profile)全部从 JSON 查条目获得。Rust 250 个编译期类型壳(`XxxConfig`/`XxxProvider`)**退役**(crates.io 发布仅一天,破坏零成本,0.x 内处理)——统一改为名字驱动入口 + 各语言 `ProviderName` 派生类型。
+**架构定稿(2026-09-29, v3)**:`provider-registry.json` 是**唯一数据源**——内置 provider 的构造数据(base_url/env_var/profile)全部从 JSON 查条目获得。Rust 250 个编译期类型壳(`XxxConfig`/`XxxProvider`)与各语言的生成式名字枚举均已退役——统一改为字符串名字驱动入口。
 
 **改动**:
 1. `provider-registry.json` — 唯一数据源(250 家:name/display/base_url/env_var/profile 全字段),由阶段 3 调研数据生成;Rust `include_str!` embed,各绑定打包同一份
-2. **名字类型声明**(checked-in 派生文件,脚本 `scripts/gen_provider_names.py` 从 JSON 生成,无 build.rs):
-   - TS: `type ProviderName = 'groq' | 'deepseek' | ...`(字面量 union → IDE 补全 + 编译期检查)
-   - Rust: `pub enum ProviderName { Groq, DeepSeek, ... }`(250 变体 + `as_str()`/`FromStr`/`Display`)
-   - Go/Python/Swift/Kotlin/Java: 各语言常量/枚举/Literal 形态
+2. **名字发现**:不再生成 8 语言静态副本;Rust/web 可通过 `provider_names()` 遍历内置 registry,用户文档由 `gen_providers_doc.py` 从同一 JSON 生成
 3. **统一入口**(各语言一致):
-   - `provider(name: ProviderName, api_key: Option<String>, model_id, config?)` — 名字 → 查 JSON → 构造;`api_key=None` 时自动读 JSON 条目的 env_var(替代旧 `from_env()`)
+   - `provider(name: string, api_key: Option<String>, model_id, config?)` — 名字 → 查 JSON → 构造;`api_key=None` 时自动读 JSON 条目的 env_var(替代旧 `from_env()`)
    - config 可覆盖 JSON 条目字段(base_url/headers/maxRetries/bodyOverrides 等,替代旧 `with_base_url`)
-   - 未知名字 → 明确错误:`NoSuchProvider { provider_id }`,显示 "No such provider: xxx";可用名字通过生成的 `ProviderName` 发现,错误载荷不携带 250 个名字
+   - 未知名字 → 明确错误:`NoSuchProvider { provider_id }`,显示 "No such provider: xxx";错误载荷不携带 250 个名字
 4. **`createProvider(config)`**(各语言):用户用基础类(`OpenAIConfig`/`OpenAIProvider`)手工构造自己的薄封装——**与内置表无关**的纯用户侧 API;用于自定义 relay / 内置表外厂商
 5. 边界特例(§2.6):认证流程特殊者(GigaChat/copilot)标记 unsupported 或后续 auth 钩子;伪兼容(coze/zai_coding_plan)修正分类
 6. 校验:启动时对 registry JSON 做 schema 校验(必填字段/base_url 合法性)
@@ -373,14 +370,14 @@ await generateText(model, prompt, {
 | 基础类构造(createProvider 地基) | `OpenAIConfig`/`OpenAIProvider` 保留 |
 
 **验收**:
-- [x] 任意语言 `provider(ProviderName::Groq, key, "llama-3.3-70b")` 可用,profile 差异生效(Rust/Node/Python 冒烟 ✅;Go/Java/Kotlin/Swift/Flutter 代码就绪,环境受限未运行)
-- [x] `ProviderName` 类型生成正确且被测试锁定(250 名字与 JSON 一致,`provider_name_roundtrip` 测试)
+- [x] 任意语言 `provider("groq", key, "llama-3.3-70b")` 可用,profile 差异生效
+- [x] `provider_names()` 与生成的 provider 文档均直接读取 registry,不维护静态名字副本
 - [x] 用户覆盖内置条目生效(`ProviderOptions.base_url` 等;Rust `base_url_override_is_applied` + Node/Python/Go/C 的 config 参数)
 - [x] `createProvider` 等价能力:基础类 `OpenAIConfig`/`OpenAIProvider` 保留 + 各绑定 config 参数覆盖(Rust/Node/Python/Go/C 均实现)
-- [x] 未知名字报错指明所请求的 provider(`NoSuchProvider { provider_id }`);可用列表由生成的 `ProviderName` 提供,不进错误载荷(Node/Python 冒烟验证)
+- [x] 未知名字报错指明所请求的 provider(`NoSuchProvider { provider_id }`),不把可用名字列表放进错误载荷
 - [x] 7 处 registry base_url 错误通过数据修正落地(stage2-004 完成)
 
-**实施状态(2026-08-02)**:✅ 完成——registry JSON 唯一数据源;250 壳类型退役(发布一天零成本);`provider(name)` 入口 + `ProviderName` 派生类型(Rust enum/TS union);C ABI `aimux_provider_new`/`aimux_provider_from_env`;8 语言绑定统一入口;全量测试 2769 绿;Node/Python E2E 冒烟通过。
+**实施状态(2026-09-29)**:✅ 完成——registry JSON 唯一数据源;250 壳类型与 8 语言名字派生退役;字符串 `provider(name)` 入口、C ABI `aimux_provider_new`/`aimux_provider_from_env` 与 8 语言绑定统一入口保留。
 
 ---
 
@@ -436,4 +433,4 @@ await generateText(model, prompt, {
 6. **退役 DeepSeek 特化的迁移**:0.x minor bump + 用户手册迁移说明(reasoning:'none' → bodyOverrides)。
 7. **registry JSON 化的校验时机**:启动时 schema 校验替代编译期校验,错误发现延后——是否可接受?校验规则集(必填字段/base_url 合法/profile 字段范围)需定义。
 8. **认证流程特殊厂商**(GigaChat OAuth/copilot device-flow)的落地形态:auth 钩子(代码扩展点)还是暂不支持仅文档化。
-9. ~~**Rust 编译期类型与 JSON 的单一事实来源**~~:**已解决(2026-08-02)**——JSON 为唯一源;类型壳**退役**(发布一天零成本),统一 `provider(name)` 入口 + `ProviderName` 派生类型,无宏生成、无双源、无 build.rs。
+9. ~~**Rust 编译期类型与 JSON 的单一事实来源**~~:**已解决(2026-09-29)**——JSON 为唯一源;类型壳与静态名字枚举均退役,统一字符串 `provider(name)` 入口,无宏生成、无双源、无 build.rs。

@@ -37,15 +37,6 @@ class ModelTest {
     }
 
     @Test
-    fun `provider creates model with ProviderName constant (recommended)`() {
-        // Recommended typed spelling: ProviderName.GROQ constant (key is
-        // validated on the first API call, not construction).
-        Model.provider(name = ProviderName.GROQ, apiKey = "sk-test-fake-key", modelId = "llama-3.3-70b").use { model ->
-            assertThat(model).isNotNull
-        }
-    }
-
-    @Test
     fun `generateText rejects malformed prompt JSON with IllegalArgumentException`() {
         Model.openai("sk-test-fake-key", "gpt-4o-mini").use { model ->
             // Malformed raw JSON is the caller's mistake, caught before the C

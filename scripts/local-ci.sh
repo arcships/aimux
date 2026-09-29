@@ -4,7 +4,7 @@
 # Mirrors .github/workflows/ci.yml (host jobs only; cross-platform matrix
 # targets and Flutter example builds stay in CI):
 #   rust      cargo fmt + clippy -D warnings + cargo test --workspace
-#   contract  ProviderName drift + Rust contract tests + Node run-node.ts
+#   contract  Rust contract tests + Node run-node.ts
 #   python    maturin develop --release + pytest (bindings/python venv)
 #   node      npm ci + napi build + npm test + tsc typecheck
 #   go        go vet + go test (needs local-ci-setup.sh)
@@ -72,9 +72,8 @@ fi
 
 # ── contract ───────────────────────────────────────────────────────────────
 if want contract; then
-  section "contract: ProviderName drift + Rust/Node contract tests"
-  if python3 scripts/gen_provider_names.py --check \
-     && cargo test --test contract_test -p aimux-core --quiet \
+  section "contract: Rust/Node contract tests"
+  if cargo test --test contract_test -p aimux-core --quiet \
      && node --experimental-strip-types contract-tests/run-node.ts | grep -q '0 failed'; then
     pass "contract"
   else
