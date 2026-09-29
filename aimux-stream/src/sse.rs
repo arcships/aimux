@@ -1,4 +1,28 @@
 //! SSE (Server-Sent Events) parser for streaming model responses.
+//!
+//! Line-based incremental parser following `eventsource-parser`'s
+//! `createParser` (the parser behind the AI SDK's `parseJsonEventStream`) and
+//! the WHATWG "parsing an event stream" algorithm:
+//!
+//! - lines end in `\n`, `\r` or `\r\n`, freely mixed; a `\r` at the end of
+//!   the buffered input waits for the next chunk in case a `\n` follows;
+//! - a UTF-8 BOM at the very start of the stream is stripped;
+//! - a blank line dispatches the event, but only if it had at least one
+//!   `data` line; field state resets after every blank line;
+//! - `field: value` removes exactly one leading U+0020 SPACE; a line without
+//!   `:` is a field with an empty value; `:`-prefixed lines are comments;
+//! - an empty `event` value means no event type; an `id` containing U+0000 is
+//!   ignored; `retry` is accepted only when it is all ASCII digits; unknown
+//!   fields are ignored;
+//! - a partial event at end of stream is not dispatched.
+//!
+//! Two aimux additions: every line is strictly UTF-8 decoded after it has
+//! been reassembled (a code point split across chunks is never corrupted, and
+//! invalid UTF-8 surfaces as [`SseError::Utf8`] and drops the event being
+//! built), and buffered input is bounded by `max_event_size` (the parser's
+//! `maxBufferSize`; exceeding it is fatal and ends the stream, as upstream).
+
+use std::collections::VecDeque;
 
 use bytes::Bytes;
 use futures::Stream;
@@ -7,8 +31,10 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use thiserror::Error;
 
-/// Default upper bound on a single buffered SSE event's size (1 MiB).
+/// Default upper bound on buffered event data plus any partial line (1 MiB).
 const DEFAULT_MAX_EVENT_SIZE: usize = 1024 * 1024;
+
+const BOM: &[u8] = b"\xEF\xBB\xBF";
 
 #[derive(Debug, Error)]
 pub enum SseError {
@@ -23,30 +49,188 @@ pub enum SseError {
 /// A parsed SSE event.
 #[derive(Debug, Clone, Default)]
 pub struct SseEvent {
-    /// The `event:` field (optional).
+    /// The `event:` field (`None` when absent or empty).
     pub event: Option<String>,
-    /// The `data:` field.
+    /// The `data:` field; multiple `data` lines are joined with `\n`.
     pub data: String,
     /// The `id:` field (optional).
     pub id: Option<String>,
-    /// The `retry:` field (optional).
+    /// The `retry:` field (optional; all-digit values only).
     pub retry: Option<u64>,
+}
+
+/// Incremental SSE line parser (the `createParser` state machine).
+#[derive(Debug)]
+struct Parser {
+    /// Bytes after the last complete line terminator.
+    pending: Vec<u8>,
+    /// Offset in `pending` from which the next terminator search starts, so a
+    /// long line fed in many small chunks is scanned once, not quadratically.
+    scan_from: usize,
+    bom_checked: bool,
+    event: Option<String>,
+    data: String,
+    data_lines: usize,
+    id: Option<String>,
+    retry: Option<u64>,
+    max_size: usize,
+    terminated: bool,
+    ready: VecDeque<Result<SseEvent, SseError>>,
+}
+
+impl Parser {
+    fn new(max_size: usize) -> Self {
+        Self {
+            pending: Vec::new(),
+            scan_from: 0,
+            bom_checked: false,
+            event: None,
+            data: String::new(),
+            data_lines: 0,
+            id: None,
+            retry: None,
+            max_size,
+            terminated: false,
+            ready: VecDeque::new(),
+        }
+    }
+
+    fn feed(&mut self, chunk: &[u8]) {
+        if self.terminated {
+            return;
+        }
+        self.pending.extend_from_slice(chunk);
+
+        if !self.bom_checked {
+            // Wait until the first three bytes can rule a BOM in or out.
+            if self.pending.len() < BOM.len() && BOM.starts_with(&self.pending) {
+                return;
+            }
+            if self.pending.starts_with(BOM) {
+                self.pending.drain(..BOM.len());
+            }
+            self.bom_checked = true;
+        }
+
+        let mut line_start = 0;
+        let mut search = self.scan_from;
+        while let Some(offset) = self.pending[search..]
+            .iter()
+            .position(|&b| b == b'\n' || b == b'\r')
+        {
+            let end = search + offset;
+            let is_cr = self.pending[end] == b'\r';
+            // A trailing `\r` may be the first half of a `\r\n` split across
+            // chunks: defer it until more input arrives.
+            if is_cr && end + 1 == self.pending.len() {
+                break;
+            }
+            let line = self.pending[line_start..end].to_vec();
+            self.parse_line(&line);
+            if self.terminated {
+                return;
+            }
+            line_start = end + 1;
+            if is_cr && self.pending.get(line_start) == Some(&b'\n') {
+                line_start += 1;
+            }
+            search = line_start;
+        }
+        self.pending.drain(..line_start);
+        // Resume the next search at the deferred `\r`, if any.
+        self.scan_from = self.pending.len().saturating_sub(1);
+        if self.pending.last() != Some(&b'\r') {
+            self.scan_from = self.pending.len();
+        }
+        self.check_size(self.pending.len());
+    }
+
+    fn parse_line(&mut self, line: &[u8]) {
+        if line.is_empty() {
+            self.dispatch();
+            return;
+        }
+        let line = match String::from_utf8(line.to_vec()) {
+            Ok(line) => line,
+            Err(error) => {
+                // The event being built can no longer be trusted.
+                self.reset_event();
+                self.ready.push_back(Err(SseError::Utf8(error)));
+                return;
+            }
+        };
+        if line.starts_with(':') {
+            return; // comment
+        }
+        let (field, value) = match line.split_once(':') {
+            Some((field, value)) => (field, value.strip_prefix(' ').unwrap_or(value)),
+            None => (line.as_str(), ""),
+        };
+        match field {
+            "event" => self.event = (!value.is_empty()).then(|| value.to_string()),
+            "data" => {
+                if self.data_lines > 0 {
+                    self.data.push('\n');
+                }
+                self.data.push_str(value);
+                self.data_lines += 1;
+                // Lines already consumed from `pending` are not buffered any
+                // more; only the event data counts until the chunk is done.
+                self.check_size(0);
+            }
+            "id" => {
+                if !value.contains('\0') {
+                    self.id = Some(value.to_string());
+                }
+            }
+            "retry" => {
+                if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
+                    self.retry = value.parse().ok();
+                }
+            }
+            _ => {} // unknown field
+        }
+    }
+
+    fn dispatch(&mut self) {
+        if self.data_lines > 0 {
+            self.ready.push_back(Ok(SseEvent {
+                event: self.event.take(),
+                data: std::mem::take(&mut self.data),
+                id: self.id.take(),
+                retry: self.retry.take(),
+            }));
+        }
+        self.reset_event();
+    }
+
+    fn reset_event(&mut self) {
+        self.event = None;
+        self.data.clear();
+        self.data_lines = 0;
+        self.id = None;
+        self.retry = None;
+    }
+
+    /// `maxBufferSize`: buffered event data plus the partial line. Exceeding
+    /// it is fatal, as in `EventSourceParserStream`.
+    fn check_size(&mut self, pending_len: usize) {
+        if self.terminated || pending_len + self.data.len() <= self.max_size {
+            return;
+        }
+        self.terminated = true;
+        self.pending.clear();
+        self.reset_event();
+        self.ready.push_back(Err(SseError::FrameTooLarge));
+    }
 }
 
 pin_project! {
     /// An adapter that decodes a byte stream into SSE events.
-    ///
-    /// Bytes are accumulated in a raw `Vec<u8>` buffer and split on the SSE
-    /// event terminator (a blank line). Each complete frame is strictly
-    /// UTF-8 decoded only *after* reassembly, so a multi-byte character split
-    /// across two network chunks is never corrupted into replacement chars —
-    /// unlike a per-chunk `String::from_utf8_lossy` decode, which would emit a
-    /// `U+FFFD` on each side of the split.
     pub struct SseStream<S, E> {
         #[pin]
         inner: S,
-        buffer: Vec<u8>,
-        max_event_size: usize,
+        parser: Parser,
         done: bool,
         _err: std::marker::PhantomData<E>,
     }
@@ -60,16 +244,13 @@ where
         Self::with_max_event_size(stream, DEFAULT_MAX_EVENT_SIZE)
     }
 
-    /// Create an [`SseStream`] with a custom per-event size limit. A single
-    /// event frame (the bytes between two terminators, excluding the
-    /// terminator itself) larger than `max_event_size` bytes yields
-    /// [`SseError::FrameTooLarge`], as does a buffer that grows past the limit
-    /// while waiting for a terminator.
+    /// Create an [`SseStream`] with a custom buffer limit: when buffered event
+    /// data plus the current partial line exceed `max_event_size` bytes, the
+    /// stream yields [`SseError::FrameTooLarge`] and ends.
     pub fn with_max_event_size(stream: S, max_event_size: usize) -> Self {
         Self {
             inner: stream,
-            buffer: Vec::new(),
-            max_event_size,
+            parser: Parser::new(max_event_size),
             done: false,
             _err: std::marker::PhantomData,
         }
@@ -87,163 +268,58 @@ where
         let this = self.as_mut().get_mut();
 
         loop {
-            // Try to emit a complete event from the buffer.
-            if let Some((frame_len, sep_len)) = find_separator(&this.buffer) {
-                if frame_len > this.max_event_size {
-                    // Drop the oversized frame so a retried poll makes progress.
-                    this.buffer.drain(..frame_len + sep_len);
-                    return Poll::Ready(Some(Err(SseError::FrameTooLarge)));
-                }
-                // Extract the frame bytes and drop the terminator. Decoding the
-                // fully reassembled frame with `String::from_utf8` (rather than
-                // `from_utf8_lossy` per chunk) preserves code points split
-                // across chunks and surfaces invalid UTF-8 as an error.
-                let frame_bytes: Vec<u8> = this.buffer.drain(..frame_len).collect();
-                this.buffer.drain(..sep_len);
-                let frame = match String::from_utf8(frame_bytes) {
-                    Ok(s) => s,
-                    Err(e) => return Poll::Ready(Some(Err(SseError::Utf8(e)))),
-                };
-                let (event, has_data_line) = try_parse_event(&frame);
-                // Per the SSE spec / eventsource-parser, an event is dispatched
-                // only if it had at least one `data:` line (dataLines > 0).
-                // This covers comment-only, `event:`/`id:`/`retry:`-only, and
-                // blank-line keep-alives (all dispatched as nothing), while an
-                // explicit empty data line (`data:\n\n`) is still dispatched.
-                if !has_data_line {
-                    continue;
-                }
-                return Poll::Ready(Some(Ok(event)));
+            if let Some(item) = this.parser.ready.pop_front() {
+                return Poll::Ready(Some(item));
             }
-
-            // No complete event yet. Guard against unbounded buffer growth when
-            // a terminator never arrives. The partial can never form a valid
-            // frame under the limit, so drop it — a retried poll then makes
-            // progress instead of looping on the same oversized buffer.
-            if this.buffer.len() > this.max_event_size {
-                this.buffer.clear();
-                return Poll::Ready(Some(Err(SseError::FrameTooLarge)));
-            }
-
-            if this.done {
-                // No terminating blank line: the buffered partial is not a
-                // complete event and is dropped. This matches eventsource-parser's
-                // `EventSourceParserStream`, which has no flush handler — a
-                // partial event at EOF is simply not dispatched.
+            // A partial event at end of stream is not dispatched: the
+            // upstream stream has no flush handler.
+            if this.done || this.parser.terminated {
                 return Poll::Ready(None);
             }
-
-            // Read more data.
             match Pin::new(&mut this.inner).poll_next(cx) {
-                Poll::Ready(Some(Ok(bytes))) => {
-                    this.buffer.extend_from_slice(&bytes);
-                }
+                Poll::Ready(Some(Ok(bytes))) => this.parser.feed(&bytes),
                 Poll::Ready(Some(Err(e))) => {
                     return Poll::Ready(Some(Err(SseError::Stream(e.to_string()))));
                 }
-                Poll::Ready(None) => {
-                    this.done = true;
-                }
+                Poll::Ready(None) => this.done = true,
                 Poll::Pending => return Poll::Pending,
             }
         }
     }
 }
 
-/// Locate the next SSE event terminator (a blank line) in `buf`.
-///
-/// Returns `(frame_len, sep_len)` where `frame_len` is the number of bytes
-/// *before* the terminator and `sep_len` is the terminator's length. Prefers
-/// `\n\n` (so a pure-CRLF stream — which contains no bare `\n\n` — falls
-/// through to `\r\n\r\n`), mirroring the str-based
-/// `find("\n\n").or_else(|| find("\r\n\r\n"))`.
-fn find_separator(buf: &[u8]) -> Option<(usize, usize)> {
-    if let Some(pos) = find_subsequence(buf, b"\n\n") {
-        return Some((pos, 2));
-    }
-    find_subsequence(buf, b"\r\n\r\n").map(|pos| (pos, 4))
-}
-
-/// First index of `needle` in `haystack`, comparing raw bytes.
-fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack.windows(needle.len()).position(|w| w == needle)
-}
-
-/// Parse a single complete SSE event frame (the bytes between two
-/// terminators, already strictly UTF-8 decoded) into an [`SseEvent`] plus a
-/// flag indicating whether the event contained at least one `data:` line.
-///
-/// A complete event is terminated by a blank line: `\n\n` or `\r\n\r\n` (the
-/// terminator is consumed by the caller before this runs). Per the SSE spec,
-/// exactly one leading U+0020 SPACE after the `:` is removed from each field
-/// value (not all leading whitespace). Comment lines (starting with `:`) and
-/// unknown fields are ignored.
-fn try_parse_event(frame: &str) -> (SseEvent, bool) {
-    let mut event = SseEvent::default();
-    let mut has_data_line = false;
-    for line in frame.lines() {
-        if let Some(value) = field_value(line, "data:") {
-            has_data_line = true;
-            if event.data.is_empty() {
-                event.data = value.to_string();
-            } else {
-                event.data.push('\n');
-                event.data.push_str(value);
-            }
-        } else if let Some(value) = field_value(line, "event:") {
-            event.event = Some(value.to_string());
-        } else if let Some(value) = field_value(line, "id:") {
-            event.id = Some(value.to_string());
-        } else if let Some(value) = field_value(line, "retry:") {
-            event.retry = value.parse().ok();
-        }
-        // Comment lines (`:` prefix) and unknown fields are ignored.
-    }
-
-    (event, has_data_line)
-}
-
-/// Strip `prefix` from `line` and remove exactly one leading U+0020 SPACE from
-/// the remainder (per the SSE spec). Returns `None` if `line` does not start
-/// with `prefix`.
-fn field_value<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
-    let rest = line.strip_prefix(prefix)?;
-    // Remove exactly one leading space, if present.
-    Some(rest.strip_prefix(' ').unwrap_or(rest))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn parse(input: &str) -> Vec<SseEvent> {
+        let mut parser = Parser::new(DEFAULT_MAX_EVENT_SIZE);
+        parser.feed(input.as_bytes());
+        parser.ready.into_iter().map(Result::unwrap).collect()
+    }
+
     #[test]
     fn parse_single_event() {
-        let (event, has_data_line) = try_parse_event("data: hello world");
-        assert_eq!(event.data, "hello world");
-        assert!(has_data_line);
+        assert_eq!(parse("data: hello world\n\n")[0].data, "hello world");
     }
 
     #[test]
     fn parse_multi_line_data() {
-        let (event, has_data_line) = try_parse_event("data: line1\ndata: line2");
-        assert_eq!(event.data, "line1\nline2");
-        assert!(has_data_line);
+        assert_eq!(
+            parse("data: line1\ndata: line2\n\n")[0].data,
+            "line1\nline2"
+        );
     }
 
     #[test]
     fn parse_event_with_type() {
-        let (event, has_data_line) = try_parse_event("event: message\ndata: payload");
-        assert_eq!(event.event.as_deref(), Some("message"));
-        assert_eq!(event.data, "payload");
-        assert!(has_data_line);
+        let events = parse("event: message\ndata: payload\n\n");
+        assert_eq!(events[0].event.as_deref(), Some("message"));
+        assert_eq!(events[0].data, "payload");
     }
 
     #[test]
-    fn parse_event_without_data_has_no_data_line() {
-        // An `event:`-only event has no data line -> not dispatched.
-        let (event, has_data_line) = try_parse_event("event: ping");
-        assert_eq!(event.event.as_deref(), Some("ping"));
-        assert!(event.data.is_empty());
-        assert!(!has_data_line);
+    fn parse_event_without_data_is_not_dispatched() {
+        assert!(parse("event: ping\n\n").is_empty());
     }
 }
