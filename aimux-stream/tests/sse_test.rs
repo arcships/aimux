@@ -484,11 +484,11 @@ async fn invalid_utf8_drops_only_the_current_event() {
     bytes.extend_from_slice(&[0xE4, 0xBD]);
     bytes.extend_from_slice(b"\ndata: tail\n\ndata: next\n\n");
     let events = collect_events_bytes(vec![bytes]).await;
-    assert_eq!(events.len(), 3);
+    // The rest of the poisoned event (`tail`) is discarded, not dispatched as
+    // a fragment; the following event is unaffected.
+    assert_eq!(events.len(), 2);
     assert!(matches!(events[0], Err(SseError::Utf8(_))));
-    // The line after the bad one starts a fresh event buffer.
-    assert_eq!(data(events[1].as_ref().unwrap()), "tail");
-    assert_eq!(data(events[2].as_ref().unwrap()), "next");
+    assert_eq!(data(events[1].as_ref().unwrap()), "next");
 }
 
 #[tokio::test]
