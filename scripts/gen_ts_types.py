@@ -40,7 +40,7 @@ WEB_TYPES_DIR = ROOT / "tools" / "aimux-web" / "web" / "src" / "types" / "genera
 #  aggregate re-export file or None)
 TARGETS = [
     (["-p", "aimux-core", "--lib", "export"], TYPES_DIR, TYPES_TS),
-    (["-p", "aimux-web", "--bins", "export"], WEB_TYPES_DIR, None),
+    (["-p", "aimux-web", "--bins", "--features", "ts-export", "export"], WEB_TYPES_DIR, None),
 ]
 
 
