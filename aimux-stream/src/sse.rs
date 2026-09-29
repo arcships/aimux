@@ -18,8 +18,8 @@
 //!
 //! Two aimux additions: every line is strictly UTF-8 decoded after it has
 //! been reassembled (a code point split across chunks is never corrupted, and
-//! invalid UTF-8 surfaces as [`SseError::Utf8`] and drops the event being
-//! built), and buffered input is bounded by `max_event_size` (the parser's
+//! invalid UTF-8 surfaces as [`SseError::Utf8`] and discards the rest of
+//! that event up to the next blank line), and buffered input is bounded by `max_event_size` (the parser's
 //! `maxBufferSize`; exceeding it is fatal and ends the stream, as upstream).
 
 use std::collections::VecDeque;
@@ -73,6 +73,9 @@ struct Parser {
     data_lines: usize,
     id: Option<String>,
     retry: Option<u64>,
+    /// Set after a line fails UTF-8 decoding: the rest of the event (up to
+    /// the next blank line) is discarded rather than dispatched as a fragment.
+    poisoned: bool,
     max_size: usize,
     terminated: bool,
     ready: VecDeque<Result<SseEvent, SseError>>,
@@ -89,6 +92,7 @@ impl Parser {
             data_lines: 0,
             id: None,
             retry: None,
+            poisoned: false,
             max_size,
             terminated: false,
             ready: VecDeque::new(),
@@ -150,11 +154,16 @@ impl Parser {
             self.dispatch();
             return;
         }
+        if self.poisoned {
+            return;
+        }
         let line = match String::from_utf8(line.to_vec()) {
             Ok(line) => line,
             Err(error) => {
-                // The event being built can no longer be trusted.
+                // The event being built can no longer be trusted: drop it and
+                // everything up to the next blank line.
                 self.reset_event();
+                self.poisoned = true;
                 self.ready.push_back(Err(SseError::Utf8(error)));
                 return;
             }
@@ -205,6 +214,7 @@ impl Parser {
     }
 
     fn reset_event(&mut self) {
+        self.poisoned = false;
         self.event = None;
         self.data.clear();
         self.data_lines = 0;

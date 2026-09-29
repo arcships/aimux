@@ -31,8 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `id` containing U+0000 is ignored, and `retry` must be all ASCII digits.
   Exceeding `max_event_size` (now: buffered event data plus the partial line)
   yields `SseError::FrameTooLarge` and ends the stream instead of skipping the
-  frame. Invalid UTF-8 still yields `SseError::Utf8`, now dropping only the
-  event being built.
+  frame. Invalid UTF-8 still yields one `SseError::Utf8` and discards that
+  event; later events are unaffected.
 - Removed `NdjsonStream` / `NdjsonError`: nothing in the workspace used them
   and the AI SDK has no counterpart. `tokio` is now a dev-dependency only and
   the unused direct `serde` dependency is dropped.
