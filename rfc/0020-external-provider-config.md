@@ -4,6 +4,7 @@
 > **Date**: 2026-08-05
 > **Scope**: `aimux-providers` 新增运行时覆盖层,允许外部(配置文件 / 编程式 API)注册、覆盖 OpenAI 兼容 provider 条目;各 binding 薄透传
 > **Related**: [RFC-0017](0017-provider-config-dx.md) 配置 DX(本 RFC 落地其 §363 预留的"用户覆盖内置条目"语义)、[RFC-0019](0019-session-affinity.md) 会话亲和、[调研报告](../docs/external-provider-config-research.md)
+> **后续变更**: 2026-09-29 删除生成式 `ProviderName`;内置与外部名字现在都走字符串入口,不改变本 RFC 的 overlay 语义。
 
 ---
 
@@ -23,7 +24,7 @@ RFC-0017 阶段 4 已预留语义([0017-provider-config-dx.md:363](0017-provider
 
 ## 2. Design Goals
 
-1. **零破坏性**:不动 `provider_registry.json`、不动 `gen_provider_names.py`、不动 `ProviderName` 派生、不动 `provider()` 签名(新参数全 `Option`)。
+1. **零破坏性**:不动 `provider_registry.json`、不动 `provider()` 签名(新参数全 `Option`)。
 2. **后端管线零改动**:外部配置只影响"查条目"一步;查到后 `OpenAIConfig` 构造 + `ProviderOptions` 叠加 + `OpenAIProvider::new(config).language_model(id)` 完全复用。
 3. **8 语言同步受益**:Rust core 一处落地,各 binding 薄透传(RFC-0017 阶段 4 已验证此分发模式)。
 4. **仅 OpenAI 兼容协议**:原生协议(anthropic/google/bedrock…)是代码实现,无法用配置数据描述(RFC-0017 §2.6 分层定论)。
@@ -50,7 +51,7 @@ static OVERLAYS: Lazy<RwLock<HashMap<String, ExternalProviderEntry>>> =
 // 3. 未命中 → NoSuchProvider
 ```
 
-内置 registry 仍是 `include_str!` 编译期嵌入(`OnceLock<Vec<RegistryEntry>>` 不变);覆盖层只承载外部新增/覆盖条目。外部名字不属于编译期 `ProviderName` 枚举,走字符串路径——`provider()` 本就接受 `&str`,无需改签名。
+内置 registry 仍是 `include_str!` 编译期嵌入(`OnceLock<Vec<RegistryEntry>>` 不变);覆盖层只承载外部新增/覆盖条目。内置与外部名字都走字符串路径——`provider()` 接受 `&str`,无需改签名。
 
 ### 3.2 配置条目 schema
 
@@ -261,7 +262,7 @@ const char* aimux_register_providers(const char* config_json);
 2. **不做动态发现 / 网关路由**。增删 provider 可行(覆盖层可变),但"动态发现"(运行时探测可用 provider)属网关职责,aimux 定位是接入层不做(RFC-0019 §1.4)。
 3. **不做 deep-merge 覆盖语义**。整体替换,简单可预期。
 4. **不做配置热重载 / 文件监听**。MVP 是启动期加载注册,进程生命周期内固定。
-5. **不改 `ProviderName` 枚举**。外部名字走字符串路径,不属于编译期派生。
+5. **不维护编译期名字枚举**。内置与外部名字统一走字符串路径。
 
 ---
 

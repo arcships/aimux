@@ -16,7 +16,6 @@
 | `ReasoningEffort` | [types.rs](../../aimux-core/src/types.rs) | [ReasoningEffort.ts](../../bindings/node/src/types/ReasoningEffort.ts) | 7 levels, passed through verbatim |
 | `AbortSignal` | [abort_signal.rs](../../aimux-core/src/abort_signal.rs) | — (runtime handle) | Rust: options field; Node: `AbortBridge` + JS `AbortSignal` |
 | `ProviderOptions` | [provider.rs](../../aimux-providers/src/provider.rs) | `ProviderConfig` (per binding) | `base_url` / `headers` / `organization` / `project` / `max_retries` / `body_overrides` |
-| `ProviderName` | [provider_name.rs](../../aimux-providers/src/provider_name.rs) | [ProviderName.ts](../../bindings/node/src/types/ProviderName.ts) | one constant per registry provider (count: [providers.md](providers.md)); also generated for Go / Python / Java / Kotlin / Swift / Dart (`scripts/gen_provider_names.py`) |
 | `GenerateTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextResult.ts](../../bindings/node/src/types/GenerateTextResult.ts) | `text`, `tool_calls`, `usage`, `warnings`, `raw` |
 | `StreamTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | — | use `StreamPart` while iterating |
 | `StreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [StreamPart.ts](../../bindings/node/src/types/StreamPart.ts) | TextDelta / ToolCallDelta / Finish / … |
@@ -86,7 +85,7 @@ Per-modality entry points are trait methods on the model types
 |----------|-------|
 | `generateText(model, prompt, options?, signal?)` / `streamText(...)` | typed wrappers; `signal` = `AbortSignal` |
 | `openai()` / `anthropic()` / `deepseek()` / `google()` | native typed path; `deepseek()` is registry-backed |
-| `provider(name, apiKey?, modelId, config?)` | registry-backed (rows in [providers.md](providers.md)); typed `ProviderName` |
+| `provider(name, apiKey?, modelId, config?)` | registry-backed; names listed in [providers.md](providers.md) |
 | `openaiEmbedding` / `cohereEmbedding` / `googleEmbedding` | embeddings |
 | `openaiSpeech` / `openaiTranscription` | speech / STT |
 | `openaiImage` / `googleImage` / `googleVideo` | image / video |
@@ -108,7 +107,7 @@ Per-modality entry points are trait methods on the model types
 
 | Function | Notes |
 |----------|-------|
-| `Provider(name, apiKey?, modelId, config?)` | registry-backed; typed `ProviderName` |
+| `Provider(name, apiKey?, modelId, config?)` | registry-backed; names listed in [providers.md](providers.md) |
 | `NewOpenAI` / `NewAnthropic` / `NewDeepSeek` | native typed path (+ `WithBase` variants) |
 | `NewOpenAIEmbedding` / `NewCohereEmbedding` / `NewGoogleEmbedding` | embeddings |
 | `NewOpenAISpeech` / `NewOpenAITranscription` | speech / STT |
