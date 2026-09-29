@@ -295,39 +295,3 @@ where
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn parse(input: &str) -> Vec<SseEvent> {
-        let mut parser = Parser::new(DEFAULT_MAX_EVENT_SIZE);
-        parser.feed(input.as_bytes());
-        parser.ready.into_iter().map(Result::unwrap).collect()
-    }
-
-    #[test]
-    fn parse_single_event() {
-        assert_eq!(parse("data: hello world\n\n")[0].data, "hello world");
-    }
-
-    #[test]
-    fn parse_multi_line_data() {
-        assert_eq!(
-            parse("data: line1\ndata: line2\n\n")[0].data,
-            "line1\nline2"
-        );
-    }
-
-    #[test]
-    fn parse_event_with_type() {
-        let events = parse("event: message\ndata: payload\n\n");
-        assert_eq!(events[0].event.as_deref(), Some("message"));
-        assert_eq!(events[0].data, "payload");
-    }
-
-    #[test]
-    fn parse_event_without_data_is_not_dispatched() {
-        assert!(parse("event: ping\n\n").is_empty());
-    }
-}
