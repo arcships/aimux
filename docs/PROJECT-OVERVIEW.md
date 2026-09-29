@@ -29,8 +29,8 @@ aimux does not do agent loops, RAG, or orchestration — it focuses solely on un
 
 > **Provider access (RFC-0017 phase 4)**: all OpenAI-compatible providers are
 > registry-backed — `provider-registry.json` is the single source of truth, and
-> every binding exposes `provider(name, ...)` with a typed `ProviderName`
-> (enum/union/consts). The per-provider shell types (`XxxConfig`/`XxxProvider`)
+> every binding exposes the string-keyed `provider(name, ...)`. The
+> per-provider shell types (`XxxConfig`/`XxxProvider`)
 > were retired in phase 4.
 
 ---

@@ -180,7 +180,7 @@ def build_page():
     w("")
     w("| category | count |")
     w("|----------|-------|")
-    w(f"| Registry-backed OpenAI-compatible (`provider(name, ...)` / `ProviderName`) | {len(registry)} |")
+    w(f"| Registry-backed OpenAI-compatible (`provider(name, ...)`) | {len(registry)} |")
     for title, mods in sections:
         # First sentence only — some lib.rs section comments run on; the full
         # title stays on the section heading below. The lookahead keeps
@@ -191,7 +191,7 @@ def build_page():
     w("")
     w(
         f"**{len(registry)} registry-backed OpenAI-compatible providers** "
-        f"(construct via `provider(name, ...)` / `ProviderName`) + "
+        f"(construct via `provider(name, ...)`) + "
         f"**{non_registry} non-registry providers** "
         "(construct via the typed factories listed below)."
     )
