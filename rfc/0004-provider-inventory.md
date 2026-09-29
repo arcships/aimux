@@ -1,6 +1,6 @@
 # Provider Inventory and Implementation Status
 
-> **Status**: SUPERSEDED (2026-07-28 快照,数字不再维护 — 现行事实来源为 [provider_registry.json](../aimux-providers/src/provider_registry.json)([RFC-0017](0017-provider-config-dx.md));与 models.dev 的对账跟踪见 #171)
+> **Status**: SUPERSEDED (2026-07-28 快照,数字不再维护 — 现行事实来源为 [provider_registry.json](../aimux-providers/src/provider_registry.json)([RFC-0017](0017-provider-config-dx.md));与 models.dev 的对账跟踪见 #171;机器可读快照见[固定历史版本](https://github.com/arcships/aimux/tree/892a351fd85bf94986e9ba765dcd77c721474f31/provider-inventory))
 
 ## 1. Providers Currently Implemented in aimux
 
