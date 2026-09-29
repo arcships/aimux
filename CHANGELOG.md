@@ -33,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   yields `SseError::FrameTooLarge` and ends the stream instead of skipping the
   frame. Invalid UTF-8 still yields `SseError::Utf8`, now dropping only the
   event being built.
+- Removed `NdjsonStream` / `NdjsonError`: nothing in the workspace used them
+  and the AI SDK has no counterpart. `tokio` is now a dev-dependency only and
+  the unused direct `serde` dependency is dropped.
 
 ## [0.5.0] - 2026-09-27
 
