@@ -2,7 +2,7 @@
 
 > **Status**: Draft
 > **Date**: 2026-09-29
-> **Scope**: 明确 aimux 的产品定位,确立数据分层(L0–L3)、一套传输无关的 ops 协议与多载体(FFI / stdio / UDS / HTTP)、proxy 扩展包边界、治理产品线,并据此重排 0.6 → 1.0 路线。
+> **Scope**: 明确 aimux 的产品定位,确立数据分层(L0–L3)、一套 ops 协议与两个入口(FFI 绑定 / stdio CLI)、proxy 扩展包的方向、治理产品线,并据此重排 0.6 → 1.0 路线。
 > **Related**: [#166](https://github.com/arcships/aimux/issues/166)(代码缩减总纲)、[#197](https://github.com/arcships/aimux/pull/197)(roadmap 草案)、[#167](https://github.com/arcships/aimux/issues/167)、[#170](https://github.com/arcships/aimux/issues/170)、[RFC-0016](0016-align-with-aisdk.md)、[RFC-0023](0023-runtime-request-recording.md)、[RFC-0026](0026-openai-compatible-output.md)、RFC-0032(provider protocol registry,**尚未入库**)
 
 ---
@@ -29,7 +29,7 @@
 2. **多语言支持的目的是多语言栈的行为统一**:同一份重试、超时、错误、工具修复、录制语义,而不是「每种语言各有一个 SDK」。
 3. **治理是一等能力**:对 provider 做端侧测试、漂移检测、能力验证,不只是调用它。
 4. **协议会演进、私有 API 会持续存在**:架构不能以最小公约数为真相;任何私有能力第一天就应可达。
-5. **与 harness 解耦**:aimux 可作为子进程 / daemon / 服务运行,harness 无需链接它。
+5. **与 harness 解耦**:aimux 可作为子进程(stdio CLI)运行,harness 无需链接它。
 6. **统一数据格式是需求,但具体抽象(AI SDK 形态)的长期适配度待评估**,不与 1.0 绑定。
 
 **不做**:agent loop、编排、RAG(沿用 RFC-0016 §7.5);多租户网关业务(virtual key、计费、预算、限流);OAuth 登录流程(沿用 RFC-0018)。
@@ -80,38 +80,37 @@ aimux_call  (0, "configure", {...})                        // 录制、session�
 {"id":3,"op":"cancel","params":{"target":2}}
 ```
 
-Rust 侧只有一个 `dispatch(op, handle, json)`;FFI / stdio / UDS / HTTP 只是把消息送到它的不同通道。本 RFC 将 C 轨的设计**提升为 aimux 的一等协议**,在其基础上追加以下要求:
+Rust 侧只有一个 `dispatch(op, handle, json)`;FFI 与 stdio 只是把消息送到它的两个入口。本 RFC 将 C 轨的设计**提升为 aimux 的一等协议**,在其基础上追加以下要求:
 
 - **消息**:request / response / stream event(带 id)/ cancel(id) / error envelope(即 C3 的错误 JSON)。
 - **op 表**:单一来源,穷举测试(每个 op × 每种 handle 类型),导出为各语言常量与 JSON Schema。
 - **二进制帧**:实时转写推音频、文件上传,不能强制 base64(+33%)。帧格式 = 长度前缀 + 类型字节(JSON 帧 / 二进制帧),二进制帧以 stream id 关联。**因此不直接采用 LSP 式 JSON-RPC over stdio 的纯文本帧。**
 - **版本协商**:握手时交换协议版本与 op 表版本。
 
-### 4.2 四种传输
+### 4.2 两个入口
 
-| 传输 | 场景 | 取舍 |
+| 入口 | 调用方 | 说明 |
 |---|---|---|
-| **FFI** | 进程内;移动端、对部署形态敏感的场景 | 最低延迟;只服务 Tier 1 语言(§8) |
-| **stdio** | harness 拉起子进程 | 零配置、无端口、生命周期随 harness;录制 / session 不跨实例共享 |
-| **UDS / named pipe** | 常驻 daemon,多进程共享 recording、session、凭据、连接池 | 文件权限即本机鉴权;需 daemon 启停与版本管理 |
-| **HTTP** | 跨机器、容器 | 通用;本机可跑在 UDS 上,不占端口 |
+| **FFI** | 8 种语言绑定 | 全部按 #166 D 轨重写为 ops 之上的薄封装,**一种形态,不分级** |
+| **stdio** | harness、治理工具 | `aimux` CLI 以子进程方式提供同一套 ops;零配置、无端口、生命周期随调用方 |
 
-四种传输共用同一个 dispatch;一致性由构造保证,而非逐语言对齐。
+两个入口共用同一个 dispatch;一致性由构造保证,而非逐语言对齐。
+
+**本轮不做**:UDS / named pipe daemon、HTTP 服务。协议传输无关,日后有真实需求再加,不改协议本身。
 
 ### 4.3 性能门禁
 
-0.6 做 spike:FFI / stdio / UDS 三条路径实测单请求开销、流式吞吐、大上下文(200 KB)序列化成本,结果进 CI 门禁。IPC 与 FFI 若同数量级,即为绑定分级(§8)的依据。
+stdio 入口的往返开销与 FFI 一并测量(单请求开销、流式吞吐、200 KB 上下文序列化),进 CI 门禁。
 
-## 5. proxy 扩展包(`aimux-proxy`)
+## 5. proxy 扩展包(方向,不排期)
 
-proxy = **别人的协议外观**:OpenAI Chat、Responses / Open Responses、Anthropic Messages、Gemini 入站,任意 provider 出站。与核心载体的区别:核心载体说 aimux ops 协议,供主动接入的 harness;proxy 供**不认识 aimux 的现成工具**(各家 SDK、IDE 插件、coding agent)改 base_url 接入。
+proxy = **别人的协议外观**(OpenAI Chat、Responses / Open Responses、Anthropic Messages……入站,任意 provider 出站),供不认识 aimux 的现成工具改 base_url 接入;也是治理第三方 harness 的入口。
 
-- **独立 crate / 二进制,不进默认构建与绑定包**(原则 1)。
-- **同协议走 L0 passthrough**:无损、最快,仍享受 auth、重试、录制、治理。
-- **跨协议经 L2**:入站协议 → L2 → 出站协议;有损字段显式报告(warning / 响应头),不静默丢弃。
-- **现状**:L2 → OpenAI Chat 出站已有(RFC-0026 `to_chat_completion{,_stream}`);`aimux-web` 已依赖 axum。缺入站解析(OpenAI / Anthropic / Responses 请求 → L2)、Responses / Anthropic 出站格式、L0 passthrough。
-- **边界**:不做多租户、virtual key、计费、预算、限流。
-- **与治理的关系**:proxy 是**治理第三方 harness 的入口**——无法改代码的工具,指向本地 proxy 即可被录制、回放、cache probe、漂移检测。
+仅确立方向与边界,本轮不排期:
+
+- 独立 crate / 二进制,不进默认构建与绑定包(原则 1)。
+- 同协议走 L0 passthrough(无损);跨协议经 L2,有损字段显式报告。
+- 不做多租户、virtual key、计费、预算、限流。
 
 ## 6. 治理产品线
 
@@ -129,12 +128,12 @@ proxy = **别人的协议外观**:OpenAI Chat、Responses / Open Responses、Ant
 - **S2** 所有发布产物体积门禁,**每个产物给具体阈值**(初期可取当前值 +10%)。
 - **S3** `cargo-bloat` 审计;feature gating 只作可选小体积路径,默认全量。
 - **P(新增)** 性能回归门禁:单请求开销、流式吞吐、RSS 增长;§4.3 的 IPC 开销纳入。
-- **新增载体预算**:CLI / daemon 单二进制体积、`aimux-proxy` 体积。
+- **新增预算**:`aimux` CLI 单二进制体积。
 - 约束不变:**瘦身不改变对外 API**;需要收窄公开 API 才能换到的收益另立提案。
 
 ## 8. 与 #166 代码缩减的关系
 
-**不放弃,重新归类**。大部分项正是新方向的地基;少数项改形或降级。
+**不放弃,重新归类**。大部分项正是新方向的地基;C1 升级,少数项降级。
 
 | #166 项 | 处理 | 在新架构中的角色 |
 |---|---|---|
@@ -145,9 +144,9 @@ proxy = **别人的协议外观**:OpenAI Chat、Responses / Open Responses、Ant
 | C1 | **保留并升级** | 成为 §4 的 ops 协议;新增要求:传输无关、二进制帧、版本协商 |
 | C2 | 保留,0.6 | 旧 ABI 转发 shim,让 B 轨可在绑定迁移前推进 |
 | C3 | 保留 | 错误 JSON 即协议错误信封 |
-| C4 | 保留,时机后移 | Tier 1 绑定全部迁移后 |
-| D1–D7 | **改形** | Tier 1 语言重写为 ops 协议的 FFI 薄封装;Tier 2 冻结现状或改为 IPC 客户端(见 §10) |
-| D8 | 保留,范围按 Tier | 类型镜像生成,先覆盖 Tier 1 |
+| C4 | 保留,时机后移 | 8 种绑定全部迁移后 |
+| D1–D7 | 保留 | 按原计划重写为 ops 协议的 FFI 薄封装 |
+| D8 | 保留 | 类型镜像生成 |
 | E1 | 保留,0.6 | #164 已合入,改为 master 上的独立清理 |
 | #171 后半(补 116 个 provider) | 降级为机会性 | 广度不是目标;B 轨后加一行 registry 的成本很低,按需补 |
 
@@ -155,24 +154,22 @@ proxy = **别人的协议外观**:OpenAI Chat、Responses / Open Responses、Ant
 
 | 版本 | 主题 | 内容 |
 |---|---|---|
-| **0.6** | 门禁 + 协议地基 + 纯减法 | S1 / S2 / P 门禁;A2–A5、E1、#185;B1 + C2;**ops 协议 schema**(op 表、帧格式、版本协商,先以文档 + 测试落地);**L0 passthrough**;IPC vs FFI spike;RFC-0032 / 0033 入库 |
+| **0.6** | 门禁 + 协议地基 + 纯减法 | S1 / S2 / P 门禁;A2–A5、E1、#185;B1 + C2;**ops 协议 schema**(op 表、帧格式、版本协商,先以文档 + 测试落地);**L0 passthrough**;RFC-0032 / 0033 入库 |
 | **0.7** | L1 协议层 + auth | B2–B8、#174 / #175;L2 的 `Raw` / `provider_metadata` 补齐;S3;L2 数据模型调研 RFC |
-| **0.8** | 载体 | C1 同一 dispatch 落地 FFI + stdio + UDS,HTTP over UDS / TCP;Tier 1 绑定迁移(D 轨)、D8 |
-| **0.9** | 治理 + proxy | #167 transport replay;#170 漂移检测;能力矩阵;`aimux probe / replay / diff`;`aimux-proxy`(同协议 passthrough 先,跨协议互转后) |
+| **0.8** | ops 协议落地 | C1 dispatch 同时落地 FFI 与 stdio CLI;D 轨绑定迁移、D8;stdio 开销进性能门禁 |
+| **0.9** | 治理 | #167 transport replay;#170 漂移检测;能力矩阵;`aimux probe / replay / diff` |
 | **1.0** | 冻结 | 冻结 ops 协议与 L0 / L1 契约;L2 独立版本化不随之冻结;C4 |
 
 各阶段允许交叠;A 轨与 B1 / C2 无依赖。
 
 ## 10. 开放问题
 
-1. **Tier 1 语言是哪几种?** 按维护者自身的多语言栈决定;Tier 2 是冻结现状还是改为 IPC 客户端。
-2. **绑定用生成器还是手写?** ops 协议收敛后每种语言只剩 ~4 个对象,手写成本已低;但类型镜像(D8)可考虑 JSON Schema → 各语言生成。
-3. **二进制帧格式选型**:自定义长度前缀帧,还是采用现成格式(如 CBOR / MessagePack 承载 JSON 语义)。
-4. **daemon 生命周期**:谁启动、如何发现(socket 路径约定)、版本不匹配时的行为。
-5. **L2 选型**:见 §3 的调研 RFC。
-6. **proxy 入站协议优先级**:OpenAI Chat 与 Responses 先行,Anthropic Messages 其次?
+1. **绑定用生成器还是手写?** ops 协议收敛后每种语言只剩 ~4 个对象,手写成本已低;类型镜像(D8)可考虑 JSON Schema → 各语言生成。
+2. **二进制帧格式选型**:自定义长度前缀帧,还是采用现成格式(如 CBOR / MessagePack 承载 JSON 语义)。
+3. **L2 选型**:见 §3 的调研 RFC。
 
 ## 11. 不在范围
 
 - 本 RFC 不修改任何代码,只确立方向;各项实现由对应 issue / RFC 承载。
 - 不重新评审 #166 各项的设计细节,只调整归类与时机。
+- UDS / HTTP 传输、proxy 扩展包的实现:方向已定,待有真实需求时另立 RFC。
