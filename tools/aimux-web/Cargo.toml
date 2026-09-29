@@ -18,6 +18,9 @@ path = "src/main.rs"
 # `web/dist` to exist at compile time (run `npm run build` first). Dev builds
 # (default) keep serving from disk so the frontend can hot-reload.
 embed-frontend = ["dep:rust-embed"]
+# Emit the wire types' ts-rs export tests. Enabled only by
+# scripts/gen_ts_types.py, which points TS_RS_EXPORT_DIR at a temp directory.
+ts-export = []
 
 [dependencies]
 aimux-core = { workspace = true }
