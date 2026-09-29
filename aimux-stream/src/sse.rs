@@ -192,10 +192,8 @@ impl Parser {
                     self.id = Some(value.to_string());
                 }
             }
-            "retry" => {
-                if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
-                    self.retry = value.parse().ok();
-                }
+            "retry" if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) => {
+                self.retry = value.parse().ok();
             }
             _ => {} // unknown field
         }
