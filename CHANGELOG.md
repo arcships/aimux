@@ -11,10 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Rust (aimux-stream)**
 
-- Removed `StreamingToolCallTracker` and its companion types
-  (`StreamingToolCallDelta`, `StreamingToolCallFunction`, `ToolCallStreamPart`,
-  `TrackerError`, `TypeValidation`). No crate in the workspace used them:
-  providers accumulate streamed tool-call deltas themselves.
+- `StreamingToolCallTracker` rewritten to match the current AI SDK
+  (`@ai-sdk/provider-utils`) design; the previous version was a port of an
+  older, index-only tracker that nothing in the workspace used. Deltas are now
+  correlated by wire `id`, `index` and function name (ambiguous deltas are
+  dropped), ids are de-duplicated with bounded suffixes, blank function names
+  are ignored, and `flush` orders calls by index only when every call has one.
+  API changes: `process_delta` and `flush` now return the emitted
+  `ToolCallStreamPart`s instead of buffering them (`parts()` / `clear_parts()`
+  are gone); `with_max_index` and `TrackerError::{MissingId, IndexOutOfRange}`
+  are removed; `TrackerError::IdExhausted` is added; the builder closures must
+  be `Send + Sync`.
+- Added `StreamingToolCallArgumentState` and `starts_with_structured_value`,
+  the structural JSON-prefix tracker the new correlation logic relies on.
 
 ## [0.5.0] - 2026-09-27
 
