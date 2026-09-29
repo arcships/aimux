@@ -126,15 +126,15 @@ tools/aimux-web/
 └── web/          Vue 3 + shadcn 风格 + Tailwind + markstream-vue
     ├── src/agent/engine.ts   前端 agent loop 引擎
     ├── src/api/client.ts     SSE/端点封装
-    └── src/types/            d.ts(core 类型来自 ts-rs,见下)
+    └── src/types/            aimux-web 专用 Wire 类型
 ```
 
 ## 前端类型来源
 
 - **core 类型**(`Recording`/`StreamPart`/`TraceRecord`/`SessionView` 等):ts-rs 从
   `aimux-core` 生成到 `bindings/node/src/types/`(`scripts/gen_ts_types.py` 管线),
-  **拷贝**到 `web/src/types/` 供前端使用。改 core 类型后:跑 `scripts/gen_ts_types.py`
-  并同步拷贝。
+  前端通过 `import type` 直接使用该受 CI 漂移检查保护的生成目录。改 core 类型后
+  只需运行 `scripts/gen_ts_types.py`。
 - **wire 类型**(`Wire*.ts`):是 aimux-web 的 API 契约,**手动维护**在
   `web/src/types/`(不 ts-rs 导出,避免污染 node bindings 的导出目录)。
   改 `src/wire.rs` 时同步更新对应的 `web/src/types/Wire*.ts`。
