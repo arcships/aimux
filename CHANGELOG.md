@@ -5,6 +5,18 @@ All notable changes to aimux are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Breaking
+
+- Removed the generated `ProviderName` type in every binding (Rust enum, TS
+  const object, Go/Java/Kotlin consts, Swift enum, Dart consts, Python
+  `Literal`) and `scripts/gen_provider_names.py`. Provider names are plain
+  strings: `provider("groq", ...)`. Built-in and overlay-registered names now
+  share one string path. The provider list lives in
+  [docs/api/providers.md](docs/api/providers.md); Rust also gains
+  `provider_names()`.
+
 ## [0.5.0] - 2026-09-27
 
 **Breaking release.** 13 PRs since 0.3.0: the cross-language error model
