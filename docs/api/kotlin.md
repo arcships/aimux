@@ -27,8 +27,7 @@ Model.openai("sk-...", "gpt-4o", "http://localhost:3000").use { model ->
 
 ## Providers
 
-All 251 registry-backed OpenAI-compatible providers are reachable by name;
-`ai.arcships.aimux.ProviderName` holds the constants:
+All 251 registry-backed OpenAI-compatible providers are reachable by string name:
 
 > **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
@@ -36,19 +35,17 @@ All 251 registry-backed OpenAI-compatible providers are reachable by name;
 > Full list: [providers.md](providers.md).
 
 ```kotlin
-// 推荐:ProviderName.GROQ 常量(类型检查 + 补全)
-Model.provider(name = ProviderName.GROQ, modelId = "llama-3.3-70b").use { model ->
+Model.provider(name = "groq", modelId = "llama-3.3-70b").use { model ->
     val result = model.generateText("\"Hello\"")
 }
 
-// 字符串形式同样可用 + 可选 config JSON ({"base_url": "..."}):
+// Optional config JSON ({"base_url": "..."}):
 Model.provider(name = "groq", apiKey = "sk-...", modelId = "llama-3.3-70b").use { model ->
     val result = model.generateText("\"Hello\"")
 }
 ```
 
-Unknown names throw `NoSuchProviderError` naming the requested provider
-(valid names come from the generated `ProviderName` constants).
+Unknown names throw `NoSuchProviderError` naming the requested provider.
 
 ## Errors
 

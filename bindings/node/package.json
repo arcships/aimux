@@ -40,7 +40,7 @@
   "scripts": {
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
-    "build:typed": "tsc -p tsconfig.json",
+    "build:typed": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json",
     "test": "ava",
     "prepublishOnly": "npm run build:typed && napi prepublish -t npm --no-gh-release"
   },

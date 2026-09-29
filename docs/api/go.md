@@ -155,8 +155,7 @@ The producer closes `Parts()` after the blocking native call returns.
 
 ## Providers
 
-All 251 registry-backed OpenAI-compatible providers are reachable by name;
-`aimux.ProviderName` holds typed constants:
+All 251 registry-backed OpenAI-compatible providers are reachable by string name:
 
 > **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed constructors
@@ -164,12 +163,11 @@ All 251 registry-backed OpenAI-compatible providers are reachable by name;
 > Full list: [providers.md](providers.md).
 
 ```go
-// 推荐:aimux.Groq 类型常量(类型检查 + 补全)
-model, err := aimux.Provider(string(aimux.Groq), "", "llama-3.3-70b")
+model, err := aimux.Provider("groq", "", "llama-3.3-70b")
 if err != nil { log.Fatal(err) }
 defer model.Close()
 
-// 字符串形式同样可用 + base URL 覆盖:
+// Base URL override:
 model2, err := aimux.ProviderWithBase("groq", "sk-...", "llama-3.3-70b", "https://relay.example/v1")
 defer model2.Close()
 
