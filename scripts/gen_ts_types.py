@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Regenerate ts-rs TypeScript bindings from Rust core types.
+"""Regenerate ts-rs TypeScript bindings from Rust types.
 
-The Rust types in aimux-core carry #[derive(TS)] + #[ts(export)]; running the
-export tests (cargo test -p aimux-core --lib export) writes the generated .ts
-files to TS_RS_EXPORT_DIR. This script always exports into a temporary
-directory first — the repo is never written by cargo directly — then either
-syncs that output into bindings/node/src/types/ (default) or compares the two
-trees and fails on any difference (--check). Comparing full file sets means a
+Two crates carry #[derive(TS)] + #[ts(export)]:
+
+- aimux-core -> bindings/node/src/types/ (+ the types.ts aggregate)
+- aimux-web  -> tools/aimux-web/web/src/types/generated/ (the console's wire
+  schema; kept out of the node bindings because it belongs to the frontend)
+
+Running a crate's export tests writes the generated .ts files to
+TS_RS_EXPORT_DIR. This script always exports into a temporary directory
+first — the repo is never written by cargo directly — then either syncs that
+output into the target directory (default) or compares the two trees and
+fails on any difference (--check). Comparing full file sets means a
 deleted Rust type shows up as a stale .ts, and a forgotten `git add` of a new
 type shows up as a missing one; a failed cargo run leaves the repo untouched.
 
@@ -18,6 +23,8 @@ Usage:
     python3 scripts/gen_ts_types.py --check     # fail if committed output differs
                                                 # (CI; read-only, repo untouched)
 """
+from __future__ import annotations
+
 import os
 import subprocess
 import sys
@@ -27,6 +34,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TYPES_DIR = ROOT / "bindings" / "node" / "src" / "types"
 TYPES_TS = ROOT / "bindings" / "node" / "src" / "types.ts"
+WEB_TYPES_DIR = ROOT / "tools" / "aimux-web" / "web" / "src" / "types" / "generated"
+
+# (cargo test args selecting the crate's export tests, output directory,
+#  aggregate re-export file or None)
+TARGETS = [
+    (["-p", "aimux-core", "--lib", "export"], TYPES_DIR, TYPES_TS),
+    (["-p", "aimux-web", "--bins", "export"], WEB_TYPES_DIR, None),
+]
 
 
 def normalize_generated(content: str) -> str:
@@ -34,8 +49,8 @@ def normalize_generated(content: str) -> str:
     return "\n".join(line.rstrip() for line in content.splitlines()) + "\n"
 
 
-def regenerate(export_dir: Path) -> None:
-    """Run the ts-rs export tests, writing the .ts files into export_dir.
+def regenerate(test_args: list[str], export_dir: Path) -> None:
+    """Run a crate's ts-rs export tests, writing the .ts files into export_dir.
 
     The external TS_RS_EXPORT_DIR overrides the repo-relative default in
     .cargo/config.toml ([env] without force = true). Do not add force = true
@@ -44,7 +59,7 @@ def regenerate(export_dir: Path) -> None:
     """
     env = {**os.environ, "TS_RS_EXPORT_DIR": str(export_dir)}
     subprocess.run(
-        ["cargo", "test", "-p", "aimux-core", "--lib", "export"],
+        ["cargo", "test", *test_args],
         cwd=ROOT,
         env=env,
         check=True,
@@ -73,67 +88,88 @@ def aggregate(files: dict[str, str]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def sync(expected: dict[str, str]) -> None:
-    """Make TYPES_DIR match expected exactly."""
-    for rel in manifest(TYPES_DIR).keys() - expected.keys():
-        (TYPES_DIR / rel).unlink()
+def sync(types_dir: Path, expected: dict[str, str]) -> None:
+    """Make types_dir match expected exactly."""
+    if types_dir.is_dir():
+        for rel in manifest(types_dir).keys() - expected.keys():
+            (types_dir / rel).unlink()
     for rel, content in expected.items():
-        path = TYPES_DIR / rel
+        path = types_dir / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        # `content` is canonicalized by manifest(); compare the raw file so a
-        # normal regeneration also removes ts-rs's incidental EOL spaces.
-        if not path.exists() or path.read_text(encoding="utf-8") != content:
+        # `content` is canonicalized by manifest(); compare against the
+        # canonicalized file too, so committed ts-rs output that only differs
+        # by incidental EOL spaces is left alone (no whitespace-only churn).
+        if not path.exists() or normalize_generated(path.read_text(encoding="utf-8")) != content:
             path.write_text(content, encoding="utf-8")
 
 
-def main() -> int:
-    check = "--check" in sys.argv[1:]
-
+def export(test_args: list[str]) -> dict[str, str]:
+    """Run one crate's export tests into a temp dir and return its manifest."""
     with tempfile.TemporaryDirectory(prefix="ts-rs-export-") as tmp:
-        regenerate(Path(tmp))
+        regenerate(test_args, Path(tmp))
         expected = manifest(Path(tmp))
-        if not expected:
-            print(
-                "ERROR: the export tests wrote nothing to the temporary "
-                "TS_RS_EXPORT_DIR — is it overridden with force = true in "
-                ".cargo/config.toml?",
-                file=sys.stderr,
-            )
-            return 2
+    if not expected:
+        print(
+            "ERROR: the export tests wrote nothing to the temporary "
+            "TS_RS_EXPORT_DIR — is it overridden with force = true in "
+            ".cargo/config.toml?",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    return expected
 
-    if not check:
-        sync(expected)
-        TYPES_TS.write_text(aggregate(expected), encoding="utf-8")
-        print(f"{len(expected)} files written to {TYPES_DIR.relative_to(ROOT)}")
-        return 0
 
-    actual = manifest(TYPES_DIR) if TYPES_DIR.is_dir() else {}
+def check_target(
+    expected: dict[str, str], types_dir: Path, types_ts: Path | None
+) -> bool:
+    actual = manifest(types_dir) if types_dir.is_dir() else {}
     missing = sorted(expected.keys() - actual.keys())
     stale = sorted(actual.keys() - expected.keys())
     changed = sorted(k for k in expected.keys() & actual.keys() if expected[k] != actual[k])
-    try:
-        aggregate_ok = TYPES_TS.read_text(encoding="utf-8") == aggregate(expected)
-    except FileNotFoundError:
-        aggregate_ok = False
+    aggregate_ok = True
+    if types_ts is not None:
+        try:
+            aggregate_ok = types_ts.read_text(encoding="utf-8") == aggregate(expected)
+        except FileNotFoundError:
+            aggregate_ok = False
 
+    rel = types_dir.relative_to(ROOT)
     if missing or stale or changed or not aggregate_ok:
-        rel = TYPES_DIR.relative_to(ROOT)
         for f in missing:
             print(f"MISSING: {rel}/{f} (generated, but not committed)", file=sys.stderr)
         for f in stale:
             print(f"STALE: {rel}/{f} (committed, but no longer generated)", file=sys.stderr)
         for f in changed:
             print(f"CHANGED: {rel}/{f}", file=sys.stderr)
-        if not aggregate_ok:
-            print(f"CHANGED: {TYPES_TS.relative_to(ROOT)}", file=sys.stderr)
+        if not aggregate_ok and types_ts is not None:
+            print(f"CHANGED: {types_ts.relative_to(ROOT)}", file=sys.stderr)
+        return False
+
+    print(f"{rel}: {len(expected)} files up to date")
+    return True
+
+
+def main() -> int:
+    check = "--check" in sys.argv[1:]
+    ok = True
+
+    for test_args, types_dir, types_ts in TARGETS:
+        expected = export(test_args)
+        if not check:
+            sync(types_dir, expected)
+            if types_ts is not None:
+                types_ts.write_text(aggregate(expected), encoding="utf-8")
+            print(f"{len(expected)} files written to {types_dir.relative_to(ROOT)}")
+        else:
+            ok = check_target(expected, types_dir, types_ts) and ok
+
+    if not ok:
         print(
             "generated ts-rs types are out of sync — "
             "run scripts/gen_ts_types.py and commit the result",
             file=sys.stderr,
         )
         return 1
-
-    print(f"{len(expected)} files up to date")
     return 0
 
 
