@@ -8,7 +8,7 @@
 
 import { api, callStream, parseStreamPart } from '../api/client'
 import type { WireCallRequest } from '../types/WireCallRequest'
-import type { StreamPart } from '../types/StreamPart'
+import type { StreamPart } from '../../../../../bindings/node/src/types/StreamPart'
 
 /** A chat message as sent to the backend (loose typing: the backend wire
  * schema's `JsonValue` is a recursive union that trips TS2589 inside
