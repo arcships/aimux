@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   be `Send + Sync`.
 - Added `StreamingToolCallArgumentState` and `starts_with_structured_value`,
   the structural JSON-prefix tracker the new correlation logic relies on.
+- `SseStream` rewritten as a line-based parser matching `eventsource-parser`
+  (the parser behind the AI SDK's `parseJsonEventStream`): `\n`, `\r` and
+  `\r\n` line endings in any mix, a leading UTF-8 BOM is stripped, a field
+  line without `:` counts as an empty value, an empty `event:` is `None`, an
+  `id` containing U+0000 is ignored, and `retry` must be all ASCII digits.
+  Exceeding `max_event_size` (now: buffered event data plus the partial line)
+  yields `SseError::FrameTooLarge` and ends the stream instead of skipping the
+  frame. Invalid UTF-8 still yields `SseError::Utf8`, now dropping only the
+  event being built.
 
 ## [0.5.0] - 2026-09-27
 
