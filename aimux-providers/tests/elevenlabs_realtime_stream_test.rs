@@ -468,20 +468,22 @@ async fn stream_abort_mid_session() {
     .await;
 
     let abort = AbortSignal::new();
-    let abort_clone = abort.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        abort_clone.abort();
-    });
-
     let model = realtime_model(&base_url, "scribe_v2_realtime");
     let result = model
         .do_stream(stream_options(
             vec![AudioChunk::Binary(vec![1])],
-            Some(abort),
+            Some(abort.clone()),
         ))
         .await
         .unwrap();
+
+    // Arm the abort only once the session is up: a timer started before
+    // `do_stream` can fire during the connect on a slow runner, and then the
+    // abort is no longer mid-session.
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        abort.abort();
+    });
     let parts = collect(result).await;
     assert!(
         parts
