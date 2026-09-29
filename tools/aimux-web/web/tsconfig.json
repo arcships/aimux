@@ -13,7 +13,10 @@
     "skipLibCheck": true,
     "noEmit": true,
     "baseUrl": ".",
-    "paths": { "@/*": ["src/*"] },
+    "paths": {
+      "@/*": ["src/*"],
+      "@aimux/types/*": ["../../../bindings/node/src/types/*"]
+    },
     "types": ["vite/client", "node"]
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "vite.config.ts"]
