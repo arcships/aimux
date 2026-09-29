@@ -2,10 +2,10 @@
 
 import type { WireCallRequest } from '../types/WireCallRequest'
 import type { WireCallResponse } from '../types/WireCallResponse'
-import type { Recording } from '../types/Recording'
-import type { TraceRecord } from '../types/TraceRecord'
-import type { SessionView } from '../types/SessionView'
-import type { StreamPart } from '../types/StreamPart'
+import type { Recording } from '../../../../../bindings/node/src/types/Recording'
+import type { TraceRecord } from '../../../../../bindings/node/src/types/TraceRecord'
+import type { SessionView } from '../../../../../bindings/node/src/types/SessionView'
+import type { StreamPart } from '../../../../../bindings/node/src/types/StreamPart'
 
 const API = '/api'
 
