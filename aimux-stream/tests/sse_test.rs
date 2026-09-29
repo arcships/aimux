@@ -6,12 +6,17 @@
 //!
 //! The expected behavior mirrors `eventsource-parser`'s `EventSourceParserStream`
 //! (which the TS `parseJsonEventStream` pipes through):
-//!   - an event is dispatched only on a terminating blank line (`\n\n`/`\r\n\r\n`);
+//!   - lines end in `\n`, `\r` or `\r\n` (freely mixed); an event is
+//!     dispatched only on a blank line;
 //!   - an event with no `data:` line is NOT dispatched (covers comment-only,
 //!     `event:`/`id:`/`retry:`-only, and blank-line keep-alives);
 //!   - exactly one leading U+0020 SPACE after the `:` is stripped from a field
 //!     value (per the SSE spec);
-//!   - a partial event at EOF (no terminating blank line) is dropped.
+//!   - a partial event at EOF (no terminating blank line) is dropped;
+//!   - a UTF-8 BOM at stream start is stripped; a line without `:` is a field
+//!     with an empty value; an empty `event` means no type; an `id` with
+//!     U+0000 is ignored; `retry` must be all ASCII digits;
+//!   - exceeding the buffer limit is fatal and ends the stream.
 
 use aimux_stream::{SseError, SseEvent, SseStream};
 use bytes::Bytes;
@@ -352,4 +357,179 @@ async fn buffer_growing_past_limit_without_terminator_returns_frame_too_large() 
     let results: Vec<_> = stream.collect().await;
     assert_eq!(results.len(), 1);
     assert!(matches!(results[0], Err(SseError::FrameTooLarge)));
+}
+
+// ── eventsource-parser alignment ─────────────────────────────────────────
+
+#[tokio::test]
+async fn bare_cr_line_endings() {
+    let events = collect_events(vec![
+        "event: a\rdata: one\rdata: two\r\rdata: next\r\r:keep-alive\n",
+    ])
+    .await;
+    assert_eq!(events.len(), 2);
+    let first = events[0].as_ref().unwrap();
+    assert_eq!(first.event.as_deref(), Some("a"));
+    assert_eq!(data(first), "one\ntwo");
+    assert_eq!(data(events[1].as_ref().unwrap()), "next");
+}
+
+#[tokio::test]
+async fn trailing_cr_at_end_of_stream_does_not_dispatch() {
+    // A `\r` at the end of the buffered input waits for a possible `\n`; with
+    // no flush at end of stream (as `EventSourceParserStream`) the event is
+    // never completed.
+    let events = collect_events(vec!["data: a\r\rdata: b\r\r"]).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(data(events[0].as_ref().unwrap()), "a");
+}
+
+#[tokio::test]
+async fn mixed_terminators_within_one_event() {
+    // `\r\n` then a bare `\n` blank line: one event, as eventsource-parser.
+    let events = collect_events(vec!["data: a\r\ndata: b\n\ndata: c\r\r\n"]).await;
+    assert_eq!(events.len(), 2);
+    assert_eq!(data(events[0].as_ref().unwrap()), "a\nb");
+    assert_eq!(data(events[1].as_ref().unwrap()), "c");
+}
+
+#[tokio::test]
+async fn crlf_split_between_chunks_is_one_terminator() {
+    // A `\r` at the end of a chunk must wait: the `\n` in the next chunk
+    // completes the same terminator, not an extra blank line.
+    let events = collect_events(vec!["data: a\r", "\ndata: b\r", "\n\r", "\n"]).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(data(events[0].as_ref().unwrap()), "a\nb");
+}
+
+#[tokio::test]
+async fn leading_bom_is_stripped() {
+    let events = collect_events(vec!["\u{FEFF}data: first\n\n"]).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(data(events[0].as_ref().unwrap()), "first");
+}
+
+#[tokio::test]
+async fn leading_bom_split_across_chunks_is_stripped() {
+    let bom = "\u{FEFF}".as_bytes();
+    let events = collect_events_bytes(vec![
+        bom[..1].to_vec(),
+        bom[1..].to_vec(),
+        b"data: first\n\n".to_vec(),
+    ])
+    .await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(data(events[0].as_ref().unwrap()), "first");
+}
+
+#[tokio::test]
+async fn bom_after_stream_start_is_not_stripped() {
+    // Only the very start of the stream may carry a BOM; later it is part of
+    // the field name, which is then unknown.
+    let events = collect_events(vec!["data: a\n\n\u{FEFF}data: b\n\n"]).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(data(events[0].as_ref().unwrap()), "a");
+}
+
+#[tokio::test]
+async fn field_without_colon_has_empty_value() {
+    // `data` alone is a data line with an empty value.
+    let events = collect_events(vec!["data\n\ndata\ndata: x\n\n"]).await;
+    assert_eq!(events.len(), 2);
+    assert_eq!(data(events[0].as_ref().unwrap()), "");
+    assert_eq!(data(events[1].as_ref().unwrap()), "\nx");
+}
+
+#[tokio::test]
+async fn empty_event_field_means_no_event_type() {
+    let events = collect_events(vec!["event:\ndata: x\n\n"]).await;
+    assert_eq!(events[0].as_ref().unwrap().event, None);
+}
+
+#[tokio::test]
+async fn event_type_resets_after_each_dispatch() {
+    let events = collect_events(vec!["event: a\ndata: 1\n\ndata: 2\n\n"]).await;
+    assert_eq!(events[0].as_ref().unwrap().event.as_deref(), Some("a"));
+    assert_eq!(events[1].as_ref().unwrap().event, None);
+}
+
+#[tokio::test]
+async fn id_containing_null_is_ignored() {
+    let events = collect_events(vec!["id: ok\nid: bad\u{0}id\ndata: x\n\n"]).await;
+    assert_eq!(events[0].as_ref().unwrap().id.as_deref(), Some("ok"));
+}
+
+#[tokio::test]
+async fn retry_must_be_all_ascii_digits() {
+    // `retry: 5` loses its one leading space and is valid; a second space is not.
+    for value in ["+5", "-5", "5s", "  5", ""] {
+        let input = format!("retry:{value}\ndata: x\n\n");
+        let events = collect_events(vec![input.as_str()]).await;
+        assert_eq!(events[0].as_ref().unwrap().retry, None, "retry {value:?}");
+    }
+    let events = collect_events(vec!["retry:1500\ndata: x\n\n"]).await;
+    assert_eq!(events[0].as_ref().unwrap().retry, Some(1500));
+}
+
+#[tokio::test]
+async fn field_names_are_case_sensitive() {
+    let events = collect_events(vec!["Data: x\n\ndata: y\n\n"]).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(data(events[0].as_ref().unwrap()), "y");
+}
+
+#[tokio::test]
+async fn invalid_utf8_drops_only_the_current_event() {
+    let mut bytes = b"data: ".to_vec();
+    bytes.extend_from_slice(&[0xE4, 0xBD]);
+    bytes.extend_from_slice(b"\ndata: tail\n\ndata: next\n\n");
+    let events = collect_events_bytes(vec![bytes]).await;
+    assert_eq!(events.len(), 3);
+    assert!(matches!(events[0], Err(SseError::Utf8(_))));
+    // The line after the bad one starts a fresh event buffer.
+    assert_eq!(data(events[1].as_ref().unwrap()), "tail");
+    assert_eq!(data(events[2].as_ref().unwrap()), "next");
+}
+
+#[tokio::test]
+async fn exceeding_the_limit_ends_the_stream() {
+    let stream = SseStream::with_max_event_size(
+        stream::iter(vec![
+            Ok::<_, std::io::Error>(Bytes::from_static(b"data: ok\n\n")),
+            Ok(Bytes::from_static(b"data: far too long for the limit\n\n")),
+            Ok(Bytes::from_static(b"data: ok\n\n")),
+        ]),
+        10,
+    );
+    let results: Vec<_> = stream.collect().await;
+    assert_eq!(results.len(), 2);
+    assert_eq!(data(results[0].as_ref().unwrap()), "ok");
+    assert!(matches!(results[1], Err(SseError::FrameTooLarge)));
+}
+
+#[tokio::test]
+async fn multi_event_payload_split_at_every_byte_boundary() {
+    let payload = "event: e\r\nid: 1\r\ndata: 你好\r\n\r\ndata: a\rdata: b\r\r:c\ndata: z\n\n";
+    let bytes = payload.as_bytes();
+    let expected = collect_events(vec![payload]).await;
+    let expected: Vec<(Option<String>, String, Option<String>)> = expected
+        .into_iter()
+        .map(|e| {
+            let e = e.unwrap();
+            (e.event, e.data, e.id)
+        })
+        .collect();
+    assert_eq!(expected.len(), 3);
+    for split in 1..bytes.len() {
+        let (a, b) = bytes.split_at(split);
+        let got: Vec<_> = collect_events_bytes(vec![a.to_vec(), b.to_vec()])
+            .await
+            .into_iter()
+            .map(|e| {
+                let e = e.unwrap_or_else(|err| panic!("split {split}: {err:?}"));
+                (e.event, e.data, e.id)
+            })
+            .collect();
+        assert_eq!(got, expected, "split at byte {split}");
+    }
 }
