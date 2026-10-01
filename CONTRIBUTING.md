@@ -10,7 +10,7 @@ aimux/
 ├── aimux-core/            # Core abstractions: LanguageModel / Provider / Message / StreamPart
 ├── aimux-providers/       # provider implementations + cassettes (counts: docs/api/providers.md)
 ├── aimux-stream/          # SSE / NDJSON stream parsing
-├── aimux-provider-utils/  # HTTP utilities: retry, backoff, error parsing, API-key loading
+├── aimux-provider-utils/  # HTTP utilities: retry, backoff, error parsing, API-key loading, streamed tool-call tracking
 ├── aimux-ffi/             # C ABI (opaque handle + JSON + push callback) for non-native bindings
 ├── bindings/              # Node, Python, Swift, Kotlin, Flutter, Go, C — share one Rust core
 ├── contract-tests/        # Shared JSON fixtures exercised across languages
