@@ -5,8 +5,9 @@
 //!
 //! Tracks streaming tool call state across the deltas of an OpenAI-compatible
 //! chat completion stream: accumulates `arguments` fragments, emits
-//! `tool-input-start` / `tool-input-delta` / `tool-input-end` / `tool-call`
-//! parts, and finalizes unfinished calls on [`StreamingToolCallTracker::flush`].
+//! [`StreamPart::ToolInputStart`] / [`StreamPart::ToolInputDelta`] /
+//! [`StreamPart::ToolInputEnd`] / [`StreamPart::ToolCall`] parts, and
+//! finalizes unfinished calls on [`StreamingToolCallTracker::flush`].
 //!
 //! Deltas are correlated to calls by wire `id`, `index` and function name
 //! (see [`StreamingToolCallTracker`]'s resolution table), not by `index`
@@ -16,11 +17,21 @@
 //! Like the TS original, a call is *never* finalized before `flush`: a
 //! parsable argument buffer can still be the prefix of a longer argument
 //! string, so acting on it early would use truncated inputs (ai-sdk #13137).
+//!
+//! This is a tool for the OpenAI chat-completions wire format only. Protocols
+//! whose streams carry explicit tool-call boundaries (Anthropic content
+//! blocks, Google complete `functionCall` parts, Bedrock content blocks,
+//! Cohere `tool-call-*` events, the Responses API's output items) do not need
+//! it.
 
 use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 use thiserror::Error;
+
+use aimux_core::error::AiMuxError;
+use aimux_core::stream_part::StreamPart;
+use aimux_core::types::ProviderMetadata;
 
 use crate::streaming_tool_call_argument_state::{
     StreamingToolCallArgumentState, starts_with_structured_value,
@@ -98,28 +109,6 @@ impl StreamingToolCallDelta {
     }
 }
 
-/// The stream parts emitted by [`StreamingToolCallTracker`].
-///
-/// Mirrors the subset of `LanguageModelV4StreamPart` the TS tracker enqueues.
-/// [`ToolCallStreamPart::ToolCall::input`] is the raw accumulated argument
-/// *string*; the tracker does not parse it.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ToolCallStreamPart<M = ()> {
-    /// Start of a tool call's input streaming.
-    ToolInputStart { id: String, tool_name: String },
-    /// A partial argument fragment.
-    ToolInputDelta { id: String, delta: String },
-    /// End of a tool call's input streaming.
-    ToolInputEnd { id: String },
-    /// A complete, finalized tool call.
-    ToolCall {
-        tool_call_id: String,
-        tool_name: String,
-        input: String,
-        provider_metadata: Option<M>,
-    },
-}
-
 /// How to validate the `type` field on a new tool call delta.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TypeValidation {
@@ -133,6 +122,9 @@ pub enum TypeValidation {
 }
 
 /// Errors raised while processing a tool call delta.
+///
+/// The TS tracker throws `InvalidResponseDataError`; these convert into
+/// [`AiMuxError::InvalidResponseData`].
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum TrackerError {
     #[error("Expected 'function.name' to be a string.")]
@@ -143,7 +135,13 @@ pub enum TrackerError {
     IdExhausted,
 }
 
-struct TrackedToolCall<M> {
+impl From<TrackerError> for AiMuxError {
+    fn from(error: TrackerError) -> Self {
+        AiMuxError::InvalidResponseData(error.to_string())
+    }
+}
+
+struct TrackedToolCall {
     id: String,
     index: Option<usize>,
     sequence: usize,
@@ -151,7 +149,7 @@ struct TrackedToolCall<M> {
     arguments: String,
     argument_state: StreamingToolCallArgumentState,
     has_finished: bool,
-    metadata: Option<M>,
+    metadata: Option<Value>,
 }
 
 enum ToolCallResolution {
@@ -161,17 +159,14 @@ enum ToolCallResolution {
 }
 
 type GenerateIdFn = Box<dyn Fn() -> String + Send + Sync>;
-type ExtractMetadataFn<M> = Box<dyn Fn(&StreamingToolCallDelta) -> Option<M> + Send + Sync>;
-type BuildMetadataFn<M> = Box<dyn Fn(Option<&M>) -> Option<M> + Send + Sync>;
+type ExtractMetadataFn = Box<dyn Fn(&StreamingToolCallDelta) -> Option<Value> + Send + Sync>;
+type BuildMetadataFn = Box<dyn Fn(Option<&Value>) -> Option<ProviderMetadata> + Send + Sync>;
 
 /// Tracks streaming tool call state across multiple deltas.
 ///
 /// [`process_delta`](Self::process_delta) and [`flush`](Self::flush) return
-/// the parts to forward downstream (the TS tracker enqueues them on a
-/// controller instead).
-///
-/// The type parameter `M` is the provider-metadata type; use `()` (the
-/// default) when no metadata handling is needed.
+/// the [`StreamPart`]s to forward downstream (the TS tracker enqueues them on
+/// a controller instead).
 ///
 /// # Correlation
 ///
@@ -186,25 +181,25 @@ type BuildMetadataFn<M> = Box<dyn Fn(Option<&M>) -> Option<M> + Send + Sync>;
 /// | absent | absent | unnamed | sole unfinished call, new call, or ambiguity |
 ///
 /// An *ambiguous* delta is dropped.
-pub struct StreamingToolCallTracker<M = ()> {
-    tool_calls: Vec<TrackedToolCall<M>>,
+pub struct StreamingToolCallTracker {
+    tool_calls: Vec<TrackedToolCall>,
     tool_calls_by_id: HashMap<String, HashSet<usize>>,
     tool_calls_by_index: HashMap<usize, HashSet<usize>>,
     used_tool_call_ids: HashSet<String>,
     next_generated_id_suffixes: HashMap<String, usize>,
     generate_id: GenerateIdFn,
     type_validation: TypeValidation,
-    extract_metadata: Option<ExtractMetadataFn<M>>,
-    build_provider_metadata: Option<BuildMetadataFn<M>>,
+    extract_metadata: Option<ExtractMetadataFn>,
+    build_provider_metadata: Option<BuildMetadataFn>,
 }
 
-impl<M> Default for StreamingToolCallTracker<M> {
+impl Default for StreamingToolCallTracker {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<M> StreamingToolCallTracker<M> {
+impl StreamingToolCallTracker {
     /// Create a tracker with no metadata handling and default settings.
     ///
     /// The default id generator returns a blank-free constant, so ids that
@@ -240,10 +235,11 @@ impl<M> StreamingToolCallTracker<M> {
     }
 
     /// Set the metadata extractor (the TS `extractMetadata` option). Called
-    /// once when a new tool call is detected.
+    /// once when a new tool call is detected; the value is kept with the call
+    /// and handed to the provider-metadata builder when the call finalizes.
     #[must_use]
     pub fn with_extract_metadata<
-        F: Fn(&StreamingToolCallDelta) -> Option<M> + Send + Sync + 'static,
+        F: Fn(&StreamingToolCallDelta) -> Option<Value> + Send + Sync + 'static,
     >(
         mut self,
         f: F,
@@ -254,9 +250,11 @@ impl<M> StreamingToolCallTracker<M> {
 
     /// Set the provider-metadata builder (the TS
     /// `buildToolCallProviderMetadata` option). If it returns `None`, the
-    /// `tool-call` part carries no `provider_metadata`.
+    /// `ToolCall` part carries no `provider_metadata`.
     #[must_use]
-    pub fn with_build_provider_metadata<F: Fn(Option<&M>) -> Option<M> + Send + Sync + 'static>(
+    pub fn with_build_provider_metadata<
+        F: Fn(Option<&Value>) -> Option<ProviderMetadata> + Send + Sync + 'static,
+    >(
         mut self,
         f: F,
     ) -> Self {
@@ -276,7 +274,7 @@ impl<M> StreamingToolCallTracker<M> {
     pub fn process_delta(
         &mut self,
         delta: &StreamingToolCallDelta,
-    ) -> Result<Vec<ToolCallStreamPart<M>>, TrackerError> {
+    ) -> Result<Vec<StreamPart>, TrackerError> {
         let wire_name = delta.function.as_ref().and_then(|f| f.name.as_deref());
         let has_blank_name = wire_name.is_some_and(|n| n.trim().is_empty());
         let wire_id = non_blank(delta.id.as_deref());
@@ -323,7 +321,7 @@ impl<M> StreamingToolCallTracker<M> {
 
     /// Finalize any unfinished tool calls and return the closing parts. Call
     /// once when the stream ends.
-    pub fn flush(&mut self) -> Vec<ToolCallStreamPart<M>> {
+    pub fn flush(&mut self) -> Vec<StreamPart> {
         // Index order is only reliable when every call has an index; for
         // mixed streams keep insertion order.
         let mut order: Vec<usize> = (0..self.tool_calls.len()).collect();
@@ -475,7 +473,7 @@ impl<M> StreamingToolCallTracker<M> {
         wire_id: Option<&str>,
         index: Option<usize>,
         name: Option<&str>,
-        parts: &mut Vec<ToolCallStreamPart<M>>,
+        parts: &mut Vec<StreamPart>,
     ) -> Result<usize, TrackerError> {
         match self.type_validation {
             TypeValidation::Required => {
@@ -494,9 +492,13 @@ impl<M> StreamingToolCallTracker<M> {
         let name = name.ok_or(TrackerError::MissingFunctionName)?;
         let id = self.create_tool_call_id(wire_id)?;
 
-        parts.push(ToolCallStreamPart::ToolInputStart {
+        parts.push(StreamPart::ToolInputStart {
             id: id.clone(),
             tool_name: name.to_string(),
+            provider_executed: None,
+            dynamic: None,
+            title: None,
+            provider_metadata: None,
         });
 
         let metadata = self
@@ -526,9 +528,10 @@ impl<M> StreamingToolCallTracker<M> {
         }
 
         if !initial_arguments.is_empty() {
-            parts.push(ToolCallStreamPart::ToolInputDelta {
+            parts.push(StreamPart::ToolInputDelta {
                 id,
                 delta: initial_arguments,
+                provider_metadata: None,
             });
         }
 
@@ -541,7 +544,7 @@ impl<M> StreamingToolCallTracker<M> {
         &mut self,
         call: usize,
         arguments: Option<&str>,
-        parts: &mut Vec<ToolCallStreamPart<M>>,
+        parts: &mut Vec<StreamPart>,
     ) {
         let tool_call = &mut self.tool_calls[call];
         if tool_call.has_finished {
@@ -550,9 +553,10 @@ impl<M> StreamingToolCallTracker<M> {
         if let Some(arguments) = arguments {
             tool_call.argument_state.append(arguments);
             tool_call.arguments.push_str(arguments);
-            parts.push(ToolCallStreamPart::ToolInputDelta {
+            parts.push(StreamPart::ToolInputDelta {
                 id: tool_call.id.clone(),
                 delta: arguments.to_string(),
+                provider_metadata: None,
             });
         }
     }
@@ -605,12 +609,13 @@ impl<M> StreamingToolCallTracker<M> {
         Err(TrackerError::IdExhausted)
     }
 
-    fn finish_tool_call(&mut self, call: usize, parts: &mut Vec<ToolCallStreamPart<M>>) {
+    fn finish_tool_call(&mut self, call: usize, parts: &mut Vec<StreamPart>) {
         let tool_call = &mut self.tool_calls[call];
         tool_call.has_finished = true;
 
-        parts.push(ToolCallStreamPart::ToolInputEnd {
+        parts.push(StreamPart::ToolInputEnd {
             id: tool_call.id.clone(),
+            provider_metadata: None,
         });
 
         let provider_metadata = self
@@ -618,10 +623,16 @@ impl<M> StreamingToolCallTracker<M> {
             .as_ref()
             .and_then(|build| build(tool_call.metadata.as_ref()));
 
-        parts.push(ToolCallStreamPart::ToolCall {
+        parts.push(StreamPart::ToolCall {
             tool_call_id: tool_call.id.clone(),
             tool_name: tool_call.function_name.clone(),
-            input: tool_call.arguments.clone(),
+            // Raw argument text; Core parses it after `stream_text`.
+            input: Value::String(tool_call.arguments.clone()),
+            provider_executed: None,
+            dynamic: None,
+            thought_signature: None,
+            invalid: None,
+            error: None,
             provider_metadata,
         });
     }

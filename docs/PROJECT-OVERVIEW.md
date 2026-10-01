@@ -165,8 +165,8 @@ aimux/
 │   ├── native protocols     #   standalone model + convert, handles provider-specific differences
 │   ├── OpenAI compatible    #   registry-backed: provider-registry.json + provider(name, ...) entry (RFC-0017 phase 4)
 │   └── modalities/search    #   voice / image / video / search implementations
-├── aimux-stream             # SSE parsing, streamed tool-call tracking
-├── aimux-provider-utils     # One-exchange HTTP helpers, response handlers, API-key loading
+├── aimux-stream             # SSE parsing
+├── aimux-provider-utils     # One-exchange HTTP helpers, response handlers, API-key loading, streamed tool-call tracking
 ├── aimux-ffi                # C ABI (FFI infrastructure, shared by all bindings)
 └── bindings/                # 6 language bindings
     ├── node/                #   napi-rs v3 + typed TS wrapper
