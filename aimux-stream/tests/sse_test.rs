@@ -13,8 +13,8 @@
 //!   `reconnect-interval` events become `SseEvent::retry`.
 //! - Upstream's `onError` for an invalid `retry` value has no counterpart: the
 //!   value is ignored, which is what is asserted.
-//! - `maxBufferSize` maps to `with_max_event_size`; overflow yields
-//!   `SseError::FrameTooLarge` and ends the stream.
+//! - There is no `maxBufferSize`: like `parseJsonEventStream`, the stream is
+//!   unbounded, so the upstream overflow cases are not ported.
 //! - A leading U+FEFF is the UTF-8 BOM at byte level. Upstream's
 //!   "invalid byte-order mark" case feeds a decoded U+FEFF that the JS
 //!   `TextDecoderStream` would already have stripped, so only the "multiple
@@ -22,8 +22,8 @@
 //!
 //! Not ported (no Rust counterpart): `onComment` call counts, `reset()`
 //! (3 tests), `onError` `ParseError` payloads (3 tests), the "function passed
-//! to `createParser`" guard, and the `onError: 'terminate'` variants of the
-//! stream tests (covered by the single `FrameTooLarge` case).
+//! to `createParser`" guard, and the `maxBufferSize` / `onError: 'terminate'`
+//! stream tests (no size limit here).
 //!
 //! The `aimux` module holds the few tests for behaviour upstream does not have.
 
@@ -38,34 +38,21 @@ use sha2::{Digest, Sha256};
 type Item = Result<SseEvent, SseError>;
 type Triple<'a> = (Option<&'a str>, Option<&'a str>, &'a str);
 
-async fn run_bytes(chunks: Vec<Vec<u8>>, max_event_size: Option<usize>) -> Vec<Item> {
+async fn run_bytes(chunks: Vec<Vec<u8>>) -> Vec<Item> {
     let items: Vec<Result<Bytes, std::io::Error>> =
         chunks.into_iter().map(|c| Ok(Bytes::from(c))).collect();
-    match max_event_size {
-        Some(max) => {
-            SseStream::with_max_event_size(stream::iter(items), max)
-                .collect::<Vec<_>>()
-                .await
-        }
-        None => {
-            SseStream::new(stream::iter(items))
-                .collect::<Vec<_>>()
-                .await
-        }
-    }
+    SseStream::new(stream::iter(items))
+        .collect::<Vec<_>>()
+        .await
 }
 
-async fn run(chunks: Vec<String>, max_event_size: Option<usize>) -> Vec<Item> {
-    run_bytes(
-        chunks.into_iter().map(String::into_bytes).collect(),
-        max_event_size,
-    )
-    .await
+async fn run(chunks: Vec<String>) -> Vec<Item> {
+    run_bytes(chunks.into_iter().map(String::into_bytes).collect()).await
 }
 
 /// Feed `chunks` and return the events; any error item fails the test.
 async fn events(chunks: Vec<String>) -> Vec<SseEvent> {
-    run(chunks, None)
+    run(chunks)
         .await
         .into_iter()
         .map(|item| item.unwrap_or_else(|e| panic!("unexpected error item: {e:?}")))
@@ -697,12 +684,7 @@ async fn stream_with_huge_data_chunks() {
         ..Msg::default()
     }));
 
-    // The default limit (1 MiB) would end the stream; upstream is unbounded.
-    let got: Vec<SseEvent> = run(chunks, Some(usize::MAX))
-        .await
-        .into_iter()
-        .map(Result::unwrap)
-        .collect();
+    let got: Vec<SseEvent> = run(chunks).await.into_iter().map(Result::unwrap).collect();
     assert_eq!(got.len(), 2);
     // JS `String.length` counts UTF-16 code units.
     assert_eq!(got[0].data.encode_utf16().count(), 4_808_512);
@@ -713,57 +695,9 @@ async fn stream_with_huge_data_chunks() {
 }
 
 #[tokio::test]
-async fn max_buffer_size_triggers_on_pending_fragment_overflow_no_terminator() {
-    // Under the limit: nothing yet.
-    assert!(run(s(&["short start"]), Some(16)).await.is_empty());
-    // The accumulated fragments pass the limit.
-    let results = run(s(&["short start", " and now too long"]), Some(16)).await;
-    assert_eq!(results.len(), 1);
-    assert!(matches!(results[0], Err(SseError::FrameTooLarge)));
-}
-
-#[tokio::test]
-async fn max_buffer_size_triggers_on_data_buffer_overflow_no_blank_line() {
-    // Each `data:` line grows the event's data; without a blank line it
-    // accumulates until the limit trips, and no event is dispatched.
-    let chunks = (0..50).map(|i| format!("data: chunk-{i}\n")).collect();
-    let results = run(chunks, Some(32)).await;
-    assert_eq!(results.len(), 1);
-    assert!(matches!(results[0], Err(SseError::FrameTooLarge)));
-}
-
-#[tokio::test]
-async fn max_buffer_size_ends_the_stream_after_overflow() {
-    // Upstream: `feed` throws after an overflow until `reset()`. Here the
-    // stream ends, so later events are never yielded.
-    let results = run(
-        s(&[
-            "this is too long for the buffer",
-            "data: hello\n\n",
-            "data: world\n\n",
-        ]),
-        Some(8),
-    )
-    .await;
-    assert_eq!(results.len(), 1);
-    assert!(matches!(results[0], Err(SseError::FrameTooLarge)));
-}
-
-#[tokio::test]
-async fn max_buffer_size_not_triggered_when_events_dispatch_within_the_limit() {
-    let chunks = (0..100).map(|i| format!("data: {i}\n\n")).collect();
-    let got: Vec<SseEvent> = run(chunks, Some(64))
-        .await
-        .into_iter()
-        .map(Result::unwrap)
-        .collect();
-    assert_eq!(got.len(), 100);
-}
-
-#[tokio::test]
-async fn max_buffer_size_large_input_within_the_default_limit_is_not_an_error() {
-    // Upstream's default is unbounded; aimux's is 1 MiB (see `aimux` below).
-    assert!(run(vec!["x".repeat(1_000_000)], None).await.is_empty());
+async fn large_input_without_a_terminator_is_not_an_error() {
+    // Unbounded, as upstream: a partial block is simply never dispatched.
+    assert!(run(vec!["x".repeat(4 * 1024 * 1024)]).await.is_empty());
 }
 
 // ── stream.test.ts ───────────────────────────────────────────────────────
@@ -787,31 +721,22 @@ async fn can_use_event_source_parser_stream() {
     assert_eq!(triples(&got)[9], (Some("evt-9"), Some("foo"), "Hello 9"));
 }
 
-#[tokio::test]
-async fn max_buffer_size_terminates_the_stream() {
-    // Upstream also runs this with `onError: 'terminate'` and with a custom
-    // `onError`; overflow is fatal either way.
-    let results = run(vec!["x".repeat(1024)], Some(64)).await;
-    assert_eq!(results.len(), 1);
-    assert!(matches!(results[0], Err(SseError::FrameTooLarge)));
-}
-
 // ── aimux-specific behaviour (not covered upstream) ──────────────────────
 
 mod aimux {
     use super::*;
 
     #[tokio::test]
-    async fn invalid_utf8_discards_the_rest_of_the_event_only() {
-        // Upstream decodes lossily (`TextDecoder`); SseStream decodes strictly.
+    async fn invalid_utf8_is_a_terminal_error() {
+        // Upstream decodes lossily (`TextDecoder`); SseStream decodes strictly
+        // and, like every decoder error, ends the stream after reporting it.
         // `E4 BD` is the start of `你` without its last byte.
         let mut bytes = b"data: ".to_vec();
         bytes.extend_from_slice(&[0xE4, 0xBD]);
         bytes.extend_from_slice(b"\ndata: tail\n\ndata: next\n\n");
-        let results = run_bytes(vec![bytes], None).await;
-        assert_eq!(results.len(), 2);
+        let results = run_bytes(vec![bytes]).await;
+        assert_eq!(results.len(), 1);
         assert!(matches!(results[0], Err(SseError::Utf8(_))));
-        assert_eq!(results[1].as_ref().unwrap().data, "next");
     }
 
     #[tokio::test]
@@ -823,7 +748,7 @@ mod aimux {
         stream_bytes.extend(multibyte_chunks(&mb).concat().into_bytes());
         for size in [1, 2, 3, 5, 8, 13] {
             let chunks = stream_bytes.chunks(size).map(<[u8]>::to_vec).collect();
-            let got: Vec<_> = run_bytes(chunks, None)
+            let got: Vec<_> = run_bytes(chunks)
                 .await
                 .into_iter()
                 .map(|item| {
@@ -845,16 +770,9 @@ mod aimux {
         let results = SseStream::new(stream::iter(items))
             .collect::<Vec<_>>()
             .await;
-        assert_eq!(results.len(), 3);
+        // The transport error is terminal: nothing after it is read.
+        assert_eq!(results.len(), 2);
         assert_eq!(results[0].as_ref().unwrap().data, "a");
-        assert!(matches!(&results[1], Err(SseError::Stream(m)) if m == "boom"));
-        assert_eq!(results[2].as_ref().unwrap().data, "b");
-    }
-
-    #[tokio::test]
-    async fn default_limit_is_one_mebibyte() {
-        let results = run(vec!["x".repeat(1024 * 1024 + 1)], None).await;
-        assert_eq!(results.len(), 1);
-        assert!(matches!(results[0], Err(SseError::FrameTooLarge)));
+        assert!(matches!(&results[1], Err(SseError::Stream(e)) if e.to_string() == "boom"));
     }
 }

@@ -14,6 +14,7 @@ pin-project-lite = { workspace = true }
 bytes = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+sse-stream = { version = "0.3.0", default-features = false, features = ["memchr"] }
 
 [dev-dependencies]
 sha2 = "0.10"
