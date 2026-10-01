@@ -1,35 +1,99 @@
 //! Port of `streaming-tool-call-tracker.test.ts` from
 //! `@ai-sdk/provider-utils`, case for case.
+//!
+//! Tracker parts are projected to a local `Part` enum so the assertions stay
+//! byte-for-byte comparable with the upstream expectations.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use aimux_stream::{
-    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker,
-    ToolCallStreamPart, TrackerError, TypeValidation,
+use aimux_core::stream_part::StreamPart;
+use aimux_provider_utils::{
+    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, TrackerError,
+    TypeValidation,
 };
 use serde_json::{Value, json};
 
-type Part<M = ()> = ToolCallStreamPart<M>;
-
-/// Tracker plus the parts it has emitted so far (the TS `createCollector`).
-struct Harness<M = ()> {
-    tracker: StreamingToolCallTracker<M>,
-    parts: Vec<Part<M>>,
+/// The TS tracker's four events, projected out of [`StreamPart`] so the
+/// assertions below read like the upstream suite.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "named after the upstream stream parts"
+)]
+enum Part {
+    ToolInputStart {
+        id: String,
+        tool_name: String,
+    },
+    ToolInputDelta {
+        id: String,
+        delta: String,
+    },
+    ToolInputEnd {
+        id: String,
+    },
+    ToolCall {
+        tool_call_id: String,
+        tool_name: String,
+        /// The raw argument text (`StreamPart::ToolCall.input` is a
+        /// `Value::String` from the tracker).
+        input: String,
+        provider_metadata: Option<Value>,
+    },
 }
 
-impl Harness<()> {
+fn project(part: StreamPart) -> Part {
+    match part {
+        StreamPart::ToolInputStart {
+            id,
+            tool_name,
+            provider_executed: None,
+            dynamic: None,
+            title: None,
+            provider_metadata: None,
+        } => Part::ToolInputStart { id, tool_name },
+        StreamPart::ToolInputDelta {
+            id,
+            delta,
+            provider_metadata: None,
+        } => Part::ToolInputDelta { id, delta },
+        StreamPart::ToolInputEnd {
+            id,
+            provider_metadata: None,
+        } => Part::ToolInputEnd { id },
+        StreamPart::ToolCall {
+            tool_call_id,
+            tool_name,
+            input: Value::String(input),
+            provider_executed: None,
+            dynamic: None,
+            thought_signature: None,
+            invalid: None,
+            error: None,
+            provider_metadata,
+        } => Part::ToolCall {
+            tool_call_id,
+            tool_name,
+            input,
+            provider_metadata,
+        },
+        other => panic!("tracker emitted an unexpected part: {other:?}"),
+    }
+}
+
+/// Tracker plus the parts it has emitted so far (the TS `createCollector`).
+struct Harness {
+    tracker: StreamingToolCallTracker,
+    parts: Vec<Part>,
+}
+
+impl Harness {
     fn new() -> Self {
         Self::with(StreamingToolCallTracker::new())
     }
 
-    fn with(tracker: StreamingToolCallTracker<()>) -> Self {
-        Self::with_meta(tracker)
-    }
-}
-
-impl<M> Harness<M> {
-    fn with_meta(tracker: StreamingToolCallTracker<M>) -> Self {
+    fn with(tracker: StreamingToolCallTracker) -> Self {
         Self {
             tracker,
             parts: Vec::new(),
@@ -38,21 +102,19 @@ impl<M> Harness<M> {
 
     fn delta(&mut self, delta: StreamingToolCallDelta) -> Result<(), TrackerError> {
         let parts = self.tracker.process_delta(&delta)?;
-        self.parts.extend(parts);
+        self.parts.extend(parts.into_iter().map(project));
         Ok(())
     }
 
     fn flush(&mut self) {
         let parts = self.tracker.flush();
-        self.parts.extend(parts);
+        self.parts.extend(parts.into_iter().map(project));
     }
 
     fn clear(&mut self) {
         self.parts.clear();
     }
-}
 
-impl<M: Clone> Harness<M> {
     /// `(id, name, input)` of every emitted `tool-call`, in order.
     fn tool_calls(&self) -> Vec<(String, String, String)> {
         self.parts
@@ -992,7 +1054,7 @@ mod flush {
 mod metadata {
     use super::*;
 
-    fn google_tracker() -> StreamingToolCallTracker<Value> {
+    fn google_tracker() -> StreamingToolCallTracker {
         StreamingToolCallTracker::new()
             .with_extract_metadata(|delta| {
                 delta.extra["extra_content"]["google"]["thought_signature"]
@@ -1008,7 +1070,7 @@ mod metadata {
 
     #[test]
     fn extracts_and_includes_provider_metadata_in_tool_call_parts() {
-        let mut h = Harness::with_meta(google_tracker());
+        let mut h = Harness::with(google_tracker());
 
         h.delta(
             start(0, "call_1", "fn", "{}")
@@ -1017,13 +1079,10 @@ mod metadata {
         .unwrap();
         h.flush();
 
-        let tool_call = h
-            .parts
-            .iter()
-            .find(|p| matches!(p, ToolCallStreamPart::ToolCall { .. }));
+        let tool_call = h.parts.iter().find(|p| matches!(p, Part::ToolCall { .. }));
         assert_eq!(
             tool_call,
-            Some(&ToolCallStreamPart::ToolCall {
+            Some(&Part::ToolCall {
                 tool_call_id: "call_1".into(),
                 tool_name: "fn".into(),
                 input: "{}".into(),
@@ -1034,7 +1093,7 @@ mod metadata {
 
     #[test]
     fn includes_provider_metadata_for_unfinished_tool_calls_finalized_in_flush() {
-        let mut h = Harness::with_meta(
+        let mut h = Harness::with(
             StreamingToolCallTracker::new()
                 .with_extract_metadata(|_| Some(json!({ "custom": { "key": "value" } })))
                 .with_build_provider_metadata(|metadata| {
@@ -1049,7 +1108,7 @@ mod metadata {
 
         assert_eq!(
             h.parts.last(),
-            Some(&ToolCallStreamPart::ToolCall {
+            Some(&Part::ToolCall {
                 tool_call_id: "call_1".into(),
                 tool_name: "fn".into(),
                 input: "{\"incomplete".into(),
@@ -1060,8 +1119,8 @@ mod metadata {
 
     #[test]
     fn omits_provider_metadata_when_the_builder_returns_none() {
-        let mut h = Harness::with_meta(
-            StreamingToolCallTracker::<()>::new()
+        let mut h = Harness::with(
+            StreamingToolCallTracker::new()
                 .with_extract_metadata(|_| None)
                 .with_build_provider_metadata(|_| None),
         );
@@ -1069,10 +1128,7 @@ mod metadata {
         h.delta(start(0, "call_1", "fn", "{}")).unwrap();
         h.flush();
 
-        let tool_call = h
-            .parts
-            .iter()
-            .find(|p| matches!(p, ToolCallStreamPart::ToolCall { .. }));
+        let tool_call = h.parts.iter().find(|p| matches!(p, Part::ToolCall { .. }));
         assert_eq!(tool_call, Some(&super::tool_call("call_1", "fn", "{}")));
     }
 }
