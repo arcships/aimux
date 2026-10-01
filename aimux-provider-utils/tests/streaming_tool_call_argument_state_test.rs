@@ -1,7 +1,7 @@
 //! Port of `streaming-tool-call-argument-state.test.ts` from
 //! `@ai-sdk/provider-utils`.
 
-use aimux_stream::{StreamingToolCallArgumentState, starts_with_structured_value};
+use aimux_provider_utils::{StreamingToolCallArgumentState, starts_with_structured_value};
 
 #[test]
 fn starts_with_structured_value_true() {

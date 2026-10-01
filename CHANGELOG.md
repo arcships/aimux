@@ -42,6 +42,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `NdjsonStream` / `NdjsonError`: nothing in the workspace used them
   and the AI SDK has no counterpart. `tokio` is now a dev-dependency only and
   the unused direct `serde` dependency is dropped.
+- `StreamingToolCallTracker`, `StreamingToolCallArgumentState`,
+  `starts_with_structured_value` and `ToolCallStreamPart` are no longer in
+  `aimux-stream`, which is now SSE decoding only (the role
+  `eventsource-parser` plays for the AI SDK).
+
+**Rust (aimux-provider-utils)**
+
+- Gains `StreamingToolCallTracker` (plus `StreamingToolCallDelta`,
+  `StreamingToolCallFunction`, `TypeValidation`, `TrackerError`,
+  `StreamingToolCallArgumentState`), where `@ai-sdk/provider-utils` keeps it.
+  It emits `aimux_core::StreamPart` tool-input parts directly; the separate
+  `ToolCallStreamPart` event type is gone. `TrackerError` converts into
+  `AiMuxError::InvalidResponseData`. Metadata hooks are typed with
+  `serde_json::Value` / `ProviderMetadata` instead of a generic parameter.
+
+**Rust (aimux-providers)**
+
+- The OpenAI chat-completions stream (`openai/model.rs`, which serves every
+  registry-backed provider) correlates `tool_calls` deltas with the tracker
+  instead of by `index` alone: deltas are matched by wire id, index and
+  function name; a continuation without an id follows its call; indices
+  reused across parallel calls stay distinct; ambiguous deltas are dropped;
+  a call whose delta carries no id gets a generated `tool-call` /
+  `tool-call-N` id instead of an empty string; a new call without a function
+  name ends the stream with `InvalidResponseData` (previously it started a
+  call with an empty name). `DeltaToolCall.index` is now `Option<usize>`.
 
 ## [0.5.0] - 2026-09-27
 
