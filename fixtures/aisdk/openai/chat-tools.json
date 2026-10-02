@@ -1,0 +1,158 @@
+{
+  "case": "chat-tools",
+  "model": {
+    "modelId": "gpt-4o",
+    "provider": "openai.chat"
+  },
+  "package": "@ai-sdk/openai",
+  "request": {
+    "body": {
+      "messages": [
+        {
+          "content": "What is the weather in Paris?",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4o",
+      "tool_choice": "required",
+      "tools": [
+        {
+          "function": {
+            "description": "Get the current weather for a city.",
+            "name": "get_weather",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "city": {
+                  "description": "City name",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    },
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json",
+      "user-agent": "ai/7.0.127 ai-sdk-provider-utils/5.0.53 node.js/22"
+    },
+    "method": "POST",
+    "url": "https://api.openai.com/v1/chat/completions"
+  },
+  "response": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "index": 0,
+          "message": {
+            "content": null,
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"city\":\"Paris\"}",
+                  "name": "get_weather"
+                },
+                "id": "call_fixture_1",
+                "type": "function"
+              }
+            ]
+          }
+        }
+      ],
+      "created": 1735689600,
+      "id": "chatcmpl-fixture-1",
+      "model": "gpt-4o-2024-08-06",
+      "object": "chat.completion",
+      "system_fingerprint": "fp_fixture",
+      "usage": {
+        "completion_tokens": 9,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens": 12,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 21
+      }
+    },
+    "headers": {
+      "content-type": "application/json"
+    },
+    "status": 200
+  },
+  "result": {
+    "content": [
+      {
+        "input": {
+          "city": "Paris"
+        },
+        "toolCallId": "call_fixture_1",
+        "toolName": "get_weather",
+        "type": "tool-call"
+      }
+    ],
+    "finishReason": "tool-calls",
+    "providerMetadata": {
+      "openai": {}
+    },
+    "rawFinishReason": "tool_calls",
+    "response": {
+      "headers": {
+        "content-type": "application/json"
+      },
+      "id": "chatcmpl-fixture-1",
+      "modelId": "gpt-4o-2024-08-06"
+    },
+    "text": "",
+    "usage": {
+      "inputTokenDetails": {
+        "cacheReadTokens": 0,
+        "noCacheTokens": 12
+      },
+      "inputTokens": 12,
+      "outputTokenDetails": {
+        "reasoningTokens": 0,
+        "textTokens": 9
+      },
+      "outputTokens": 9,
+      "totalTokens": 21
+    },
+    "warnings": []
+  },
+  "sdk": {
+    "input": {
+      "prompt": "What is the weather in Paris?",
+      "toolChoice": "required",
+      "tools": {
+        "get_weather": {
+          "description": "Get the current weather for a city.",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "description": "City name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          }
+        }
+      }
+    },
+    "operation": "generateText"
+  },
+  "version": "4.0.83"
+}

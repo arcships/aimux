@@ -1,0 +1,169 @@
+{
+  "case": "generate-tools",
+  "model": {
+    "modelId": "gemini-2.5-flash",
+    "provider": "google.generative-ai"
+  },
+  "package": "@ai-sdk/google",
+  "request": {
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the weather in Paris?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {},
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "ANY"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "Get the current weather for a city.",
+              "name": "get_weather",
+              "parametersJsonSchema": {
+                "additionalProperties": false,
+                "properties": {
+                  "city": {
+                    "description": "City name",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "headers": {
+      "content-type": "application/json",
+      "user-agent": "ai/7.0.127 ai-sdk-provider-utils/5.0.53 node.js/22",
+      "x-goog-api-key": "<redacted>"
+    },
+    "method": "POST",
+    "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+  },
+  "response": {
+    "body": {
+      "candidates": [
+        {
+          "content": {
+            "parts": [
+              {
+                "functionCall": {
+                  "args": {
+                    "city": "Paris"
+                  },
+                  "name": "get_weather"
+                }
+              }
+            ],
+            "role": "model"
+          },
+          "finishReason": "STOP",
+          "index": 0
+        }
+      ],
+      "modelVersion": "gemini-2.5-flash",
+      "responseId": "resp-fixture-1",
+      "usageMetadata": {
+        "candidatesTokenCount": 3,
+        "promptTokenCount": 4,
+        "totalTokenCount": 7
+      }
+    },
+    "headers": {
+      "content-type": "application/json"
+    },
+    "status": 200
+  },
+  "result": {
+    "content": [
+      {
+        "input": {
+          "city": "Paris"
+        },
+        "toolCallId": "5WtKk8A3IuO3vm8Q",
+        "toolName": "get_weather",
+        "type": "tool-call"
+      }
+    ],
+    "finishReason": "tool-calls",
+    "providerMetadata": {
+      "google": {
+        "finishMessage": null,
+        "groundingMetadata": null,
+        "promptFeedback": null,
+        "safetyRatings": null,
+        "serviceTier": null,
+        "urlContextMetadata": null,
+        "usageMetadata": {
+          "candidatesTokenCount": 3,
+          "promptTokenCount": 4,
+          "totalTokenCount": 7
+        }
+      }
+    },
+    "rawFinishReason": "STOP",
+    "response": {
+      "headers": {
+        "content-type": "application/json"
+      },
+      "id": "resp-fixture-1",
+      "modelId": "gemini-2.5-flash"
+    },
+    "text": "",
+    "usage": {
+      "inputTokenDetails": {
+        "cacheReadTokens": 0,
+        "noCacheTokens": 4
+      },
+      "inputTokens": 4,
+      "outputTokenDetails": {
+        "reasoningTokens": 0,
+        "textTokens": 3
+      },
+      "outputTokens": 3,
+      "totalTokens": 7
+    },
+    "warnings": []
+  },
+  "sdk": {
+    "input": {
+      "prompt": "What is the weather in Paris?",
+      "toolChoice": "required",
+      "tools": {
+        "get_weather": {
+          "description": "Get the current weather for a city.",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "description": "City name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          }
+        }
+      }
+    },
+    "operation": "generateText"
+  },
+  "version": "4.0.87"
+}
