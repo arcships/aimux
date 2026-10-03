@@ -392,14 +392,14 @@ where
                 match item {
                     Ok(event) if event.data == "[DONE]" => continue,
                     Ok(event) => yield serde_json::from_str::<T>(&event.data).map_err(AiMuxError::from),
-                    Err(aimux_stream::SseError::Stream(message)) => {
+                    Err(aimux_stream::SseError::Stream(error)) => {
                         // Preserve response transport failures as ApiCallError
                         // items. Framing/parser failures remain JsonParse below.
                         yield Err(AiMuxError::ApiCall(Box::new(ApiCallError {
                             response_headers: Some(stream_headers.clone()),
                             is_retryable: true,
                             ..ApiCallError::new(
-                                message,
+                                error.to_string(),
                                 stream_url.clone(),
                                 stream_request_body_values.clone(),
                             )

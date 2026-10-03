@@ -4,18 +4,21 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Streaming primitives for aimux"
-keywords = ["llm", "streaming", "sse", "ndjson"]
+keywords = ["llm", "streaming", "sse", "tool-calls"]
 categories = ["asynchronous", "parser-implementations"]
 documentation = "https://docs.rs/aimux-stream"
 
 [dependencies]
 futures = { workspace = true }
-tokio = { workspace = true }
 pin-project-lite = { workspace = true }
 bytes = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+sse-stream = { version = "0.3.0", default-features = false, features = ["memchr"] }
+
+[dev-dependencies]
+sha2 = "0.10"
+tokio = { workspace = true }
 
 [lints]
 workspace = true
