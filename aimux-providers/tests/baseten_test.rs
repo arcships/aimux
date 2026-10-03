@@ -2,7 +2,7 @@
 //!
 //! Translated from `packages/baseten/src/baseten-provider.unit.test.ts`.
 //!
-//! Baseten is a thin OpenAI-compatible wrapper over [`OpenAIProvider`]. The TS
+//! Baseten is a registry preset of the OpenAI-compatible package. The TS
 //! suite is almost entirely provider-configuration unit tests (mocked
 //! constructor calls asserting the base URL, env var, headers, and model-URL
 //! routing). The Rust wrapper exposes the same configuration surface, so these
@@ -23,6 +23,7 @@
 
 use serde_json::{Value, json};
 use serial_test::serial;
+use std::sync::Arc;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -61,7 +62,7 @@ fn text_completion_body() -> Value {
     })
 }
 
-fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
     provider(
         "baseten",
         Some("test-api-key".to_string()),

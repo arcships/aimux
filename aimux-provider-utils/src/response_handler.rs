@@ -10,6 +10,7 @@ use serde::de::DeserializeOwned;
 use aimux_core::{AiMuxError, ApiCallError};
 
 use crate::extract_response_headers::extract_response_headers;
+use crate::fetch::FetchResponse;
 use crate::read_response_with_size_limit::{
     DEFAULT_MAX_DOWNLOAD_SIZE, DEFAULT_MAX_JSON_RESPONSE_SIZE, read_response_with_size_limit,
 };
@@ -18,7 +19,7 @@ use crate::read_response_with_size_limit::{
 pub struct ResponseHandlerInput {
     pub url: String,
     pub request_body_values: serde_json::Value,
-    pub response: reqwest::Response,
+    pub response: FetchResponse,
     pub abort_signal: Option<aimux_core::AbortSignal>,
     /// Per-request override of the successful-JSON-body size cap, forwarded
     /// from `HttpRequest::max_json_response_bytes`. Only

@@ -14,7 +14,8 @@ use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs};
 use aimux_core::shared::Size;
-use aimux_providers::{RecraftConfig, RecraftProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{RecraftProviderSettings, create_recraft};
 
 const PROMPT: &str = "A cute baby sea otter";
 const API_KEY: &str = "test-recraft-key";
@@ -43,8 +44,12 @@ fn options(prompt: &str) -> ImageCallOptions {
 }
 
 fn make_model(server: &MockServer) -> impl ImageModel {
-    let config = RecraftConfig::new(API_KEY).with_base_url(server.uri());
-    RecraftProvider::new(config).image(MODEL)
+    let config = RecraftProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_recraft(config).unwrap().image(MODEL)
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -238,21 +243,28 @@ async fn status_500_maps_to_provider_error() {
 // ════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn provider_name_is_recraft() {
+async fn image_model_provider_is_recraft() {
     let server = MockServer::start().await;
-    let config = RecraftConfig::new(API_KEY).with_base_url(server.uri());
-    let provider = RecraftProvider::new(config);
-    assert_eq!(provider.name(), "recraft");
+    let config = RecraftProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_recraft(config).unwrap();
+    assert_eq!(provider.image("recraftv3").provider(), "recraft.image");
 }
 
 #[test]
-fn language_model_returns_unsupported_error() {
-    let config = RecraftConfig::new(API_KEY);
-    let provider = RecraftProvider::new(config);
+fn language_model_returns_no_such_model() {
+    let config = RecraftProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        ..Default::default()
+    };
+    let provider = create_recraft(config).unwrap();
     let result = provider.language_model("recraftv3");
     assert!(
-        matches!(result, Err(AiMuxError::UnsupportedFunctionality(_))),
-        "expected Unsupported error"
+        matches!(result, Err(AiMuxError::NoSuchModel { ref model_type, .. }) if model_type == "languageModel"),
+        "expected NoSuchModel error"
     );
 }
 

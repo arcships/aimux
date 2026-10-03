@@ -3,7 +3,9 @@
 //! Each modality is a napi class wrapping the Rust trait object.
 //! All cross-boundary data uses JSON strings (base64 for binary).
 
-use crate::error::{AimuxResult, BindingError, AiMuxBindingError, parse_wire_json, serialize_result};
+use crate::error::{
+    AiMuxBindingError, AimuxResult, BindingError, parse_wire_json, serialize_result,
+};
 use std::sync::Arc;
 
 use aimux_core::AiMuxError;
@@ -55,8 +57,7 @@ fn parse_opts_json<T: serde::de::DeserializeOwned>(
 /// Shape-only stand-in for `TranscriptionCallOptions::audio`, built from the
 /// real enum so a variant rename is a compile error rather than a runtime one.
 fn audio_placeholder() -> serde_json::Value {
-    serde_json::to_value(AudioInput::Base64(String::new()))
-        .expect("AudioInput always serializes")
+    serde_json::to_value(AudioInput::Base64(String::new())).expect("AudioInput always serializes")
 }
 
 /// Shape-only stand-in for `RerankingCallOptions::documents`.
@@ -208,27 +209,27 @@ impl TranscriptionModel {
             let __r: crate::error::MResult<String> = async {
                 let mut opts =
                     TranscriptionCallOptions::new(AudioInput::Base64(audio_base64), media_type);
-                if let Some(s) = opts_json.as_deref() {
-                    if !s.trim().is_empty() && s.trim() != "null" {
-                        let mut parsed: TranscriptionCallOptions = parse_opts_json(
-                            "opts_json",
-                            s,
-                            &[
-                                ("audio", audio_placeholder()),
-                                ("media_type", serde_json::Value::from("")),
-                            ],
-                        )?;
-                        // Required data comes from the explicit arguments; all
-                        // operation policy and optional fields come from JSON.
-                        parsed.audio = opts.audio;
-                        parsed.media_type = opts.media_type;
-                        opts = parsed;
-                    }
+                if let Some(s) = opts_json.as_deref()
+                    && !s.trim().is_empty()
+                    && s.trim() != "null"
+                {
+                    let mut parsed: TranscriptionCallOptions = parse_opts_json(
+                        "opts_json",
+                        s,
+                        &[
+                            ("audio", audio_placeholder()),
+                            ("media_type", serde_json::Value::from("")),
+                        ],
+                    )?;
+                    // Required data comes from the explicit arguments; all
+                    // operation policy and optional fields come from JSON.
+                    parsed.audio = opts.audio;
+                    parsed.media_type = opts.media_type;
+                    opts = parsed;
                 }
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
-                let result =
-                    aimux_core::transcription_model::transcribe(self.inner.as_ref(), opts)
+                let result = aimux_core::transcription_model::transcribe(self.inner.as_ref(), opts)
                     .await
                     .map_err(|e| AiMuxBindingError::from(&e))?;
                 serialize_result(&result)
@@ -268,22 +269,23 @@ impl RerankingModel {
                 let docs: RerankingDocuments = parse_wire_json("docs_json", &docs_json)?;
 
                 let mut opts = RerankingCallOptions::new(query, docs);
-                if let Some(s) = opts_json.as_deref() {
-                    if !s.trim().is_empty() && s.trim() != "null" {
-                        let mut parsed: RerankingCallOptions = parse_opts_json(
-                            "opts_json",
-                            s,
-                            &[
-                                ("query", serde_json::Value::from("")),
-                                ("documents", documents_placeholder()),
-                            ],
-                        )?;
-                        // Required data comes from the explicit arguments; all
-                        // operation policy and optional fields come from JSON.
-                        parsed.query = opts.query;
-                        parsed.documents = opts.documents;
-                        opts = parsed;
-                    }
+                if let Some(s) = opts_json.as_deref()
+                    && !s.trim().is_empty()
+                    && s.trim() != "null"
+                {
+                    let mut parsed: RerankingCallOptions = parse_opts_json(
+                        "opts_json",
+                        s,
+                        &[
+                            ("query", serde_json::Value::from("")),
+                            ("documents", documents_placeholder()),
+                        ],
+                    )?;
+                    // Required data comes from the explicit arguments; all
+                    // operation policy and optional fields come from JSON.
+                    parsed.query = opts.query;
+                    parsed.documents = opts.documents;
+                    opts = parsed;
                 }
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
@@ -359,18 +361,16 @@ impl SearchModel {
             let __r: crate::error::MResult<String> = async {
                 use aimux_core::search_model::SearchCallOptions;
                 let mut opts = SearchCallOptions::new(query);
-                if let Some(s) = opts_json.as_deref() {
-                    if !s.trim().is_empty() && s.trim() != "null" {
-                        // Required data comes from the explicit arguments; all
-                        // operation policy and optional fields come from JSON.
-                        let mut parsed: SearchCallOptions = parse_opts_json(
-                            "opts_json",
-                            s,
-                            &[("query", serde_json::Value::from(""))],
-                        )?;
-                        parsed.query = opts.query;
-                        opts = parsed;
-                    }
+                if let Some(s) = opts_json.as_deref()
+                    && !s.trim().is_empty()
+                    && s.trim() != "null"
+                {
+                    // Required data comes from the explicit arguments; all
+                    // operation policy and optional fields come from JSON.
+                    let mut parsed: SearchCallOptions =
+                        parse_opts_json("opts_json", s, &[("query", serde_json::Value::from(""))])?;
+                    parsed.query = opts.query;
+                    opts = parsed;
                 }
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
@@ -416,12 +416,13 @@ impl Files {
                     },
                     media_type,
                 );
-                if let Some(s) = opts_json.as_deref() {
-                    if !s.trim().is_empty() && s.trim() != "null" {
-                        let parsed: UploadFileCallOptions = parse_wire_json("opts_json", s)?;
-                        opts.filename = parsed.filename;
-                        opts.provider_options = parsed.provider_options;
-                    }
+                if let Some(s) = opts_json.as_deref()
+                    && !s.trim().is_empty()
+                    && s.trim() != "null"
+                {
+                    let parsed: UploadFileCallOptions = parse_wire_json("opts_json", s)?;
+                    opts.filename = parsed.filename;
+                    opts.provider_options = parsed.provider_options;
                 }
 
                 let result = self
@@ -450,13 +451,10 @@ pub async fn openai_embedding(
 ) -> AimuxResult<EmbeddingModel> {
     AimuxResult({
         let __r: crate::error::MResult<EmbeddingModel> = async {
-            use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-            let mut config = OpenAIConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = OpenAIProvider::new(config);
-            let model = provider.embedding_model(&model_id);
+            use aimux_providers::openai::create_openai;
+            let provider = create_openai(crate::openai_settings(api_key, base_url))
+                .map_err(|e| AiMuxBindingError::from(&e))?;
+            let model = provider.embedding(&model_id);
             Ok(EmbeddingModel {
                 inner: Arc::new(model),
             })
@@ -475,12 +473,9 @@ pub async fn openai_speech(
 ) -> AimuxResult<SpeechModel> {
     AimuxResult({
         let __r: crate::error::MResult<SpeechModel> = async {
-            use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-            let mut config = OpenAIConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = OpenAIProvider::new(config);
+            use aimux_providers::openai::create_openai;
+            let provider = create_openai(crate::openai_settings(api_key, base_url))
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider.speech(&model_id);
             Ok(SpeechModel {
                 inner: Arc::new(model),
@@ -500,12 +495,9 @@ pub async fn openai_image(
 ) -> AimuxResult<ImageModel> {
     AimuxResult({
         let __r: crate::error::MResult<ImageModel> = async {
-            use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-            let mut config = OpenAIConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = OpenAIProvider::new(config);
+            use aimux_providers::openai::create_openai;
+            let provider = create_openai(crate::openai_settings(api_key, base_url))
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider.image(&model_id);
             Ok(ImageModel {
                 inner: Arc::new(model),
@@ -525,12 +517,9 @@ pub async fn openai_transcription(
 ) -> AimuxResult<TranscriptionModel> {
     AimuxResult({
         let __r: crate::error::MResult<TranscriptionModel> = async {
-            use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-            let mut config = OpenAIConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = OpenAIProvider::new(config);
+            use aimux_providers::openai::create_openai;
+            let provider = create_openai(crate::openai_settings(api_key, base_url))
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider.transcription(&model_id);
             Ok(TranscriptionModel {
                 inner: Arc::new(model),
@@ -546,12 +535,9 @@ pub async fn openai_transcription(
 pub async fn openai_files(api_key: String, base_url: Option<String>) -> AimuxResult<Files> {
     AimuxResult({
         let __r: crate::error::MResult<Files> = async {
-            use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-            let mut config = OpenAIConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = OpenAIProvider::new(config);
+            use aimux_providers::openai::create_openai;
+            let provider = create_openai(crate::openai_settings(api_key, base_url))
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             let files = provider.files();
             Ok(Files {
                 inner: Arc::new(files),
@@ -571,13 +557,14 @@ pub async fn cohere_embedding(
 ) -> AimuxResult<EmbeddingModel> {
     AimuxResult({
         let __r: crate::error::MResult<EmbeddingModel> = async {
-            use aimux_providers::cohere::{CohereConfig, CohereProvider};
-            let mut config = CohereConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = CohereProvider::new(config);
-            let model = provider.embedding_model(&model_id);
+            use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
+            let provider = create_cohere(CohereProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                base_url,
+                ..Default::default()
+            })
+            .map_err(|e| AiMuxBindingError::from(&e))?;
+            let model = provider.embedding(&model_id);
             Ok(EmbeddingModel {
                 inner: Arc::new(model),
             })
@@ -596,13 +583,14 @@ pub async fn cohere_reranking(
 ) -> AimuxResult<RerankingModel> {
     AimuxResult({
         let __r: crate::error::MResult<RerankingModel> = async {
-            use aimux_providers::cohere::{CohereConfig, CohereProvider};
-            let mut config = CohereConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = CohereProvider::new(config);
-            let model = provider.reranking_model(&model_id);
+            use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
+            let provider = create_cohere(CohereProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                base_url,
+                ..Default::default()
+            })
+            .map_err(|e| AiMuxBindingError::from(&e))?;
+            let model = provider.reranking(&model_id);
             Ok(RerankingModel {
                 inner: Arc::new(model),
             })
@@ -621,13 +609,14 @@ pub async fn google_embedding(
 ) -> AimuxResult<EmbeddingModel> {
     AimuxResult({
         let __r: crate::error::MResult<EmbeddingModel> = async {
-            use aimux_providers::google::{GoogleConfig, GoogleProvider};
-            let mut config = GoogleConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = GoogleProvider::new(config);
-            let model = provider.embedding_model(&model_id);
+            use aimux_providers::google::{GoogleProviderSettings, create_google};
+            let provider = create_google(GoogleProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                base_url,
+                ..Default::default()
+            })
+            .map_err(|e| AiMuxBindingError::from(&e))?;
+            let model = provider.embedding(&model_id);
             Ok(EmbeddingModel {
                 inner: Arc::new(model),
             })
@@ -646,12 +635,13 @@ pub async fn google_image(
 ) -> AimuxResult<ImageModel> {
     AimuxResult({
         let __r: crate::error::MResult<ImageModel> = async {
-            use aimux_providers::google::{GoogleConfig, GoogleProvider};
-            let mut config = GoogleConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = GoogleProvider::new(config);
+            use aimux_providers::google::{GoogleProviderSettings, create_google};
+            let provider = create_google(GoogleProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                base_url,
+                ..Default::default()
+            })
+            .map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider.image(&model_id);
             Ok(ImageModel {
                 inner: Arc::new(model),
@@ -671,12 +661,13 @@ pub async fn google_video(
 ) -> AimuxResult<VideoModel> {
     AimuxResult({
         let __r: crate::error::MResult<VideoModel> = async {
-            use aimux_providers::google::{GoogleConfig, GoogleProvider};
-            let mut config = GoogleConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = GoogleProvider::new(config);
+            use aimux_providers::google::{GoogleProviderSettings, create_google};
+            let provider = create_google(GoogleProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                base_url,
+                ..Default::default()
+            })
+            .map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider.video(&model_id);
             Ok(VideoModel {
                 inner: Arc::new(model),
@@ -692,12 +683,13 @@ pub async fn google_video(
 pub async fn tavily_search(api_key: String, base_url: Option<String>) -> AimuxResult<SearchModel> {
     AimuxResult({
         let __r: crate::error::MResult<SearchModel> = async {
-            use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
-            let mut config = TavilyConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = TavilyProvider::new(config);
+            use aimux_providers::tavily::{TavilyProviderSettings, create_tavily};
+            let provider = create_tavily(TavilyProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                base_url,
+                ..Default::default()
+            })
+            .map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider.search_model();
             Ok(SearchModel {
                 inner: Arc::new(model),
@@ -719,8 +711,9 @@ pub async fn tavily_search(api_key: String, base_url: Option<String>) -> AimuxRe
 #[napi]
 pub struct TranscriptionSession {
     audio_tx: std::sync::Mutex<Option<futures::channel::mpsc::Sender<AudioChunk>>>,
-    parts_rx:
-        tokio::sync::Mutex<tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>>,
+    parts_rx: tokio::sync::Mutex<
+        tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>,
+    >,
     token: aimux_core::AbortSignal,
 }
 
@@ -827,23 +820,20 @@ pub async fn start_transcription_session(
                                     return;
                                 }
                             };
-                            loop {
-                                match tx.try_send(Ok(json.clone())) {
-                                    Ok(()) => break,
-                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                                        // Full: block on send (waits for
-                                        // capacity) unless aborted.
-                                        tokio::select! {
-                                            _ = effective.cancelled() => return,
-                                            res = tx.send(Ok(json.clone())) => {
-                                                if res.is_err() { return; }
-                                                break;
-                                            }
+                            match tx.try_send(Ok(json.clone())) {
+                                Ok(()) => {}
+                                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                    // Full: block on send (waits for
+                                    // capacity) unless aborted.
+                                    tokio::select! {
+                                        _ = effective.cancelled() => return,
+                                        res = tx.send(Ok(json.clone())) => {
+                                            if res.is_err() { return; }
                                         }
                                     }
-                                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                                        return;
-                                    }
+                                }
+                                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                    return;
                                 }
                             }
                         }
@@ -852,20 +842,17 @@ pub async fn start_transcription_session(
                         // Connect failure: deliver as the first channel item.
                         // try_send + abort-select (a full channel must not
                         // stall; abort covers the session-drop path).
-                        loop {
-                            match tx.try_send(Err(AiMuxBindingError::from(&e))) {
-                                Ok(()) => break,
-                                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                                    tokio::select! {
-                                        _ = effective.cancelled() => return,
-                                        res = tx.send(Err(AiMuxBindingError::from(&e))) => {
-                                            if res.is_err() { return; }
-                                            break;
-                                        }
+                        match tx.try_send(Err(AiMuxBindingError::from(&e))) {
+                            Ok(()) => {}
+                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                tokio::select! {
+                                    _ = effective.cancelled() => {}
+                                    res = tx.send(Err(AiMuxBindingError::from(&e))) => {
+                                        let _ = res;
                                     }
                                 }
-                                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return,
                             }
+                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {}
                         }
                     }
                 }

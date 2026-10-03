@@ -73,7 +73,7 @@ pub mod prelude {
         generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
     };
     pub use crate::image_model::{ImageCallOptions, ImageModel, ImageResult, generate_image};
-    pub use crate::language_model::LanguageModel;
+    pub use crate::language_model::{LanguageModel, SupportedUrls};
     pub use crate::language_model_message::LanguageModelPrompt;
     pub use crate::message::{MessageContent, ModelMessage, ModelPrompt, Role};
     pub use crate::moa::{MoaConfig, MoaFailMode, MoaModel};

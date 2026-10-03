@@ -1,0 +1,157 @@
+{
+  "case": "chat-stream-basic",
+  "model": {
+    "modelId": "llama-3.3-70b-versatile",
+    "provider": "groq.chat"
+  },
+  "package": "@ai-sdk/openai-compatible",
+  "request": {
+    "body": {
+      "messages": [
+        {
+          "content": "Say hello.",
+          "role": "user"
+        }
+      ],
+      "model": "llama-3.3-70b-versatile",
+      "stream": true
+    },
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json",
+      "user-agent": "ai-sdk-openai-compatible/3.0.62 ai-sdk-provider-utils/5.0.53 node.js/22"
+    },
+    "method": "POST",
+    "url": "https://api.groq.com/openai/v1/chat/completions"
+  },
+  "response": {
+    "body": "data: {\"id\":\"chatcmpl-fixture-2\",\"object\":\"chat.completion.chunk\",\"created\":1735689600,\"model\":\"llama-3.3-70b-versatile\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fixture-2\",\"object\":\"chat.completion.chunk\",\"created\":1735689600,\"model\":\"llama-3.3-70b-versatile\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fixture-2\",\"object\":\"chat.completion.chunk\",\"created\":1735689600,\"model\":\"llama-3.3-70b-versatile\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fixture-2\",\"object\":\"chat.completion.chunk\",\"created\":1735689600,\"model\":\"llama-3.3-70b-versatile\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"id\":\"chatcmpl-fixture-2\",\"object\":\"chat.completion.chunk\",\"created\":1735689600,\"model\":\"llama-3.3-70b-versatile\",\"choices\":[],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":2,\"total_tokens\":14}}\n\ndata: [DONE]\n\n",
+    "headers": {
+      "cache-control": "no-cache",
+      "content-type": "text/event-stream"
+    },
+    "status": 200
+  },
+  "result": {
+    "finishReason": "stop",
+    "parts": [
+      {
+        "type": "start"
+      },
+      {
+        "request": {},
+        "type": "start-step",
+        "warnings": []
+      },
+      {
+        "id": "txt-0",
+        "type": "text-start"
+      },
+      {
+        "id": "txt-0",
+        "text": "Hello",
+        "type": "text-delta"
+      },
+      {
+        "id": "txt-0",
+        "text": " world",
+        "type": "text-delta"
+      },
+      {
+        "id": "txt-0",
+        "type": "text-end"
+      },
+      {
+        "finishReason": "stop",
+        "performance": {
+          "effectiveOutputTokensPerSecond": 0,
+          "effectiveTotalTokensPerSecond": 0,
+          "inputTokensPerSecond": 0,
+          "outputTokensPerSecond": 0,
+          "responseTimeMs": 0,
+          "stepTimeMs": 0,
+          "timeBetweenOutputChunksMs": {
+            "avg": 0,
+            "max": 0,
+            "median": 0,
+            "min": 0,
+            "p10": 0,
+            "p90": 0
+          },
+          "timeToFirstOutputMs": 0,
+          "toolExecutionMs": {}
+        },
+        "providerMetadata": {
+          "groq": {}
+        },
+        "rawFinishReason": "stop",
+        "response": {
+          "headers": {
+            "cache-control": "no-cache",
+            "content-type": "text/event-stream"
+          },
+          "id": "chatcmpl-fixture-2",
+          "modelId": "llama-3.3-70b-versatile",
+          "timestamp": "2025-01-01T00:00:00.000Z"
+        },
+        "type": "finish-step",
+        "usage": {
+          "inputTokenDetails": {
+            "cacheReadTokens": 0,
+            "noCacheTokens": 12
+          },
+          "inputTokens": 12,
+          "outputTokenDetails": {
+            "reasoningTokens": 0,
+            "textTokens": 2
+          },
+          "outputTokens": 2,
+          "raw": {
+            "completion_tokens": 2,
+            "prompt_tokens": 12,
+            "total_tokens": 14
+          },
+          "totalTokens": 14
+        }
+      },
+      {
+        "finishReason": "stop",
+        "rawFinishReason": "stop",
+        "totalUsage": {
+          "inputTokenDetails": {
+            "cacheReadTokens": 0,
+            "noCacheTokens": 12
+          },
+          "inputTokens": 12,
+          "outputTokenDetails": {
+            "reasoningTokens": 0,
+            "textTokens": 2
+          },
+          "outputTokens": 2,
+          "totalTokens": 14
+        },
+        "type": "finish"
+      }
+    ],
+    "usage": {
+      "inputTokenDetails": {
+        "cacheReadTokens": 0,
+        "noCacheTokens": 12
+      },
+      "inputTokens": 12,
+      "outputTokenDetails": {
+        "reasoningTokens": 0,
+        "textTokens": 2
+      },
+      "outputTokens": 2,
+      "totalTokens": 14
+    }
+  },
+  "sdk": {
+    "input": {
+      "prompt": "Say hello."
+    },
+    "operation": "streamText"
+  },
+  "version": "3.0.62"
+}

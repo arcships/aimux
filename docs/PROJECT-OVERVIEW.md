@@ -194,21 +194,22 @@ pub trait LanguageModel: Send + Sync {
 
 This means `Box<dyn LanguageModel>` can be swapped between OpenAI / Anthropic / Google — **switching providers only requires changing the provider construction, and the model usage stays exactly the same**.
 
-#### 2. OpenAICompatProfile configuration descriptor struct
+#### 2. Provider factories and registry presets
 
-A thin wrapper does not lose differences. Each OpenAI-compatible service has subtle differences (some support top_k, some do not support tools, some have a different streaming usage format):
+A thin wrapper does not lose differences. Each OpenAI-compatible service has subtle differences (some do not accept `top_k`, some use `max_completion_tokens`, some have a different streaming usage format). They are expressed once, as data and dialect hooks, instead of one hand-written shell type per vendor:
 
 ```rust
-pub struct OpenAICompatProfile {
-    pub supports_top_k: bool,          // Groq supports it, OpenAI does not
-    pub supports_tools: bool,           // some services do not support it
-    pub supports_response_format: bool,
-    pub streaming_usage_format: UsageFormat, // streaming usage in data line vs chunk line
-    pub post_process_request: Option<fn(&mut serde_json::Value)>,
-}
+// Every package follows the AI SDK factory shape.
+let provider = create_openai_compatible(OpenAICompatibleProviderSettings {
+    name: "acme".into(),                       // model.provider() == "acme.chat"
+    base_url: "https://api.acme.example/v1".into(),
+    api_key: Some("sk-...".to_string().into()),  // resolved per request; None sends no Authorization
+    ..Default::default()
+})?;
+let model = provider.chat("acme-large");
 ```
 
-Use a profile descriptor struct to express the differences, rather than writing an independent model for each provider — this is why the 145 compatible providers only need a thin wrapper.
+The 283 registry providers are rows of `provider_registry.json` (base URL, key variable, `auth: api_key | none`, template parameters, `max_tokens_key`, `family`); `scripts/gen_presets.py` turns each row into `presets::create_<name>(PresetSettings)` plus a default instance `presets::<name>()`, and `provider(name, ...)` looks the row up at runtime — this is why the 283 compatible providers need no shell types.
 
 #### 3. JSON string FFI boundary
 
@@ -360,12 +361,15 @@ for part in result:
 
 ```rust
 use aimux_core::prelude::*;
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::{OpenAIProviderSettings, create_openai};
 
 #[tokio::main]
 async fn main() -> Result<(), AiMuxError> {
-    let provider = OpenAIProvider::new(OpenAIConfig::new("sk-..."));
-    let model = provider.model("gpt-4o");
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("sk-...".to_string().into()),
+        ..Default::default()
+    })?;
+    let model = provider.chat("gpt-4o");
 
     let result = generate_text(
         &model,
@@ -410,20 +414,14 @@ Not a single trick, but systematic design choices:
 
 ### 3. The way to unify all providers
 
-Don't write an independent model for each provider — that would explode. Use `OpenAICompatProfile` to describe the differences:
+Don't write an independent model for each provider — that would explode. One compatible chat model plus a per-vendor preset row (and, where a vendor needs more, a small package such as `groq/` or `deepseek/` built on the same internals) describes the differences:
 
 ```rust
-// one profile describes a compatible provider's differences
-let profile = OpenAICompatProfile {
-    supports_top_k: true,         // Groq supports top_k
-    supports_tools: true,         // supports function calling
-    streaming_usage_format: UsageFormat::InDataLine,
-    post_process_request: Some(strip_unsupported_fields),
-    ..Default::default()
-};
+// a registry row becomes a factory; the default instance reads GROQ_API_KEY per request
+let model = aimux_providers::presets::groq().chat("llama-3.3-70b-versatile");
 ```
 
-The native protocol providers have independent models + convert (handling differences such as Anthropic message format / Google generateContent / Bedrock SigV4), while the OpenAI-compatible providers are registry-backed (provider-registry.json + unified provider(name, ...) entry, RFC-0017 phase 4).
+The native protocol providers have independent models + convert (handling differences such as Anthropic message format / Google generateContent / Bedrock SigV4), while the OpenAI-compatible providers are registry-backed (provider_registry.json + generated presets + unified provider(name, ...) entry, RFC-0017 phase 4, RFC-0036).
 
 ### 4. Recorded testing with 2650 cassettes
 

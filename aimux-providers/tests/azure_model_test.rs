@@ -1,4 +1,4 @@
-﻿//! Wiremock tests for the Azure OpenAI provider.
+//! Wiremock tests for the Azure OpenAI provider.
 //!
 //! These cover the Azure-specific differences from the OpenAI provider:
 //! - deployment-based URL construction with an `api-version` query parameter
@@ -16,7 +16,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -32,7 +31,39 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
-use aimux_providers::{AzureConfig, AzureProvider, TokenProvider};
+use aimux_provider_utils::{HeaderMapOpt, Resolvable};
+
+#[path = "common/mock_fetch.rs"]
+mod mock_fetch;
+use aimux_providers::{AzureOpenAIProvider, AzureOpenAIProviderSettings, create_azure};
+use mock_fetch::EnvVar;
+
+/// A provider pointed at the mock server. Deployment-based URLs keep the
+/// deployment in the path (`/deployments/{id}/...?api-version=`), which is what
+/// the mocks below match.
+fn test_provider(server: &MockServer, api_key: &str) -> AzureOpenAIProvider {
+    create_azure(AzureOpenAIProviderSettings {
+        base_url: Some(server.uri()),
+        api_key: Some(api_key.to_string().into()),
+        use_deployment_based_urls: true,
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
+
+/// [`test_provider`] with arbitrary settings changes.
+fn test_provider_with(
+    server: &MockServer,
+    change: impl FnOnce(&mut AzureOpenAIProviderSettings),
+) -> AzureOpenAIProvider {
+    let mut settings = AzureOpenAIProviderSettings {
+        base_url: Some(server.uri()),
+        use_deployment_based_urls: true,
+        ..Default::default()
+    };
+    change(&mut settings);
+    create_azure(settings).expect("valid settings")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -131,28 +162,6 @@ fn text_deltas(parts: &[StreamPart]) -> Vec<String> {
         .collect()
 }
 
-/// A token provider that returns a fixed token.
-struct StaticToken(String);
-#[async_trait]
-impl TokenProvider for StaticToken {
-    async fn get_token(&self) -> Result<String, AiMuxError> {
-        Ok(self.0.clone())
-    }
-}
-
-/// A token provider that returns a different token on each call
-/// (`token-1`, `token-2`, …) so tests can assert it is invoked per request.
-struct CountingToken {
-    count: AtomicU32,
-}
-#[async_trait]
-impl TokenProvider for CountingToken {
-    async fn get_token(&self) -> Result<String, AiMuxError> {
-        let n = self.count.fetch_add(1, Ordering::SeqCst) + 1;
-        Ok(format!("token-{n}"))
-    }
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // URL construction
 // ════════════════════════════════════════════════════════════════════════════
@@ -169,11 +178,8 @@ async fn should_build_deployment_based_url_with_default_api_version() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -183,7 +189,7 @@ async fn should_build_deployment_based_url_with_default_api_version() {
     assert_eq!(requests.len(), 1);
     let url = &requests[0].url;
     assert_eq!(url.path(), "/deployments/gpt-4o/chat/completions");
-    assert_eq!(url.query(), Some("api-version=2024-10-21"));
+    assert_eq!(url.query(), Some("api-version=v1"));
 }
 
 /// A custom `api_version` is reflected in the `api-version` query parameter.
@@ -197,12 +203,11 @@ async fn should_use_custom_api_version() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key")
-        .with_api_version("2025-04-01-preview");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider_with(&server, |s| {
+        s.api_key = Some("test-api-key".to_string().into());
+        s.api_version = Some("2025-04-01-preview".to_string());
+    });
+    let model = provider.chat("gpt-4o");
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -215,35 +220,29 @@ async fn should_use_custom_api_version() {
     );
 }
 
-/// The v1 URL form uses `/v1/chat/completions` (no deployment in the path).
-/// With a non-Azure gateway `base_url`, the gateway owns versioning and
-/// `api-version` is omitted — mirroring the TS `useAzureOpenAIEndpoint` gate.
+/// Without deployment-based URLs a non-Azure gateway `base_url` is used as the
+/// prefix as is: no `/v1`, no deployment in the path, and the gateway owns
+/// versioning, so `api-version` is omitted (the AI SDK's `isAzureOpenAI` gate).
 /// (The real-Azure v1 case — `api-version` appended — is covered by the unit
 /// tests in `azure/model.rs`, which construct the URL from a `resource_name`
 /// without needing a live HTTP endpoint.)
 #[tokio::test]
 async fn should_use_v1_url_form_on_gateway() {
     let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        "/v1/chat/completions",
-        text_completion_response("hi"),
-    )
-    .await;
+    mock_json_response(&server, "/chat/completions", text_completion_response("hi")).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key")
-        .use_v1_urls();
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider_with(&server, |s| {
+        s.api_key = Some("test-api-key".to_string().into());
+        s.use_deployment_based_urls = false;
+    });
+    let model = provider.chat("gpt-4o");
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
         .expect("do_generate should succeed");
 
     let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests[0].url.path(), "/v1/chat/completions");
+    assert_eq!(requests[0].url.path(), "/chat/completions");
     // Non-Azure gateway owns its own versioning — no api-version query param.
     assert_eq!(requests[0].url.query(), None);
 }
@@ -263,11 +262,8 @@ async fn should_send_api_key_header() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -294,11 +290,10 @@ async fn should_send_bearer_token_from_token_provider() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_token_provider(Arc::new(StaticToken("test-azure-ad-token".to_string())));
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider_with(&server, |s| {
+        s.token_provider = Some(Resolvable::Value("test-azure-ad-token".to_string()));
+    });
+    let model = provider.chat("gpt-4o");
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -325,13 +320,14 @@ async fn should_call_token_provider_per_request() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_token_provider(Arc::new(CountingToken {
-            count: AtomicU32::new(0),
+    let counter = Arc::new(AtomicU32::new(0));
+    let provider = test_provider_with(&server, |s| {
+        s.token_provider = Some(Resolvable::from_async_fn(move || {
+            let n = counter.fetch_add(1, Ordering::SeqCst) + 1;
+            async move { Ok(format!("token-{n}")) }
         }));
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    });
+    let model = provider.chat("gpt-4o");
 
     let _ = model
         .do_generate(&default_options(test_prompt()))
@@ -371,12 +367,14 @@ async fn should_merge_provider_and_request_headers() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key")
-        .with_header("Custom-Provider-Header", "provider-header-value");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider_with(&server, |s| {
+        s.api_key = Some("test-api-key".to_string().into());
+        s.headers = Some(HeaderMapOpt::from([(
+            "Custom-Provider-Header".to_string(),
+            Some("provider-header-value".to_string()),
+        )]));
+    });
+    let model = provider.chat("gpt-4o");
 
     let mut options = default_options(test_prompt());
     let mut req_headers = std::collections::HashMap::new();
@@ -423,11 +421,8 @@ async fn should_extract_text_response() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -456,11 +451,8 @@ async fn should_extract_usage() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -482,11 +474,8 @@ async fn should_send_deployment_and_messages_in_request_body() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -514,11 +503,8 @@ async fn should_stream_text_deltas() {
     ]);
     mock_sse_response(&server, "/deployments/gpt-4o/chat/completions", &sse).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -564,11 +550,8 @@ async fn should_return_auth_error_on_401() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("bad-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "bad-key");
+    let model = provider.chat("gpt-4o");
 
     let err = model
         .do_generate(&default_options(test_prompt()))
@@ -580,36 +563,69 @@ async fn should_return_auth_error_on_401() {
     );
 }
 
-/// Constructing a provider without `resource_name` or `base_url` is rejected.
+/// A provider without `resource_name` or `base_url` is created (the resource
+/// name is a request-time setting), and a call fails with `LoadSetting` when
+/// `AZURE_RESOURCE_NAME` is unset. No request is sent.
 #[tokio::test]
-async fn should_reject_missing_resource_and_base_url() {
-    let config = AzureConfig::new().with_api_key("test-api-key");
-    assert!(matches!(
-        AzureProvider::new(config),
-        Err(AiMuxError::InvalidArgument(_))
-    ));
+#[serial_test::serial]
+async fn should_fail_the_call_without_resource_and_base_url() {
+    let env_resource = EnvVar::set("AZURE_RESOURCE_NAME", None);
+    let provider = create_azure(AzureOpenAIProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        ..Default::default()
+    })
+    .expect("created without a resource");
+    let err = provider
+        .chat("gpt-4o")
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect_err("no resource name");
+    assert!(
+        matches!(&err, AiMuxError::LoadSetting { env_var, .. } if env_var == "AZURE_RESOURCE_NAME"),
+        "{err:?}"
+    );
+    drop(env_resource);
 }
 
-/// Calling a model with no auth configured returns an `Auth` error at request
-/// time.
+/// Calling a model with no key configured fails with `LoadApiKey` at request
+/// time, before anything is sent.
 #[tokio::test]
+#[serial_test::serial]
 async fn should_error_when_no_auth_configured() {
     let server = MockServer::start().await;
     // No mock is mounted: the request must never be sent because auth fails
     // before the HTTP call.
-    let config = AzureConfig::new().with_base_url(server.uri());
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let env_key = EnvVar::set("AZURE_API_KEY", None);
+    let provider = test_provider_with(&server, |_| {});
+    let model = provider.chat("gpt-4o");
 
     let err = model
         .do_generate(&default_options(test_prompt()))
         .await
         .expect_err("no auth should error");
-    assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err:?}");
+    assert!(
+        matches!(&err, AiMuxError::LoadApiKey { env_var, .. } if env_var == "AZURE_API_KEY"),
+        "{err:?}"
+    );
+    drop(env_key);
 
     // No request should have hit the server.
     let requests = server.received_requests().await.unwrap();
     assert!(requests.is_empty());
+}
+
+/// An `api_key` and a `token_provider` together are rejected when the provider
+/// is created.
+#[test]
+fn should_reject_api_key_with_token_provider() {
+    let err = create_azure(AzureOpenAIProviderSettings {
+        api_key: Some("k".to_string().into()),
+        token_provider: Some(Resolvable::Value("t".to_string())),
+        ..Default::default()
+    })
+    .err()
+    .expect("conflict");
+    assert!(matches!(err, AiMuxError::InvalidArgument(_)));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -653,11 +669,8 @@ async fn should_extract_tool_call() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -692,11 +705,8 @@ async fn should_stream_tool_call() {
     ]);
     mock_sse_response(&server, "/deployments/gpt-4o/chat/completions", &sse).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -730,11 +740,8 @@ async fn should_send_json_schema_response_format() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
 
     let schema = json!({
         "type": "object",
@@ -771,11 +778,8 @@ async fn should_map_reasoning_effort() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
 
     let mut options = default_options(test_prompt());
     options.reasoning = Some(ReasoningEffort::High);
@@ -799,11 +803,8 @@ async fn should_expose_response_headers() {
         .mount(&server)
         .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -835,11 +836,8 @@ async fn should_expose_response_headers_stream() {
         .mount(&server)
         .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -875,11 +873,8 @@ async fn should_map_length_finish_reason() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -902,11 +897,8 @@ async fn should_return_rate_limited_on_429() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.chat("gpt-4o");
 
     let err = model
         .do_generate(&default_options(test_prompt()))

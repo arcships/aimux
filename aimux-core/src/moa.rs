@@ -125,11 +125,8 @@ impl MoaModel {
             let child_opts =
                 ref_opts.for_step(format!("moa.ref[{i}]:{}/{}", m.provider(), m.model_id()));
             async move {
-                let retries = retry::prepare_retries(
-                    child_opts.max_retries,
-                    m.retry_config(),
-                    child_opts.abort_signal.clone(),
-                );
+                let retries =
+                    retry::prepare_retries(child_opts.max_retries, child_opts.abort_signal.clone());
                 retries
                     .retry(|| {
                         if let Some(context) = &child_opts.recording_context {
@@ -183,15 +180,6 @@ impl LanguageModel for MoaModel {
         &self.config.model_id
     }
 
-    fn retry_config(&self) -> retry::RetryConfig {
-        // Retrying the composite would rerun the entire reference fanout;
-        // references and aggregator are retried independently instead.
-        retry::RetryConfig {
-            max_retries: 0,
-            ..retry::RetryConfig::default()
-        }
-    }
-
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         // 1. Fan out references (non-streaming).
         let (texts, ref_usage, warnings) = self.run_references_nonstream(options).await?;
@@ -206,11 +194,7 @@ impl LanguageModel for MoaModel {
         agg_opts.prompt = agg_prompt;
 
         // 3. Run the aggregator.
-        let retries = retry::prepare_retries(
-            agg_opts.max_retries,
-            self.aggregator.retry_config(),
-            agg_opts.abort_signal.clone(),
-        );
+        let retries = retry::prepare_retries(agg_opts.max_retries, agg_opts.abort_signal.clone());
         let agg_opts = agg_opts.for_step(format!(
             "moa.aggregator:{}/{}",
             self.aggregator.provider(),
@@ -248,11 +232,7 @@ impl LanguageModel for MoaModel {
         // 3. Aggregator streams; we emit our own StreamStart and add reference
         //    usage onto its Finish. We swallow the aggregator's StreamStart
         //    (we've already emitted ours).
-        let retries = retry::prepare_retries(
-            agg_opts.max_retries,
-            self.aggregator.retry_config(),
-            agg_opts.abort_signal.clone(),
-        );
+        let retries = retry::prepare_retries(agg_opts.max_retries, agg_opts.abort_signal.clone());
         let agg_opts = agg_opts.for_step(format!(
             "moa.aggregator:{}/{}",
             self.aggregator.provider(),
@@ -566,7 +546,6 @@ mod tests {
         let (ref_b, ref_b_calls) = retry_child("ref-b", "B", 0);
         let (aggregator, aggregator_calls) = retry_child("aggregator", "final", 1);
         let moa = MoaModel::new(vec![ref_a, ref_b], aggregator, MoaConfig::default());
-        assert_eq!(moa.retry_config().max_retries, 0);
 
         let result = crate::generate::generate_text(
             &moa,

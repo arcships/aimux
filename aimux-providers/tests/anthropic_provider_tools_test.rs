@@ -53,8 +53,8 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult};
 use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
 
-use aimux_providers::anthropic::AnthropicConfig;
-use aimux_providers::anthropic::model::AnthropicModel;
+use aimux_providers::anthropic::AnthropicMessagesModel;
+use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers (mirrors anthropic_model_test.rs)
@@ -74,20 +74,26 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
     CallOptions::new(prompt)
 }
 
-/// Build an `AnthropicModel` whose base URL points at the wiremock server.
-fn make_model(server: &MockServer) -> AnthropicModel {
-    AnthropicModel::new(
-        "claude-3-haiku-20240307".to_string(),
-        AnthropicConfig::new("test-api-key").with_base_url(server.uri()),
-    )
+/// Build an `AnthropicMessagesModel` whose base URL points at the wiremock server.
+fn make_model(server: &MockServer) -> AnthropicMessagesModel {
+    create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap()
+    .messages("claude-3-haiku-20240307")
 }
 
-/// Build an `AnthropicModel` with a specific model id.
-fn make_model_with_id(server: &MockServer, model_id: &str) -> AnthropicModel {
-    AnthropicModel::new(
-        model_id.to_string(),
-        AnthropicConfig::new("test-api-key").with_base_url(server.uri()),
-    )
+/// Build an `AnthropicMessagesModel` with a specific model id.
+fn make_model_with_id(server: &MockServer, model_id: &str) -> AnthropicMessagesModel {
+    create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap()
+    .messages(model_id)
 }
 
 /// Mount a JSON response on `/v1/messages`.

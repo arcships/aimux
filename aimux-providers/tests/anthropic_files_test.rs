@@ -9,7 +9,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
 use aimux_core::shared::FileBytes;
-use aimux_providers::{AnthropicConfig, AnthropicProvider};
+use aimux_providers::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -28,8 +28,12 @@ fn file_response_body() -> Value {
 
 /// Build an `AnthropicProvider` pointing at the mock server.
 fn provider(server: &MockServer) -> AnthropicProvider {
-    let config = AnthropicConfig::new("test-api-key").with_base_url(server.uri());
-    AnthropicProvider::new(config)
+    create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap()
 }
 
 /// Build `UploadFileCallOptions` with binary data.
@@ -294,17 +298,46 @@ async fn handles_base64_string_data() {
 }
 
 #[tokio::test]
-async fn has_specification_version_v4() {
-    let provider = AnthropicProvider::new(AnthropicConfig::new("test-api-key"));
-    let files = provider.files();
-
-    assert_eq!(files.specification_version(), "v4");
-}
-
-#[tokio::test]
 async fn has_correct_provider_name() {
-    let provider = AnthropicProvider::new(AnthropicConfig::new("test-api-key"));
+    let provider = create_anthropic(AnthropicProviderSettings::default()).unwrap();
     let files = provider.files();
 
     assert_eq!(files.provider(), "anthropic.files");
+}
+
+/// A transient 503 on the upload is reported as it happened: like the AI SDK's
+/// `uploadFile`, nothing retries it, so the file body is sent once.
+#[tokio::test]
+async fn transient_upload_failure_is_not_retried() {
+    let server = MockServer::start().await;
+    let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let responder_attempts = std::sync::Arc::clone(&attempts);
+    Mock::given(method("POST"))
+        .and(path("/v1/files"))
+        .respond_with(move |_: &wiremock::Request| {
+            if responder_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                ResponseTemplate::new(503)
+                    .insert_header("retry-after-ms", "0")
+                    .set_body_json(
+                        json!({"error": {"type": "overloaded_error", "message": "try again"}}),
+                    )
+            } else {
+                ResponseTemplate::new(200).set_body_json(file_response_body())
+            }
+        })
+        .mount(&server)
+        .await;
+
+    let provider = provider(&server);
+    let error = provider
+        .files()
+        .upload_file(&upload_options())
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        aimux_core::AiMuxError::ApiCall(ref detail) if detail.status_code == Some(503)
+    ));
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
 }

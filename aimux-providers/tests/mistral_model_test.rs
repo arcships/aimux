@@ -20,7 +20,16 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::{MistralConfig, MistralProvider};
+use aimux_providers::{MistralProvider, MistralProviderSettings, create_mistral};
+
+fn test_provider(api_key: &str, base_url: impl Into<String>) -> MistralProvider {
+    create_mistral(MistralProviderSettings {
+        api_key: Some(api_key.to_string().into()),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -149,9 +158,8 @@ async fn should_extract_text_response() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -203,9 +211,8 @@ async fn should_extract_usage() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -243,9 +250,8 @@ async fn should_extract_usage_with_cached_tokens() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -291,9 +297,8 @@ async fn should_extract_tool_call() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -340,9 +345,8 @@ async fn should_send_correct_request_body() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -382,9 +386,8 @@ async fn should_pass_tools_with_tool_choice_required() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let options = CallOptions {
         prompt: test_prompt(),
@@ -424,9 +427,8 @@ async fn should_pass_tools_with_tool_choice_tool() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let options = CallOptions {
         prompt: test_prompt(),
@@ -465,9 +467,8 @@ async fn should_forward_stop_sequences() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let options = CallOptions {
         prompt: test_prompt(),
@@ -501,9 +502,8 @@ async fn should_map_model_length_finish_reason() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -538,9 +538,8 @@ async fn should_stream_text() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -588,9 +587,8 @@ async fn should_stream_tool_call() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -649,9 +647,8 @@ async fn should_send_streaming_request_body() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -686,9 +683,8 @@ async fn should_stream_text_with_array_content() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -713,9 +709,8 @@ async fn should_handle_auth_error() {
         .mount(&server)
         .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -751,9 +746,8 @@ async fn should_forward_presence_and_frequency_penalty() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_text_body()).await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let options = CallOptions {
         prompt: test_prompt(),
@@ -786,9 +780,8 @@ async fn should_pass_request_headers() {
         .mount(&server)
         .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let mut headers = std::collections::HashMap::new();
     headers.insert(
@@ -820,9 +813,8 @@ async fn should_expose_raw_response_headers() {
         .mount(&server)
         .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -842,9 +834,8 @@ async fn should_send_additional_response_information() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_text_body()).await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -866,9 +857,8 @@ async fn should_set_json_object_response_format() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_text_body()).await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let options = CallOptions {
         prompt: test_prompt(),
@@ -891,9 +881,8 @@ async fn should_set_json_schema_response_format() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_text_body()).await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let schema = json!({
         "type": "object",
@@ -930,9 +919,8 @@ async fn should_mark_trailing_assistant_message_as_prefix() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_text_body()).await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let prompt: LanguageModelPrompt = vec![
         LanguageModelPromptMessage {
@@ -985,9 +973,8 @@ async fn should_extract_content_when_message_content_is_object() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -1033,9 +1020,8 @@ async fn should_extract_text_from_mixed_thinking_and_text() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("magistral-medium-2507");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("magistral-medium-2507");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -1088,9 +1074,8 @@ async fn should_handle_empty_thinking_content() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("magistral-medium-2507");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("magistral-medium-2507");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -1131,9 +1116,8 @@ async fn should_return_raw_text_with_think_tags() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("magistral-small-2506");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("magistral-small-2506");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -1167,9 +1151,8 @@ async fn should_map_content_filter_finish_reason() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -1210,9 +1193,8 @@ async fn should_extract_multiple_tool_calls() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -1255,9 +1237,8 @@ async fn should_send_default_request_body_shape() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_text_body()).await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let options = CallOptions {
         prompt: test_prompt(),
@@ -1300,9 +1281,8 @@ async fn should_handle_rate_limit_error() {
         .mount(&server)
         .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
@@ -1324,9 +1304,8 @@ async fn should_handle_model_not_found_error() {
         .mount(&server)
         .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
@@ -1362,9 +1341,8 @@ async fn should_stream_reasoning() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("magistral-small-2507");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("magistral-small-2507");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -1399,9 +1377,8 @@ async fn should_stream_interleaved_thinking_and_text() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("magistral-small-2507");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("magistral-small-2507");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -1450,9 +1427,8 @@ async fn should_expose_raw_response_headers_stream() {
         .mount(&server)
         .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -1483,9 +1459,8 @@ async fn should_pass_request_headers_stream() {
         .mount(&server)
         .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let mut headers = std::collections::HashMap::new();
     headers.insert(
@@ -1516,9 +1491,8 @@ async fn should_stream_response_metadata() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -1549,9 +1523,8 @@ async fn should_stream_rate_limit_error() {
         .mount(&server)
         .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model.do_stream(&default_options(test_prompt())).await;
     assert!(
@@ -1571,9 +1544,8 @@ async fn should_stream_error_in_chunk() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -1605,9 +1577,8 @@ async fn should_stream_with_trailing_assistant_prefix() {
     )
     .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("mistral-small-latest");
 
     let prompt: LanguageModelPrompt = vec![
         LanguageModelPromptMessage {

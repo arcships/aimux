@@ -22,7 +22,16 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::{CohereConfig, CohereProvider};
+use aimux_providers::{CohereProvider, CohereProviderSettings, create_cohere};
+
+fn test_provider(api_key: &str, base_url: impl Into<String>) -> CohereProvider {
+    create_cohere(CohereProviderSettings {
+        api_key: Some(api_key.to_string().into()),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -155,9 +164,8 @@ async fn should_extract_text_response() {
     )
     .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -196,9 +204,8 @@ async fn should_map_max_tokens_finish_reason() {
     )
     .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -248,9 +255,8 @@ async fn should_extract_tool_calls() {
     )
     .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let options = CallOptions {
         tools: Some(vec![test_tool()]),
@@ -312,9 +318,8 @@ async fn should_handle_null_tool_call_arguments() {
     )
     .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -352,9 +357,8 @@ async fn should_extract_usage() {
     )
     .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -388,9 +392,8 @@ async fn should_send_correct_request_body() {
     )
     .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -434,9 +437,8 @@ async fn should_pass_tools_with_tool_choice_none() {
     )
     .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let options = CallOptions {
         tools: Some(vec![test_tool()]),
@@ -474,9 +476,8 @@ async fn should_stream_text_deltas() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -527,9 +528,8 @@ async fn should_stream_tool_call_deltas() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let options = CallOptions {
         tools: Some(vec![test_tool()]),
@@ -598,9 +598,8 @@ async fn malformed_streamed_tool_call_arguments_do_not_error_the_stream() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     // First, confirm the raw provider stream itself never parses and never
     // errors on the malformed arguments — it just forwards the text.
@@ -671,9 +670,8 @@ async fn should_stream_reasoning_deltas() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -728,9 +726,8 @@ async fn should_send_streaming_request_body() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -762,9 +759,8 @@ async fn should_handle_unparsable_stream_parts() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -809,9 +805,8 @@ async fn should_handle_auth_error() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -857,9 +852,8 @@ async fn should_pass_request_headers() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let mut headers = std::collections::HashMap::new();
     headers.insert(
@@ -891,9 +885,8 @@ async fn should_expose_raw_response_headers() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -913,9 +906,8 @@ async fn should_send_additional_response_information() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -931,9 +923,8 @@ async fn should_pass_response_format() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let schema = json!({
         "type": "object",
@@ -964,9 +955,8 @@ async fn should_pass_tools_with_tool_choice_required() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let options = CallOptions {
         prompt: test_prompt(),
@@ -987,9 +977,8 @@ async fn should_pass_tools_with_tool_choice_tool() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let options = CallOptions {
         prompt: test_prompt(),
@@ -1015,9 +1004,8 @@ async fn should_extract_text_documents_from_file_parts() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
         role: Role::User,
@@ -1107,9 +1095,8 @@ async fn should_extract_citations_from_response() {
     let server = MockServer::start().await;
     mock_json_response(&server, cohere_citations_response()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
         role: Role::User,
@@ -1175,9 +1162,8 @@ async fn should_extract_multiple_text_documents() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
         role: Role::User,
@@ -1227,9 +1213,8 @@ async fn should_support_json_files() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
         role: Role::User,
@@ -1270,9 +1255,8 @@ async fn should_not_include_mediatype_in_outgoing_payload() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
         role: Role::User,
@@ -1317,9 +1301,8 @@ async fn should_process_supported_text_media_types() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
         role: Role::User,
@@ -1363,9 +1346,8 @@ async fn should_not_include_documents_when_no_files_present() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -1385,9 +1367,8 @@ async fn should_send_full_request_body() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let options = CallOptions {
         prompt: test_prompt(),
@@ -1429,9 +1410,8 @@ async fn should_handle_rate_limit_error() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
@@ -1473,9 +1453,8 @@ async fn should_pass_request_headers_stream() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let mut headers = std::collections::HashMap::new();
     headers.insert(
@@ -1508,9 +1487,8 @@ async fn should_expose_raw_response_headers_stream() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -1537,9 +1515,8 @@ async fn should_stream_empty_tool_call_arguments() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let options = CallOptions {
         tools: Some(vec![test_tool()]),
@@ -1584,9 +1561,8 @@ async fn should_stream_rate_limit_error() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model.do_stream(&default_options(test_prompt())).await;
     assert!(

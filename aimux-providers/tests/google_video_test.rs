@@ -6,7 +6,19 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use aimux_core::AiMuxError;
 use aimux_core::video_model::{VideoCallOptions, generate_video};
-use aimux_providers::{GoogleConfig, GoogleProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{GoogleProvider, GoogleProviderSettings, create_google};
+
+/// A Google provider with the test key, pointed at `base_url` when given.
+fn test_google(key: &str, base_url: Option<String>) -> GoogleProvider {
+    create_google(GoogleProviderSettings {
+        api_key: Some(Resolvable::Value(key.to_string())),
+        base_url,
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
+
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -54,8 +66,7 @@ async fn should_generate_video() {
     let result =
         json!({"done": true, "response": {"videos": [{"gcsUri": "gs://bucket/video.mp4"}]}});
     mock_predict_and_poll(&server, &result).await;
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.video("veo-3.0-generate-001");
     let r = generate_video(&model, options("A cat")).await.unwrap();
     assert_eq!(r.videos.len(), 1);
@@ -94,13 +105,7 @@ async fn poll_retry_does_not_submit_a_second_generation() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_retry_config(aimux_provider_utils::RetryConfig {
-            max_retries: 1,
-            ..Default::default()
-        });
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.video("veo-3.0-generate-001");
     let mut opts = options("A cat");
     opts.max_retries = Some(1);
@@ -164,13 +169,7 @@ async fn start_retry_reuses_the_same_idempotency_key() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_retry_config(aimux_provider_utils::RetryConfig {
-            max_retries: 1,
-            ..Default::default()
-        });
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.video("veo-3.0-generate-001");
     let mut opts = options("A cat");
     opts.max_retries = Some(1);
@@ -200,8 +199,7 @@ async fn poll_deadline_reached_during_delay_does_not_issue_status_request() {
     let result =
         json!({"done": true, "response": {"videos": [{"gcsUri": "gs://bucket/video.mp4"}]}});
     mock_predict_and_poll(&server, &result).await;
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.video("veo-3.0-generate-001");
     let mut opts = options("A cat");
     opts.poll = Some(aimux_core::video_model::VideoPollOptions {
@@ -253,16 +251,12 @@ async fn poll_retry_exhaustion_does_not_submit_a_second_generation() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_retry_config(aimux_provider_utils::RetryConfig {
-            max_retries: 1,
-            ..Default::default()
-        });
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.video("veo-3.0-generate-001");
 
-    let error = generate_video(&model, options("A cat")).await.unwrap_err();
+    let mut opts = options("A cat");
+    opts.max_retries = Some(1);
+    let error = generate_video(&model, opts).await.unwrap_err();
     assert!(matches!(error, AiMuxError::Retry(_)));
 
     let requests = server.received_requests().await.unwrap();
@@ -288,8 +282,7 @@ async fn should_pass_prompt() {
     let result =
         json!({"done": true, "response": {"videos": [{"gcsUri": "gs://bucket/video.mp4"}]}});
     mock_predict_and_poll(&server, &result).await;
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.video("veo-3.0-generate-001");
     generate_video(&model, options("A cat")).await.unwrap();
     let requests = server.received_requests().await.unwrap();
@@ -303,8 +296,7 @@ async fn should_pass_aspect_ratio_and_duration() {
     let result =
         json!({"done": true, "response": {"videos": [{"gcsUri": "gs://bucket/video.mp4"}]}});
     mock_predict_and_poll(&server, &result).await;
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.video("veo-3.0-generate-001");
     let mut opts = options("test");
     opts.aspect_ratio = Some(aimux_core::shared::AspectRatio::new(16, 9));
@@ -322,8 +314,7 @@ async fn should_include_response_data() {
     let result =
         json!({"done": true, "response": {"videos": [{"gcsUri": "gs://bucket/video.mp4"}]}});
     mock_predict_and_poll(&server, &result).await;
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.video("veo-3.0-generate-001");
     let r = generate_video(&model, options("test")).await.unwrap();
     assert!(r.response.timestamp.is_some());

@@ -181,20 +181,11 @@ pub struct ImageResponse {
 /// Aligned with V4 `ImageModelV4`.
 #[async_trait]
 pub trait ImageModel: Send + Sync {
-    /// Specification version (always `"v4"`).
-    fn specification_version(&self) -> &'static str {
-        "v4"
-    }
-
     /// Provider name, e.g. `"openai"`.
     fn provider(&self) -> &str;
 
     /// Provider-specific model ID, e.g. `"dall-e-3"`.
     fn model_id(&self) -> &str;
-
-    fn retry_config(&self) -> crate::retry::RetryConfig {
-        crate::retry::RetryConfig::default()
-    }
 
     /// Limit of how many images can be generated in a single API call.
     ///
@@ -220,11 +211,7 @@ pub async fn generate_image(
 ) -> Result<ImageResult, AiMuxError> {
     let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
     let abort_signal = options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
     timeout::run(
         retries.retry(|| model.do_generate(&options)),
         abort_signal.as_ref(),

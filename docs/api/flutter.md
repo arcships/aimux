@@ -47,9 +47,9 @@ model.close();
 
 ## Providers
 
-All 251 registry-backed OpenAI-compatible providers are reachable by string name:
+All 283 registry-backed OpenAI-compatible providers are reachable by string name:
 
-> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
+> **Scope:** `provider(name)` covers only the 283 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
 > (`Model.anthropic(apiKey, modelId)`); custom endpoints → base-URL variant.
 > Full list: [providers.md](providers.md).
@@ -73,7 +73,7 @@ shares a base with the other (both just `implements Exception`):
 
 | Source | Rust | Dart | C code |
 |---|---|---|---|
-| AiMux | `AiMuxError` | `AimuxException` hierarchy | 1..17 (4 retired) |
+| AiMux | `AiMuxError` | `AimuxException` hierarchy | 1..19 (4 retired) |
 | recorder | `RecordingError` | `RecordingException` | 100..105 |
 
 Every fallible C call returns an opaque `aimux_error_t *` (`NULL` =
@@ -81,7 +81,7 @@ success, result in the trailing out-parameter). The binding has one decoder
 (`errors.dart`): `expectAimuxError(e, context)` for model calls,
 `expectRecordingError(e, context)` for `initRecording` / `recordingTryFlush`,
 `expectFfiError(e, context)` for utilities that can only fail in the C ABI.
-One unified code selects 1..17, 100..105, or 200..206; each decoder copies the
+One unified code selects 1..19, 100..105, or 200..206; each decoder copies the
 relevant fields, releases the error with `aimux_error_free` exactly once, and
 throws the matching `AimuxException` subclass / `RecordingException`. Codes
 200..206 throw the native
@@ -105,6 +105,8 @@ Exception (implements)
       ├── NoSuchToolError           // code 15; tool not in the supplied tool set
       ├── InvalidToolInputError     // code 16; tool arguments failed to parse/validate
       ├── ToolCallRepairError       // code 17; a repairToolCall hook itself failed
+      ├── LoadAPIKeyError           // code 18; no API key, fallback env var unset (envVar)
+      ├── LoadSettingError          // code 19; a required setting is missing (envVar)
       └── OtherError
 ```
 

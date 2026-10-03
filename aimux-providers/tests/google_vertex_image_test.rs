@@ -10,7 +10,8 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs,
 };
 use aimux_core::shared::{AspectRatio, Size};
-use aimux_providers::{VertexProvider, VertexProviderConfig};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{VertexProvider, VertexProviderSettings, create_google_vertex};
 
 const PROMPT: &str = "A cute baby sea otter";
 
@@ -28,13 +29,28 @@ fn gemini_response() -> Value {
     })
 }
 
-fn config(server: &MockServer) -> VertexProviderConfig {
-    VertexProviderConfig::with_api_key("test-api-key").with_base_url(server.uri())
+/// Express mode (API key) pointed at the mock server.
+fn config(server: &MockServer) -> VertexProviderSettings {
+    VertexProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    }
 }
 
-fn config_bearer(server: &MockServer) -> VertexProviderConfig {
-    VertexProviderConfig::new("test-token", "test-project", "us-central1")
-        .with_base_url(server.uri())
+/// Standard mode (bearer token) pointed at the mock server.
+fn config_bearer(server: &MockServer) -> VertexProviderSettings {
+    VertexProviderSettings {
+        access_token: Some(Resolvable::Value("test-token".to_string())),
+        project: Some("test-project".to_string()),
+        location: Some("us-central1".to_string()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    }
+}
+
+fn vertex(settings: VertexProviderSettings) -> VertexProvider {
+    create_google_vertex(settings).expect("valid settings")
 }
 
 fn options(prompt: &str) -> ImageCallOptions {
@@ -49,7 +65,7 @@ async fn imagen_should_extract_generated_images() {
         .respond_with(ResponseTemplate::new(200).set_body_json(imagen_response()))
         .mount(&server)
         .await;
-    let provider = VertexProvider::new(config(&server));
+    let provider = vertex(config(&server));
     let model = provider.image("imagen-4.0-generate-001");
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
     match result.images {
@@ -66,7 +82,7 @@ async fn imagen_should_send_aspect_ratio() {
         .respond_with(ResponseTemplate::new(200).set_body_json(imagen_response()))
         .mount(&server)
         .await;
-    let provider = VertexProvider::new(config(&server));
+    let provider = vertex(config(&server));
     let model = provider.image("imagen-4.0-generate-001");
     let mut opts = options("test prompt");
     opts.n = 1;
@@ -86,7 +102,7 @@ async fn imagen_should_warn_for_size() {
         .respond_with(ResponseTemplate::new(200).set_body_json(imagen_response()))
         .mount(&server)
         .await;
-    let provider = VertexProvider::new(config(&server));
+    let provider = vertex(config(&server));
     let model = provider.image("imagen-4.0-generate-001");
     let mut opts = options(PROMPT);
     opts.n = 1;
@@ -103,7 +119,7 @@ async fn imagen_should_support_editing() {
         .respond_with(ResponseTemplate::new(200).set_body_json(imagen_response()))
         .mount(&server)
         .await;
-    let provider = VertexProvider::new(config(&server));
+    let provider = vertex(config(&server));
     let model = provider.image("imagen-4.0-generate-001");
     let mut opts = options("Edit this");
     opts.n = 1;
@@ -129,7 +145,7 @@ async fn gemini_should_extract_image() {
         .respond_with(ResponseTemplate::new(200).set_body_json(gemini_response()))
         .mount(&server)
         .await;
-    let provider = VertexProvider::new(config(&server));
+    let provider = vertex(config(&server));
     let model = provider.image("gemini-2.5-flash-image");
     let mut opts = options("A sunset");
     opts.n = 1;
@@ -148,7 +164,7 @@ async fn gemini_should_send_response_modalities() {
         .respond_with(ResponseTemplate::new(200).set_body_json(gemini_response()))
         .mount(&server)
         .await;
-    let provider = VertexProvider::new(config(&server));
+    let provider = vertex(config(&server));
     let model = provider.image("gemini-2.5-flash-image");
     let mut opts = options("A sunset");
     opts.n = 1;
@@ -169,7 +185,7 @@ async fn gemini_should_pass_aspect_ratio() {
         .respond_with(ResponseTemplate::new(200).set_body_json(gemini_response()))
         .mount(&server)
         .await;
-    let provider = VertexProvider::new(config(&server));
+    let provider = vertex(config(&server));
     let model = provider.image("gemini-2.5-flash-image");
     let mut opts = options("A sunset");
     opts.n = 1;
@@ -186,7 +202,7 @@ async fn gemini_should_pass_aspect_ratio() {
 #[tokio::test]
 async fn gemini_should_throw_for_n_gt_1() {
     let server = MockServer::start().await;
-    let provider = VertexProvider::new(config(&server));
+    let provider = vertex(config(&server));
     let model = provider.image("gemini-2.5-flash-image");
     let mut opts = options("A sunset");
     opts.n = 2;
@@ -196,7 +212,7 @@ async fn gemini_should_throw_for_n_gt_1() {
 #[tokio::test]
 async fn gemini_should_throw_for_mask() {
     let server = MockServer::start().await;
-    let provider = VertexProvider::new(config(&server));
+    let provider = vertex(config(&server));
     let model = provider.image("gemini-2.5-flash-image");
     let mut opts = options("Edit");
     opts.n = 1;
@@ -215,7 +231,7 @@ async fn should_use_bearer_token_auth() {
         .respond_with(ResponseTemplate::new(200).set_body_json(imagen_response()))
         .mount(&server)
         .await;
-    let provider = VertexProvider::new(config_bearer(&server));
+    let provider = vertex(config_bearer(&server));
     let model = provider.image("imagen-4.0-generate-001");
     model.do_generate(&options(PROMPT)).await.unwrap();
     let reqs = server.received_requests().await.unwrap();

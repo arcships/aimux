@@ -1141,7 +1141,6 @@ public struct GenerateTextOptions: Codable, Equatable {
     public var providerOptions: JSONValue?
     public var reasoning: ReasoningEffort?
     public var instructions: String?
-    public var bodyOverrides: JSONValue?
     public var maxRetries: UInt32?
     public var timeout: TimeoutConfiguration?
     public var includeRawChunks: Bool?
@@ -1194,7 +1193,6 @@ public struct GenerateTextOptions: Codable, Equatable {
         case headers
         case providerOptions = "provider_options"
         case reasoning, instructions
-        case bodyOverrides = "body_overrides"
         case maxRetries = "max_retries"
         case timeout
         case includeRawChunks = "include_raw_chunks"
@@ -1208,7 +1206,7 @@ public struct GenerateTextOptions: Codable, Equatable {
                 tools: [Tool]? = nil, toolChoice: ToolChoice? = nil,
                 headers: [String: String]? = nil, providerOptions: JSONValue? = nil,
                 reasoning: ReasoningEffort? = nil, instructions: String? = nil,
-                bodyOverrides: JSONValue? = nil, maxRetries: UInt32? = nil,
+                maxRetries: UInt32? = nil,
                 timeout: TimeoutConfiguration? = nil,
                 includeRawChunks: Bool? = nil,
                 sessionId: String? = nil,
@@ -1219,7 +1217,7 @@ public struct GenerateTextOptions: Codable, Equatable {
         self.responseFormat = responseFormat; self.seed = seed; self.tools = tools
         self.toolChoice = toolChoice; self.headers = headers; self.providerOptions = providerOptions
         self.reasoning = reasoning; self.instructions = instructions
-        self.bodyOverrides = bodyOverrides; self.maxRetries = maxRetries; self.timeout = timeout
+        self.maxRetries = maxRetries; self.timeout = timeout
         self.includeRawChunks = includeRawChunks
         self.sessionId = sessionId
         self.repairToolCallBox = repairToolCall.map(RepairToolCallBox.init(run:))

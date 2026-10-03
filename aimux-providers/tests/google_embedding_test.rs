@@ -11,7 +11,18 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
-use aimux_providers::{GoogleConfig, GoogleProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{GoogleProvider, GoogleProviderSettings, create_google};
+
+/// A Google provider with the test key, pointed at `base_url` when given.
+fn test_google(key: &str, base_url: Option<String>) -> GoogleProvider {
+    create_google(GoogleProviderSettings {
+        api_key: Some(Resolvable::Value(key.to_string())),
+        base_url,
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 const TEST_VALUES: &[&str] = &["sunny day at the beach", "rainy day in the city"];
 
@@ -57,9 +68,8 @@ async fn should_extract_embedding() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.embedding_model("gemini-embedding-001");
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+    let model = provider.embedding("gemini-embedding-001");
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -82,9 +92,8 @@ async fn should_expose_raw_response() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.embedding_model("gemini-embedding-001");
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+    let model = provider.embedding("gemini-embedding-001");
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -111,9 +120,8 @@ async fn should_pass_model_and_values() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.embedding_model("gemini-embedding-001");
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+    let model = provider.embedding("gemini-embedding-001");
 
     let _ = model
         .do_embed(&default_options(test_values()))
@@ -146,9 +154,8 @@ async fn should_pass_output_dimensionality() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.embedding_model("gemini-embedding-001");
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+    let model = provider.embedding("gemini-embedding-001");
 
     let mut provider_options = HashMap::new();
     provider_options.insert("google".to_string(), json!({"outputDimensionality": 64}));
@@ -178,9 +185,8 @@ async fn should_pass_task_type() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.embedding_model("gemini-embedding-001");
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+    let model = provider.embedding("gemini-embedding-001");
 
     let mut provider_options = HashMap::new();
     provider_options.insert(
@@ -213,9 +219,8 @@ async fn should_pass_headers() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.embedding_model("gemini-embedding-001");
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+    let model = provider.embedding("gemini-embedding-001");
 
     let mut request_headers = HashMap::new();
     request_headers.insert(
@@ -257,9 +262,8 @@ async fn should_use_batch_endpoint() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.embedding_model("gemini-embedding-001");
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+    let model = provider.embedding("gemini-embedding-001");
 
     let _ = model
         .do_embed(&default_options(test_values()))
@@ -280,9 +284,8 @@ async fn should_use_single_endpoint() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.embedding_model("gemini-embedding-001");
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+    let model = provider.embedding("gemini-embedding-001");
 
     let result = model
         .do_embed(&default_options(vec![TEST_VALUES[0].to_string()]))
@@ -299,9 +302,8 @@ async fn should_use_single_endpoint() {
 /// TS: "should expose the Google batch embedding API limit"
 #[test]
 fn should_expose_max_embeddings_per_call() {
-    let config = GoogleConfig::new("test-api-key");
-    let provider = GoogleProvider::new(config);
-    let model = provider.embedding_model("gemini-embedding-001");
+    let provider = test_google("test-api-key", None);
+    let model = provider.embedding("gemini-embedding-001");
     assert_eq!(model.max_embeddings_per_call(), Some(100));
 }
 

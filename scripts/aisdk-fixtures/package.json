@@ -1,0 +1,19 @@
+{
+  "name": "aimux-aisdk-fixtures",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Records Vercel AI SDK request/response fixtures under a mocked fetch transport (RFC-0036 section 9.3).",
+  "scripts": {
+    "record": "node record.mjs"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "4.0.71",
+    "@ai-sdk/google": "4.0.87",
+    "@ai-sdk/openai": "4.0.83",
+    "@ai-sdk/openai-compatible": "3.0.62",
+    "@ai-sdk/provider": "4.0.21",
+    "@ai-sdk/provider-utils": "5.0.53",
+    "ai": "7.0.127"
+  }
+}

@@ -30,18 +30,23 @@ model = provider("groq", None, "llama-3.3-70b")
 model = provider("groq", "sk-...", "llama-3.3-70b", "https://relay.example/v1")
 # Full ProviderOptions via config dict:
 model = provider("groq", "sk-...", "llama-3.3-70b",
-                 config={"headers": {"X-Custom": "1"}, "max_retries": 0})
+                 config={"headers": {"X-Custom": "1"}})
+# A preset with template parameters:
+model = provider("cloudflare_workers_ai", "sk-...", "@cf/meta/llama-3.1-8b-instruct",
+                 config={"params": {"account_id": "acct123"}})
 result = generate_text(model, "Hello")
 ```
 
 `provider(name, api_key, model_id, base_url=None, config=None)` covers all
-251 built-in OpenAI-compatible providers. `config` takes the full
+283 built-in OpenAI-compatible providers. `config` takes the full
 `ProviderOptions` shape (`base_url` / `headers` / `organization` / `project` /
-`max_retries` / `body_overrides`); the `base_url` parameter wins over
-`config["base_url"]`. `openai` / `anthropic` / `deepseek` factories
+`params`); the `base_url` parameter wins over `config["base_url"]`.
+`max_retries` (a per-call option) and `body_overrides` (removed) in `config`
+raise `InvalidArgumentError`. A missing key or setting raises `LoadAPIKeyError`
+(`env_var`, `description`) / `LoadSettingError` (`env_var`, `setting_name`). `openai` / `anthropic` / `deepseek` factories
 remain (deepseek is now registry-backed).
 
-> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
+> **Scope:** `provider(name)` covers only the 283 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
 > (`anthropic(api_key, model)`); custom endpoints → `base_url` param.
 > Full list: [providers.md](providers.md).
@@ -391,6 +396,7 @@ Exception
       ├── JSONParseError / InvalidResponseDataError
       ├── NoSuchToolError / InvalidToolInputError / ToolCallRepairError  # tool-contract errors
       ├── InvalidArgumentError / InvalidPromptError
+      ├── LoadAPIKeyError / LoadSettingError   # no API key / required setting: env_var (+ description / setting_name)
       ├── TokenExpiredError
       ├── UnsupportedFunctionalityError
       ├── NoSuchModelError / NoSuchProviderError
@@ -429,7 +435,9 @@ permitted attempt failed with a retryable error — or `"errorNotRetryable"` —
 a later attempt failed non-retryably), `errors` — the per-attempt history,
 oldest first, each itself an exception from this hierarchy — and
 `last_error`. `TokenExpiredError` has `status == 401`, `NoSuchModelError` has
-`model_id` / `model_type`, and `NoSuchProviderError` has `provider_id`.
+`model_id` / `model_type`, `NoSuchProviderError` has `provider_id`, and
+`LoadAPIKeyError` / `LoadSettingError` have `env_var` (the environment variable
+consulted) plus `description` / `setting_name`.
 
 ```python
 from aimux import (

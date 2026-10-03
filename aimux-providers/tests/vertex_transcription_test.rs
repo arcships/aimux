@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Google Vertex transcription model tests.
+//! Rust translation of the Google Vertex transcription model tests.
 //! Source: `reference/ai/packages/google-vertex/src/google-vertex-transcription-model.test.ts`
 
 use std::collections::HashMap;
@@ -8,7 +8,21 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
-use aimux_providers::{VertexProvider, VertexProviderConfig};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{VertexProvider, VertexProviderSettings, create_google_vertex};
+
+/// A standard-mode Vertex provider (project `test-project`, location
+/// `us-central1`, bearer token `test-token`) pointed at `base_url`.
+fn vertex_at(base_url: &str) -> VertexProvider {
+    create_google_vertex(VertexProviderSettings {
+        base_url: Some(base_url.to_string()),
+        project: Some("test-project".to_string()),
+        location: Some("us-central1".to_string()),
+        access_token: Some(Resolvable::Value("test-token".to_string())),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 fn mock_audio() -> Vec<u8> {
     vec![1u8, 2, 3, 4, 5, 6, 7, 8]
@@ -34,9 +48,7 @@ fn default_body() -> Value {
 }
 
 fn make_provider(server_uri: &str) -> VertexProvider {
-    let config = VertexProviderConfig::new("test-token", "test-project", "us-central1")
-        .with_base_url(server_uri);
-    VertexProvider::new(config)
+    vertex_at(server_uri)
 }
 
 async fn mock_response(server: &MockServer, body: &Value, headers: &[(&str, &str)]) {
@@ -60,7 +72,7 @@ async fn should_send_model_language_codes_features_and_base64() {
     mock_response(&server, &default_body(), &[]).await;
 
     let provider = make_provider(&server.uri());
-    let model = provider.transcription("chirp_2").unwrap();
+    let model = provider.transcription("chirp_2");
 
     model
         .do_generate(&options(mock_audio(), "audio/wav"))
@@ -86,7 +98,7 @@ async fn should_extract_text_segments_language_and_duration() {
     mock_response(&server, &default_body(), &[]).await;
 
     let provider = make_provider(&server.uri());
-    let model = provider.transcription("chirp_2").unwrap();
+    let model = provider.transcription("chirp_2");
 
     let result = model
         .do_generate(&options(mock_audio(), "audio/wav"))
@@ -110,10 +122,8 @@ async fn should_pass_headers() {
     let server = MockServer::start().await;
     mock_response(&server, &default_body(), &[]).await;
 
-    let config = VertexProviderConfig::new("test-token", "test-project", "us-central1")
-        .with_base_url(server.uri());
-    let provider = VertexProvider::new(config);
-    let model = provider.transcription("chirp_2").unwrap();
+    let provider = vertex_at(&server.uri());
+    let model = provider.transcription("chirp_2");
 
     let mut opts = options(mock_audio(), "audio/wav");
     let mut rh = HashMap::new();
@@ -140,7 +150,7 @@ async fn should_include_response_data() {
     mock_response(&server, &default_body(), &[("x-request-id", "test-req")]).await;
 
     let provider = make_provider(&server.uri());
-    let model = provider.transcription("chirp_2").unwrap();
+    let model = provider.transcription("chirp_2");
 
     let result = model
         .do_generate(&options(mock_audio(), "audio/wav"))
@@ -157,7 +167,7 @@ async fn should_use_real_date() {
     mock_response(&server, &default_body(), &[]).await;
 
     let provider = make_provider(&server.uri());
-    let model = provider.transcription("chirp_2").unwrap();
+    let model = provider.transcription("chirp_2");
 
     let result = model
         .do_generate(&options(mock_audio(), "audio/wav"))
@@ -174,7 +184,7 @@ async fn should_handle_no_results() {
     mock_response(&server, &json!({}), &[]).await;
 
     let provider = make_provider(&server.uri());
-    let model = provider.transcription("chirp_2").unwrap();
+    let model = provider.transcription("chirp_2");
 
     let result = model
         .do_generate(&options(mock_audio(), "audio/wav"))
@@ -202,10 +212,8 @@ async fn should_use_provider_options_for_region_and_language() {
         .mount(&server)
         .await;
 
-    let config = VertexProviderConfig::new("test-token", "test-project", "us-central1")
-        .with_base_url(server.uri());
-    let provider = VertexProvider::new(config);
-    let model = provider.transcription("chirp_2").unwrap();
+    let provider = vertex_at(&server.uri());
+    let model = provider.transcription("chirp_2");
 
     let mut opts = options(mock_audio(), "audio/wav");
     let mut po = HashMap::new();

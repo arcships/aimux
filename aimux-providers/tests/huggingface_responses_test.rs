@@ -36,7 +36,7 @@ use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::huggingface::responses::convert_to_huggingface_responses_messages;
-use aimux_providers::{HuggingFaceConfig, HuggingFaceProvider};
+use aimux_providers::{HuggingFaceProvider, HuggingFaceProviderSettings, create_huggingface};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers
@@ -58,8 +58,12 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 
 /// Build a Hugging Face provider whose base URL points at the mock server.
 fn make_provider(server: &MockServer) -> HuggingFaceProvider {
-    let config = HuggingFaceConfig::new("APIKEY").with_base_url(server.uri());
-    HuggingFaceProvider::new(config)
+    create_huggingface(HuggingFaceProviderSettings {
+        api_key: Some("APIKEY".to_string().into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .expect("valid settings")
 }
 
 /// Mount a JSON response on `/responses`.
@@ -162,7 +166,7 @@ async fn should_generate_text() {
     mock_json(&server, basic_response_body()).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -185,7 +189,7 @@ async fn should_extract_usage() {
     mock_json(&server, basic_response_body()).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -242,7 +246,7 @@ async fn should_extract_text_from_output_array_when_output_text_missing() {
     .await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -288,7 +292,7 @@ async fn should_handle_missing_usage_gracefully() {
     .await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -313,7 +317,7 @@ async fn should_send_model_id_settings_and_input() {
     mock_json(&server, basic_response_body()).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let prompt = vec![
         LanguageModelPromptMessage {
@@ -357,7 +361,7 @@ async fn should_handle_unsupported_settings_with_warnings() {
     mock_json(&server, basic_response_body()).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let mut options = default_options(test_prompt());
     options.top_k = Some(10.0);
@@ -436,7 +440,7 @@ async fn should_generate_text_and_sources_from_annotations() {
     .await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -524,7 +528,7 @@ async fn should_handle_mcp_tools_with_annotations() {
     .await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -620,7 +624,7 @@ async fn should_stream_text_deltas() {
     mock_sse(&server, chunks).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -701,7 +705,7 @@ async fn should_handle_streaming_without_usage() {
     mock_sse(&server, chunks).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -741,7 +745,7 @@ async fn should_handle_non_message_item_types() {
     mock_sse(&server, chunks).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -785,7 +789,7 @@ async fn should_handle_streaming_errors() {
     mock_sse(&server, chunks).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -823,7 +827,7 @@ async fn should_send_correct_streaming_request() {
     mock_sse(&server, chunks).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let mut options = default_options(test_prompt());
     options.temperature = Some(0.7);
@@ -879,7 +883,7 @@ async fn should_convert_user_messages_with_images() {
     stub_empty_response(&server).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let prompt = vec![LanguageModelPromptMessage {
         role: Role::User,
@@ -913,7 +917,7 @@ async fn should_throw_for_file_parts_with_provider_references() {
     stub_empty_response(&server).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("Qwen/Qwen2.5-VL-32B-Instruct");
+    let model = provider.responses("Qwen/Qwen2.5-VL-32B-Instruct");
 
     let prompt = vec![LanguageModelPromptMessage {
         role: Role::User,
@@ -942,7 +946,7 @@ async fn should_handle_assistant_messages() {
     stub_empty_response(&server).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let prompt = vec![
         LanguageModelPromptMessage {
@@ -987,7 +991,7 @@ async fn should_not_warn_about_assistant_content_types() {
     stub_empty_response(&server).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let prompt = vec![LanguageModelPromptMessage {
         role: Role::Assistant,
@@ -1020,7 +1024,7 @@ async fn should_warn_about_tool_messages() {
     stub_empty_response(&server).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let prompt = vec![LanguageModelPromptMessage {
         role: Role::Tool,
@@ -1099,7 +1103,7 @@ async fn should_handle_function_call_tool_responses() {
     .await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -1157,7 +1161,7 @@ async fn should_stream_tool_calls() {
     mock_sse(&server, chunks).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -1275,7 +1279,7 @@ async fn should_send_text_format_for_structured_output() {
     .await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("moonshotai/Kimi-K2-Instruct");
+    let model = provider.responses("moonshotai/Kimi-K2-Instruct");
 
     let mut options = default_options(test_prompt());
     options.response_format = Some(ResponseFormat::Json {
@@ -1347,7 +1351,7 @@ async fn should_handle_structured_output_with_custom_name_and_description() {
     .await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("moonshotai/Kimi-K2-Instruct");
+    let model = provider.responses("moonshotai/Kimi-K2-Instruct");
 
     let mut options = default_options(test_prompt());
     options.response_format = Some(ResponseFormat::Json {
@@ -1416,7 +1420,7 @@ async fn should_handle_reasoning_content_in_responses() {
     .await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-R1");
+    let model = provider.responses("deepseek-ai/DeepSeek-R1");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -1485,7 +1489,7 @@ async fn should_stream_reasoning_content() {
     mock_sse(&server, chunks).await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-R1");
+    let model = provider.responses("deepseek-ai/DeepSeek-R1");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -1609,7 +1613,7 @@ async fn should_send_provider_specific_options() {
     .await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let mut options = default_options(test_prompt());
     let mut po = HashMap::new();
@@ -1669,7 +1673,7 @@ async fn should_prepare_tools_correctly() {
     .await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let mut options = default_options(test_prompt());
     options.tools = Some(vec![Tool::from(
@@ -1738,7 +1742,7 @@ async fn should_handle_auto_and_required_tool_choices() {
     .await;
 
     let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     // Test auto
     let mut options = default_options(test_prompt());

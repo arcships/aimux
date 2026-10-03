@@ -10,12 +10,15 @@ the [API overview](../API.md).
 
 ```rust
 use aimux_core::prelude::*;
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::{OpenAIProviderSettings, create_openai};
 
 #[tokio::main]
 async fn main() -> Result<(), AiMuxError> {
-    let provider = OpenAIProvider::new(OpenAIConfig::new("sk-..."));
-    let model = provider.model("gpt-4o");
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("sk-...".to_string().into()),
+        ..Default::default()
+    })?;
+    let model = provider.chat("gpt-4o");
     let result = generate_text(&model, "What is Rust?", GenerateTextOptions::default()).await?;
     println!("{}", result.text);
     Ok(())
@@ -24,30 +27,59 @@ async fn main() -> Result<(), AiMuxError> {
 
 ## Providers
 
-All 251 built-in OpenAI-compatible providers are registry-backed: no per-provider
-`XxxConfig`/`XxxProvider` types. Look them up by string name:
+Every provider package follows the AI SDK shape: `XxxProviderSettings`
+(all fields optional), `create_xxx(settings)` and an infallible default
+instance `xxx()`. Models are taken from the provider (`provider.chat(id)`,
+`provider.language_model(id)?`, `provider.embedding_model(id)?`, …); each
+reports `provider()` as `"{name}.{method}"` (`openai.chat`, `anthropic.messages`).
 
-> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
-> providers; Anthropic/Google/multimodal/local → typed factories
-> (`AnthropicProvider::new(..)`); custom endpoints →
-> `ProviderOptions.base_url` / `OpenAIConfig::with_base_url`.
-> Full list: [providers.md](providers.md).
+```rust
+use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
+use aimux_providers::openai::openai;
+
+// Default instance: OPENAI_API_KEY is read when a request is made; a missing
+// key fails that call with `AiMuxError::LoadApiKey`, not the constructor.
+let model = openai().chat("gpt-4o");
+
+// Explicit settings. `api_key: Some(..)` is used as given (`""` included).
+let anthropic = create_anthropic(AnthropicProviderSettings {
+    api_key: Some("sk-ant-...".to_string().into()),
+    base_url: Some("https://relay.example/v1".into()),
+    ..Default::default()
+})?;
+let model = anthropic.messages("claude-sonnet-4-5");
+```
+
+Settings that need a function (a rotating key, headers, a custom transport)
+take a `Resolvable` (`Resolvable::from_fn`, `from_async_fn`) or a `Fetch`; a
+provider-level rewrite of the request body is `transform_request_body`.
+Retry is not a provider setting: `max_retries` on the call options (default
+2, 2000 ms initial delay, factor 2).
+
+The 283 OpenAI-compatible registry providers are generated presets
+(`presets::create_groq(PresetSettings)` / `presets::groq()`), and are also
+reachable by string name:
+
+> **Scope:** `provider(name)` covers the registry OpenAI-compatible providers
+> (and runtime overlays); Anthropic/Google/Bedrock/multimodal/local use their
+> own `create_xxx` factories; custom endpoints → `ProviderOptions.base_url` /
+> `XxxProviderSettings::base_url`. Full list: [providers.md](providers.md).
 
 ```rust
 use aimux_providers::{provider, provider_from_env, ProviderOptions};
 
-// Key from the provider's env var (GROQ_API_KEY etc.), base URL & profile from
-// the registry — replaces the retired `XxxConfig::from_env()`.
+// Key from the provider's env var (GROQ_API_KEY etc.), base URL from the registry.
 let model = provider_from_env("groq", "llama-3.3-70b", None)?;
 
-// Explicit key + overrides — replaces the retired `XxxConfig::new().with_base_url(..)`.
+// Explicit key + overrides. `ProviderOptions` carries base_url / headers /
+// organization / project / params (preset template parameters such as
+// `account_id`); a `max_retries` or `body_overrides` key is `InvalidArgument`.
 let model = provider(
     "groq",
     Some("sk-...".to_string()),
     "llama-3.3-70b",
     Some(ProviderOptions { base_url: Some("https://relay.example/v1".into()), ..Default::default() }),
 )?;
-
 ```
 
 Names come from `provider_registry.json`; the current list is in
@@ -300,7 +332,7 @@ The user-facing API consists of the `generate_text()` / `stream_text()` free fun
 > `provider.files()`, `provider.reranking_model(...)`,
 > `provider.search_model(...)`, `provider.video(...)`) are **inherent methods
 > on each provider struct**, not trait methods — they exist only on providers
-> that support the feature (e.g. `OpenAIProvider` has `embedding_model` /
+> that support the feature (e.g. `OpenAIProvider` has `embedding` /
 > `speech` / `image` / `transcription` / `files`; `CohereProvider` has
 > `embedding_model` / `reranking_model`; `BedrockProvider` has `image`).
 

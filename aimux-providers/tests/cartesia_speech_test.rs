@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Cartesia speech (TTS) model tests.
+//! Rust translation of the Cartesia speech (TTS) model tests.
 //!
 //! Source: `reference/ai/packages/cartesia/src/cartesia-speech-model.test.ts`
 //!
@@ -14,7 +14,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::shared::Warning;
 use aimux_core::speech_model::{AudioData, SpeechCallOptions, SpeechModel};
-use aimux_providers::{CartesiaConfig, CartesiaProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{CartesiaProviderSettings, create_cartesia};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -67,8 +68,12 @@ async fn should_generate_speech_with_required_parameters() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let mut options = speech_options("Hello, world!");
@@ -100,8 +105,12 @@ async fn should_throw_when_no_voice_is_provided() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let result = model.do_generate(&speech_options("Hello, world!")).await;
@@ -120,8 +129,12 @@ async fn should_map_wav_output_format() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "wav").await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let mut options = speech_options("Hello, world!");
@@ -148,8 +161,12 @@ async fn should_map_pcm_output_format_with_sample_rate_suffix() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "pcm").await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let mut options = speech_options("Hello, world!");
@@ -176,8 +193,12 @@ async fn should_handle_language_parameter() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let mut options = speech_options("Hola, mundo!");
@@ -198,8 +219,12 @@ async fn should_handle_speed_parameter() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let mut options = speech_options("Hello, world!");
@@ -219,8 +244,12 @@ async fn should_warn_and_ignore_an_out_of_range_generic_speed() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let mut options = speech_options("Hello, world!");
@@ -251,8 +280,12 @@ async fn should_warn_about_unsupported_instructions_parameter() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let mut options = speech_options("Hello, world!");
@@ -282,8 +315,12 @@ async fn should_pass_provider_specific_options() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let mut options = speech_options("Hello, world!");
@@ -322,8 +359,12 @@ async fn should_ignore_encoding_for_mp3_output() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let mut options = speech_options("Hello, world!");
@@ -360,8 +401,12 @@ async fn should_warn_about_an_unsupported_sample_rate_suffix() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "wav").await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let mut options = speech_options("Hello, world!");
@@ -395,10 +440,18 @@ async fn should_pass_headers() {
         "Custom-Provider-Header".to_string(),
         "provider-header-value".to_string(),
     );
-    let config = CartesiaConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(provider_headers);
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some(
+            (provider_headers)
+                .into_iter()
+                .map(|(k, v)| (k, Some(v)))
+                .collect(),
+        ),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let mut options = speech_options("Hello, world!");
@@ -433,8 +486,12 @@ async fn should_return_audio_data() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let mut options = speech_options("Hello, world!");
@@ -451,8 +508,12 @@ async fn should_include_response_data_with_timestamp_modelid_and_headers() {
     let server = MockServer::start().await;
     mock_audio_response_with_headers(&server, "mp3", &[("x-request-id", "test-request-id")]).await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.speech("sonic-3.5");
 
     let mut options = speech_options("Hello, world!");

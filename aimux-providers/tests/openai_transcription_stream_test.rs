@@ -22,7 +22,19 @@ use aimux_core::transcription_model::{
     AudioChunk, InputAudioFormat, TranscriptionModel, TranscriptionStreamOptions,
     TranscriptionStreamPart,
 };
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
+
+/// A native OpenAI provider against `base_url`. The key is an explicit value,
+/// so the environment is never consulted.
+fn provider_with(api_key: &str, base_url: impl Into<String>) -> OpenAIProvider {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value(api_key.to_string())),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("settings are valid")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -136,8 +148,7 @@ async fn serve(ws: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream
 }
 
 fn realtime_model(base_url: &str) -> aimux_providers::OpenAITranscriptionModel {
-    let config = OpenAIConfig::new("test-api-key").with_base_url(base_url.to_string());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", base_url.to_string());
     provider.transcription("gpt-realtime-whisper")
 }
 
@@ -354,8 +365,7 @@ async fn stream_abort_mid_session() {
 /// Non-realtime models are rejected from do_stream (inverse gating).
 #[tokio::test]
 async fn stream_rejects_non_realtime_models() {
-    let config = OpenAIConfig::new("k").with_base_url("http://127.0.0.1:1");
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("k", "http://127.0.0.1:1");
     let model = provider.transcription("whisper-1");
     let err = model
         .do_stream(stream_options(vec![], None))
@@ -374,8 +384,7 @@ async fn stream_rejects_non_realtime_models() {
 #[tokio::test]
 async fn stream_connect_failure_errors() {
     // Port 1 is never listening on loopback: TCP refuses immediately.
-    let config = OpenAIConfig::new("k").with_base_url("http://127.0.0.1:1".to_string());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("k", "http://127.0.0.1:1".to_string());
     let model = provider.transcription("gpt-realtime-whisper");
 
     let err = model
@@ -448,8 +457,7 @@ async fn stream_connect_timeout_fires() {
         std::future::pending::<()>().await;
     });
 
-    let config = OpenAIConfig::new("k").with_base_url(format!("http://127.0.0.1:{port}"));
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("k", format!("http://127.0.0.1:{port}"));
     let model = provider.transcription("gpt-realtime-whisper");
 
     let options = TranscriptionStreamOptions {
@@ -501,8 +509,7 @@ async fn stream_first_chunk_timeout_fires() {
         while let Ok(Some(_)) = tokio::time::timeout(Duration::from_secs(2), ws.next()).await {}
     });
 
-    let config = OpenAIConfig::new("k").with_base_url(format!("http://127.0.0.1:{port}"));
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("k", format!("http://127.0.0.1:{port}"));
     let model = provider.transcription("gpt-realtime-whisper");
 
     let options = TranscriptionStreamOptions {
@@ -657,8 +664,7 @@ async fn stream_chunk_idle_timeout_fires() {
         while let Ok(Some(_)) = tokio::time::timeout(Duration::from_secs(2), ws.next()).await {}
     });
 
-    let config = OpenAIConfig::new("k").with_base_url(format!("http://127.0.0.1:{port}"));
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("k", format!("http://127.0.0.1:{port}"));
     let model = provider.transcription("gpt-realtime-whisper");
 
     let options = TranscriptionStreamOptions {
@@ -721,8 +727,7 @@ async fn stream_total_timeout_fires() {
         }
     });
 
-    let config = OpenAIConfig::new("k").with_base_url(format!("http://127.0.0.1:{port}"));
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("k", format!("http://127.0.0.1:{port}"));
     let model = provider.transcription("gpt-realtime-whisper");
 
     let options = TranscriptionStreamOptions {

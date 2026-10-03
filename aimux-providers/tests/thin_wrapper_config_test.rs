@@ -7,7 +7,7 @@
 //! suites verify:
 //!
 //! - `from_env()` loads the correct environment variable.
-//! - `Provider::name()` returns the documented provider string.
+//! - the provider's models report the documented provider string.
 //! - Custom headers are forwarded to the HTTP request.
 //! - The default base URL constant is wired correctly (verified via a mock
 //!   round-trip that relies on `with_base_url`).
@@ -22,6 +22,7 @@ use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -29,7 +30,8 @@ use aimux_core::options::CallOptions;
 use aimux_core::provider::Provider;
 
 use aimux_providers::{
-    HuggingFaceConfig, HuggingFaceProvider, ProviderOptions, provider, provider_from_env,
+    HuggingFaceProvider, HuggingFaceProviderSettings, ProviderOptions, create_huggingface,
+    provider, provider_from_env,
 };
 
 // ── shared helpers ───────────────────────────────────────────────────────────
@@ -68,14 +70,29 @@ fn text_completion_body() -> Value {
 mod huggingface_config {
     use super::*;
 
+    fn hf_provider(api_key: &str, base_url: Option<String>) -> HuggingFaceProvider {
+        create_huggingface(HuggingFaceProviderSettings {
+            api_key: Some(api_key.to_string().into()),
+            base_url,
+            ..Default::default()
+        })
+        .expect("valid settings")
+    }
+
     /// TS: `createHuggingFace()` should create a provider with default
-    /// configuration. In Rust we verify the provider name and that a model
-    /// can be created.
+    /// configuration. In Rust we verify that a model can be created. The chat
+    /// model is the shared OpenAI-compatible model, so `provider()` carries the
+    /// protocol name until each wrapper gets its own settings-level name.
     #[test]
-    fn provider_name_is_huggingface() {
-        let config = HuggingFaceConfig::new("test-key");
-        let provider = HuggingFaceProvider::new(config);
-        assert_eq!(provider.name(), "huggingface");
+    fn model_is_created_with_default_configuration() {
+        let provider = hf_provider("test-key", None);
+        let model = provider.chat_completions("any");
+        assert_eq!(model.model_id(), "any");
+        assert_eq!(model.provider(), "huggingface.chat");
+        assert_eq!(
+            provider.responses("any").provider(),
+            "huggingface.responses"
+        );
     }
 
     /// TS: `createHuggingFace({ apiKey: 'custom-key' })` �?custom API key
@@ -90,9 +107,8 @@ mod huggingface_config {
             .mount(&server)
             .await;
 
-        let config = HuggingFaceConfig::new("my-custom-key").with_base_url(server.uri());
-        let provider = HuggingFaceProvider::new(config);
-        let model = provider.model("meta-llama/Llama-3.3-70B-Instruct");
+        let provider = hf_provider("my-custom-key", Some(server.uri()));
+        let model = provider.chat_completions("meta-llama/Llama-3.3-70B-Instruct");
 
         model
             .do_generate(&default_options(test_prompt()))
@@ -112,9 +128,8 @@ mod huggingface_config {
             .mount(&server)
             .await;
 
-        let config = HuggingFaceConfig::new("test-key").with_base_url(server.uri());
-        let provider = HuggingFaceProvider::new(config);
-        let model = provider.model("meta-llama/Llama-3.3-70B-Instruct");
+        let provider = hf_provider("test-key", Some(server.uri()));
+        let model = provider.chat_completions("meta-llama/Llama-3.3-70B-Instruct");
 
         let mut options = default_options(test_prompt());
         options.headers = Some(
@@ -129,64 +144,56 @@ mod huggingface_config {
             .expect("should succeed with custom headers");
     }
 
-    /// TS: `provider.languageModel(modelId)` �?the provider should create a
-    /// language model via the `Provider` trait.
-    #[tokio::test]
-    async fn language_model_via_trait() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-            .mount(&server)
-            .await;
-
-        let config = HuggingFaceConfig::new("test-key").with_base_url(server.uri());
-        let provider = HuggingFaceProvider::new(config);
+    /// TS: `provider.languageModel(modelId)` — the provider creates the
+    /// Responses model (the AI SDK package has no chat model) via the
+    /// `Provider` trait.
+    #[test]
+    fn language_model_via_trait_is_the_responses_model() {
+        let provider = hf_provider("test-key", Some("http://127.0.0.1:1".to_string()));
         let model = provider
             .language_model("meta-llama/Llama-3.3-70B-Instruct")
             .expect("language_model should succeed");
-
-        model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .expect("do_generate should succeed");
+        assert_eq!(model.provider(), "huggingface.responses");
     }
 
-    /// TS: `from_env` should load `HUGGINGFACE_API_KEY`.
-    #[test]
-    fn from_env_loads_correct_env_var() {
-        // Save and restore env var.
+    /// TS: the key is loaded from `HUGGINGFACE_API_KEY` when a request is
+    /// made, not when the provider is created.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn key_is_loaded_from_env_per_request() {
         let saved = std::env::var("HUGGINGFACE_API_KEY").ok();
+        unsafe { std::env::remove_var("HUGGINGFACE_API_KEY") };
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .and(header("authorization", "Bearer env-test-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
+            .mount(&server)
+            .await;
+        let provider = create_huggingface(HuggingFaceProviderSettings {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        })
+        .expect("created without a key");
+        let model = provider.chat_completions("any");
+
+        let err = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .expect_err("no key yet");
+        assert!(matches!(err, AiMuxError::LoadApiKey { .. }), "{err:?}");
+
         unsafe { std::env::set_var("HUGGINGFACE_API_KEY", "env-test-key") };
+        let result = model.do_generate(&default_options(test_prompt())).await;
 
-        let config = HuggingFaceConfig::from_env();
-        assert!(config.is_ok(), "from_env should succeed with env var set");
-
-        // Restore.
         unsafe {
             match saved {
                 Some(v) => std::env::set_var("HUGGINGFACE_API_KEY", v),
                 None => std::env::remove_var("HUGGINGFACE_API_KEY"),
             }
         }
-    }
-
-    /// TS: `from_env` should fail without the env var.
-    #[test]
-    #[ignore = "flaky: parallel test env var race"]
-    fn from_env_fails_without_env_var() {
-        let saved = std::env::var("HUGGINGFACE_API_KEY").ok();
-        unsafe { std::env::remove_var("HUGGINGFACE_API_KEY") };
-
-        let config = HuggingFaceConfig::from_env();
-        assert!(config.is_err(), "from_env should fail without env var");
-
-        // Restore.
-        unsafe {
-            if let Some(v) = saved {
-                std::env::set_var("HUGGINGFACE_API_KEY", v);
-            }
-        }
+        result.expect("the key set after creation is used");
     }
 }
 

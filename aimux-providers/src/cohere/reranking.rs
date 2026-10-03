@@ -16,9 +16,7 @@ use aimux_core::reranking_model::{
 };
 use aimux_core::types::Warning;
 
-use aimux_provider_utils::HttpRequest;
-
-use super::CohereConfig;
+use crate::shared::EndpointConfig;
 
 /// Cohere provider-specific reranking options.
 #[derive(Debug, Clone, Default)]
@@ -31,9 +29,7 @@ fn parse_cohere_reranking_options(
     provider_options: Option<&HashMap<String, Value>>,
 ) -> CohereRerankingOptions {
     let mut opts = CohereRerankingOptions::default();
-    if let Some(po) = provider_options
-        && let Some(cohere) = po.get("cohere")
-    {
+    if let Some(cohere) = super::options::cohere_options(provider_options) {
         if let Some(v) = cohere
             .get("maxTokensPerDoc")
             .and_then(serde_json::Value::as_u64)
@@ -64,46 +60,23 @@ struct CohereRerankingResult {
 /// A Cohere reranking model.
 pub struct CohereRerankingModel {
     model_id: String,
-    config: CohereConfig,
+    config: EndpointConfig,
 }
 
 impl CohereRerankingModel {
-    #[must_use]
-    pub fn new(model_id: String, config: CohereConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/rerank", self.config.base_url)
     }
 }
 
 #[async_trait]
 impl RerankingModel for CohereRerankingModel {
     fn provider(&self) -> &str {
-        "cohere"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
 
     async fn do_rerank(
@@ -143,15 +116,11 @@ impl RerankingModel for CohereRerankingModel {
             body["priority"] = json!(priority);
         }
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let mut header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        header_list.push(("Content-Type".to_string(), "application/json".to_string()));
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(body);
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), header_list, options),
+            exchange.request(exchange.url("/rerank"), options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler::<CohereRerankingResponse>(),
             super::cohere_failed_response_handler(),

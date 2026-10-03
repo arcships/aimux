@@ -14,59 +14,85 @@ simplify some steps below — noted per step).
 | Case | The vendor speaks… | You add | Example |
 |---|---|---|---|
 | 1. OpenAI-compatible | OpenAI Chat Completions wire format, own base URL | one registry row + derived cassettes | `deepinfra` |
-| 2. A new protocol | its own HTTP API for text generation | a `src/<name>/` module implementing `do_generate` / `do_stream` | `cohere` |
-| 3. Single modality | any API, but only one non-text modality | a typed shell + one modality model | `serper` (search), `lmnt` (speech) |
+| 2. A new protocol | its own HTTP API for text generation | a `src/<name>/` package: `XxxProviderSettings` + `create_xxx` + a model implementing `do_generate` / `do_stream` | `cohere` |
+| 3. Single modality | any API, but only one non-text modality | a `XxxProviderSettings` + `create_xxx` factory + one modality model | `serper` (search), `lmnt` (speech) |
 
-If the vendor is OpenAI-compatible **and** needs quirks beyond a `profile`
-flag (different auth header, non-standard error body, …), it is case 2, not
-case 1.
+If the vendor is OpenAI-compatible **and** needs quirks beyond what a row can
+say (a different auth header, a non-standard error body, message conversion of
+its own, ...), it is case 2 - or, when it shares the compatible chat model and
+only differs in a few hooks, its own package next to `groq/` and `deepseek/`
+(`family` in the row points at it).
 
 ## Case 1 — OpenAI-compatible vendor (registry row)
 
 1. Add one row to `aimux-providers/src/provider_registry.json` (file is
-   sorted by `name`; follow the flat 5-key shape):
+   sorted by `name`):
 
    ```json
    { "name": "example", "display": "Example", "env_var": "EXAMPLE_API_KEY",
      "base_url": "https://api.example.com/v1", "profile": {} }
    ```
 
-   `profile` carries the known quirks — `supports_top_k`, `supports_tools`,
-   `supports_response_format`, `stream_usage_key`, `max_tokens_key` — see
-   the rows that already use one (e.g. `groq`). Anything beyond body-shape
-   flags rides in per-call `body_overrides` (RFC-0017); if the quirk changes
-   auth or error shapes, it is case 2.
+   Optional keys: `auth: "none"` (a local server: no key variable, no
+   `Authorization` header, no placeholder key) with `base_url_env` (the
+   variable holding the base URL); `params` for a templated `base_url`
+   (`{param}` placeholders, each declared with an optional `env` list and
+   `default`; a derived parameter takes `derive: {from, map, otherwise}`);
+   `family` (`"groq"` / `"deepseek"`: the dialect of an own package);
+   `profile.max_tokens_key` (`"max_tokens"` or `"max_completion_tokens"`: the
+   only max-token key the vendor accepts). Anything beyond that rides in a
+   `transform_request_body` closure on the factory; if the quirk changes auth
+   or error shapes, it is case 2.
 
-2. Regenerate the provider documentation and commit its output:
+2. Regenerate what is generated from the registry and commit its output:
 
    ```sh
+   python scripts/gen_presets.py          # aimux-providers/src/presets/*.rs
    python scripts/gen_providers_doc.py    # docs/api/providers.md (totals + list)
    ```
 
-   CI runs it with `--check` in the `contract-tests` job and fails if the
+   Both generators exist so the registry is the one source: every row becomes
+   `presets::create_<name>(PresetSettings)` plus a `presets::<name>()` default
+   instance, and the by-name `provider(name, ...)` entry point looks the row up.
+   CI runs both with `--check` in the `contract-tests` job and fails if the
    committed output is stale.
 
 3. Derive replay cassettes: add a tuple to `PROVIDERS` in
    `scripts/generate_thin_wrapper_cassettes.py`, then run it. It derives
    `thin_wrapper_nonstream.json` / `thin_wrapper_stream.json` under
    `aimux-providers/tests/cassettes/<name>/` from **real OpenAI recordings**
-   (rewriting request path and model id — not fake data), because a
+   (rewriting request path and model id - not fake data), because a
    registry-backed provider's requests are byte-for-byte OpenAI shape.
 
 4. Nothing else: `provider("example", ...)` now works in every binding, and
    env-var key loading follows `env_var` automatically.
 
-> Roadmap note: #166 B2 turns the 33 standalone thin wrappers into registry
-> rows and makes `conformance_test.rs` iterate the registry; the
+> Roadmap note: #166 B2 makes `conformance_test.rs` iterate the registry; the
 > cassette-derivation step above is then replaced by that suite.
 
 ## Case 2 — a new protocol
 
 1. New directory `aimux-providers/src/<name>/`:
 
-   - `model.rs` — `<Name>Provider` implementing `LanguageModel`:
+   - `mod.rs` — the factory, modelled on the vendor's `@ai-sdk/<name>`
+     package: `<Name>ProviderSettings` (every field optional: `base_url`,
+     `api_key: Option<Resolvable<String>>`, `headers`, `name`, `fetch`,
+     `transform_request_body`), `create_<name>(settings)` (fails only for an
+     unusable `base_url`), an infallible default instance `<name>()`, and
+     `<Name>Provider` with one method per model (`chat(id)`, `embedding(id)`,
+     …) plus the `Provider` trait impl. The key is resolved **on every request**
+     (`None` reads the environment variable, `Some("")` is sent verbatim, a
+     missing key fails the call with `AiMuxError::LoadApiKey`); a required
+     setting that is missing fails the call with `LoadSetting`. Each model
+     reports `provider()` as `"{name}.{method}"` with `name` defaulting to the
+     package name. There is no `Config` type, no `from_env`, no `with_*`
+     builder, and no retry setting: the model reads a private config built by
+     the factory, and retry belongs to the caller (`max_retries` on the call);
+   - `model.rs` — the model implementing `LanguageModel`:
      `do_generate` / `do_stream` (plus other modality traits if the vendor
      offers them: embeddings, image, transcription…);
+   - `options.rs` — the providerOptions / providerMetadata namespace keys,
+     spelled once;
    - `convert.rs` — unified message format ⇄ vendor wire format, both
      directions, including the error-body shape;
    - `types.rs` — vendor request/response structs (`#[serde(default)]` on
@@ -81,7 +107,7 @@ case 1.
 
    ```rust
    pub mod <name>;
-   pub use <name>::{<Name>Config, <Name>Provider};
+   pub use <name>::{<Name>Provider, <Name>ProviderSettings, <name>, create_<name>};
    ```
 
 3. Record real cassettes under `tests/cassettes/<name>/` (RFC-0003; no
@@ -91,8 +117,9 @@ case 1.
    20 modules.
 
 4. Note: protocol providers are **not** name-addressable today — callers use
-   the typed factories (`CohereProvider::new(...)`), and
-   `provider("cohere", ...)` fails with `NoSuchProvider`. A registry row with
+   the typed factories (`create_cohere(CohereProviderSettings {..})` or the
+   default instance `cohere()`), and `provider("cohere", ...)` fails with
+   `NoSuchProvider`. A registry row with
    a `protocol` field arrives with #166 B1 (the `Protocol` enum +
    `from_resolved`); until then, do not add protocol providers to the
    registry JSON.
@@ -102,19 +129,23 @@ case 1.
 1. One file `aimux-providers/src/<name>.rs` (see `serper.rs` for search,
    `lmnt.rs` for speech; `cartesia/` for a vendor with two modalities):
 
-   - `<Name>Config { api_key, base_url }` with `new` / `with_base_url` /
-     `from_env`;
-   - `<Name>Provider` — a shell whose only job is returning the modality
-     model (`search_model()`, `speech_model()`, `image_model()`, …) and
-     reporting its `name()`;
+   - `<Name>ProviderSettings { api_key, base_url, headers, name, fetch, .. }`
+     (all optional), `create_<name>(settings)` and an infallible default
+     instance `<name>()` — the key is resolved per request, as in case 2;
+   - `<Name>Provider` — returns the modality model (`search_model()`,
+     `speech_model()`, `image_model()`, …); the model reports `provider()` as
+     `"{name}.{method}"` (`luma.image`, `tavily.search`);
    - the modality model implementing the trait's operation
      (`SearchModel::do_search`, `SpeechModel::do_speak`, …) as: build the
      request body → send through the provider-utils HTTP helpers → map the
      response into aimux types. Implement **only** the transform functions;
      transport, retry and timeouts are not your problem (Core owns them).
 
-2. `pub mod` + `pub use` in `lib.rs` under the modality's section comment
-   (search-only, speech-only, image-only, video-only, …).
+2. `pub mod` + `pub use` (`<Name>ProviderSettings`, `create_<name>`, `<name>`) in
+   `lib.rs` under the modality's section comment (search-only, speech-only,
+   image-only, video-only, …). Async jobs poll on package constants through
+   `shared/poll.rs`; `scripts/check_provider_boundaries.sh` keeps retry,
+   `options.max_retries` reads and builder-era names out of the package.
 
 3. Cassettes + unit tests asserting the mapped result shapes.
 
@@ -122,7 +153,8 @@ case 1.
 
 - **A generator may stay in `scripts/` only if its output carries a
   "GENERATED — do not edit" header and CI runs it with `--check`.** Today
-  that is `gen_providers_doc.py` (the `contract-tests` job).
+  that is `gen_presets.py` and `gen_providers_doc.py` (the `contract-tests`
+  job).
   `gen_ts_types.py` regenerates the ts-rs TypeScript
   types through `cargo test -p aimux-core --lib export` (the export tests
   are the gate).

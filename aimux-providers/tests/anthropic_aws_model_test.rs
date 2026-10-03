@@ -21,7 +21,9 @@ use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::anthropic_aws::{AnthropicAwsAuth, AnthropicAwsConfig, AnthropicAwsModel};
+use aimux_providers::anthropic_aws::{
+    AnthropicAwsAuth, AnthropicAwsModel, AnthropicAwsProviderSettings, create_anthropic_aws,
+};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,17 +40,13 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 }
 
 fn make_model(server: &MockServer) -> AnthropicAwsModel {
-    AnthropicAwsModel::new(
-        "claude-sonnet-4-20250514".to_string(),
-        AnthropicAwsConfig {
-            base_url: server.uri(),
-            auth: AnthropicAwsAuth::ApiKey("test-api-key".to_string()),
-            api_version: "2023-06-01".to_string(),
-            workspace_id: None,
-            api_key_source: None,
-            retry_config: aimux_provider_utils::RetryConfig::default(),
-        },
-    )
+    create_anthropic_aws(AnthropicAwsProviderSettings {
+        base_url: Some(server.uri()),
+        auth: Some(AnthropicAwsAuth::ApiKey("test-api-key".to_string().into())),
+        ..Default::default()
+    })
+    .expect("valid settings")
+    .messages("claude-sonnet-4-20250514")
 }
 
 async fn mock_messages_json(server: &MockServer, status: u16, body: Value) {
@@ -398,22 +396,21 @@ async fn anthropic_aws_sigv4_auth() {
     let server = MockServer::start().await;
     mock_messages_json(&server, 200, text_response("Signed!")).await;
 
-    let model = AnthropicAwsModel::new(
-        "claude-sonnet-4-20250514".to_string(),
-        AnthropicAwsConfig {
-            base_url: server.uri(),
-            auth: AnthropicAwsAuth::SigV4(aimux_providers::bedrock::AwsCredentials {
+    let model = create_anthropic_aws(AnthropicAwsProviderSettings {
+        base_url: Some(server.uri()),
+        auth: Some(AnthropicAwsAuth::SigV4(
+            aimux_provider_utils::AwsCredentials {
                 access_key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
                 secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
                 session_token: None,
                 region: "us-east-1".to_string(),
-            }),
-            api_version: "2023-06-01".to_string(),
-            workspace_id: None,
-            api_key_source: None,
-            retry_config: aimux_provider_utils::RetryConfig::default(),
-        },
-    );
+            }
+            .into(),
+        )),
+        ..Default::default()
+    })
+    .expect("valid settings")
+    .messages("claude-sonnet-4-20250514");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -421,6 +418,41 @@ async fn anthropic_aws_sigv4_auth() {
         .expect("do_generate should succeed with SigV4");
 
     assert_eq!(as_text(&result.content[0]), "Signed!");
+
+    // The transport decorator signed the request that went out: the signed
+    // payload hash is the hash of the exact body bytes the server received.
+    let requests = server.received_requests().await.expect("requests recorded");
+    assert_eq!(requests.len(), 1);
+    let headers = &requests[0].headers;
+    let header = |name: &str| {
+        headers
+            .get(name)
+            .unwrap_or_else(|| panic!("signed request carries {name}"))
+            .to_str()
+            .unwrap()
+            .to_string()
+    };
+    use sha2::{Digest, Sha256};
+    assert_eq!(
+        header("x-amz-content-sha256"),
+        hex::encode(Sha256::digest(&requests[0].body)),
+        "the signature covers the final body bytes"
+    );
+    let authorization = header("authorization");
+    assert!(
+        authorization.starts_with("AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/"),
+        "{authorization}"
+    );
+    assert!(
+        authorization.contains("/us-east-1/aws-external-anthropic/aws4_request"),
+        "{authorization}"
+    );
+    assert!(header("x-amz-date").ends_with('Z'));
+    assert!(
+        headers.get("x-api-key").is_none(),
+        "SigV4 sends no API key header"
+    );
+    assert_eq!(header("anthropic-version"), "2023-06-01");
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

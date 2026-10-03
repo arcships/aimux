@@ -10,7 +10,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
-use aimux_providers::{VertexAuth, VertexProvider, VertexProviderConfig};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{VertexProvider, VertexProviderSettings, create_google_vertex};
 
 const TEST_VALUES: &[&str] = &["test text one", "test text two"];
 
@@ -74,15 +75,14 @@ fn default_options(values: Vec<String>) -> EmbeddingCallOptions {
 }
 
 fn test_provider(base_url: String) -> VertexProvider {
-    let config = VertexProviderConfig {
-        base_url,
+    create_google_vertex(VertexProviderSettings {
+        base_url: Some(base_url),
         project: Some("test-project".to_string()),
         location: Some("us-central1".to_string()),
-        auth: VertexAuth::BearerToken("test-token".to_string()),
-        api_key_source: None,
-        retry_config: aimux_provider_utils::RetryConfig::default(),
-    };
-    VertexProvider::new(config)
+        access_token: Some(Resolvable::Value("test-token".to_string())),
+        ..Default::default()
+    })
+    .expect("valid settings")
 }
 
 /// TS: "should extract embeddings"
@@ -98,7 +98,7 @@ async fn should_extract_embeddings() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("textembedding-gecko@001");
+    let model = provider.embedding("textembedding-gecko@001");
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -138,7 +138,7 @@ async fn should_extract_usage() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("textembedding-gecko@001");
+    let model = provider.embedding("textembedding-gecko@001");
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -160,7 +160,7 @@ async fn should_pass_model_parameters() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("textembedding-gecko@001");
+    let model = provider.embedding("textembedding-gecko@001");
 
     let _ = model
         .do_embed(&default_options(test_values()))
@@ -188,7 +188,7 @@ async fn should_accept_google_vertex_key() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("textembedding-gecko@001");
+    let model = provider.embedding("textembedding-gecko@001");
 
     let mut provider_options = HashMap::new();
     provider_options.insert(
@@ -228,7 +228,7 @@ async fn should_pass_task_type_only() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("textembedding-gecko@001");
+    let model = provider.embedding("textembedding-gecko@001");
 
     let mut provider_options = HashMap::new();
     provider_options.insert(
@@ -264,7 +264,7 @@ async fn should_use_embed_content_for_gemini_2() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("gemini-embedding-2");
+    let model = provider.embedding("gemini-embedding-2");
 
     let result = model
         .do_embed(&default_options(vec![TEST_VALUES[0].to_string()]))
@@ -289,16 +289,8 @@ async fn should_use_embed_content_for_gemini_2() {
 /// TS: "should limit gemini-embedding-2 to one value per call"
 #[test]
 fn gemini_embedding_2_max_per_call() {
-    let config = VertexProviderConfig {
-        base_url: "https://example.com".to_string(),
-        project: Some("test-project".to_string()),
-        location: Some("us-central1".to_string()),
-        auth: VertexAuth::BearerToken("test".to_string()),
-        api_key_source: None,
-        retry_config: aimux_provider_utils::RetryConfig::default(),
-    };
-    let provider = VertexProvider::new(config);
-    let model = provider.embedding_model("gemini-embedding-2");
+    let provider = test_provider("https://example.com".to_string());
+    let model = provider.embedding("gemini-embedding-2");
     assert_eq!(model.max_embeddings_per_call(), Some(1));
 }
 
@@ -317,7 +309,7 @@ async fn should_expose_response_headers() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("textembedding-gecko@001");
+    let model = provider.embedding("textembedding-gecko@001");
 
     let result = model
         .do_embed(&default_options(test_values()))

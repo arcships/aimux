@@ -6,6 +6,13 @@
 // pyo3 0.22 macros generate unsafe-op-in-unsafe-fn calls that trigger
 // edition-2024 lint. Suppress until pyo3 0.23+ lands.
 #![allow(unsafe_op_in_unsafe_fn)]
+// The same macros test the `gil-refs` feature of the *calling* crate, which
+// this crate does not declare (rustc's check-cfg flags it).
+#![allow(unexpected_cfgs)]
+// pyo3 0.22's `#[pyfunction]` / `#[pymethods]` expansion converts a `PyErr` into
+// itself on every `PyResult` return (fixed in 0.23); clippy blames the
+// signature.
+#![allow(clippy::useless_conversion)]
 
 mod error;
 mod multimodal;
@@ -419,18 +426,28 @@ impl StreamIterator {
 // Provider constructors
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// An OpenAI provider for an explicit key handed over by the host, with an
+/// optional base URL. The key is an explicit value (`""` included), so it never
+/// falls back to `OPENAI_API_KEY`.
+pub(crate) fn openai_provider(
+    api_key: &str,
+    base_url: Option<&str>,
+) -> PyResult<aimux_providers::openai::OpenAIProvider> {
+    aimux_providers::openai::create_openai(aimux_providers::openai::OpenAIProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))
+}
+
 /// Create an OpenAI model instance.
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn openai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = OpenAIProvider::new(config);
+    let provider = openai_provider(api_key, base_url)?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -445,13 +462,14 @@ fn openai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn anthropic(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
+    use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
-    let mut config = AnthropicConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = AnthropicProvider::new(config);
+    let provider = create_anthropic(AnthropicProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -483,13 +501,14 @@ fn deepseek(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<M
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn google(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::google::{GoogleConfig, GoogleProvider};
+    use aimux_providers::google::{GoogleProviderSettings, create_google};
 
-    let mut config = GoogleConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = GoogleProvider::new(config);
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -504,13 +523,14 @@ fn google(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn cohere(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::cohere::{CohereConfig, CohereProvider};
+    use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
 
-    let mut config = CohereConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = CohereProvider::new(config);
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -525,13 +545,14 @@ fn cohere(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn mistral(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::mistral::{MistralConfig, MistralProvider};
+    use aimux_providers::mistral::{MistralProviderSettings, create_mistral};
 
-    let mut config = MistralConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = MistralProvider::new(config);
+    let provider = create_mistral(MistralProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -546,13 +567,14 @@ fn mistral(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mo
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn xai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::xai::{XAIConfig, XAIProvider};
+    use aimux_providers::xai::{XAIProviderSettings, create_xai};
 
-    let mut config = XAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = XAIProvider::new(config);
+    let provider = create_xai(XAIProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -573,13 +595,22 @@ fn bedrock(
     base_url: Option<&str>,
 ) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::bedrock::{BedrockProvider, BedrockProviderConfig};
+    use aimux_providers::bedrock::{AmazonBedrockProviderSettings, create_amazon_bedrock};
 
-    let mut config = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = BedrockProvider::new(config);
+    let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+        credential_provider: Some(aimux_provider_utils::Resolvable::Value(
+            aimux_provider_utils::AwsCredentials {
+                access_key_id: access_key_id.to_string(),
+                secret_access_key: secret_access_key.to_string(),
+                session_token: None,
+                region: region.to_string(),
+            },
+        )),
+        region: Some(region.to_string()),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -600,13 +631,18 @@ fn vertex(
     base_url: Option<&str>,
 ) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::vertex::{VertexProvider, VertexProviderConfig};
+    use aimux_providers::vertex::{VertexProviderSettings, create_google_vertex};
 
-    let mut config = VertexProviderConfig::new(access_token, project, location);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = VertexProvider::new(config);
+    let provider = create_google_vertex(VertexProviderSettings {
+        access_token: Some(aimux_provider_utils::Resolvable::Value(
+            access_token.to_string(),
+        )),
+        project: Some(project.to_string()),
+        location: Some(location.to_string()),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -626,13 +662,19 @@ fn anthropic_aws(
     base_url: Option<&str>,
 ) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::anthropic_aws::{AnthropicAwsProvider, AnthropicAwsProviderConfig};
+    use aimux_providers::anthropic_aws::{
+        AnthropicAwsAuth, AnthropicAwsProviderSettings, create_anthropic_aws,
+    };
 
-    let mut config = AnthropicAwsProviderConfig::with_api_key(api_key, region);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = AnthropicAwsProvider::new(config);
+    let provider = create_anthropic_aws(AnthropicAwsProviderSettings {
+        region: Some(region.to_string()),
+        auth: Some(AnthropicAwsAuth::ApiKey(
+            aimux_provider_utils::Resolvable::Value(api_key.to_string()),
+        )),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -655,21 +697,24 @@ fn azure(
     base_url: Option<&str>,
 ) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::azure::{AzureConfig, AzureProvider};
+    use aimux_providers::azure::{AzureOpenAIProviderSettings, create_azure};
 
-    let mut config = AzureConfig::new().with_api_key(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    if let Some(version) = api_version {
-        if !version.is_empty() {
-            config = config.with_api_version(version);
-        }
+    let mut config = AzureOpenAIProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    };
+    // A dated `api_version` belongs to the deployment URL form.
+    if let Some(version) = api_version
+        && !version.is_empty()
+    {
+        config.api_version = Some(version.to_string());
+        config.use_deployment_based_urls = true;
     }
     if !resource_name.is_empty() {
-        config = config.with_resource_name(resource_name);
+        config.resource_name = Some(resource_name.to_string());
     }
-    let provider = AzureProvider::new(config).map_err(|e| to_py_err(&e))?;
+    let provider = create_azure(config).map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(deployment)
         .map_err(|e| to_py_err(&e))?;
@@ -682,8 +727,9 @@ fn azure(
 /// Create a language model from the built-in registry by provider name
 /// (RFC-0017 phase 4). `api_key=None` reads the provider's env var.
 /// `config_json` is a serialized `ProviderOptions` object (`base_url` /
-/// `headers` / `organization` / `project` / `max_retries` /
-/// `body_overrides`); the `base_url` parameter wins over the JSON field.
+/// `headers` / `organization` / `project` / `params`; `max_retries` and
+/// `body_overrides` are rejected as invalid arguments); the `base_url`
+/// parameter wins over the JSON field.
 #[pyfunction]
 #[pyo3(signature = (name, api_key, model_id, base_url=None, config_json=None))]
 fn provider(
@@ -717,6 +763,7 @@ fn provider(
 #[pyclass]
 struct ProviderHandle {
     inner: Arc<dyn aimux_core::provider::Provider>,
+    discovery: Arc<dyn aimux_core::provider::ProviderDiscovery>,
 }
 
 #[pymethods]
@@ -726,7 +773,7 @@ impl ProviderHandle {
     fn list_models(&self) -> PyResult<String> {
         let rt = runtime();
         let models = rt
-            .block_on(async { self.inner.list_models().await })
+            .block_on(async { self.discovery.list_models().await })
             .map_err(|e| to_py_err(&e))?;
         serialize_result(&models)
     }
@@ -763,16 +810,18 @@ fn create_provider(
     if let Some(url) = base_url {
         options.get_or_insert_with(Default::default).base_url = Some(url.to_string());
     }
-    let p = aimux_providers::provider_handle(name, api_key, options).map_err(|e| to_py_err(&e))?;
-    Ok(ProviderHandle {
-        inner: Arc::from(p),
-    })
+    let inner = aimux_providers::provider_handle(name, api_key.clone(), options.clone())
+        .map_err(|e| to_py_err(&e))?;
+    let discovery =
+        aimux_providers::provider_discovery(name, api_key, options).map_err(|e| to_py_err(&e))?;
+    Ok(ProviderHandle { inner, discovery })
 }
 
 /// Fetch the community model catalogue (RFC-0027) and return it as a JSON
 /// string (serialized `Catalogue`). `source_url` defaults to the anya2a
 /// `dist/all.json`.
 #[pyfunction]
+#[pyo3(signature = (source_url=None))]
 fn get_model_specs(source_url: Option<&str>) -> PyResult<String> {
     let catalogue = runtime()
         .block_on(async { aimux_providers::get_model_specs(source_url).await })

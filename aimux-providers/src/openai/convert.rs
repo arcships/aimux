@@ -10,7 +10,6 @@ use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warn
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::OpenAICompatProfile;
 /// Public capability enum used by the conversion helpers (moved to
 /// `convert_common` in M10; re-exported for API compatibility).
 pub use super::convert_common::SystemMessageMode;
@@ -96,106 +95,6 @@ pub fn prepare_tools(
     }
 }
 
-// ── Groq tool preparation ───────────────────────────────────────────────────
-
-/// Models that support Groq's browser_search tool.
-const GROQ_BROWSER_SEARCH_MODELS: &[&str] = &["openai/gpt-oss-20b", "openai/gpt-oss-120b"];
-
-/// Prepare tools for Groq, supporting `groq.browser_search` provider tools
-/// alongside standard function tools. Mirrors TS `prepareTools` in
-/// `groq-prepare-tools.ts`.
-fn prepare_tools_groq(
-    function_tools: &Option<Vec<FunctionTool>>,
-    all_tools: Option<&Vec<Tool>>,
-    tool_choice: Option<&ToolChoice>,
-    model_id: &str,
-) -> PreparedTools {
-    let non_empty_functions = function_tools.as_ref().filter(|&t| !t.is_empty());
-    let has_any_tools = all_tools.as_ref().is_some_and(|t| !t.is_empty());
-
-    if !has_any_tools {
-        return PreparedTools {
-            tools: None,
-            tool_choice: None,
-            tool_warnings: vec![],
-        };
-    }
-
-    let mut groq_tools: Vec<Value> = Vec::new();
-    let mut tool_warnings: Vec<ToolWarning> = Vec::new();
-
-    // Function tools
-    if let Some(tools) = non_empty_functions {
-        for t in tools {
-            let mut func = json!({
-                "name": t.name,
-                "parameters": t.input_schema,
-            });
-            if let Some(ref desc) = t.description {
-                func["description"] = json!(desc);
-            }
-            if let Some(strict) = t.strict {
-                func["strict"] = json!(strict);
-            }
-            groq_tools.push(json!({ "type": "function", "function": func }));
-        }
-    }
-
-    // Provider-defined tools (browser_search)
-    if let Some(tools) = all_tools {
-        for t in tools {
-            if let Tool::Provider(pt) = t {
-                if pt.id == "groq.browser_search" {
-                    if GROQ_BROWSER_SEARCH_MODELS.contains(&model_id) {
-                        groq_tools.push(json!({ "type": "browser_search" }));
-                    } else {
-                        tool_warnings.push(ToolWarning {
-                            warning_type: "unsupported".to_string(),
-                            feature: format!("provider-defined tool {}", pt.id),
-                            details: Some(format!(
-                                "Browser search is only supported on the following models: {}. Current model: {}",
-                                GROQ_BROWSER_SEARCH_MODELS.join(", "),
-                                model_id
-                            )),
-                        });
-                    }
-                } else {
-                    tool_warnings.push(ToolWarning {
-                        warning_type: "unsupported".to_string(),
-                        feature: format!("provider-defined tool {}", pt.id),
-                        details: None,
-                    });
-                }
-            }
-        }
-    }
-
-    let tools_opt = if groq_tools.is_empty() {
-        None
-    } else {
-        Some(groq_tools)
-    };
-
-    let tool_choice_opt = match (&tools_opt, tool_choice) {
-        (None, _) => None,
-        (Some(_), None) => None,
-        (Some(_), Some(tc)) => match tc {
-            ToolChoice::Auto => Some(json!("auto")),
-            ToolChoice::None => Some(json!("none")),
-            ToolChoice::Required => Some(json!("required")),
-            ToolChoice::Tool { tool_name } => {
-                Some(json!({ "type": "function", "function": { "name": tool_name } }))
-            }
-        },
-    };
-
-    PreparedTools {
-        tools: tools_opt,
-        tool_choice: tool_choice_opt,
-        tool_warnings,
-    }
-}
-
 // ── Message conversion ──────────────────────────────────────────────────────
 
 /// Convert a `LanguageModelPrompt` to OpenAI `messages` array.
@@ -230,7 +129,11 @@ pub fn convert_prompt_to_openai_messages_with_mode_fallible(
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,
 ) -> Result<Vec<Value>, AiMuxError> {
-    convert_prompt_to_openai_messages_with_provider(prompt, system_message_mode, "openai")
+    let mut result = Vec::new();
+    for msg in prompt {
+        result.extend(convert_message_to_openai(msg, system_message_mode)?);
+    }
+    Ok(result)
 }
 
 /// Convert a `LanguageModelPrompt` to OpenAI `messages` array with a system
@@ -255,30 +158,6 @@ pub fn convert_prompt_to_openai_messages_with_mode(
 ) -> Vec<Value> {
     convert_prompt_to_openai_messages_with_mode_fallible(prompt, system_message_mode)
         .expect("convert_prompt_to_openai_messages_with_mode: conversion failed")
-}
-
-/// Convert a `LanguageModelPrompt` to OpenAI `messages` array with a system
-/// message mode and provider name (for provider-specific message conversion).
-///
-/// # Errors
-///
-/// Returns `AiMuxError::InvalidArgument` when a message part cannot be
-/// converted (e.g. an unsupported file part shape or a missing provider
-/// reference).
-pub fn convert_prompt_to_openai_messages_with_provider(
-    prompt: &LanguageModelPrompt,
-    system_message_mode: SystemMessageMode,
-    provider: &str,
-) -> Result<Vec<Value>, AiMuxError> {
-    let mut result = Vec::new();
-    for msg in prompt {
-        result.extend(convert_message_to_openai(
-            msg,
-            system_message_mode,
-            provider,
-        )?);
-    }
-    Ok(result)
 }
 
 /// Get the prompt cache breakpoint from provider options.
@@ -461,7 +340,6 @@ fn convert_file_part_to_openai(
 fn convert_message_to_openai(
     msg: &LanguageModelPromptMessage,
     system_message_mode: SystemMessageMode,
-    provider: &str,
 ) -> Result<Vec<Value>, AiMuxError> {
     let role = match msg.role {
         Role::System => "system",
@@ -513,72 +391,6 @@ fn convert_message_to_openai(
         .iter()
         .any(|p| matches!(p, ContentPart::ToolCall { .. }));
 
-    // Groq: assistant messages always collect text, reasoning, and tool_calls
-    // together (mirrors TS `convertToGroqChatMessages`). The `reasoning` field
-    // is added when non-empty, and `content` is "" (not null) when there is no
-    // text.
-    if msg.role == Role::Assistant && provider == "groq" {
-        let text: String = msg
-            .content
-            .iter()
-            .filter_map(|p| match p {
-                ContentPart::Text { text, .. } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("");
-
-        let reasoning: String = msg
-            .content
-            .iter()
-            .filter_map(|p| match p {
-                ContentPart::Reasoning { text, .. } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("");
-
-        let tool_calls_json: Vec<Value> = msg
-            .content
-            .iter()
-            .filter_map(|p| match p {
-                ContentPart::ToolCall {
-                    tool_call_id,
-                    tool_name,
-                    input,
-                    ..
-                } => {
-                    let arguments = if input.is_null() {
-                        "{}".to_string()
-                    } else {
-                        input.to_string()
-                    };
-                    Some(json!({
-                        "type": "function",
-                        "id": tool_call_id,
-                        "function": {
-                            "name": tool_name,
-                            "arguments": arguments,
-                        }
-                    }))
-                }
-                _ => None,
-            })
-            .collect();
-
-        let mut msg_obj = json!({
-            "role": "assistant",
-            "content": text,
-        });
-        if !reasoning.is_empty() {
-            msg_obj["reasoning"] = json!(reasoning);
-        }
-        if !tool_calls_json.is_empty() {
-            msg_obj["tool_calls"] = json!(tool_calls_json);
-        }
-        return Ok(vec![msg_obj]);
-    }
-
     if msg.role == Role::Assistant && has_tool_calls {
         let text: String = msg
             .content
@@ -590,13 +402,12 @@ fn convert_message_to_openai(
             .collect::<Vec<_>>()
             .join("");
 
-        // Reasoning / thinking content. DeepSeek V4 thinking mode (and other
+        // Reasoning / thinking content. Thinking-mode servers (and other
         // OpenAI-compatible reasoning models such as xAI) require prior
         // assistant `reasoning_content` to be replayed on subsequent turns,
         // including tool-call turns. Mirrors the Vercel AI SDK
         // `openai-compatible` assistant conversion, which emits
-        // `reasoning_content` whenever a reasoning part is present. Groq uses
-        // the `reasoning` field name and is handled in its own branch above.
+        // `reasoning_content` whenever a reasoning part is present.
         let reasoning: String = collect_reasoning(&msg.content);
 
         let tool_calls_json: Vec<Value> = msg
@@ -644,8 +455,8 @@ fn convert_message_to_openai(
         return Ok(vec![msg_obj]);
     }
 
-    // Default path (non-Groq, no tool calls). Assistant reasoning / thinking
-    // parts are lifted to a top-level `reasoning_content` string (DeepSeek V4
+    // Default path (no tool calls). Assistant reasoning / thinking
+    // parts are lifted to a top-level `reasoning_content` string (thinking-mode servers
     // thinking mode and other OpenAI-compatible reasoning models require it to
     // be replayed on later turns); they are never valid OpenAI content parts,
     // so they are excluded from the content shape below. Non-assistant roles do
@@ -716,7 +527,7 @@ fn convert_message_to_openai(
 /// Collect and concatenate the `text` of all `ContentPart::Reasoning` parts in
 /// `content`, mirroring the Vercel AI SDK assistant-message conversion. Used to
 /// build the OpenAI-compatible top-level `reasoning_content` / `reasoning`
-/// field that thinking models (DeepSeek V4, xAI, Groq) require to be replayed
+/// field that thinking models (xAI and other servers) require to be replayed
 /// across turns.
 fn collect_reasoning(content: &[ContentPart]) -> String {
     content
@@ -922,41 +733,7 @@ pub fn build_request_body(
     options: &CallOptions,
     stream: bool,
 ) -> Result<Value, AiMuxError> {
-    build_request_body_with_warnings(
-        model_id,
-        options,
-        stream,
-        "openai",
-        &OpenAICompatProfile::full(),
-    )
-    .map(|r| r.body)
-}
-
-/// Convert `CallOptions` to an OpenAI request body, returning warnings.
-/// `provider` controls provider-specific behaviour (e.g. groq reads provider
-/// options from the `"groq"` key).
-/// `profile` declares provider capability differences (top_k, tools, etc.).
-///
-/// Conversion errors propagate to the caller (fail-fast, issue H2): the old
-/// behaviour of silently returning `body: null` sent empty requests upstream
-/// and made conversion failures invisible.
-/// Look up a key from the provider-specific options (groq → "groq" then
-/// "openai"; otherwise "openai").
-fn provider_option(
-    provider_opts: &Option<HashMap<String, Value>>,
-    provider: &str,
-    key: &str,
-) -> Option<Value> {
-    if provider == "groq"
-        && let Some(v) = provider_opts
-            .as_ref()
-            .and_then(|m| m.get("groq"))
-            .and_then(|o| o.get(key))
-            .cloned()
-    {
-        return Some(v);
-    }
-    openai_option(provider_opts, key)
+    build_request_body_with_warnings(model_id, options, stream).map(|r| r.body)
 }
 
 /// Resolve the effective reasoning effort — direct passthrough (v3: no built-in
@@ -964,10 +741,9 @@ fn provider_option(
 /// `reasoning`; custom top-level levels map verbatim to `reasoning_effort`.
 fn resolve_reasoning_effort(
     provider_opts: &Option<HashMap<String, Value>>,
-    provider: &str,
     reasoning: &Option<ReasoningEffort>,
 ) -> Option<String> {
-    provider_option(provider_opts, provider, "reasoningEffort")
+    openai_option(provider_opts, "reasoningEffort")
         .map(|v| {
             v.as_str()
                 .map(std::string::ToString::to_string)
@@ -984,21 +760,19 @@ fn resolve_reasoning_effort(
 
 fn resolve_is_reasoning_model(
     provider_opts: &Option<HashMap<String, Value>>,
-    provider: &str,
     caps: &ModelCapabilities,
 ) -> bool {
-    provider_option(provider_opts, provider, "forceReasoning")
+    openai_option(provider_opts, "forceReasoning")
         .map(|v| v.as_bool().unwrap_or(false))
         .unwrap_or(caps.is_reasoning_model)
 }
 
 fn resolve_system_message_mode(
     provider_opts: &Option<HashMap<String, Value>>,
-    provider: &str,
     is_reasoning_model: bool,
     caps: &ModelCapabilities,
 ) -> SystemMessageMode {
-    provider_option(provider_opts, provider, "systemMessageMode")
+    openai_option(provider_opts, "systemMessageMode")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string))
         .map(|s| match s.as_str() {
             "developer" => SystemMessageMode::Developer,
@@ -1012,41 +786,27 @@ fn resolve_system_message_mode(
         })
 }
 
-/// Insert `max_tokens` / `max_completion_tokens`.
-///
-/// `max_tokens_key` 是内部数据（非用户概念），指定该厂商唯一认的 key：
-/// - Some("max_tokens")            → 只发 max_tokens（如 stepfun/siliconflow/perplexity 等）
-/// - Some("max_completion_tokens") → 只发 max_completion_tokens（groq/heroku 等）
-/// - None                          → 现状推断：推理模型发 mct，非推理发 max_tokens。
+/// Insert `max_tokens` / `max_completion_tokens`: reasoning models take the
+/// latter, the rest the former; an explicit `maxCompletionTokens` option is
+/// always sent as `max_completion_tokens`.
 fn apply_max_tokens(
     body: &mut Value,
     options: &CallOptions,
     provider_opts: &Option<HashMap<String, Value>>,
-    provider: &str,
-    profile: &OpenAICompatProfile,
     is_reasoning_model: bool,
 ) {
-    let max_completion_tokens_opt = provider_option(provider_opts, provider, "maxCompletionTokens")
+    let max_completion_tokens_opt = openai_option(provider_opts, "maxCompletionTokens")
         .and_then(|v| v.as_u64().map(|n| n as u32));
 
-    let use_mct_key = match profile.max_tokens_key {
-        Some("max_tokens") => false,
-        Some("max_completion_tokens") => true,
-        _ => is_reasoning_model,
-    };
-
     if let Some(max_tokens) = options.max_output_tokens {
-        let key = if use_mct_key {
+        let key = if is_reasoning_model {
             "max_completion_tokens"
         } else {
             "max_tokens"
         };
         body[key] = json!(max_tokens);
     }
-    // 显式 maxCompletionTokens 选项：只认 max_tokens 的厂商不发送 mct。
-    if let Some(mct) = max_completion_tokens_opt
-        && profile.max_tokens_key != Some("max_tokens")
-    {
+    if let Some(mct) = max_completion_tokens_opt {
         body["max_completion_tokens"] = json!(mct);
     }
 }
@@ -1152,30 +912,9 @@ fn insert_sampling_params(body: &mut Value, params: &SamplingParams, options: &C
     }
 }
 
-/// `response_format` → body, respecting the profile's capability flag and
-/// groq's structuredOutputs / strictJsonSchema semantics.
-fn apply_response_format(
-    body: &mut Value,
-    options: &CallOptions,
-    provider_opts: &Option<HashMap<String, Value>>,
-    provider: &str,
-    profile: &OpenAICompatProfile,
-    warnings: &mut Vec<Warning>,
-) {
-    if !profile.supports_response_format {
-        // Provider does not support response_format: drop it and warn when the
-        // caller requested a (non-default) format. `Text` is the no-op default
-        // and needs no warning.
-        if let Some(ref rf) = options.response_format
-            && !matches!(rf, ResponseFormat::Text)
-        {
-            warnings.push(Warning::Unsupported {
-                feature: "responseFormat".to_string(),
-                details: Some("response_format is not supported by this provider".to_string()),
-            });
-        }
-        return;
-    }
+/// `response_format` → body: a schema is sent as `json_schema` (strict), a
+/// bare JSON request as `json_object`.
+fn apply_response_format(body: &mut Value, options: &CallOptions) {
     let Some(ref rf) = options.response_format else {
         return;
     };
@@ -1186,45 +925,17 @@ fn apply_response_format(
             name,
             description,
         } => {
-            // Groq: structuredOutputs defaults to true, strictJsonSchema
-            // defaults to true. When structuredOutputs is false and a schema
-            // is provided, emit a warning and use json_object.
-            let (structured_outputs, strict_json_schema) = if provider == "groq" {
-                (
-                    provider_option(provider_opts, provider, "structuredOutputs")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(true),
-                    provider_option(provider_opts, provider, "strictJsonSchema")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(true),
-                )
-            } else {
-                (true, true)
-            };
-
-            if schema.is_some() && structured_outputs {
+            if let Some(schema) = schema {
                 let mut schema_obj = json!({});
-                if let Some(s) = schema {
-                    schema_obj["schema"] = s.clone();
-                }
+                schema_obj["schema"] = schema.clone();
                 schema_obj["name"] = json!(name.clone().unwrap_or_else(|| "response".to_string()));
                 if let Some(d) = description {
                     schema_obj["description"] = json!(d);
                 }
-                schema_obj["strict"] = json!(strict_json_schema);
+                schema_obj["strict"] = json!(true);
                 body["response_format"] = json!({
                     "type": "json_schema",
                     "json_schema": schema_obj,
-                });
-            } else if schema.is_some() && !structured_outputs {
-                // Schema provided but structuredOutputs disabled → json_object + warning
-                body["response_format"] = json!({ "type": "json_object" });
-                warnings.push(Warning::Unsupported {
-                    feature: "responseFormat".to_string(),
-                    details: Some(
-                        "JSON response format schema is only supported with structuredOutputs"
-                            .to_string(),
-                    ),
                 });
             } else {
                 body["response_format"] = json!({ "type": "json_object" });
@@ -1234,14 +945,13 @@ fn apply_response_format(
 }
 
 /// Pass through the simple provider-specific options that map 1:1 to a body
-/// field (plus Groq's `reasoning_format`).
+/// field.
 fn apply_provider_option_passthrough(
     body: &mut Value,
     provider_opts: &Option<HashMap<String, Value>>,
-    provider: &str,
 ) {
     let mut set = |key: &str, body_key: &str| {
-        if let Some(val) = provider_option(provider_opts, provider, key) {
+        if let Some(val) = openai_option(provider_opts, key) {
             body[body_key] = val;
         }
     };
@@ -1262,30 +972,16 @@ fn apply_provider_option_passthrough(
     // expects `logprobs: bool` and `top_logprobs: int`).
     set("logprobs", "logprobs");
     set("topLogprobs", "top_logprobs");
-    // Groq: reasoning_format provider option
-    if provider == "groq"
-        && let Some(val) = provider_option(provider_opts, provider, "reasoningFormat")
-    {
-        body["reasoning_format"] = val;
-    }
 }
 
-/// `service_tier` with model-capability validation (Groq passes it through
-/// without validation).
+/// `service_tier` with model-capability validation.
 fn apply_service_tier(
     body: &mut Value,
     provider_opts: &Option<HashMap<String, Value>>,
-    provider: &str,
     caps: &ModelCapabilities,
     warnings: &mut Vec<Warning>,
 ) {
-    if provider == "groq" {
-        if let Some(val) = provider_option(provider_opts, provider, "serviceTier") {
-            body["service_tier"] = val;
-        }
-        return;
-    }
-    let service_tier = provider_option(provider_opts, provider, "serviceTier")
+    let service_tier = openai_option(provider_opts, "serviceTier")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string));
     if let Some(ref st) = service_tier {
         match st.as_str() {
@@ -1321,17 +1017,8 @@ fn apply_service_tier(
     }
 }
 
-/// Function tools → `tools` / `tool_choice` (Groq also maps provider-defined
-/// tools such as browser_search). Drops both when the profile declares no tool
-/// support, warning when the caller supplied any.
-fn apply_tools(
-    body: &mut Value,
-    options: &CallOptions,
-    provider: &str,
-    profile: &OpenAICompatProfile,
-    model_id: &str,
-    warnings: &mut Vec<Warning>,
-) {
+/// Function tools → `tools` / `tool_choice`.
+fn apply_tools(body: &mut Value, options: &CallOptions) {
     let function_tools: Option<Vec<FunctionTool>> = options.tools.as_ref().map(|tools| {
         tools
             .iter()
@@ -1342,51 +1029,16 @@ fn apply_tools(
             .collect()
     });
 
-    let supports_tools = profile.supports_tools;
-    if !supports_tools && options.tools.as_ref().is_some_and(|t| !t.is_empty()) {
-        warnings.push(Warning::Unsupported {
-            feature: "tools".to_string(),
-            details: Some("tools are not supported by this provider".to_string()),
-        });
-    }
-
-    let prepared = if !supports_tools {
-        PreparedTools {
-            tools: None,
-            tool_choice: None,
-            tool_warnings: Vec::new(),
-        }
-    } else if provider == "groq" {
-        prepare_tools_groq(
-            &function_tools,
-            options.tools.as_ref(),
-            Some(&options.tool_choice),
-            model_id,
-        )
-    } else {
-        prepare_tools(&function_tools, Some(&options.tool_choice))
-    };
-
+    let prepared = prepare_tools(&function_tools, Some(&options.tool_choice));
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);
         if let Some(tc) = prepared.tool_choice {
             body["tool_choice"] = tc;
         }
     }
-
-    // Convert tool warnings to Warning type
-    for tw in prepared.tool_warnings {
-        warnings.push(Warning::Unsupported {
-            feature: tw.feature,
-            details: tw.details,
-        });
-    }
 }
 
 /// Convert `CallOptions` to an OpenAI request body, returning warnings.
-/// `provider` controls provider-specific behaviour (e.g. groq reads provider
-/// options from the `"groq"` key).
-/// `profile` declares provider capability differences (top_k, tools, etc.).
 ///
 /// Conversion errors propagate to the caller (fail-fast, issue H2): the old
 /// behaviour of silently returning `body: null` sent empty requests upstream
@@ -1400,33 +1052,25 @@ pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
     stream: bool,
-    provider: &str,
-    profile: &OpenAICompatProfile,
 ) -> Result<RequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
     let caps = get_model_capabilities(model_id);
     let provider_opts = &options.provider_options;
 
-    let resolved_reasoning_effort =
-        resolve_reasoning_effort(provider_opts, provider, &options.reasoning);
-    let is_reasoning_model = resolve_is_reasoning_model(provider_opts, provider, &caps);
-    let system_message_mode =
-        resolve_system_message_mode(provider_opts, provider, is_reasoning_model, &caps);
+    let resolved_reasoning_effort = resolve_reasoning_effort(provider_opts, &options.reasoning);
+    let is_reasoning_model = resolve_is_reasoning_model(provider_opts, &caps);
+    let system_message_mode = resolve_system_message_mode(provider_opts, is_reasoning_model, &caps);
 
-    // top_k: only send when the provider supports it.
-    let top_k_supported = profile.supports_top_k;
-    if options.top_k.is_some() && !top_k_supported {
+    // OpenAI has no top_k.
+    if options.top_k.is_some() {
         warnings.push(Warning::Unsupported {
             feature: "topK".to_string(),
             details: None,
         });
     }
 
-    let messages = convert_prompt_to_openai_messages_with_provider(
-        &options.prompt,
-        system_message_mode,
-        provider,
-    )?;
+    let messages =
+        convert_prompt_to_openai_messages_with_mode_fallible(&options.prompt, system_message_mode)?;
 
     let mut body = json!({
         "model": model_id,
@@ -1435,24 +1079,10 @@ pub fn build_request_body_with_warnings(
 
     if stream {
         body["stream"] = json!(true);
-        // Groq does not send stream_options; other providers include usage.
-        if provider != "groq" {
-            body["stream_options"] = json!({ "include_usage": true });
-        }
+        body["stream_options"] = json!({ "include_usage": true });
     }
 
-    if let Some(tk) = options.top_k.filter(|_| top_k_supported) {
-        body["top_k"] = json!(tk);
-    }
-
-    apply_max_tokens(
-        &mut body,
-        options,
-        provider_opts,
-        provider,
-        profile,
-        is_reasoning_model,
-    );
+    apply_max_tokens(&mut body, options, provider_opts, is_reasoning_model);
 
     let sampling = strip_sampling_params(
         options,
@@ -1464,61 +1094,18 @@ pub fn build_request_body_with_warnings(
     );
     insert_sampling_params(&mut body, &sampling, options);
 
-    apply_response_format(
-        &mut body,
-        options,
-        provider_opts,
-        provider,
-        profile,
-        &mut warnings,
-    );
-    apply_provider_option_passthrough(&mut body, provider_opts, provider);
+    apply_response_format(&mut body, options);
+    apply_provider_option_passthrough(&mut body, provider_opts);
 
-    // Reasoning effort (v3 passthrough; 注：旧的"reasoning 无映射提示"warning
-    // 块已删除——v3 直传语义下该分支不可达：custom 值此时必已进 resolved)。
+    // Reasoning effort (v3 passthrough: no built-in vendor normalization).
     if let Some(ref effort) = resolved_reasoning_effort {
         body["reasoning_effort"] = json!(effort);
     }
 
-    apply_service_tier(&mut body, provider_opts, provider, &caps, &mut warnings);
-    apply_tools(
-        &mut body,
-        options,
-        provider,
-        profile,
-        model_id,
-        &mut warnings,
-    );
-
-    // 厂商特化后处理已整体退役（RFC-0017 阶段 2）：不内置任何厂商映射，
-    // thinking 注入 / effort 重映射等差异由用户 bodyOverrides 定义。
-
-    // Per-call request body overrides (RFC-0017): deep-merge user-supplied
-    // JSON into the built body. `null` values delete the corresponding key.
-    // Applied last so users can override anything, including vendor-specific
-    // fields injected above.
-    if let Some(ref overrides) = options.body_overrides {
-        deep_merge_json(&mut body, overrides);
-    }
+    apply_service_tier(&mut body, provider_opts, &caps, &mut warnings);
+    apply_tools(&mut body, options);
 
     Ok(RequestBodyResult { body, warnings })
-}
-pub fn deep_merge_json(target: &mut Value, patch: &Value) {
-    match (target, patch) {
-        (Value::Object(t), Value::Object(p)) => {
-            for (k, v) in p {
-                match v {
-                    Value::Null => {
-                        t.remove(k);
-                    }
-                    _ => {
-                        deep_merge_json(t.entry(k).or_insert(Value::Null), v);
-                    }
-                }
-            }
-        }
-        (target, patch) => *target = patch.clone(),
-    }
 }
 
 /// Parse OpenAI finish reason string into `FinishReason`.

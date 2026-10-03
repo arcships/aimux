@@ -23,34 +23,66 @@ pub fn build_model(
     base_url: Option<&str>,
 ) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
     macro_rules! native {
-        ($provider_mod:ident, $config:ident, $provider_type:ident, $env:literal) => {{
+        ($provider_mod:ident, $settings:ident, $create:ident, $env:literal) => {{
             let key = native_key(provider, $env, api_key.clone())?;
-            let mut cfg = aimux_providers::$provider_mod::$config::new(key);
-            if let Some(url) = base_url {
-                cfg = cfg.with_base_url(url);
-            }
-            let p = aimux_providers::$provider_mod::$provider_type::new(cfg);
-            Ok(Arc::from(p.model(model_id)))
+            let p = aimux_providers::$provider_mod::$create(
+                aimux_providers::$provider_mod::$settings {
+                    api_key: Some(key.into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            aimux_core::provider::Provider::language_model(&p, model_id)
         }};
     }
 
     match provider {
-        "openai" => native!(openai, OpenAIConfig, OpenAIProvider, "OPENAI_API_KEY"),
-        "anthropic" => native!(
-            anthropic,
-            AnthropicConfig,
-            AnthropicProvider,
-            "ANTHROPIC_API_KEY"
+        "openai" => {
+            let key = native_key(provider, "OPENAI_API_KEY", api_key.clone())?;
+            let provider = aimux_providers::openai::create_openai(
+                aimux_providers::openai::OpenAIProviderSettings {
+                    api_key: Some(key.into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Arc::new(provider.chat(model_id)))
+        }
+        "anthropic" => {
+            let key = native_key(provider, "ANTHROPIC_API_KEY", api_key.clone())?;
+            let provider = aimux_providers::anthropic::create_anthropic(
+                aimux_providers::anthropic::AnthropicProviderSettings {
+                    api_key: Some(key.into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Arc::new(provider.messages(model_id)))
+        }
+        "google" => {
+            let key = native_key(provider, "GOOGLE_GENERATIVE_AI_API_KEY", api_key.clone())?;
+            let provider = aimux_providers::google::create_google(
+                aimux_providers::google::GoogleProviderSettings {
+                    api_key: Some(key.into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Arc::new(provider.chat(model_id)))
+        }
+        "mistral" => native!(
+            mistral,
+            MistralProviderSettings,
+            create_mistral,
+            "MISTRAL_API_KEY"
         ),
-        "google" => native!(
-            google,
-            GoogleConfig,
-            GoogleProvider,
-            "GOOGLE_GENERATIVE_AI_API_KEY"
+        "xai" => native!(xai, XAIProviderSettings, create_xai, "XAI_API_KEY"),
+        "cohere" => native!(
+            cohere,
+            CohereProviderSettings,
+            create_cohere,
+            "COHERE_API_KEY"
         ),
-        "mistral" => native!(mistral, MistralConfig, MistralProvider, "MISTRAL_API_KEY"),
-        "xai" => native!(xai, XAIConfig, XAIProvider, "XAI_API_KEY"),
-        "cohere" => native!(cohere, CohereConfig, CohereProvider, "COHERE_API_KEY"),
         _ => {
             let mut options = ProviderOptions::default();
             if let Some(url) = base_url {
@@ -58,7 +90,7 @@ pub fn build_model(
             }
             let model = aimux_providers::provider(provider, api_key, model_id, Some(options))
                 .map_err(|e| AiMuxError::InvalidArgument(format!("provider '{provider}': {e}")))?;
-            Ok(Arc::from(model))
+            Ok(model)
         }
     }
 }

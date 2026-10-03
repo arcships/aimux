@@ -15,7 +15,7 @@
 | `ResponseFormat` | [options.rs](../../aimux-core/src/options.rs) | [ResponseFormat.ts](../../bindings/node/src/types/ResponseFormat.ts) | text / json_object / json_schema |
 | `ReasoningEffort` | [types.rs](../../aimux-core/src/types.rs) | [ReasoningEffort.ts](../../bindings/node/src/types/ReasoningEffort.ts) | 7 levels, passed through verbatim |
 | `AbortSignal` | [abort_signal.rs](../../aimux-core/src/abort_signal.rs) | — (runtime handle) | Rust: options field; Node: `AbortBridge` + JS `AbortSignal` |
-| `ProviderOptions` | [provider.rs](../../aimux-providers/src/provider.rs) | `ProviderConfig` (per binding) | `base_url` / `headers` / `organization` / `project` / `max_retries` / `body_overrides` |
+| `ProviderOptions` | [provider.rs](../../aimux-providers/src/provider.rs) | `ProviderConfig` (per binding) | `base_url` / `headers` / `organization` / `project` / `params` (a `max_retries` or `body_overrides` key is rejected as `InvalidArgument`) |
 | `GenerateTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextResult.ts](../../bindings/node/src/types/GenerateTextResult.ts) | `text`, `tool_calls`, `usage`, `warnings`, `raw` |
 | `StreamTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | — | use `StreamPart` while iterating |
 | `StreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [StreamPart.ts](../../bindings/node/src/types/StreamPart.ts) | TextDelta / ToolCallDelta / Finish / … |
@@ -44,8 +44,8 @@
 
 | Provider | Rust | Node / Python | Go / Java | Kotlin / Swift / Flutter | C ABI |
 |----------|------|--------------|-----------|--------------------------|-------|
-| OpenAI | `OpenAIProvider::new(OpenAIConfig::new(key))` | `openai(apiKey, model, baseUrl?)` | `NewOpenAI(...)` / `Model.openai(...)` | `Model.openai(...)` / `Aimux.openai(apiKey:modelId:)` | `aimux_openai_new` |
-| Anthropic | `AnthropicProvider::new(AnthropicConfig::new(key))` | `anthropic(apiKey, model, baseUrl?)` | `NewAnthropic(...)` / `Model.anthropic(...)` | `Model.anthropic(...)` / `Aimux.anthropic(apiKey:modelId:)` | `aimux_anthropic_new` |
+| OpenAI | `create_openai(OpenAIProviderSettings { api_key: Some(key.into()), ..Default::default() })` | `openai(apiKey, model, baseUrl?)` | `NewOpenAI(...)` / `Model.openai(...)` | `Model.openai(...)` / `Aimux.openai(apiKey:modelId:)` | `aimux_openai_new` |
+| Anthropic | `create_anthropic(AnthropicProviderSettings { api_key: Some(key.into()), ..Default::default() })` | `anthropic(apiKey, model, baseUrl?)` | `NewAnthropic(...)` / `Model.anthropic(...)` | `Model.anthropic(...)` / `Aimux.anthropic(apiKey:modelId:)` | `aimux_anthropic_new` |
 | Google | `GoogleProvider` | `google(apiKey, model, baseUrl?)` | — | — | — |
 | DeepSeek (registry) | `provider("deepseek", ...)` | `deepseek(...)` | `NewDeepSeek(...)` / `Model.deepseek(...)` | — | `aimux_provider_new("deepseek", ...)` |
 | Cohere | `CohereProvider` | `cohere(apiKey, model, baseUrl?)` | `NewCohere(...)` / `Model.cohere(...)` | `Model.cohere(...)` / `Aimux.cohere(...)` | `aimux_cohere_new` |
@@ -71,7 +71,7 @@ function tables below.
 |----------|----------------------|-------|
 | `provider` | `provider(name, api_key, model_id, options) -> Box<dyn LanguageModel>` | registry lookup; unknown name → `NoSuchProvider` |
 | `provider_from_env` | `provider_from_env(name, model_id, options)` | key read from the registry entry's env var |
-| `provider_registry_entry` | `-> Option<OpenAICompatProfile>` | inspect a registry profile |
+| `provider_registry_entry` | `-> Option<&'static PresetDescriptor>` | inspect a registry row (auth mode, template parameters, `max_tokens_key`) |
 | `generate_text` | `(model, prompt, options) -> GenerateTextResult` | non-streaming |
 | `stream_text` | `(model, prompt, options) -> StreamTextResult` | streaming |
 

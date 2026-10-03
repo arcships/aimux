@@ -1,638 +1,127 @@
-//! Anthropic partner models on Vertex AI — implements `LanguageModel`.
+//! Anthropic partner models on Vertex AI.
 //!
-//! Serves Anthropic Claude models (e.g. `claude-sonnet-4-20250514`) through the
-//! Vertex AI `rawPredict` / `streamRawPredict` endpoints. These endpoints proxy
-//! the standard Anthropic Messages API: the request body is an Anthropic
-//! Messages request wrapped in an `anthropic_version` envelope — with the model
-//! identity carried by the URL path (`publishers/anthropic/models/{model}`),
-//! not the body — and the response is a verbatim Anthropic Messages response.
+//! Claude on Vertex is the Anthropic Messages API behind the
+//! `publishers/anthropic/models/{model}:rawPredict` / `:streamRawPredict`
+//! endpoints, so its model is the shared
+//! [`AnthropicMessagesModel`](crate::anthropic::AnthropicMessagesModel), the
+//! Rust form of `createVertexAnthropic`'s `AnthropicLanguageModel`. Only what
+//! Vertex does differently is configured here:
 //!
-//! This reuses the shared [`crate::anthropic::convert`] message conversion
-//! logic and [`crate::anthropic::types`] response types. Only the endpoint
-//! construction and authentication differ from the standard Anthropic provider,
-//! and both come from the parent Vertex provider ([`super::VertexAuth`]).
+//! - the URL carries the model and the mode,
+//! - the body drops `model` and gains `anthropic_version: "vertex-2023-10-16"`
+//!   (the version is not a header),
+//! - credentials and the base URL are the Vertex provider's, resolved on every
+//!   request (OAuth bearer token or Express API key; project and location),
+//! - errors are Google-shaped,
+//! - no URL sources, no structured-output beta and no `strict` tool
+//!   definitions.
 //!
 //! Reference: <https://docs.cloud.google.com/claude-on-vertex-ai>
 
-use std::collections::HashMap;
+use std::sync::Arc;
 
-use async_trait::async_trait;
-use futures::StreamExt;
+use futures::future::BoxFuture;
 use serde_json::{Value, json};
 
-use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
-use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateResult, StreamResult};
-use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use aimux_core::AiMuxError;
+use aimux_core::language_model::SupportedUrls;
+use aimux_provider_utils::{FetchFunction, Resolvable};
 
-use aimux_provider_utils::{HttpRequest, RetryConfig};
-
-use crate::anthropic::convert::{build_request_body_with_warnings, parse_stop_reason};
-use crate::anthropic::stream::{
-    finalize_streamed_tool_input, initial_tool_input, server_tool_provider_name,
-    stream_parts_for_result_block, tool_call_caller_metadata,
-};
-use crate::anthropic::tool_name_mapping::ToolNameMapping;
-use crate::anthropic::types::{AnthropicResponse, ContentBlock, StreamEvent};
-
-use super::VertexAuth;
+use crate::anthropic::AnthropicMessagesModel;
+use crate::anthropic::config::{AnthropicModelConfig, AnthropicModelHooks, TransformRequestBody};
+use crate::anthropic::options::CANONICAL;
+use crate::shared::Endpoint;
 
 /// `anthropic_version` envelope value required by the Vertex AI `rawPredict` /
 /// `streamRawPredict` endpoints.
 const ANTHROPIC_VERTEX_VERSION: &str = "vertex-2023-10-16";
 
-/// Google/Vertex error structure: `{ "error": { "message": "...", "status": "..." } }`.
-///
-/// Configuration for an Anthropic-on-Vertex model instance.
-///
-/// `base_url` is the Vertex AI base URL *without* a `/publishers/{publisher}`
-/// suffix (e.g. `.../projects/{project}/locations/{location}`); the publisher
-/// (`anthropic`) is appended by the endpoint helpers. The parent
-/// [`super::VertexProvider::anthropic_model`] strips any existing
-/// `/publishers/google` suffix from its configured base URL before constructing
-/// this config.
-#[derive(Debug, Clone)]
-pub struct VertexAnthropicConfig {
-    pub base_url: String,
-    pub auth: VertexAuth,
-    /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
-    pub api_key_source: Option<String>,
-    /// Retry settings used by Core model operations.
-    pub retry_config: RetryConfig,
+/// The provider string of every Anthropic model on Vertex.
+const PROVIDER: &str = "googleVertex.anthropic.messages";
+
+/// An Anthropic Claude language model served via Vertex AI.
+pub type VertexAnthropicModel = AnthropicMessagesModel;
+
+/// Resolves the endpoint of a request: the `.../publishers/anthropic/models`
+/// base URL and the provider headers.
+pub(super) type EndpointFn =
+    Arc<dyn Fn() -> BoxFuture<'static, Result<Endpoint, AiMuxError>> + Send + Sync>;
+
+/// Wrap a standard Messages request body in the `rawPredict` envelope: drop
+/// `model` (the URL carries it) and add `anthropic_version`.
+fn raw_predict_envelope(body: Value) -> Value {
+    let mut envelope = serde_json::Map::new();
+    envelope.insert(
+        "anthropic_version".to_string(),
+        json!(ANTHROPIC_VERTEX_VERSION),
+    );
+    if let Value::Object(map) = body {
+        envelope.extend(map.into_iter().filter(|(key, _)| key != "model"));
+    }
+    Value::Object(envelope)
 }
 
-/// An Anthropic Claude language model served via Vertex AI `rawPredict`.
-///
-/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
-/// process-wide shared `Client` internally (RFC-0009 §4.1).
-pub struct VertexAnthropicModel {
-    model_id: String,
-    config: VertexAnthropicConfig,
-}
-
-impl VertexAnthropicModel {
-    #[must_use]
-    pub fn new(model_id: String, config: VertexAnthropicConfig) -> Self {
-        Self { model_id, config }
-    }
-
-    /// `…/publishers/anthropic/models/{model}:rawPredict`
-    fn generate_endpoint(&self) -> String {
-        format!(
-            "{}/publishers/anthropic/models/{}:rawPredict",
-            self.config.base_url, self.model_id
-        )
-    }
-
-    /// `…/publishers/anthropic/models/{model}:streamRawPredict`
-    fn stream_endpoint(&self) -> String {
-        format!(
-            "{}/publishers/anthropic/models/{}:streamRawPredict",
-            self.config.base_url, self.model_id
-        )
-    }
-
-    /// Build the request headers, reusing the parent Vertex auth (Bearer token
-    /// or API key). Mirrors [`super::VertexModel::build_headers`].
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> Vec<(String, String)> {
-        let mut headers = vec![("Content-Type".to_string(), "application/json".to_string())];
-        match &self.config.auth {
-            VertexAuth::BearerToken(token) => {
-                headers.push(("Authorization".to_string(), format!("Bearer {token}")));
-            }
-            VertexAuth::ApiKey(key) => {
-                headers.push(("x-goog-api-key".to_string(), key.clone()));
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.push((k.clone(), v.clone()));
-            }
-        }
-        headers
-    }
-
-    /// Wrap a standard Anthropic Messages request body in the Vertex AI
-    /// `rawPredict` envelope: prepend `anthropic_version` and drop the `model`
-    /// field (the model identity is carried by the URL path, not the body).
-    fn wrap_raw_predict_body(&self, anthropic_body: Value) -> Value {
-        let mut envelope = serde_json::Map::new();
-        envelope.insert(
-            "anthropic_version".to_string(),
-            json!(ANTHROPIC_VERTEX_VERSION),
-        );
-        if let Value::Object(map) = anthropic_body {
-            for (k, v) in map {
-                if k == "model" {
-                    continue;
-                }
-                envelope.insert(k, v);
-            }
-        }
-        Value::Object(envelope)
-    }
-}
-
-#[async_trait]
-impl LanguageModel for VertexAnthropicModel {
-    fn provider(&self) -> &str {
-        "google.vertex"
-    }
-
-    fn model_id(&self) -> &str {
-        &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        use aimux_core::recording::ProviderRecord;
-        // M2b: record identity + credential source + auth kind. Never serialize
-        // the bearer token or API key plaintext.
-        let auth_kind = match &self.config.auth {
-            VertexAuth::BearerToken(_) => "bearer_token",
-            VertexAuth::ApiKey(_) => "api_key",
-        };
-        ProviderRecord {
-            provider: self.provider().to_string(),
-            model_id: self.model_id.clone(),
-            base_url: Some(self.config.base_url.clone()),
-            api_key_source: self
-                .config
-                .api_key_source
-                .clone()
-                .unwrap_or_else(|| "explicit".to_string()),
-            profile: None,
-            provider_options: Some(serde_json::json!({
-                "auth_kind": auth_kind,
-                "anthropic_version": ANTHROPIC_VERTEX_VERSION,
+/// The configuration of one request against `endpoint`.
+fn request_config(
+    endpoint: Endpoint,
+    fetch: Option<FetchFunction>,
+    transform_request_body: Option<TransformRequestBody>,
+) -> AnthropicModelConfig {
+    let Endpoint { base_url, headers } = endpoint;
+    let models = base_url.clone();
+    let url_base = base_url.clone();
+    AnthropicModelConfig {
+        provider: PROVIDER.to_string(),
+        url: Arc::new(move |path| format!("{url_base}{path}")),
+        headers: Resolvable::Value(headers),
+        fetch,
+        supported_urls: SupportedUrls::default(),
+        transform_request_body,
+        base_url,
+        provider_options_name: CANONICAL.to_string(),
+        hooks: AnthropicModelHooks {
+            request_url: Some(Arc::new(move |model_id, stream| {
+                let method = if stream {
+                    "streamRawPredict"
+                } else {
+                    "rawPredict"
+                };
+                format!("{models}/{model_id}:{method}")
             })),
-        }
-    }
-
-    async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let req = build_request_body_with_warnings(&self.model_id, options, false)?;
-        let body = self.wrap_raw_predict_body(req.body);
-        let url = self.generate_endpoint();
-        let headers = self.build_headers(options.headers.as_ref());
-        let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: url.clone(),
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
-            body.clone(),
-            aimux_provider_utils::create_json_response_handler(),
-            crate::google::google_failed_response_handler(),
-        )
-        .await?;
-
-        let data: AnthropicResponse = resp.value;
-
-        let content = crate::anthropic::stream::parse_anthropic_content(
-            &data.content,
-            &ToolNameMapping::new(options.tools.as_deref()),
-        );
-
-        let finish_reason = data
-            .stop_reason
-            .as_deref()
-            .map(parse_stop_reason)
-            .unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            });
-
-        // RFC-0015 P0-2: fill cache fields + raw (same shape as Anthropic).
-        let usage = crate::anthropic::usage::usage_from_anthropic(&data.usage);
-
-        Ok(GenerateResult {
-            content,
-            finish_reason,
-            usage,
-            warnings: req.warnings,
-            provider_metadata: None,
-            response: ResponseMetadata {
-                id: Some(data.id),
-                timestamp: None,
-                model_id: Some(data.model),
-            },
-            request_body: Some(body),
-            response_headers: None,
-        })
-    }
-
-    async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let req = build_request_body_with_warnings(&self.model_id, options, true)?;
-        let body = self.wrap_raw_predict_body(req.body);
-        let warnings = req.warnings;
-        let tool_names = ToolNameMapping::new(options.tools.as_deref());
-        let url = self.stream_endpoint();
-        let headers = self.build_headers(options.headers.as_ref());
-        let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: url.clone(),
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
-            body.clone(),
-            aimux_provider_utils::create_event_source_response_handler::<StreamEvent>(),
-            crate::google::google_failed_response_handler(),
-        )
-        .await?;
-
-        let response_headers = resp.response_headers;
-        let mut sse_stream = resp.value;
-        let first_event = match sse_stream.next().await {
-            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
-            first_event => first_event,
-        };
-        if let Some(Ok(StreamEvent::Error { error })) = first_event.as_ref() {
-            return Err(crate::anthropic::stream::anthropic_stream_error(
-                error,
-                &url,
-                body.clone(),
-                response_headers,
-            ));
-        }
-        let stream_error_url = url;
-        let stream_request_body = body.clone();
-        let stream_response_headers = response_headers.clone();
-
-        let stream = async_stream::stream! {
-            yield Ok(StreamPart::StreamStart { warnings });
-
-            let mut sse = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
-            let mut blocks: HashMap<usize, BlockState> = HashMap::new();
-            let mut final_usage = Usage::default();
-            let mut final_finish_reason: Option<FinishReason> = None;
-            let mut response_meta_emitted = false;
-            let mut mcp_tool_calls: HashMap<String, (String, String)> = HashMap::new();
-            let mut server_tool_calls: HashMap<String, String> = HashMap::new();
-
-            while let Some(event) = sse.next().await {
-                match event {
-                    Ok(stream_event) => {
-                        match stream_event {
-                            StreamEvent::MessageStart { message } => {
-                                if let Some(usage) = &message.usage {
-                                    // RFC-0015 P0-2: full input side incl.
-                                    // cache fields + raw (same as Anthropic).
-                                    final_usage =
-                                        crate::anthropic::usage::usage_from_anthropic(usage);
-                                }
-                                if !response_meta_emitted {
-                                    yield Ok(StreamPart::ResponseMetadata {
-                                        id: Some(message.id.clone()),
-                                        timestamp: None,
-                                        model_id: Some(message.model.clone()),
-                                    });
-                                    response_meta_emitted = true;
-                                }
-                            }
-                            StreamEvent::ContentBlockStart { index, content_block } => {
-                                match content_block {
-                                    ContentBlock::Text { .. } => {
-                                        blocks.insert(index, BlockState::Text { started: false });
-                                    }
-                                    ContentBlock::Thinking { .. } => {
-                                        blocks.insert(index, BlockState::Thinking { started: false });
-                                    }
-                                    ContentBlock::ToolUse {
-                                        id,
-                                        name,
-                                        input,
-                                        caller,
-                                    } => {
-                                        let custom_name = tool_names
-                                            .to_custom_tool_name(&name)
-                                            .to_string();
-                                        let initial_input = initial_tool_input(&input);
-                                        yield Ok(StreamPart::ToolInputStart {
-                                            id: id.clone(),
-                                            tool_name: custom_name.clone(),
-                                            provider_executed: None,
-                                            dynamic: None,
-                                            title: None,
-                                            provider_metadata: None,
-                                        });
-                                        blocks.insert(index, BlockState::ToolUse {
-                                            id,
-                                            name: custom_name,
-                                            first_delta: initial_input.is_empty(),
-                                            accumulated_json: initial_input,
-                                            provider_executed: None,
-                                            dynamic: None,
-                                            provider_tool_name: None,
-                                            provider_tool_input_type: None,
-                                            provider_metadata: tool_call_caller_metadata(caller.as_ref()),
-                                        });
-                                    }
-                                    ContentBlock::ServerToolUse { id, name, input } => {
-                                        if matches!(
-                                            name.as_str(),
-                                            "tool_search_tool_regex" | "tool_search_tool_bm25"
-                                        ) {
-                                            server_tool_calls.insert(id.clone(), name.clone());
-                                        }
-                                        let provider_name = server_tool_provider_name(&name);
-                                        let custom_name = tool_names
-                                            .to_custom_tool_name(provider_name)
-                                            .to_string();
-                                        let dynamic = (provider_name == "code_execution"
-                                            && tool_names.mark_code_execution_dynamic())
-                                        .then_some(true);
-                                        let initial_input = initial_tool_input(&input);
-                                        yield Ok(StreamPart::ToolInputStart {
-                                            id: id.clone(),
-                                            tool_name: custom_name.clone(),
-                                            provider_executed: Some(true),
-                                            dynamic,
-                                            title: None,
-                                            provider_metadata: None,
-                                        });
-                                        blocks.insert(index, BlockState::ToolUse {
-                                            id,
-                                            name: custom_name,
-                                            first_delta: initial_input.is_empty(),
-                                            accumulated_json: initial_input,
-                                            provider_executed: Some(true),
-                                            dynamic,
-                                            provider_tool_name: Some(provider_name.to_string()),
-                                            provider_tool_input_type: match name.as_str() {
-                                                "text_editor_code_execution" | "bash_code_execution" => {
-                                                    Some(name)
-                                                }
-                                                "code_execution" => {
-                                                    Some("programmatic-tool-call".to_string())
-                                                }
-                                                _ => None,
-                                            },
-                                            provider_metadata: None,
-                                        });
-                                    }
-                                    ContentBlock::McpToolUse { id, name, input, server_name } => {
-                                        mcp_tool_calls
-                                            .insert(id.clone(), (name.clone(), server_name.clone()));
-                                        yield Ok(StreamPart::ToolCall {
-                                            tool_call_id: id.clone(),
-                                            tool_name: name.clone(),
-                                            input: Value::String(input.to_string()),
-                                            provider_executed: Some(true),
-                                            dynamic: Some(true),
-                                            thought_signature: None,
-                                            invalid: None,
-                                            error: None,
-                                            provider_metadata: Some(json!({
-                                                "anthropic": {
-                                                    "type": "mcp-tool-use",
-                                                    "serverName": server_name,
-                                                }
-                                            })),
-                                        });
-                                    }
-                                    ContentBlock::RedactedThinking { data } => {
-                                        yield Ok(StreamPart::ReasoningStart {
-                                            id: index.to_string(),
-                                            provider_metadata: Some(json!({
-                                                "anthropic": { "redactedData": data }
-                                            })),
-                                        });
-                                        blocks.insert(index, BlockState::Thinking { started: true });
-                                    }
-                                    other => {
-                                        for part in stream_parts_for_result_block(
-                                            &other,
-                                            &tool_names,
-                                            &mcp_tool_calls,
-                                            &server_tool_calls,
-                                        ) {
-                                            yield Ok(part);
-                                        }
-                                    }
-                                }
-                            }
-                            StreamEvent::ContentBlockDelta { index, delta } => {
-                                if let Some(text) = delta.text {
-                                    let start_id: Option<String> = match blocks.get_mut(&index) {
-                                        Some(BlockState::Text { started: false }) => {
-                                            if let Some(BlockState::Text { started }) =
-                                                blocks.get_mut(&index)
-                                            {
-                                                *started = true;
-                                            }
-                                            Some(index.to_string())
-                                        }
-                                        _ => None,
-                                    };
-                                    if let Some(id) = start_id {
-                                        yield Ok(StreamPart::TextStart { id, provider_metadata: None});
-                                    }
-                                    yield Ok(StreamPart::TextDelta {
-                                        id: index.to_string(),
-                                        delta: text,
-                                        provider_metadata: None,
-                                    });
-                                }
-                                if let Some(partial) = delta.partial_json {
-                                    let delta_event: Option<(String, String)> = match blocks.get_mut(&index) {
-                                        Some(BlockState::ToolUse {
-                                            id,
-                                            accumulated_json,
-                                            provider_tool_input_type,
-                                            first_delta,
-                                            ..
-                                        }) if !partial.is_empty() => {
-                                            let emitted_delta = if *first_delta {
-                                                if let Some(input_type) = provider_tool_input_type {
-                                                    format!(
-                                                        "{{\"type\": \"{input_type}\",{}",
-                                                        partial.strip_prefix('{').unwrap_or(&partial)
-                                                    )
-                                                } else {
-                                                    partial
-                                                }
-                                            } else {
-                                                partial
-                                            };
-                                            accumulated_json.push_str(&emitted_delta);
-                                            *first_delta = false;
-                                            Some((id.clone(), emitted_delta))
-                                        }
-                                        _ => None,
-                                    };
-                                    if let Some((id, delta)) = delta_event {
-                                        yield Ok(StreamPart::ToolInputDelta {
-                                            id,
-                                            delta,
-                                            provider_metadata: None,
-                                        });
-                                    }
-                                }
-                                if let Some(thinking) = delta.thinking {
-                                    let start_id: Option<String> = match blocks.get_mut(&index) {
-                                        Some(BlockState::Thinking { started: false }) => {
-                                            if let Some(BlockState::Thinking { started }) =
-                                                blocks.get_mut(&index)
-                                            {
-                                                *started = true;
-                                            }
-                                            Some(index.to_string())
-                                        }
-                                        _ => None,
-                                    };
-                                    if let Some(id) = start_id {
-                                        yield Ok(StreamPart::ReasoningStart {
-                                            id,
-                                            provider_metadata: None,
-                                        });
-                                    }
-                                    yield Ok(StreamPart::ReasoningDelta {
-                                        id: index.to_string(),
-                                        delta: thinking,
-                                        provider_metadata: None,
-                                    });
-                                }
-                            }
-                            StreamEvent::ContentBlockStop { index } => {
-                                if let Some(state) = blocks.remove(&index) {
-                                    match state {
-                                        BlockState::Text { started: true } => {
-                                            yield Ok(StreamPart::TextEnd {
-                                                id: index.to_string(),
-                                                provider_metadata: None,
-                                            });
-                                        }
-                                        BlockState::Text { started: false } => {}
-                                        BlockState::Thinking { started: true } => {
-                                            yield Ok(StreamPart::ReasoningEnd {
-                                                id: index.to_string(),
-                                                provider_metadata: None,
-                                            });
-                                        }
-                                        BlockState::Thinking { started: false } => {}
-                                        BlockState::ToolUse {
-                                            id,
-                                            name,
-                                            accumulated_json,
-                                            provider_executed,
-                                            dynamic,
-                                            provider_tool_name,
-                                            provider_tool_input_type,
-                                            provider_metadata,
-                                            ..
-                                        } => {
-                                            yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
-                                            let input =
-                                                Value::String(finalize_streamed_tool_input(
-                                                    accumulated_json,
-                                                    provider_tool_name.as_deref(),
-                                                    provider_tool_input_type.as_deref(),
-                                                ));
-                                            yield Ok(StreamPart::ToolCall {
-                                                tool_call_id: id,
-                                                tool_name: name,
-                                                input,
-                                                provider_executed,
-                                                dynamic,
-                                                thought_signature: None,
-                                                invalid: None,
-                                                error: None,
-                                                provider_metadata,
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                            StreamEvent::MessageDelta { delta, usage } => {
-                                if let Some(reason) = delta.stop_reason {
-                                    final_finish_reason = Some(parse_stop_reason(&reason));
-                                }
-                                if let Some(u) = usage {
-                                    // Reuse the shared conversion so the output
-                                    // reasoning/text split (from
-                                    // output_tokens_details) is preserved, matching
-                                    // anthropic/stream.rs. Only the output side is
-                                    // applied — MessageDelta carries output tokens
-                                    // only, so input-side usage from MessageStart is
-                                    // kept intact.
-                                    final_usage.output_tokens =
-                                        crate::anthropic::usage::usage_from_anthropic(&u)
-                                            .output_tokens;
-                                }
-                            }
-                            StreamEvent::MessageStop => break,
-                            StreamEvent::Error { error } => {
-                                yield Ok(StreamPart::Error {
-                                    error: crate::anthropic::stream::anthropic_stream_error(
-                                        &error,
-                                        &stream_error_url,
-                                        stream_request_body.clone(),
-                                        stream_response_headers.clone(),
-                                    ),
-                                });
-                                return;
-                            }
-                            _ => {}
-                        }
-                    }
-                    Err(error) => {
-                        let recoverable = error.is_recoverable_stream_error();
-                        yield Err(error);
-                        if !recoverable {
-                            return;
-                        }
-                    }
-                }
-            }
-
-            yield Ok(StreamPart::Finish {
-                finish_reason: final_finish_reason.unwrap_or(FinishReason {
-                    unified: FinishReasonUnified::Stop,
-                    raw: None,
-                }),
-                usage: final_usage,
-                provider_metadata: None,
-            });
-        };
-
-        Ok(StreamResult {
-            stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
-        })
+            prepare_body: Some(Arc::new(raw_predict_envelope)),
+            failed_response_handler: crate::google::google_failed_response_handler,
+            supports_native_structured_output: false,
+            supports_strict_tools: false,
+        },
+        resolve: None,
     }
 }
 
-/// Per-content-block state during streaming (mirrors the Anthropic provider).
-enum BlockState {
-    Text {
-        started: bool,
-    },
-    ToolUse {
-        id: String,
-        name: String,
-        accumulated_json: String,
-        provider_executed: Option<bool>,
-        dynamic: Option<bool>,
-        provider_tool_name: Option<String>,
-        provider_tool_input_type: Option<String>,
-        provider_metadata: Option<Value>,
-        first_delta: bool,
-    },
-    Thinking {
-        started: bool,
-    },
+/// The model `model_id` on the Vertex endpoint `endpoint` resolves to for each
+/// request.
+pub(super) fn model(
+    model_id: &str,
+    endpoint: EndpointFn,
+    fetch: Option<FetchFunction>,
+    transform_request_body: Option<TransformRequestBody>,
+) -> VertexAnthropicModel {
+    let resolve_fetch = fetch.clone();
+    let resolve_transform = transform_request_body.clone();
+    let mut config = request_config(
+        Endpoint {
+            base_url: String::new(),
+            headers: Default::default(),
+        },
+        fetch,
+        transform_request_body,
+    );
+    // The model's own fields only describe its identity; every request is
+    // built from the endpoint resolved for it.
+    config.resolve = Some(Arc::new(move || {
+        let endpoint = endpoint.clone();
+        let fetch = resolve_fetch.clone();
+        let transform = resolve_transform.clone();
+        Box::pin(async move { Ok(request_config(endpoint().await?, fetch, transform)) })
+    }));
+    AnthropicMessagesModel::with_config(model_id.to_string(), config)
 }

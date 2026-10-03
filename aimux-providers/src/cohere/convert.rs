@@ -419,8 +419,7 @@ pub fn resolve_cohere_thinking(
     provider_options: &Option<std::collections::HashMap<String, Value>>,
 ) -> Option<Value> {
     // Provider options take precedence.
-    if let Some(po) = provider_options
-        && let Some(cohere) = po.get("cohere")
+    if let Some(cohere) = super::options::cohere_options(provider_options.as_ref())
         && let Some(thinking) = cohere.get("thinking")
     {
         let t_type = thinking

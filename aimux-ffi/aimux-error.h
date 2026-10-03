@@ -6,7 +6,7 @@
  * trailing out-parameter, which remains at its documented sentinel on failure.
  *
  * Every non-NULL error has one non-zero `aimux_error_code_t` and one message.
- * Codes 1..17 come from `AiMuxError`, 100..105 from
+ * Codes 1..19 come from `AiMuxError`, 100..105 from
  * `RecordingError`, and 200..206 identify failures detected while crossing
  * the C ABI. Higher-level bindings reconstruct their native error types from
  * that code; they map all 200..206 codes to the language's existing
@@ -40,7 +40,7 @@ typedef struct aimux_error aimux_error_t;
 typedef enum aimux_error_code {
     AIMUX_OK = 0,
 
-    /* AiMuxError: 1..17, except retired code 4. */
+    /* AiMuxError: 1..19, except retired code 4. */
     AIMUX_E_OTHER = 1,
     AIMUX_E_JSON_PARSE = 2,
     AIMUX_E_INVALID_RESPONSE_DATA = 3,
@@ -60,6 +60,12 @@ typedef enum aimux_error_code {
     AIMUX_E_NO_SUCH_TOOL = 15,
     AIMUX_E_INVALID_TOOL_INPUT = 16,
     AIMUX_E_TOOL_CALL_REPAIR = 17,
+    /* No API key was passed and the fallback environment variable is unset
+     * (the AI SDK's LoadAPIKeyError). Pre-HTTP: no request was made. */
+    AIMUX_E_LOAD_API_KEY = 18,
+    /* A required provider setting was not passed and its fallback environment
+     * variable is unset (the AI SDK's LoadSettingError). */
+    AIMUX_E_LOAD_SETTING = 19,
 
     /* RecordingError: 100..105. */
     AIMUX_E_RECORDING_INIT = 100,
@@ -107,9 +113,13 @@ int32_t aimux_error_status(const aimux_error_t *error);
 
 /** Retry hint in milliseconds (0 = retry now), or -1 when absent. */
 int64_t aimux_error_retry_ms(const aimux_error_t *error);
-/** Provider's own error code, e.g. "insufficient_quota". */
+/** Provider's own error code, e.g. "insufficient_quota". Under
+ *  AIMUX_E_LOAD_API_KEY / AIMUX_E_LOAD_SETTING: the environment variable that
+ *  was consulted, e.g. "OPENAI_API_KEY". */
 char *aimux_error_provider_code(const aimux_error_t *error);
-/** Failure text without Aimux's composed prefix. */
+/** Failure text without Aimux's composed prefix. Under AIMUX_E_LOAD_API_KEY:
+ *  what the key is for ("OpenAI"); under AIMUX_E_LOAD_SETTING: the setting's
+ *  parameter name ("region"). */
 char *aimux_error_provider_message(const aimux_error_t *error);
 /** Raw provider response body. */
 char *aimux_error_response_body(const aimux_error_t *error);

@@ -24,6 +24,8 @@ const ERROR_CLASS_NAMES: &[&str] = &[
     "ToolCallRepairError",
     "InvalidArgumentError",
     "InvalidPromptError",
+    "LoadAPIKeyError",
+    "LoadSettingError",
     "TokenExpiredError",
     "UnsupportedFunctionalityError",
     "NoSuchModelError",
@@ -183,6 +185,8 @@ fn aimux_error_class_name(error: &AiMuxError) -> &'static str {
         AiMuxError::ToolCallRepair { .. } => "ToolCallRepairError",
         AiMuxError::InvalidArgument(_) => "InvalidArgumentError",
         AiMuxError::InvalidPrompt(_) => "InvalidPromptError",
+        AiMuxError::LoadApiKey { .. } => "LoadAPIKeyError",
+        AiMuxError::LoadSetting { .. } => "LoadSettingError",
         AiMuxError::TokenExpired(_) => "TokenExpiredError",
         AiMuxError::UnsupportedFunctionality(_) => "UnsupportedFunctionalityError",
         AiMuxError::NoSuchModel { .. } => "NoSuchModelError",
@@ -292,6 +296,17 @@ fn aimux_error_object<'env>(env: &'env Env, error: &AiMuxError) -> NapiResult<Ob
         AiMuxError::NoSuchProvider { provider_id } => {
             obj.set("providerId", provider_id.as_str())?;
         }
+        AiMuxError::LoadApiKey {
+            env_var,
+            description,
+        } => {
+            obj.set("envVar", env_var.as_str())?;
+            obj.set("description", description.as_str())?;
+        }
+        AiMuxError::LoadSetting { env_var, name } => {
+            obj.set("envVar", env_var.as_str())?;
+            obj.set("settingName", name.as_str())?;
+        }
         AiMuxError::NoSuchTool {
             tool_name,
             available_tools,
@@ -314,7 +329,7 @@ fn aimux_error_object<'env>(env: &'env Env, error: &AiMuxError) -> NapiResult<Ob
             obj.set("toolInput", tool_input.as_str())?;
         }
         AiMuxError::ToolCallRepair { original_error, .. } => {
-            obj.set("originalError", &aimux_error_object(env, original_error)?)?;
+            obj.set("originalError", aimux_error_object(env, original_error)?)?;
         }
         _ => {}
     }

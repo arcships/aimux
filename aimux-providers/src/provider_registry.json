@@ -238,6 +238,23 @@
     "profile": {}
   },
   {
+    "name": "bedrock_mantle",
+    "display": "Bedrock Mantle",
+    "base_url": "https://bedrock-mantle.{region}.api.aws/v1",
+    "env_var": "BEDROCK_MANTLE_API_KEY",
+    "params": [
+      {
+        "name": "region",
+        "env": [
+          "BEDROCK_MANTLE_REGION",
+          "AWS_REGION"
+        ],
+        "default": "us-east-1"
+      }
+    ],
+    "profile": {}
+  },
+  {
     "name": "berget",
     "display": "Berget.AI",
     "base_url": "https://api.berget.ai/v1",
@@ -352,15 +369,31 @@
   {
     "name": "cloudflare",
     "display": "Cloudflare",
-    "base_url": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
+    "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
     "env_var": "CLOUDFLARE_API_KEY",
+    "params": [
+      {
+        "name": "account_id",
+        "env": [
+          "CLOUDFLARE_ACCOUNT_ID"
+        ]
+      }
+    ],
     "profile": {}
   },
   {
     "name": "cloudflare_workers_ai",
     "display": "Cloudflare Workers AI",
-    "base_url": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
+    "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
     "env_var": "CLOUDFLARE_API_KEY",
+    "params": [
+      {
+        "name": "account_id",
+        "env": [
+          "CLOUDFLARE_ACCOUNT_ID"
+        ]
+      }
+    ],
     "profile": {}
   },
   {
@@ -434,6 +467,14 @@
     "profile": {}
   },
   {
+    "name": "cybertron",
+    "display": "Cybertron",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "auth": "none",
+    "base_url_env": "CYBERTRON_BASE_URL",
+    "profile": {}
+  },
+  {
     "name": "daoxe",
     "display": "DaoXE",
     "base_url": "https://daoxe.com/v1",
@@ -478,6 +519,7 @@
   {
     "name": "deepseek",
     "display": "DeepSeek",
+    "family": "deepseek",
     "base_url": "https://api.deepseek.com/v1",
     "env_var": "DEEPSEEK_API_KEY",
     "profile": {}
@@ -494,6 +536,14 @@
     "display": "DInference",
     "base_url": "https://api.dinference.com/v1",
     "env_var": "DINFERENCE_API_KEY",
+    "profile": {}
+  },
+  {
+    "name": "docker_model_runner",
+    "display": "Docker Model Runner",
+    "base_url": "http://model-runner.docker.internal/engines/llama.cpp/v1",
+    "auth": "none",
+    "base_url_env": "DOCKER_MODEL_RUNNER_BASE_URL",
     "profile": {}
   },
   {
@@ -616,6 +666,14 @@
     "profile": {}
   },
   {
+    "name": "gaudi",
+    "display": "Intel Gaudi",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "auth": "none",
+    "base_url_env": "GAUDI_BASE_URL",
+    "profile": {}
+  },
+  {
     "name": "gdc",
     "display": "GDC",
     "base_url": "https://api.gdc.ai/v1",
@@ -667,13 +725,10 @@
   {
     "name": "groq",
     "display": "Groq",
+    "family": "groq",
     "base_url": "https://api.groq.com/openai/v1",
     "env_var": "GROQ_API_KEY",
-    "profile": {
-      "supports_top_k": false,
-      "stream_usage_key": "x_groq",
-      "max_tokens_key": "max_completion_tokens"
-    }
+    "profile": {}
   },
   {
     "name": "helicone",
@@ -783,6 +838,14 @@
     "profile": {}
   },
   {
+    "name": "jlama",
+    "display": "Jlama",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "auth": "none",
+    "base_url_env": "JLAMA_BASE_URL",
+    "profile": {}
+  },
+  {
     "name": "kenari",
     "display": "Kenari",
     "base_url": "https://kenari.id/v1",
@@ -881,10 +944,34 @@
     "profile": {}
   },
   {
+    "name": "litellm_proxy",
+    "display": "LiteLLM Proxy",
+    "base_url": "http://127.0.0.1:4000/v1",
+    "auth": "none",
+    "base_url_env": "LITELLM_PROXY_BASE_URL",
+    "profile": {}
+  },
+  {
     "name": "llama",
     "display": "Llama",
     "base_url": "https://api.llama.com/compat/v1/",
     "env_var": "LLAMA_API_KEY",
+    "profile": {}
+  },
+  {
+    "name": "llamacpp",
+    "display": "llama.cpp",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "auth": "none",
+    "base_url_env": "LLAMACPP_BASE_URL",
+    "profile": {}
+  },
+  {
+    "name": "llamafile",
+    "display": "Llamafile",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "auth": "none",
+    "base_url_env": "LLAMAFILE_BASE_URL",
     "profile": {}
   },
   {
@@ -906,6 +993,30 @@
     "display": "LLMTR",
     "base_url": "https://llmtr.com/v1",
     "env_var": "LLMTR_API_KEY",
+    "profile": {}
+  },
+  {
+    "name": "lmstudio",
+    "display": "LM Studio",
+    "base_url": "http://127.0.0.1:1234/v1",
+    "auth": "none",
+    "base_url_env": "LMSTUDIO_BASE_URL",
+    "profile": {}
+  },
+  {
+    "name": "local",
+    "display": "Local LLM",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "auth": "none",
+    "base_url_env": "LOCAL_LLM_BASE_URL",
+    "profile": {}
+  },
+  {
+    "name": "localai",
+    "display": "LocalAI",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "auth": "none",
+    "base_url_env": "LOCALAI_BASE_URL",
     "profile": {}
   },
   {
@@ -1007,10 +1118,26 @@
     "profile": {}
   },
   {
+    "name": "mistralrs",
+    "display": "Mistral.rs",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "auth": "none",
+    "base_url_env": "MISTRALRS_BASE_URL",
+    "profile": {}
+  },
+  {
     "name": "mixlayer",
     "display": "Mixlayer",
     "base_url": "https://models.mixlayer.ai/v1",
     "env_var": "MIXLAYER_API_KEY",
+    "profile": {}
+  },
+  {
+    "name": "mlx",
+    "display": "MLX (Apple Silicon)",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "auth": "none",
+    "base_url_env": "MLX_BASE_URL",
     "profile": {}
   },
   {
@@ -1093,8 +1220,13 @@
   {
     "name": "neon",
     "display": "Neon",
-    "base_url": "https://<branch-host>/v1",
+    "base_url": "https://{branch_host}/v1",
     "env_var": "NEON_AI_GATEWAY_TOKEN",
+    "params": [
+      {
+        "name": "branch_host"
+      }
+    ],
     "profile": {}
   },
   {
@@ -1149,8 +1281,13 @@
   {
     "name": "oci",
     "display": "OCI",
-    "base_url": "https://inference.generativeai.${region}.oci.oraclecloud.com/openai/v1",
+    "base_url": "https://inference.generativeai.{region}.oci.oraclecloud.com/openai/v1",
     "env_var": "OCI_API_KEY",
+    "params": [
+      {
+        "name": "region"
+      }
+    ],
     "profile": {}
   },
   {
@@ -1168,10 +1305,42 @@
     "profile": {}
   },
   {
+    "name": "ollama",
+    "display": "Ollama",
+    "base_url": "http://127.0.0.1:11434/v1",
+    "auth": "none",
+    "base_url_env": "OLLAMA_BASE_URL",
+    "profile": {}
+  },
+  {
     "name": "ollama_cloud",
     "display": "Ollama Cloud",
     "base_url": "https://api.ollama.com/v1",
     "env_var": "OLLAMA_CLOUD_API_KEY",
+    "profile": {}
+  },
+  {
+    "name": "omlx",
+    "display": "OMLX / MLX LM",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "auth": "none",
+    "base_url_env": "OMLX_BASE_URL",
+    "profile": {}
+  },
+  {
+    "name": "onnx",
+    "display": "ONNX Runtime",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "auth": "none",
+    "base_url_env": "ONNX_BASE_URL",
+    "profile": {}
+  },
+  {
+    "name": "oobabooba",
+    "display": "Oobabooga Text Generation WebUI",
+    "base_url": "http://127.0.0.1:5000/v1",
+    "auth": "none",
+    "base_url_env": "OOBABOOBA_BASE_URL",
     "profile": {}
   },
   {
@@ -1207,6 +1376,21 @@
     "display": "OpenCode Zen",
     "base_url": "https://api.opencode.zen/v1",
     "env_var": "OPENCODE_ZEN_API_KEY",
+    "profile": {}
+  },
+  {
+    "name": "openrouter",
+    "display": "OpenRouter",
+    "base_url": "https://openrouter.ai/api/v1",
+    "env_var": "OPENROUTER_API_KEY",
+    "profile": {}
+  },
+  {
+    "name": "openvino",
+    "display": "OpenVINO",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "auth": "none",
+    "base_url_env": "OPENVINO_BASE_URL",
     "profile": {}
   },
   {
@@ -1421,6 +1605,14 @@
     "profile": {}
   },
   {
+    "name": "sglang",
+    "display": "SGLang",
+    "base_url": "http://127.0.0.1:30000/v1",
+    "auth": "none",
+    "base_url_env": "SGLANG_BASE_URL",
+    "profile": {}
+  },
+  {
     "name": "siliconflow",
     "display": "SiliconFlow",
     "base_url": "https://api.siliconflow.cn/v1",
@@ -1432,15 +1624,25 @@
   {
     "name": "snowflake",
     "display": "Snowflake",
-    "base_url": "https://<account-identifier>.snowflakecomputing.com/api/v2/cortex/v1",
+    "base_url": "https://{account_identifier}.snowflakecomputing.com/api/v2/cortex/v1",
     "env_var": "SNOWFLAKE_PAT",
+    "params": [
+      {
+        "name": "account_identifier"
+      }
+    ],
     "profile": {}
   },
   {
     "name": "snowflake_cortex",
     "display": "Snowflake Cortex",
-    "base_url": "https://<account-identifier>.snowflakecomputing.com/api/v2/cortex/v1",
+    "base_url": "https://{account_identifier}.snowflakecomputing.com/api/v2/cortex/v1",
     "env_var": "SNOWFLAKE_CORTEX_PAT",
+    "params": [
+      {
+        "name": "account_identifier"
+      }
+    ],
     "profile": {}
   },
   {
@@ -1656,10 +1858,358 @@
     "profile": {}
   },
   {
+    "name": "vertex_ai_ai21_models",
+    "display": "AI21 models on Vertex AI",
+    "base_url": "https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi",
+    "env_var": "GOOGLE_VERTEX_ACCESS_TOKEN",
+    "params": [
+      {
+        "name": "project",
+        "env": [
+          "GOOGLE_VERTEX_PROJECT"
+        ]
+      },
+      {
+        "name": "location",
+        "env": [
+          "GOOGLE_VERTEX_LOCATION"
+        ],
+        "default": "global"
+      },
+      {
+        "name": "host",
+        "derive": {
+          "from": "location",
+          "map": {
+            "global": "aiplatform.googleapis.com",
+            "eu": "aiplatform.eu.rep.googleapis.com",
+            "us": "aiplatform.us.rep.googleapis.com"
+          },
+          "otherwise": "{location}-aiplatform.googleapis.com"
+        }
+      }
+    ],
+    "profile": {}
+  },
+  {
+    "name": "vertex_ai_anthropic_models",
+    "display": "Anthropic Claude models on Vertex AI",
+    "base_url": "https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi",
+    "env_var": "GOOGLE_VERTEX_ACCESS_TOKEN",
+    "params": [
+      {
+        "name": "project",
+        "env": [
+          "GOOGLE_VERTEX_PROJECT"
+        ]
+      },
+      {
+        "name": "location",
+        "env": [
+          "GOOGLE_VERTEX_LOCATION"
+        ],
+        "default": "global"
+      },
+      {
+        "name": "host",
+        "derive": {
+          "from": "location",
+          "map": {
+            "global": "aiplatform.googleapis.com",
+            "eu": "aiplatform.eu.rep.googleapis.com",
+            "us": "aiplatform.us.rep.googleapis.com"
+          },
+          "otherwise": "{location}-aiplatform.googleapis.com"
+        }
+      }
+    ],
+    "profile": {}
+  },
+  {
+    "name": "vertex_ai_deepseek_models",
+    "display": "DeepSeek models on Vertex AI",
+    "base_url": "https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi",
+    "env_var": "GOOGLE_VERTEX_ACCESS_TOKEN",
+    "params": [
+      {
+        "name": "project",
+        "env": [
+          "GOOGLE_VERTEX_PROJECT"
+        ]
+      },
+      {
+        "name": "location",
+        "env": [
+          "GOOGLE_VERTEX_LOCATION"
+        ],
+        "default": "global"
+      },
+      {
+        "name": "host",
+        "derive": {
+          "from": "location",
+          "map": {
+            "global": "aiplatform.googleapis.com",
+            "eu": "aiplatform.eu.rep.googleapis.com",
+            "us": "aiplatform.us.rep.googleapis.com"
+          },
+          "otherwise": "{location}-aiplatform.googleapis.com"
+        }
+      }
+    ],
+    "profile": {}
+  },
+  {
+    "name": "vertex_ai_llama_models",
+    "display": "Meta Llama models on Vertex AI",
+    "base_url": "https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi",
+    "env_var": "GOOGLE_VERTEX_ACCESS_TOKEN",
+    "params": [
+      {
+        "name": "project",
+        "env": [
+          "GOOGLE_VERTEX_PROJECT"
+        ]
+      },
+      {
+        "name": "location",
+        "env": [
+          "GOOGLE_VERTEX_LOCATION"
+        ],
+        "default": "global"
+      },
+      {
+        "name": "host",
+        "derive": {
+          "from": "location",
+          "map": {
+            "global": "aiplatform.googleapis.com",
+            "eu": "aiplatform.eu.rep.googleapis.com",
+            "us": "aiplatform.us.rep.googleapis.com"
+          },
+          "otherwise": "{location}-aiplatform.googleapis.com"
+        }
+      }
+    ],
+    "profile": {}
+  },
+  {
+    "name": "vertex_ai_minimax_models",
+    "display": "MiniMax models on Vertex AI",
+    "base_url": "https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi",
+    "env_var": "GOOGLE_VERTEX_ACCESS_TOKEN",
+    "params": [
+      {
+        "name": "project",
+        "env": [
+          "GOOGLE_VERTEX_PROJECT"
+        ]
+      },
+      {
+        "name": "location",
+        "env": [
+          "GOOGLE_VERTEX_LOCATION"
+        ],
+        "default": "global"
+      },
+      {
+        "name": "host",
+        "derive": {
+          "from": "location",
+          "map": {
+            "global": "aiplatform.googleapis.com",
+            "eu": "aiplatform.eu.rep.googleapis.com",
+            "us": "aiplatform.us.rep.googleapis.com"
+          },
+          "otherwise": "{location}-aiplatform.googleapis.com"
+        }
+      }
+    ],
+    "profile": {}
+  },
+  {
+    "name": "vertex_ai_mistral_models",
+    "display": "Mistral models on Vertex AI",
+    "base_url": "https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi",
+    "env_var": "GOOGLE_VERTEX_ACCESS_TOKEN",
+    "params": [
+      {
+        "name": "project",
+        "env": [
+          "GOOGLE_VERTEX_PROJECT"
+        ]
+      },
+      {
+        "name": "location",
+        "env": [
+          "GOOGLE_VERTEX_LOCATION"
+        ],
+        "default": "global"
+      },
+      {
+        "name": "host",
+        "derive": {
+          "from": "location",
+          "map": {
+            "global": "aiplatform.googleapis.com",
+            "eu": "aiplatform.eu.rep.googleapis.com",
+            "us": "aiplatform.us.rep.googleapis.com"
+          },
+          "otherwise": "{location}-aiplatform.googleapis.com"
+        }
+      }
+    ],
+    "profile": {}
+  },
+  {
+    "name": "vertex_ai_moonshot_models",
+    "display": "Moonshot AI models on Vertex AI",
+    "base_url": "https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi",
+    "env_var": "GOOGLE_VERTEX_ACCESS_TOKEN",
+    "params": [
+      {
+        "name": "project",
+        "env": [
+          "GOOGLE_VERTEX_PROJECT"
+        ]
+      },
+      {
+        "name": "location",
+        "env": [
+          "GOOGLE_VERTEX_LOCATION"
+        ],
+        "default": "global"
+      },
+      {
+        "name": "host",
+        "derive": {
+          "from": "location",
+          "map": {
+            "global": "aiplatform.googleapis.com",
+            "eu": "aiplatform.eu.rep.googleapis.com",
+            "us": "aiplatform.us.rep.googleapis.com"
+          },
+          "otherwise": "{location}-aiplatform.googleapis.com"
+        }
+      }
+    ],
+    "profile": {}
+  },
+  {
+    "name": "vertex_ai_openai_models",
+    "display": "OpenAI models on Vertex AI",
+    "base_url": "https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi",
+    "env_var": "GOOGLE_VERTEX_ACCESS_TOKEN",
+    "params": [
+      {
+        "name": "project",
+        "env": [
+          "GOOGLE_VERTEX_PROJECT"
+        ]
+      },
+      {
+        "name": "location",
+        "env": [
+          "GOOGLE_VERTEX_LOCATION"
+        ],
+        "default": "global"
+      },
+      {
+        "name": "host",
+        "derive": {
+          "from": "location",
+          "map": {
+            "global": "aiplatform.googleapis.com",
+            "eu": "aiplatform.eu.rep.googleapis.com",
+            "us": "aiplatform.us.rep.googleapis.com"
+          },
+          "otherwise": "{location}-aiplatform.googleapis.com"
+        }
+      }
+    ],
+    "profile": {}
+  },
+  {
+    "name": "vertex_ai_qwen_models",
+    "display": "Qwen models on Vertex AI",
+    "base_url": "https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi",
+    "env_var": "GOOGLE_VERTEX_ACCESS_TOKEN",
+    "params": [
+      {
+        "name": "project",
+        "env": [
+          "GOOGLE_VERTEX_PROJECT"
+        ]
+      },
+      {
+        "name": "location",
+        "env": [
+          "GOOGLE_VERTEX_LOCATION"
+        ],
+        "default": "global"
+      },
+      {
+        "name": "host",
+        "derive": {
+          "from": "location",
+          "map": {
+            "global": "aiplatform.googleapis.com",
+            "eu": "aiplatform.eu.rep.googleapis.com",
+            "us": "aiplatform.us.rep.googleapis.com"
+          },
+          "otherwise": "{location}-aiplatform.googleapis.com"
+        }
+      }
+    ],
+    "profile": {}
+  },
+  {
+    "name": "vertex_ai_zai_models",
+    "display": "Z.AI models on Vertex AI",
+    "base_url": "https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi",
+    "env_var": "GOOGLE_VERTEX_ACCESS_TOKEN",
+    "params": [
+      {
+        "name": "project",
+        "env": [
+          "GOOGLE_VERTEX_PROJECT"
+        ]
+      },
+      {
+        "name": "location",
+        "env": [
+          "GOOGLE_VERTEX_LOCATION"
+        ],
+        "default": "global"
+      },
+      {
+        "name": "host",
+        "derive": {
+          "from": "location",
+          "map": {
+            "global": "aiplatform.googleapis.com",
+            "eu": "aiplatform.eu.rep.googleapis.com",
+            "us": "aiplatform.us.rep.googleapis.com"
+          },
+          "otherwise": "{location}-aiplatform.googleapis.com"
+        }
+      }
+    ],
+    "profile": {}
+  },
+  {
     "name": "vivgrid",
     "display": "Vivgrid",
     "base_url": "https://api.vivgrid.com/v1",
     "env_var": "VIVGRID_API_KEY",
+    "profile": {}
+  },
+  {
+    "name": "vllm",
+    "display": "vLLM",
+    "base_url": "http://127.0.0.1:8000/v1",
+    "auth": "none",
+    "base_url_env": "VLLM_BASE_URL",
     "profile": {}
   },
   {
@@ -1716,6 +2266,14 @@
     "display": "Xiaomi MiMo",
     "base_url": "https://mimo.xiaomi.com/v1",
     "env_var": "XIAOMI_API_KEY",
+    "profile": {}
+  },
+  {
+    "name": "xinference",
+    "display": "Xinference",
+    "base_url": "http://127.0.0.1:9997/v1",
+    "auth": "none",
+    "base_url_env": "XINFERENCE_BASE_URL",
     "profile": {}
   },
   {

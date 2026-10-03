@@ -23,13 +23,24 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
+use aimux_provider_utils::Resolvable;
 use aimux_providers::google::convert::{
     convert_json_schema_to_openapi_schema, get_google_model_capabilities,
 };
 use aimux_providers::google::utils::{
     GoogleJsonAccumulator, PartialArg, get_model_path, is_supported_file_url,
 };
-use aimux_providers::{GoogleConfig, GoogleProvider};
+use aimux_providers::{GoogleProvider, GoogleProviderSettings, create_google};
+
+/// A Google provider with the test key, pointed at `base_url` when given.
+fn test_google(key: &str, base_url: Option<String>) -> GoogleProvider {
+    create_google(GoogleProviderSettings {
+        api_key: Some(Resolvable::Value(key.to_string())),
+        base_url,
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // get_model_path  (TS: get-model-path.test.ts)
@@ -1298,22 +1309,12 @@ mod provider_config_tests {
     }
 
     #[tokio::test]
-    async fn default_base_url_is_generativelanguage() {
-        let config = GoogleConfig::new("test-api-key");
-        assert_eq!(
-            config.base_url,
-            "https://generativelanguage.googleapis.com/v1beta"
-        );
-    }
-
-    #[tokio::test]
     async fn custom_base_url_is_used() {
         let server = MockServer::start().await;
         mock_ok(&server).await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         model
             .do_generate(&default_options(test_prompt()))
@@ -1322,11 +1323,12 @@ mod provider_config_tests {
     }
 
     #[tokio::test]
-    async fn provider_name_is_google() {
-        use aimux_core::provider::Provider;
-        let config = GoogleConfig::new("test-api-key");
-        let provider = GoogleProvider::new(config);
-        assert_eq!(provider.name(), "google");
+    async fn model_provider_is_google() {
+        let provider = test_google("test-api-key", None);
+        assert_eq!(
+            provider.chat("gemini-2.0-flash").provider(),
+            "google.generative-ai"
+        );
     }
 
     #[tokio::test]
@@ -1334,41 +1336,91 @@ mod provider_config_tests {
         let server = MockServer::start().await;
         mock_ok(&server).await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         assert_eq!(model.provider(), "google.generative-ai");
         assert_eq!(model.model_id(), "gemini-2.0-flash");
     }
 
     #[tokio::test]
-    async fn with_base_url_strips_trailing_slash() {
-        let config = GoogleConfig::new("key").with_base_url("https://example.com/v1beta/");
-        assert_eq!(config.base_url, "https://example.com/v1beta");
+    async fn trailing_slash_in_base_url_is_removed() {
+        let server = MockServer::start().await;
+        mock_ok(&server).await;
+
+        let provider = test_google("key", Some(format!("{}/", server.uri())));
+        provider
+            .chat("gemini-2.0-flash")
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .expect("the request path has no double slash");
+    }
+
+    #[tokio::test]
+    async fn invalid_base_url_is_rejected_when_the_provider_is_created() {
+        let result = create_google(GoogleProviderSettings {
+            base_url: Some("not a url".to_string()),
+            ..Default::default()
+        });
+        assert!(matches!(result, Err(AiMuxError::InvalidArgument(_))));
     }
 
     #[tokio::test]
     #[serial]
-    async fn from_env_uses_google_generative_ai_api_key() {
+    async fn api_key_is_read_from_the_environment_per_request() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/models/gemini-2.0-flash:generateContent"))
+            .and(header("x-goog-api-key", "env-api-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "candidates": [{
+                    "content": { "parts": [{ "text": "hi" }], "role": "model" },
+                    "finishReason": "STOP", "index": 0
+                }]
+            })))
+            .mount(&server)
+            .await;
+        unsafe {
+            std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+        }
+        // Creating the provider reads nothing; the key set afterwards is used.
+        let provider = create_google(GoogleProviderSettings {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        })
+        .expect("creation reads nothing");
         unsafe {
             std::env::set_var("GOOGLE_GENERATIVE_AI_API_KEY", "env-api-key");
         }
-        let config = GoogleConfig::from_env().expect("from_env");
-        assert_eq!(config.api_key, "env-api-key");
+        let result = provider
+            .chat("gemini-2.0-flash")
+            .do_generate(&default_options(test_prompt()))
+            .await;
         unsafe {
             std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
         }
+        result.expect("the environment key authenticates the call");
     }
 
     #[tokio::test]
     #[serial]
-    async fn from_env_errors_when_missing() {
+    async fn missing_api_key_fails_the_call_with_load_api_key() {
         unsafe {
             std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
         }
-        let result = GoogleConfig::from_env();
-        assert!(result.is_err());
+        let provider =
+            create_google(GoogleProviderSettings::default()).expect("creation does not need a key");
+        let error = provider
+            .chat("gemini-2.0-flash")
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap_err();
+        match error {
+            AiMuxError::LoadApiKey { env_var, .. } => {
+                assert_eq!(env_var, "GOOGLE_GENERATIVE_AI_API_KEY");
+            }
+            other => panic!("expected LoadApiKey, got {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -1386,9 +1438,8 @@ mod provider_config_tests {
             .mount(&server)
             .await;
 
-        let config = GoogleConfig::new("my-secret-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("my-secret-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         model
             .do_generate(&default_options(test_prompt()))
@@ -1412,9 +1463,8 @@ mod provider_config_tests {
             .mount(&server)
             .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let mut opts = default_options(test_prompt());
         let mut headers = std::collections::HashMap::new();
@@ -1430,9 +1480,7 @@ mod provider_config_tests {
     #[tokio::test]
     async fn language_model_trait_method_returns_boxed_model() {
         use aimux_core::provider::Provider;
-
-        let config = GoogleConfig::new("test-api-key");
-        let provider = GoogleProvider::new(config);
+        let provider = test_google("test-api-key", None);
         let model = provider.language_model("gemini-2.0-flash").unwrap();
         assert_eq!(model.model_id(), "gemini-2.0-flash");
         assert_eq!(model.provider(), "google.generative-ai");

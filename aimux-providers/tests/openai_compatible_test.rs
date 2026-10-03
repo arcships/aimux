@@ -1,7 +1,7 @@
 //! Wiremock tests for the OpenAI-compatible provider wrappers.
 //!
 //! Each of the 8 wrappers (groq, deepseek, togetherai, fireworks, perplexity,
-//! cerebras, xai, moonshotai) is a thin layer over [`OpenAIProvider`] that
+//! cerebras, xai, moonshotai) is a registry preset over the OpenAI-compatible package that
 //! only fixes the default base URL and the API-key environment variable. These
 //! tests verify, for every wrapper, the four behaviours that the wrapper is
 //! responsible for getting right:
@@ -17,6 +17,7 @@
 
 use futures::StreamExt;
 use serde_json::{Value, json};
+use std::sync::Arc;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -30,30 +31,33 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
-use aimux_providers::{
-    ProviderOptions, bedrock_mantle::BedrockMantleConfig, bedrock_mantle::BedrockMantleProvider,
-    huggingface::HuggingFaceConfig, huggingface::HuggingFaceProvider, provider,
-    vertex_ai_ai21_models::VertexAiAi21ModelsConfig,
-    vertex_ai_ai21_models::VertexAiAi21ModelsProvider,
-    vertex_ai_anthropic_models::VertexAiAnthropicModelsConfig,
-    vertex_ai_anthropic_models::VertexAiAnthropicModelsProvider,
-    vertex_ai_deepseek_models::VertexAiDeepseekModelsConfig,
-    vertex_ai_deepseek_models::VertexAiDeepseekModelsProvider,
-    vertex_ai_llama_models::VertexAiLlamaModelsConfig,
-    vertex_ai_llama_models::VertexAiLlamaModelsProvider,
-    vertex_ai_minimax_models::VertexAiMinimaxModelsConfig,
-    vertex_ai_minimax_models::VertexAiMinimaxModelsProvider,
-    vertex_ai_mistral_models::VertexAiMistralModelsConfig,
-    vertex_ai_mistral_models::VertexAiMistralModelsProvider,
-    vertex_ai_moonshot_models::VertexAiMoonshotModelsConfig,
-    vertex_ai_moonshot_models::VertexAiMoonshotModelsProvider,
-    vertex_ai_openai_models::VertexAiOpenaiModelsConfig,
-    vertex_ai_openai_models::VertexAiOpenaiModelsProvider,
-    vertex_ai_qwen_models::VertexAiQwenModelsConfig,
-    vertex_ai_qwen_models::VertexAiQwenModelsProvider,
-    vertex_ai_zai_models::VertexAiZaiModelsConfig, vertex_ai_zai_models::VertexAiZaiModelsProvider,
-    xai::XAIConfig, xai::XAIProvider,
-};
+use aimux_providers::huggingface::{HuggingFaceProviderSettings, create_huggingface};
+use aimux_providers::xai::{XAIProviderSettings, create_xai};
+use aimux_providers::{ProviderOptions, provider};
+
+/// xAI's Chat Completions model (an aimux extension of the package), pointed at
+/// `base_url`.
+fn xai_chat(base_url: String, model_id: &str) -> Arc<dyn LanguageModel> {
+    let provider = create_xai(XAIProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(base_url),
+        ..Default::default()
+    })
+    .expect("valid settings");
+    Arc::new(provider.chat_completions(model_id))
+}
+
+/// Hugging Face's Chat Completions model (an aimux extension of the package),
+/// pointed at `base_url`.
+fn huggingface_chat(base_url: String, model_id: &str) -> Arc<dyn LanguageModel> {
+    let provider = create_huggingface(HuggingFaceProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(base_url),
+        ..Default::default()
+    })
+    .expect("valid settings");
+    Arc::new(provider.chat_completions(model_id))
+}
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -139,16 +143,14 @@ fn text_deltas(parts: &[StreamPart]) -> Vec<String> {
 macro_rules! openai_compatible_tests {
     (
         $mod_name:ident,
-        $config:ty,
-        $provider:ty,
+        $ctor:path,
         $model_id:literal
     ) => {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-                let config = <$config>::new("test-api-key").with_base_url(server.uri());
-                Box::new(<$provider>::new(config).model($model_id))
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+                $ctor(server.uri(), $model_id)
             }
         mod $mod_name {
             use super::*;
@@ -315,7 +317,7 @@ macro_rules! openai_compatible_tests {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
                 provider(
                     $provider_name,
                     Some("test-api-key".to_string()),
@@ -496,7 +498,7 @@ openai_compatible_tests!(
 );
 openai_compatible_tests!(perplexity, "perplexity", "sonar");
 openai_compatible_tests!(cerebras, "cerebras", "llama-3.3-70b");
-openai_compatible_tests!(xai, XAIConfig, XAIProvider, "grok-2");
+openai_compatible_tests!(xai, xai_chat, "grok-2");
 openai_compatible_tests!(moonshotai, "moonshotai", "moonshot-v1-8k");
 
 // Second batch of OpenAI-compatible thin wrappers.
@@ -508,8 +510,7 @@ openai_compatible_tests!(
 openai_compatible_tests!(baseten, "baseten", "deepseek-ai/DeepSeek-V3-0324");
 openai_compatible_tests!(
     huggingface,
-    HuggingFaceConfig,
-    HuggingFaceProvider,
+    huggingface_chat,
     "meta-llama/Llama-3.3-70B-Instruct"
 );
 openai_compatible_tests!(alibaba, "alibaba", "qwen-max");
@@ -556,16 +557,14 @@ fn tool_call_completion_body() -> Value {
 macro_rules! openai_compatible_tool_tests {
     (
         $mod_name:ident,
-        $config:ty,
-        $provider:ty,
+        $ctor:path,
         $model_id:literal
     ) => {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-                let config = <$config>::new("test-api-key").with_base_url(server.uri());
-                Box::new(<$provider>::new(config).model($model_id))
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+                $ctor(server.uri(), $model_id)
             }
         mod $mod_name {
             use super::*;
@@ -651,7 +650,7 @@ macro_rules! openai_compatible_tool_tests {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
                 provider(
                     $provider_name,
                     Some("test-api-key".to_string()),
@@ -755,7 +754,7 @@ openai_compatible_tool_tests!(
 );
 openai_compatible_tool_tests!(perplexity_tools, "perplexity", "sonar");
 openai_compatible_tool_tests!(cerebras_tools, "cerebras", "llama-3.3-70b");
-openai_compatible_tool_tests!(xai_tools, XAIConfig, XAIProvider, "grok-2");
+openai_compatible_tool_tests!(xai_tools, xai_chat, "grok-2");
 openai_compatible_tool_tests!(moonshotai_tools, "moonshotai", "moonshot-v1-8k");
 openai_compatible_tool_tests!(
     deepinfra_tools,
@@ -765,8 +764,7 @@ openai_compatible_tool_tests!(
 openai_compatible_tool_tests!(baseten_tools, "baseten", "deepseek-ai/DeepSeek-V3-0324");
 openai_compatible_tool_tests!(
     huggingface_tools,
-    HuggingFaceConfig,
-    HuggingFaceProvider,
+    huggingface_chat,
     "meta-llama/Llama-3.3-70B-Instruct"
 );
 openai_compatible_tool_tests!(alibaba_tools, "alibaba", "qwen-max");
@@ -1083,8 +1081,7 @@ openai_compatible_tests!(
 );
 openai_compatible_tests!(
     bedrock_mantle,
-    BedrockMantleConfig,
-    BedrockMantleProvider,
+    "bedrock_mantle",
     "bedrock_mantle/openai.gpt-oss-120b"
 );
 openai_compatible_tests!(cherryin, "cherryin", "BAAI/bge-reranker-v2-m3(free)");
@@ -1185,64 +1182,55 @@ openai_compatible_tests!(zeldoc, "zeldoc", "z-code");
 openai_compatible_tests!(privatemode_ai, "privatemode_ai", "gpt-oss-120b");
 openai_compatible_tests!(snowflake, "snowflake", "claude-sonnet-4-5");
 
-// Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers).
+// Vertex AI MaaS partner-model providers (registry presets with template parameters;
+// the tests override the whole base URL).
 openai_compatible_tests!(
     vertex_ai_ai21_models,
-    VertexAiAi21ModelsConfig,
-    VertexAiAi21ModelsProvider,
+    "vertex_ai_ai21_models",
     "ai21/jamba-1.5-large"
 );
 openai_compatible_tests!(
     vertex_ai_anthropic_models,
-    VertexAiAnthropicModelsConfig,
-    VertexAiAnthropicModelsProvider,
+    "vertex_ai_anthropic_models",
     "anthropic/claude-sonnet-4"
 );
 openai_compatible_tests!(
     vertex_ai_deepseek_models,
-    VertexAiDeepseekModelsConfig,
-    VertexAiDeepseekModelsProvider,
+    "vertex_ai_deepseek_models",
     "deepseek-ai/deepseek-v3.1-maas"
 );
 openai_compatible_tests!(
     vertex_ai_llama_models,
-    VertexAiLlamaModelsConfig,
-    VertexAiLlamaModelsProvider,
+    "vertex_ai_llama_models",
     "meta/llama-4-scout-17b-16e-instruct-maas"
 );
 openai_compatible_tests!(
     vertex_ai_minimax_models,
-    VertexAiMinimaxModelsConfig,
-    VertexAiMinimaxModelsProvider,
+    "vertex_ai_minimax_models",
     "minimax/minimax-m2-maas"
 );
 openai_compatible_tests!(
     vertex_ai_mistral_models,
-    VertexAiMistralModelsConfig,
-    VertexAiMistralModelsProvider,
+    "vertex_ai_mistral_models",
     "mistralai/mistral-large-2411"
 );
 openai_compatible_tests!(
     vertex_ai_moonshot_models,
-    VertexAiMoonshotModelsConfig,
-    VertexAiMoonshotModelsProvider,
+    "vertex_ai_moonshot_models",
     "moonshotai/kimi-k2-thinking-maas"
 );
 openai_compatible_tests!(
     vertex_ai_openai_models,
-    VertexAiOpenaiModelsConfig,
-    VertexAiOpenaiModelsProvider,
+    "vertex_ai_openai_models",
     "openai/gpt-oss-120b-maas"
 );
 openai_compatible_tests!(
     vertex_ai_qwen_models,
-    VertexAiQwenModelsConfig,
-    VertexAiQwenModelsProvider,
+    "vertex_ai_qwen_models",
     "qwen/qwen3-coder-480b-a35b-instruct-maas"
 );
 openai_compatible_tests!(
     vertex_ai_zai_models,
-    VertexAiZaiModelsConfig,
-    VertexAiZaiModelsProvider,
+    "vertex_ai_zai_models",
     "zai-org/glm-4.7-maas"
 );

@@ -1,7 +1,7 @@
-﻿//! Provider-specific tests for the OpenRouter provider.
+//! Provider-specific tests for the OpenRouter provider.
 //!
-//! OpenRouter is a thin OpenAI-compatible wrapper over [`OpenAIProvider`]. The
-//! behaviours verified here are the ones the wrapper is responsible for:
+//! OpenRouter is a registry preset of the OpenAI-compatible package. The
+//! behaviours verified here are the ones the preset is responsible for:
 //!
 //! - Provider configuration: name, `OPENROUTER_API_KEY` env var, custom API
 //!   key, custom headers, base-URL override.
@@ -35,7 +35,8 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::{OpenRouterConfig, OpenRouterProvider};
+use aimux_providers::preset::PresetProvider;
+use aimux_providers::{PresetSettings, presets, provider};
 
 // Shared cassette-replay infrastructure (same `mod common` used by
 // `conformance_test.rs`).
@@ -118,21 +119,32 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     parts
 }
 
-fn make_provider(server: &MockServer) -> OpenRouterProvider {
-    let config = OpenRouterConfig::new("test-api-key").with_base_url(server.uri());
-    OpenRouterProvider::new(config)
+/// The OpenRouter preset at `base_url` with an explicit key.
+fn openrouter_at(base_url: String, key: &str) -> PresetProvider {
+    presets::create_openrouter(PresetSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(key.to_string())),
+        base_url: Some(base_url),
+        ..Default::default()
+    })
+    .unwrap()
+}
+
+fn make_provider(server: &MockServer) -> PresetProvider {
+    openrouter_at(server.uri(), "test-api-key")
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 // Provider configuration
 // ════════════════════════════════════════════════════════════════════════════
 
-/// `createOpenRouter()` produces a provider whose name is "openrouter".
+/// The preset's models report `openrouter.chat`; the default instance needs
+/// neither a key nor the environment.
 #[test]
-fn provider_name_is_openrouter() {
-    let config = OpenRouterConfig::new("test-key");
-    let provider = OpenRouterProvider::new(config);
-    assert_eq!(provider.name(), "openrouter");
+fn model_provider_is_openrouter() {
+    assert_eq!(
+        presets::openrouter().chat("openai/gpt-4o-mini").provider(),
+        "openrouter.chat"
+    );
 }
 
 /// Custom API key is sent in the `Authorization: Bearer` header.
@@ -146,9 +158,8 @@ async fn custom_api_key_used_in_auth_header() {
         .mount(&server)
         .await;
 
-    let config = OpenRouterConfig::new("my-custom-key").with_base_url(server.uri());
-    let provider = OpenRouterProvider::new(config);
-    let model = provider.model("openai/gpt-4o-mini");
+    let provider = openrouter_at(server.uri(), "my-custom-key");
+    let model = provider.chat("openai/gpt-4o-mini");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -167,9 +178,8 @@ async fn custom_headers_forwarded() {
         .mount(&server)
         .await;
 
-    let config = OpenRouterConfig::new("test-key").with_base_url(server.uri());
-    let provider = OpenRouterProvider::new(config);
-    let model = provider.model("openai/gpt-4o-mini");
+    let provider = openrouter_at(server.uri(), "test-key");
+    let model = provider.chat("openai/gpt-4o-mini");
 
     let mut options = default_options(test_prompt());
     options.headers = Some(
@@ -195,8 +205,7 @@ async fn language_model_via_trait() {
         .mount(&server)
         .await;
 
-    let config = OpenRouterConfig::new("test-key").with_base_url(server.uri());
-    let provider = OpenRouterProvider::new(config);
+    let provider = openrouter_at(server.uri(), "test-key");
     let model = provider
         .language_model("openai/gpt-4o-mini")
         .expect("language_model should succeed");
@@ -216,8 +225,8 @@ fn from_env_loads_openrouter_api_key() {
         std::env::set_var("OPENROUTER_API_KEY", "env-test-key");
     }
 
-    let config = OpenRouterConfig::from_env();
-    assert!(config.is_ok(), "from_env should succeed with env var set");
+    let model = provider("openrouter", None, "openai/gpt-4o-mini", None);
+    assert!(model.is_ok(), "the by-name entry point reads the variable");
 
     unsafe {
         match saved {
@@ -236,8 +245,8 @@ fn from_env_fails_without_env_var() {
         std::env::remove_var("OPENROUTER_API_KEY");
     }
 
-    let config = OpenRouterConfig::from_env();
-    assert!(config.is_err(), "from_env should fail without env var");
+    let model = provider("openrouter", None, "openai/gpt-4o-mini", None);
+    assert!(model.is_err(), "no key variable, no provider");
 
     unsafe {
         if let Some(v) = saved {
@@ -261,7 +270,7 @@ async fn sends_correct_request_body() {
         .await;
 
     let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
+    let model = provider.chat("openai/gpt-4o-mini");
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -298,7 +307,7 @@ async fn stream_request_body_has_stream_flag() {
         .await;
 
     let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
+    let model = provider.chat("openai/gpt-4o-mini");
     let _ = model
         .do_stream(&default_options(test_prompt()))
         .await
@@ -325,7 +334,7 @@ async fn extracts_usage() {
         .await;
 
     let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
+    let model = provider.chat("openai/gpt-4o-mini");
     let result = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -350,7 +359,7 @@ async fn do_generate_returns_text() {
         .await;
 
     let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
+    let model = provider.chat("openai/gpt-4o-mini");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -376,7 +385,7 @@ async fn do_generate_extracts_tool_call() {
         .await;
 
     let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
+    let model = provider.chat("openai/gpt-4o-mini");
 
     let tool = FunctionTool::new(
         "get-weather",
@@ -425,7 +434,7 @@ async fn tool_choice_required_forwarded() {
         .await;
 
     let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
+    let model = provider.chat("openai/gpt-4o-mini");
 
     let tool = FunctionTool::new("get-weather", json!({})).with_description("Test");
     let options = CallOptions {
@@ -466,7 +475,7 @@ async fn do_stream_returns_text() {
         .await;
 
     let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
+    let model = provider.chat("openai/gpt-4o-mini");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -510,7 +519,7 @@ async fn do_stream_emits_tool_call() {
         .await;
 
     let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
+    let model = provider.chat("openai/gpt-4o-mini");
 
     let tool = FunctionTool::new(
         "get-weather",
@@ -554,7 +563,7 @@ async fn status_401_maps_to_auth_error() {
         .await;
 
     let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
+    let model = provider.chat("openai/gpt-4o-mini");
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
@@ -576,7 +585,7 @@ async fn status_429_maps_to_rate_limited() {
         .await;
 
     let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
+    let model = provider.chat("openai/gpt-4o-mini");
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
@@ -600,7 +609,7 @@ async fn exposes_response_headers() {
         .await;
 
     let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
+    let model = provider.chat("openai/gpt-4o-mini");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -630,10 +639,8 @@ mod conformance {
 
     /// Build a provider whose requests land at `<server>/api/v1/chat/completions`,
     /// matching the path recorded in the OpenRouter cassettes.
-    fn make_cassette_provider(server: &MockServer) -> OpenRouterProvider {
-        let base = format!("{}/api/v1", server.uri());
-        let config = OpenRouterConfig::new("test-key").with_base_url(base);
-        OpenRouterProvider::new(config)
+    fn make_cassette_provider(server: &MockServer) -> PresetProvider {
+        openrouter_at(format!("{}/api/v1", server.uri()), "test-key")
     }
 
     fn has_text(content: &[GenerateContent]) -> bool {
@@ -667,7 +674,7 @@ mod conformance {
         let provider = make_cassette_provider(&server);
         // `openai/gpt-4o-mini` matches the `completion_smoke` cassette (model
         // field weight 10), so a real non-streaming JSON response is returned.
-        let model = provider.model("openai/gpt-4o-mini");
+        let model = provider.chat("openai/gpt-4o-mini");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -696,7 +703,7 @@ mod conformance {
         mount_cassettes(&server, "tests/cassettes/openrouter").await;
 
         let provider = make_cassette_provider(&server);
-        let model = provider.model("openai/gpt-4o-mini");
+        let model = provider.chat("openai/gpt-4o-mini");
 
         let result = model.do_stream(&default_options(test_prompt())).await;
 

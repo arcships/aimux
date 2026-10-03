@@ -66,18 +66,10 @@ fn openai_chat_golden() {
         tools: Some(vec![Tool::Function(weather_tool())]),
         tool_choice: ToolChoice::Auto,
         response_format: Some(json_schema_format()),
-        body_overrides: Some(json!({ "user": "override-me" })),
         ..CallOptions::default()
     };
 
-    let result = openai_build(
-        "o3-mini",
-        &options,
-        false,
-        "openai",
-        &aimux_providers::openai::OpenAICompatProfile::full(),
-    )
-    .expect("openai chat build");
+    let result = openai_build("o3-mini", &options, false).expect("openai chat build");
 
     assert_eq!(
         result.body,
@@ -114,14 +106,12 @@ fn openai_chat_golden() {
                     }
                 }
             ],
-            "tool_choice": "auto",
-            "user": "override-me"
+            "tool_choice": "auto"
         }),
         "openai chat body diverged: {}",
         result.body
     );
-    // `temperature` is stripped for reasoning models with a warning; the
-    // body override `user` lands after built-in fields.
+    // `temperature` is stripped for reasoning models with a warning.
     assert_eq!(result.body.get("temperature"), None);
     assert_eq!(
         serde_json::to_value(&result.warnings).unwrap(),
@@ -222,7 +212,6 @@ fn anthropic_golden() {
             "model": "claude-sonnet-4-5",
             "messages": [ { "role": "user", "content": [ { "type": "text", "text": "Hello" } ] } ],
             "max_tokens": 1000 + 4096,
-            "stream": false,
             "thinking": { "type": "enabled", "budget_tokens": 4096 },
             "stop_sequences": ["END"]
         }),

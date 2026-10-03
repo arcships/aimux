@@ -17,7 +17,19 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
+
+/// A native OpenAI provider against `base_url`. The key is an explicit value,
+/// so the environment is never consulted.
+fn provider_with(api_key: &str, base_url: impl Into<String>) -> OpenAIProvider {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value(api_key.to_string())),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("settings are valid")
+}
 
 fn test_prompt() -> LanguageModelPrompt {
     vec![LanguageModelPromptMessage {
@@ -43,7 +55,6 @@ fn default_opts(p: LanguageModelPrompt) -> CallOptions {
         headers: None,
         provider_options: None,
         reasoning: None,
-        body_overrides: None,
         max_retries: None,
         timeout: None,
         abort_signal: None,
@@ -146,9 +157,8 @@ mod do_generate_extended {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_generate(&default_opts(test_prompt()))
@@ -194,9 +204,8 @@ mod do_generate_extended {
             }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-4o-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-4o-mini");
 
         let result = model
             .do_generate(&default_opts(test_prompt()))
@@ -223,9 +232,8 @@ mod do_generate_extended {
             }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-4o-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-4o-mini");
 
         let result = model
             .do_generate(&default_opts(test_prompt()))
@@ -253,9 +261,8 @@ mod do_generate_extended {
             }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o4-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("o4-mini");
 
         let result = model
             .do_generate(&default_opts(test_prompt()))
@@ -277,9 +284,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_generate(&default_opts(test_prompt()))
@@ -303,9 +309,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_generate(&default_opts(test_prompt()))
@@ -328,9 +333,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let opts = CallOptions {
             provider_options: po(
@@ -355,9 +359,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o4-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("o4-mini");
 
         let opts = CallOptions {
             reasoning: Some(ReasoningEffort::ProviderDefault),
@@ -378,9 +381,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o4-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("o4-mini");
 
         let opts = CallOptions {
             reasoning: Some(ReasoningEffort::Medium),
@@ -401,9 +403,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o4-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("o4-mini");
 
         let opts = CallOptions {
             provider_options: po(json!({ "reasoningEffort": "low" })),
@@ -424,9 +425,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-4o");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-4o");
 
         let opts = CallOptions {
             provider_options: po(json!({ "textVerbosity": "low" })),
@@ -447,9 +447,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o4-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("o4-mini");
 
         let opts = CallOptions {
             temperature: Some(0.5),
@@ -477,9 +476,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o4-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("o4-mini");
 
         let opts = CallOptions {
             max_output_tokens: Some(1000),
@@ -501,9 +499,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o1");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("o1");
 
         let p: LanguageModelPrompt = vec![
             LanguageModelPromptMessage {
@@ -535,9 +532,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let opts = CallOptions {
             provider_options: po(json!({ "store": true })),
@@ -558,9 +554,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let opts = CallOptions {
             provider_options: po(json!({ "metadata": { "custom": "value" } })),
@@ -581,9 +576,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let opts = CallOptions {
             provider_options: po(
@@ -609,9 +603,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o4-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("o4-mini");
 
         let opts = CallOptions {
             provider_options: po(json!({ "serviceTier": "flex" })),
@@ -632,9 +625,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-4o-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-4o-mini");
 
         let opts = CallOptions {
             provider_options: po(json!({ "serviceTier": "priority" })),
@@ -655,9 +647,8 @@ mod do_generate_extended {
             "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
         })).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-4o-search-preview");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-4o-search-preview");
 
         let opts = CallOptions {
             temperature: Some(0.7),
@@ -700,9 +691,8 @@ mod do_stream_extended {
         ]);
         mock_sse(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&default_opts(test_prompt()))
@@ -745,9 +735,8 @@ mod do_stream_extended {
         ]);
         mock_sse(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&default_opts(test_prompt()))
@@ -790,9 +779,8 @@ mod do_stream_extended {
         ]);
         mock_sse(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o4-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("o4-mini");
 
         let result = model
             .do_stream(&default_opts(test_prompt()))
@@ -830,9 +818,8 @@ mod do_stream_extended {
         ]);
         mock_sse(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let opts = CallOptions {
             provider_options: po(json!({ "store": true })),
@@ -861,9 +848,8 @@ mod do_stream_extended {
         ]);
         mock_sse(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let opts = CallOptions {
             provider_options: po(json!({ "metadata": { "custom": "value" } })),
@@ -891,9 +877,8 @@ mod do_stream_extended {
         ]);
         mock_sse(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o4-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("o4-mini");
 
         let opts = CallOptions {
             provider_options: po(json!({ "serviceTier": "flex" })),
@@ -921,9 +906,8 @@ mod do_stream_extended {
         ]);
         mock_sse(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-4o-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-4o-mini");
 
         let opts = CallOptions {
             provider_options: po(json!({ "serviceTier": "priority" })),

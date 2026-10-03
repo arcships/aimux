@@ -8,22 +8,27 @@
 //! `stable-image-core` → `/generate/core`, `sd3` → `/generate/sd3`. Any other
 //! model ID is used as-is for the sub-path. Responses are image binary
 //! (`Accept: image/*`) or base64-encoded JSON.
+//!
+//! [`create_stability`] takes [`StabilityProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`StabilityProvider`]. The credential is not read
+//! there: it is loaded for every request, from the setting or from `STABILITY_API_KEY`.
+//! [`stability()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use serde_json::Value;
 
-use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::shared::Warning;
-use aimux_provider_utils::{
-    HttpBody, HttpRequest, MultipartForm, load_api_key, without_trailing_slash,
-};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{HttpBody, MultipartForm};
+
+use crate::shared::{Credential, EndpointConfig, provider_headers};
 
 /// Stability error response structure: `{ "id": "...", "name": "...", "errors": ["..."] }`.
 ///
@@ -109,105 +114,130 @@ fn model_id_to_subpath(model_id: &str) -> &str {
     }
 }
 
-/// Configuration for the Stability provider.
-#[derive(Debug, Clone)]
-pub struct StabilityConfig {
-    pub api_key: String,
-    pub base_url: String,
-    pub headers: Option<HashMap<String, String>>,
+pub(crate) mod options;
+
+const DEFAULT_BASE_URL: &str = "https://api.stability.ai";
+const API_KEY_ENV_VAR: &str = "STABILITY_API_KEY";
+const DEFAULT_NAME: &str = "stability";
+
+/// Settings of [`create_stability`].
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct StabilityProviderSettings {
+    /// Base URL for the API calls. Default `https://api.stability.ai`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `STABILITY_API_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including the credential. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings (`"{name}.image"`).
+    /// Default `"stability"`. The providerOptions key stays `stability`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
 }
 
-impl StabilityConfig {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: "https://api.stability.ai".to_string(),
-            headers: None,
-        }
-    }
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-    #[must_use]
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = Some(headers);
-        self
-    }
-    /// Create from the `STABILITY_API_KEY` environment variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
-    /// set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "STABILITY_API_KEY", "Stability")?;
-        Ok(Self::new(api_key))
+impl std::fmt::Debug for StabilityProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StabilityProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .finish()
     }
 }
 
+/// Create a Stability provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_stability(
+    settings: StabilityProviderSettings,
+) -> Result<StabilityProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(StabilityProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: provider_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Stability"),
+            vec![("Accept".to_string(), "image/*".to_string())],
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_stability` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn stability() -> &'static StabilityProvider {
+    static DEFAULT: OnceLock<StabilityProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_stability(StabilityProviderSettings::default())
+            .expect("default Stability settings are always valid")
+    })
+}
+
+/// A Stability provider. Cheap to clone the models out of; it holds no HTTP
+/// client.
 pub struct StabilityProvider {
-    config: StabilityConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
 }
 
 impl StabilityProvider {
-    #[must_use]
-    pub fn new(config: StabilityConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            None,
+        )
     }
+
+    /// An image model (e.g. `"stable-image-core"`); `provider()` is `"{name}.image"`.
     #[must_use]
     pub fn image(&self, model_id: &str) -> StabilityImageModel {
-        StabilityImageModel::new(model_id.to_string(), self.config.clone())
+        StabilityImageModel::from_config(model_id.to_string(), self.model_config("image"))
     }
 }
 
-impl Provider for StabilityProvider {
-    fn name(&self) -> &str {
-        "stability"
-    }
-}
+crate::impl_single_modality_provider!(StabilityProvider, image_model, |p, id| p.image(id));
 
 /// A Stability image generation model.
 pub struct StabilityImageModel {
     model_id: String,
-    config: StabilityConfig,
+    config: EndpointConfig,
 }
 
 impl StabilityImageModel {
-    #[must_use]
-    pub fn new(model_id: String, config: StabilityConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut h = HashMap::new();
-        h.insert(
-            "Authorization".into(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        // Request the image binary directly; a caller may override this with
-        // `application/json` via config/extra headers to receive base64 JSON.
-        h.insert("Accept".into(), "image/*".into());
-        if let Some(ref ch) = self.config.headers {
-            for (k, v) in ch {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        h
-    }
-
-    fn endpoint(&self) -> String {
-        format!(
-            "{}/v2beta/stable-image/generate/{}",
-            self.config.base_url,
-            model_id_to_subpath(&self.model_id)
-        )
     }
 }
 
@@ -229,7 +259,7 @@ fn convert_size_to_aspect_ratio(size: &aimux_core::shared::Size) -> Option<Strin
 #[async_trait]
 impl ImageModel for StabilityImageModel {
     fn provider(&self) -> &str {
-        "stability"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
@@ -241,7 +271,7 @@ impl ImageModel for StabilityImageModel {
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError> {
         let mut warnings: Vec<Warning> = Vec::new();
 
-        let stability_opts = options.provider_options.get("stability");
+        let stability_opts = options::stability_options(Some(&options.provider_options));
 
         // Resolve aspect ratio: explicit option > provider option > derived from size.
         let aspect_ratio: Option<String> = if let Some(ar) = options.aspect_ratio {
@@ -323,11 +353,16 @@ impl ImageModel for StabilityImageModel {
 
         let (body_bytes, content_type) = form.finish();
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest::new(self.endpoint(), header_list, options),
+            exchange.request(
+                exchange.url(&format!(
+                    "/v2beta/stable-image/generate/{}",
+                    model_id_to_subpath(&self.model_id)
+                )),
+                options,
+            ),
             HttpBody::Bytes(body_bytes, content_type),
             stability_successful_response_handler(),
             stability_failed_response_handler(),

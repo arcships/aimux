@@ -29,7 +29,8 @@ use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warn
 use serde_json::{Map, Value, json};
 
 use crate::anthropic::cache_control::CacheControlValidator;
-use crate::anthropic::prepare_tools::{AnthropicTool, prepare_tools_with_provider};
+use crate::anthropic::options::{CANONICAL, anthropic_options, anthropic_options_in};
+use crate::anthropic::prepare_tools::{AnthropicTool, prepare_tools_for};
 use crate::anthropic::tool_name_mapping::ToolNameMapping;
 
 /// Beta header emitted when a PDF file part is present.
@@ -97,17 +98,34 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
     send_reasoning: bool,
     tool_names: &ToolNameMapping,
 ) -> Result<AnthropicPromptConversion, AiMuxError> {
+    convert_prompt_for(prompt, send_reasoning, tool_names, CANONICAL)
+}
+
+/// [`convert_prompt_to_anthropic_full_with_tools`] for a provider whose
+/// providerOptions key is `options_name`: the part and message options are
+/// read from `anthropic` merged with `options_name` (the custom key wins) and
+/// the metadata the response side wrote under `options_name` is read back.
+///
+/// # Errors
+///
+/// Same as [`convert_prompt_to_anthropic_full_with_tools`].
+pub(crate) fn convert_prompt_for(
+    prompt: &LanguageModelPrompt,
+    send_reasoning: bool,
+    tool_names: &ToolNameMapping,
+    options_name: &str,
+) -> Result<AnthropicPromptConversion, AiMuxError> {
     // Ids of tool calls that were executed over MCP. Their results must be sent
     // back as `mcp_tool_result`, not as a provider-tool result block. Upstream
     // scopes this set to one merged assistant block; scanning the whole prompt
     // is a superset of that and is safe because tool call ids are unique.
-    let mcp_tool_use_ids = collect_mcp_tool_use_ids(prompt);
+    let mcp_tool_use_ids = collect_mcp_tool_use_ids(prompt, options_name);
 
     let mut system: Vec<Value> = Vec::new();
     let mut messages: Vec<Value> = Vec::new();
     let mut betas: BTreeSet<String> = BTreeSet::new();
     let mut warnings: Vec<Warning> = Vec::new();
-    let mut validator = CacheControlValidator::new();
+    let mut validator = CacheControlValidator::for_options_name(options_name);
 
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Eff {
@@ -207,6 +225,7 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
                         msg.provider_options.as_ref(),
                         part_ctx,
                         msg_ctx,
+                        options_name,
                     )? {
                         acc.push(block);
                     }
@@ -246,6 +265,7 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
                             msg.provider_options.as_ref(),
                             "assistant message part",
                             "assistant message",
+                            options_name,
                         )?
                     };
                     if let Some(block) = block {
@@ -360,6 +380,7 @@ fn convert_part_to_anthropic(
     message_provider_options: Option<&Value>,
     part_context_type: &str,
     message_context_type: &str,
+    options_name: &str,
 ) -> Result<Option<Value>, AiMuxError> {
     // Resolve cache_control = part-level ?? (is_last_part ? message-level).
     let resolve_cc =
@@ -467,9 +488,8 @@ fn convert_part_to_anthropic(
         } => {
             let file_id = resolve_anthropic_reference(reference)?;
             betas.insert(BETA_FILES_API.to_string());
-            let container_upload = provider_options
+            let container_upload = anthropic_options(provider_options.as_ref(), options_name)
                 .as_ref()
-                .and_then(|o| o.get("anthropic"))
                 .and_then(|a| a.get("containerUpload"))
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
@@ -501,6 +521,7 @@ fn convert_part_to_anthropic(
                 send_reasoning,
                 warnings,
                 validator,
+                options_name,
             ));
         }
 
@@ -516,16 +537,16 @@ fn convert_part_to_anthropic(
 
             if *provider_executed == Some(true) {
                 let provider_name = tool_names.to_provider_tool_name(tool_name);
-                let anthropic_options = provider_options
-                    .as_ref()
-                    .and_then(|options| options.get("anthropic"));
+                let own_options = anthropic_options(provider_options.as_ref(), options_name);
 
-                if anthropic_options
+                if own_options
+                    .as_ref()
                     .and_then(|options| options.get("type"))
                     .and_then(Value::as_str)
                     == Some("mcp-tool-use")
                 {
-                    let Some(server_name) = anthropic_options
+                    let Some(server_name) = own_options
+                        .as_ref()
                         .and_then(|options| options.get("serverName"))
                         .and_then(Value::as_str)
                     else {
@@ -601,9 +622,8 @@ fn convert_part_to_anthropic(
             } else {
                 json!({ "rawInvalidInput": input })
             };
-            let caller = provider_options
+            let caller = anthropic_options(provider_options.as_ref(), options_name)
                 .as_ref()
-                .and_then(|options| options.get("anthropic"))
                 .and_then(|anthropic| anthropic.get("caller"))
                 .and_then(|caller| {
                     let caller_type = caller.get("type")?.as_str()?;
@@ -680,7 +700,10 @@ fn convert_part_to_anthropic(
 /// before any message is converted. The marker is the one the response side
 /// writes on an `mcp_tool_use` block (`stream.rs`):
 /// `providerOptions.anthropic.type == "mcp-tool-use"`.
-fn collect_mcp_tool_use_ids(prompt: &LanguageModelPrompt) -> HashSet<&str> {
+fn collect_mcp_tool_use_ids<'a>(
+    prompt: &'a LanguageModelPrompt,
+    options_name: &str,
+) -> HashSet<&'a str> {
     let mut ids = HashSet::new();
     for msg in prompt {
         if msg.role != Role::Assistant {
@@ -692,8 +715,8 @@ fn collect_mcp_tool_use_ids(prompt: &LanguageModelPrompt) -> HashSet<&str> {
                 provider_options: Some(opts),
                 ..
             } = part
-                && opts
-                    .get("anthropic")
+                && anthropic_options(Some(opts), options_name)
+                    .as_ref()
                     .and_then(|a| a.get("type"))
                     .and_then(|t| t.as_str())
                     == Some("mcp-tool-use")
@@ -1229,6 +1252,7 @@ fn convert_reasoning_part(
     send_reasoning: bool,
     warnings: &mut Vec<Warning>,
     validator: &mut CacheControlValidator,
+    options_name: &str,
 ) -> Option<Value> {
     if !send_reasoning {
         warnings.push(Warning::Other {
@@ -1239,16 +1263,17 @@ fn convert_reasoning_part(
 
     // `redactedData` is read from `providerOptions.anthropic.redactedData`
     // (mirroring the TS `anthropicReasoningMetadataSchema`).
-    let redacted_data = provider_options
-        .and_then(|o| o.get("anthropic"))
+    let reasoning_options = anthropic_options(provider_options, options_name);
+    let redacted_data = reasoning_options
+        .as_ref()
         .and_then(|a| a.get("redactedData"))
         .and_then(|v| v.as_str());
 
     // #6: Fall back to `providerOptions.anthropic.signature` when the
     // `signature` field is None (upstream convert-to-anthropic-prompt.ts:669-690).
     let effective_signature = signature.or_else(|| {
-        provider_options
-            .and_then(|o| o.get("anthropic"))
+        reasoning_options
+            .as_ref()
             .and_then(|a| a.get("signature"))
             .and_then(|v| v.as_str())
     });
@@ -1279,10 +1304,11 @@ fn convert_reasoning_part(
 }
 
 /// Resolve the Anthropic file id from a provider-reference object, mirroring the
-/// TS `resolveProviderReference`. Panics when no `anthropic` key is present,
-/// matching the TS `UnsupportedFunctionalityError`.
+/// TS `resolveProviderReference`: the reference is always keyed by the
+/// canonical name, whatever the provider is called. Errors when that key is
+/// absent, matching the TS `UnsupportedFunctionalityError`.
 fn resolve_anthropic_reference(reference: &Value) -> Result<String, AiMuxError> {
-    if let Some(id) = reference.get("anthropic").and_then(|v| v.as_str()) {
+    if let Some(id) = reference.get(CANONICAL).and_then(|v| v.as_str()) {
         return Ok(id.to_string());
     }
     let providers: Vec<&str> = reference
@@ -1290,7 +1316,7 @@ fn resolve_anthropic_reference(reference: &Value) -> Result<String, AiMuxError> 
         .map(|o| o.keys().map(String::as_str).collect())
         .unwrap_or_default();
     Err(AiMuxError::InvalidArgument(format!(
-        "No provider reference found for provider 'anthropic'. Available providers: {}",
+        "No provider reference found for provider '{CANONICAL}'. Available providers: {}",
         providers.join(", ")
     )))
 }
@@ -1566,13 +1592,39 @@ pub struct RequestBodyResult {
     pub betas: BTreeSet<String>,
 }
 
-/// Read a value from `provider_options["anthropic"][key]`.
-fn anthropic_option(options: &Option<HashMap<String, Value>>, key: &str) -> Option<Value> {
-    options
-        .as_ref()
-        .and_then(|m| m.get("anthropic"))
-        .and_then(|o| o.get(key))
-        .cloned()
+/// What differs between the hosts of the Messages API as far as the request
+/// body goes: which providerOptions key the caller's options live under (read
+/// in addition to the canonical one) and which tool/output features the host
+/// accepts.
+#[derive(Debug, Clone)]
+pub(crate) struct RequestProfile {
+    /// The custom providerOptions key; `anthropic` is always read too.
+    pub(crate) options_name: String,
+    /// Structured outputs and their beta header (Vertex has neither).
+    pub(crate) supports_native_structured_output: bool,
+    /// `strict` on tool definitions (Vertex rejects it).
+    pub(crate) supports_strict_tools: bool,
+}
+
+impl Default for RequestProfile {
+    /// The first-party API under its canonical name.
+    fn default() -> Self {
+        Self {
+            options_name: CANONICAL.to_string(),
+            supports_native_structured_output: true,
+            supports_strict_tools: true,
+        }
+    }
+}
+
+/// Read a value from the Anthropic options of a call (`anthropic` merged with
+/// the profile's custom key).
+fn anthropic_option(
+    options: &Option<HashMap<String, Value>>,
+    profile: &RequestProfile,
+    key: &str,
+) -> Option<Value> {
+    anthropic_options_in(options.as_ref(), &profile.options_name).and_then(|o| o.get(key).cloned())
 }
 
 /// Recursively remove `null`-valued fields from JSON objects (mirroring the
@@ -1669,12 +1721,13 @@ fn strip_anthropic_sampling_params(
 fn resolve_anthropic_thinking(
     model_id: &str,
     options: &CallOptions,
+    profile: &RequestProfile,
     caps: &ModelCapabilities,
     warnings: &mut Vec<Warning>,
 ) -> (Option<Value>, Option<String>) {
     let mut thinking_config: Option<Value> =
-        anthropic_option(&options.provider_options, "thinking");
-    let mut effort: Option<String> = anthropic_option(&options.provider_options, "effort")
+        anthropic_option(&options.provider_options, profile, "thinking");
+    let mut effort: Option<String> = anthropic_option(&options.provider_options, profile, "effort")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string));
 
     if let Some(reasoning) = options.reasoning
@@ -1884,17 +1937,18 @@ fn insert_anthropic_sampling(
 fn apply_anthropic_tools(
     body: &mut Value,
     options: &CallOptions,
+    profile: &RequestProfile,
     stream: bool,
     caps: &ModelCapabilities,
     betas: &mut BTreeSet<String>,
     warnings: &mut Vec<Warning>,
 ) {
     let disable_parallel_tool_use =
-        anthropic_option(&options.provider_options, "disableParallelToolUse")
+        anthropic_option(&options.provider_options, profile, "disableParallelToolUse")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
     let default_eager_input_streaming = stream
-        && anthropic_option(&options.provider_options, "toolStreaming")
+        && anthropic_option(&options.provider_options, profile, "toolStreaming")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
@@ -1913,7 +1967,7 @@ fn apply_anthropic_tools(
         None => Vec::new(),
     };
 
-    let prepared = prepare_tools_with_provider(
+    let prepared = prepare_tools_for(
         if options.tools.is_some() {
             Some(&anthropic_tools)
         } else {
@@ -1921,9 +1975,10 @@ fn apply_anthropic_tools(
         },
         Some(&options.tool_choice),
         disable_parallel_tool_use,
-        caps.supports_structured_output,
-        caps.supports_structured_output,
+        caps.supports_structured_output && profile.supports_native_structured_output,
+        caps.supports_structured_output && profile.supports_strict_tools,
         default_eager_input_streaming,
+        &profile.options_name,
     );
 
     warnings.extend(prepared.tool_warnings);
@@ -1949,9 +2004,10 @@ fn apply_anthropic_tools(
 fn append_anthropic_mcp_servers(
     body: &mut Value,
     options: &CallOptions,
+    profile: &RequestProfile,
     betas: &mut BTreeSet<String>,
 ) {
-    let Some(mcp) = anthropic_option(&options.provider_options, "mcpServers") else {
+    let Some(mcp) = anthropic_option(&options.provider_options, profile, "mcpServers") else {
         return;
     };
     let Some(arr) = mcp.as_array() else {
@@ -2001,10 +2057,11 @@ fn append_anthropic_mcp_servers(
 fn append_anthropic_container(
     body: &mut Value,
     options: &CallOptions,
+    profile: &RequestProfile,
     betas: &mut BTreeSet<String>,
     warnings: &mut Vec<Warning>,
 ) -> Result<(), AiMuxError> {
-    let Some(container) = anthropic_option(&options.provider_options, "container") else {
+    let Some(container) = anthropic_option(&options.provider_options, profile, "container") else {
         return Ok(());
     };
     let skills = container.get("skills").and_then(|s| s.as_array());
@@ -2021,12 +2078,12 @@ fn append_anthropic_container(
             let skill_id = if stype == "custom" {
                 match skill
                     .get("providerReference")
-                    .and_then(|r| r.get("anthropic"))
+                    .and_then(|r| r.get(CANONICAL))
                 {
                     Some(id) => id.clone(),
                     None => {
                         return Err(AiMuxError::UnsupportedFunctionality(format!(
-                            "skill provider reference is missing the 'anthropic' key: {skill}"
+                            "skill provider reference is missing the '{CANONICAL}' key: {skill}"
                         )));
                     }
                 }
@@ -2095,6 +2152,21 @@ pub fn build_request_body_with_warnings(
     options: &CallOptions,
     stream: bool,
 ) -> Result<RequestBodyResult, AiMuxError> {
+    build_request_body_for(model_id, options, stream, &RequestProfile::default())
+}
+
+/// [`build_request_body_with_warnings`] for a host of the Messages API other
+/// than the first-party endpoint under its canonical name.
+///
+/// # Errors
+///
+/// Same as [`build_request_body_with_warnings`].
+pub(crate) fn build_request_body_for(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+    profile: &RequestProfile,
+) -> Result<RequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
     let mut betas: BTreeSet<String> = BTreeSet::new();
     let caps = get_model_capabilities(model_id);
@@ -2118,7 +2190,7 @@ pub fn build_request_body_with_warnings(
 
     // providerOptions.anthropic.thinking / .effort + top-level `reasoning`.
     let (thinking_config, thinking_effort) =
-        resolve_anthropic_thinking(model_id, options, &caps, &mut warnings);
+        resolve_anthropic_thinking(model_id, options, profile, &caps, &mut warnings);
     let (thinking_type, send_thinking, mut thinking_budget, thinking_display) =
         derive_anthropic_thinking(&thinking_config);
 
@@ -2132,10 +2204,11 @@ pub fn build_request_body_with_warnings(
     // the parts are omitted with a warning instead.
     let send_input_reasoning =
         matches!(thinking_type.as_deref(), Some("enabled") | Some("adaptive"));
-    let conversion = convert_prompt_to_anthropic_full_with_tools(
+    let conversion = convert_prompt_for(
         &options.prompt,
         send_input_reasoning,
         &ToolNameMapping::new(options.tools.as_deref()),
+        &profile.options_name,
     )?;
     let system = conversion.system;
     let messages = conversion.messages;
@@ -2146,8 +2219,11 @@ pub fn build_request_body_with_warnings(
         "model": model_id,
         "messages": messages,
         "max_tokens": max_tokens,
-        "stream": stream,
     });
+    // `stream` is sent only when streaming, as the AI SDK does.
+    if stream {
+        body["stream"] = json!(true);
+    }
 
     if let Some(sys) = system {
         body["system"] = json!(sys);
@@ -2180,24 +2256,34 @@ pub fn build_request_body_with_warnings(
 
     insert_anthropic_sampling(&mut body, temperature, top_p, top_k, options);
 
+    // providerOptions.anthropic.metadata.userId -> metadata.user_id.
+    if let Some(user_id) = anthropic_option(&options.provider_options, profile, "metadata")
+        .and_then(|metadata| metadata.get("userId").cloned())
+        .filter(|user_id| !user_id.is_null())
+    {
+        body["metadata"] = json!({ "user_id": user_id });
+    }
+
     // Tools — provider-defined tools alongside function tools, plus the
     // required beta headers / tool warnings.
-    apply_anthropic_tools(&mut body, options, stream, &caps, &mut betas, &mut warnings);
+    apply_anthropic_tools(
+        &mut body,
+        options,
+        profile,
+        stream,
+        &caps,
+        &mut betas,
+        &mut warnings,
+    );
 
     // providerOptions.anthropic.mcpServers → mcp_servers + beta header.
-    append_anthropic_mcp_servers(&mut body, options, &mut betas);
+    append_anthropic_mcp_servers(&mut body, options, profile, &mut betas);
 
     // providerOptions.anthropic.container — programmatic tool calling / skills.
-    append_anthropic_container(&mut body, options, &mut betas, &mut warnings)?;
+    append_anthropic_container(&mut body, options, profile, &mut betas, &mut warnings)?;
 
     // providerOptions.anthropic.contextManagement → context_management is not
     // yet implemented (build_context_management pending).
-
-    // Per-call request body overrides (RFC-0017): deep-merge user-supplied
-    // JSON into the built body. `null` values delete the corresponding key.
-    if let Some(ref overrides) = options.body_overrides {
-        crate::openai::convert::deep_merge_json(&mut body, overrides);
-    }
 
     Ok(RequestBodyResult {
         body,
@@ -2227,7 +2313,7 @@ mod tests {
 
     fn opts_with_anthropic_thinking(thinking: serde_json::Value) -> CallOptions {
         let mut provider = std::collections::HashMap::new();
-        provider.insert("anthropic".to_string(), thinking);
+        provider.insert(CANONICAL.to_string(), thinking);
         CallOptions {
             provider_options: Some(provider),
             ..CallOptions::new(LanguageModelPrompt::default())

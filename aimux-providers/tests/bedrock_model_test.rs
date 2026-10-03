@@ -21,7 +21,10 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::bedrock::{BedrockModel, BedrockProviderConfig};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::bedrock::{
+    AmazonBedrockProviderSettings, BedrockModel, create_amazon_bedrock,
+};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,15 +41,14 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 }
 
 fn make_model(server: &MockServer) -> BedrockModel {
-    BedrockModel::new(
-        "anthropic.claude-3-5-sonnet-20240620-v1:0".to_string(),
-        aimux_providers::bedrock::BedrockConfig {
-            base_url: server.uri(),
-            auth: aimux_providers::bedrock::BedrockAuth::BearerToken("test-token".to_string()),
-            retry_config: aimux_provider_utils::RetryConfig::default(),
-            api_key_source: None,
-        },
-    )
+    create_amazon_bedrock(AmazonBedrockProviderSettings {
+        base_url: Some(server.uri()),
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        region: Some("us-east-1".to_string()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+    .chat("anthropic.claude-3-5-sonnet-20240620-v1:0")
 }
 
 async fn mock_converse_json(server: &MockServer, status: u16, body: Value) {
@@ -412,22 +414,15 @@ async fn bedrock_sigv4_auth() {
         .mount(&server)
         .await;
 
-    let model = BedrockModel::new(
-        "test-model".to_string(),
-        aimux_providers::bedrock::BedrockConfig {
-            base_url: server.uri(),
-            auth: aimux_providers::bedrock::BedrockAuth::SigV4(
-                aimux_providers::bedrock::AwsCredentials {
-                    access_key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
-                    secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
-                    session_token: None,
-                    region: "us-east-1".to_string(),
-                },
-            ),
-            retry_config: aimux_provider_utils::RetryConfig::default(),
-            api_key_source: None,
-        },
-    );
+    let model = create_amazon_bedrock(AmazonBedrockProviderSettings {
+        base_url: Some(server.uri()),
+        access_key_id: Some("AKIAIOSFODNN7EXAMPLE".to_string()),
+        secret_access_key: Some("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string()),
+        region: Some("us-east-1".to_string()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+    .chat("test-model");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -435,29 +430,6 @@ async fn bedrock_sigv4_auth() {
         .expect("do_generate should succeed with SigV4");
 
     assert_eq!(as_text(&result.content[0]), "Signed!");
-}
-
-/// Test: provider config from_env with bearer token.
-#[tokio::test]
-async fn bedrock_provider_config_bearer() {
-    unsafe {
-        std::env::set_var("AWS_BEARER_TOKEN_BEDROCK", "test-bearer-token");
-        std::env::set_var("AWS_REGION", "us-west-2");
-    }
-
-    let config = BedrockProviderConfig::from_env().expect("should create config");
-    match config.auth {
-        aimux_providers::bedrock::BedrockAuth::BearerToken(t) => {
-            assert_eq!(t, "test-bearer-token");
-        }
-        _ => panic!("expected BearerToken auth"),
-    }
-    assert!(config.base_url.contains("us-west-2"));
-
-    unsafe {
-        std::env::remove_var("AWS_BEARER_TOKEN_BEDROCK");
-        std::env::remove_var("AWS_REGION");
-    }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

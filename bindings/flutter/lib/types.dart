@@ -947,8 +947,6 @@ class GenerateTextOptions {
   final Map<String, dynamic>? providerOptions;
   final ReasoningEffort? reasoning;
   final String? instructions;
-  @JsonKey(name: 'body_overrides')
-  final Map<String, dynamic>? bodyOverrides;
   @JsonKey(name: 'max_retries')
   final int? maxRetries;
   final TimeoutConfiguration? timeout;
@@ -991,7 +989,6 @@ class GenerateTextOptions {
     this.providerOptions,
     this.reasoning,
     this.instructions,
-    this.bodyOverrides,
     this.maxRetries,
     this.timeout,
     this.includeRawChunks,
@@ -1022,7 +1019,6 @@ class GenerateTextOptions {
           ? ReasoningEffort.fromJson(json['reasoning'] as String)
           : null,
       instructions: json['instructions'] as String?,
-      bodyOverrides: json['body_overrides'] as Map<String, dynamic>?,
       maxRetries: json['max_retries'] as int?,
       timeout: json['timeout'] != null
           ? TimeoutConfiguration.fromJson(json['timeout'] as Map<String, dynamic>)
@@ -1047,7 +1043,6 @@ class GenerateTextOptions {
         if (providerOptions != null) 'provider_options': providerOptions,
         if (reasoning != null) 'reasoning': reasoning!.toJson(),
         if (instructions != null) 'instructions': instructions,
-        if (bodyOverrides != null) 'body_overrides': bodyOverrides,
         if (maxRetries != null) 'max_retries': maxRetries,
         if (timeout != null) 'timeout': timeout!.toJson(),
         if (includeRawChunks != null) 'include_raw_chunks': includeRawChunks,

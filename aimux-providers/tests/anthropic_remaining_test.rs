@@ -15,18 +15,14 @@
 //! - `anthropic-language-model.test.ts` → `mid-conversation tool changes`
 //!   describe block.
 //!
-//! HTTP is mocked with `wiremock` (a real loopback HTTP server). Env-var
-//! tests are `#[serial]` and bracketed with `unsafe` `set_var`/`remove_var`
-//! per the workspace convention.
+//! HTTP is mocked with `wiremock` (a real loopback HTTP server).
 //!
 //! Tests for behaviour the Rust implementation does not yet expose
-//! (`supportedUrls`, `toolChanges`, empty-`baseURL` rejection) are written
-//! against the intended contract and marked `#[ignore]` with a
-//! `// TODO: implementation gap` note, so they document the gap without
-//! breaking the suite.
+//! (`toolChanges`) are written against the intended contract and marked
+//! `#[ignore]` with a `// TODO: implementation gap` note, so they document the
+//! gap without breaking the suite.
 
 use serde_json::{Value, json};
-use serial_test::serial;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -38,9 +34,10 @@ use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::types::Warning;
 
-use aimux_providers::anthropic::AnthropicConfig;
-use aimux_providers::anthropic::model::AnthropicModel;
 use aimux_providers::anthropic::sanitize_json_schema::sanitize_json_schema;
+use aimux_providers::anthropic::{
+    AnthropicMessagesModel, AnthropicProviderSettings, create_anthropic,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers
@@ -60,9 +57,20 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
     CallOptions::new(prompt)
 }
 
-/// Build an `AnthropicModel` backed by `config` (model id `claude-3-haiku-20240307`).
-fn make_model_with_config(config: AnthropicConfig) -> AnthropicModel {
-    AnthropicModel::new("claude-3-haiku-20240307".to_string(), config)
+/// Build a model (id `claude-3-haiku-20240307`) from provider `settings`.
+fn make_model_with_settings(settings: AnthropicProviderSettings) -> AnthropicMessagesModel {
+    create_anthropic(settings)
+        .expect("settings are valid")
+        .messages("claude-3-haiku-20240307")
+}
+
+/// Settings for the wiremock `server`, authenticated with `test-api-key`.
+fn settings_for(server: &MockServer) -> AnthropicProviderSettings {
+    AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    }
 }
 
 /// A minimal Anthropic text response body (mirrors the TS `anthropic-text` fixture).
@@ -88,48 +96,22 @@ async fn mock_messages_ok(server: &MockServer, body: Value) {
         .await;
 }
 
-/// Remove the Anthropic env vars consulted by `AnthropicConfig::from_env`
-/// (test isolation for `#[serial]` env tests).
-fn clear_anthropic_env() {
-    unsafe {
-        std::env::remove_var("ANTHROPIC_BASE_URL");
-        std::env::remove_var("ANTHROPIC_API_KEY");
-    }
-}
-
-/// Set the API key (always required by `from_env`) plus an optional base URL.
-fn set_anthropic_env(api_key: &str, base_url: Option<&str>) {
-    unsafe {
-        std::env::set_var("ANTHROPIC_API_KEY", api_key);
-        match base_url {
-            Some(url) => std::env::set_var("ANTHROPIC_BASE_URL", url),
-            None => std::env::remove_var("ANTHROPIC_BASE_URL"),
-        }
-    }
-}
-
 // ═════════════════════════════════════════════════════════════════════════════
 // baseURL configuration  (TS: anthropic-provider.test.ts → 'baseURL configuration')
 // ═════════════════════════════════════════════════════════════════════════════
 
 /// TS: "uses the default Anthropic base URL when not provided".
 ///
-/// The TS test mocks `fetch` and asserts the request URL is
-/// `https://api.anthropic.com/v1/messages`. The Rust provider builds the
-/// endpoint as `{base_url}/v1/messages`, so the equivalent observable
-/// behaviour is: the default config's `base_url` is the bare Anthropic URL,
-/// and a request against a stubbed server lands on `/v1/messages`.
+/// The default instance does no I/O at creation, and the messages endpoint is
+/// `{base_url}/messages` with the version segment in the base URL, so a
+/// request against a stubbed `{server}/v1` lands on `/v1/messages`. (The exact
+/// default URL is asserted against the recorded SDK request in
+/// `anthropic_factory_test.rs`.)
 #[tokio::test]
 async fn default_base_url_when_not_provided() {
-    // Config-level: default base URL is the bare Anthropic API URL.
-    let config = AnthropicConfig::new("test-api-key");
-    assert_eq!(config.base_url, "https://api.anthropic.com");
-
-    // HTTP-level: the endpoint path is `/v1/messages`.
     let server = MockServer::start().await;
     mock_messages_ok(&server, text_response("Hi")).await;
-    let model =
-        make_model_with_config(AnthropicConfig::new("test-api-key").with_base_url(server.uri()));
+    let model = make_model_with_settings(settings_for(&server));
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -140,79 +122,33 @@ async fn default_base_url_when_not_provided() {
     assert_eq!(requests[0].url.path(), "/v1/messages");
 }
 
-/// TS: "uses ANTHROPIC_BASE_URL when set".
-///
-/// The TS test mocks `fetch` and asserts the request URL is
-/// `https://proxy.anthropic.example/v1/messages`. The Rust provider builds the
-/// endpoint as `{base_url}/v1/messages`, so the observable behaviour is that
-/// `from_env` picks up `ANTHROPIC_BASE_URL` and normalizes it into `base_url`.
-/// (The HTTP `/v1/messages` path round-trip is covered by
-/// `default_base_url_when_not_provided`.)
-#[tokio::test]
-#[serial]
-async fn uses_anthropic_base_url_env_when_set() {
-    clear_anthropic_env();
-    set_anthropic_env("test-api-key", Some("https://proxy.anthropic.example/v1/"));
-
-    let config = AnthropicConfig::from_env().expect("from_env");
-    // Trailing slash + `/v1` segment normalized away; the endpoint becomes
-    // `https://proxy.anthropic.example/v1/messages`.
-    assert_eq!(config.base_url, "https://proxy.anthropic.example");
-
-    clear_anthropic_env();
-}
-
-/// TS: "normalizes a bare Anthropic API URL from ANTHROPIC_BASE_URL".
-#[tokio::test]
-#[serial]
-async fn normalizes_bare_anthropic_url_from_env() {
-    clear_anthropic_env();
-    set_anthropic_env("test-api-key", Some("https://api.anthropic.com/"));
-    let config = AnthropicConfig::from_env().expect("from_env");
-    // Trailing slash stripped; endpoint becomes `https://api.anthropic.com/v1/messages`.
-    assert_eq!(config.base_url, "https://api.anthropic.com");
-    clear_anthropic_env();
-}
-
-/// TS: "normalizes a bare Anthropic API URL from the baseURL option".
-#[tokio::test]
-async fn normalizes_bare_anthropic_url_from_base_url_option() {
-    let config = AnthropicConfig::new("test-api-key").with_base_url("https://api.anthropic.com/");
-    assert_eq!(config.base_url, "https://api.anthropic.com");
-}
-
-/// TS: "prefers the baseURL option over ANTHROPIC_BASE_URL".
-#[tokio::test]
-#[serial]
-async fn prefers_base_url_option_over_env() {
-    clear_anthropic_env();
-    set_anthropic_env("test-api-key", Some("https://env.anthropic.example/v1"));
-    let config = AnthropicConfig::from_env()
-        .expect("from_env")
-        .with_base_url("https://option.anthropic.example/v1/");
-    // The explicit option wins; its trailing slash and `/v1` are normalized away.
-    assert_eq!(config.base_url, "https://option.anthropic.example");
-    clear_anthropic_env();
-}
-
 /// TS: "rejects an empty baseURL option during provider creation".
-// TODO: implementation gap — the Rust `normalize_base_url` returns the default
-// Anthropic URL for an empty input instead of rejecting it with
-// `InvalidArgumentError` (`argument: "baseURL"`, message: "baseURL must be a
-// non-empty string."). Re-enable once `with_base_url` / the builder validate
-// emptiness.
-#[tokio::test]
-#[ignore]
-async fn rejects_empty_base_url_option() {
-    let result = AnthropicConfig::builder()
-        .api_key("test-api-key")
-        .base_url("")
-        .build();
-    match result {
-        Err(AiMuxError::InvalidArgument(msg)) => {
-            assert_eq!(msg, "baseURL must be a non-empty string.");
-        }
-        other => panic!("expected InvalidArgument for empty baseURL, got {other:?}"),
+#[test]
+fn rejects_empty_base_url_option() {
+    let result = create_anthropic(AnthropicProviderSettings {
+        base_url: Some(String::new()),
+        ..Default::default()
+    });
+    assert!(
+        matches!(result, Err(AiMuxError::InvalidArgument(_))),
+        "an empty baseURL must be rejected"
+    );
+}
+
+/// A base URL that is not an http(s) URL with a host is rejected at creation.
+#[test]
+fn rejects_a_malformed_base_url() {
+    for url in ["not a url", "ftp://example.com/v1", "https://"] {
+        assert!(
+            matches!(
+                create_anthropic(AnthropicProviderSettings {
+                    base_url: Some(url.to_string()),
+                    ..Default::default()
+                }),
+                Err(AiMuxError::InvalidArgument(_))
+            ),
+            "{url} must be rejected"
+        );
     }
 }
 
@@ -226,12 +162,11 @@ async fn sends_authorization_bearer_when_auth_token_provided() {
     let server = MockServer::start().await;
     mock_messages_ok(&server, text_response("Hi")).await;
 
-    let config = AnthropicConfig::builder()
-        .auth_token("test-auth-token")
-        .base_url(server.uri())
-        .build()
-        .expect("builder build");
-    let model = make_model_with_config(config);
+    let model = make_model_with_settings(AnthropicProviderSettings {
+        auth_token: Some("test-auth-token".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    });
 
     let _ = model
         .do_generate(&default_options(test_prompt()))
@@ -258,10 +193,11 @@ async fn sends_authorization_bearer_when_auth_token_provided() {
 /// TS: "throws error when both apiKey and authToken options are provided".
 #[test]
 fn throws_when_both_api_key_and_auth_token_provided() {
-    let result = AnthropicConfig::builder()
-        .api_key("test-api-key")
-        .auth_token("test-auth-token")
-        .build();
+    let result = create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        auth_token: Some("test-auth-token".to_string().into()),
+        ..Default::default()
+    });
     match result {
         Err(AiMuxError::InvalidArgument(msg)) => {
             assert_eq!(
@@ -270,9 +206,10 @@ fn throws_when_both_api_key_and_auth_token_provided() {
                  Please use only one authentication method."
             );
         }
-        other => {
+        Err(other) => {
             panic!("expected InvalidArgument for conflicting apiKey + authToken, got {other:?}")
         }
+        Ok(_) => panic!("conflicting apiKey + authToken must be rejected"),
     }
 }
 
@@ -283,16 +220,17 @@ fn throws_when_both_api_key_and_auth_token_provided() {
 /// TS: "should use custom provider name when specified".
 #[test]
 fn uses_custom_provider_name_when_specified() {
-    let config = AnthropicConfig::new("test-api-key").with_name("my-claude-proxy");
-    let model = make_model_with_config(config);
+    let model = make_model_with_settings(AnthropicProviderSettings {
+        name: Some("my-claude-proxy".to_string()),
+        ..Default::default()
+    });
     assert_eq!(model.provider(), "my-claude-proxy");
 }
 
 /// TS: "should default to anthropic.messages when name not specified".
 #[test]
 fn defaults_to_anthropic_messages_when_not_specified() {
-    let config = AnthropicConfig::new("test-api-key");
-    let model = make_model_with_config(config);
+    let model = make_model_with_settings(AnthropicProviderSettings::default());
     assert_eq!(model.provider(), "anthropic.messages");
 }
 
@@ -301,28 +239,31 @@ fn defaults_to_anthropic_messages_when_not_specified() {
 // ═════════════════════════════════════════════════════════════════════════════
 
 /// TS: "should support image/* URLs".
-// TODO: implementation gap — the Rust `LanguageModel` trait has no
-// `supported_urls` surface, so there is nothing to assert against. Re-enable
-// once `supported_urls` is added to the trait and the Anthropic model exposes
-// its image/PDF URL allow-list.
-#[tokio::test]
-#[ignore]
-async fn supports_image_urls() {
-    let config = AnthropicConfig::new("test-api-key");
-    let model = make_model_with_config(config);
-    // Intended: `model.supported_urls()["image/*"]` matches
-    // `https://example.com/image.png`.
-    let _ = model.provider();
+#[test]
+fn supports_image_urls() {
+    let urls = make_model_with_settings(AnthropicProviderSettings::default()).supported_urls();
+    let patterns = &urls.0["image/*"];
+    assert!(
+        patterns
+            .iter()
+            .any(|re| re.is_match("https://example.com/image.png"))
+    );
+    assert!(
+        !patterns
+            .iter()
+            .any(|re| re.is_match("ftp://example.com/image.png"))
+    );
 }
 
 /// TS: "should support application/pdf URLs".
-// TODO: implementation gap — see `supports_image_urls`.
-#[tokio::test]
-#[ignore]
-async fn supports_pdf_urls() {
-    let config = AnthropicConfig::new("test-api-key");
-    let model = make_model_with_config(config);
-    let _ = model.provider();
+#[test]
+fn supports_pdf_urls() {
+    let urls = make_model_with_settings(AnthropicProviderSettings::default()).supported_urls();
+    assert!(
+        urls.0["application/pdf"]
+            .iter()
+            .any(|re| re.is_match("https://example.com/doc.pdf"))
+    );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -330,11 +271,14 @@ async fn supports_pdf_urls() {
 // ═════════════════════════════════════════════════════════════════════════════
 
 /// Build a model with the given model id pointing at the wiremock server.
-fn make_model_with_id(server: &MockServer, model_id: &str) -> AnthropicModel {
-    AnthropicModel::new(
-        model_id.to_string(),
-        AnthropicConfig::new("test-api-key").with_base_url(server.uri()),
-    )
+fn make_model_with_id(server: &MockServer, model_id: &str) -> AnthropicMessagesModel {
+    create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap()
+    .messages(model_id)
 }
 
 /// TS: "should warn when using the default max output token limit".
@@ -610,8 +554,9 @@ async fn sends_tool_change_blocks_and_beta_header() {
     let server = MockServer::start().await;
     mock_messages_ok(&server, text_response("OK")).await;
 
-    let config = AnthropicConfig::new("test-api-key").with_base_url(server.uri());
-    let model = AnthropicModel::new("claude-opus-4-8".to_string(), config);
+    let model = create_anthropic(settings_for(&server))
+        .unwrap()
+        .messages("claude-opus-4-8");
 
     // NOTE: when implemented, `toolChanges` should be carried on the system
     // message's provider options. The current `LanguageModelPromptMessage`

@@ -6,22 +6,35 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::provider::Provider;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
 
-use aimux_providers::{TavilyConfig, TavilyProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{TavilyProvider, TavilyProviderSettings, create_tavily};
 
 fn make_provider(server: &MockServer) -> TavilyProvider {
-    let config = TavilyConfig::new("test-api-key").with_base_url(server.uri());
-    TavilyProvider::new(config)
+    let config = TavilyProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_tavily(config).unwrap()
 }
 
 #[test]
-fn provider_name_is_tavily() {
-    let provider = TavilyProvider::new(TavilyConfig::new("test-key"));
-    assert_eq!(provider.name(), "tavily");
+fn search_model_provider_is_tavily() {
+    let provider = create_tavily(TavilyProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(provider.search_model().provider(), "tavily.search");
 }
 
 #[test]
 fn language_model_returns_unsupported() {
-    let provider = TavilyProvider::new(TavilyConfig::new("test-key"));
+    let provider = create_tavily(TavilyProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
     assert!(provider.language_model("any").is_err());
 }
 
@@ -70,8 +83,12 @@ async fn uses_bearer_auth_header() {
         .mount(&server)
         .await;
 
-    let config = TavilyConfig::new("my-key").with_base_url(server.uri());
-    let provider = TavilyProvider::new(config);
+    let config = TavilyProviderSettings {
+        api_key: Some(Resolvable::Value("my-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_tavily(config).unwrap();
     let model = provider.search_model();
     model
         .do_search(&SearchCallOptions::new("test"))

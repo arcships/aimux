@@ -2,7 +2,7 @@
 """Generate cassettes for OpenAI-compatible thin-wrapper providers.
 
 These providers (alibaba, baseten, bytedance, deepinfra, fireworks,
-moonshotai, togetherai, vercel) are thin wrappers around OpenAIProvider.
+moonshotai, togetherai, vercel) are thin wrappers around OpenAIConfigProvider.
 Their responses are byte-for-byte OpenAI Chat Completions format, so we
 can derive valid cassettes from existing OpenAI recordings by rewriting
 the request path and model field.

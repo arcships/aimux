@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Fal transcription model tests.
+//! Rust translation of the Fal transcription model tests.
 //! Source: `reference/ai/packages/fal/src/fal-transcription-model.test.ts`
 
 use std::collections::HashMap;
@@ -8,7 +8,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
-use aimux_providers::{FalConfig, FalProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{FalProviderSettings, create_fal};
 
 fn mock_audio() -> Vec<u8> {
     vec![1u8, 2, 3]
@@ -57,8 +58,12 @@ async fn should_pass_model_and_audio() {
     let server = MockServer::start().await;
     mock_queue_and_result(&server, &fixture_result(), &[]).await;
 
-    let config = FalConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = FalProvider::new(config);
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_fal(config).unwrap();
     let model = provider.transcription("wizper");
 
     model
@@ -89,10 +94,13 @@ async fn should_pass_headers() {
         "Custom-Provider-Header".to_string(),
         "provider-header-value".to_string(),
     );
-    let config = FalConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(ph);
-    let provider = FalProvider::new(config);
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some((ph).into_iter().map(|(k, v)| (k, Some(v))).collect()),
+        ..Default::default()
+    };
+    let provider = create_fal(config).unwrap();
     let model = provider.transcription("wizper");
 
     let mut opts = options(mock_audio(), "audio/wav");
@@ -124,8 +132,12 @@ async fn should_extract_text() {
     let server = MockServer::start().await;
     mock_queue_and_result(&server, &fixture_result(), &[]).await;
 
-    let config = FalConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = FalProvider::new(config);
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_fal(config).unwrap();
     let model = provider.transcription("wizper");
 
     let result = model
@@ -149,8 +161,12 @@ async fn should_include_response_data() {
     )
     .await;
 
-    let config = FalConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = FalProvider::new(config);
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_fal(config).unwrap();
     let model = provider.transcription("wizper");
 
     let result = model
@@ -167,8 +183,12 @@ async fn should_use_real_date() {
     let server = MockServer::start().await;
     mock_queue_and_result(&server, &fixture_result(), &[]).await;
 
-    let config = FalConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = FalProvider::new(config);
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_fal(config).unwrap();
     let model = provider.transcription("wizper");
 
     let result = model

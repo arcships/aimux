@@ -21,7 +21,7 @@ console.log(result.text)
 
 ## Providers
 
-All 251 built-in OpenAI-compatible providers are registry-backed. Look them up
+All 283 built-in OpenAI-compatible providers are registry-backed. Look them up
 by string name; the current list is generated from `provider_registry.json` in
 [providers.md](providers.md):
 
@@ -31,7 +31,6 @@ import { provider, generateText } from '@arcships/aimux'
 const model = await provider('groq', undefined, 'llama-3.3-70b')
 const relay = await provider('groq', 'sk-...', 'llama-3.3-70b', {
   baseUrl: 'https://relay.example/v1',
-  maxRetries: 0,
 })
 const result = await generateText(model, 'Hello')
 ```
@@ -40,7 +39,15 @@ const result = await generateText(model, 'Hello')
 registry-backed). For custom providers not in the registry, build from the
 base classes with `createProvider`-style config via the base-URL override.
 
-> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
+The 3rd argument of every constructor is a base URL string or a
+`ProviderConfig` (`baseUrl`, `headers` as a JSON string, `organization`,
+`project`, and `params` — a `Record<string, string>` filling a preset's template
+parameters, e.g. `{ account_id: '…' }` for `cloudflare_workers_ai`).
+`maxRetries` and `bodyOverrides` are kept in the type only so that passing them
+throws `InvalidArgumentError`; retry is a per-call option
+(`max_retries` in the call options).
+
+> **Scope:** `provider(name)` covers only the 283 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
 > (`anthropic(apiKey, model)`); custom endpoints → `baseUrl` override.
 > Full list: [providers.md](providers.md).
@@ -91,6 +98,7 @@ Error
       ├── JSONParseError / InvalidResponseDataError
       ├── NoSuchToolError / InvalidToolInputError / ToolCallRepairError  // tool-contract errors
       ├── InvalidArgumentError / InvalidPromptError
+      ├── LoadAPIKeyError / LoadSettingError   // no API key / required setting: envVar (+ description / settingName)
       ├── TokenExpiredError
       ├── UnsupportedFunctionalityError
       ├── NoSuchModelError / NoSuchProviderError
@@ -132,8 +140,9 @@ that carries them: `APICallError` adds `retryable` and optional `status` /
 error — or `'errorNotRetryable'` — a later attempt failed non-retryably),
 `errors` — the per-attempt history, oldest first, each itself an error from
 this hierarchy — and `lastError`; `TokenExpiredError` carries `status: 401`;
-`NoSuchModelError` adds `modelId` / `modelType`; and `NoSuchProviderError`
-adds `providerId`. Missing HTTP status and retry hints are absent rather than
+`NoSuchModelError` adds `modelId` / `modelType`; `NoSuchProviderError`
+adds `providerId`; and `LoadAPIKeyError` / `LoadSettingError` add `envVar`
+(the environment variable consulted) plus `description` / `settingName`. Missing HTTP status and retry hints are absent rather than
 represented by `-1`.
 
 ```typescript

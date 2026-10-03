@@ -1,4 +1,4 @@
-﻿//! Wiremock tests for the Azure OpenAI Responses API provider.
+//! Wiremock tests for the Azure OpenAI Responses API provider.
 //!
 //! These cover the Azure-specific differences from the OpenAI Responses
 //! provider:
@@ -7,7 +7,7 @@
 //! - `api-key` header authentication (API key)
 //! - `Authorization: Bearer <token>` authentication (Azure AD token provider)
 //! - token provider invoked per request (tokens differ per call)
-//! - custom provider/request headers + user-agent suffix
+//! - custom provider/request headers
 //! - Azure `assistant-` file ID prefix passthrough (file_id vs base64)
 //! - doGenerate text extraction, usage, response metadata, provider metadata
 //! - doStream text content streaming
@@ -26,7 +26,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
@@ -42,7 +41,39 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::{AzureConfig, AzureProvider, TokenProvider};
+use aimux_provider_utils::{HeaderMapOpt, Resolvable};
+
+#[path = "common/mock_fetch.rs"]
+mod mock_fetch;
+use aimux_providers::{AzureOpenAIProvider, AzureOpenAIProviderSettings, create_azure};
+use mock_fetch::EnvVar;
+
+/// A provider pointed at the mock server. Deployment-based URLs keep the
+/// deployment in the path (`/deployments/{id}/...?api-version=`), which is what
+/// the mocks below match.
+fn test_provider(server: &MockServer, api_key: &str) -> AzureOpenAIProvider {
+    create_azure(AzureOpenAIProviderSettings {
+        base_url: Some(server.uri()),
+        api_key: Some(api_key.to_string().into()),
+        use_deployment_based_urls: true,
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
+
+/// [`test_provider`] with arbitrary settings changes.
+fn test_provider_with(
+    server: &MockServer,
+    change: impl FnOnce(&mut AzureOpenAIProviderSettings),
+) -> AzureOpenAIProvider {
+    let mut settings = AzureOpenAIProviderSettings {
+        base_url: Some(server.uri()),
+        use_deployment_based_urls: true,
+        ..Default::default()
+    };
+    change(&mut settings);
+    create_azure(settings).expect("valid settings")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -217,44 +248,19 @@ async fn first_request_body(server: &MockServer) -> Value {
     serde_json::from_slice(&requests[0].body).expect("invalid JSON body")
 }
 
-/// A token provider that returns a fixed token.
-struct StaticToken(String);
-#[async_trait]
-impl TokenProvider for StaticToken {
-    async fn get_token(&self) -> Result<String, AiMuxError> {
-        Ok(self.0.clone())
-    }
-}
-
-/// A token provider that returns a different token on each call
-/// (`token-1`, `token-2`, …) so tests can assert it is invoked per request.
-struct CountingToken {
-    count: AtomicU32,
-}
-#[async_trait]
-impl TokenProvider for CountingToken {
-    async fn get_token(&self) -> Result<String, AiMuxError> {
-        let n = self.count.fetch_add(1, Ordering::SeqCst) + 1;
-        Ok(format!("token-{n}"))
-    }
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // URL construction & api-version
 // ════════════════════════════════════════════════════════════════════════════
 
 /// The default deployment-based URL form places the deployment in the path and
-/// appends `?api-version=2024-10-21` (the Rust AzureConfig default).
+/// appends `?api-version=v1` (the AI SDK's default api version).
 #[tokio::test]
 async fn should_build_deployment_url_with_default_api_version() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -263,7 +269,7 @@ async fn should_build_deployment_url_with_default_api_version() {
     let requests = server.received_requests().await.expect("requests recorded");
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].url.path(), DEPLOYMENT_PATH);
-    assert_eq!(requests[0].url.query(), Some("api-version=2024-10-21"));
+    assert_eq!(requests[0].url.query(), Some("api-version=v1"));
 }
 
 /// A custom `api_version` is reflected in the `api-version` query parameter.
@@ -272,12 +278,11 @@ async fn should_use_custom_api_version() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key")
-        .with_api_version("2025-04-01-preview");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider_with(&server, |s| {
+        s.api_key = Some("test-api-key".to_string().into());
+        s.api_version = Some("2025-04-01-preview".to_string());
+    });
+    let model = provider.responses("test-deployment");
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -296,24 +301,23 @@ async fn should_use_custom_api_version() {
 async fn should_omit_api_version_on_gateway_v1_url() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/v1/responses"))
+        .and(path("/responses"))
         .respond_with(ResponseTemplate::new(200).set_body_json(text_response_body()))
         .mount(&server)
         .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key")
-        .use_v1_urls();
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider_with(&server, |s| {
+        s.api_key = Some("test-api-key".to_string().into());
+        s.use_deployment_based_urls = false;
+    });
+    let model = provider.responses("test-deployment");
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
         .expect("do_generate should succeed");
 
     let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests[0].url.path(), "/v1/responses");
+    assert_eq!(requests[0].url.path(), "/responses");
     // Non-Azure gateway owns its own versioning — no api-version query param.
     assert_eq!(requests[0].url.query(), None);
 }
@@ -328,11 +332,8 @@ async fn should_send_api_key_header() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -354,11 +355,10 @@ async fn should_send_bearer_token_from_token_provider() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_token_provider(Arc::new(StaticToken("test-azure-ad-token".to_string())));
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider_with(&server, |s| {
+        s.token_provider = Some(Resolvable::Value("test-azure-ad-token".to_string()));
+    });
+    let model = provider.responses("test-deployment");
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -383,13 +383,14 @@ async fn should_call_token_provider_per_request() {
         mock_json_response(&server, text_response_body()).await;
     }
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_token_provider(Arc::new(CountingToken {
-            count: AtomicU32::new(0),
+    let counter = Arc::new(AtomicU32::new(0));
+    let provider = test_provider_with(&server, |s| {
+        s.token_provider = Some(Resolvable::from_async_fn(move || {
+            let n = counter.fetch_add(1, Ordering::SeqCst) + 1;
+            async move { Ok(format!("token-{n}")) }
         }));
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    });
+    let model = provider.responses("test-deployment");
 
     let _ = model
         .do_generate(&default_options(test_prompt()))
@@ -434,12 +435,14 @@ async fn should_pass_custom_headers() {
         .mount(&server)
         .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key")
-        .with_header("Custom-Provider-Header", "provider-header-value");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider_with(&server, |s| {
+        s.api_key = Some("test-api-key".to_string().into());
+        s.headers = Some(HeaderMapOpt::from([(
+            "Custom-Provider-Header".to_string(),
+            Some("provider-header-value".to_string()),
+        )]));
+    });
+    let model = provider.responses("test-deployment");
 
     let options = CallOptions {
         headers: Some({
@@ -461,15 +464,6 @@ async fn should_pass_custom_headers() {
     // If the mock matched, the headers were all present.
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
-    let ua = requests[0]
-        .headers
-        .get("user-agent")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    assert!(
-        ua.contains("ai-sdk/azure"),
-        "user-agent should contain ai-sdk/azure, got: {ua}"
-    );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -482,11 +476,8 @@ async fn should_extract_text_content() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -510,11 +501,8 @@ async fn should_extract_tool_call_content() {
     let server = MockServer::start().await;
     mock_json_response(&server, tool_call_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -549,11 +537,8 @@ async fn should_extract_usage() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -570,11 +555,8 @@ async fn should_extract_response_metadata() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -595,11 +577,8 @@ async fn should_use_azure_provider_metadata_namespace() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -622,11 +601,8 @@ async fn should_map_finish_reason_stop() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -642,11 +618,8 @@ async fn should_map_finish_reason_tool_calls() {
     let server = MockServer::start().await;
     mock_json_response(&server, tool_call_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -667,11 +640,8 @@ async fn should_extract_response_headers() {
     )
     .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -696,11 +666,8 @@ async fn should_pass_through_assistant_file_id_for_image() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
         role: Role::User,
@@ -738,11 +705,8 @@ async fn should_pass_through_assistant_file_id_for_pdf() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
         role: Role::User,
@@ -782,11 +746,8 @@ async fn should_fall_back_to_base64_for_non_assistant_file_ids() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
         role: Role::User,
@@ -849,11 +810,8 @@ async fn should_stream_text_content() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -920,11 +878,8 @@ async fn should_send_api_key_header_on_stream() {
     ]);
     mock_sse_response(&server, &sse).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -934,7 +889,7 @@ async fn should_send_api_key_header_on_stream() {
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].url.query(), Some("api-version=2024-10-21"));
+    assert_eq!(requests[0].url.query(), Some("api-version=v1"));
     assert_eq!(
         requests[0]
             .headers
@@ -964,11 +919,8 @@ async fn should_handle_error_status() {
         .mount(&server)
         .await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -985,44 +937,25 @@ async fn should_handle_error_status() {
 // Environment variable configuration (serial)
 // ════════════════════════════════════════════════════════════════════════════
 
-/// `AzureConfig::from_env` reads `AZURE_API_KEY` and `AZURE_RESOURCE_NAME`.
+/// The key and the resource name are read from `AZURE_API_KEY` and
+/// `AZURE_RESOURCE_NAME` when a request is made, not when the provider is
+/// created: the provider exists before either is set.
 #[tokio::test]
 #[serial_test::serial]
-async fn should_create_config_from_env() {
-    // Set env vars.
-    unsafe {
-        std::env::set_var("AZURE_API_KEY", "env-api-key");
-        std::env::set_var("AZURE_RESOURCE_NAME", "env-resource");
-    }
-
-    let config = AzureConfig::from_env().expect("from_env");
-    assert_eq!(config.resource_name.as_deref(), Some("env-resource"));
-
-    // Clean up.
-    unsafe {
-        std::env::remove_var("AZURE_API_KEY");
-        std::env::remove_var("AZURE_RESOURCE_NAME");
-    }
-
-    // Verify the config produces the right URL.
-    let model = AzureProvider::new(config)
-        .expect("provider")
-        .responses_model("my-deployment");
+async fn should_read_key_and_resource_from_env_per_request() {
+    let env_key = EnvVar::set("AZURE_API_KEY", None);
+    let env_resource = EnvVar::set("AZURE_RESOURCE_NAME", None);
+    let provider = create_azure(AzureOpenAIProviderSettings::default()).expect("provider");
+    let model = provider.responses("my-deployment");
     assert_eq!(model.model_id(), "my-deployment");
     assert_eq!(model.provider(), "azure.responses");
-}
 
-/// `AzureConfig::from_env` fails when `AZURE_API_KEY` is not set.
-#[tokio::test]
-#[serial_test::serial]
-async fn should_fail_from_env_without_api_key() {
-    // Ensure the env var is not set.
-    unsafe {
-        std::env::remove_var("AZURE_API_KEY");
-    }
-
-    let result = AzureConfig::from_env();
-    assert!(result.is_err());
+    let err = model
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect_err("no key");
+    assert!(matches!(err, AiMuxError::LoadApiKey { .. }), "{err:?}");
+    drop((env_key, env_resource));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1035,11 +968,8 @@ async fn should_send_model_and_input_in_request_body() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
+    let provider = test_provider(&server, "test-api-key");
+    let model = provider.responses("test-deployment");
 
     let _ = model
         .do_generate(&default_options(test_prompt()))

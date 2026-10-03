@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Replicate image model tests.
+//! Rust translation of the Replicate image model tests.
 //! Source: `reference/ai/packages/replicate/src/replicate-image-model.test.ts`
 
 use serde_json::{Value, json};
@@ -6,7 +6,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs};
-use aimux_providers::{ReplicateConfig, ReplicateProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{ReplicateProviderSettings, create_replicate};
 
 const PROMPT: &str = "A cute baby sea otter";
 
@@ -32,8 +33,14 @@ fn options(prompt: &str) -> ImageCallOptions {
 async fn should_extract_generated_images() {
     let server = MockServer::start().await;
     mock_replicate(&server, json!(format!("{}/image.png", server.uri()))).await;
-    let config = ReplicateConfig::new("test-token").with_base_url(server.uri());
-    let model = ReplicateProvider::new(config).image("black-forest-labs/flux-schnell");
+    let config = ReplicateProviderSettings {
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_replicate(config)
+        .unwrap()
+        .image("black-forest-labs/flux-schnell");
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
     match result.images {
         ImageOutputs::Binary(imgs) => {
@@ -48,8 +55,14 @@ async fn should_extract_generated_images() {
 async fn should_pass_prompt_and_n() {
     let server = MockServer::start().await;
     mock_replicate(&server, json!(format!("{}/image.png", server.uri()))).await;
-    let config = ReplicateConfig::new("test-token").with_base_url(server.uri());
-    let model = ReplicateProvider::new(config).image("black-forest-labs/flux-schnell");
+    let config = ReplicateProviderSettings {
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_replicate(config)
+        .unwrap()
+        .image("black-forest-labs/flux-schnell");
     let mut opts = options(PROMPT);
     opts.n = 1;
     model.do_generate(&opts).await.unwrap();
@@ -63,8 +76,14 @@ async fn should_pass_prompt_and_n() {
 async fn should_pass_aspect_ratio() {
     let server = MockServer::start().await;
     mock_replicate(&server, json!(format!("{}/image.png", server.uri()))).await;
-    let config = ReplicateConfig::new("test-token").with_base_url(server.uri());
-    let model = ReplicateProvider::new(config).image("black-forest-labs/flux-schnell");
+    let config = ReplicateProviderSettings {
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_replicate(config)
+        .unwrap()
+        .image("black-forest-labs/flux-schnell");
     let mut opts = options(PROMPT);
     opts.n = 1;
     opts.aspect_ratio = Some(aimux_core::shared::AspectRatio::new(16, 9));
@@ -78,8 +97,14 @@ async fn should_pass_aspect_ratio() {
 async fn should_pass_seed() {
     let server = MockServer::start().await;
     mock_replicate(&server, json!(format!("{}/image.png", server.uri()))).await;
-    let config = ReplicateConfig::new("test-token").with_base_url(server.uri());
-    let model = ReplicateProvider::new(config).image("black-forest-labs/flux-schnell");
+    let config = ReplicateProviderSettings {
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_replicate(config)
+        .unwrap()
+        .image("black-forest-labs/flux-schnell");
     let mut opts = options(PROMPT);
     opts.n = 1;
     opts.seed = Some(42);
@@ -93,8 +118,14 @@ async fn should_pass_seed() {
 async fn should_pass_auth_headers() {
     let server = MockServer::start().await;
     mock_replicate(&server, json!(format!("{}/image.png", server.uri()))).await;
-    let config = ReplicateConfig::new("test-token").with_base_url(server.uri());
-    let model = ReplicateProvider::new(config).image("black-forest-labs/flux-schnell");
+    let config = ReplicateProviderSettings {
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_replicate(config)
+        .unwrap()
+        .image("black-forest-labs/flux-schnell");
     model.do_generate(&options(PROMPT)).await.unwrap();
     let reqs = server.received_requests().await.unwrap();
     assert_eq!(
@@ -116,8 +147,14 @@ async fn should_pass_auth_headers() {
 async fn should_use_custom_wait_time() {
     let server = MockServer::start().await;
     mock_replicate(&server, json!(format!("{}/image.png", server.uri()))).await;
-    let config = ReplicateConfig::new("test-token").with_base_url(server.uri());
-    let model = ReplicateProvider::new(config).image("black-forest-labs/flux-schnell");
+    let config = ReplicateProviderSettings {
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_replicate(config)
+        .unwrap()
+        .image("black-forest-labs/flux-schnell");
     let mut opts = options(PROMPT);
     opts.n = 1;
     opts.provider_options
@@ -135,8 +172,14 @@ async fn should_handle_array_output() {
     let server = MockServer::start().await;
     let img_url = format!("{}/image.png", server.uri());
     mock_replicate(&server, json!([img_url, img_url])).await;
-    let config = ReplicateConfig::new("test-token").with_base_url(server.uri());
-    let model = ReplicateProvider::new(config).image("black-forest-labs/flux-schnell");
+    let config = ReplicateProviderSettings {
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_replicate(config)
+        .unwrap()
+        .image("black-forest-labs/flux-schnell");
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
     match result.images {
         ImageOutputs::Binary(imgs) => assert_eq!(imgs.len(), 2),
@@ -148,8 +191,14 @@ async fn should_handle_array_output() {
 async fn should_use_versioned_endpoint() {
     let server = MockServer::start().await;
     mock_replicate(&server, json!(format!("{}/image.png", server.uri()))).await;
-    let config = ReplicateConfig::new("test-token").with_base_url(server.uri());
-    let model = ReplicateProvider::new(config).image("black-forest-labs/flux-schnell:abc123");
+    let config = ReplicateProviderSettings {
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_replicate(config)
+        .unwrap()
+        .image("black-forest-labs/flux-schnell:abc123");
     model.do_generate(&options(PROMPT)).await.unwrap();
     let reqs = server.received_requests().await.unwrap();
     let body: Value = serde_json::from_slice(&reqs[0].body).unwrap();

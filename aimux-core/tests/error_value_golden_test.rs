@@ -159,6 +159,20 @@ fn error_value_snapshots_plain_variants() {
             r#"{"UnsupportedFunctionality":"no audio"}"#,
         ),
         (
+            AiMuxError::LoadApiKey {
+                env_var: "OPENAI_API_KEY".into(),
+                description: "OpenAI".into(),
+            },
+            r#"{"LoadApiKey":{"env_var":"OPENAI_API_KEY","description":"OpenAI"}}"#,
+        ),
+        (
+            AiMuxError::LoadSetting {
+                env_var: "AWS_REGION".into(),
+                name: "region".into(),
+            },
+            r#"{"LoadSetting":{"env_var":"AWS_REGION","name":"region"}}"#,
+        ),
+        (
             AiMuxError::NoSuchModel {
                 model_id: "gpt-9".into(),
                 model_type: "languageModel".into(),
@@ -186,7 +200,7 @@ fn error_value_snapshots_plain_variants() {
 }
 
 /// The variant set is a cross-language contract of its own: bindings switch on
-/// the wire tag. Adding or removing one is a breaking change (16 variants —
+/// the wire tag. Adding or removing one is a breaking change (18 variants —
 /// the per-status avatars `Auth`/`ModelNotFound`/`RateLimited` are gone,
 /// `Http`/`Provider` folded into `ApiCall` (a failed exchange is an `ApiCall`
 /// error classified by `status_code`, transport failures included), and the
@@ -207,6 +221,8 @@ fn variant_addition_breaks_this_match(error: &AiMuxError) {
         | AiMuxError::ToolCallRepair { .. }
         | AiMuxError::InvalidArgument(_)
         | AiMuxError::InvalidPrompt(_)
+        | AiMuxError::LoadApiKey { .. }
+        | AiMuxError::LoadSetting { .. }
         | AiMuxError::TokenExpired(_)
         | AiMuxError::UnsupportedFunctionality(_)
         | AiMuxError::NoSuchModel { .. }
@@ -218,7 +234,7 @@ fn variant_addition_breaks_this_match(error: &AiMuxError) {
 }
 
 #[test]
-fn variant_set_is_exactly_sixteen() {
+fn variant_set_is_exactly_eighteen() {
     let all = [
         AiMuxError::ApiCall(Box::new(api_error("x"))),
         AiMuxError::Retry(RetryError {
@@ -247,6 +263,14 @@ fn variant_set_is_exactly_sixteen() {
         },
         AiMuxError::InvalidArgument("x".into()),
         AiMuxError::InvalidPrompt("x".into()),
+        AiMuxError::LoadApiKey {
+            env_var: "X_API_KEY".into(),
+            description: "x".into(),
+        },
+        AiMuxError::LoadSetting {
+            env_var: "X_REGION".into(),
+            name: "region".into(),
+        },
         AiMuxError::TokenExpired("x".into()),
         AiMuxError::UnsupportedFunctionality("x".into()),
         AiMuxError::NoSuchModel {
@@ -281,6 +305,8 @@ fn variant_set_is_exactly_sixteen() {
             "InvalidResponseData",
             "InvalidToolInput",
             "JsonParse",
+            "LoadApiKey",
+            "LoadSetting",
             "NoSuchModel",
             "NoSuchProvider",
             "NoSuchTool",

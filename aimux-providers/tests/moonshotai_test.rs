@@ -4,7 +4,7 @@
 //! - `packages/moonshotai/src/moonshotai-provider.test.ts`
 //! - `packages/moonshotai/src/convert-moonshotai-chat-usage.test.ts`
 //!
-//! Moonshot AI is a thin OpenAI-compatible wrapper over [`OpenAIProvider`].
+//! Moonshot AI is a registry preset of the OpenAI-compatible package.
 //! The TS suite has a custom usage converter that recognises a **top-level**
 //! `cached_tokens` field (Moonshot's wire format) and prioritises it over the
 //! nested `prompt_tokens_details.cached_tokens`. The shared OpenAI
@@ -20,6 +20,7 @@
 use futures::StreamExt;
 use serde_json::{Value, json};
 use serial_test::serial;
+use std::sync::Arc;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -89,7 +90,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     parts
 }
 
-fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
     provider(
         "moonshotai",
         Some("test-api-key".to_string()),

@@ -14,9 +14,10 @@ use aimux_core::error::AiMuxError;
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
 use aimux_core::shared::FileBytes;
 
-use aimux_provider_utils::{HttpBody, HttpRequest};
+use aimux_provider_utils::HttpBody;
 
-use super::AnthropicConfig;
+use super::config::AnthropicModelConfig;
+use super::options::CANONICAL;
 
 /// The beta header value for the Anthropic Files API.
 const FILES_BETA_HEADER: &str = "files-api-2025-04-14";
@@ -58,45 +59,20 @@ struct AnthropicFilesResponse {
 /// Aligned with TS `AnthropicFiles`. Does **not** hold an HTTP client —
 /// the `aimux-provider-utils` API helpers use the process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct AnthropicFiles {
-    config: AnthropicConfig,
+    config: AnthropicModelConfig,
 }
 
 impl AnthropicFiles {
-    #[must_use]
-    pub fn new(config: AnthropicConfig) -> Self {
+    pub(crate) fn from_config(config: AnthropicModelConfig) -> Self {
         Self { config }
-    }
-
-    fn build_headers(&self) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "anthropic-version".to_string(),
-            self.config.api_version.clone(),
-        );
-        // Auth: prefer bearer token, fall back to x-api-key.
-        if let Some(token) = &self.config.auth_token {
-            headers.insert("authorization".to_string(), format!("Bearer {token}"));
-        } else {
-            headers.insert("x-api-key".to_string(), self.config.api_key.clone());
-        }
-        // Extra config-level headers.
-        if let Some(cfg_headers) = &self.config.headers {
-            for (k, v) in cfg_headers {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/v1/files", self.config.base_url)
     }
 }
 
 #[async_trait]
 impl Files for AnthropicFiles {
+    /// `"{name}.files"` with the `.messages` suffix removed.
     fn provider(&self) -> &str {
-        "anthropic.files"
+        &self.config.provider
     }
 
     async fn upload_file(
@@ -118,12 +94,9 @@ impl Files for AnthropicFiles {
             None,
         );
 
-        let mut headers = self.build_headers();
-        headers.insert("anthropic-beta".to_string(), FILES_BETA_HEADER.to_string());
-        let header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let betas = std::collections::BTreeSet::from([FILES_BETA_HEADER.to_string()]);
+        let config = self.config.resolved().await?;
+        let header_list = config.request_headers(None, &betas).await?;
 
         // `send()` returns Ok only for 2xx; non-2xx responses are mapped to an
         // error internally using the shared error structure. The multipart body
@@ -131,25 +104,16 @@ impl Files for AnthropicFiles {
         // sets `Content-Type` from it, so it is intentionally not added to the
         // header list above.
         //
-        // Nothing above `upload_file` retries it (there is no Core
-        // `do_upload_file`), so the retry lives here — safe for the whole
-        // exchange because an upload is not billable and a failed
-        // create-a-file request returns no id to replay against (§9.4).
-        let retries = aimux_core::retry::prepare_retries(
-            None,
-            self.config.retry_config,
-            options.abort_signal.clone(),
-        );
-        let resp = retries
-            .retry(|| {
-                aimux_provider_utils::post_to_api(
-                    HttpRequest::new(self.endpoint(), header_list.clone(), options),
-                    HttpBody::Bytes(body.clone(), content_type.clone()),
-                    aimux_provider_utils::create_json_response_handler(),
-                    super::anthropic_failed_response_handler(),
-                )
-            })
-            .await?;
+        // One attempt: like the AI SDK's `uploadFile`, an upload is never
+        // replayed implicitly. A caller that wants a retry makes it around
+        // `upload_file`.
+        let resp = aimux_provider_utils::post_to_api(
+            config.http_request(config.url("/files"), header_list, options),
+            HttpBody::Bytes(body, content_type),
+            aimux_provider_utils::create_json_response_handler(),
+            self.config.failed_response_handler(),
+        )
+        .await?;
 
         let data: AnthropicFilesResponse = resp.value;
 
@@ -172,7 +136,7 @@ impl Files for AnthropicFiles {
         }
 
         let mut provider_ref = HashMap::new();
-        provider_ref.insert("anthropic".to_string(), data.id);
+        provider_ref.insert(CANONICAL.to_string(), data.id);
 
         let result_media_type = data
             .mime_type
@@ -185,7 +149,11 @@ impl Files for AnthropicFiles {
             media_type: Some(result_media_type),
             filename: result_filename,
             provider_metadata: Some(
-                std::iter::once(("anthropic".to_string(), Value::Object(metadata))).collect(),
+                std::iter::once((
+                    self.config.provider_options_name.clone(),
+                    Value::Object(metadata),
+                ))
+                .collect(),
             ),
             warnings: Vec::new(),
         })

@@ -1,0 +1,166 @@
+{
+  "case": "messages-system-tools",
+  "model": {
+    "modelId": "claude-sonnet-4-5",
+    "provider": "anthropic.messages"
+  },
+  "package": "@ai-sdk/anthropic",
+  "request": {
+    "body": {
+      "max_tokens": 256,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "What is the weather in Paris?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "system": [
+        {
+          "text": "You are a weather assistant.",
+          "type": "text"
+        }
+      ],
+      "tool_choice": {
+        "type": "any"
+      },
+      "tools": [
+        {
+          "description": "Get the current weather for a city.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "description": "City name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          },
+          "name": "get_weather"
+        }
+      ]
+    },
+    "headers": {
+      "anthropic-beta": "structured-outputs-2025-11-13",
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+      "user-agent": "ai/7.0.127 ai-sdk-provider-utils/5.0.53 node.js/22",
+      "x-api-key": "<redacted>"
+    },
+    "method": "POST",
+    "url": "https://api.anthropic.com/v1/messages"
+  },
+  "response": {
+    "body": {
+      "content": [
+        {
+          "id": "toolu_fixture_1",
+          "input": {
+            "city": "Paris"
+          },
+          "name": "get_weather",
+          "type": "tool_use"
+        }
+      ],
+      "id": "msg_fixture_1",
+      "model": "claude-sonnet-4-5",
+      "role": "assistant",
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+        "input_tokens": 12,
+        "output_tokens": 9
+      }
+    },
+    "headers": {
+      "content-type": "application/json",
+      "request-id": "req_fixture_1"
+    },
+    "status": 200
+  },
+  "result": {
+    "content": [
+      {
+        "input": {
+          "city": "Paris"
+        },
+        "toolCallId": "toolu_fixture_1",
+        "toolName": "get_weather",
+        "type": "tool-call"
+      }
+    ],
+    "finishReason": "tool-calls",
+    "providerMetadata": {
+      "anthropic": {
+        "container": null,
+        "contextManagement": null,
+        "iterations": null,
+        "stopSequence": null,
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 9
+        }
+      }
+    },
+    "rawFinishReason": "tool_use",
+    "response": {
+      "headers": {
+        "content-type": "application/json",
+        "request-id": "req_fixture_1"
+      },
+      "id": "msg_fixture_1",
+      "modelId": "claude-sonnet-4-5"
+    },
+    "text": "",
+    "usage": {
+      "inputTokenDetails": {
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "noCacheTokens": 12
+      },
+      "inputTokens": 12,
+      "outputTokenDetails": {},
+      "outputTokens": 9,
+      "totalTokens": 21
+    },
+    "warnings": []
+  },
+  "sdk": {
+    "input": {
+      "maxOutputTokens": 256,
+      "prompt": "What is the weather in Paris?",
+      "system": "You are a weather assistant.",
+      "toolChoice": "required",
+      "tools": {
+        "get_weather": {
+          "description": "Get the current weather for a city.",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "description": "City name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          }
+        }
+      }
+    },
+    "operation": "generateText"
+  },
+  "version": "4.0.71"
+}

@@ -92,23 +92,52 @@ fn build_model(
     base_url: Option<&str>,
 ) -> anyhow::Result<Arc<dyn aimux_core::language_model::LanguageModel>> {
     macro_rules! native {
-        ($provider_mod:ident, $config:ident, $provider_type:ident) => {{
-            let mut cfg = aimux_providers::$provider_mod::$config::new(api_key.clone());
-            if let Some(url) = base_url {
-                cfg = cfg.with_base_url(url);
-            }
-            let p = aimux_providers::$provider_mod::$provider_type::new(cfg);
-            Arc::from(p.model(model_id))
+        ($provider_mod:ident, $settings:ident, $create:ident) => {{
+            let p = aimux_providers::$provider_mod::$create(
+                aimux_providers::$provider_mod::$settings {
+                    api_key: Some(api_key.clone().into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            aimux_core::provider::Provider::language_model(&p, model_id)?
         }};
     }
 
     match provider {
-        "openai" => Ok(native!(openai, OpenAIConfig, OpenAIProvider)),
-        "anthropic" => Ok(native!(anthropic, AnthropicConfig, AnthropicProvider)),
-        "mistral" => Ok(native!(mistral, MistralConfig, MistralProvider)),
-        "xai" => Ok(native!(xai, XAIConfig, XAIProvider)),
-        "cohere" => Ok(native!(cohere, CohereConfig, CohereProvider)),
-        "google" => Ok(native!(google, GoogleConfig, GoogleProvider)),
+        "openai" => {
+            let provider = aimux_providers::openai::create_openai(
+                aimux_providers::openai::OpenAIProviderSettings {
+                    api_key: Some(api_key.clone().into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Arc::new(provider.chat(model_id)))
+        }
+        "anthropic" => {
+            let provider = aimux_providers::anthropic::create_anthropic(
+                aimux_providers::anthropic::AnthropicProviderSettings {
+                    api_key: Some(api_key.clone().into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Arc::new(provider.messages(model_id)))
+        }
+        "mistral" => Ok(native!(mistral, MistralProviderSettings, create_mistral)),
+        "xai" => Ok(native!(xai, XAIProviderSettings, create_xai)),
+        "cohere" => Ok(native!(cohere, CohereProviderSettings, create_cohere)),
+        "google" => {
+            let provider = aimux_providers::google::create_google(
+                aimux_providers::google::GoogleProviderSettings {
+                    api_key: Some(api_key.clone().into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Arc::new(provider.chat(model_id)))
+        }
         _ => {
             let mut options = ProviderOptions::default();
             if let Some(url) = base_url {
@@ -116,7 +145,7 @@ fn build_model(
             }
             let model = aimux_providers::provider(provider, Some(api_key), model_id, Some(options))
                 .map_err(|e| anyhow::anyhow!("provider '{provider}': {e}"))?;
-            Ok(Arc::from(model))
+            Ok(model)
         }
     }
 }
@@ -223,8 +252,10 @@ pub async fn run(args: &ProviderArgs) -> anyhow::Result<Option<serde_json::Value
         );
     }
 
+    // Traces carry the model's own provider string (`openai.chat`, `groq`, ...),
+    // which is not the name the user typed on the command line.
     let stats = store.aggregate(&TraceFilter {
-        provider: Some(args.provider.clone()),
+        provider: Some(model.provider().to_string()),
         model: None,
         session_id: Some("aimux-cli-probe".to_string()),
         since_unix_ms: None,

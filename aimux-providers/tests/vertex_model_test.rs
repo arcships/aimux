@@ -26,7 +26,8 @@ use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::vertex::{VertexAuth, VertexConfig, VertexModel, VertexProviderConfig};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::vertex::{VertexModel, VertexProviderSettings, create_google_vertex};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -43,15 +44,13 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 }
 
 fn make_model(server: &MockServer) -> VertexModel {
-    VertexModel::new(
-        "gemini-2.0-flash".to_string(),
-        VertexConfig {
-            base_url: server.uri(),
-            auth: VertexAuth::BearerToken("test-token".to_string()),
-            api_key_source: None,
-            retry_config: aimux_provider_utils::RetryConfig::default(),
-        },
-    )
+    create_google_vertex(VertexProviderSettings {
+        base_url: Some(server.uri()),
+        access_token: Some(Resolvable::Value("test-token".to_string())),
+        ..Default::default()
+    })
+    .expect("valid settings")
+    .chat("gemini-2.0-flash")
 }
 
 async fn mock_generate_content(server: &MockServer, body: Value) {
@@ -163,7 +162,7 @@ async fn vertex_generate_text_response() {
         .provider_metadata
         .as_ref()
         .expect("provider metadata");
-    assert_eq!(metadata["vertex"], metadata["googleVertex"]);
+    assert!(metadata.get("vertex").is_none());
     assert!(metadata.get("google").is_none());
 }
 
@@ -259,7 +258,7 @@ async fn vertex_renamed_code_execution_passes_core_generate_boundary() {
             "serverToolType": "code_execution",
         })
     );
-    assert_eq!(call_metadata["vertex"], call_metadata["googleVertex"]);
+    assert!(call_metadata.get("vertex").is_none());
     assert!(call_metadata.get("google").is_none());
     assert!(result.raw.content.iter().any(|content| matches!(
         content,
@@ -356,9 +355,12 @@ async fn vertex_server_tool_call_and_response_pass_core_generate_boundary() {
             "thoughtSignature": "call-signature"
         })
     );
-    assert_eq!(
-        call.provider_metadata.as_ref().unwrap()["vertex"],
-        call.provider_metadata.as_ref().unwrap()["googleVertex"]
+    assert!(
+        call.provider_metadata
+            .as_ref()
+            .unwrap()
+            .get("vertex")
+            .is_none()
     );
     assert!(
         call.provider_metadata
@@ -384,7 +386,7 @@ async fn vertex_server_tool_call_and_response_pass_core_generate_boundary() {
                 "serverToolType": "GOOGLE_SEARCH_WEB",
                 "thoughtSignature": "result-signature"
             })
-            && metadata["vertex"] == metadata["googleVertex"]
+            && metadata.get("vertex").is_none()
             && metadata.get("google").is_none()
     )));
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
@@ -448,7 +450,7 @@ async fn vertex_generate_tool_call_with_thought_signature() {
                 metadata["googleVertex"]["thoughtSignature"],
                 json!("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
             );
-            assert_eq!(metadata["vertex"], metadata["googleVertex"]);
+            assert!(metadata.get("vertex").is_none());
             assert!(metadata.get("google").is_none());
         }
         other => panic!("expected ToolCall, got {other:?}"),
@@ -548,15 +550,13 @@ async fn vertex_api_key_auth() {
     )
     .await;
 
-    let model = VertexModel::new(
-        "gemini-2.0-flash".to_string(),
-        VertexConfig {
-            base_url: server.uri(),
-            auth: VertexAuth::ApiKey("test-api-key".to_string()),
-            api_key_source: None,
-            retry_config: aimux_provider_utils::RetryConfig::default(),
-        },
-    );
+    let model = create_google_vertex(VertexProviderSettings {
+        base_url: Some(server.uri()),
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        ..Default::default()
+    })
+    .expect("valid settings")
+    .chat("gemini-2.0-flash");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -564,29 +564,6 @@ async fn vertex_api_key_auth() {
         .expect("do_generate should succeed with API key");
 
     assert_eq!(as_text(&result.content[0]), "Express!");
-}
-
-/// Test: provider config construction and base URL.
-#[tokio::test]
-async fn vertex_provider_config() {
-    let config = VertexProviderConfig::new("test-token", "my-project", "us-central1");
-    assert!(
-        config
-            .base_url
-            .contains("us-central1-aiplatform.googleapis.com")
-    );
-    assert!(config.base_url.contains("my-project"));
-
-    let config_express = VertexProviderConfig::with_api_key("test-key");
-    assert!(
-        config_express
-            .base_url
-            .contains("aiplatform.googleapis.com")
-    );
-    match config_express.auth {
-        VertexAuth::ApiKey(k) => assert_eq!(k, "test-key"),
-        _ => panic!("expected ApiKey auth"),
-    }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -999,7 +976,7 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
                 "serverToolCallId": tool_call_id,
                 "serverToolType": "code_execution",
             })
-            && metadata["vertex"] == metadata["googleVertex"]
+            && metadata.get("vertex").is_none()
             && metadata.get("google").is_none()
     )));
     assert!(parts.iter().any(|part| matches!(
@@ -1014,7 +991,7 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
                 "serverToolCallId": tool_call_id,
                 "serverToolType": "code_execution",
             })
-            && metadata["vertex"] == metadata["googleVertex"]
+            && metadata.get("vertex").is_none()
             && metadata.get("google").is_none()
     )));
 
@@ -1220,7 +1197,7 @@ async fn vertex_stream_server_tool_call_and_response() {
             && tool_name == "server:GOOGLE_SEARCH_WEB"
             && *input == json!({ "query": "San Francisco weather" })
             && metadata["googleVertex"]["serverToolCallId"] == "server-call-1"
-            && metadata["vertex"] == metadata["googleVertex"]
+            && metadata.get("vertex").is_none()
             && metadata.get("google").is_none()
     )));
     assert!(core_parts.iter().any(|part| matches!(
@@ -1236,7 +1213,7 @@ async fn vertex_stream_server_tool_call_and_response() {
             && tool_name == "server:GOOGLE_SEARCH_WEB"
             && *result == json!({ "results": [{ "title": "Weather in SF" }] })
             && metadata["googleVertex"]["serverToolType"] == "GOOGLE_SEARCH_WEB"
-            && metadata["vertex"] == metadata["googleVertex"]
+            && metadata.get("vertex").is_none()
             && metadata.get("google").is_none()
     )));
 }
@@ -1361,7 +1338,7 @@ async fn vertex_stream_finish_provider_metadata() {
 
     let pm = finish_provider_metadata(&parts).expect("finish part");
     let vertex = &pm["googleVertex"];
-    assert_eq!(&pm["vertex"], vertex);
+    assert!(pm.get("vertex").is_none());
     assert!(pm.get("google").is_none());
     assert!(
         !vertex.is_null() && vertex.as_object().map(|o| !o.is_empty()).unwrap_or(false),

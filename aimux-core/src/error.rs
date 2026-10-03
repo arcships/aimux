@@ -215,6 +215,34 @@ pub enum AiMuxError {
     #[error("invalid prompt: {0}")]
     InvalidPrompt(String),
 
+    /// No API key was passed and the fallback environment variable is unset
+    /// (the AI SDK's `LoadAPIKeyError`). Pre-HTTP: no request was made.
+    #[error(
+        "No API key found for {description}. \
+         Please provide it via the `api_key` parameter \
+         or set the `{env_var}` environment variable."
+    )]
+    LoadApiKey {
+        /// The environment variable consulted as the fallback.
+        env_var: String,
+        /// What the key is for, e.g. `"OpenAI"`.
+        description: String,
+    },
+
+    /// A required provider setting was not passed and its fallback
+    /// environment variable is unset (the AI SDK's `LoadSettingError`).
+    #[error(
+        "No value found for setting `{name}`. \
+         Please provide it via the `{name}` parameter \
+         or set the `{env_var}` environment variable."
+    )]
+    LoadSetting {
+        /// The environment variable consulted as the fallback.
+        env_var: String,
+        /// The setting's parameter name, e.g. `"region"`.
+        name: String,
+    },
+
     /// The access token has expired (or was invalidated) and must be refreshed
     /// by the caller. RFC-0018 subscription mode: the library maps a 401 from
     /// the Codex subscription endpoint to this variant; the integrator
@@ -287,6 +315,18 @@ pub fn is_retryable_status(status: u16) -> bool {
 }
 
 impl AiMuxError {
+    /// Build a [`NoSuchModel`](Self::NoSuchModel) for `model_id`.
+    ///
+    /// `model_type` is the AI SDK's `modelType` (`"languageModel"`,
+    /// `"embeddingModel"`, `"imageModel"`, …).
+    #[must_use]
+    pub fn no_such_model(model_id: &str, model_type: &str) -> Self {
+        Self::NoSuchModel {
+            model_id: model_id.to_string(),
+            model_type: model_type.to_string(),
+        }
+    }
+
     /// Returns `true` for a malformed individual stream frame that does not
     /// prove the underlying transport has failed. Stream reducers may report
     /// these errors and continue polling for later, independently framed data.

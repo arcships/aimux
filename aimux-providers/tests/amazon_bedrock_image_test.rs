@@ -8,7 +8,10 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs,
 };
-use aimux_providers::{BedrockProvider, BedrockProviderConfig};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{
+    AmazonBedrockProvider, AmazonBedrockProviderSettings, create_amazon_bedrock,
+};
 
 const PROMPT: &str = "A cute baby sea otter";
 
@@ -24,8 +27,17 @@ async fn mock_bedrock(server: &MockServer, body: Value) {
         .await;
 }
 
-fn config(server: &MockServer) -> BedrockProviderConfig {
-    BedrockProviderConfig::with_bearer_token("test-token", "us-east-1").with_base_url(server.uri())
+fn config(server: &MockServer) -> AmazonBedrockProviderSettings {
+    AmazonBedrockProviderSettings {
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        region: Some("us-east-1".to_string()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    }
+}
+
+fn bedrock(settings: AmazonBedrockProviderSettings) -> AmazonBedrockProvider {
+    create_amazon_bedrock(settings).expect("valid settings")
 }
 
 fn options(prompt: &str) -> ImageCallOptions {
@@ -36,7 +48,7 @@ fn options(prompt: &str) -> ImageCallOptions {
 async fn should_extract_generated_images() {
     let server = MockServer::start().await;
     mock_bedrock(&server, bedrock_response()).await;
-    let provider = BedrockProvider::new(config(&server));
+    let provider = bedrock(config(&server));
     let model = provider.image("amazon.titan-image-generator-v1");
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
     match result.images {
@@ -52,7 +64,7 @@ async fn should_extract_generated_images() {
 async fn should_pass_prompt() {
     let server = MockServer::start().await;
     mock_bedrock(&server, bedrock_response()).await;
-    let provider = BedrockProvider::new(config(&server));
+    let provider = bedrock(config(&server));
     let model = provider.image("amazon.titan-image-generator-v1");
     model.do_generate(&options(PROMPT)).await.unwrap();
     let reqs = server.received_requests().await.unwrap();
@@ -65,7 +77,7 @@ async fn should_pass_prompt() {
 async fn should_pass_size_and_n() {
     let server = MockServer::start().await;
     mock_bedrock(&server, bedrock_response()).await;
-    let provider = BedrockProvider::new(config(&server));
+    let provider = bedrock(config(&server));
     let model = provider.image("amazon.titan-image-generator-v1");
     let mut opts = options(PROMPT);
     opts.n = 2;
@@ -82,7 +94,7 @@ async fn should_pass_size_and_n() {
 async fn should_pass_seed() {
     let server = MockServer::start().await;
     mock_bedrock(&server, bedrock_response()).await;
-    let provider = BedrockProvider::new(config(&server));
+    let provider = bedrock(config(&server));
     let model = provider.image("amazon.titan-image-generator-v1");
     let mut opts = options(PROMPT);
     opts.n = 1;
@@ -97,7 +109,7 @@ async fn should_pass_seed() {
 async fn should_warn_for_aspect_ratio() {
     let server = MockServer::start().await;
     mock_bedrock(&server, bedrock_response()).await;
-    let provider = BedrockProvider::new(config(&server));
+    let provider = bedrock(config(&server));
     let model = provider.image("amazon.titan-image-generator-v1");
     let mut opts = options(PROMPT);
     opts.n = 1;
@@ -110,7 +122,7 @@ async fn should_warn_for_aspect_ratio() {
 async fn should_pass_bearer_auth() {
     let server = MockServer::start().await;
     mock_bedrock(&server, bedrock_response()).await;
-    let provider = BedrockProvider::new(config(&server));
+    let provider = bedrock(config(&server));
     let model = provider.image("amazon.titan-image-generator-v1");
     model.do_generate(&options(PROMPT)).await.unwrap();
     let reqs = server.received_requests().await.unwrap();
@@ -129,7 +141,7 @@ async fn should_pass_bearer_auth() {
 async fn should_support_image_variation() {
     let server = MockServer::start().await;
     mock_bedrock(&server, bedrock_response()).await;
-    let provider = BedrockProvider::new(config(&server));
+    let provider = bedrock(config(&server));
     let model = provider.image("amazon.titan-image-generator-v1");
     let mut opts = options("Variation");
     opts.n = 1;
@@ -148,7 +160,7 @@ async fn should_support_image_variation() {
 async fn should_support_inpainting() {
     let server = MockServer::start().await;
     mock_bedrock(&server, bedrock_response()).await;
-    let provider = BedrockProvider::new(config(&server));
+    let provider = bedrock(config(&server));
     let model = provider.image("amazon.titan-image-generator-v1");
     let mut opts = options("Inpaint");
     opts.n = 1;
@@ -178,7 +190,7 @@ async fn should_handle_moderated_response() {
         })))
         .mount(&server)
         .await;
-    let provider = BedrockProvider::new(config(&server));
+    let provider = bedrock(config(&server));
     let model = provider.image("amazon.titan-image-generator-v1");
     let result = model.do_generate(&options(PROMPT)).await;
     assert!(result.is_err());
@@ -190,7 +202,7 @@ async fn should_handle_moderated_response() {
 async fn should_pass_negative_text() {
     let server = MockServer::start().await;
     mock_bedrock(&server, bedrock_response()).await;
-    let provider = BedrockProvider::new(config(&server));
+    let provider = bedrock(config(&server));
     let model = provider.image("amazon.titan-image-generator-v1");
     let mut opts = options(PROMPT);
     opts.n = 1;

@@ -368,8 +368,10 @@ public class Model implements Closeable {
      *                   from the registry entry.
      * @param modelId    Model id.
      * @param configJson Optional JSON object of ProviderOptions
-     *                   ({@code {"base_url": "...", "headers": {...}, "max_retries": 0,
-     *                   "body_overrides": {...}}}); {@code null} for defaults.
+     *                   ({@code {"base_url": "...", "headers": {...}, "organization": "...",
+     *                   "project": "...", "params": {...}}}); {@code null} for defaults.
+     *                   {@code max_retries} (a per-call option) and {@code body_overrides}
+     *                   (removed) are rejected as {@link AimuxException.InvalidArgumentError}.
      * @return A new {@link Model}.
      * @throws AimuxException if the provider could not be constructed
      *                        (unknown provider, bad config, missing env key).

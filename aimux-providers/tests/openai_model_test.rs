@@ -37,7 +37,8 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -73,7 +74,6 @@ fn options_with_tools(prompt: LanguageModelPrompt, tools: Vec<FunctionTool>) -> 
         headers: None,
         provider_options: None,
         reasoning: None,
-        body_overrides: None,
         max_retries: None,
         timeout: None,
         abort_signal: None,
@@ -284,9 +284,8 @@ mod do_generate {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -324,9 +323,8 @@ mod do_generate {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -364,9 +362,8 @@ mod do_generate {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -421,9 +418,8 @@ mod do_generate {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("deepseek-chat");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("deepseek-chat");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -465,9 +461,8 @@ mod do_generate {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -502,9 +497,8 @@ mod do_generate {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -553,9 +547,8 @@ mod do_generate {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -597,9 +590,8 @@ mod do_generate {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -634,9 +626,8 @@ mod do_generate {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -672,9 +663,8 @@ mod do_generate {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -723,9 +713,8 @@ mod do_generate {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -782,9 +771,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -825,9 +813,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -937,9 +924,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&options_with_tools(test_prompt(), vec![test_tool()]))
@@ -1057,9 +1043,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&options_with_tools(test_prompt(), vec![test_tool()]))
@@ -1117,9 +1102,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&options_with_tools(
@@ -1185,9 +1169,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&options_with_tools(test_prompt(), vec![search_tool()]))
@@ -1247,9 +1230,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&options_with_tools(test_prompt(), vec![test_tool()]))
@@ -1295,9 +1277,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&options_with_tools(test_prompt(), vec![test_tool()]))
@@ -1344,9 +1325,8 @@ mod do_stream {
         );
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model.do_stream(&default_options(test_prompt())).await;
 
@@ -1375,9 +1355,8 @@ mod do_stream {
         );
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model.do_stream(&default_options(test_prompt())).await;
 
@@ -1420,9 +1399,8 @@ mod do_stream {
             .mount(&server)
             .await;
 
-        let provider =
-            OpenAIProvider::new(OpenAIConfig::new("test-api-key").with_base_url(server.uri()));
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
         let result = stream_text(
             &model,
             "Hello",
@@ -1446,8 +1424,6 @@ mod do_stream {
 
     #[tokio::test]
     async fn first_sse_body_transport_error_enters_core_retry() {
-        use std::time::Duration;
-
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpListener;
 
@@ -1511,17 +1487,9 @@ mod do_stream {
             }
         });
 
-        let provider = OpenAIProvider::new(
-            OpenAIConfig::new("test-api-key")
-                .with_base_url(base_url)
-                .with_retry_config(aimux_core::retry::RetryConfig {
-                    max_retries: 1,
-                    initial_delay: Duration::ZERO,
-                    backoff_factor: 2,
-                }),
-        );
+        let provider = provider_with("test-api-key", base_url);
         let result = stream_text(
-            &provider.model("gpt-3.5-turbo"),
+            &provider.chat("gpt-3.5-turbo"),
             "Hello",
             GenerateTextOptions {
                 max_retries: Some(1),
@@ -1566,9 +1534,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1617,9 +1584,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1670,9 +1636,8 @@ mod do_stream {
         ]);
         mock_sse_response_with_headers(&server, &body, &[("test-header", "test-value")]).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1705,9 +1670,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1754,9 +1718,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o4-mini");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("o4-mini");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1821,9 +1784,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let options = CallOptions {
             include_raw_chunks: Some(true),
@@ -1861,9 +1823,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1894,9 +1855,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let options = CallOptions {
             include_raw_chunks: Some(true),
@@ -1954,9 +1914,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &body).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
+        let provider = provider_with("test-api-key", server.uri());
+        let model = provider.chat("gpt-3.5-turbo");
 
         let options = CallOptions {
             include_raw_chunks: Some(true),
@@ -2006,6 +1965,17 @@ use aimux_core::AbortSignal;
 use aimux_core::options::TimeoutConfiguration;
 use std::time::Duration;
 
+/// A native OpenAI provider against `base_url`. The key is an explicit value,
+/// so the environment is never consulted.
+fn provider_with(api_key: &str, base_url: impl Into<String>) -> OpenAIProvider {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value(api_key.to_string())),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("settings are valid")
+}
+
 /// TS: timeout — total_ms bounds the whole call.
 #[tokio::test]
 async fn total_timeout_aborts_slow_generate() {
@@ -2028,9 +1998,8 @@ async fn total_timeout_aborts_slow_generate() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.model("gpt-3.5-turbo");
+    let provider = provider_with("test-api-key", server.uri());
+    let model = provider.chat("gpt-3.5-turbo");
 
     let options = GenerateTextOptions {
         timeout: Some(TimeoutConfiguration {
@@ -2068,9 +2037,8 @@ async fn abort_signal_cancels_in_flight_generate() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.model("gpt-3.5-turbo");
+    let provider = provider_with("test-api-key", server.uri());
+    let model = provider.chat("gpt-3.5-turbo");
 
     let signal = AbortSignal::new();
     let signal_clone = signal.clone();
@@ -2110,9 +2078,8 @@ async fn abort_before_send_fails_fast() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.model("gpt-3.5-turbo");
+    let provider = provider_with("test-api-key", server.uri());
+    let model = provider.chat("gpt-3.5-turbo");
 
     let signal = AbortSignal::new();
     signal.abort();

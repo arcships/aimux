@@ -13,7 +13,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
-use aimux_providers::{YouComConfig, YouComProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{YouComProvider, YouComProviderSettings, create_you_com};
 
 const API_KEY: &str = "test-ydc-key";
 
@@ -44,8 +45,12 @@ fn search_response_body() -> Value {
 }
 
 fn provider(server: &MockServer) -> YouComProvider {
-    let config = YouComConfig::new(API_KEY).with_base_url(server.uri());
-    YouComProvider::new(config)
+    let config = YouComProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_you_com(config).unwrap()
 }
 
 fn opts(query: &str, max_results: Option<u32>) -> SearchCallOptions {
@@ -179,23 +184,30 @@ async fn status_401_maps_to_auth_error() {
 // -- Provider trait ----------------------------------------------------------
 
 #[tokio::test]
-async fn provider_name_is_you_com() {
-    let config = YouComConfig::new(API_KEY);
-    let provider = YouComProvider::new(config);
-    assert_eq!(provider.name(), "you_com");
+async fn search_model_provider_is_you_com() {
+    let config = YouComProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        ..Default::default()
+    };
+    let provider = create_you_com(config).unwrap();
+    assert_eq!(provider.search_model().provider(), "you_com.search");
 }
 
 #[test]
-fn language_model_returns_unsupported_error() {
-    let config = YouComConfig::new(API_KEY);
-    let provider = YouComProvider::new(config);
+fn language_model_returns_no_such_model() {
+    let config = YouComProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        ..Default::default()
+    };
+    let provider = create_you_com(config).unwrap();
     match provider.language_model("youcom-search") {
-        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
-            assert!(
-                msg.contains("provider 'you_com' does not provide language models"),
-                "unexpected message: {msg}"
-            );
+        Err(AiMuxError::NoSuchModel {
+            model_id,
+            model_type,
+        }) => {
+            assert_eq!(model_id, "youcom-search");
+            assert_eq!(model_type, "languageModel");
         }
-        _ => panic!("expected Unsupported error, got success or another error variant"),
+        _ => panic!("expected NoSuchModel error, got success or another error variant"),
     }
 }

@@ -5,8 +5,8 @@
 //!   (helpers not ported to Rust → `#[ignore]`).
 //! - `convert-amazon-bedrock-usage.test.ts` — the two `raw`-echo cases (the
 //!   Rust `Usage` type has no `raw` field → `#[ignore]`).
-//! - `amazon-bedrock-provider.test.ts` — `from_env` auth variants + provider
-//!   plumbing (green).
+//! - `amazon-bedrock-provider.test.ts` — provider plumbing (green); the auth
+//!   and region resolution cases live in `bedrock_factory_test.rs`.
 //! - `convert-to-amazon-bedrock-chat-messages.test.ts` — Mistral tool-call-id
 //!   normalization cases (the Rust converter has no `isMistral` parameter →
 //!   `#[ignore]`).
@@ -23,7 +23,6 @@ use std::collections::HashMap;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
-use serial_test::serial;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -32,14 +31,14 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, Tool, ToolChoice};
-use aimux_core::provider::Provider;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
+use aimux_provider_utils::Resolvable;
 use aimux_providers::bedrock::{
-    BedrockAuth, BedrockConfig, BedrockModel, BedrockProvider, BedrockProviderConfig,
+    AmazonBedrockProviderSettings, BedrockModel, create_amazon_bedrock,
 };
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
@@ -56,16 +55,19 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
     CallOptions::new(prompt)
 }
 
+fn bedrock_model(server: &MockServer, model_id: &str) -> BedrockModel {
+    create_amazon_bedrock(AmazonBedrockProviderSettings {
+        base_url: Some(server.uri()),
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        region: Some("us-east-1".to_string()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+    .chat(model_id)
+}
+
 fn make_model(server: &MockServer) -> BedrockModel {
-    BedrockModel::new(
-        "anthropic.claude-3-5-sonnet-20240620-v1:0".to_string(),
-        BedrockConfig {
-            base_url: server.uri(),
-            auth: BedrockAuth::BearerToken("test-token".to_string()),
-            retry_config: aimux_provider_utils::RetryConfig::default(),
-            api_key_source: None,
-        },
-    )
+    bedrock_model(server, "anthropic.claude-3-5-sonnet-20240620-v1:0")
 }
 
 async fn mock_converse_json(server: &MockServer, status: u16, body: Value) {
@@ -119,18 +121,6 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
         }
     }
     parts
-}
-
-/// Remove every env var that `BedrockProviderConfig::from_env` consults, so each
-/// `#[serial]` test starts from a clean slate.
-fn clear_bedrock_env() {
-    unsafe {
-        std::env::remove_var("AWS_BEARER_TOKEN_BEDROCK");
-        std::env::remove_var("AWS_ACCESS_KEY_ID");
-        std::env::remove_var("AWS_SECRET_ACCESS_KEY");
-        std::env::remove_var("AWS_REGION");
-        std::env::remove_var("AWS_SESSION_TOKEN");
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -300,161 +290,16 @@ fn usage_raw_preserved() {
 // amazon-bedrock-provider.test.ts — provider configuration / auth
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: "should create a provider instance with default options" — default
-/// region is `us-east-1` and the base URL points at bedrock-runtime.
+/// The provider vends language models, reporting `amazon-bedrock`.
 #[test]
-#[serial]
-fn provider_default_region_and_base_url() {
-    clear_bedrock_env();
-    let config = BedrockProviderConfig::new("ak", "sk", "us-east-1");
-    assert_eq!(
-        config.base_url,
-        "https://bedrock-runtime.us-east-1.amazonaws.com"
-    );
-    assert!(matches!(config.auth, BedrockAuth::SigV4(_)));
-}
-
-/// TS: "should create a provider instance with custom options" — custom region
-/// flows into the base URL.
-#[test]
-fn provider_custom_region_base_url() {
-    let config = BedrockProviderConfig::new("ak", "sk", "eu-west-1");
-    assert_eq!(
-        config.base_url,
-        "https://bedrock-runtime.eu-west-1.amazonaws.com"
-    );
-}
-
-/// TS: "should accept a credentialProvider in options" — the Rust port models
-/// only static SigV4 creds + bearer; the `with_base_url` override mirrors the
-/// custom baseURL option.
-#[test]
-fn provider_with_base_url_override() {
-    let config = BedrockProviderConfig::with_bearer_token("tok", "us-east-1")
-        .with_base_url("https://custom.url/");
-    assert_eq!(config.base_url, "https://custom.url");
-}
-
-/// TS: "should use API key when provided in options" — bearer-token auth path.
-#[test]
-fn provider_bearer_token_auth() {
-    let config = BedrockProviderConfig::with_bearer_token("test-api-key", "us-east-1");
-    match config.auth {
-        BedrockAuth::BearerToken(t) => assert_eq!(t, "test-api-key"),
-        _ => panic!("expected BearerToken auth"),
-    }
-}
-
-/// TS: "should use API key from environment variable" — `AWS_BEARER_TOKEN_BEDROCK`
-/// takes precedence over SigV4 env vars in `from_env`.
-#[test]
-#[serial]
-fn provider_from_env_bearer_token_precedence() {
-    clear_bedrock_env();
-    unsafe {
-        std::env::set_var("AWS_BEARER_TOKEN_BEDROCK", "env-bearer");
-        std::env::set_var("AWS_ACCESS_KEY_ID", "should-not-be-used");
-        std::env::set_var("AWS_SECRET_ACCESS_KEY", "should-not-be-used");
-        std::env::set_var("AWS_REGION", "us-west-2");
-    }
-
-    let config = BedrockProviderConfig::from_env().expect("from_env should succeed");
-    match config.auth {
-        BedrockAuth::BearerToken(t) => assert_eq!(t, "env-bearer"),
-        _ => panic!("expected BearerToken auth (bearer takes precedence)"),
-    }
-    assert!(config.base_url.contains("us-west-2"));
-
-    clear_bedrock_env();
-}
-
-/// TS: "should fall back to SigV4 when no API key provided" — `from_env` uses
-/// SigV4 when `AWS_BEARER_TOKEN_BEDROCK` is absent.
-#[test]
-#[serial]
-fn provider_from_env_sigv4_fallback() {
-    clear_bedrock_env();
-    unsafe {
-        std::env::set_var("AWS_ACCESS_KEY_ID", "test-ak");
-        std::env::set_var("AWS_SECRET_ACCESS_KEY", "test-sk");
-        std::env::set_var("AWS_REGION", "eu-west-1");
-    }
-
-    let config = BedrockProviderConfig::from_env().expect("from_env should succeed");
-    match config.auth {
-        BedrockAuth::SigV4(creds) => {
-            assert_eq!(creds.access_key_id, "test-ak");
-            assert_eq!(creds.secret_access_key, "test-sk");
-            assert_eq!(creds.region, "eu-west-1");
-            assert!(creds.session_token.is_none());
-        }
-        _ => panic!("expected SigV4 auth"),
-    }
-
-    clear_bedrock_env();
-}
-
-/// TS: "should maintain backward compatibility with existing SigV4
-/// authentication" — `AWS_SESSION_TOKEN` from env is picked up by `from_env`.
-#[test]
-#[serial]
-fn provider_from_env_session_token() {
-    clear_bedrock_env();
-    unsafe {
-        std::env::set_var("AWS_ACCESS_KEY_ID", "ak");
-        std::env::set_var("AWS_SECRET_ACCESS_KEY", "sk");
-        std::env::set_var("AWS_REGION", "us-east-1");
-        std::env::set_var("AWS_SESSION_TOKEN", "sts-token");
-    }
-
-    let config = BedrockProviderConfig::from_env().expect("from_env should succeed");
-    match config.auth {
-        BedrockAuth::SigV4(creds) => {
-            assert_eq!(creds.session_token.as_deref(), Some("sts-token"));
-        }
-        _ => panic!("expected SigV4 auth"),
-    }
-
-    clear_bedrock_env();
-}
-
-/// TS: default region falls back to `us-east-1` when `AWS_REGION` is unset.
-#[test]
-#[serial]
-fn provider_from_env_default_region() {
-    clear_bedrock_env();
-    unsafe {
-        std::env::set_var("AWS_ACCESS_KEY_ID", "ak");
-        std::env::set_var("AWS_SECRET_ACCESS_KEY", "sk");
-    }
-
-    let config = BedrockProviderConfig::from_env().expect("from_env should succeed");
-    assert!(config.base_url.contains("us-east-1"));
-
-    clear_bedrock_env();
-}
-
-/// TS: `from_env` errors when neither bearer token nor access key is present.
-#[test]
-#[serial]
-fn provider_from_env_missing_credentials_errors() {
-    clear_bedrock_env();
-    let result = BedrockProviderConfig::from_env();
-    assert!(
-        result.is_err(),
-        "from_env should error without any credentials"
-    );
-    clear_bedrock_env();
-}
-
-/// The `BedrockProvider` exposes its name and can vend language models.
-#[test]
-fn provider_name_and_language_model() {
-    let provider =
-        BedrockProvider::new(BedrockProviderConfig::with_bearer_token("tok", "us-east-1"));
-    assert_eq!(provider.name(), "amazon-bedrock");
-
-    let model = provider.model("anthropic.claude-3-5-sonnet-20240620-v1:0");
+fn provider_vends_language_model() {
+    let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+        api_key: Some(Resolvable::Value("tok".to_string())),
+        region: Some("us-east-1".to_string()),
+        ..Default::default()
+    })
+    .expect("valid settings");
+    let model = provider.chat("anthropic.claude-3-5-sonnet-20240620-v1:0");
     assert_eq!(
         model.model_id(),
         "anthropic.claude-3-5-sonnet-20240620-v1:0"
@@ -462,23 +307,10 @@ fn provider_name_and_language_model() {
     assert_eq!(model.provider(), "amazon-bedrock");
 }
 
-/// TS: "should prioritize options.apiKey over environment variable" — explicit
-/// bearer token construction does not consult env vars.
-#[test]
-#[serial]
-fn provider_explicit_bearer_over_env() {
-    clear_bedrock_env();
-    unsafe {
-        std::env::set_var("AWS_BEARER_TOKEN_BEDROCK", "env-bearer");
-    }
-    // Explicit construction with a different token should win over env.
-    let config = BedrockProviderConfig::with_bearer_token("explicit-tok", "us-east-1");
-    match config.auth {
-        BedrockAuth::BearerToken(t) => assert_eq!(t, "explicit-tok"),
-        _ => panic!("expected BearerToken auth"),
-    }
-    clear_bedrock_env();
-}
+// The region and base-URL rules (`AWS_REGION`, `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`,
+// an explicit `base_url`), API key versus SigV4 selection and the typed errors
+// for missing settings are covered request by request in
+// `bedrock_factory_test.rs`.
 
 // ════════════════════════════════════════════════════════════════════════════
 // convert-to-amazon-bedrock-chat-messages.test.ts — Mistral normalization
@@ -586,15 +418,7 @@ async fn arn_model_id_encoded_generate_route() {
         .mount(&server)
         .await;
 
-    let model = BedrockModel::new(
-        arn.to_string(),
-        BedrockConfig {
-            base_url: server.uri(),
-            auth: BedrockAuth::BearerToken("tok".to_string()),
-            retry_config: aimux_provider_utils::RetryConfig::default(),
-            api_key_source: None,
-        },
-    );
+    let model = bedrock_model(&server, arn);
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -640,15 +464,7 @@ async fn arn_model_id_encoded_stream_route() {
         .mount(&server)
         .await;
 
-    let model = BedrockModel::new(
-        arn.to_string(),
-        BedrockConfig {
-            base_url: server.uri(),
-            auth: BedrockAuth::BearerToken("tok".to_string()),
-            retry_config: aimux_provider_utils::RetryConfig::default(),
-            api_key_source: None,
-        },
-    );
+    let model = bedrock_model(&server, arn);
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -783,7 +599,7 @@ async fn guardrail_config_in_request_body() {
     let mut opts = default_options(test_prompt());
     let mut po = HashMap::new();
     po.insert(
-        "bedrock".to_string(),
+        "amazonBedrock".to_string(),
         json!({
             "guardrailConfig": {
                 "guardrailIdentifier": "-1",
@@ -850,7 +666,7 @@ async fn trace_in_provider_metadata() {
         .provider_metadata
         .as_ref()
         .expect("provider_metadata should be Some");
-    assert_eq!(pm["bedrock"]["trace"], trace);
+    assert_eq!(pm["amazonBedrock"]["trace"], trace);
 }
 
 // ── stop_sequence in providerMetadata ────────────────────────────────────────
@@ -883,7 +699,7 @@ async fn stop_sequence_in_provider_metadata() {
         .provider_metadata
         .as_ref()
         .expect("provider_metadata should be Some");
-    assert_eq!(pm["bedrock"]["stopSequence"], json!("STOP"));
+    assert_eq!(pm["amazonBedrock"]["stopSequence"], json!("STOP"));
     assert_eq!(pm["amazonBedrock"]["stopSequence"], json!("STOP"));
 }
 

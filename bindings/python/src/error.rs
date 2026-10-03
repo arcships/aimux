@@ -63,6 +63,18 @@ create_exception!(
 );
 create_exception!(aimux, InvalidArgumentError, AimuxError, "Invalid argument");
 create_exception!(aimux, InvalidPromptError, AimuxError, "Invalid prompt");
+create_exception!(
+    aimux,
+    LoadAPIKeyError,
+    AimuxError,
+    "No API key was passed and the fallback environment variable is unset"
+);
+create_exception!(
+    aimux,
+    LoadSettingError,
+    AimuxError,
+    "A required provider setting was not passed and its environment variable is unset"
+);
 create_exception!(aimux, TokenExpiredError, AimuxError, "Access token expired");
 create_exception!(
     aimux,
@@ -246,6 +258,8 @@ fn variant_instance<'py>(py: Python<'py>, e: &AiMuxError) -> PyResult<Bound<'py,
         AiMuxError::ToolCallRepair { .. } => py.get_type_bound::<ToolCallRepairError>(),
         AiMuxError::InvalidArgument(_) => py.get_type_bound::<InvalidArgumentError>(),
         AiMuxError::InvalidPrompt(_) => py.get_type_bound::<InvalidPromptError>(),
+        AiMuxError::LoadApiKey { .. } => py.get_type_bound::<LoadAPIKeyError>(),
+        AiMuxError::LoadSetting { .. } => py.get_type_bound::<LoadSettingError>(),
         AiMuxError::TokenExpired(_) => py.get_type_bound::<TokenExpiredError>(),
         AiMuxError::UnsupportedFunctionality(_) => {
             py.get_type_bound::<UnsupportedFunctionalityError>()
@@ -327,6 +341,17 @@ fn variant_instance<'py>(py: Python<'py>, e: &AiMuxError) -> PyResult<Bound<'py,
         AiMuxError::NoSuchProvider { provider_id } => {
             inst.setattr("provider_id", provider_id.as_str())?;
         }
+        AiMuxError::LoadApiKey {
+            env_var,
+            description,
+        } => {
+            inst.setattr("env_var", env_var.as_str())?;
+            inst.setattr("description", description.as_str())?;
+        }
+        AiMuxError::LoadSetting { env_var, name } => {
+            inst.setattr("env_var", env_var.as_str())?;
+            inst.setattr("setting_name", name.as_str())?;
+        }
         AiMuxError::NoSuchTool {
             tool_name,
             available_tools,
@@ -390,6 +415,8 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "InvalidPromptError",
         py.get_type_bound::<InvalidPromptError>(),
     )?;
+    m.add("LoadAPIKeyError", py.get_type_bound::<LoadAPIKeyError>())?;
+    m.add("LoadSettingError", py.get_type_bound::<LoadSettingError>())?;
     m.add(
         "TokenExpiredError",
         py.get_type_bound::<TokenExpiredError>(),

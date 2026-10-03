@@ -4,7 +4,7 @@
 //! - `packages/cerebras/src/cerebras-provider.test.ts`
 //! - `packages/cerebras/src/cerebras-chat-language-model.test.ts`
 //!
-//! Cerebras is a thin OpenAI-compatible wrapper over [`OpenAIProvider`]. The TS
+//! Cerebras is a registry preset of the OpenAI-compatible package. The TS
 //! suite is mostly provider-configuration unit tests plus a `transformRequestBody`
 //! that renames assistant `reasoning_content` �?`reasoning`, and fixture-based
 //! finish-reason normalisation for structured-output tool calls. The Rust thin
@@ -22,6 +22,7 @@
 
 use serde_json::{Value, json};
 use serial_test::serial;
+use std::sync::Arc;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -60,7 +61,7 @@ fn text_completion_body() -> Value {
     })
 }
 
-fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
     provider(
         "cerebras",
         Some("test-api-key".to_string()),

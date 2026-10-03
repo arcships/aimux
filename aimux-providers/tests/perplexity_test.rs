@@ -4,7 +4,7 @@
 //! - `packages/perplexity/src/perplexity-language-model.test.ts`
 //! - `packages/perplexity/src/convert-to-perplexity-messages.test.ts`
 //!
-//! Perplexity is a thin OpenAI-compatible wrapper over [`OpenAIProvider`]. The
+//! Perplexity is a registry preset of the OpenAI-compatible package. The
 //! behaviours verified here are the ones the wrapper is responsible for:
 //!
 //! - Provider configuration: name, `PERPLEXITY_API_KEY` env var, custom API
@@ -23,6 +23,7 @@
 use futures::StreamExt;
 use serde_json::{Value, json};
 use serial_test::serial;
+use std::sync::Arc;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -92,7 +93,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     parts
 }
 
-fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
     provider(
         "perplexity",
         Some("test-api-key".to_string()),

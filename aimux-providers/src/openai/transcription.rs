@@ -30,9 +30,9 @@ use aimux_core::transcription_model::{
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
 
-use aimux_provider_utils::{HttpBody, HttpRequest, MultipartForm, media_type_to_extension};
+use aimux_provider_utils::{HttpBody, MultipartForm, media_type_to_extension};
 
-use super::OpenAIConfig;
+use super::config::OpenAIModelConfig;
 
 // ── Language map ────────────────────────────────────────────────────────────
 
@@ -217,42 +217,12 @@ fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
 /// Works with any OpenAI-compatible `/audio/transcriptions` endpoint.
 pub struct OpenAITranscriptionModel {
     model_id: String,
-    config: OpenAIConfig,
+    config: OpenAIModelConfig,
 }
 
 impl OpenAITranscriptionModel {
-    #[must_use]
-    pub fn new(model_id: String, config: OpenAIConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: OpenAIModelConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(ref org) = self.config.org_id {
-            headers.insert("OpenAI-Organization".to_string(), org.clone());
-        }
-        if let Some(ref project) = self.config.project {
-            headers.insert("OpenAI-Project".to_string(), project.clone());
-        }
-        if let Some(ref config_headers) = self.config.headers {
-            for (k, v) in config_headers {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/audio/transcriptions", self.config.base_url)
     }
 }
 
@@ -264,10 +234,6 @@ impl TranscriptionModel for OpenAITranscriptionModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
 
     async fn do_generate(
@@ -340,11 +306,14 @@ impl TranscriptionModel for OpenAITranscriptionModel {
 
         let (body_bytes, content_type) = form.finish();
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let headers = self
+            .config
+            .request_headers(options.headers.as_ref())
+            .await?;
 
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest::new(self.endpoint(), header_list, options),
+            self.config
+                .http_request(self.config.url("/audio/transcriptions")?, headers, options),
             HttpBody::Bytes(body_bytes, content_type),
             aimux_provider_utils::create_json_response_handler::<OpenAITranscriptionResponse>(),
             super::openai_failed_response_handler(),
@@ -431,16 +400,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
 
         // wss URL from the REST base URL (https→wss / http→ws), matching the
         // AI SDK's toWebSocketUrl.
-        let ws_url = {
-            let base = self.config.base_url.trim_end_matches('/');
-            if let Some(rest) = base.strip_prefix("https://") {
-                format!("wss://{rest}/realtime?intent=transcription")
-            } else if let Some(rest) = base.strip_prefix("http://") {
-                format!("ws://{rest}/realtime?intent=transcription")
-            } else {
-                format!("{base}/realtime?intent=transcription")
-            }
-        };
+        let ws_url = self.config.ws_url("/realtime?intent=transcription")?;
 
         // session.update — exact upstream wire shape (RFC-0028 §3.2 B1): the
         // model rides in session.audio.input.transcription.model, NOT in the
@@ -473,10 +433,10 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             session_update["session"]["include"] = serde_json::json!(include);
         }
 
-        let mut header_list: Vec<(String, String)> = self
-            .build_headers(options.headers.as_ref())
-            .into_iter()
-            .collect();
+        let mut header_list = self
+            .config
+            .request_headers(options.headers.as_ref())
+            .await?;
 
         let abort = options.abort_signal.clone();
         let include_raw = options.include_raw_chunks;
@@ -492,6 +452,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             subprotocols: Vec::new(),
             abort_signal: abort.clone(),
             timeout: options.timeout,
+            connector: None,
         };
         let mut ws = ws_connect(&req).await?;
 
