@@ -58,7 +58,7 @@ aimux 是 **provider 接入与治理的运行时**：
 
 版本语义：
 - **Rust 层 breaking**：A2 删枚举、#185 换类型。
-- **绑定源码级 breaking**：A2 删除 Go / Java / Kotlin / Swift / Flutter / Node / Python 的 `ProviderName` 类型化常量，改为字符串（Node 由 `gen_ts_types.py` 生成 string-literal union 保留补全）；CHANGELOG 需给迁移说明。
+- **绑定源码级 breaking**：A2 删除 Go / Java / Kotlin / Swift / Flutter / Node / Python 的 `ProviderName` 类型化常量，改为字符串，Node 也不保留 string-literal union（overlay 注册的名字无法进入编译期联合类型，保留它就是保留第二条路径）；CHANGELOG 需给迁移说明。
 - binding wire 与 C ABI 不变。
 
 ### 0.7.0 ——「L1 协议层 + auth」（~5-6 周）
