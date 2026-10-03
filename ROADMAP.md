@@ -13,7 +13,7 @@ aimux 是 **provider 接入与治理的运行时**：
 1. 性能与体积是第一基准线——每个产物有预算，回归即 CI 失败。
 2. 多语言绑定的目的是多语言栈的**行为统一**。
 3. 治理（端侧测试、漂移检测、能力验证）是一等能力。
-4. 协议持续演进、私有 API 持续存在——数据真相下沉到 L0 传输 / L1 协议，L2（AI SDK 形态）是版本化投影，不随 1.0 冻结。
+4. 协议持续演进、私有 API 持续存在——数据真相下沉到 L0 传输 / L1 协议，L2（AI SDK 形态）是版本化投影，不随 1.0 冻结。L2 的选型已定为 AI SDK V4 形态，不再另立调研 RFC（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）。
 5. 与 harness 解耦——同一套 **ops 协议**两个入口：FFI（8 种绑定）与 stdio CLI。
 6. 不做 agent / 编排 / 多租户网关业务。
 
@@ -31,7 +31,7 @@ aimux 是 **provider 接入与治理的运行时**：
 ├─ E 轨 内部清理（#164 已合入，改为 master 上独立 PR）+ 文档三层重组
 │
 ├── 新增（RFC-0036）：L0 native passthrough | ops 协议 schema | stdio CLI | 性能门禁 P
-├── 独立项：#185 ToolInput 类型化 + 删 StreamingToolCallTracker
+├── 独立项：#185 ToolInput 类型化（tracker 改为对齐上游并移入 provider-utils，见 #204（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)））
 ├── 独立项：#170 registry 维护自动化 → #171 triage（前半：27 个 base_url 分歧）
 └── 小项（随时插空）：#181 session 后续 | #180 cache probe §10
 
@@ -50,7 +50,7 @@ aimux 是 **provider 接入与治理的运行时**：
 | **P** | 性能回归门禁：单请求开销、流式吞吐、RSS 增长 |
 | A2–A5 | 删 `ProviderName` 枚举及各语言副本；归档 `provider-inventory/`；aimux-web 类型副本；Flutter example 桌面脚手架 |
 | E1 | 内部清理 + 文档三层重组 |
-| #185 | 删 `StreamingToolCallTracker`（纯删）→ `ToolInput{Raw,Parsed}` |
+| #185 | `ToolInput{Raw,Parsed}`；tracker 不删，改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils（#204（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）） |
 | #170 / #171 前半 | sync/probe 脚本 + scheduled Action；27 个 base_url 分歧 triage |
 | **B1 + C2** | 解锁项：protocol 列 + `from_resolved`；40 个 FFI 构造器转发 shim |
 | **ops 协议 schema** | op 表、消息与错误信封、二进制帧、版本协商——先以文档 + 测试落地（RFC-0036 §4） |
@@ -69,7 +69,7 @@ aimux 是 **provider 接入与治理的运行时**：
 | #174 / #175 | registry `auth` schema + `apply_auth()`；Credential 解析序 + CredentialStore + TokenRefresher |
 | L2 补齐 | `StreamPart::Raw` / `provider_metadata` 在各协议接线——投影不下的不得静默丢弃 |
 | **S3** | `cargo-bloat` 审计 0.5.0 增重（Android `.so` 13.4 → 21 MB）；feature gating 仅作可选小体积路径，默认全量 |
-| 调研 RFC | L2 数据模型选型（AI SDK 形态 / Open Responses items / 自有），指标见 RFC-0036 §3 |
+| ~~调研 RFC~~ | ~~L2 数据模型选型（AI SDK 形态 / Open Responses items / 自有），指标见 RFC-0036 §3~~ 撤销：选型已定为 AI SDK V4 形态（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 
 版本语义：Rust API 大 breaking（33 wrapper 退役）；C ABI 经 C2 转发不受影响。
 
@@ -83,7 +83,7 @@ aimux 是 **provider 接入与治理的运行时**：
 | D8 | 类型镜像生成：serde → JSON Schema → 各语言，`--check` 门禁扩到全部输出 |
 | P | stdio 入口往返开销纳入性能门禁 |
 
-版本语义：新 ABI 加入，旧导出并存（#166 要求共存至少一个 minor 版本）；绑定按各自节奏迁移。
+版本语义：新 ABI 加入，旧导出并存（#166 要求共存至少一个 minor 版本）；绑定按各自节奏迁移。“共存至少一个 minor”不再作为承诺：全链路对齐切换本身没有共存期，之后 ops ABI 引入时的旧符号也按切换门一次替换；C2 转发 shim 与 C4 旧导出清理随之取消（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）。
 
 ### 0.9.0 ——「治理」（~3-4 周）
 
