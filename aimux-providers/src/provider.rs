@@ -238,7 +238,7 @@ pub fn provider(
 /// be described by config data. The JSON form accepts exactly these fields;
 /// `max_retries` and `body_overrides` (removed) and any unknown field are
 /// `InvalidArgument`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct ExternalProviderEntry {
     /// Provider name used for `provider("name", ...)` lookup. Required.
     pub name: String,
@@ -266,6 +266,24 @@ pub struct ExternalProviderEntry {
     pub project: Option<String>,
     /// Free-form note for the user; the library ignores this.
     pub comment: Option<String>,
+}
+
+impl std::fmt::Debug for ExternalProviderEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExternalProviderEntry")
+            .field("name", &self.name)
+            .field("display", &self.display)
+            .field("base_url", &self.base_url)
+            .field("env_var", &self.env_var)
+            .field("api_key", &self.api_key.is_some())
+            .field("protocol", &self.protocol)
+            .field("profile", &self.profile)
+            .field("headers", &self.headers.as_ref().map(HashMap::len))
+            .field("organization", &self.organization)
+            .field("project", &self.project)
+            .field("comment", &self.comment)
+            .finish()
+    }
 }
 
 fn default_openai_compat() -> String {
@@ -685,6 +703,13 @@ mod tests {
             project: None,
             comment: None,
         }
+    }
+
+    #[test]
+    fn external_entry_debug_does_not_print_api_key() {
+        let mut entry = entry("debug-test");
+        entry.api_key = Some("literal-secret-key".into());
+        assert!(!format!("{entry:?}").contains("literal-secret-key"));
     }
 
     #[test]

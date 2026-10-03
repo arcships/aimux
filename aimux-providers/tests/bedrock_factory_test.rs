@@ -537,6 +537,24 @@ async fn a_credential_provider_is_resolved_on_every_request() {
 
 #[serial]
 #[tokio::test]
+async fn an_invalid_region_fails_before_sending_a_request() {
+    let _env = clean_env();
+    let mock = MockFetch::new(vec![converse_response()]);
+    let model = bedrock(AmazonBedrockProviderSettings {
+        region: Some("us-east-1.evil.example/#".to_string()),
+        api_key: Some(Resolvable::Value("k".to_string())),
+        fetch: Some(mock.transport()),
+        ..Default::default()
+    })
+    .chat(MODEL);
+
+    let result = model.do_generate(&user_prompt("hi")).await;
+    assert!(matches!(result, Err(AiMuxError::InvalidArgument(_))));
+    assert!(mock.seen().is_empty(), "nothing was sent");
+}
+
+#[serial]
+#[tokio::test]
 async fn the_runtime_endpoint_environment_variable_and_base_url_override_the_host() {
     let _env = clean_env();
     let _endpoint = EnvVar::set(

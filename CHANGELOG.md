@@ -230,6 +230,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed from `aimux-providers`: `body_merge`, `openai_legacy`, `AzureAuth`,
   `TokenProvider`, `VertexAuth`, `BedrockAuth`, `StaticBearerConfig` and the
   `hmac` dependency (`sha2` / `hex` are dev-dependencies).
+- Bedrock regions must be a single DNS label; invalid values fail the call
+  with `InvalidArgument` before a request is sent.
+- `ExternalProviderEntry` debug output reports only whether `api_key` is
+  present, keeping literal keys out of debug logs.
 
 **C ABI**
 

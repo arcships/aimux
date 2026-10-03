@@ -55,7 +55,7 @@ use aimux_provider_utils::{
     load_setting, validate_base_url, without_trailing_slash,
 };
 
-use crate::shared::{Endpoint, EndpointConfig, TransformRequestBody};
+use crate::shared::{Endpoint, EndpointConfig, TransformRequestBody, is_valid_hostname_part};
 
 pub use embedding::BedrockEmbeddingModel;
 pub use image::BedrockImageModel;
@@ -199,15 +199,24 @@ impl Auth {
     /// The region: the setting, `AWS_REGION`, or the region of a plain-value
     /// credential provider.
     fn region(&self) -> Result<String, AiMuxError> {
-        if let Some(region) = load_optional_setting(self.region.as_deref(), REGION_ENV_VAR) {
-            return Ok(region);
+        let region =
+            if let Some(region) = load_optional_setting(self.region.as_deref(), REGION_ENV_VAR) {
+                region
+            } else if let Some(Resolvable::Value(credentials)) = &self.credential_provider
+                && !credentials.region.is_empty()
+            {
+                credentials.region.clone()
+            } else {
+                load_setting(None, REGION_ENV_VAR, "region")?
+            };
+        if !is_valid_hostname_part(&region) {
+            return Err(AiMuxError::InvalidArgument(
+                "Invalid Amazon Bedrock region. Expected a single DNS label (letters, digits, and \
+                 hyphens). Use `base_url` for custom endpoints."
+                    .to_string(),
+            ));
         }
-        if let Some(Resolvable::Value(credentials)) = &self.credential_provider
-            && !credentials.region.is_empty()
-        {
-            return Ok(credentials.region.clone());
-        }
-        load_setting(None, REGION_ENV_VAR, "region")
+        Ok(region)
     }
 
     /// The credentials of the settings and the environment (no provider).
