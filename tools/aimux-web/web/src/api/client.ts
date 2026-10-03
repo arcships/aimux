@@ -1,11 +1,11 @@
 // API client — typed wrappers for the console endpoints (RFC-0029 §5).
 
-import type { WireCallRequest } from '../types/WireCallRequest'
-import type { WireCallResponse } from '../types/WireCallResponse'
-import type { Recording } from '../types/Recording'
-import type { TraceRecord } from '../types/TraceRecord'
-import type { SessionView } from '../types/SessionView'
-import type { StreamPart } from '../types/StreamPart'
+import type { WireCallRequest } from '@/types/generated/WireCallRequest'
+import type { WireCallResponse } from '@/types/generated/WireCallResponse'
+import type { Recording } from '@aimux/types/Recording'
+import type { TraceRecord } from '@aimux/types/TraceRecord'
+import type { SessionView } from '@aimux/types/SessionView'
+import type { StreamPart } from '@aimux/types/StreamPart'
 
 const API = '/api'
 

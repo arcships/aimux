@@ -275,18 +275,16 @@ session.close()
 ```rust
 // OpenAI → DeepSeek: only the provider name changes (registry-backed;
 // key read from the provider's env var)
-use aimux_providers::{provider, provider_from_env, ProviderName};
+use aimux_providers::{provider, provider_from_env};
 
-// 推荐:类型化 ProviderName(IDE 补全 + 编译期检查)
-let model = provider(ProviderName::Deepseek, None, "deepseek-chat", None)?;
-// 字符串形式同样可用:
+let model = provider("deepseek", None, "deepseek-chat", None)?;
 let model = provider_from_env("deepseek", "deepseek-chat", None)?;
 // model usage is identical — it's all dyn LanguageModel
 ```
 
 All registry-backed OpenAI-compatible providers share one entry:
-`provider(name, ...)` in every binding, with typed `ProviderName`
-(enum/union/consts per language).
+`provider(name, ...)` in every binding. Provider names are runtime strings;
+the generated provider list is the discovery surface.
 The retired per-provider shell types (`XxxConfig`/`XxxProvider`) are gone —
 see [docs/API.md](docs/API.md#providers).
 

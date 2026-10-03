@@ -49,3 +49,7 @@ tsconfig.tsbuildinfo
 
 # 竞品 bad-case 挖矿副产物（数据 + 临时脚本），不进产品仓库
 quirks-corpus/
+
+# Generated audit artifacts — keep conclusions in Markdown, not raw output.
+/docs/quality-audit/**/lcov.info
+/docs/quality-audit/**/*.log

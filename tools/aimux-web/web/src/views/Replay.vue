@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, shallowRef } from 'vue'
 import { api } from '../api/client'
-import type { Recording } from '../types/Recording'
+import type { Recording } from '@aimux/types/Recording'
 import Button from '../components/ui/Button.vue'
 import Input from '../components/ui/Input.vue'
 import Combobox from '../components/ui/Combobox.vue'

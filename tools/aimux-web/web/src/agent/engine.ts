@@ -7,8 +7,8 @@
 // so the Traces page groups the whole run into a waterfall.
 
 import { api, callStream, parseStreamPart } from '../api/client'
-import type { WireCallRequest } from '../types/WireCallRequest'
-import type { StreamPart } from '../types/StreamPart'
+import type { WireCallRequest } from '@/types/generated/WireCallRequest'
+import type { StreamPart } from '@aimux/types/StreamPart'
 
 /** A chat message as sent to the backend (loose typing: the backend wire
  * schema's `JsonValue` is a recursive union that trips TS2589 inside

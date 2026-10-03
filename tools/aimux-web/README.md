@@ -126,15 +126,17 @@ tools/aimux-web/
 └── web/          Vue 3 + shadcn 风格 + Tailwind + markstream-vue
     ├── src/agent/engine.ts   前端 agent loop 引擎
     ├── src/api/client.ts     SSE/端点封装
-    └── src/types/            d.ts(core 类型来自 ts-rs,见下)
+    └── src/types/generated/  wire 类型(ts-rs 生成,勿手改)
 ```
 
 ## 前端类型来源
 
 - **core 类型**(`Recording`/`StreamPart`/`TraceRecord`/`SessionView` 等):ts-rs 从
   `aimux-core` 生成到 `bindings/node/src/types/`(`scripts/gen_ts_types.py` 管线),
-  **拷贝**到 `web/src/types/` 供前端使用。改 core 类型后:跑 `scripts/gen_ts_types.py`
-  并同步拷贝。
-- **wire 类型**(`Wire*.ts`):是 aimux-web 的 API 契约,**手动维护**在
-  `web/src/types/`(不 ts-rs 导出,避免污染 node bindings 的导出目录)。
-  改 `src/wire.rs` 时同步更新对应的 `web/src/types/Wire*.ts`。
+  前端通过 `tsconfig.json` 的 `@aimux/types/*` 别名(`import type { Recording } from '@aimux/types/Recording'`)
+  直接使用该受 CI 漂移检查保护的生成目录,不拷贝。别名只服务类型导入(构建时擦除),
+  不要用它做值导入。改 core 类型后只需运行 `scripts/gen_ts_types.py`。
+- **wire 类型**(`Wire*.ts`):aimux-web 的 API 契约,由 ts-rs 从 `src/wire.rs` 生成到
+  `web/src/types/generated/`(同样由 `scripts/gen_ts_types.py` 生成、CI `--check` 防漂移)。
+  不导出到 `bindings/node`,因为它们属于前端而非 node 绑定。改 `src/wire.rs` 后运行
+  `scripts/gen_ts_types.py` 并一起提交,**不要手改** `generated/` 下的文件。

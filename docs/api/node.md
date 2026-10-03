@@ -22,16 +22,13 @@ console.log(result.text)
 ## Providers
 
 All 251 built-in OpenAI-compatible providers are registry-backed. Look them up
-by name; the `ProviderName` type is a string-literal union generated from
-`provider-registry.json`, so your IDE autocompletes and typo'd names fail
-type-checking:
+by string name; the current list is generated from `provider_registry.json` in
+[providers.md](providers.md):
 
 ```typescript
-import { provider, generateText, ProviderName } from '@arcships/aimux'
+import { provider, generateText } from '@arcships/aimux'
 
-// 推荐:ProviderName.groq 写法(IDE 补全 + 类型检查)
-const model = await provider(ProviderName.groq, undefined, 'llama-3.3-70b')
-// 字符串形式同样可用:
+const model = await provider('groq', undefined, 'llama-3.3-70b')
 const relay = await provider('groq', 'sk-...', 'llama-3.3-70b', {
   baseUrl: 'https://relay.example/v1',
   maxRetries: 0,
