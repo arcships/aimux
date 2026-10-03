@@ -33,6 +33,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `NdjsonStream` / `NdjsonError`: nothing in the workspace used them
   and the AI SDK has no counterpart. `tokio` is now a dev-dependency only and
   the unused direct `serde` dependency is dropped.
+- `StreamingToolCallTracker`, `ToolCallStreamPart` and `TrackerError` are no
+  longer exported from `aimux-stream`; nothing in the workspace used them and
+  the AI SDK keeps the tracker in `@ai-sdk/provider-utils`, next to the
+  provider code that drives it. See `aimux-provider-utils` below.
+
+**Rust (aimux-provider-utils)**
+
+- Gains `StreamingToolCallTracker` (plus `StreamingToolCallDelta`,
+  `StreamingToolCallFunction`, `TypeValidation`, `TrackerError`,
+  `StreamingToolCallArgumentState` and `starts_with_structured_value`),
+  a port of the current `@ai-sdk/provider-utils` tracker. The previous
+  `aimux-stream` version was a port of an older, index-only tracker. Deltas
+  are correlated by wire `id`, `index` and function name (ambiguous deltas
+  are dropped), ids are de-duplicated with bounded suffixes, blank function
+  names are ignored, and `flush` orders calls by index only when every call
+  has one. It emits `aimux_core::StreamPart` tool-input parts directly
+  (`ToolInputStart` / `ToolInputDelta` / `ToolInputEnd` / `ToolCall`); there
+  is no separate `ToolCallStreamPart` event type. `TrackerError` converts
+  into `AiMuxError::InvalidResponseData`. Metadata hooks are typed with
+  `serde_json::Value` / `ProviderMetadata`, and the builder closures must be
+  `Send + Sync`.
+
+**Rust (aimux-providers)**
+
+- The OpenAI chat-completions stream (`openai/model.rs`, which serves every
+  registry-backed provider) correlates `tool_calls` deltas with the tracker
+  instead of by `index` alone: deltas are matched by wire id, index and
+  function name; a continuation without an id follows its call; indices
+  reused across parallel calls stay distinct; ambiguous deltas are dropped;
+  a call whose delta carries no id gets a generated `tool-call` /
+  `tool-call-N` id instead of an empty string; a new call without a function
+  name ends the stream with `InvalidResponseData` (previously it started a
+  call with an empty name). `DeltaToolCall.index` is now `Option<usize>`.
 
 ## [0.5.0] - 2026-09-27
 
