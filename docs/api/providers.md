@@ -340,35 +340,35 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 
 | module | typed entry points |
 |--------|--------------------|
-| `cartesia` | `CartesiaConfig` / `CartesiaProvider` |
+| `cartesia` | `CartesiaProvider` / `CartesiaProviderSettings` / `create_cartesia` |
 | `elevenlabs` | `ElevenLabsProvider` / `ElevenLabsProviderSettings` / `create_elevenlabs` |
-| `hume` | `HumeConfig` / `HumeProvider` |
-| `lmnt` | `LMNTConfig` / `LMNTProvider` |
+| `hume` | `HumeProvider` / `HumeProviderSettings` / `create_hume` |
+| `lmnt` | `LMNTProvider` / `LMNTProviderSettings` / `create_lmnt` |
 
 ### Transcription-only providers (STT) — 5
 
 | module | typed entry points |
 |--------|--------------------|
-| `assemblyai` | `AssemblyAIConfig` / `AssemblyAIProvider` |
-| `deepgram` | `DeepgramConfig` / `DeepgramProvider` |
-| `fal` | `FalConfig` / `FalProvider` |
-| `gladia` | `GladiaConfig` / `GladiaProvider` |
-| `revai` | `RevaiConfig` / `RevaiProvider` |
+| `assemblyai` | `AssemblyAIProvider` / `AssemblyAIProviderSettings` / `create_assemblyai` |
+| `deepgram` | `DeepgramProvider` / `DeepgramProviderSettings` / `create_deepgram` |
+| `fal` | `FalProvider` / `FalProviderSettings` / `create_fal` |
+| `gladia` | `GladiaProvider` / `GladiaProviderSettings` / `create_gladia` |
+| `revai` | `RevaiProvider` / `RevaiProviderSettings` / `create_revai` |
 
 ### Image-only providers — 4
 
 | module | typed entry points |
 |--------|--------------------|
-| `black_forest_labs` | `BlackForestLabsConfig` / `BlackForestLabsProvider` |
-| `luma` | `LumaConfig` / `LumaProvider` |
-| `prodia` | `ProdiaConfig` / `ProdiaProvider` |
-| `replicate` | `ReplicateConfig` / `ReplicateProvider` |
+| `black_forest_labs` | `BlackForestLabsProvider` / `BlackForestLabsProviderSettings` / `create_black_forest_labs` |
+| `luma` | `LumaProvider` / `LumaProviderSettings` / `create_luma` |
+| `prodia` | `ProdiaProvider` / `ProdiaProviderSettings` / `create_prodia` |
+| `replicate` | `ReplicateProvider` / `ReplicateProviderSettings` / `create_replicate` |
 
 ### Video-only providers — 1
 
 | module | typed entry points |
 |--------|--------------------|
-| `klingai` | `KlingAIConfig` / `KlingAIProvider` |
+| `klingai` | `KlingAIProvider` / `KlingAIProviderSettings` / `create_klingai` |
 
 ### Generic Responses API wrapper — 1
 
@@ -380,45 +380,45 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 
 | module | typed entry points |
 |--------|--------------------|
-| `jina_ai` | `JinaAiConfig` / `JinaAiProvider` |
+| `jina_ai` | `JinaAiProvider` / `JinaAiProviderSettings` / `create_jina_ai` |
 
 ### AWS Polly speech (TTS) provider — SigV4 authenticated, speech modality only — 1
 
 | module | typed entry points |
 |--------|--------------------|
-| `aws_polly` | `AwsPollyConfig` / `AwsPollyProvider` |
+| `aws_polly` | `AwsPollyProvider` / `AwsPollyProviderSettings` / `create_aws_polly` |
 
 ### Recraft image provider (OpenAI Images-compatible + Recraft extension fields) — 1
 
 | module | typed entry points |
 |--------|--------------------|
-| `recraft` | `RecraftConfig` / `RecraftProvider` |
+| `recraft` | `RecraftProvider` / `RecraftProviderSettings` / `create_recraft` |
 
 ### Stability image provider (image modality only) — 1
 
 | module | typed entry points |
 |--------|--------------------|
-| `stability` | `StabilityConfig` / `StabilityProvider` |
+| `stability` | `StabilityProvider` / `StabilityProviderSettings` / `create_stability` |
 
 ### Video-only provider (runwayml) — 1
 
 | module | typed entry points |
 |--------|--------------------|
-| `runwayml` | `RunwaymlConfig` / `RunwaymlProvider` |
+| `runwayml` | `RunwaymlProvider` / `RunwaymlProviderSettings` / `create_runwayml` |
 
 ### Search-only providers (web search modality) — 11
 
 | module | typed entry points |
 |--------|--------------------|
-| `dataforseo` | `DataforseoConfig` / `DataforseoProvider` |
-| `exa_ai` | `ExaAiConfig` / `ExaAiProvider` |
-| `firecrawl` | `FirecrawlConfig` / `FirecrawlProvider` |
-| `google_pse` | `GooglePseConfig` / `GooglePseProvider` |
-| `linkup` | `LinkupConfig` / `LinkupProvider` |
-| `parallel_ai` | `ParallelAiConfig` / `ParallelAiProvider` |
-| `searxng` | `SearxngConfig` / `SearxngProvider` |
-| `serper` | `SerperConfig` / `SerperProvider` |
-| `tavily` | `TavilyConfig` / `TavilyProvider` |
-| `tinyfish` | `TinyfishConfig` / `TinyfishProvider` |
-| `you_com` | `YouComConfig` / `YouComProvider` |
+| `dataforseo` | `DataforseoProvider` / `DataforseoProviderSettings` / `create_dataforseo` |
+| `exa_ai` | `ExaAiProvider` / `ExaAiProviderSettings` / `create_exa_ai` |
+| `firecrawl` | `FirecrawlProvider` / `FirecrawlProviderSettings` / `create_firecrawl` |
+| `google_pse` | `GooglePseProvider` / `GooglePseProviderSettings` / `create_google_pse` |
+| `linkup` | `LinkupProvider` / `LinkupProviderSettings` / `create_linkup` |
+| `parallel_ai` | `ParallelAiProvider` / `ParallelAiProviderSettings` / `create_parallel_ai` |
+| `searxng` | `SearxngProvider` / `SearxngProviderSettings` / `create_searxng` |
+| `serper` | `SerperProvider` / `SerperProviderSettings` / `create_serper` |
+| `tavily` | `TavilyProvider` / `TavilyProviderSettings` / `create_tavily` |
+| `tinyfish` | `TinyfishProvider` / `TinyfishProviderSettings` / `create_tinyfish` |
+| `you_com` | `YouComProvider` / `YouComProviderSettings` / `create_you_com` |
 

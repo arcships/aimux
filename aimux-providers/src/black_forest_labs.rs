@@ -5,8 +5,15 @@
 //!
 //! Uses an async submit + poll pattern: POST to submit, then GET poll_url
 //! until status is "Ready", then download the image.
+//!
+//! [`create_black_forest_labs`] takes [`BlackForestLabsProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`BlackForestLabsProvider`]. The credential is not read
+//! there: it is loaded for every request, from the setting or from `BFL_API_KEY`.
+//! [`black_forest_labs()`] is the default instance; it reads nothing and cannot fail.
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
@@ -17,9 +24,14 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult,
 };
-use aimux_core::retry;
 use aimux_core::shared::Warning;
-use aimux_provider_utils::{HttpRequest, load_api_key, sleep_or_abort, without_trailing_slash};
+use aimux_provider_utils::HttpRequest;
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+
+use crate::shared::{
+    Credential, EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, is_poll_control_key,
+    poll_interval_ms, poll_until, provider_headers, retry_download,
+};
 
 /// AI SDK's `isTrustedUrl` (black-forest-labs-api.ts): credentials may go to
 /// the configured origin, or over HTTPS to `bfl.ai` and its subdomains — BFL
@@ -62,93 +74,144 @@ fn bfl_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxE
     })
 }
 
-const DEFAULT_POLL_INTERVAL_MS: u64 = 500;
-const DEFAULT_POLL_TIMEOUT_MS: u64 = 60000;
+/// Milliseconds between two polls of a generation
+/// (`providerOptions.blackForestLabs.pollIntervalMillis` overrides it for one call).
+const POLL_INTERVAL_MS: u64 = 500;
+/// How many times a generation is polled before the call gives up (the sixty
+/// seconds of the AI SDK at the default interval).
+const MAX_POLL_ATTEMPTS: u32 = 120;
 
-/// Configuration for the Black Forest Labs provider.
-#[derive(Debug, Clone)]
-pub struct BlackForestLabsConfig {
-    pub api_key: String,
-    pub base_url: String,
-    pub headers: Option<HashMap<String, String>>,
+/// What a finished generation reports.
+struct BflResult {
+    image_url: String,
+    seed: Option<Value>,
+    start_time: Option<Value>,
+    end_time: Option<Value>,
+    duration: Option<Value>,
 }
 
-impl BlackForestLabsConfig {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: "https://api.bfl.ai".to_string(),
-            headers: None,
-        }
-    }
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-    #[must_use]
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = Some(headers);
-        self
-    }
-    /// Create from the `BFL_API_KEY` environment variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
-    /// set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "BFL_API_KEY", "Black Forest Labs")?;
-        Ok(Self::new(api_key))
+pub(crate) mod options;
+
+const DEFAULT_BASE_URL: &str = "https://api.bfl.ai";
+const API_KEY_ENV_VAR: &str = "BFL_API_KEY";
+const DEFAULT_NAME: &str = "blackForestLabs";
+
+/// Settings of [`create_black_forest_labs`].
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct BlackForestLabsProviderSettings {
+    /// Base URL for the API calls. Default `https://api.bfl.ai`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `BFL_API_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including the credential. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings (`"{name}.image"`).
+    /// Default `"blackForestLabs"`. The providerOptions key stays `blackForestLabs`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
+}
+
+impl std::fmt::Debug for BlackForestLabsProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BlackForestLabsProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .finish()
     }
 }
 
+/// Create a Black Forest Labs provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_black_forest_labs(
+    settings: BlackForestLabsProviderSettings,
+) -> Result<BlackForestLabsProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(BlackForestLabsProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: provider_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Black Forest Labs"),
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_black_forest_labs` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn black_forest_labs() -> &'static BlackForestLabsProvider {
+    static DEFAULT: OnceLock<BlackForestLabsProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_black_forest_labs(BlackForestLabsProviderSettings::default())
+            .expect("default Black Forest Labs settings are always valid")
+    })
+}
+
+/// A Black Forest Labs provider. Cheap to clone the models out of; it holds no HTTP
+/// client.
 pub struct BlackForestLabsProvider {
-    config: BlackForestLabsConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
 }
+
 impl BlackForestLabsProvider {
-    #[must_use]
-    pub fn new(config: BlackForestLabsConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            None,
+        )
     }
+
+    /// An image model (e.g. `"flux-pro-1.1"`); `provider()` is `"{name}.image"`.
     #[must_use]
     pub fn image(&self, model_id: &str) -> BlackForestLabsImageModel {
-        BlackForestLabsImageModel::new(model_id.to_string(), self.config.clone())
+        BlackForestLabsImageModel::from_config(model_id.to_string(), self.model_config("image"))
     }
 }
 
-/// A Black Forest Labs image generation model.
+crate::impl_single_modality_provider!(BlackForestLabsProvider, image_model, |p, id| p.image(id));
+
 pub struct BlackForestLabsImageModel {
     model_id: String,
-    config: BlackForestLabsConfig,
+    config: EndpointConfig,
 }
 impl BlackForestLabsImageModel {
-    #[must_use]
-    pub fn new(model_id: String, config: BlackForestLabsConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut h = HashMap::new();
-        h.insert(
-            "Authorization".into(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(ref ch) = self.config.headers {
-            for (k, v) in ch {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        h
-    }
-
-    fn submit_endpoint(&self) -> String {
-        format!("{}/{}", self.config.base_url, self.model_id)
     }
 
     fn file_to_string(file: &ImageFile) -> Result<String, AiMuxError> {
@@ -181,7 +244,7 @@ fn gcd(a: u32, b: u32) -> u32 {
 #[async_trait]
 impl ImageModel for BlackForestLabsImageModel {
     fn provider(&self) -> &str {
-        "blackForestLabs"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
@@ -210,7 +273,7 @@ impl ImageModel for BlackForestLabsImageModel {
             warnings.push(Warning::Unsupported { feature: "size".into(), details: Some("Black Forest Labs ignores size when aspectRatio is provided. Use the width and height provider options to specify dimensions for models that support them".into()) });
         }
 
-        let bfl_opts = options.provider_options.get("blackForestLabs");
+        let bfl_opts = options::black_forest_labs_options(Some(&options.provider_options));
         let (width_str, height_str) = options
             .size
             .map(|s| (s.width().to_string(), s.height().to_string()))
@@ -300,10 +363,7 @@ impl ImageModel for BlackForestLabsImageModel {
                 ("webhookUrl", "webhook_url"),
             ];
             for (key, value) in bfl {
-                if matches!(
-                    key.as_str(),
-                    "width" | "height" | "pollIntervalMillis" | "pollTimeoutMillis"
-                ) {
+                if is_poll_control_key(key) || matches!(key.as_str(), "width" | "height") {
                     continue;
                 }
                 let ak = map
@@ -321,12 +381,12 @@ impl ImageModel for BlackForestLabsImageModel {
             body.insert("mask".into(), json!(m));
         }
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
-        // Submit
+        // Submit. This is the only request that creates a generation: nothing
+        // below sends it again.
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.submit_endpoint(), header_list.clone(), options),
+            exchange.request(exchange.url(&format!("/{}", self.model_id)), options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             bfl_failed_response_handler(),
@@ -346,18 +406,12 @@ impl ImageModel for BlackForestLabsImageModel {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let retries = retry::prepare_retries(None, options.abort_signal.clone());
 
-        // Poll for result
-        let poll_interval = bfl_opts
-            .and_then(|o| o.get("pollIntervalMillis"))
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(DEFAULT_POLL_INTERVAL_MS);
-        let poll_timeout = bfl_opts
-            .and_then(|o| o.get("pollTimeoutMillis"))
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(DEFAULT_POLL_TIMEOUT_MS);
-        let max_attempts = (poll_timeout / poll_interval.max(1)) as usize;
+        let poll_interval = Duration::from_millis(poll_interval_ms(
+            bfl_opts,
+            POLL_INTERVAL_MILLIS_KEY,
+            POLL_INTERVAL_MS,
+        ));
 
         let mut poll_url_with_id = url::Url::parse(&poll_url)
             .map_err(|e| AiMuxError::InvalidResponseData(format!("invalid BFL poll URL: {e}")))?;
@@ -366,129 +420,98 @@ impl ImageModel for BlackForestLabsImageModel {
                 .query_pairs_mut()
                 .append_pair("id", &request_id);
         }
-
-        let mut image_url = None;
-        let mut result_seed = None;
-        let mut result_start_time = None;
-        let mut result_end_time = None;
-        let mut result_duration = None;
+        let poll_url = poll_url_with_id.to_string();
 
         // AI SDK gates headers per URL via isTrustedUrl; response-supplied
         // targets outside the BFL allowlist get none.
-        let gated_headers = |url: &str| -> Vec<(String, String)> {
-            if bfl_trusted_url(url, &self.config.base_url) {
-                header_list.clone()
-            } else {
-                vec![]
+        let gated_request = |url: &str| -> HttpRequest {
+            let mut request = exchange.request(url.to_string(), options);
+            // Headers are gated per URL here, not by the credentialed origin.
+            request.credentialed_origin = None;
+            if !bfl_trusted_url(url, exchange.base_url()) {
+                request.headers = Vec::new();
             }
+            request.validate_url = true;
+            request.trusted_origin = Some(exchange.base_url().to_string());
+            request
         };
 
-        for _ in 0..max_attempts {
-            // AI SDK polls polling_url with validateUrl: true and gates the
-            // headers itself via isTrustedUrl (base_url origin or HTTPS
-            // *.bfl.ai), so credentialed_origin is None here.
-            let poll_url = poll_url_with_id.to_string();
-            let pr = retries
-                .retry(|| {
-                    aimux_provider_utils::get_from_api(
-                        HttpRequest {
-                            url: poll_url.clone(),
-                            headers: gated_headers(&poll_url),
-
-                            abort_signal: options.abort_signal.clone(),
-                            call_id: None,
-                            recording_context: None,
-                            response_timeout: None,
-                            max_json_response_bytes: None,
-                            validate_url: true,
-                            trusted_origin: Some(self.config.base_url.clone()),
-                            // Headers are gated per URL by gated_headers above.
-                            credentialed_origin: None,
-                            fetch: None,
-                        },
-                        aimux_provider_utils::create_json_response_handler::<Value>(),
-                        bfl_failed_response_handler(),
-                    )
-                })
+        // Poll for the result. AI SDK polls polling_url with validateUrl: true
+        // and gates the headers itself via isTrustedUrl (base_url origin or
+        // HTTPS *.bfl.ai).
+        let ready = poll_until(
+            &format!("blackForestLabs task {request_id}"),
+            options.abort_signal.as_ref(),
+            poll_interval,
+            MAX_POLL_ATTEMPTS,
+            || async {
+                let pr = aimux_provider_utils::get_from_api(
+                    gated_request(&poll_url),
+                    aimux_provider_utils::create_json_response_handler::<Value>(),
+                    bfl_failed_response_handler(),
+                )
                 .await?;
-            let response_body = pr.raw_value.as_ref().map(ToString::to_string);
-            let pv = pr.value;
+                let response_body = pr.raw_value.as_ref().map(ToString::to_string);
+                let pv = pr.value;
 
-            let poll_status = pv
-                .get("status")
-                .and_then(|v| v.as_str())
-                .or_else(|| pv.get("state").and_then(|v| v.as_str()))
-                .unwrap_or("");
-            if poll_status == "Ready" {
-                if let Some(result) = pv.get("result") {
-                    image_url = result
-                        .get("sample")
+                let poll_status = pv
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| pv.get("state").and_then(|v| v.as_str()))
+                    .unwrap_or("");
+                if poll_status == "Ready" {
+                    let result = pv.get("result");
+                    let sample = result
+                        .and_then(|r| r.get("sample"))
                         .and_then(|v| v.as_str())
-                        .map(String::from);
-                    result_seed = result.get("seed").cloned();
-                    result_start_time = result.get("start_time").cloned();
-                    result_end_time = result.get("end_time").cloned();
-                    result_duration = result.get("duration").cloned();
+                        .map(String::from)
+                        .ok_or_else(|| {
+                            AiMuxError::InvalidResponseData(
+                                "BFL poll reported Ready without result.sample".to_string(),
+                            )
+                        })?;
+                    return Ok(PollStep::Ready(BflResult {
+                        image_url: sample,
+                        seed: result.and_then(|r| r.get("seed")).cloned(),
+                        start_time: result.and_then(|r| r.get("start_time")).cloned(),
+                        end_time: result.and_then(|r| r.get("end_time")).cloned(),
+                        duration: result.and_then(|r| r.get("duration")).cloned(),
+                    }));
                 }
-                if image_url.is_none() {
-                    return Err(AiMuxError::InvalidResponseData(
-                        "BFL poll reported Ready without result.sample".to_string(),
-                    ));
+                if poll_status == "Error" || poll_status == "Failed" {
+                    return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                        status_code: Some(200),
+                        provider_code: Some(poll_status.to_string()),
+                        message: "Black Forest Labs generation failed.".into(),
+                        response_body,
+                        ..ApiCallError::new(
+                            "Black Forest Labs generation failed.",
+                            poll_url.clone(),
+                            serde_json::json!({}),
+                        )
+                    })));
                 }
-                break;
-            }
-            if poll_status == "Error" || poll_status == "Failed" {
-                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                    status_code: Some(200),
-                    provider_code: Some(poll_status.to_string()),
-                    message: "Black Forest Labs generation failed.".into(),
-                    response_body,
-                    ..ApiCallError::new(
-                        "Black Forest Labs generation failed.",
-                        poll_url_with_id.to_string(),
-                        serde_json::json!({}),
-                    )
-                })));
-            }
-            sleep_or_abort(
-                std::time::Duration::from_millis(poll_interval),
-                options.abort_signal.as_ref(),
-            )
-            .await?;
-        }
-
-        let image_url = image_url.ok_or_else(|| {
-            AiMuxError::Timeout(format!(
-                "blackForestLabs task {request_id} polling timed out after {poll_timeout}ms"
-            ))
-        })?;
+                Ok(PollStep::Pending)
+            },
+        )
+        .await?;
+        let image_url = ready.image_url;
+        let result_seed = ready.seed;
+        let result_start_time = ready.start_time;
+        let result_end_time = ready.end_time;
+        let result_duration = ready.duration;
 
         // Download image; result.sample is a URL from the poll response body.
         // AI SDK sends its headers to trusted BFL hosts on the download too,
         // gated by the same allowlist.
-        let ir = retries
-            .retry(|| {
-                aimux_provider_utils::get_from_api(
-                    HttpRequest {
-                        url: image_url.clone(),
-                        headers: gated_headers(&image_url),
-
-                        abort_signal: options.abort_signal.clone(),
-                        call_id: None,
-                        recording_context: None,
-                        response_timeout: None,
-                        max_json_response_bytes: None,
-                        validate_url: true,
-                        trusted_origin: Some(self.config.base_url.clone()),
-                        // Headers are gated per URL by gated_headers above.
-                        credentialed_origin: None,
-                        fetch: None,
-                    },
-                    aimux_provider_utils::create_binary_response_handler(),
-                    bfl_failed_response_handler(),
-                )
-            })
-            .await?;
+        let ir = retry_download(options.abort_signal.as_ref(), poll_interval, || {
+            aimux_provider_utils::get_from_api(
+                gated_request(&image_url),
+                aimux_provider_utils::create_binary_response_handler(),
+                bfl_failed_response_handler(),
+            )
+        })
+        .await?;
         let image_bytes = ir.value.to_vec();
         let download_headers: HashMap<String, String> = HashMap::new();
 
@@ -518,7 +541,7 @@ impl ImageModel for BlackForestLabsImageModel {
             img_meta.insert("outputMegapixels".into(), o.clone());
         }
         bfl_meta.insert("images".into(), json!([Value::Object(img_meta)]));
-        metadata.insert("blackForestLabs".into(), Value::Object(bfl_meta));
+        metadata.insert(options::NAMESPACE.into(), Value::Object(bfl_meta));
 
         Ok(ImageResult {
             images: ImageOutputs::Binary(vec![image_bytes]),

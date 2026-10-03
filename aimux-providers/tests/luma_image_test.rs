@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Luma image model tests.
+//! Rust translation of the Luma image model tests.
 //! Source: `reference/ai/packages/luma/src/luma-image-model.test.ts`
 
 use serde_json::{Value, json};
@@ -6,7 +6,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::image_model::{ImageCallOptions, ImageFile, ImageModel, ImageOutputs};
-use aimux_providers::{LumaConfig, LumaProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{LumaProviderSettings, create_luma};
 
 const PROMPT: &str = "A beautiful sunset";
 
@@ -41,8 +42,12 @@ fn options(prompt: &str) -> ImageCallOptions {
 async fn should_extract_generated_image() {
     let server = MockServer::start().await;
     mock_luma(&server).await;
-    let config = LumaConfig::new("test-key").with_base_url(server.uri());
-    let model = LumaProvider::new(config).image("ray2");
+    let config = LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_luma(config).unwrap().image("ray2");
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
     match result.images {
         ImageOutputs::Binary(imgs) => {
@@ -57,8 +62,12 @@ async fn should_extract_generated_image() {
 async fn should_pass_prompt_and_model() {
     let server = MockServer::start().await;
     mock_luma(&server).await;
-    let config = LumaConfig::new("test-key").with_base_url(server.uri());
-    let model = LumaProvider::new(config).image("ray2");
+    let config = LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_luma(config).unwrap().image("ray2");
     model.do_generate(&options(PROMPT)).await.unwrap();
     let reqs = server.received_requests().await.unwrap();
     let body: Value = serde_json::from_slice(&reqs[0].body).unwrap();
@@ -70,8 +79,12 @@ async fn should_pass_prompt_and_model() {
 async fn should_pass_aspect_ratio() {
     let server = MockServer::start().await;
     mock_luma(&server).await;
-    let config = LumaConfig::new("test-key").with_base_url(server.uri());
-    let model = LumaProvider::new(config).image("ray2");
+    let config = LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_luma(config).unwrap().image("ray2");
     let mut opts = options(PROMPT);
     opts.aspect_ratio = Some(aimux_core::shared::AspectRatio::new(16, 9));
     model.do_generate(&opts).await.unwrap();
@@ -84,8 +97,12 @@ async fn should_pass_aspect_ratio() {
 async fn should_warn_for_seed() {
     let server = MockServer::start().await;
     mock_luma(&server).await;
-    let config = LumaConfig::new("test-key").with_base_url(server.uri());
-    let model = LumaProvider::new(config).image("ray2");
+    let config = LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_luma(config).unwrap().image("ray2");
     let mut opts = options(PROMPT);
     opts.seed = Some(42);
     let result = model.do_generate(&opts).await.unwrap();
@@ -96,8 +113,12 @@ async fn should_warn_for_seed() {
 async fn should_warn_for_size() {
     let server = MockServer::start().await;
     mock_luma(&server).await;
-    let config = LumaConfig::new("test-key").with_base_url(server.uri());
-    let model = LumaProvider::new(config).image("ray2");
+    let config = LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_luma(config).unwrap().image("ray2");
     let mut opts = options(PROMPT);
     opts.size = Some(aimux_core::shared::Size::new(1024, 1024));
     let result = model.do_generate(&opts).await.unwrap();
@@ -108,8 +129,12 @@ async fn should_warn_for_size() {
 async fn should_pass_auth_headers() {
     let server = MockServer::start().await;
     mock_luma(&server).await;
-    let config = LumaConfig::new("test-key").with_base_url(server.uri());
-    let model = LumaProvider::new(config).image("ray2");
+    let config = LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_luma(config).unwrap().image("ray2");
     model.do_generate(&options(PROMPT)).await.unwrap();
     let reqs = server.received_requests().await.unwrap();
     assert_eq!(
@@ -127,8 +152,12 @@ async fn should_pass_auth_headers() {
 async fn should_support_image_editing_with_urls() {
     let server = MockServer::start().await;
     mock_luma(&server).await;
-    let config = LumaConfig::new("test-key").with_base_url(server.uri());
-    let model = LumaProvider::new(config).image("ray2");
+    let config = LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_luma(config).unwrap().image("ray2");
     let mut opts = options("Edit this");
     opts.n = 1;
     opts.files = Some(vec![ImageFile::Url {
@@ -146,8 +175,12 @@ async fn should_support_image_editing_with_urls() {
 #[tokio::test]
 async fn should_throw_for_mask() {
     let server = MockServer::start().await;
-    let config = LumaConfig::new("test-key").with_base_url(server.uri());
-    let model = LumaProvider::new(config).image("ray2");
+    let config = LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_luma(config).unwrap().image("ray2");
     let mut opts = options("Edit");
     opts.n = 1;
     opts.mask = Some(ImageFile::Url {

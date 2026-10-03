@@ -263,7 +263,8 @@ pub use codex::{
 pub use xai::{XAIProvider, XAIProviderSettings, XaiModel, XaiResponsesModel, create_xai, xai};
 
 pub use cartesia::{
-    CartesiaConfig, CartesiaProvider, CartesiaSpeechModel, CartesiaTranscriptionModel,
+    CartesiaProvider, CartesiaProviderSettings, CartesiaSpeechModel, CartesiaTranscriptionModel,
+    cartesia, create_cartesia,
 };
 pub use elevenlabs::{
     ElevenLabsProvider, ElevenLabsProviderSettings, ElevenLabsSpeechModel,
@@ -273,23 +274,45 @@ pub use huggingface::{
     HuggingFaceProvider, HuggingFaceProviderSettings, HuggingFaceResponsesModel,
     create_huggingface, huggingface,
 };
-pub use hume::{HumeConfig, HumeProvider, HumeSpeechModel};
-pub use lmnt::{LMNTConfig, LMNTProvider, LMNTSpeechModel};
+pub use hume::{HumeProvider, HumeProviderSettings, HumeSpeechModel, create_hume, hume};
+pub use lmnt::{LMNTProvider, LMNTProviderSettings, LMNTSpeechModel, create_lmnt, lmnt};
 
-pub use assemblyai::{AssemblyAIConfig, AssemblyAIProvider, AssemblyAITranscriptionModel};
-pub use deepgram::{DeepgramConfig, DeepgramProvider, DeepgramTranscriptionModel};
-pub use fal::{FalConfig, FalImageModel, FalProvider, FalTranscriptionModel, FalVideoModel};
+pub use assemblyai::{
+    AssemblyAIProvider, AssemblyAIProviderSettings, AssemblyAITranscriptionModel, assemblyai,
+    create_assemblyai,
+};
+pub use deepgram::{
+    DeepgramProvider, DeepgramProviderSettings, DeepgramTranscriptionModel, create_deepgram,
+    deepgram,
+};
+pub use fal::{
+    FalImageModel, FalProvider, FalProviderSettings, FalTranscriptionModel, FalVideoModel,
+    create_fal, fal,
+};
 
 // Image-only provider re-exports.
 pub use black_forest_labs::{
-    BlackForestLabsConfig, BlackForestLabsImageModel, BlackForestLabsProvider,
+    BlackForestLabsImageModel, BlackForestLabsProvider, BlackForestLabsProviderSettings,
+    black_forest_labs, create_black_forest_labs,
 };
-pub use gladia::{GladiaConfig, GladiaProvider, GladiaTranscriptionModel};
-pub use klingai::{KlingAIConfig, KlingAIProvider, KlingAIVideoModel};
-pub use luma::{LumaConfig, LumaImageModel, LumaProvider};
-pub use prodia::{ProdiaConfig, ProdiaImageModel, ProdiaProvider, ProdiaVideoModel};
-pub use replicate::{ReplicateConfig, ReplicateImageModel, ReplicateProvider, ReplicateVideoModel};
-pub use revai::{RevaiConfig, RevaiProvider, RevaiTranscriptionModel};
+pub use gladia::{
+    GladiaProvider, GladiaProviderSettings, GladiaTranscriptionModel, create_gladia, gladia,
+};
+pub use klingai::{
+    KlingAIProvider, KlingAIProviderSettings, KlingAIVideoModel, create_klingai, klingai,
+};
+pub use luma::{LumaImageModel, LumaProvider, LumaProviderSettings, create_luma, luma};
+pub use prodia::{
+    ProdiaImageModel, ProdiaProvider, ProdiaProviderSettings, ProdiaVideoModel, create_prodia,
+    prodia,
+};
+pub use replicate::{
+    ReplicateImageModel, ReplicateProvider, ReplicateProviderSettings, ReplicateVideoModel,
+    create_replicate, replicate,
+};
+pub use revai::{
+    RevaiProvider, RevaiProviderSettings, RevaiTranscriptionModel, create_revai, revai,
+};
 
 pub use open_responses::{
     OpenResponsesModel, OpenResponsesProvider, OpenResponsesProviderSettings, create_open_responses,
@@ -297,23 +320,33 @@ pub use open_responses::{
 
 // Modality-specific providers (non-language, e.g. rerank-only).
 pub mod jina_ai;
-pub use jina_ai::{JinaAiConfig, JinaAiProvider, JinaAiRerankingModel};
+pub use jina_ai::{
+    JinaAiProvider, JinaAiProviderSettings, JinaAiRerankingModel, create_jina_ai, jina_ai,
+};
 
 // AWS Polly speech (TTS) provider — SigV4 authenticated, speech modality only.
 pub mod aws_polly;
-pub use aws_polly::{AwsPollyConfig, AwsPollyProvider, AwsPollySpeechModel};
+pub use aws_polly::{
+    AwsPollyProvider, AwsPollyProviderSettings, AwsPollySpeechModel, aws_polly, create_aws_polly,
+};
 
 // Recraft image provider (OpenAI Images-compatible + Recraft extension fields).
 pub mod recraft;
-pub use recraft::{RecraftConfig, RecraftImageModel, RecraftProvider};
+pub use recraft::{
+    RecraftImageModel, RecraftProvider, RecraftProviderSettings, create_recraft, recraft,
+};
 
 // Stability image provider (image modality only).
 pub mod stability;
-pub use stability::{StabilityConfig, StabilityImageModel, StabilityProvider};
+pub use stability::{
+    StabilityImageModel, StabilityProvider, StabilityProviderSettings, create_stability, stability,
+};
 
 // Video-only provider (runwayml).
 pub mod runwayml;
-pub use runwayml::{RunwaymlConfig, RunwaymlProvider, RunwaymlVideoModel};
+pub use runwayml::{
+    RunwaymlProvider, RunwaymlProviderSettings, RunwaymlVideoModel, create_runwayml, runwayml,
+};
 
 // Search-only providers (web search modality).
 pub mod dataforseo;
@@ -328,14 +361,37 @@ pub mod tavily;
 pub mod tinyfish;
 pub mod you_com;
 
-pub use dataforseo::{DataforseoConfig, DataforseoProvider, DataforseoSearchModel};
-pub use exa_ai::{ExaAiConfig, ExaAiProvider, ExaAiSearchModel};
-pub use firecrawl::{FirecrawlConfig, FirecrawlProvider, FirecrawlSearchModel};
-pub use google_pse::{GooglePseConfig, GooglePseProvider, GooglePseSearchModel};
-pub use linkup::{LinkupConfig, LinkupProvider, LinkupSearchModel};
-pub use parallel_ai::{ParallelAiConfig, ParallelAiProvider, ParallelAiSearchModel};
-pub use searxng::{SearxngConfig, SearxngProvider, SearxngSearchModel};
-pub use serper::{SerperConfig, SerperProvider, SerperSearchModel};
-pub use tavily::{TavilyConfig, TavilyProvider, TavilySearchModel};
-pub use tinyfish::{TinyfishConfig, TinyfishProvider, TinyfishSearchModel};
-pub use you_com::{YouComConfig, YouComProvider, YouComSearchModel};
+pub use dataforseo::{
+    DataforseoProvider, DataforseoProviderSettings, DataforseoSearchModel, create_dataforseo,
+    dataforseo,
+};
+pub use exa_ai::{ExaAiProvider, ExaAiProviderSettings, ExaAiSearchModel, create_exa_ai, exa_ai};
+pub use firecrawl::{
+    FirecrawlProvider, FirecrawlProviderSettings, FirecrawlSearchModel, create_firecrawl, firecrawl,
+};
+pub use google_pse::{
+    GooglePseProvider, GooglePseProviderSettings, GooglePseSearchModel, create_google_pse,
+    google_pse,
+};
+pub use linkup::{
+    LinkupProvider, LinkupProviderSettings, LinkupSearchModel, create_linkup, linkup,
+};
+pub use parallel_ai::{
+    ParallelAiProvider, ParallelAiProviderSettings, ParallelAiSearchModel, create_parallel_ai,
+    parallel_ai,
+};
+pub use searxng::{
+    SearxngProvider, SearxngProviderSettings, SearxngSearchModel, create_searxng, searxng,
+};
+pub use serper::{
+    SerperProvider, SerperProviderSettings, SerperSearchModel, create_serper, serper,
+};
+pub use tavily::{
+    TavilyProvider, TavilyProviderSettings, TavilySearchModel, create_tavily, tavily,
+};
+pub use tinyfish::{
+    TinyfishProvider, TinyfishProviderSettings, TinyfishSearchModel, create_tinyfish, tinyfish,
+};
+pub use you_com::{
+    YouComProvider, YouComProviderSettings, YouComSearchModel, create_you_com, you_com,
+};

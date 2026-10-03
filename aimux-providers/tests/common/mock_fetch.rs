@@ -25,6 +25,14 @@ pub struct Canned {
 }
 
 impl Canned {
+    /// A response with a JSON body and the given status.
+    pub fn json_status(status: u16, body: &Value) -> Self {
+        Self {
+            status,
+            ..Self::json(body)
+        }
+    }
+
     pub fn json(body: &Value) -> Self {
         Self {
             status: 200,
@@ -37,6 +45,8 @@ impl Canned {
 /// One request as the transport saw it.
 #[derive(Clone, Debug)]
 pub struct Seen {
+    /// When the transport received it.
+    pub at: std::time::Instant,
     pub method: String,
     pub url: String,
     /// Lower-cased names (the `http` crate normalizes them).
@@ -77,6 +87,7 @@ impl MockFetch {
 impl Fetch for MockFetch {
     async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
         self.seen.lock().unwrap().push(Seen {
+            at: std::time::Instant::now(),
             method: request.method.to_string(),
             url: request.url.to_string(),
             headers: request
@@ -97,6 +108,79 @@ impl Fetch for MockFetch {
             .unwrap()
             .pop_front()
             .ok_or_else(|| FetchError::Other("no canned response left".into()))?;
+        let mut headers = HeaderMap::new();
+        for (name, value) in &canned.headers {
+            headers.insert(
+                HeaderName::try_from(name.as_str()).unwrap(),
+                HeaderValue::try_from(value.as_str()).unwrap(),
+            );
+        }
+        Ok(FetchResponse::from_bytes(
+            StatusCode::from_u16(canned.status).unwrap(),
+            headers,
+            request.url,
+            Bytes::from(canned.body),
+        ))
+    }
+}
+
+/// A scripted [`Fetch`] that answers every request from a function of the
+/// request, so a test can script "poll answers 503 forever" without counting
+/// canned responses. Every request is recorded.
+pub struct RouteFetch {
+    handler: Box<dyn Fn(&Seen) -> Canned + Send + Sync>,
+    seen: Mutex<Vec<Seen>>,
+}
+
+impl RouteFetch {
+    pub fn new(handler: impl Fn(&Seen) -> Canned + Send + Sync + 'static) -> Arc<Self> {
+        Arc::new(Self {
+            handler: Box::new(handler),
+            seen: Mutex::default(),
+        })
+    }
+
+    pub fn seen(&self) -> Vec<Seen> {
+        self.seen.lock().unwrap().clone()
+    }
+
+    /// How many recorded requests had this method and URL path.
+    pub fn count(&self, method: &str, path: &str) -> usize {
+        self.seen()
+            .iter()
+            .filter(|seen| {
+                seen.method == method
+                    && url::Url::parse(&seen.url).is_ok_and(|url| url.path() == path)
+            })
+            .count()
+    }
+
+    pub fn transport(self: &Arc<Self>) -> FetchFunction {
+        self.clone()
+    }
+}
+
+#[async_trait]
+impl Fetch for RouteFetch {
+    async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
+        let seen = Seen {
+            at: std::time::Instant::now(),
+            method: request.method.to_string(),
+            url: request.url.to_string(),
+            headers: request
+                .headers
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.as_str().to_string(),
+                        value.to_str().expect("ASCII header").to_string(),
+                    )
+                })
+                .collect(),
+            body: request.body.to_vec(),
+        };
+        let canned = (self.handler)(&seen);
+        self.seen.lock().unwrap().push(seen);
         let mut headers = HeaderMap::new();
         for (name, value) in &canned.headers {
             headers.insert(

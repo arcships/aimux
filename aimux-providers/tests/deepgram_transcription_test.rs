@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Deepgram transcription model tests.
+//! Rust translation of the Deepgram transcription model tests.
 //!
 //! Source: `reference/ai/packages/deepgram/src/deepgram-transcription-model.test.ts`
 
@@ -9,7 +9,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
-use aimux_providers::{DeepgramConfig, DeepgramProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{DeepgramProviderSettings, create_deepgram};
 
 fn mock_audio() -> Vec<u8> {
     vec![1u8, 2, 3, 4, 5]
@@ -68,8 +69,12 @@ async fn should_pass_model_in_query() {
     let server = MockServer::start().await;
     mock_response(&server, &fixture_response()).await;
 
-    let config = DeepgramConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = DeepgramProvider::new(config);
+    let config = DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_deepgram(config).unwrap();
     let model = provider.transcription("nova-3");
 
     model
@@ -93,10 +98,13 @@ async fn should_pass_headers() {
         "Custom-Provider-Header".to_string(),
         "provider-header-value".to_string(),
     );
-    let config = DeepgramConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(ph);
-    let provider = DeepgramProvider::new(config);
+    let config = DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some((ph).into_iter().map(|(k, v)| (k, Some(v))).collect()),
+        ..Default::default()
+    };
+    let provider = create_deepgram(config).unwrap();
     let model = provider.transcription("nova-3");
 
     let mut opts = options(mock_audio(), "audio/wav");
@@ -128,8 +136,12 @@ async fn should_extract_text() {
     let server = MockServer::start().await;
     mock_response(&server, &fixture_response()).await;
 
-    let config = DeepgramConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = DeepgramProvider::new(config);
+    let config = DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_deepgram(config).unwrap();
     let model = provider.transcription("nova-3");
 
     let result = model
@@ -145,8 +157,12 @@ async fn should_pass_detect_language_query_param() {
     let server = MockServer::start().await;
     mock_response(&server, &fixture_response()).await;
 
-    let config = DeepgramConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = DeepgramProvider::new(config);
+    let config = DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_deepgram(config).unwrap();
     let model = provider.transcription("nova-3");
 
     let mut opts = options(mock_audio(), "audio/wav");
@@ -165,8 +181,12 @@ async fn should_return_detected_language() {
     let server = MockServer::start().await;
     mock_response(&server, &fixture_response()).await;
 
-    let config = DeepgramConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = DeepgramProvider::new(config);
+    let config = DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_deepgram(config).unwrap();
     let model = provider.transcription("nova-3");
 
     let mut opts = options(mock_audio(), "audio/wav");
@@ -192,8 +212,12 @@ async fn should_include_response_data() {
     )
     .await;
 
-    let config = DeepgramConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = DeepgramProvider::new(config);
+    let config = DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_deepgram(config).unwrap();
     let model = provider.transcription("nova-3");
 
     let result = model
@@ -213,8 +237,12 @@ async fn should_use_real_date() {
     let server = MockServer::start().await;
     mock_response(&server, &fixture_response()).await;
 
-    let config = DeepgramConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = DeepgramProvider::new(config);
+    let config = DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_deepgram(config).unwrap();
     let model = provider.transcription("nova-3");
 
     let result = model
@@ -243,8 +271,12 @@ async fn should_return_language_from_inline_response() {
     )
     .await;
 
-    let config = DeepgramConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = DeepgramProvider::new(config);
+    let config = DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_deepgram(config).unwrap();
     let model = provider.transcription("nova-3");
 
     let mut opts = options(mock_audio(), "audio/wav");
@@ -273,8 +305,12 @@ async fn should_return_none_language_when_not_detected() {
     )
     .await;
 
-    let config = DeepgramConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = DeepgramProvider::new(config);
+    let config = DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_deepgram(config).unwrap();
     let model = provider.transcription("nova-3");
 
     let result = model

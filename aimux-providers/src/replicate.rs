@@ -2,8 +2,13 @@
 //!
 //! Aligned with Vercel AI SDK `ReplicateImageModel`
 //! (`reference/ai/packages/replicate/src/replicate-image-model.ts`).
+//!
+//! [`create_replicate`] takes [`ReplicateProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`ReplicateProvider`]. The credential is not read
+//! there: it is loaded for every request, from the setting or from `REPLICATE_API_TOKEN`.
+//! [`replicate()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -14,9 +19,14 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult,
 };
-use aimux_core::retry;
 use aimux_core::shared::Warning;
-use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
+use aimux_provider_utils::HttpRequest;
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+
+use crate::shared::{
+    AuthScheme, Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, credential_headers,
+    is_poll_control_key, poll_interval_ms, retry_download,
+};
 
 /// Replicate's `prefer: wait` holds the connection for at most this long when
 /// no explicit duration is given (their documented default and maximum).
@@ -40,108 +50,186 @@ fn replicate_failed_response_handler() -> aimux_provider_utils::ResponseHandler<
     })
 }
 
-/// Configuration for the Replicate provider.
-#[derive(Debug, Clone)]
-pub struct ReplicateConfig {
-    pub api_key: String,
-    pub base_url: String,
-    pub headers: Option<HashMap<String, String>>,
+/// Milliseconds between two attempts to download a finished prediction's output
+/// (`providerOptions.replicate.pollIntervalMs` overrides it for one call).
+const DOWNLOAD_RETRY_INTERVAL_MS: u64 = 1_000;
+
+pub(crate) mod options;
+
+const DEFAULT_BASE_URL: &str = "https://api.replicate.com/v1";
+const API_KEY_ENV_VAR: &str = "REPLICATE_API_TOKEN";
+const DEFAULT_NAME: &str = "replicate";
+
+/// Settings of [`create_replicate`].
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct ReplicateProviderSettings {
+    /// Base URL for the API calls. Default `https://api.replicate.com/v1`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `REPLICATE_API_TOKEN` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including the credential. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings (`"{name}.image"`, `"{name}.video"`).
+    /// Default `"replicate"`. The providerOptions key stays `replicate`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
 }
 
-impl ReplicateConfig {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: "https://api.replicate.com/v1".to_string(),
-            headers: None,
-        }
-    }
-
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-
-    #[must_use]
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = Some(headers);
-        self
-    }
-
-    /// Create from the `REPLICATE_API_TOKEN` environment variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
-    /// set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "REPLICATE_API_TOKEN", "Replicate")?;
-        Ok(Self::new(api_key))
+impl std::fmt::Debug for ReplicateProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReplicateProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .finish()
     }
 }
 
-/// Replicate provider — creates `ReplicateImageModel` instances.
+/// Create a Replicate provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_replicate(
+    settings: ReplicateProviderSettings,
+) -> Result<ReplicateProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(ReplicateProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        credential: Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Replicate"),
+        user_headers: settings.headers,
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_replicate` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn replicate() -> &'static ReplicateProvider {
+    static DEFAULT: OnceLock<ReplicateProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_replicate(ReplicateProviderSettings::default())
+            .expect("default Replicate settings are always valid")
+    })
+}
+
+/// A Replicate provider. Cheap to clone the models out of; it holds no HTTP
+/// client.
 pub struct ReplicateProvider {
-    config: ReplicateConfig,
+    name: String,
+    base_url: String,
+    credential: Credential,
+    user_headers: Option<HeaderMapOpt>,
+    fetch: Option<FetchFunction>,
 }
 
 impl ReplicateProvider {
-    #[must_use]
-    pub fn new(config: ReplicateConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            match method {
+                "image" => credential_headers(
+                    self.credential.clone(),
+                    AuthScheme::Bearer,
+                    Vec::new(),
+                    self.user_headers.clone(),
+                ),
+                _ => credential_headers(
+                    self.credential.clone(),
+                    AuthScheme::Scheme("Token"),
+                    Vec::new(),
+                    self.user_headers.clone(),
+                ),
+            },
+            self.fetch.clone(),
+            None,
+        )
     }
 
+    /// An image model (e.g. `"black-forest-labs/flux-schnell"`); `provider()` is `"{name}.image"`.
     #[must_use]
     pub fn image(&self, model_id: &str) -> ReplicateImageModel {
-        ReplicateImageModel::new(model_id.to_string(), self.config.clone())
+        ReplicateImageModel::from_config(model_id.to_string(), self.model_config("image"))
     }
 
-    /// Create a video generation model instance for the given model name
-    /// (e.g. `"wan-lab/wan-2.1-t2v-14b"`).
+    /// A video model; `provider()` is `"{name}.video"`.
     #[must_use]
     pub fn video(&self, model_id: &str) -> ReplicateVideoModel {
-        ReplicateVideoModel::new(model_id.to_string(), self.config.clone())
+        ReplicateVideoModel::from_config(model_id.to_string(), self.model_config("video"))
     }
 }
 
-/// Flux-2 model pattern for max input images.
+impl ::aimux_core::Provider for ReplicateProvider {
+    fn language_model(
+        &self,
+        model_id: &str,
+    ) -> Result<::std::sync::Arc<dyn ::aimux_core::LanguageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "languageModel"))
+    }
+
+    fn embedding_model(
+        &self,
+        model_id: &str,
+    ) -> Result<::std::sync::Arc<dyn ::aimux_core::EmbeddingModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
+    }
+
+    fn image_model(
+        &self,
+        model_id: &str,
+    ) -> Result<::std::sync::Arc<dyn ::aimux_core::ImageModel>, AiMuxError> {
+        Ok(::std::sync::Arc::new(self.image(model_id)))
+    }
+
+    fn video_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<::std::sync::Arc<dyn ::aimux_core::VideoModel>, AiMuxError>> {
+        Some(Ok(::std::sync::Arc::new(self.video(model_id))))
+    }
+}
+
 const FLUX_2_PATTERN: &str = "black-forest-labs/flux-2-";
 const MAX_FLUX_2_INPUT_IMAGES: u32 = 8;
 
 /// A Replicate image generation model.
 pub struct ReplicateImageModel {
     model_id: String,
-    config: ReplicateConfig,
+    config: EndpointConfig,
 }
 
 impl ReplicateImageModel {
-    #[must_use]
-    pub fn new(model_id: String, config: ReplicateConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
     }
 
     fn is_flux2(&self) -> bool {
         self.model_id.starts_with(FLUX_2_PATTERN)
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut h = HashMap::new();
-        h.insert(
-            "Authorization".into(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(ref ch) = self.config.headers {
-            for (k, v) in ch {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        h
     }
 
     fn file_to_data_uri(file: &ImageFile) -> Result<String, AiMuxError> {
@@ -159,22 +247,21 @@ impl ReplicateImageModel {
         }
     }
 
-    fn endpoint(&self) -> String {
-        if let Some((model_id, _version)) = self.model_id.split_once(':') {
-            format!("{}/models/{}/predictions", self.config.base_url, model_id)
-        } else {
-            format!(
-                "{}/models/{}/predictions",
-                self.config.base_url, self.model_id
-            )
-        }
+    /// The path of the prediction endpoint of this model; a `:version` suffix
+    /// of the model id is sent in the body, not in the path.
+    fn endpoint_path(&self) -> String {
+        let model = self
+            .model_id
+            .split_once(':')
+            .map_or(self.model_id.as_str(), |(model, _version)| model);
+        format!("/models/{model}/predictions")
     }
 }
 
 #[async_trait]
 impl ImageModel for ReplicateImageModel {
     fn provider(&self) -> &str {
-        "replicate"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
@@ -194,7 +281,7 @@ impl ImageModel for ReplicateImageModel {
             .split_once(':')
             .unwrap_or((&self.model_id, ""));
 
-        let replicate_opts = options.provider_options.get("replicate");
+        let replicate_opts = options::replicate_options(Some(&options.provider_options));
         let max_wait = replicate_opts
             .and_then(|o| o.get("maxWaitTimeInSeconds"))
             .and_then(serde_json::Value::as_u64);
@@ -265,10 +352,11 @@ impl ImageModel for ReplicateImageModel {
             input.insert("mask".into(), json!(m));
         }
 
-        // Forward replicate provider options (excluding maxWaitTimeInSeconds)
+        // Forward replicate provider options (excluding maxWaitTimeInSeconds and
+        // the pacing keys, which are read here, never sent)
         if let Some(ro) = replicate_opts.and_then(|v| v.as_object()) {
             for (k, v) in ro {
-                if k != "maxWaitTimeInSeconds" {
+                if k != "maxWaitTimeInSeconds" && !is_poll_control_key(k) {
                     input.insert(k.clone(), v.clone());
                 }
             }
@@ -280,38 +368,27 @@ impl ImageModel for ReplicateImageModel {
             body.insert("version".into(), json!(version));
         }
 
-        // Build headers with prefer
-        let mut headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let prefer = if let Some(mw) = max_wait {
             format!("wait={mw}")
         } else {
             "wait".to_string()
         };
-        headers.insert("prefer".into(), prefer);
-
-        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let mut request = exchange.request(exchange.url(&self.endpoint_path()), options);
+        request
+            .headers
+            .retain(|(name, _)| !name.eq_ignore_ascii_case("prefer"));
+        request.headers.push(("prefer".to_string(), prefer));
+        // This exchange legitimately holds the connection for the whole wait
+        // window; widen the hang guard past it so a slow-but-alive generation
+        // is not misread as a dead transport (retryable -> re-create -> double
+        // billing).
+        request.response_timeout = Some(Duration::from_secs(
+            max_wait.unwrap_or(DEFAULT_WAIT_SECONDS) + WAIT_TRANSPORT_MARGIN_SECONDS,
+        ));
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                // This exchange legitimately holds the connection for the
-                // whole wait window; widen the hang guard past it so a
-                // slow-but-alive generation is not misread as a dead
-                // transport (retryable → re-create → double billing).
-                response_timeout: Some(Duration::from_secs(
-                    max_wait.unwrap_or(DEFAULT_WAIT_SECONDS) + WAIT_TRANSPORT_MARGIN_SECONDS,
-                )),
-                max_json_response_bytes: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-                fetch: None,
-            },
+            request,
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             replicate_failed_response_handler(),
@@ -320,7 +397,6 @@ impl ImageModel for ReplicateImageModel {
 
         let rh = resp.response_headers;
         let rb: Value = resp.value;
-        let retries = retry::prepare_retries(None, options.abort_signal.clone());
 
         // Extract output (string or array of strings)
         let urls: Vec<String> = match &rb["output"] {
@@ -333,31 +409,33 @@ impl ImageModel for ReplicateImageModel {
         };
 
         // Download images; output URLs come from the prediction response
-        // body, so they go through the SSRF download guard.
+        // body, so they go through the SSRF download guard. A transient failure
+        // repeats the download, never the prediction.
         let mut downloaded: Vec<Vec<u8>> = Vec::new();
         for url in &urls {
-            let ir = retries
-                .retry(|| {
+            let ir = retry_download(
+                options.abort_signal.as_ref(),
+                Duration::from_millis(poll_interval_ms(
+                    replicate_opts,
+                    POLL_INTERVAL_MS_KEY,
+                    DOWNLOAD_RETRY_INTERVAL_MS,
+                )),
+                || {
                     aimux_provider_utils::get_from_api(
                         HttpRequest {
                             url: url.clone(),
-                            headers: vec![],
-
                             abort_signal: options.abort_signal.clone(),
-                            call_id: None,
-                            recording_context: None,
-                            response_timeout: None,
-                            max_json_response_bytes: None,
                             validate_url: true,
-                            trusted_origin: Some(self.config.base_url.clone()),
-                            credentialed_origin: Some(self.config.base_url.clone()),
-                            fetch: None,
+                            trusted_origin: Some(exchange.base_url().to_string()),
+                            credentialed_origin: Some(exchange.base_url().to_string()),
+                            ..Default::default()
                         },
                         aimux_provider_utils::create_binary_response_handler(),
                         replicate_failed_response_handler(),
                     )
-                })
-                .await?;
+                },
+            )
+            .await?;
             downloaded.push(ir.value.to_vec());
         }
 
@@ -393,32 +471,12 @@ use aimux_core::video_model::{
 /// status polling via `do_status`.
 pub struct ReplicateVideoModel {
     model_id: String,
-    config: ReplicateConfig,
+    config: EndpointConfig,
 }
 
 impl ReplicateVideoModel {
-    #[must_use]
-    pub fn new(model_id: String, config: ReplicateConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Token {}", self.config.api_key),
-        );
-        if let Some(ref ch) = self.config.headers {
-            for (k, v) in ch {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
     }
 }
 
@@ -438,7 +496,7 @@ fn video_file_to_url(file: &VideoFile) -> Result<String, AiMuxError> {
 #[async_trait]
 impl VideoModel for ReplicateVideoModel {
     fn provider(&self) -> &str {
-        "replicate"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
@@ -469,25 +527,11 @@ impl VideoModel for ReplicateVideoModel {
             "input": Value::Object(input),
         });
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         // Submit prediction.
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: format!("{}/predictions", self.config.base_url),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                max_json_response_bytes: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-                fetch: None,
-            },
+            exchange.request(exchange.url("/predictions"), options),
             body,
             aimux_provider_utils::create_json_response_handler(),
             replicate_failed_response_handler(),
@@ -530,25 +574,11 @@ impl VideoModel for ReplicateVideoModel {
                 )
             })?;
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers.into_iter().collect();
-        let poll_url = format!("{}/predictions/{}", self.config.base_url, prediction_id);
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let poll_url = exchange.url(&format!("/predictions/{prediction_id}"));
 
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest {
-                url: poll_url.clone(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                max_json_response_bytes: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-                fetch: None,
-            },
+            exchange.request(poll_url.clone(), options),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             replicate_failed_response_handler(),
         )

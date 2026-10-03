@@ -15,7 +15,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
-use aimux_providers::{LinkupConfig, LinkupProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{LinkupProvider, LinkupProviderSettings, create_linkup};
 
 const API_KEY: &str = "test-linkup-key";
 
@@ -54,8 +55,12 @@ fn sourced_answer_body() -> Value {
 }
 
 fn provider(server: &MockServer) -> LinkupProvider {
-    let config = LinkupConfig::new(API_KEY).with_base_url(server.uri());
-    LinkupProvider::new(config)
+    let config = LinkupProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_linkup(config).unwrap()
 }
 
 fn opts(query: &str) -> SearchCallOptions {
@@ -262,15 +267,21 @@ async fn status_403_maps_to_provider_error() {
 
 #[tokio::test]
 async fn search_model_provider_is_linkup() {
-    let config = LinkupConfig::new(API_KEY);
-    let provider = LinkupProvider::new(config);
-    assert_eq!(provider.search_model().provider(), "linkup");
+    let config = LinkupProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        ..Default::default()
+    };
+    let provider = create_linkup(config).unwrap();
+    assert_eq!(provider.search_model().provider(), "linkup.search");
 }
 
 #[test]
 fn language_model_returns_no_such_model() {
-    let config = LinkupConfig::new(API_KEY);
-    let provider = LinkupProvider::new(config);
+    let config = LinkupProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        ..Default::default()
+    };
+    let provider = create_linkup(config).unwrap();
     match provider.language_model("linkup-search") {
         Err(AiMuxError::NoSuchModel {
             model_id,
@@ -285,9 +296,12 @@ fn language_model_returns_no_such_model() {
 
 #[test]
 fn model_id_is_linkup_search() {
-    let config = LinkupConfig::new(API_KEY);
-    let provider = LinkupProvider::new(config);
+    let config = LinkupProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        ..Default::default()
+    };
+    let provider = create_linkup(config).unwrap();
     let model = provider.search_model();
     assert_eq!(model.model_id(), "linkup-search");
-    assert_eq!(model.provider(), "linkup");
+    assert_eq!(model.provider(), "linkup.search");
 }

@@ -8,7 +8,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
-use aimux_providers::{GladiaConfig, GladiaProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{GladiaProviderSettings, create_gladia};
 
 fn mock_audio() -> Vec<u8> {
     vec![1u8, 2, 3]
@@ -70,8 +71,12 @@ async fn should_extract_text() {
     let server = MockServer::start().await;
     mock_all(&server, &fixture_result(), &[]).await;
 
-    let config = GladiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GladiaProvider::new(config);
+    let config = GladiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_gladia(config).unwrap();
     let model = provider.transcription("default");
 
     let result = model
@@ -95,10 +100,13 @@ async fn should_pass_headers() {
         "Custom-Provider-Header".to_string(),
         "provider-header-value".to_string(),
     );
-    let config = GladiaConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(ph);
-    let provider = GladiaProvider::new(config);
+    let config = GladiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some((ph).into_iter().map(|(k, v)| (k, Some(v))).collect()),
+        ..Default::default()
+    };
+    let provider = create_gladia(config).unwrap();
     let model = provider.transcription("default");
 
     let mut opts = options(mock_audio(), "audio/wav");
@@ -129,8 +137,12 @@ async fn should_include_response_data() {
     let server = MockServer::start().await;
     mock_all(&server, &fixture_result(), &[("x-request-id", "test-req")]).await;
 
-    let config = GladiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GladiaProvider::new(config);
+    let config = GladiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_gladia(config).unwrap();
     let model = provider.transcription("default");
 
     let result = model
@@ -147,8 +159,12 @@ async fn should_use_real_date() {
     let server = MockServer::start().await;
     mock_all(&server, &fixture_result(), &[]).await;
 
-    let config = GladiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GladiaProvider::new(config);
+    let config = GladiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_gladia(config).unwrap();
     let model = provider.transcription("default");
 
     let result = model
@@ -165,8 +181,12 @@ async fn should_include_provider_metadata() {
     let server = MockServer::start().await;
     mock_all(&server, &fixture_result(), &[]).await;
 
-    let config = GladiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GladiaProvider::new(config);
+    let config = GladiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_gladia(config).unwrap();
     let model = provider.transcription("default");
 
     let result = model

@@ -22,6 +22,16 @@
 #      stays deleted), and their providerOptions / providerMetadata keys are
 #      spelled once, in each package's `options.rs`.
 #
+#   9. No provider code calls the operation-level retry: `prepare_retries` and
+#      `aimux_core::retry` are not used anywhere in aimux-providers/src (the
+#      exception list is empty). A provider's own stages (poll, download) are
+#      bounded by package constants through `shared::poll`; the call-level
+#      retry belongs to Core.
+#  10. The single-modality vendor packages (search, speech, transcription,
+#      image, video, reranking) keep no builder-era config state, and their
+#      providerOptions namespace keys are spelled once, in each package's
+#      `options.rs`.
+#
 # Usage: bash scripts/check_provider_boundaries.sh   (exit 1 on any violation)
 
 set -euo pipefail
@@ -231,6 +241,52 @@ rule8b_hits="$(
         ' || true
 )"
 violation 'vendor providerOptions namespace key spelled outside the package options.rs' "$rule8b_hits"
+
+# ── Rule 9: no operation-level retry inside aimux-providers/src ──────────────
+#
+# Core owns `prepare_retries`. Providers run their poll / download stages with
+# the bounded helpers of `shared::poll`, and never re-submit a job.
+rule9_hits="$(
+    grep -rnE 'prepare_retries|aimux_core::retry|use aimux_core::\{[^}]*\bretry\b' \
+        aimux-providers/src --include='*.rs' || true
+)"
+violation 'prepare_retries / aimux_core::retry used in aimux-providers/src (exceptions: none)' "$rule9_hits"
+
+# ── Rule 10: the single-modality vendor packages read their settings through the model config ─
+#
+# No `XxxConfig` / `api_key_source` / `from_env` / `with_base_url` / `body_overrides`,
+# and the namespace keys (`lmnt`, `hume`, `deepgram`, `cartesia`, `stability`,
+# `aws_polly`, `prodia`, `luma`, `klingai`, `replicate`, `fal`, `recraft`,
+# `gladia`, `blackForestLabs`, `assemblyai`, `revai`, `linkup`, `jina`,
+# `google_pse`) are quoted only in the package's `options.rs` (comments, unit
+# tests and the `DEFAULT_NAME` provider-name constants aside).
+single_family='serper prodia deepgram you_com luma lmnt klingai dataforseo replicate fal recraft aws_polly jina_ai gladia tavily linkup tinyfish black_forest_labs assemblyai revai hume cartesia searxng parallel_ai firecrawl runwayml exa_ai stability google_pse'
+single_paths=''
+for name in $single_family; do
+    single_paths="$single_paths aimux-providers/src/$name.rs"
+    [[ -d "aimux-providers/src/$name" ]] && single_paths="$single_paths aimux-providers/src/$name"
+done
+rule10_hits="$(
+    # shellcheck disable=SC2086
+    grep -rnE '\b(SerperConfig|ProdiaConfig|DeepgramConfig|YouComConfig|LumaConfig|LMNTConfig|KlingAIConfig|DataforseoConfig|ReplicateConfig|FalConfig|RecraftConfig|AwsPollyConfig|JinaAiConfig|GladiaConfig|TavilyConfig|LinkupConfig|TinyfishConfig|BlackForestLabsConfig|AssemblyAIConfig|RevaiConfig|HumeConfig|CartesiaConfig|SearxngConfig|ParallelAiConfig|FirecrawlConfig|RunwaymlConfig|ExaAiConfig|StabilityConfig|GooglePseConfig)\b|body_overrides|api_key_source|from_env|with_base_url' \
+        $single_paths --include='*.rs' || true
+)"
+violation 'single-modality vendor packages read builder-era config state' "$rule10_hits"
+rule10b_hits="$(
+    # Non-test, non-comment lines of every file but the options helpers.
+    # shellcheck disable=SC2086
+    find $single_paths -name '*.rs' ! -name options.rs -print0 |
+        xargs -0 awk '
+            FNR == 1 { in_tests = 0 }
+            /^#\[cfg\(test\)\]/ { in_tests = 1 }
+            in_tests { next }
+            /^[[:space:]]*\/\// { next }
+            /"(lmnt|hume|deepgram|cartesia|stability|aws_polly|prodia|luma|klingai|replicate|fal|recraft|gladia|blackForestLabs|assemblyai|revai|linkup|jina|google_pse)"/ && !/DEFAULT_NAME/ {
+                printf "%s:%d:%s\n", FILENAME, FNR, $0
+            }
+        ' || true
+)"
+violation 'single-modality providerOptions namespace key spelled outside the package options.rs' "$rule10b_hits"
 
 if [[ "$status" -eq 0 ]]; then
     echo 'provider boundaries: ok'

@@ -13,7 +13,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
-use aimux_providers::{ParallelAiConfig, ParallelAiProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{ParallelAiProvider, ParallelAiProviderSettings, create_parallel_ai};
 
 const API_KEY: &str = "test-parallel-key";
 
@@ -38,8 +39,12 @@ fn search_body() -> Value {
 }
 
 fn provider(server: &MockServer) -> ParallelAiProvider {
-    let config = ParallelAiConfig::new(API_KEY).with_base_url(server.uri());
-    ParallelAiProvider::new(config)
+    let config = ParallelAiProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_parallel_ai(config).unwrap()
 }
 
 fn opts(query: &str) -> SearchCallOptions {
@@ -194,15 +199,21 @@ async fn status_403_maps_to_provider_error() {
 
 #[tokio::test]
 async fn search_model_provider_is_parallel_ai() {
-    let config = ParallelAiConfig::new(API_KEY);
-    let provider = ParallelAiProvider::new(config);
-    assert_eq!(provider.search_model().provider(), "parallel_ai");
+    let config = ParallelAiProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        ..Default::default()
+    };
+    let provider = create_parallel_ai(config).unwrap();
+    assert_eq!(provider.search_model().provider(), "parallel_ai.search");
 }
 
 #[test]
 fn language_model_returns_no_such_model() {
-    let config = ParallelAiConfig::new(API_KEY);
-    let provider = ParallelAiProvider::new(config);
+    let config = ParallelAiProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        ..Default::default()
+    };
+    let provider = create_parallel_ai(config).unwrap();
     match provider.language_model("parallel-search") {
         Err(AiMuxError::NoSuchModel {
             model_id,
@@ -217,9 +228,12 @@ fn language_model_returns_no_such_model() {
 
 #[test]
 fn model_id_is_parallel_search() {
-    let config = ParallelAiConfig::new(API_KEY);
-    let provider = ParallelAiProvider::new(config);
+    let config = ParallelAiProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        ..Default::default()
+    };
+    let provider = create_parallel_ai(config).unwrap();
     let model = provider.search_model();
     assert_eq!(model.model_id(), "parallel-search");
-    assert_eq!(model.provider(), "parallel_ai");
+    assert_eq!(model.provider(), "parallel_ai.search");
 }

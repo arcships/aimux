@@ -14,7 +14,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
-use aimux_providers::{DataforseoConfig, DataforseoProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{DataforseoProvider, DataforseoProviderSettings, create_dataforseo};
 
 const LOGIN: &str = "test-login";
 const PASSWORD: &str = "test-password";
@@ -62,8 +63,13 @@ fn search_response_body() -> Value {
 }
 
 fn provider(server: &MockServer) -> DataforseoProvider {
-    let config = DataforseoConfig::new(LOGIN, PASSWORD).with_base_url(server.uri());
-    DataforseoProvider::new(config)
+    let config = DataforseoProviderSettings {
+        login: Some(Resolvable::Value(LOGIN.to_string())),
+        password: Some(Resolvable::Value(PASSWORD.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_dataforseo(config).unwrap()
 }
 
 fn opts(query: &str, max_results: Option<u32>) -> SearchCallOptions {
@@ -222,15 +228,23 @@ async fn status_401_maps_to_auth_error() {
 
 #[tokio::test]
 async fn search_model_provider_is_dataforseo() {
-    let config = DataforseoConfig::new(LOGIN, PASSWORD);
-    let provider = DataforseoProvider::new(config);
-    assert_eq!(provider.search_model().provider(), "dataforseo");
+    let config = DataforseoProviderSettings {
+        login: Some(Resolvable::Value(LOGIN.to_string())),
+        password: Some(Resolvable::Value(PASSWORD.to_string())),
+        ..Default::default()
+    };
+    let provider = create_dataforseo(config).unwrap();
+    assert_eq!(provider.search_model().provider(), "dataforseo.search");
 }
 
 #[test]
 fn language_model_returns_no_such_model() {
-    let config = DataforseoConfig::new(LOGIN, PASSWORD);
-    let provider = DataforseoProvider::new(config);
+    let config = DataforseoProviderSettings {
+        login: Some(Resolvable::Value(LOGIN.to_string())),
+        password: Some(Resolvable::Value(PASSWORD.to_string())),
+        ..Default::default()
+    };
+    let provider = create_dataforseo(config).unwrap();
     match provider.language_model("dataforseo-search") {
         Err(AiMuxError::NoSuchModel {
             model_id,

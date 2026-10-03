@@ -5,9 +5,14 @@
 
 mod discovery;
 mod exchange;
+mod poll;
 
 pub(crate) use discovery::list_data_models;
 pub(crate) use exchange::{Endpoint, EndpointConfig};
+pub(crate) use poll::{
+    POLL_INTERVAL_MILLIS_KEY, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key,
+    poll_interval_ms, poll_until, retry_download,
+};
 
 use std::sync::Arc;
 
@@ -87,7 +92,10 @@ impl Credential {
         }
     }
 
-    async fn secret(&self) -> Result<Option<String>, AiMuxError> {
+    /// The secret of this request, `None` for [`Credential::None`]. A
+    /// package that puts the key somewhere other than a header (a query
+    /// parameter, a JWT claim) asks for it here, per request.
+    pub(crate) async fn secret(&self) -> Result<Option<String>, AiMuxError> {
         match self {
             Self::None => Ok(None),
             Self::Explicit(key) => Ok(Some(key.resolve().await?)),
@@ -103,6 +111,8 @@ pub(crate) enum AuthScheme {
     Bearer,
     /// `<name>: <secret>` (`x-api-key`).
     Header(&'static str),
+    /// `Authorization: <scheme> <secret>` (`Token <key>`, `Key <key>`).
+    Scheme(&'static str),
 }
 
 /// Provider headers with a bearer credential: [`credential_headers`] with
@@ -141,6 +151,12 @@ pub(crate) fn credential_headers(
                     }
                     AuthScheme::Header(name) => {
                         layer.insert(name.to_string(), Some(secret));
+                    }
+                    AuthScheme::Scheme(scheme) => {
+                        layer.insert(
+                            "Authorization".to_string(),
+                            Some(format!("{scheme} {secret}")),
+                        );
                     }
                 }
             }

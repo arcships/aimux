@@ -7,8 +7,14 @@
 //! 1. POST `/speechtotext/v1/jobs` with multipart form (media file + config JSON)
 //! 2. GET `/speechtotext/v1/jobs/{id}` to poll until status is `transcribed`
 //! 3. GET `/speechtotext/v1/jobs/{id}/transcript` to fetch the final transcript
+//!
+//! [`create_revai`] takes [`RevaiProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`RevaiProvider`]. The credential is not read
+//! there: it is loaded for every request, from the setting or from `REVAI_API_KEY`.
+//! [`revai()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
+use std::sync::OnceLock;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -16,15 +22,17 @@ use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
-use aimux_core::retry;
 use aimux_core::shared::Warning;
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::{
-    HttpRequest, MultipartForm, load_api_key, media_type_to_extension, sleep_or_abort,
-    without_trailing_slash,
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{MultipartForm, media_type_to_extension};
+
+use crate::shared::{
+    Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, poll_interval_ms, poll_until,
+    provider_headers, retry_download,
 };
 
 fn revai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -49,61 +57,129 @@ fn revai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMu
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
-pub struct RevaiConfig {
-    pub api_key: String,
-    pub base_url: String,
-    pub headers: Option<HashMap<String, String>>,
+/// Milliseconds between two polls of a job
+/// (`providerOptions.revai.pollIntervalMs` overrides it for one call).
+const POLL_INTERVAL_MS: u64 = 100;
+/// How many times a job is polled before the call gives up (ten minutes at the
+/// default interval).
+const MAX_POLL_ATTEMPTS: u32 = 6_000;
+
+pub(crate) mod options;
+
+const DEFAULT_BASE_URL: &str = "https://api.rev.ai";
+const API_KEY_ENV_VAR: &str = "REVAI_API_KEY";
+const DEFAULT_NAME: &str = "revai";
+
+/// Settings of [`create_revai`].
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct RevaiProviderSettings {
+    /// Base URL for the API calls. Default `https://api.rev.ai`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `REVAI_API_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including the credential. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings (`"{name}.transcription"`).
+    /// Default `"revai"`. The providerOptions key stays `revai`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
 }
 
-impl RevaiConfig {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: "https://api.rev.ai".to_string(),
-            headers: None,
-        }
-    }
-
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-
-    #[must_use]
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = Some(headers);
-        self
-    }
-
-    /// Create from the `REVAI_API_KEY` environment variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
-    /// set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "REVAI_API_KEY", "Rev.ai")?;
-        Ok(Self::new(api_key))
+impl std::fmt::Debug for RevaiProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RevaiProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .finish()
     }
 }
 
+/// Create a Rev.ai provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_revai(settings: RevaiProviderSettings) -> Result<RevaiProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(RevaiProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: provider_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Rev.ai"),
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_revai` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn revai() -> &'static RevaiProvider {
+    static DEFAULT: OnceLock<RevaiProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_revai(RevaiProviderSettings::default())
+            .expect("default Rev.ai settings are always valid")
+    })
+}
+
+/// A Rev.ai provider. Cheap to clone the models out of; it holds no HTTP
+/// client.
 pub struct RevaiProvider {
-    config: RevaiConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
 }
 
 impl RevaiProvider {
-    #[must_use]
-    pub fn new(config: RevaiConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            None,
+        )
     }
 
+    /// A transcription (STT) model (e.g. `"machine"`); `provider()` is `"{name}.transcription"`.
     #[must_use]
     pub fn transcription(&self, model_id: &str) -> RevaiTranscriptionModel {
-        RevaiTranscriptionModel::new(model_id.to_string(), self.config.clone())
+        RevaiTranscriptionModel::from_config(
+            model_id.to_string(),
+            self.model_config("transcription"),
+        )
     }
 }
+
+crate::impl_single_modality_provider!(RevaiProvider, transcription_model, |p, id| p
+    .transcription(id));
 
 // ── Response schema ─────────────────────────────────────────────────────────
 
@@ -153,54 +229,19 @@ fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
 
 pub struct RevaiTranscriptionModel {
     model_id: String,
-    config: RevaiConfig,
+    config: EndpointConfig,
 }
 
 impl RevaiTranscriptionModel {
-    #[must_use]
-    pub fn new(model_id: String, config: RevaiConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(ref config_headers) = self.config.headers {
-            for (k, v) in config_headers {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn jobs_url(&self) -> String {
-        format!("{}/speechtotext/v1/jobs", self.config.base_url)
-    }
-
-    fn job_status_url(&self, job_id: &str) -> String {
-        format!("{}/speechtotext/v1/jobs/{}", self.config.base_url, job_id)
-    }
-
-    fn transcript_url(&self, job_id: &str) -> String {
-        format!(
-            "{}/speechtotext/v1/jobs/{}/transcript",
-            self.config.base_url, job_id
-        )
     }
 }
 
 #[async_trait]
 impl TranscriptionModel for RevaiTranscriptionModel {
     fn provider(&self) -> &str {
-        "revai"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -224,19 +265,13 @@ impl TranscriptionModel for RevaiTranscriptionModel {
         let mut form = MultipartForm::new();
         form.file("media", &filename, &options.media_type, &audio_bytes)?;
         form.text("config", &config)?;
-        let headers = self.build_headers(options.headers.as_ref());
-        let submit_url = self.jobs_url();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let submit_url = exchange.url("/speechtotext/v1/jobs");
 
-        // Submit job.
+        // Submit job. This creates the job and is sent exactly once; only the
+        // status poll and the transcript fetch below repeat.
         let resp = aimux_provider_utils::post_form_data_to_api(
-            HttpRequest::new(
-                submit_url.clone(),
-                headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                options,
-            ),
+            exchange.request(submit_url.clone(), options),
             form,
             aimux_provider_utils::create_json_response_handler::<RevaiJobResponse>(),
             revai_failed_response_handler(),
@@ -265,70 +300,56 @@ impl TranscriptionModel for RevaiTranscriptionModel {
             )
         })?;
         let submission_language = submit_response.language;
-        let retries = retry::prepare_retries(None, options.abort_signal.clone());
+        let poll_interval = Duration::from_millis(poll_interval_ms(
+            options::revai_options(options.provider_options.as_ref()),
+            POLL_INTERVAL_MS_KEY,
+            POLL_INTERVAL_MS,
+        ));
 
         // Poll for completion.
-        let job_status: RevaiJobResponse;
-        loop {
-            sleep_or_abort(
-                std::time::Duration::from_millis(100),
-                options.abort_signal.as_ref(),
-            )
-            .await?;
-
-            let poll_url = self.job_status_url(&job_id);
-            let resp = retries
-                .retry(|| {
-                    aimux_provider_utils::get_from_api(
-                        HttpRequest::new(
-                            poll_url.clone(),
-                            headers
-                                .iter()
-                                .map(|(k, v)| (k.clone(), v.clone()))
-                                .collect(),
-                            options,
-                        ),
-                        aimux_provider_utils::create_json_response_handler::<RevaiJobResponse>(),
-                        revai_failed_response_handler(),
-                    )
-                })
-                .await?;
-
-            let response_body = resp.raw_value.as_ref().map(ToString::to_string);
-            let poll: RevaiJobResponse = resp.value;
-
-            if poll.status.as_deref() == Some("transcribed") {
-                job_status = poll;
-                break;
-            }
-            if poll.status.as_deref() == Some("failed") {
-                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                    status_code: Some(200),
-                    provider_code: Some("failed".to_string()),
-                    response_body,
-                    ..ApiCallError::new("Transcription job failed", poll_url, serde_json::json!({}))
-                })));
-            }
-        }
-        let _ = job_status;
-
-        // Fetch transcript.
-        let resp = retries
-            .retry(|| {
-                aimux_provider_utils::get_from_api(
-                    HttpRequest::new(
-                        self.transcript_url(&job_id),
-                        headers
-                            .iter()
-                            .map(|(k, v)| (k.clone(), v.clone()))
-                            .collect(),
-                        options,
-                    ),
-                    aimux_provider_utils::create_json_response_handler::<RevaiTranscriptResponse>(),
+        let poll_url = exchange.url(&format!("/speechtotext/v1/jobs/{job_id}"));
+        poll_until(
+            &format!("revai job {job_id}"),
+            options.abort_signal.as_ref(),
+            poll_interval,
+            MAX_POLL_ATTEMPTS,
+            || async {
+                let resp = aimux_provider_utils::get_from_api(
+                    exchange.request(poll_url.clone(), options),
+                    aimux_provider_utils::create_json_response_handler::<RevaiJobResponse>(),
                     revai_failed_response_handler(),
                 )
-            })
-            .await?;
+                .await?;
+                let response_body = resp.raw_value.as_ref().map(ToString::to_string);
+                match resp.value.status.as_deref() {
+                    Some("transcribed") => Ok(PollStep::Ready(())),
+                    Some("failed") => Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                        status_code: Some(200),
+                        provider_code: Some("failed".to_string()),
+                        response_body,
+                        ..ApiCallError::new(
+                            "Transcription job failed",
+                            poll_url.clone(),
+                            serde_json::json!({}),
+                        )
+                    }))),
+                    _ => Ok(PollStep::Pending),
+                }
+            },
+        )
+        .await?;
+
+        // Fetch transcript. A transient failure repeats this request, never the
+        // submit.
+        let transcript_url = exchange.url(&format!("/speechtotext/v1/jobs/{job_id}/transcript"));
+        let resp = retry_download(options.abort_signal.as_ref(), poll_interval, || {
+            aimux_provider_utils::get_from_api(
+                exchange.request(transcript_url.clone(), options),
+                aimux_provider_utils::create_json_response_handler::<RevaiTranscriptResponse>(),
+                revai_failed_response_handler(),
+            )
+        })
+        .await?;
 
         let response_headers = resp.response_headers;
         let raw_body = resp.raw_value.unwrap_or(Value::Null);

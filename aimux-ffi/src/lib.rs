@@ -81,7 +81,7 @@ use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
 use aimux_providers::google::{GoogleProviderSettings, create_google};
 use aimux_providers::mistral::{MistralProviderSettings, create_mistral};
 use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
-use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
+use aimux_providers::tavily::{TavilyProvider, TavilyProviderSettings, create_tavily};
 use aimux_providers::vertex::{VertexProviderSettings, create_google_vertex};
 use aimux_providers::xai::{XAIProviderSettings, create_xai};
 use aimux_providers::{ProviderOptions, provider, provider_discovery, provider_handle};
@@ -2953,6 +2953,19 @@ pub extern "C" fn aimux_video_generate(
 // C ABI: Search
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// A Tavily provider for an explicit key handed over by the host, with an
+/// optional base URL.
+fn tavily_provider(
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<TavilyProvider, AiMuxError> {
+    create_tavily(TavilyProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        base_url,
+        ..Default::default()
+    })
+}
+
 /// Create a Tavily search model instance. `model_id` is accepted for API
 /// symmetry but ignored (Tavily uses a fixed endpoint).
 #[unsafe(no_mangle)]
@@ -2963,7 +2976,7 @@ pub extern "C" fn aimux_tavily_search_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let api_key = str_arg(api_key, "api_key")?;
-        let model = TavilyProvider::new(TavilyConfig::new(api_key)).search_model();
+        let model = tavily_provider(api_key, None)?.search_model();
         Ok(intern_handle(HandleEntry::Search(Arc::new(model))))
     })
 }
@@ -2977,11 +2990,7 @@ pub extern "C" fn aimux_tavily_search_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let api_key = str_arg(api_key, "api_key")?;
-        let mut config = TavilyConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let model = TavilyProvider::new(config).search_model();
+        let model = tavily_provider(api_key, parse_base_url(base_url)?)?.search_model();
         Ok(intern_handle(HandleEntry::Search(Arc::new(model))))
     })
 }

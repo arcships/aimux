@@ -13,7 +13,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
-use aimux_providers::{TinyfishConfig, TinyfishProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{TinyfishProvider, TinyfishProviderSettings, create_tinyfish};
 
 const API_KEY: &str = "test-tinyfish-key";
 
@@ -48,8 +49,12 @@ fn search_response_body() -> Value {
 }
 
 fn provider(server: &MockServer) -> TinyfishProvider {
-    let config = TinyfishConfig::new(API_KEY).with_base_url(server.uri());
-    TinyfishProvider::new(config)
+    let config = TinyfishProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_tinyfish(config).unwrap()
 }
 
 fn opts(query: &str, max_results: Option<u32>) -> SearchCallOptions {
@@ -199,15 +204,21 @@ async fn status_401_maps_to_auth_error() {
 
 #[tokio::test]
 async fn search_model_provider_is_tinyfish() {
-    let config = TinyfishConfig::new(API_KEY);
-    let provider = TinyfishProvider::new(config);
-    assert_eq!(provider.search_model().provider(), "tinyfish");
+    let config = TinyfishProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        ..Default::default()
+    };
+    let provider = create_tinyfish(config).unwrap();
+    assert_eq!(provider.search_model().provider(), "tinyfish.search");
 }
 
 #[test]
 fn language_model_returns_no_such_model() {
-    let config = TinyfishConfig::new(API_KEY);
-    let provider = TinyfishProvider::new(config);
+    let config = TinyfishProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        ..Default::default()
+    };
+    let provider = create_tinyfish(config).unwrap();
     match provider.language_model("tinyfish-search") {
         Err(AiMuxError::NoSuchModel {
             model_id,

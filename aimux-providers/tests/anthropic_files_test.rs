@@ -304,3 +304,40 @@ async fn has_correct_provider_name() {
 
     assert_eq!(files.provider(), "anthropic.files");
 }
+
+/// A transient 503 on the upload is reported as it happened: like the AI SDK's
+/// `uploadFile`, nothing retries it, so the file body is sent once.
+#[tokio::test]
+async fn transient_upload_failure_is_not_retried() {
+    let server = MockServer::start().await;
+    let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let responder_attempts = std::sync::Arc::clone(&attempts);
+    Mock::given(method("POST"))
+        .and(path("/v1/files"))
+        .respond_with(move |_: &wiremock::Request| {
+            if responder_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                ResponseTemplate::new(503)
+                    .insert_header("retry-after-ms", "0")
+                    .set_body_json(
+                        json!({"error": {"type": "overloaded_error", "message": "try again"}}),
+                    )
+            } else {
+                ResponseTemplate::new(200).set_body_json(file_response_body())
+            }
+        })
+        .mount(&server)
+        .await;
+
+    let provider = provider(&server);
+    let error = provider
+        .files()
+        .upload_file(&upload_options())
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        aimux_core::AiMuxError::ApiCall(ref detail) if detail.status_code == Some(503)
+    ));
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+}

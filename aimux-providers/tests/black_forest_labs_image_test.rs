@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Black Forest Labs image model tests.
+//! Rust translation of the Black Forest Labs image model tests.
 //! Source: `reference/ai/packages/black-forest-labs/src/black-forest-labs-image-model.test.ts`
 
 use serde_json::{Value, json};
@@ -6,7 +6,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs};
-use aimux_providers::{BlackForestLabsConfig, BlackForestLabsProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{BlackForestLabsProviderSettings, create_black_forest_labs};
 
 const PROMPT: &str = "A cute baby sea otter";
 
@@ -39,8 +40,14 @@ fn options(prompt: &str) -> ImageCallOptions {
 async fn should_extract_generated_image() {
     let server = MockServer::start().await;
     mock_bfl(&server).await;
-    let config = BlackForestLabsConfig::new("test-key").with_base_url(server.uri());
-    let model = BlackForestLabsProvider::new(config).image("flux-pro-1.1");
+    let config = BlackForestLabsProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_black_forest_labs(config)
+        .unwrap()
+        .image("flux-pro-1.1");
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
     match result.images {
         ImageOutputs::Binary(imgs) => {
@@ -55,8 +62,14 @@ async fn should_extract_generated_image() {
 async fn should_pass_prompt() {
     let server = MockServer::start().await;
     mock_bfl(&server).await;
-    let config = BlackForestLabsConfig::new("test-key").with_base_url(server.uri());
-    let model = BlackForestLabsProvider::new(config).image("flux-pro-1.1");
+    let config = BlackForestLabsProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_black_forest_labs(config)
+        .unwrap()
+        .image("flux-pro-1.1");
     model.do_generate(&options(PROMPT)).await.unwrap();
     let reqs = server.received_requests().await.unwrap();
     let body: Value = serde_json::from_slice(&reqs[0].body).unwrap();
@@ -67,8 +80,14 @@ async fn should_pass_prompt() {
 async fn should_pass_aspect_ratio() {
     let server = MockServer::start().await;
     mock_bfl(&server).await;
-    let config = BlackForestLabsConfig::new("test-key").with_base_url(server.uri());
-    let model = BlackForestLabsProvider::new(config).image("flux-pro-1.1");
+    let config = BlackForestLabsProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_black_forest_labs(config)
+        .unwrap()
+        .image("flux-pro-1.1");
     let mut opts = options(PROMPT);
     opts.aspect_ratio = Some(aimux_core::shared::AspectRatio::new(16, 9));
     model.do_generate(&opts).await.unwrap();
@@ -81,8 +100,14 @@ async fn should_pass_aspect_ratio() {
 async fn should_pass_seed() {
     let server = MockServer::start().await;
     mock_bfl(&server).await;
-    let config = BlackForestLabsConfig::new("test-key").with_base_url(server.uri());
-    let model = BlackForestLabsProvider::new(config).image("flux-pro-1.1");
+    let config = BlackForestLabsProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_black_forest_labs(config)
+        .unwrap()
+        .image("flux-pro-1.1");
     let mut opts = options(PROMPT);
     opts.seed = Some(42);
     model.do_generate(&opts).await.unwrap();
@@ -95,8 +120,14 @@ async fn should_pass_seed() {
 async fn should_pass_auth_headers() {
     let server = MockServer::start().await;
     mock_bfl(&server).await;
-    let config = BlackForestLabsConfig::new("test-key").with_base_url(server.uri());
-    let model = BlackForestLabsProvider::new(config).image("flux-pro-1.1");
+    let config = BlackForestLabsProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_black_forest_labs(config)
+        .unwrap()
+        .image("flux-pro-1.1");
     model.do_generate(&options(PROMPT)).await.unwrap();
     let reqs = server.received_requests().await.unwrap();
     assert_eq!(
@@ -114,8 +145,14 @@ async fn should_pass_auth_headers() {
 async fn should_return_provider_metadata() {
     let server = MockServer::start().await;
     mock_bfl(&server).await;
-    let config = BlackForestLabsConfig::new("test-key").with_base_url(server.uri());
-    let model = BlackForestLabsProvider::new(config).image("flux-pro-1.1");
+    let config = BlackForestLabsProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_black_forest_labs(config)
+        .unwrap()
+        .image("flux-pro-1.1");
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
     let meta = result.provider_metadata.unwrap();
     let bfl = meta.get("blackForestLabs").unwrap();

@@ -15,7 +15,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
-use aimux_providers::{GooglePseConfig, GooglePseProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{GooglePseProvider, GooglePseProviderSettings, create_google_pse};
 
 const API_KEY: &str = "test-google-key";
 const CX: &str = "test-cx-id";
@@ -41,10 +42,13 @@ fn search_body() -> Value {
 }
 
 fn provider(server: &MockServer) -> GooglePseProvider {
-    let config = GooglePseConfig::new(API_KEY)
-        .with_cx(CX)
-        .with_base_url(format!("{}/customsearch/v1", server.uri()));
-    GooglePseProvider::new(config)
+    let config = GooglePseProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        cx: Some(CX.to_string()),
+        base_url: Some(format!("{}/customsearch/v1", server.uri()).to_string()),
+        ..Default::default()
+    };
+    create_google_pse(config).unwrap()
 }
 
 fn opts(query: &str) -> SearchCallOptions {
@@ -167,9 +171,12 @@ async fn cx_resolved_from_provider_options_when_config_has_none() {
         .await;
 
     // Config without cx.
-    let config =
-        GooglePseConfig::new(API_KEY).with_base_url(format!("{}/customsearch/v1", server.uri()));
-    let provider = GooglePseProvider::new(config);
+    let config = GooglePseProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(format!("{}/customsearch/v1", server.uri()).to_string()),
+        ..Default::default()
+    };
+    let provider = create_google_pse(config).unwrap();
     let model = provider.search_model();
 
     let mut options = opts("rust language");
@@ -187,9 +194,12 @@ async fn cx_resolved_from_provider_options_when_config_has_none() {
 async fn missing_cx_returns_invalid_argument_error() {
     let server = MockServer::start().await;
     // Config without cx; no provider_options either.
-    let config =
-        GooglePseConfig::new(API_KEY).with_base_url(format!("{}/customsearch/v1", server.uri()));
-    let provider = GooglePseProvider::new(config);
+    let config = GooglePseProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(format!("{}/customsearch/v1", server.uri()).to_string()),
+        ..Default::default()
+    };
+    let provider = create_google_pse(config).unwrap();
     let model = provider.search_model();
 
     let result = model.do_search(&opts("rust language")).await;
@@ -251,15 +261,23 @@ async fn status_403_maps_to_provider_error() {
 
 #[tokio::test]
 async fn search_model_provider_is_google_pse() {
-    let config = GooglePseConfig::new(API_KEY).with_cx(CX);
-    let provider = GooglePseProvider::new(config);
-    assert_eq!(provider.search_model().provider(), "google_pse");
+    let config = GooglePseProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        cx: Some(CX.to_string()),
+        ..Default::default()
+    };
+    let provider = create_google_pse(config).unwrap();
+    assert_eq!(provider.search_model().provider(), "google_pse.search");
 }
 
 #[test]
 fn language_model_returns_no_such_model() {
-    let config = GooglePseConfig::new(API_KEY).with_cx(CX);
-    let provider = GooglePseProvider::new(config);
+    let config = GooglePseProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        cx: Some(CX.to_string()),
+        ..Default::default()
+    };
+    let provider = create_google_pse(config).unwrap();
     match provider.language_model("google-pse-search") {
         Err(AiMuxError::NoSuchModel {
             model_id,
@@ -274,9 +292,13 @@ fn language_model_returns_no_such_model() {
 
 #[test]
 fn model_id_is_google_pse_search() {
-    let config = GooglePseConfig::new(API_KEY).with_cx(CX);
-    let provider = GooglePseProvider::new(config);
+    let config = GooglePseProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        cx: Some(CX.to_string()),
+        ..Default::default()
+    };
+    let provider = create_google_pse(config).unwrap();
     let model = provider.search_model();
     assert_eq!(model.model_id(), "google-pse-search");
-    assert_eq!(model.provider(), "google_pse");
+    assert_eq!(model.provider(), "google_pse.search");
 }

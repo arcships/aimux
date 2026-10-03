@@ -569,12 +569,13 @@ pub fn google_video(api_key: &str, model_id: &str, base_url: Option<&str>) -> Py
 #[pyfunction]
 #[pyo3(signature = (api_key, base_url=None))]
 pub fn tavily_search(api_key: &str, base_url: Option<&str>) -> PyResult<SearchModel> {
-    use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
-    let mut config = TavilyConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = TavilyProvider::new(config);
+    use aimux_providers::tavily::{TavilyProviderSettings, create_tavily};
+    let provider = create_tavily(TavilyProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider.search_model();
     Ok(SearchModel {
         inner: Arc::new(model),

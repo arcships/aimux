@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Cartesia transcription model tests.
+//! Rust translation of the Cartesia transcription model tests.
 //! Source: `reference/ai/packages/cartesia/src/cartesia-transcription-model.test.ts`
 
 use std::collections::HashMap;
@@ -9,7 +9,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
-use aimux_providers::{CartesiaConfig, CartesiaProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{CartesiaProviderSettings, create_cartesia};
 
 fn mock_audio() -> Vec<u8> {
     vec![1u8, 2, 3]
@@ -76,8 +77,12 @@ async fn should_pass_model() {
     let server = MockServer::start().await;
     mock_response(&server, &fixture_response(), &[]).await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.transcription("best");
 
     model
@@ -101,10 +106,13 @@ async fn should_pass_headers() {
         "Custom-Provider-Header".to_string(),
         "provider-header-value".to_string(),
     );
-    let config = CartesiaConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(ph);
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some((ph).into_iter().map(|(k, v)| (k, Some(v))).collect()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.transcription("best");
 
     let mut opts = options(mock_audio(), "audio/wav");
@@ -136,8 +144,12 @@ async fn should_extract_text() {
     let server = MockServer::start().await;
     mock_response(&server, &fixture_response(), &[]).await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.transcription("best");
 
     let result = model
@@ -154,8 +166,12 @@ async fn should_extract_text() {
 #[tokio::test]
 async fn should_reject_streaming_model_for_non_streaming() {
     let server = MockServer::start().await;
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.transcription("ink-2");
 
     let result = model.do_generate(&options(mock_audio(), "audio/wav")).await;
@@ -177,8 +193,12 @@ async fn should_include_response_data() {
     )
     .await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.transcription("best");
 
     let result = model
@@ -195,8 +215,12 @@ async fn should_use_real_date() {
     let server = MockServer::start().await;
     mock_response(&server, &fixture_response(), &[]).await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.transcription("best");
 
     let result = model
@@ -213,8 +237,12 @@ async fn should_warn_about_streaming_options() {
     let server = MockServer::start().await;
     mock_response(&server, &fixture_response(), &[]).await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.transcription("best");
 
     let mut opts = options(mock_audio(), "audio/wav");
@@ -241,8 +269,12 @@ async fn should_pass_language_and_timestamp_granularities() {
     let server = MockServer::start().await;
     mock_response(&server, &fixture_response(), &[]).await;
 
-    let config = CartesiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CartesiaProvider::new(config);
+    let config = CartesiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_cartesia(config).unwrap();
     let model = provider.transcription("best");
 
     let mut opts = options(mock_audio(), "audio/wav");

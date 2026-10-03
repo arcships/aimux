@@ -6,8 +6,13 @@
 //! Authentication uses the `X-API-Key` header (env `TINYFISH_API_KEY`).
 //! TinyFish is a search-only provider: it exposes a web search protocol
 //! (query → results) and does not support language models.
+//!
+//! [`create_tinyfish`] takes [`TinyfishProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`TinyfishProvider`]. The credential is not read
+//! there: it is loaded for every request, from the setting or from `TINYFISH_API_KEY`.
+//! [`tinyfish()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -17,12 +22,9 @@ use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_core::shared::SharedHeaders;
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
-use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
-
-/// Provider canonical name.
-const PROVIDER_NAME: &str = "tinyfish";
+use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
 
 /// Fixed model id for the TinyFish search model.
 const MODEL_ID: &str = "tinyfish-search";
@@ -32,71 +34,113 @@ const DEFAULT_COUNT: u32 = 10;
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-/// Configuration for the TinyFish provider.
+const DEFAULT_BASE_URL: &str = "https://api.search.tinyfish.ai";
+const API_KEY_ENV_VAR: &str = "TINYFISH_API_KEY";
+const DEFAULT_NAME: &str = "tinyfish";
+
+/// Settings of [`create_tinyfish`].
 ///
-/// The `Debug` implementation redacts the API key so credentials never appear
-/// in logs or error messages.
-#[derive(Clone)]
-pub struct TinyfishConfig {
-    api_key: String,
-    base_url: String,
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct TinyfishProviderSettings {
+    /// Base URL for the API calls. Default `https://api.search.tinyfish.ai`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `TINYFISH_API_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including the credential. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings (`"{name}.search"`).
+    /// Default `"tinyfish"`. The providerOptions key stays `tinyfish`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
 }
 
-impl TinyfishConfig {
-    /// Create from an API key (uses the default TinyFish base URL).
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: "https://api.search.tinyfish.ai".to_string(),
-        }
-    }
-
-    /// Use a custom base URL.
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-
-    /// Create from the `TINYFISH_API_KEY` environment variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when `TINYFISH_API_KEY` is not set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "TINYFISH_API_KEY", "TinyFish")?;
-        Ok(Self::new(api_key))
-    }
-}
-
-impl std::fmt::Debug for TinyfishConfig {
+impl std::fmt::Debug for TinyfishProviderSettings {
+    /// Never prints the key or header values.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TinyfishConfig")
-            .field("api_key", &"<redacted>")
+        f.debug_struct("TinyfishProviderSettings")
             .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
             .finish()
     }
 }
 
-// ── Provider ─────────────────────────────────────────────────────────────────
-
-/// TinyFish provider — creates [`TinyfishSearchModel`] instances.
+/// Create a TinyFish provider.
 ///
-/// TinyFish is a search-only provider; it does not support language models.
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_tinyfish(settings: TinyfishProviderSettings) -> Result<TinyfishProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(TinyfishProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: credential_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "TinyFish"),
+            AuthScheme::Header("X-API-Key"),
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_tinyfish` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn tinyfish() -> &'static TinyfishProvider {
+    static DEFAULT: OnceLock<TinyfishProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_tinyfish(TinyfishProviderSettings::default())
+            .expect("default TinyFish settings are always valid")
+    })
+}
+
+/// A TinyFish provider. Cheap to clone the models out of; it holds no HTTP
+/// client.
 pub struct TinyfishProvider {
-    config: TinyfishConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
 }
 
 impl TinyfishProvider {
-    #[must_use]
-    pub fn new(config: TinyfishConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            None,
+        )
     }
 
-    /// Create a search model instance.
+    /// The search model; `provider()` is `"{name}.search"`.
     #[must_use]
     pub fn search_model(&self) -> TinyfishSearchModel {
-        TinyfishSearchModel::new(self.config.clone())
+        TinyfishSearchModel::from_config(self.model_config("search"))
     }
 }
 
@@ -153,36 +197,19 @@ fn map_result(r: TinyfishResult) -> SearchResultItem {
 
 /// A TinyFish search model.
 pub struct TinyfishSearchModel {
-    config: TinyfishConfig,
+    config: EndpointConfig,
 }
 
 impl TinyfishSearchModel {
-    #[must_use]
-    pub fn new(config: TinyfishConfig) -> Self {
+    pub(crate) fn from_config(config: EndpointConfig) -> Self {
         Self { config }
-    }
-
-    fn build_headers(&self, extra: Option<&SharedHeaders>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert("X-API-Key".to_string(), self.config.api_key.clone());
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    /// The search endpoint (root path; query parameters are appended at call time).
-    fn endpoint(&self) -> String {
-        self.config.base_url.clone()
     }
 }
 
 #[async_trait]
 impl SearchModel for TinyfishSearchModel {
     fn provider(&self) -> &str {
-        PROVIDER_NAME
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -191,27 +218,16 @@ impl SearchModel for TinyfishSearchModel {
 
     async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError> {
         let count = resolve_count(options.max_results);
-        let headers: Vec<(String, String)> = self
-            .build_headers(options.headers.as_ref())
-            .into_iter()
-            .collect();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
-        let mut url = url::Url::parse(&self.endpoint())
+        let mut url = url::Url::parse(exchange.base_url())
             .map_err(|e| AiMuxError::InvalidArgument(format!("invalid tinyfish endpoint: {e}")))?;
         url.query_pairs_mut()
             .append_pair("query", &options.query)
             .append_pair("count", &count.to_string());
 
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest {
-                url: url.to_string(),
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                ..Default::default()
-            },
+            exchange.request(url.to_string(), options),
             aimux_provider_utils::create_json_response_handler::<TinyfishSearchResponse>(),
             aimux_provider_utils::create_standard_json_error_response_handler(),
         )

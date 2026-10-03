@@ -303,11 +303,10 @@ async fn should_set_provider() {
     assert_eq!(named.files().provider(), "proxy.files");
 }
 
-/// A transient 503 followed by 200 must succeed: `upload_file` retries the
-/// upload exchange with the default retry settings, the same way
-/// `list_models` already does.
+/// A transient 503 on the upload is reported as it happened: like the AI SDK's
+/// `uploadFile`, nothing retries it, so the file body is sent once.
 #[tokio::test]
-async fn transient_failure_is_retried_and_succeeds() {
+async fn transient_upload_failure_is_not_retried() {
     let server = MockServer::start().await;
     let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let responder_attempts = std::sync::Arc::clone(&attempts);
@@ -328,11 +327,11 @@ async fn transient_failure_is_retried_and_succeeds() {
     let provider = provider_with("test-api-key", server.uri());
     let files = provider.files();
 
-    let result = files.upload_file(&upload_options(None)).await.unwrap();
+    let error = files.upload_file(&upload_options(None)).await.unwrap_err();
 
-    assert_eq!(
-        result.provider_reference.get("openai"),
-        Some(&"file-retried".to_string())
-    );
-    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert!(matches!(
+        error,
+        aimux_core::AiMuxError::ApiCall(ref detail) if detail.status_code == Some(503)
+    ));
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
 }

@@ -6,22 +6,35 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::provider::Provider;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
 
-use aimux_providers::{ExaAiConfig, ExaAiProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{ExaAiProvider, ExaAiProviderSettings, create_exa_ai};
 
 fn make_provider(server: &MockServer) -> ExaAiProvider {
-    let config = ExaAiConfig::new("test-api-key").with_base_url(server.uri());
-    ExaAiProvider::new(config)
+    let config = ExaAiProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_exa_ai(config).unwrap()
 }
 
 #[test]
 fn search_model_provider_is_exa_ai() {
-    let provider = ExaAiProvider::new(ExaAiConfig::new("test-key"));
-    assert_eq!(provider.search_model().provider(), "exa_ai");
+    let provider = create_exa_ai(ExaAiProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(provider.search_model().provider(), "exa_ai.search");
 }
 
 #[test]
 fn language_model_returns_unsupported() {
-    let provider = ExaAiProvider::new(ExaAiConfig::new("test-key"));
+    let provider = create_exa_ai(ExaAiProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
     assert!(provider.language_model("any").is_err());
 }
 
@@ -64,8 +77,12 @@ async fn uses_x_api_key_header() {
         .mount(&server)
         .await;
 
-    let config = ExaAiConfig::new("my-key").with_base_url(server.uri());
-    let provider = ExaAiProvider::new(config);
+    let config = ExaAiProviderSettings {
+        api_key: Some(Resolvable::Value("my-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_exa_ai(config).unwrap();
     let model = provider.search_model();
     model
         .do_search(&SearchCallOptions::new("test"))

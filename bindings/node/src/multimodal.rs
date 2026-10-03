@@ -682,12 +682,13 @@ pub async fn google_video(
 pub async fn tavily_search(api_key: String, base_url: Option<String>) -> AimuxResult<SearchModel> {
     AimuxResult({
         let __r: crate::error::MResult<SearchModel> = async {
-            use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
-            let mut config = TavilyConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = TavilyProvider::new(config);
+            use aimux_providers::tavily::{TavilyProviderSettings, create_tavily};
+            let provider = create_tavily(TavilyProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                base_url,
+                ..Default::default()
+            })
+            .map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider.search_model();
             Ok(SearchModel {
                 inner: Arc::new(model),

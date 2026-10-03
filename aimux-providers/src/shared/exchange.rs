@@ -82,6 +82,22 @@ impl EndpointConfig {
         }
     }
 
+    /// A config whose base URL is itself resolved on every request (a
+    /// self-hosted instance named by an environment variable).
+    pub(crate) fn dynamic(
+        provider: String,
+        endpoint: EndpointFn,
+        fetch: Option<FetchFunction>,
+    ) -> Self {
+        Self {
+            provider,
+            endpoint,
+            fetch,
+            supported_urls: Arc::new(|_| SupportedUrls::default()),
+            transform_request_body: None,
+        }
+    }
+
     /// The same config with the URLs the model fetches itself.
     #[must_use]
     pub(crate) fn with_supported_urls(mut self, urls: SupportedUrlsFn) -> Self {

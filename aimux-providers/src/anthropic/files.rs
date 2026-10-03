@@ -104,21 +104,16 @@ impl Files for AnthropicFiles {
         // sets `Content-Type` from it, so it is intentionally not added to the
         // header list above.
         //
-        // Nothing above `upload_file` retries it (there is no Core
-        // `do_upload_file`), so the retry lives here — safe for the whole
-        // exchange because an upload is not billable and a failed
-        // create-a-file request returns no id to replay against (§9.4).
-        let retries = aimux_core::retry::prepare_retries(None, options.abort_signal.clone());
-        let resp = retries
-            .retry(|| {
-                aimux_provider_utils::post_to_api(
-                    config.http_request(config.url("/files"), header_list.clone(), options),
-                    HttpBody::Bytes(body.clone(), content_type.clone()),
-                    aimux_provider_utils::create_json_response_handler(),
-                    self.config.failed_response_handler(),
-                )
-            })
-            .await?;
+        // One attempt: like the AI SDK's `uploadFile`, an upload is never
+        // replayed implicitly. A caller that wants a retry makes it around
+        // `upload_file`.
+        let resp = aimux_provider_utils::post_to_api(
+            config.http_request(config.url("/files"), header_list, options),
+            HttpBody::Bytes(body, content_type),
+            aimux_provider_utils::create_json_response_handler(),
+            self.config.failed_response_handler(),
+        )
+        .await?;
 
         let data: AnthropicFilesResponse = resp.value;
 

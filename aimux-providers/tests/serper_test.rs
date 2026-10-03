@@ -6,22 +6,35 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::provider::Provider;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
 
-use aimux_providers::{SerperConfig, SerperProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{SerperProvider, SerperProviderSettings, create_serper};
 
 fn make_provider(server: &MockServer) -> SerperProvider {
-    let config = SerperConfig::new("test-api-key").with_base_url(server.uri());
-    SerperProvider::new(config)
+    let config = SerperProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_serper(config).unwrap()
 }
 
 #[test]
 fn search_model_provider_is_serper() {
-    let provider = SerperProvider::new(SerperConfig::new("test-key"));
-    assert_eq!(provider.search_model().provider(), "serper");
+    let provider = create_serper(SerperProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(provider.search_model().provider(), "serper.search");
 }
 
 #[test]
 fn language_model_returns_unsupported() {
-    let provider = SerperProvider::new(SerperConfig::new("test-key"));
+    let provider = create_serper(SerperProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
     assert!(provider.language_model("any").is_err());
 }
 
@@ -64,8 +77,12 @@ async fn uses_x_api_key_header() {
         .mount(&server)
         .await;
 
-    let config = SerperConfig::new("my-key").with_base_url(server.uri());
-    let provider = SerperProvider::new(config);
+    let config = SerperProviderSettings {
+        api_key: Some(Resolvable::Value("my-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_serper(config).unwrap();
     let model = provider.search_model();
     model
         .do_search(&SearchCallOptions::new("test"))

@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Rev.ai transcription model tests.
+//! Rust translation of the Rev.ai transcription model tests.
 //! Source: `reference/ai/packages/revai/src/revai-transcription-model.test.ts`
 
 use std::collections::HashMap;
@@ -8,7 +8,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
-use aimux_providers::{RevaiConfig, RevaiProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{RevaiProviderSettings, create_revai};
 
 fn mock_audio() -> Vec<u8> {
     vec![1u8, 2, 3]
@@ -95,8 +96,12 @@ async fn should_pass_model_in_config() {
     let server = MockServer::start().await;
     mock_all_endpoints(&server, &fixture_transcript(), &[]).await;
 
-    let config = RevaiConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = RevaiProvider::new(config);
+    let config = RevaiProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_revai(config).unwrap();
     let model = provider.transcription("machine");
 
     model
@@ -122,10 +127,13 @@ async fn should_pass_headers() {
         "Custom-Provider-Header".to_string(),
         "provider-header-value".to_string(),
     );
-    let config = RevaiConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(ph);
-    let provider = RevaiProvider::new(config);
+    let config = RevaiProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some((ph).into_iter().map(|(k, v)| (k, Some(v))).collect()),
+        ..Default::default()
+    };
+    let provider = create_revai(config).unwrap();
     let model = provider.transcription("machine");
 
     let mut opts = options(mock_audio(), "audio/wav");
@@ -156,8 +164,12 @@ async fn should_extract_text() {
     let server = MockServer::start().await;
     mock_all_endpoints(&server, &fixture_transcript(), &[]).await;
 
-    let config = RevaiConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = RevaiProvider::new(config);
+    let config = RevaiProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_revai(config).unwrap();
     let model = provider.transcription("machine");
 
     let result = model
@@ -181,8 +193,12 @@ async fn should_include_response_data() {
     )
     .await;
 
-    let config = RevaiConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = RevaiProvider::new(config);
+    let config = RevaiProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_revai(config).unwrap();
     let model = provider.transcription("machine");
 
     let result = model
@@ -199,8 +215,12 @@ async fn should_use_real_date() {
     let server = MockServer::start().await;
     mock_all_endpoints(&server, &fixture_transcript(), &[]).await;
 
-    let config = RevaiConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = RevaiProvider::new(config);
+    let config = RevaiProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_revai(config).unwrap();
     let model = provider.transcription("machine");
 
     let result = model

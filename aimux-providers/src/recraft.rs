@@ -8,8 +8,15 @@
 //! - Base URL: `https://external.api.recraft.ai/v1`
 //! - Response: `{ "data": [{ "url" | "b64_json" }] }` (OpenAI Images shape)
 //! - No streaming.
+//!
+//! [`create_recraft`] takes [`RecraftProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`RecraftProvider`]. The credential is not read
+//! there: it is loaded for every request, from the setting or from `RECRAFT_API_TOKEN`.
+//! [`recraft()`] is the default instance; it reads nothing and cannot fail.
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
@@ -18,9 +25,14 @@ use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
-use aimux_core::retry;
 use aimux_core::shared::Warning;
-use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
+use aimux_provider_utils::HttpRequest;
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+
+use crate::shared::{
+    Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, poll_interval_ms, provider_headers,
+    retry_download,
+};
 
 fn recraft_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -40,68 +52,118 @@ fn recraft_failed_response_handler() -> aimux_provider_utils::ResponseHandler<Ai
     })
 }
 
+/// Milliseconds between two attempts to download a generated image
+/// (`providerOptions.recraft.pollIntervalMs` overrides it for one call).
+const DOWNLOAD_RETRY_INTERVAL_MS: u64 = 1_000;
+
+pub(crate) mod options;
+
 const DEFAULT_BASE_URL: &str = "https://external.api.recraft.ai/v1";
-const ENV_VAR: &str = "RECRAFT_API_TOKEN";
-const PROVIDER_NAME: &str = "recraft";
+const API_KEY_ENV_VAR: &str = "RECRAFT_API_TOKEN";
+const DEFAULT_NAME: &str = "recraft";
 
-/// Configuration for the Recraft provider.
-#[derive(Debug, Clone)]
-pub struct RecraftConfig {
-    pub api_key: String,
-    pub base_url: String,
-    pub headers: Option<HashMap<String, String>>,
+/// Settings of [`create_recraft`].
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct RecraftProviderSettings {
+    /// Base URL for the API calls. Default `https://external.api.recraft.ai/v1`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `RECRAFT_API_TOKEN` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including the credential. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings (`"{name}.image"`).
+    /// Default `"recraft"`. The providerOptions key stays `recraft`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
 }
 
-impl RecraftConfig {
-    /// Create from an API key, using the default Recraft base URL.
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: DEFAULT_BASE_URL.to_string(),
-            headers: None,
-        }
-    }
-
-    /// Override the base URL (useful for tests / self-hosted endpoints).
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-
-    /// Set additional static HTTP headers sent with every request.
-    #[must_use]
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = Some(headers);
-        self
-    }
-
-    /// Create from the `RECRAFT_API_TOKEN` environment variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when `RECRAFT_API_TOKEN` is not set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, ENV_VAR, "Recraft")?;
-        Ok(Self::new(api_key))
+impl std::fmt::Debug for RecraftProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecraftProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .finish()
     }
 }
 
-/// Recraft provider — creates [`RecraftImageModel`] instances.
+/// Create a Recraft provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_recraft(settings: RecraftProviderSettings) -> Result<RecraftProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(RecraftProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: provider_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Recraft"),
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_recraft` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn recraft() -> &'static RecraftProvider {
+    static DEFAULT: OnceLock<RecraftProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_recraft(RecraftProviderSettings::default())
+            .expect("default Recraft settings are always valid")
+    })
+}
+
+/// A Recraft provider. Cheap to clone the models out of; it holds no HTTP
+/// client.
 pub struct RecraftProvider {
-    config: RecraftConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
 }
 
 impl RecraftProvider {
-    #[must_use]
-    pub fn new(config: RecraftConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            None,
+        )
     }
 
-    /// Create an image generation model instance (e.g. `"recraftv3"`).
+    /// An image model (e.g. `"recraftv3"`); `provider()` is `"{name}.image"`.
     #[must_use]
     pub fn image(&self, model_id: &str) -> RecraftImageModel {
-        RecraftImageModel::new(model_id.to_string(), self.config.clone())
+        RecraftImageModel::from_config(model_id.to_string(), self.model_config("image"))
     }
 }
 
@@ -110,36 +172,12 @@ crate::impl_single_modality_provider!(RecraftProvider, image_model, |p, id| p.im
 /// A Recraft image generation model.
 pub struct RecraftImageModel {
     model_id: String,
-    config: RecraftConfig,
+    config: EndpointConfig,
 }
 
 impl RecraftImageModel {
-    #[must_use]
-    pub fn new(model_id: String, config: RecraftConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut h = HashMap::new();
-        h.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(ref ch) = self.config.headers {
-            for (k, v) in ch {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        h
-    }
-
-    fn generations_endpoint(&self) -> String {
-        format!("{}/images/generations", self.config.base_url)
     }
 }
 
@@ -157,7 +195,7 @@ struct RecraftOptions {
 /// Unknown fields are ignored (safe degradation); values are passed through as
 /// raw JSON so that unrecognised-but-valid enum values do not cause errors.
 fn parse_recraft_options(provider_options: &HashMap<String, Value>) -> RecraftOptions {
-    let recraft = provider_options.get("recraft");
+    let recraft = options::recraft_options(Some(provider_options));
     RecraftOptions {
         style: recraft.and_then(|o| o.get("style")).cloned(),
         style_id: recraft.and_then(|o| o.get("styleId")).cloned(),
@@ -221,9 +259,9 @@ fn build_generation_body(
 /// - If neither is present, returns an empty [`ImageOutputs::Base64`].
 async fn extract_images(
     response: &Value,
-    retries: &retry::PreparedRetries,
     abort_signal: Option<aimux_core::AbortSignal>,
     base_url: &str,
+    retry_interval: Duration,
 ) -> Result<ImageOutputs, AiMuxError> {
     let items = response.get("data").and_then(|d| d.as_array());
 
@@ -255,28 +293,21 @@ async fn extract_images(
     for url in &urls {
         // data[].url is a generated-image URL from the response body, so it
         // goes through the SSRF download guard.
-        let resp = retries
-            .retry(|| {
-                aimux_provider_utils::get_from_api(
-                    HttpRequest {
-                        url: url.clone(),
-                        headers: vec![],
-
-                        abort_signal: abort_signal.clone(),
-                        call_id: None,
-                        recording_context: None,
-                        response_timeout: None,
-                        max_json_response_bytes: None,
-                        validate_url: true,
-                        trusted_origin: Some(base_url.to_string()),
-                        credentialed_origin: Some(base_url.to_string()),
-                        fetch: None,
-                    },
-                    aimux_provider_utils::create_binary_response_handler(),
-                    recraft_failed_response_handler(),
-                )
-            })
-            .await?;
+        let resp = retry_download(abort_signal.as_ref(), retry_interval, || {
+            aimux_provider_utils::get_from_api(
+                HttpRequest {
+                    url: url.clone(),
+                    abort_signal: abort_signal.clone(),
+                    validate_url: true,
+                    trusted_origin: Some(base_url.to_string()),
+                    credentialed_origin: Some(base_url.to_string()),
+                    ..Default::default()
+                },
+                aimux_provider_utils::create_binary_response_handler(),
+                recraft_failed_response_handler(),
+            )
+        })
+        .await?;
         binaries.push(resp.value.to_vec());
     }
     Ok(ImageOutputs::Binary(binaries))
@@ -285,7 +316,7 @@ async fn extract_images(
 #[async_trait]
 impl ImageModel for RecraftImageModel {
     fn provider(&self) -> &str {
-        PROVIDER_NAME
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -312,24 +343,10 @@ impl ImageModel for RecraftImageModel {
         let recraft_opts = parse_recraft_options(&options.provider_options);
         let body = build_generation_body(&self.model_id, options, &recraft_opts);
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.generations_endpoint(),
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                max_json_response_bytes: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-                fetch: None,
-            },
+            exchange.request(exchange.url("/images/generations"), options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             recraft_failed_response_handler(),
@@ -338,13 +355,16 @@ impl ImageModel for RecraftImageModel {
 
         let response_headers = resp.response_headers;
         let value: Value = resp.value;
-        let retries = retry::prepare_retries(None, options.abort_signal.clone());
 
         let images = extract_images(
             &value,
-            &retries,
             options.abort_signal.clone(),
-            &self.config.base_url,
+            exchange.base_url(),
+            Duration::from_millis(poll_interval_ms(
+                options::recraft_options(Some(&options.provider_options)),
+                POLL_INTERVAL_MS_KEY,
+                DOWNLOAD_RETRY_INTERVAL_MS,
+            )),
         )
         .await?;
 
