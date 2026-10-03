@@ -87,7 +87,9 @@ for pattern in \
     'RetryConfig' \
     'Provider::name' \
     'fn specification_version' \
-    'StaticBearerConfig'; do
+    'StaticBearerConfig' \
+    'api_key_source' \
+    'body_merge|apply_body_overrides|deep_merge_json'; do
     violation "removed name \`$pattern\` is back" "$(search_removed "$pattern")"
 done
 

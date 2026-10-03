@@ -422,6 +422,15 @@ fn assert_generate_result(fixture: &Fixture, result: &GenerateResult) {
         "{}: raw finish",
         fixture.name
     );
+    // The result-level providerMetadata: the raw usage, stop sequence,
+    // iterations, container and context management, under the canonical key
+    // and the provider's own.
+    assert_eq!(
+        result.provider_metadata.as_ref(),
+        Some(&recorded["providerMetadata"]),
+        "{}: providerMetadata",
+        fixture.name
+    );
 }
 
 // ── the fixtures ─────────────────────────────────────────────────────────────
@@ -582,11 +591,18 @@ async fn messages_stream_basic() {
         StreamPart::Finish {
             finish_reason,
             usage,
-            ..
-        } => Some((finish_reason, usage)),
+            provider_metadata,
+        } => Some((finish_reason, usage, provider_metadata)),
         _ => None,
     });
-    let (reason, usage) = finish.expect("a finish part");
+    let (reason, usage, metadata) = finish.expect("a finish part");
+    // `message_start`'s usage updated by `message_delta`'s.
+    let finish_step = fixture.json["result"]["parts"]
+        .as_array()
+        .and_then(|parts| parts.iter().find(|p| p["type"] == "finish-step"))
+        .expect("a recorded finish-step");
+    assert_eq!(metadata.as_ref(), Some(&finish_step["providerMetadata"]));
+    assert_eq!(usage.raw.as_ref(), Some(&finish_step["usage"]["raw"]));
     assert_eq!(reason.unified, FinishReasonUnified::Stop);
     assert_eq!(reason.raw.as_deref(), Some("end_turn"));
     assert_eq!(usage.input_tokens.total, Some(12));

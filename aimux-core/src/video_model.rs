@@ -293,8 +293,11 @@ pub trait VideoModel: Send + Sync {
     /// Provider-specific model ID, e.g. `"kling-video"`.
     fn model_id(&self) -> &str;
 
-    /// Poll pacing for this model. Defaults to the AI SDK values; providers
-    /// with configurable polling should surface their configuration here.
+    /// Poll pacing for this model: the package's own constants. Providers have
+    /// no poll settings (the AI SDK's `pollIntervalMs` / `pollTimeoutMs` are
+    /// per-call options, here [`VideoCallOptions::poll`], which overrides this
+    /// per field). Defaults to the AI SDK values; a package whose job runs
+    /// longer or shorter returns its own constants.
     fn poll_config(&self) -> VideoPollConfig {
         VideoPollConfig::default()
     }

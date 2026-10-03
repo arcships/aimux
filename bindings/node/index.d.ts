@@ -484,6 +484,13 @@ export interface ProviderConfig {
   /** OpenAI project ID (sent via `OpenAI-Project` header). */
   project?: string
   /**
+   * Values of a preset's template parameters, named as the registry
+   * declares them (e.g. `{ account_id: '…' }`), for providers created by
+   * name (`provider()` / `createProvider()`). Only parameters the preset
+   * declares are accepted.
+   */
+  params?: Record<string, string>
+  /**
    * Rejected with `InvalidArgumentError`: retry is a per-call setting
    * (`maxRetries` in the call options). The field exists only so passing it
    * is reported instead of ignored.

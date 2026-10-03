@@ -12,7 +12,7 @@
 //! value on failure (the out-parameter is left at its sentinel: handle 0,
 //! pointer NULL). Every non-NULL error has one code from [`aimux_error_code`]
 //! and one message from [`aimux_error_message`], and is released exactly once
-//! with [`aimux_error_free`]. Codes 1..17 come from `AiMuxError`, 100..105
+//! with [`aimux_error_free`]. Codes 1..19 come from `AiMuxError`, 100..105
 //! from `RecordingError`, and 200..206 identify failures detected while
 //! crossing the C ABI.
 //!
@@ -450,6 +450,11 @@ pub const AIMUX_E_RETRY: i32 = 14;
 pub const AIMUX_E_NO_SUCH_TOOL: i32 = 15;
 pub const AIMUX_E_INVALID_TOOL_INPUT: i32 = 16;
 pub const AIMUX_E_TOOL_CALL_REPAIR: i32 = 17;
+// Appended after 17 (4 stays retired): the AI SDK's `LoadAPIKeyError` and
+// `LoadSettingError`. Their facts travel on the provider-code / provider-message
+// getters: `env_var` and the description (key) or setting name.
+pub const AIMUX_E_LOAD_API_KEY: i32 = 18;
+pub const AIMUX_E_LOAD_SETTING: i32 = 19;
 
 // 100..105 preserve `RecordingError` as a separate high-level type while C
 // uses one code space for every returned error.
@@ -486,10 +491,8 @@ fn aimux_error_code_of(err: &AiMuxError) -> i32 {
         AiMuxError::ToolCallRepair { .. } => AIMUX_E_TOOL_CALL_REPAIR,
         AiMuxError::InvalidArgument(_) => AIMUX_E_INVALID_ARGUMENT,
         AiMuxError::InvalidPrompt(_) => AIMUX_E_INVALID_PROMPT,
-        // TODO(A5): dedicated AIMUX_E_LOAD_API_KEY / AIMUX_E_LOAD_SETTING codes
-        // (+ env_var/description getters). Until then the new credential and
-        // setting errors surface as the existing invalid-argument code.
-        AiMuxError::LoadApiKey { .. } | AiMuxError::LoadSetting { .. } => AIMUX_E_INVALID_ARGUMENT,
+        AiMuxError::LoadApiKey { .. } => AIMUX_E_LOAD_API_KEY,
+        AiMuxError::LoadSetting { .. } => AIMUX_E_LOAD_SETTING,
         AiMuxError::TokenExpired(_) => AIMUX_E_TOKEN_EXPIRED,
         AiMuxError::UnsupportedFunctionality(_) => AIMUX_E_UNSUPPORTED_FUNCTIONALITY,
         AiMuxError::NoSuchModel { .. } => AIMUX_E_NO_SUCH_MODEL,
@@ -612,19 +615,35 @@ pub extern "C" fn aimux_error_retryable(err: *const aimux_error_t) -> i32 {
 }
 
 /// `AIMUX_E_API_CALL`: the provider's own error code, e.g. "insufficient_quota".
+/// `AIMUX_E_LOAD_API_KEY` / `AIMUX_E_LOAD_SETTING`: the environment variable
+/// that was consulted (`env_var`), e.g. "OPENAI_API_KEY".
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_error_provider_code(err: *const aimux_error_t) -> *mut c_char {
-    opt_cstring(map_aimux_error(err, |e| api_call(e)?.provider_code.clone()).flatten())
+    opt_cstring(
+        map_aimux_error(err, |e| match e {
+            AiMuxError::LoadApiKey { env_var, .. } | AiMuxError::LoadSetting { env_var, .. } => {
+                Some(env_var.clone())
+            }
+            _ => api_call(e)?.provider_code.clone(),
+        })
+        .flatten(),
+    )
 }
 
 /// `AIMUX_E_API_CALL`: the failure's own text ("slow down"), without the
 /// composed prefix `message` carries ("API call error: HTTP 429: slow down").
+/// `AIMUX_E_LOAD_API_KEY`: what the key is for ("OpenAI");
+/// `AIMUX_E_LOAD_SETTING`: the setting's parameter name ("region").
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_error_provider_message(err: *const aimux_error_t) -> *mut c_char {
     opt_cstring(
-        map_aimux_error(err, |e| Some(api_call(e)?.message.clone()))
-            .flatten()
-            .filter(|m| !m.is_empty()),
+        map_aimux_error(err, |e| match e {
+            AiMuxError::LoadApiKey { description, .. } => Some(description.clone()),
+            AiMuxError::LoadSetting { name, .. } => Some(name.clone()),
+            _ => Some(api_call(e)?.message.clone()),
+        })
+        .flatten()
+        .filter(|m| !m.is_empty()),
     )
 }
 
@@ -3583,7 +3602,7 @@ mod tests {
     fn expect_aimux_error(e: *mut aimux_error_t) -> (i32, String) {
         assert!(!e.is_null(), "expected a returned error");
         let code = aimux_error_code(e);
-        if !(AIMUX_E_OTHER..=AIMUX_E_TOOL_CALL_REPAIR).contains(&code) {
+        if !(AIMUX_E_OTHER..=AIMUX_E_LOAD_SETTING).contains(&code) {
             panic!("expected an AiMuxError code, got {code}: {}", msg(e));
         }
         let out = (code, take(aimux_error_message(e)).unwrap());
@@ -3757,6 +3776,52 @@ mod tests {
         assert!(aimux_error_provider_id(h).is_null());
         assert_eq!(aimux_error_status(h), -1);
         assert_eq!(aimux_error_retryable(h), 0);
+        aimux_error_free(owner);
+
+        // LoadApiKey / LoadSetting carry the consulted environment variable on
+        // the provider-code channel and the description / setting name on the
+        // provider-message channel; every other getter answers its sentinel.
+        let owner = boxed(AiMuxError::LoadApiKey {
+            env_var: "OPENAI_API_KEY".into(),
+            description: "OpenAI".into(),
+        });
+        let h = owner;
+        assert_eq!(aimux_error_code(h), AIMUX_E_LOAD_API_KEY);
+        assert_eq!(
+            take(aimux_error_provider_code(h)).as_deref(),
+            Some("OPENAI_API_KEY")
+        );
+        assert_eq!(
+            take(aimux_error_provider_message(h)).as_deref(),
+            Some("OpenAI")
+        );
+        assert!(
+            take(aimux_error_message(h))
+                .unwrap()
+                .contains("OPENAI_API_KEY")
+        );
+        assert!(aimux_error_response_body(h).is_null());
+        assert!(aimux_error_model_id(h).is_null());
+        assert_eq!(aimux_error_status(h), -1);
+        assert_eq!(aimux_error_retryable(h), 0);
+        aimux_error_free(owner);
+
+        let owner = boxed(AiMuxError::LoadSetting {
+            env_var: "AWS_REGION".into(),
+            name: "region".into(),
+        });
+        let h = owner;
+        assert_eq!(aimux_error_code(h), AIMUX_E_LOAD_SETTING);
+        assert_eq!(
+            take(aimux_error_provider_code(h)).as_deref(),
+            Some("AWS_REGION")
+        );
+        assert_eq!(
+            take(aimux_error_provider_message(h)).as_deref(),
+            Some("region")
+        );
+        assert!(aimux_error_url(h).is_null());
+        assert_eq!(aimux_error_status(h), -1);
         aimux_error_free(owner);
 
         let owner = boxed(AiMuxError::NoSuchProvider {
@@ -3939,7 +4004,7 @@ mod tests {
         );
     }
 
-    /// Pin the full 16-variant → code mapping.
+    /// Pin the full 18-variant → code mapping.
     #[test]
     fn error_code_mapping_covers_all_variants() {
         let s = |t: &str| t.to_string();
@@ -3996,6 +4061,20 @@ mod tests {
                 AIMUX_E_INVALID_ARGUMENT,
             ),
             (AiMuxError::InvalidPrompt(s("x")), AIMUX_E_INVALID_PROMPT),
+            (
+                AiMuxError::LoadApiKey {
+                    env_var: s("OPENAI_API_KEY"),
+                    description: s("OpenAI"),
+                },
+                AIMUX_E_LOAD_API_KEY,
+            ),
+            (
+                AiMuxError::LoadSetting {
+                    env_var: s("AWS_REGION"),
+                    name: s("region"),
+                },
+                AIMUX_E_LOAD_SETTING,
+            ),
             (AiMuxError::TokenExpired(s("x")), AIMUX_E_TOKEN_EXPIRED),
             (
                 AiMuxError::UnsupportedFunctionality(s("x")),

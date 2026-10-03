@@ -3,7 +3,9 @@
 //! Each modality is a napi class wrapping the Rust trait object.
 //! All cross-boundary data uses JSON strings (base64 for binary).
 
-use crate::error::{AimuxResult, BindingError, AiMuxBindingError, parse_wire_json, serialize_result};
+use crate::error::{
+    AiMuxBindingError, AimuxResult, BindingError, parse_wire_json, serialize_result,
+};
 use std::sync::Arc;
 
 use aimux_core::AiMuxError;
@@ -55,8 +57,7 @@ fn parse_opts_json<T: serde::de::DeserializeOwned>(
 /// Shape-only stand-in for `TranscriptionCallOptions::audio`, built from the
 /// real enum so a variant rename is a compile error rather than a runtime one.
 fn audio_placeholder() -> serde_json::Value {
-    serde_json::to_value(AudioInput::Base64(String::new()))
-        .expect("AudioInput always serializes")
+    serde_json::to_value(AudioInput::Base64(String::new())).expect("AudioInput always serializes")
 }
 
 /// Shape-only stand-in for `RerankingCallOptions::documents`.
@@ -208,27 +209,27 @@ impl TranscriptionModel {
             let __r: crate::error::MResult<String> = async {
                 let mut opts =
                     TranscriptionCallOptions::new(AudioInput::Base64(audio_base64), media_type);
-                if let Some(s) = opts_json.as_deref() {
-                    if !s.trim().is_empty() && s.trim() != "null" {
-                        let mut parsed: TranscriptionCallOptions = parse_opts_json(
-                            "opts_json",
-                            s,
-                            &[
-                                ("audio", audio_placeholder()),
-                                ("media_type", serde_json::Value::from("")),
-                            ],
-                        )?;
-                        // Required data comes from the explicit arguments; all
-                        // operation policy and optional fields come from JSON.
-                        parsed.audio = opts.audio;
-                        parsed.media_type = opts.media_type;
-                        opts = parsed;
-                    }
+                if let Some(s) = opts_json.as_deref()
+                    && !s.trim().is_empty()
+                    && s.trim() != "null"
+                {
+                    let mut parsed: TranscriptionCallOptions = parse_opts_json(
+                        "opts_json",
+                        s,
+                        &[
+                            ("audio", audio_placeholder()),
+                            ("media_type", serde_json::Value::from("")),
+                        ],
+                    )?;
+                    // Required data comes from the explicit arguments; all
+                    // operation policy and optional fields come from JSON.
+                    parsed.audio = opts.audio;
+                    parsed.media_type = opts.media_type;
+                    opts = parsed;
                 }
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
-                let result =
-                    aimux_core::transcription_model::transcribe(self.inner.as_ref(), opts)
+                let result = aimux_core::transcription_model::transcribe(self.inner.as_ref(), opts)
                     .await
                     .map_err(|e| AiMuxBindingError::from(&e))?;
                 serialize_result(&result)
@@ -268,22 +269,23 @@ impl RerankingModel {
                 let docs: RerankingDocuments = parse_wire_json("docs_json", &docs_json)?;
 
                 let mut opts = RerankingCallOptions::new(query, docs);
-                if let Some(s) = opts_json.as_deref() {
-                    if !s.trim().is_empty() && s.trim() != "null" {
-                        let mut parsed: RerankingCallOptions = parse_opts_json(
-                            "opts_json",
-                            s,
-                            &[
-                                ("query", serde_json::Value::from("")),
-                                ("documents", documents_placeholder()),
-                            ],
-                        )?;
-                        // Required data comes from the explicit arguments; all
-                        // operation policy and optional fields come from JSON.
-                        parsed.query = opts.query;
-                        parsed.documents = opts.documents;
-                        opts = parsed;
-                    }
+                if let Some(s) = opts_json.as_deref()
+                    && !s.trim().is_empty()
+                    && s.trim() != "null"
+                {
+                    let mut parsed: RerankingCallOptions = parse_opts_json(
+                        "opts_json",
+                        s,
+                        &[
+                            ("query", serde_json::Value::from("")),
+                            ("documents", documents_placeholder()),
+                        ],
+                    )?;
+                    // Required data comes from the explicit arguments; all
+                    // operation policy and optional fields come from JSON.
+                    parsed.query = opts.query;
+                    parsed.documents = opts.documents;
+                    opts = parsed;
                 }
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
@@ -359,18 +361,16 @@ impl SearchModel {
             let __r: crate::error::MResult<String> = async {
                 use aimux_core::search_model::SearchCallOptions;
                 let mut opts = SearchCallOptions::new(query);
-                if let Some(s) = opts_json.as_deref() {
-                    if !s.trim().is_empty() && s.trim() != "null" {
-                        // Required data comes from the explicit arguments; all
-                        // operation policy and optional fields come from JSON.
-                        let mut parsed: SearchCallOptions = parse_opts_json(
-                            "opts_json",
-                            s,
-                            &[("query", serde_json::Value::from(""))],
-                        )?;
-                        parsed.query = opts.query;
-                        opts = parsed;
-                    }
+                if let Some(s) = opts_json.as_deref()
+                    && !s.trim().is_empty()
+                    && s.trim() != "null"
+                {
+                    // Required data comes from the explicit arguments; all
+                    // operation policy and optional fields come from JSON.
+                    let mut parsed: SearchCallOptions =
+                        parse_opts_json("opts_json", s, &[("query", serde_json::Value::from(""))])?;
+                    parsed.query = opts.query;
+                    opts = parsed;
                 }
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
@@ -416,12 +416,13 @@ impl Files {
                     },
                     media_type,
                 );
-                if let Some(s) = opts_json.as_deref() {
-                    if !s.trim().is_empty() && s.trim() != "null" {
-                        let parsed: UploadFileCallOptions = parse_wire_json("opts_json", s)?;
-                        opts.filename = parsed.filename;
-                        opts.provider_options = parsed.provider_options;
-                    }
+                if let Some(s) = opts_json.as_deref()
+                    && !s.trim().is_empty()
+                    && s.trim() != "null"
+                {
+                    let parsed: UploadFileCallOptions = parse_wire_json("opts_json", s)?;
+                    opts.filename = parsed.filename;
+                    opts.provider_options = parsed.provider_options;
                 }
 
                 let result = self
@@ -710,8 +711,9 @@ pub async fn tavily_search(api_key: String, base_url: Option<String>) -> AimuxRe
 #[napi]
 pub struct TranscriptionSession {
     audio_tx: std::sync::Mutex<Option<futures::channel::mpsc::Sender<AudioChunk>>>,
-    parts_rx:
-        tokio::sync::Mutex<tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>>,
+    parts_rx: tokio::sync::Mutex<
+        tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>,
+    >,
     token: aimux_core::AbortSignal,
 }
 
@@ -818,23 +820,20 @@ pub async fn start_transcription_session(
                                     return;
                                 }
                             };
-                            loop {
-                                match tx.try_send(Ok(json.clone())) {
-                                    Ok(()) => break,
-                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                                        // Full: block on send (waits for
-                                        // capacity) unless aborted.
-                                        tokio::select! {
-                                            _ = effective.cancelled() => return,
-                                            res = tx.send(Ok(json.clone())) => {
-                                                if res.is_err() { return; }
-                                                break;
-                                            }
+                            match tx.try_send(Ok(json.clone())) {
+                                Ok(()) => {}
+                                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                    // Full: block on send (waits for
+                                    // capacity) unless aborted.
+                                    tokio::select! {
+                                        _ = effective.cancelled() => return,
+                                        res = tx.send(Ok(json.clone())) => {
+                                            if res.is_err() { return; }
                                         }
                                     }
-                                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                                        return;
-                                    }
+                                }
+                                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                    return;
                                 }
                             }
                         }
@@ -843,20 +842,17 @@ pub async fn start_transcription_session(
                         // Connect failure: deliver as the first channel item.
                         // try_send + abort-select (a full channel must not
                         // stall; abort covers the session-drop path).
-                        loop {
-                            match tx.try_send(Err(AiMuxBindingError::from(&e))) {
-                                Ok(()) => break,
-                                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                                    tokio::select! {
-                                        _ = effective.cancelled() => return,
-                                        res = tx.send(Err(AiMuxBindingError::from(&e))) => {
-                                            if res.is_err() { return; }
-                                            break;
-                                        }
+                        match tx.try_send(Err(AiMuxBindingError::from(&e))) {
+                            Ok(()) => {}
+                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                tokio::select! {
+                                    _ = effective.cancelled() => {}
+                                    res = tx.send(Err(AiMuxBindingError::from(&e))) => {
+                                        let _ = res;
                                     }
                                 }
-                                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return,
                             }
+                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {}
                         }
                     }
                 }

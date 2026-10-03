@@ -63,11 +63,13 @@ if err != nil {
 | `AvailableTools` | `CodeNoSuchTool` payload: `[]string` of the tools the call offered; `nil` when not reported |
 | `ToolInput` | `CodeInvalidToolInput` payload: the raw argument text the model produced |
 | `OriginalError` | `CodeToolCallRepair` payload: the pre-repair failure as `json.RawMessage` wire JSON (same encoding as `ToolCall.Error`) |
+| `EnvVar` | `CodeLoadAPIKey` / `CodeLoadSetting` payload: the environment variable that was consulted |
 
-`Code` values 1..17 mirror aimux-core's `AiMuxError` variants; 4 is retired
+`Code` values 1..19 mirror aimux-core's `AiMuxError` variants; 4 is retired
 (the legacy `Tool` variant) and 14 is `CodeRetry`. The tool-call variants
 arrive as `CodeNoSuchTool` (15), `CodeInvalidToolInput` (16), and
-`CodeToolCallRepair` (17). A code outside the enum is a header/library
+`CodeToolCallRepair` (17); a missing API key / provider setting are
+`CodeLoadAPIKey` (18) / `CodeLoadSetting` (19). A code outside the enum is a header/library
 mismatch and fails with a `panic`, not an error type.
 
 Recording failures are a separate type, as in Rust (`recording::RecordingError`
@@ -92,7 +94,7 @@ no Go type of their own; the binding maps them to native Go errors:
 |---------|----|
 | bad raw JSON in `promptJson` / `optsJson` / `configJSON` | plain `error` naming the parameter, e.g. `aimux: prompt_json: invalid JSON` — checked in Go before the C call with `json.Valid` **plus** a surrogate-pairing scan, because `json.Valid` accepts unpaired `\uD800`–`\uDFFF` escapes that serde_json rejects (required parameters reject `""`; optional `""` = default; JSONL by line) |
 | a string parameter that is not valid UTF-8, or contains a NUL | plain `error`: `aimux: <param>: must be valid UTF-8` / `aimux: <param>: must not contain NUL` — a Go string is an arbitrary byte sequence and `C.CString` passes it through verbatim (a NUL would truncate the argument silently), so every user-supplied string is checked before the C call. Two exceptions, both deliberate: the five `mustNew` constructors panic instead (see below), and `InitLogging` has no error channel and falls back to `"warn"` |
-| a typed option struct (`ProviderConfig`, `EmbeddingCallOptions`, `SpeechCallOptions`, … , `TranscriptionSessionOpts`) whose raw JSON field carries bad bytes | plain `error` naming the marshalled parameter, e.g. `aimux: opts: invalid JSON: unpaired high surrogate \uD800`, `aimux: config_json: must be valid UTF-8` — `json.Marshal` is **not** self-validating: it coerces invalid UTF-8 in a Go *string* field to U+FFFD and escapes NUL, but a `json.RawMessage` field (`ProviderOptions`, `BodyOverrides`, `Audio`, `Documents`, `Files`, `Mask`, `Data`, `InputSchema`) is emitted through `compact()`, which checks JSON *syntax only*. Raw non-UTF-8 bytes and lone `\uD800`–`\uDFFF` escapes therefore survive marshalling, so every marshalled C argument gets the same `checkJSON` as a raw-string parameter |
+| a typed option struct (`ProviderConfig`, `EmbeddingCallOptions`, `SpeechCallOptions`, … , `TranscriptionSessionOpts`) whose raw JSON field carries bad bytes | plain `error` naming the marshalled parameter, e.g. `aimux: opts: invalid JSON: unpaired high surrogate \uD800`, `aimux: config_json: must be valid UTF-8` — `json.Marshal` is **not** self-validating: it coerces invalid UTF-8 in a Go *string* field to U+FFFD and escapes NUL, but a `json.RawMessage` field (`ProviderOptions`, `Audio`, `Documents`, `Files`, `Mask`, `Data`, `InputSchema`) is emitted through `compact()`, which checks JSON *syntax only*. Raw non-UTF-8 bytes and lone `\uD800`–`\uDFFF` escapes therefore survive marshalling, so every marshalled C argument gets the same `checkJSON` as a raw-string parameter |
 | use-after-close (`Model`, `ProviderHandle`, multimodal models, `TranscriptionSession`) | `errors.Is(err, aimux.ErrClosed)` — guarded in Go before the C call |
 | a `nil` `*Model` handed to a composite constructor — a `NewRouter` child, a `NewMoa` reference, or the `NewMoa` aggregator | plain `error` naming the position: `aimux: router: models[2] is nil`, `aimux: moa: references[1] is nil`, `aimux: moa: aggregator is nil` — checked in Go before the C call, so a nil element is a returned error rather than the nil-pointer dereference that would otherwise take the process down |
 | trace query (`TraceAggregate`, `TraceSessionChain`, `TraceExportJsonl`, `TraceClear`) on a model that never went through `Trace` / `TraceAudited` | `errors.Is(err, aimux.ErrNotTraced)` — guarded in Go before the C call, ahead of argument validation; the trace store is keyed on the wrapper handle, so C can only report it as a missing handle |
@@ -100,7 +102,7 @@ no Go type of their own; the binding maps them to native Go errors:
 
 Decoder: every fallible C call returns an opaque `aimux_error_t *` (NULL =
 success, result in the out-parameter). One `aimux_error_code()` distinguishes
-`AiMuxError` (1–17), `RecordingError` (100–105), and C ABI failures (200–206).
+`AiMuxError` (1–19), `RecordingError` (100–105), and C ABI failures (200–206).
 `expectAimuxError`, `expectRecordingError`, and `expectFfiError` enforce the
 range expected by each call; the first two restore `*Error` and
 `*RecordingError`, while 200–206 becomes a plain `error`. Every path frees the
@@ -117,7 +119,7 @@ design** — that one is opt-in, and every one of its five entry points has a
 |------------|--------------------------|
 | `aimux.go` `mustNew` — behind `OpenAI` / `OpenAIWithBase` / `Anthropic` / `AnthropicWithBase` / `DeepSeek` | **Yes, by design.** `regexp.MustCompile` convention: an `apiKey` / `modelID` / `baseURL` that is not valid UTF-8 or contains a NUL panics, as does any AiMuxError failure. Use `NewOpenAI` / `NewOpenAIWithBase` / `NewAnthropic` / `NewAnthropicWithBase` / `NewDeepSeek` for anything caller-supplied |
 | `aimux.go` `InitLogging` — `expectFfiError` returned an error | No. `level` is coerced first: empty, non-UTF-8, or NUL-bearing falls back to `"warn"`, which is what aimux-core does with an unparseable level anyway (`AIMUX_LOG` / `AIMUX_LOG_LEVEL` outrank it regardless). That leaves no documented failure for `aimux_init_logging`, so a non-nil error here is a header/library mismatch |
-| `aimux.go` `expectAimuxError` — `aimux_error_code_t` outside 1..17 | No. Header/library version mismatch |
+| `aimux.go` `expectAimuxError` — `aimux_error_code_t` outside 1..19 | No. Header/library version mismatch |
 | `aimux.go` `expectRecordingError` — `aimux_error_code_t` outside the enum | No. Header/library version mismatch |
 | `multimodal.go` `TranscriptionSession.NextPart` — unknown `aimux_transcription_next_part` state | No. Header/library version mismatch |
 
@@ -155,9 +157,9 @@ The producer closes `Parts()` after the blocking native call returns.
 
 ## Providers
 
-All 251 registry-backed OpenAI-compatible providers are reachable by string name:
+All 283 registry-backed OpenAI-compatible providers are reachable by string name:
 
-> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
+> **Scope:** `provider(name)` covers only the 283 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed constructors
 > (`NewAnthropic(apiKey, model)`); custom endpoints → `WithBase` variant.
 > Full list: [providers.md](providers.md).
@@ -171,12 +173,22 @@ defer model.Close()
 model2, err := aimux.ProviderWithBase("groq", "sk-...", "llama-3.3-70b", "https://relay.example/v1")
 defer model2.Close()
 
-// 完整 ProviderOptions(base_url / headers / organization / project /
-// max_retries / body_overrides):
+// Full ProviderOptions (base_url / headers / organization / project / params).
+// Retry is a per-call option (CallOptions.MaxRetries) and request-body overrides
+// no longer exist: a config_json carrying max_retries or body_overrides is
+// rejected as CodeInvalidArgument, so ProviderConfig has neither.
 model3, err := aimux.ProviderWithConfig("groq", "sk-...", "llama-3.3-70b", &aimux.ProviderConfig{
 	Headers: map[string]string{"X-Custom": "1"},
 })
 defer model3.Close()
+
+// A preset with template parameters:
+model4, err := aimux.ProviderWithConfig("cloudflare_workers_ai", "sk-...", "@cf/meta/llama-3.1-8b-instruct",
+	&aimux.ProviderConfig{Params: map[string]string{"account_id": "acct123"}})
+defer model4.Close()
+
+// A missing key or setting is CodeLoadAPIKey / CodeLoadSetting; Error.EnvVar
+// names the environment variable that was consulted.
 ```
 
 `NewDeepSeek` / `DeepSeek` remain as shortcuts (registry-backed). Unknown

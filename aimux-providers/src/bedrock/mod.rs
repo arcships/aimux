@@ -504,11 +504,13 @@ impl ProviderDiscovery for AmazonBedrockProvider {
         let config = self.runtime_config();
         Box::pin(async move {
             // `ListFoundationModels` is on the control plane, whose host is
-            // not the runtime's; an explicit base URL replaces it.
+            // `bedrock.{region}.amazonaws.com` (the runtime is
+            // `bedrock-runtime.{region}.amazonaws.com`); an explicit base URL
+            // replaces it.
             let url = match &base_url {
                 Some(base) => format!("{base}/foundation-models"),
                 None => format!(
-                    "https://bedrock.{}.api.amazonaws.com/foundation-models",
+                    "https://bedrock.{}.amazonaws.com/foundation-models",
                     auth.region()?
                 ),
             };

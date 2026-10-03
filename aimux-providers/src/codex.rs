@@ -64,8 +64,10 @@ use crate::shared::{AuthScheme, Credential, credential_headers};
 
 /// Default API-key base URL (official OpenAI Responses endpoint).
 pub const CODEX_API_BASE_URL: &str = "https://api.openai.com/v1";
-/// Default subscription base URL (undocumented ChatGPT backend endpoint).
-pub const CODEX_SUBSCRIPTION_BASE_URL: &str = "https://chatgpt.com/backend-api";
+/// Default subscription base URL (undocumented ChatGPT backend endpoint). The
+/// Responses path is appended, giving `https://chatgpt.com/backend-api/codex/responses`
+/// (the endpoint the `chatgpt` cassettes record).
+pub const CODEX_SUBSCRIPTION_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
 /// Environment variable the API-key mode reads when no key is given.
 pub const CODEX_API_KEY_ENV_VAR: &str = "CODEX_API_KEY";
 /// OAuth token endpoint used by [`codex_refresh`] (RFC-0018 §2 V3).

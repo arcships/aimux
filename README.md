@@ -30,8 +30,8 @@ difference: aimux is an access layer, those are orchestration layers.
 
 ## Why aimux
 
-- **327 providers** (as of 2026-09-24) — 251 registry-backed OpenAI-compatible
-  (unified `provider(name, ...)` entry) + 76 typed providers (native protocol
+- **327 providers** (as of 2026-10-03) — 283 registry-backed OpenAI-compatible
+  (unified `provider(name, ...)` entry) + 44 typed providers (native protocol
   implementations such as OpenAI/Anthropic/Google/Bedrock/Vertex, local
   engines like Ollama/vLLM, and speech/image/video/search modality providers).
   Counts by category and the full list live in
@@ -49,10 +49,12 @@ difference: aimux is an access layer, those are orchestration layers.
 - **Composite models** (new in 0.3.0) — `RouterModel` routes each call with
   fallback (RFC-0021); `MoaModel` aggregates parallel reference models
   mixture-of-agents style (RFC-0022). Both are plain `LanguageModel`s.
-- **Config-driven provider registry** — `provider-registry.json` describes
-  each registry-backed OpenAI-compatible provider (base URL, env var, profile
-  quirks: top_k, tools, response_format, streaming usage, max_tokens key);
-  one unified `provider(name, ...)` entry in every binding.
+- **Config-driven provider registry** — `provider_registry.json` describes
+  each registry-backed OpenAI-compatible provider (base URL, env var, auth
+  mode, template parameters); `scripts/gen_presets.py` turns every row into a
+  `create_<name>(settings)` factory, and one unified `provider(name, ...)`
+  entry in every binding looks them up by name. Native packages follow the AI
+  SDK shape: `XxxProviderSettings` + `create_xxx()` + a default `xxx()`.
 - **Fast and small** — Rust core, release profile tuned for binary size
   (`lto`, `codegen-units=1`, `panic="abort"`, `strip`, `opt-level="z"`).
 - **8 language bindings** from one core: Node, Python, Swift, Kotlin, Flutter,
@@ -283,8 +285,9 @@ let model = provider_from_env("deepseek", "deepseek-chat", None)?;
 All registry-backed OpenAI-compatible providers share one entry:
 `provider(name, ...)` in every binding. Provider names are runtime strings;
 the generated provider list is the discovery surface.
-The retired per-provider shell types (`XxxConfig`/`XxxProvider`) are gone —
-see [docs/API.md](docs/API.md#providers).
+The old per-provider config types (`XxxConfig`, `from_env()`, `with_*`) are
+gone: use `create_xxx(XxxProviderSettings {..})` or the default instance
+`xxx()` — see [docs/api/rust.md](docs/api/rust.md#providers).
 
 > **Scope:** OpenAI-compatible → `provider(name, ...)`; others (Anthropic,
 > multimodal, local…) → their constructors. List:

@@ -10,8 +10,9 @@ import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Machine-readable codes matching aimux-ffi `aimux_error_code_t` (aimux-error.h).
- * 1..17 mirror the 16 core variants (1 is the catch-all `Other`;
- * 4 is retired — the legacy `Tool` variant; 14 = `Retry`). The
+ * 1..19 mirror the 18 core variants (1 is the catch-all `Other`;
+ * 4 is retired — the legacy `Tool` variant; 14 = `Retry`; 18 / 19 = a
+ * missing API key / provider setting). The
  * per-status codes (Provider, Http, RateLimited, Auth, ModelNotFound) are
  * gone, every HTTP-shaped failure arrives as [AIMUX_E_API_CALL].
  */
@@ -30,6 +31,8 @@ const val AIMUX_E_ABORTED: Int = 13
 const val AIMUX_E_NO_SUCH_TOOL: Int = 15
 const val AIMUX_E_INVALID_TOOL_INPUT: Int = 16
 const val AIMUX_E_TOOL_CALL_REPAIR: Int = 17
+const val AIMUX_E_LOAD_API_KEY: Int = 18
+const val AIMUX_E_LOAD_SETTING: Int = 19
 const val AIMUX_E_OTHER: Int = 1
 const val AIMUX_E_RETRY: Int = 14
 
@@ -55,7 +58,7 @@ const val AIMUX_E_RETRY: Int = 14
  * }
  * ```
  *
- * Transport: Rust → C `aimux_error_t *` with code 1..17 → [fromC].
+ * Transport: Rust → C `aimux_error_t *` with code 1..19 → [fromC].
  * Primary path is not a JSON
  * error envelope.
  */
@@ -86,7 +89,7 @@ sealed class AimuxException(
          * string. Does not own the pointer: the caller ([expectAimuxError]) frees
          * the returned error afterwards (retry attempt errors are new owned
          * copies and are freed here). Code [AIMUX_OK] or a code outside
-         * 1..17 is a header/library mismatch and throws [IllegalStateException].
+         * 1..19 is a header/library mismatch and throws [IllegalStateException].
          */
         @JvmStatic
         internal fun fromC(error: Pointer, prefix: String = ""): AimuxException {
@@ -152,6 +155,13 @@ sealed class AimuxException(
                     originalError = takeString(lib.aimux_error_original_error(error))
                         ?.let(AimuxJson::parseToJsonElement),
                 )
+                AIMUX_E_LOAD_API_KEY, AIMUX_E_LOAD_SETTING -> createByCode(
+                    code,
+                    msg,
+                    retryable = retryable,
+                    // The consulted environment variable rides the provider-code getter.
+                    envVar = takeString(lib.aimux_error_provider_code(error)) ?: "",
+                )
                 else -> createByCode(code, msg, retryable = retryable)
             }
         }
@@ -189,7 +199,7 @@ sealed class AimuxException(
             }
 
         /**
-         * Build the subclass for a core / C error code (1..17).
+         * Build the subclass for a core / C error code (1..19).
          *
          * Any other code — [AIMUX_OK] on a failure path or a code this binding
          * does not know — is a header/library mismatch and throws
@@ -219,11 +229,14 @@ sealed class AimuxException(
             availableTools: List<String>? = null,
             toolInput: String = "",
             originalError: JsonElement? = null,
+            envVar: String = "",
         ): AimuxException = when (code) {
             AIMUX_E_JSON_PARSE -> JSONParseError(message, status, retryMs, cause, retryable)
             AIMUX_E_INVALID_RESPONSE_DATA -> InvalidResponseDataError(message, status, retryMs, cause, retryable)
             AIMUX_E_INVALID_ARGUMENT -> InvalidArgumentError(message, status, retryMs, cause, retryable)
             AIMUX_E_INVALID_PROMPT -> InvalidPromptError(message, status, retryMs, cause, retryable)
+            AIMUX_E_LOAD_API_KEY -> LoadAPIKeyError(message, status, retryMs, cause, retryable, envVar)
+            AIMUX_E_LOAD_SETTING -> LoadSettingError(message, status, retryMs, cause, retryable, envVar)
             AIMUX_E_TOKEN_EXPIRED -> TokenExpiredError(
                 message,
                 status = if (status == -1) 401 else status,
@@ -263,6 +276,8 @@ sealed class AimuxException(
             AIMUX_E_INVALID_RESPONSE_DATA -> "InvalidResponseData"
             AIMUX_E_INVALID_ARGUMENT -> "InvalidArgument"
             AIMUX_E_INVALID_PROMPT -> "InvalidPrompt"
+            AIMUX_E_LOAD_API_KEY -> "LoadApiKey"
+            AIMUX_E_LOAD_SETTING -> "LoadSetting"
             AIMUX_E_TOKEN_EXPIRED -> "TokenExpired"
             AIMUX_E_UNSUPPORTED_FUNCTIONALITY -> "UnsupportedFunctionality"
             AIMUX_E_NO_SUCH_MODEL -> "NoSuchModel"
@@ -311,6 +326,34 @@ class InvalidPromptError(
     cause: Throwable? = null,
     retryable: Boolean = false,
 ) : AimuxException(message, AIMUX_E_INVALID_PROMPT, status, retryMs, cause, retryable)
+
+/**
+ * No API key was passed and the fallback environment variable is unset (AI SDK
+ * `LoadAPIKeyError`). No request was made.
+ */
+class LoadAPIKeyError(
+    message: String,
+    status: Int = -1,
+    retryMs: Long = -1,
+    cause: Throwable? = null,
+    retryable: Boolean = false,
+    /** The environment variable that was consulted, e.g. "OPENAI_API_KEY" ("" when synthesized locally). */
+    val envVar: String = "",
+) : AimuxException(message, AIMUX_E_LOAD_API_KEY, status, retryMs, cause, retryable)
+
+/**
+ * A required provider setting was not passed and its fallback environment
+ * variable is unset (AI SDK `LoadSettingError`).
+ */
+class LoadSettingError(
+    message: String,
+    status: Int = -1,
+    retryMs: Long = -1,
+    cause: Throwable? = null,
+    retryable: Boolean = false,
+    /** The environment variable that was consulted ("" when synthesized locally). */
+    val envVar: String = "",
+) : AimuxException(message, AIMUX_E_LOAD_SETTING, status, retryMs, cause, retryable)
 
 /** Access token expired and must be refreshed (HTTP 401, but retry-after-refresh). */
 class TokenExpiredError(

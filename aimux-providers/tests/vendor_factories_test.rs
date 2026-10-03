@@ -963,7 +963,16 @@ async fn codex_chatgpt_account_streams_without_storing_and_resolves_the_token_pe
     model.do_generate(&call()).await.unwrap();
 
     let seen = mock.seen();
-    assert_eq!(seen[0].url, "https://chatgpt.com/backend-api/responses");
+    // The subscription endpoint is `/backend-api/codex/responses` (as the
+    // `chatgpt` cassettes record), not `/backend-api/responses`.
+    assert_eq!(
+        seen[0].url,
+        "https://chatgpt.com/backend-api/codex/responses"
+    );
+    assert_eq!(
+        aimux_providers::CODEX_SUBSCRIPTION_BASE_URL,
+        "https://chatgpt.com/backend-api/codex"
+    );
     assert_eq!(seen[0].headers["authorization"], "Bearer acct-token-1");
     assert_eq!(seen[1].headers["authorization"], "Bearer acct-token-2");
     assert_eq!(seen[0].headers["originator"], "aimux");

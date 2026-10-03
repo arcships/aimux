@@ -1,6 +1,7 @@
 # 调研:允许外部提供 provider 配置的可行性与设计
 
 > **Status**: 调研报告(非 RFC,供决策)
+> **Historical (RFC-0036)**: 本报告写于 provider 工厂重构之前,下文的 `OpenAIConfig`、provider 配置上的 retry/body 覆盖字段等旧 API 已不存在,仅作决策记录保留;现行形态见 [docs/api/rust.md](api/rust.md#providers)(`XxxProviderSettings` + `create_xxx`、preset 表 + 运行时 overlay)。
 > **Date**: 2026-08-05
 > **Scope**: 评估"运行时/宿主应用/配置文件提供 provider 配置"对 aimux 的可行性、形态、成本收益,给出明确建议
 > **Related**: [RFC-0017](../rfc/0017-provider-config-dx.md) 配置 DX、[RFC-0019](../rfc/0019-session-affinity.md) 会话亲和

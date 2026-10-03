@@ -186,6 +186,22 @@ final class AimuxTests: XCTestCase {
                        Int32(AIMUX_E_TIMEOUT.rawValue))
     }
 
+    /// 18 / 19: a missing API key / provider setting have their own codes and
+    /// carry the consulted environment variable.
+    func testLoadErrorCodes() {
+        XCTAssertEqual(AIMUX_E_LOAD_API_KEY.rawValue, 18)
+        XCTAssertEqual(AIMUX_E_LOAD_SETTING.rawValue, 19)
+        let key = AimuxError.loadApiKey(message: "no key", status: -1, retryMs: -1, retryable: false,
+                                        envVar: "OPENAI_API_KEY")
+        XCTAssertEqual(key.code, Int32(AIMUX_E_LOAD_API_KEY.rawValue))
+        XCTAssertEqual(key.envVar, "OPENAI_API_KEY")
+        XCTAssertNil(key.status)
+        let setting = AimuxError.loadSetting(message: "no region", status: -1, retryMs: -1, retryable: false,
+                                             envVar: "AWS_REGION")
+        XCTAssertEqual(setting.code, Int32(AIMUX_E_LOAD_SETTING.rawValue))
+        XCTAssertEqual(setting.envVar, "AWS_REGION")
+    }
+
     /// HTTP-shaped failures all arrive as `.apiCall`; the classification is the
     /// `status` field (there are no per-status cases any more).
     func testApiCallClassifiesByStatus() {

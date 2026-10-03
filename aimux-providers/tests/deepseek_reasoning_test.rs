@@ -441,7 +441,7 @@ async fn should_passthrough_reasoning_high_to_reasoning_effort_without_thinking(
 
     assert!(
         body.get("thinking").is_none(),
-        "stage2-001: thinking 注入已退役,开思考改用 bodyOverrides:{{thinking:{{type:'enabled'}}}}"
+        "stage2-001: thinking 注入已退役,开思考改用 provider 级 transform_request_body 写入 thinking"
     );
     assert_eq!(body["reasoning_effort"], json!("high"));
 }
@@ -463,7 +463,7 @@ async fn should_passthrough_reasoning_none_to_reasoning_effort_without_thinking(
 
     assert!(
         body.get("thinking").is_none(),
-        "stage2-001: thinking 注入已退役,关思考改用 bodyOverrides:{{thinking:{{type:'disabled'}}}}"
+        "stage2-001: thinking 注入已退役,关思考改用 provider 级 transform_request_body 写入 thinking"
     );
     assert_eq!(body["reasoning_effort"], json!("none"));
 }

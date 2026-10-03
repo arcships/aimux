@@ -15,7 +15,7 @@
 | `ResponseFormat` | [options.rs](../../aimux-core/src/options.rs) | [ResponseFormat.ts](../../bindings/node/src/types/ResponseFormat.ts) | text / json_object / json_schema |
 | `ReasoningEffort` | [types.rs](../../aimux-core/src/types.rs) | [ReasoningEffort.ts](../../bindings/node/src/types/ReasoningEffort.ts) | 7 levels, passed through verbatim |
 | `AbortSignal` | [abort_signal.rs](../../aimux-core/src/abort_signal.rs) | — (runtime handle) | Rust: options field; Node: `AbortBridge` + JS `AbortSignal` |
-| `ProviderOptions` | [provider.rs](../../aimux-providers/src/provider.rs) | `ProviderConfig` (per binding) | `base_url` / `headers` / `organization` / `project` / `max_retries` / `body_overrides` |
+| `ProviderOptions` | [provider.rs](../../aimux-providers/src/provider.rs) | `ProviderConfig` (per binding) | `base_url` / `headers` / `organization` / `project` / `params` (a `max_retries` or `body_overrides` key is rejected as `InvalidArgument`) |
 | `GenerateTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextResult.ts](../../bindings/node/src/types/GenerateTextResult.ts) | `text`, `tool_calls`, `usage`, `warnings`, `raw` |
 | `StreamTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | — | use `StreamPart` while iterating |
 | `StreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [StreamPart.ts](../../bindings/node/src/types/StreamPart.ts) | TextDelta / ToolCallDelta / Finish / … |
@@ -71,7 +71,7 @@ function tables below.
 |----------|----------------------|-------|
 | `provider` | `provider(name, api_key, model_id, options) -> Box<dyn LanguageModel>` | registry lookup; unknown name → `NoSuchProvider` |
 | `provider_from_env` | `provider_from_env(name, model_id, options)` | key read from the registry entry's env var |
-| `provider_registry_entry` | `-> Option<OpenAICompatProfile>` | inspect a registry profile |
+| `provider_registry_entry` | `-> Option<&'static PresetDescriptor>` | inspect a registry row (auth mode, template parameters, `max_tokens_key`) |
 | `generate_text` | `(model, prompt, options) -> GenerateTextResult` | non-streaming |
 | `stream_text` | `(model, prompt, options) -> StreamTextResult` | streaming |
 

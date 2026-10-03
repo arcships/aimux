@@ -71,7 +71,7 @@ The code range identifies the source:
 
 | Range | Meaning |
 |---|---|
-| `1..17` | `AiMuxError` (4 retired, 14 = `Retry`) |
+| `1..19` | `AiMuxError` (4 retired, 14 = `Retry`) |
 | `100..105` | `RecordingError` |
 | `200..206` | failure detected by the C ABI |
 
@@ -139,10 +139,10 @@ it with these same getters — it can itself be any AiMuxError code, including
 `aimux_error_free` independently of the parent (free order is
 unconstrained).
 
-The unified `aimux_error_code_t` maps AiMuxError variants to values 1–17
+The unified `aimux_error_code_t` maps AiMuxError variants to values 1–19
 (`AIMUX_E_RETRY` 14, `AIMUX_E_NO_SUCH_TOOL` 15, `AIMUX_E_INVALID_TOOL_INPUT` 16,
-`AIMUX_E_TOOL_CALL_REPAIR` 17; 4 is retired — the legacy catch-all `Tool`
-variant, never produced), adds RecordingError values
+`AIMUX_E_TOOL_CALL_REPAIR` 17, `AIMUX_E_LOAD_API_KEY` 18, `AIMUX_E_LOAD_SETTING` 19;
+4 is retired — the legacy catch-all `Tool` variant, never produced), adds RecordingError values
 100–105, and assigns C ABI failures 200–206: `NULL_POINTER`, `INVALID_UTF8`,
 `INVALID_WIRE_JSON`, `INVALID_HANDLE`, `REENTRANT_CALL`,
 `RESULT_SERIALIZATION`, and `CALLBACK_FAILURE`. Values are never renumbered
@@ -153,6 +153,18 @@ ones: `aimux_error_tool_name` (codes 15/16), `aimux_error_available_tools`
 `aimux_error_tool_input` (16), and `aimux_error_original_error` (17; the
 original failure as the same externally-tagged JSON used by
 `ToolCall.error`). All returned strings are caller-owned.
+
+`AIMUX_E_LOAD_API_KEY` (18) and `AIMUX_E_LOAD_SETTING` (19) are the AI SDK's
+`LoadAPIKeyError` / `LoadSettingError`: no key was passed and the fallback
+environment variable is unset, or a required setting (AWS region, Azure
+resource name, Vertex project, …) is. Provider keys resolve on every request,
+so these arrive from the call (or from `aimux_provider_new` for registry
+providers), never from a request that was sent. `aimux_error_provider_code`
+returns the environment variable that was consulted; `aimux_error_provider_message`
+the key's description (`"OpenAI"`) or the setting name (`"region"`). A provider
+`config_json` is `{"base_url", "headers", "organization", "project", "params"}`;
+`max_retries` (a per-call option) and `body_overrides` (removed) are rejected
+with `AIMUX_E_INVALID_ARGUMENT`.
 
 Internal panics abort the process in this workspace's **release** profile
 (`panic = "abort"`); in a `panic=unwind` build a Rust callback's panic is

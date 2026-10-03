@@ -20,6 +20,8 @@ from .aimux import (
     ToolCallRepairError,
     InvalidArgumentError,
     InvalidPromptError,
+    LoadAPIKeyError,
+    LoadSettingError,
     TokenExpiredError,
     UnsupportedFunctionalityError,
     NoSuchModelError,
@@ -96,6 +98,8 @@ __all__ = [
     "ToolCallRepairError",
     "InvalidArgumentError",
     "InvalidPromptError",
+    "LoadAPIKeyError",
+    "LoadSettingError",
     "TokenExpiredError",
     "UnsupportedFunctionalityError",
     "NoSuchModelError",
@@ -197,8 +201,9 @@ def provider(
         model_id: Model ID.
         base_url: Base-URL override (wins over config["base_url"]).
         config: Full ProviderOptions dict — base_url / headers / organization /
-            project. ``max_retries`` (a call-level option) and ``body_overrides``
-            are rejected with an error.
+            project / params (a preset's template parameters, e.g.
+            ``{"account_id": "..."}``). ``max_retries`` (a call-level option) and
+            ``body_overrides`` are rejected with ``InvalidArgumentError``.
     """
     config_json = json.dumps(config) if config is not None else None
     return _native_provider(name, api_key, model_id, base_url, config_json)
@@ -220,8 +225,9 @@ def create_provider(
         api_key: API key; None reads the provider's env var.
         base_url: Base-URL override (wins over config["base_url"]).
         config: Full ProviderOptions dict — base_url / headers / organization /
-            project. ``max_retries`` (a call-level option) and ``body_overrides``
-            are rejected with an error.
+            project / params (a preset's template parameters, e.g.
+            ``{"account_id": "..."}``). ``max_retries`` (a call-level option) and
+            ``body_overrides`` are rejected with ``InvalidArgumentError``.
     """
     config_json = json.dumps(config) if config is not None else None
     return _native_create_provider(name, api_key, base_url, config_json)

@@ -4,9 +4,9 @@
 //!
 //! 覆盖：
 //! - **I4**：退役后 DeepSeek 请求体不含 `thinking` 注入（除非 provider 级
-//!   body_overrides 注入）
-//! - **I5**：provider 级 `body_overrides: { thinking: { type: 'disabled' } }` →
-//!   请求体含之（阶段 1 能力回归；调用级覆盖已删除）
+//!   `transform_request_body` 注入）
+//! - **I5**：provider 级 `transform_request_body` 写入 `thinking` → 发出的请求体含之
+//!   （声明式 `body_overrides` 与调用级覆盖均已删除）
 //! - **max_tokens_key 矩阵**：8 家接线（stepfun/siliconflow/sarvam/reka_ai/publicai/
 //!   perplexity → `"max_tokens"`；groq/heroku → `"max_completion_tokens"`）×
 //!   推理/非推理两分支。profile 取自注册表 `provider_registry_entry(name)`
@@ -20,8 +20,7 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::types::{ReasoningEffort, Warning};
-use aimux_providers::body_merge::apply_body_overrides;
-use aimux_providers::deepseek::deepseek;
+use aimux_providers::deepseek::{DeepSeekProviderSettings, create_deepseek, deepseek};
 use aimux_providers::openai_compatible::OpenAICompatibleChatModel;
 use aimux_providers::{PresetFamily, PresetSettings, provider_registry_entry};
 use serde_json::json;
@@ -65,7 +64,7 @@ fn has_reasoning_warning(warnings: &[Warning]) -> bool {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// I4: 退役后 DeepSeek 请求体不含 thinking（除非用户 bodyOverrides）
+// I4: 退役后 DeepSeek 请求体不含 thinking（除非 provider 级 transform_request_body）
 // ════════════════════════════════════════════════════════════════════════════
 
 /// I4: `reasoning:'none'` 透传为 `reasoning_effort:"none"`，请求体**不含**
@@ -96,47 +95,67 @@ fn i4_deepseek_no_thinking_when_reasoning_unset() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// I5: provider 级 body_overrides 注入 thinking → 请求体含之（阶段 1 能力回归）
+// I5: provider 级 transform_request_body 注入 thinking → 发出的请求体含之
 // ════════════════════════════════════════════════════════════════════════════
 
-/// I5: provider 级 `body_overrides: { thinking: { type: 'disabled' } }` 原样进入请求体。
-/// 关思考的语义完全由用户定义（退役后不再由 reasoning:'none' 自动注入）。
-#[test]
-fn i5_body_overrides_injects_thinking_disabled() {
+/// Send one non-streaming DeepSeek chat call whose provider rewrites the body
+/// with `thinking`, and return the JSON that reached the wire.
+async fn deepseek_wire_body(thinking: serde_json::Value, opts: &CallOptions) -> serde_json::Value {
+    use aimux_core::language_model::LanguageModel;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "c1", "object": "chat.completion", "created": 1, "model": "deepseek-reasoner",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "hi"},
+                         "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        })))
+        .mount(&server)
+        .await;
+    let model = create_deepseek(DeepSeekProviderSettings {
+        base_url: Some(server.uri()),
+        api_key: Some(aimux_provider_utils::Resolvable::Value("k".into())),
+        transform_request_body: Some(std::sync::Arc::new(move |mut body| {
+            body["thinking"] = thinking.clone();
+            body
+        })),
+        ..Default::default()
+    })
+    .unwrap()
+    .chat("deepseek-reasoner");
+    model.do_generate(opts).await.unwrap();
+    let requests = server.received_requests().await.unwrap();
+    serde_json::from_slice(&requests[0].body).unwrap()
+}
+
+/// I5: a provider-level transform that writes `thinking: { type: 'disabled' }`
+/// reaches the wire as is. What "thinking off" means is the user's to define
+/// (since retirement `reasoning: 'none'` no longer injects it).
+#[tokio::test]
+async fn i5_transform_injects_thinking_disabled() {
     let opts = CallOptions {
         prompt: user_prompt(),
         reasoning: Some(ReasoningEffort::None),
         ..CallOptions::default()
     };
-    let mut result = deepseek()
-        .chat("deepseek-reasoner")
-        .request_body(&opts, false)
-        .unwrap();
-    apply_body_overrides(
-        &mut result.body,
-        Some(&json!({ "thinking": { "type": "disabled" } })),
-    );
-    assert_eq!(result.body["thinking"], json!({ "type": "disabled" }));
-    assert_eq!(result.body["reasoning_effort"], json!("none"));
+    let body = deepseek_wire_body(json!({ "type": "disabled" }), &opts).await;
+    assert_eq!(body["thinking"], json!({ "type": "disabled" }));
+    assert_eq!(body["reasoning_effort"], json!("none"));
 }
 
-/// I5 补充: 注入 `thinking: { type: 'enabled' }` 同样原样进入请求体
-/// （开思考回归——退役前由特化注入，现由 provider 级覆盖定义）。
-#[test]
-fn i5_body_overrides_injects_thinking_enabled() {
+/// I5 补充: `thinking: { type: 'enabled' }` 同样原样进入请求体。
+#[tokio::test]
+async fn i5_transform_injects_thinking_enabled() {
     let opts = CallOptions {
         prompt: user_prompt(),
         ..CallOptions::default()
     };
-    let mut result = deepseek()
-        .chat("deepseek-reasoner")
-        .request_body(&opts, false)
-        .unwrap();
-    apply_body_overrides(
-        &mut result.body,
-        Some(&json!({ "thinking": { "type": "enabled" } })),
-    );
-    assert_eq!(result.body["thinking"], json!({ "type": "enabled" }));
+    let body = deepseek_wire_body(json!({ "type": "enabled" }), &opts).await;
+    assert_eq!(body["thinking"], json!({ "type": "enabled" }));
 }
 
 // ════════════════════════════════════════════════════════════════════════════

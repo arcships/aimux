@@ -6,6 +6,13 @@
 // pyo3 0.22 macros generate unsafe-op-in-unsafe-fn calls that trigger
 // edition-2024 lint. Suppress until pyo3 0.23+ lands.
 #![allow(unsafe_op_in_unsafe_fn)]
+// The same macros test the `gil-refs` feature of the *calling* crate, which
+// this crate does not declare (rustc's check-cfg flags it).
+#![allow(unexpected_cfgs)]
+// pyo3 0.22's `#[pyfunction]` / `#[pymethods]` expansion converts a `PyErr` into
+// itself on every `PyResult` return (fixed in 0.23); clippy blames the
+// signature.
+#![allow(clippy::useless_conversion)]
 
 mod error;
 mod multimodal;
@@ -720,9 +727,9 @@ fn azure(
 /// Create a language model from the built-in registry by provider name
 /// (RFC-0017 phase 4). `api_key=None` reads the provider's env var.
 /// `config_json` is a serialized `ProviderOptions` object (`base_url` /
-/// `headers` / `organization` / `project`; `max_retries` and `body_overrides`
-/// are rejected as invalid arguments); the `base_url` parameter wins over the
-/// JSON field.
+/// `headers` / `organization` / `project` / `params`; `max_retries` and
+/// `body_overrides` are rejected as invalid arguments); the `base_url`
+/// parameter wins over the JSON field.
 #[pyfunction]
 #[pyo3(signature = (name, api_key, model_id, base_url=None, config_json=None))]
 fn provider(
@@ -814,6 +821,7 @@ fn create_provider(
 /// string (serialized `Catalogue`). `source_url` defaults to the anya2a
 /// `dist/all.json`.
 #[pyfunction]
+#[pyo3(signature = (source_url=None))]
 fn get_model_specs(source_url: Option<&str>) -> PyResult<String> {
     let catalogue = runtime()
         .block_on(async { aimux_providers::get_model_specs(source_url).await })

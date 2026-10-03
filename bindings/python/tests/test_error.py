@@ -163,3 +163,48 @@ def test_malformed_wire_json_is_a_value_error_not_a_core_error():
         model.generate_text("{not json")
 
     assert not isinstance(excinfo.value, AimuxError)
+
+
+def test_missing_api_key_is_load_api_key_error(monkeypatch):
+    """No key passed and the env var unset: a typed LoadAPIKeyError, not InvalidArgument."""
+    from aimux import AimuxError, InvalidArgumentError, LoadAPIKeyError, provider
+
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    with pytest.raises(LoadAPIKeyError) as excinfo:
+        provider("groq", None, "some-model")
+    err = excinfo.value
+
+    assert type(err) is LoadAPIKeyError
+    assert isinstance(err, AimuxError)
+    assert not isinstance(err, InvalidArgumentError)
+    assert err.env_var == "GROQ_API_KEY"
+    assert err.description == "Groq"
+    assert "GROQ_API_KEY" in str(err)
+    # Pre-HTTP: the ApiCall-only attributes do not exist.
+    for attr in ("status", "retryable", *_API_CALL_ONLY):
+        assert not hasattr(err, attr), f"{attr} must not exist on LoadAPIKeyError"
+
+
+def test_explicit_empty_api_key_is_not_a_load_error():
+    """The AI SDK sends an explicit empty key verbatim; only None consults the env."""
+    from aimux import provider
+
+    assert provider("groq", "", "some-model") is not None
+
+
+def test_missing_setting_is_load_setting_error_at_call_time(monkeypatch):
+    """A required setting unset in the environment fails the call, typed."""
+    from aimux import AimuxError, LoadSettingError, azure, generate_text
+
+    monkeypatch.delenv("AZURE_RESOURCE_NAME", raising=False)
+    model = azure("test-key", "", "some-deployment")
+    with pytest.raises(LoadSettingError) as excinfo:
+        generate_text(model, "hi", {"max_retries": 0})
+    err = excinfo.value
+
+    assert type(err) is LoadSettingError
+    assert isinstance(err, AimuxError)
+    assert err.env_var == "AZURE_RESOURCE_NAME"
+    assert err.setting_name == "resourceName"
+    for attr in ("status", "retryable", *_API_CALL_ONLY):
+        assert not hasattr(err, attr)

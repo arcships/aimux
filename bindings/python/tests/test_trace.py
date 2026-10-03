@@ -39,7 +39,7 @@ class TestTraceProbe:
             stats = json.loads(traced.trace_aggregate())
             assert len(stats) == 1
             assert stats[0]["requests"] == 2
-            assert stats[0]["provider"] == "openai"
+            assert stats[0]["provider"] == "openai.chat"
             assert "verdict_counts" in stats[0]
 
             chain = json.loads(traced.trace_session_chain("sess-1"))

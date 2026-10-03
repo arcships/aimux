@@ -801,12 +801,20 @@ pub(crate) async fn anthropic_generate_core(
     // breakdown (text/reasoning) comes from output_tokens_details.
     let usage = super::usage::usage_from_anthropic(&data.usage);
 
+    let provider_metadata = super::usage::result_provider_metadata(
+        &config.provider_options_name,
+        &serde_json::to_value(&data.usage).unwrap_or(Value::Null),
+        data.stop_sequence.as_deref(),
+        data.container.as_ref(),
+        data.context_management.as_ref(),
+    );
+
     Ok(GenerateResult {
         content,
         finish_reason,
         usage,
         warnings,
-        provider_metadata: None,
+        provider_metadata: Some(provider_metadata),
         response: ResponseMetadata {
             id: Some(data.id),
             timestamp: None,
@@ -894,6 +902,13 @@ pub(crate) async fn anthropic_stream_core(
         let mut blocks: HashMap<usize, BlockState> = HashMap::new();
         let mut final_usage = Usage::default();
         let mut final_finish_reason: Option<FinishReason> = None;
+        // Result-level providerMetadata: the raw usage (`message_start`'s,
+        // updated by every `message_delta`'s), the stop sequence, the
+        // container and the context-management edits.
+        let mut raw_usage = Value::Object(serde_json::Map::new());
+        let mut stop_sequence: Option<String> = None;
+        let mut container: Option<Value> = None;
+        let mut context_management: Option<Value> = None;
         let mut response_meta_emitted = false;
         let mut stream_errored = false;
         // id → (tool name, server name), so `mcp_tool_result` can inherit them
@@ -913,6 +928,7 @@ pub(crate) async fn anthropic_stream_core(
                                 // fields + raw (Anthropic reports cache only
                                 // in message_start).
                                 final_usage = super::usage::usage_from_anthropic(usage);
+                                raw_usage = serde_json::to_value(usage).unwrap_or(raw_usage);
                             }
                             if !response_meta_emitted {
                                 yield Ok(StreamPart::ResponseMetadata {
@@ -1247,11 +1263,20 @@ pub(crate) async fn anthropic_stream_core(
                                 }
                             }
                         }
-                        StreamEvent::MessageDelta { delta, usage } => {
+                        StreamEvent::MessageDelta { delta, usage, context_management: edits } => {
                             if let Some(reason) = delta.stop_reason {
                                 final_finish_reason = Some(parse_stop_reason(&reason));
                             }
+                            stop_sequence = delta.stop_sequence.or(stop_sequence);
+                            container = delta.container.or(container);
+                            context_management = edits.or(context_management);
                             if let Some(u) = usage {
+                                if let (Value::Object(raw), Ok(Value::Object(update))) =
+                                    (&mut raw_usage, serde_json::to_value(&u))
+                                {
+                                    raw.extend(update);
+                                }
+                                final_usage.raw = Some(raw_usage.clone());
                                 let reasoning_tokens = u
                                     .output_tokens_details
                                     .as_ref()
@@ -1320,7 +1345,15 @@ pub(crate) async fn anthropic_stream_core(
             } else {
                 final_usage
             },
-            provider_metadata: None,
+            provider_metadata: (!stream_errored).then(|| {
+                super::usage::result_provider_metadata(
+                    options_name.as_str(),
+                    &raw_usage,
+                    stop_sequence.as_deref(),
+                    container.as_ref(),
+                    context_management.as_ref(),
+                )
+            }),
         });
     };
 

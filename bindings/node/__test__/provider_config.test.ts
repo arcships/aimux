@@ -6,7 +6,22 @@
 
 import test from 'ava'
 import { createServer, type Server } from 'node:http'
-import { openai } from '../src/native.ts'
+import {
+  anthropic,
+  anthropicAws,
+  azure,
+  bedrock,
+  cohere,
+  createProvider,
+  deepseek,
+  google,
+  mistral,
+  openai,
+  provider,
+  vertex,
+  xai,
+  InvalidArgumentError,
+} from '../src/native.ts'
 
 function startMockServer(handler: (req: any, res: any) => void): Promise<{ server: Server; url: string }> {
   return new Promise((resolve) => {
@@ -82,6 +97,76 @@ test('factory config maxRetries is rejected, not ignored', async (t) => {
   )
   t.true(err instanceof Error)
   t.regex(err!.message, /max_retries/)
+})
+
+// Every native constructor takes the same config and rejects the two removed
+// keys; none of them drops a key silently.
+const NATIVE_CONSTRUCTORS: Array<[string, (config: object) => Promise<unknown>]> = [
+  ['openai', (c) => openai('k', 'm', c)],
+  ['anthropic', (c) => anthropic('k', 'm', c)],
+  ['google', (c) => google('k', 'm', c)],
+  ['cohere', (c) => cohere('k', 'm', c)],
+  ['mistral', (c) => mistral('k', 'm', c)],
+  ['xai', (c) => xai('k', 'm', c)],
+  ['deepseek', (c) => deepseek('k', 'm', c)],
+  ['bedrock', (c) => bedrock('AKIA', 'secret', 'us-east-1', 'm', c)],
+  ['vertex', (c) => vertex('token', 'proj', 'us-central1', 'm', c)],
+  ['anthropicAws', (c) => anthropicAws('k', 'us-east-1', 'm', c)],
+  ['azure', (c) => azure('k', 'res', 'dep', null, c)],
+  ['provider', (c) => provider('groq', 'k', 'm', c)],
+  ['createProvider', (c) => createProvider('groq', 'k', c)],
+]
+
+for (const [name, construct] of NATIVE_CONSTRUCTORS) {
+  test(`${name}: maxRetries / bodyOverrides in the config are InvalidArgumentError`, async (t) => {
+    const maxRetries = await t.throwsAsync(() => construct({ maxRetries: 1 }))
+    t.true(maxRetries instanceof InvalidArgumentError)
+    t.regex(maxRetries!.message, /max_retries/)
+    const overrides = await t.throwsAsync(() => construct({ bodyOverrides: '{"a":1}' }))
+    t.true(overrides instanceof InvalidArgumentError)
+    t.regex(overrides!.message, /body_overrides/)
+  })
+
+  test(`${name}: a plain config is accepted`, async (t) => {
+    await t.notThrowsAsync(() => construct({ baseUrl: 'http://127.0.0.1:1' }))
+  })
+}
+
+// ── params: preset template parameters ───────────────────────────────────────
+
+test('params fills a preset template parameter', async (t) => {
+  const saved = process.env.CLOUDFLARE_ACCOUNT_ID
+  delete process.env.CLOUDFLARE_ACCOUNT_ID
+  try {
+    // Without the parameter the preset cannot build its base URL.
+    const missing = await t.throwsAsync(() => provider('cloudflare_workers_ai', 'k', 'm'))
+    t.true(missing instanceof InvalidArgumentError)
+    t.regex(missing!.message, /account_id/)
+
+    await t.notThrowsAsync(() =>
+      provider('cloudflare_workers_ai', 'k', 'm', { params: { account_id: 'acct123' } }),
+    )
+    await t.notThrowsAsync(() =>
+      createProvider('cloudflare_workers_ai', 'k', { params: { account_id: 'acct123' } }),
+    )
+  } finally {
+    if (saved !== undefined) process.env.CLOUDFLARE_ACCOUNT_ID = saved
+  }
+})
+
+test('params the preset does not declare are rejected', async (t) => {
+  const err = await t.throwsAsync(() =>
+    provider('groq', 'k', 'm', { params: { account_id: 'acct123' } }),
+  )
+  t.true(err instanceof InvalidArgumentError)
+  t.regex(err!.message, /no template parameter `account_id`/)
+})
+
+test('params values that could change the URL are rejected', async (t) => {
+  const err = await t.throwsAsync(() =>
+    provider('cloudflare_workers_ai', 'k', 'm', { params: { account_id: 'a/b' } }),
+  )
+  t.true(err instanceof InvalidArgumentError)
 })
 
 test('factory config headers are sent on every request', async (t) => {

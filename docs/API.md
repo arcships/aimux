@@ -72,7 +72,9 @@ One function in every binding:
 provider(name, api_key?, model_id, config?)   // all languages
   name     — registry provider name as a string
   api_key  — optional; omitted/None reads the provider's env var
-  config   — optional overrides (base_url / headers / maxRetries / body_overrides)
+  config   — optional overrides (base_url / headers / organization / project / params)
+             `maxRetries` (a per-call option) and `bodyOverrides` (removed) are
+             rejected with InvalidArgument, not ignored
 ```
 
 - Full list (name / env var / base URL): [providers.md](api/providers.md)
@@ -102,7 +104,7 @@ Examples: [Node.js](api/node.md#text-generation) · [Python](api/python.md#text-
 | `reasoning` | `ReasoningEffort?` | Reasoning effort |
 | `max_retries` | `number?` | Per-call retry override; `0` disables retries (`None` = provider default, 2) |
 | `timeout` | `TimeoutConfiguration?` | Per-call timeouts (total / step / first-chunk / chunk idle) — see [Timeouts](#timeouts) |
-| `body_overrides` | `object?` | Per-call request-body overrides, deep-merged; `null` values delete keys |
+| `provider_options` | `object?` | Per-provider options keyed by namespace; for OpenAI-compatible providers, unknown fields of the provider's own namespace go to the request body as given |
 | `headers` | `object?` | Extra HTTP headers |
 
 Node.js additionally accepts an `AbortSignal` as the 4th argument of

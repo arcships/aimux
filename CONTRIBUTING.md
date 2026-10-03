@@ -10,7 +10,7 @@ aimux/
 ├── aimux-core/            # Core abstractions: LanguageModel / Provider / Message / StreamPart
 ├── aimux-providers/       # provider implementations + cassettes (counts: docs/api/providers.md)
 ├── aimux-stream/          # SSE decoding
-├── aimux-provider-utils/  # HTTP utilities: retry, backoff, error parsing, API-key loading, streamed tool-call tracking
+├── aimux-provider-utils/  # HTTP utilities: Fetch transport, Resolvable settings, error parsing, API-key loading, streamed tool-call tracking
 ├── aimux-ffi/             # C ABI (opaque handle + JSON + push callback) for non-native bindings
 ├── bindings/              # Node, Python, Swift, Kotlin, Flutter, Go, C — share one Rust core
 ├── contract-tests/        # Shared JSON fixtures exercised across languages
@@ -38,6 +38,21 @@ cargo build --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+Provider changes also run the generator and boundary checks CI runs in the
+`contract-tests` job:
+
+```bash
+python3 scripts/gen_presets.py --check        # registry -> aimux-providers/src/presets
+python3 scripts/gen_providers_doc.py --check  # docs/api/providers.md
+python3 scripts/gen_ts_types.py --check       # ts-rs types for the Node binding
+bash scripts/check_provider_boundaries.sh     # factory-shape rules for provider packages
+```
+
+The Node and Python bindings are separate workspaces: run `cargo fmt` and
+`cargo clippy -- -D warnings` inside each, then `npm ci && npm run build &&
+npm test` (Node) or `maturin build --release`, `pip install` the wheel and
+`python -m pytest tests/` (Python).
 
 ## Testing
 

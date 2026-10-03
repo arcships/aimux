@@ -11,8 +11,8 @@ use std::os::raw::c_char;
 use std::ptr;
 
 use aimux_ffi::{
-    AIMUX_E_NO_SUCH_PROVIDER, aimux_drop_handle, aimux_error_t, aimux_provider_handle_new,
-    aimux_provider_list_models, aimux_provider_model,
+    AIMUX_E_INVALID_ARGUMENT, AIMUX_E_NO_SUCH_PROVIDER, aimux_drop_handle, aimux_error_t,
+    aimux_provider_handle_new, aimux_provider_list_models, aimux_provider_model,
 };
 use common::{c, expect_aimux_error, expect_ffi_error, ok};
 
@@ -93,6 +93,54 @@ fn provider_handle_new_bad_config_json() {
         expect_ffi_error(e, "provider_handle_new(bad config)")
             .starts_with("config_json: invalid JSON:")
     );
+}
+
+/// `max_retries` (call-level) and `body_overrides` (removed) in the provider
+/// `config_json` are invalid arguments naming the key, not silently ignored.
+#[test]
+fn provider_handle_new_rejects_removed_config_keys() {
+    for (config, key) in [
+        (r#"{"max_retries":0}"#, "max_retries"),
+        (r#"{"body_overrides":{"a":1}}"#, "body_overrides"),
+    ] {
+        let mut h = 7;
+        let e = aimux_provider_handle_new(
+            c("deepseek").as_ptr(),
+            c("sk-test-fake").as_ptr(),
+            c(config).as_ptr(),
+            &mut h,
+        );
+        assert_eq!(h, 0, "failure writes the sentinel");
+        let (code, m) = expect_aimux_error(e, "provider_handle_new(removed key)");
+        assert_eq!(code, AIMUX_E_INVALID_ARGUMENT, "{m}");
+        assert!(m.contains(key), "message names `{key}`: {m}");
+    }
+}
+
+/// `params` fill a preset's template parameters; one the preset does not
+/// declare is an invalid argument.
+#[test]
+fn provider_handle_new_params() {
+    let mut h = 0;
+    let e = aimux_provider_handle_new(
+        c("cloudflare_workers_ai").as_ptr(),
+        c("sk-test-fake").as_ptr(),
+        c(r#"{"params":{"account_id":"acct123"}}"#).as_ptr(),
+        &mut h,
+    );
+    aimux_drop_handle(expect_handle(e, h, "provider_handle_new(params)"));
+
+    let mut h = 7;
+    let e = aimux_provider_handle_new(
+        c("deepseek").as_ptr(),
+        c("sk-test-fake").as_ptr(),
+        c(r#"{"params":{"account_id":"acct123"}}"#).as_ptr(),
+        &mut h,
+    );
+    assert_eq!(h, 0);
+    let (code, m) = expect_aimux_error(e, "provider_handle_new(undeclared param)");
+    assert_eq!(code, AIMUX_E_INVALID_ARGUMENT, "{m}");
+    assert!(m.contains("account_id"), "{m}");
 }
 
 // ── aimux_provider_model ─────────────────────────────────────────────────────

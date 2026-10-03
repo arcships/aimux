@@ -78,6 +78,186 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name ends the stream with `InvalidResponseData` (previously it started a
   call with an empty name). `DeltaToolCall.index` is now `Option<usize>`.
 
+**Rust (provider factory, RFC-0036)**
+
+- `Provider` follows the AI SDK's `ProviderV4`: `language_model`,
+  `embedding_model` and `image_model` are required and return
+  `NoSuchModel { model_id, model_type }` when a vendor has no such modality;
+  `transcription_model`, `speech_model`, `reranking_model` and `files` are
+  optional (`None` = not offered); video and search stay aimux extensions.
+  Every constructor returns an `Arc<dyn …>`. Removed: `Provider::name()`,
+  `specification_version()` (from `Provider` and the nine model traits),
+  `LanguageModel::config_snapshot()` and `list_models` on `Provider`.
+  Discovery is the separate `ProviderDiscovery` trait (`provider_discovery(name,
+  …)` resolves one); `supported_urls()` is added to `LanguageModel`.
+- Every `XxxConfig`, config builder, `from_env()`, `with_*` method and
+  `XxxProvider::new(...)` is gone, in every provider package. Each package
+  has `XxxProviderSettings` (all fields optional), `create_xxx(settings)`
+  (fallible only for an unusable `base_url`, a conflicting key setting or an
+  undeclared template parameter) and an infallible default instance `xxx()`.
+  Models read a crate-private per-model config; there are no getters and no
+  snapshot. `Fetch` (HTTP), `WsConnector` (WebSocket) and `Resolvable<T>`
+  (value, closure, async closure or future) are the injection points;
+  `transform_request_body` is the one provider-level body hook.
+- Credentials and per-request settings are evaluated on every request:
+  `api_key: None` reads the package's environment variable, `Some("")` is
+  sent verbatim and never falls back to the environment, and a missing key
+  fails the call (not the factory) with `AiMuxError::LoadApiKey { env_var,
+  description }`. A missing required setting (AWS region, Azure resource name,
+  Vertex project, …) fails the call with `AiMuxError::LoadSetting { env_var,
+  name }`. Headers merge case-insensitively (provider, then call, then
+  credential) and a credential header is sent once.
+- Retry is a call-level concern only. `RetryConfig`, `retry_config()`,
+  `with_retry_config`, the `max_retries` fields on every provider config and
+  `ProviderRecord.max_retries` are deleted; the nine core operations call
+  `prepare_retries(max_retries, abort)` with the constant defaults 2 retries,
+  2000 ms initial delay, factor 2 (jitter, `Retry-After` and the error history
+  are unchanged). Providers no longer retry anything themselves: `list_models`
+  and files uploads are single exchanges, and job-creating requests are sent
+  exactly once.
+- `body_overrides` is removed everywhere (provider configs, builders,
+  `CallOptions`, `ProviderOptions`, `config_json`, binding `ProviderConfig`).
+  Provider-level body rewrites are a `transform_request_body` closure that
+  runs once on the finished JSON body. `ProviderOptions`, the C ABI
+  `config_json` and the Node `ProviderConfig` that carry `max_retries` or
+  `body_overrides` now fail with `InvalidArgument` instead of ignoring them
+  (`reject_removed_provider_options` for other shapes).
+- Recording: `RECORDING_SCHEMA = 3`. `ProviderRecord` holds identity only
+  (`provider_id`, `provider`, `model_id`); base URL, key source, profile,
+  options and retry settings are no longer recorded and schema-2 files are
+  rejected on read. `rebuild_provider` resolves `provider_id` through the
+  registry and overlay tables (native-protocol packages are not in the
+  registry and return `NoSuchProvider`; replay them with `replay_with_model`).
+  Recorded provider strings change with the next item.
+- `model.provider()` is `"{name}.{method}"`, where `name` is
+  `settings.name` (default: the package name). Defaults: `openai.chat` /
+  `openai.responses` / `openai.embedding` / `openai.image` / `openai.speech` /
+  `openai.transcription` / `openai.files`; `anthropic.messages` (a custom name
+  is used verbatim; `{name}.files` derives from it), `anthropic-aws`,
+  `googleVertex.anthropic.messages`; `google.generative-ai` (+ `.video`,
+  `.files`), `google.vertex` (+ `.video`, `.transcription`),
+  `amazon-bedrock`; `azure.chat` / `.responses` / `.embeddings` / `.image` /
+  `.transcription` / `.speech`; `xai.responses`, `huggingface.responses`,
+  `mistral.chat` / `.embedding`, `cohere.chat` / `.textEmbedding` /
+  `.reranking`, `codex.responses`, `{name}.responses` (open_responses),
+  `voyage.embedding` / `.reranking`, `elevenlabs.speech` / `.transcription`,
+  `groq.chat`, `deepseek.chat`; compat and preset providers
+  `{name}.chat` / `.embedding` / `.image`; single-modality packages
+  `luma.image`, `deepgram.transcription`, `tavily.search`, `amazon-polly.speech`,
+  `blackForestLabs.image`, `cartesia.transcription`, … . Consumers that
+  compared `provider` to `"openai"` must match the prefix (the CLI and web
+  probes filter by `model.provider()`).
+- providerOptions namespaces are canonical only: `googleVertex` and
+  `amazonBedrock` (the legacy `vertex` / `bedrock` keys are neither read nor
+  written; Bedrock still reads `anthropic` for its Anthropic models). The
+  Anthropic package reads `anthropic` merged with the first segment of a
+  custom `name` (custom wins) and writes metadata under the custom key;
+  compat providers no longer read the `openai` key; `providerOptions.deepseek`
+  is honoured (`reasoningEffort`, `thinking`).
+- Presets: `provider_registry.json` has 283 rows (251 + the 32 former thin
+  wrapper vendors, whose types are deleted — `OllamaConfig`, `VllmProvider`,
+  the `vertex_ai_*_models` family, …). `scripts/gen_presets.py` generates
+  `aimux-providers/src/presets/` (`create_<name>(PresetSettings)` +
+  `<name>()`); rows carry `auth: api_key | none` (`none` sends no
+  `Authorization`; `PLACEHOLDER_API_KEY` is gone), `base_url_env` and
+  template `params` (env, default, derived host maps). Only declared
+  parameters are accepted, host parameters reject `/ @ : ?`, and an
+  unexpanded placeholder is an error. Unknown names are `NoSuchProvider`;
+  nothing falls back to OpenAI. `litellm_proxy` reads `LITELLM_PROXY_BASE_URL`
+  (the old wrapper read its API-key variable as a URL). `gen_presets.py
+  --check` and `scripts/check_provider_boundaries.sh` run in CI.
+- Groq and DeepSeek are standalone packages (`create_groq`, `create_deepseek`)
+  built on the compat internals; the native OpenAI package no longer knows any
+  other vendor. Compat providers expose chat, embedding and image only (the
+  upstream set); the native OpenAI package warns on and drops `top_k`;
+  `OpenAICompatProfile` and `with_profile` are deleted in favour of dialect
+  hooks.
+- Anthropic: the base URL includes `/v1` (endpoint `{base}/messages`; only the
+  bare `https://api.anthropic.com` is rewritten); `ANTHROPIC_BASE_URL` and
+  `OPENAI_BASE_URL` are no longer read; `stream` is omitted on non-streaming
+  calls; `providerOptions.anthropic.metadata.userId` maps to `metadata.user_id`; `anthropic-beta` is
+  sent on every host. Result-level `providerMetadata` is now populated
+  (`usage`, `stopSequence`, `iterations`, `container`, `contextManagement`,
+  under `anthropic` and the custom name), `usage.raw` is the provider's own
+  usage object, and `usage.iterations` now feeds the token totals. Vertex-
+  Anthropic and `anthropic_aws` run on the Anthropic core.
+- Google: request bodies follow the AI SDK (`generationConfig` is always
+  sent, function tools use `parametersJsonSchema`, `providerOptions.google`
+  maps `thinkingConfig`, `responseModalities`, `safetySettings`,
+  `cachedContent`, …; response `modelId` comes from `modelVersion`).
+  Vertex: Gemini uses `v1beta1`, Anthropic-on-Vertex `v1`; a tuned model in
+  express mode now fails at request time instead of at construction.
+  Bedrock signs the final request bytes through `SigV4Fetch`;
+  `list_models` now calls the control-plane host
+  `bedrock.{region}.amazonaws.com` (it used `….api.amazonaws.com`).
+- Azure defaults to `api_version = "v1"` with `/v1{path}`; a dated
+  `api_version` selects the deployment URL form. xAI, Hugging Face and Azure
+  default to the Responses API (`chat_completions(id)` is the chat extension);
+  the OpenAI default `language_model` stays chat (upstream: Responses; see the
+  RFC-0036 §5 table). Codex is `codex.responses`, its ChatGPT-account base URL
+  defaults to `https://chatgpt.com/backend-api/codex` (it was missing
+  `/codex`), and `store: false` is a package rule. `open_responses`: `url` →
+  `base_url`. The Azure deepseek / completion / MAI models and the Foundry item
+  type are not ported.
+- Single-modality vendors (28 packages) run async jobs on package constants:
+  a fixed interval and attempt cap (previously unbounded loops now stop after
+  6000 × 100 ms), a transient poll error spends one attempt, and the interval
+  is overridden through the package namespace (`pollIntervalMs`, luma
+  `pollIntervalMillis`) which replaces the old per-provider poll settings.
+  `cartesia` `version` and `runwayml` `poll_interval` / `timeout` settings are
+  removed (headers / constants); `google_pse` `cx` resolves settings, then
+  providerOptions, then `GOOGLE_CSE_ID` per request; DataForSEO without
+  credentials fails with `LoadApiKey`; searxng accepts an optional bearer
+  token; the user-agent suffix is gone. `VideoModel::poll_config()` stays as
+  the package-constant source.
+- Removed from `aimux-providers`: `body_merge`, `openai_legacy`, `AzureAuth`,
+  `TokenProvider`, `VertexAuth`, `BedrockAuth`, `StaticBearerConfig` and the
+  `hmac` dependency (`sha2` / `hex` are dev-dependencies).
+
+**C ABI**
+
+- New error codes `AIMUX_E_LOAD_API_KEY = 18` and `AIMUX_E_LOAD_SETTING = 19`
+  (appended; retired 4 is not reused). `aimux_error_provider_code` returns the
+  environment variable that was consulted and `aimux_error_provider_message`
+  the key's description (`"OpenAI"`) or the setting name (`"region"`); no new
+  symbol. `aimux_error_model_type` carries `NoSuchModel.model_type`. These two
+  failures used to surface as `AIMUX_E_INVALID_ARGUMENT`.
+- `aimux_provider_new`, `aimux_provider_handle_new` and `config_json` resolve
+  names through the preset and overlay tables; `config_json` accepts
+  `base_url`, `headers`, `organization`, `project` and `params`, and rejects
+  `max_retries` and `body_overrides` with `AIMUX_E_INVALID_ARGUMENT`. A
+  provider handle is provider + discovery. `aimux_register_providers`
+  entries reject the same two keys.
+
+**Node / Python**
+
+- Node `ProviderConfig`: `maxRetries` and `bodyOverrides` are kept in the type
+  only so that passing them throws `InvalidArgumentError`, for every native
+  constructor (`openai`, `anthropic`,
+  `google`, `cohere`, `mistral`, `xai`, `deepseek`, `bedrock`, `vertex`,
+  `anthropicAws`, `azure`, `provider`, `createProvider`), not only OpenAI.
+  `headers` now applies to all of them. New `params: Record<string, string>`
+  fills a preset's template parameters. Python `config` /
+  `config_json` accept `params` and reject `max_retries` / `body_overrides`
+  the same way.
+- New error classes `LoadAPIKeyError` (`envVar`, `description`) and
+  `LoadSettingError` (`envVar`, `settingName`) in Node; `LoadAPIKeyError`
+  (`env_var`, `description`) and `LoadSettingError` (`env_var`,
+  `setting_name`) in Python. Both extend `AimuxError`, no longer
+  `InvalidArgumentError`.
+- Recorded and traced provider strings follow `"{name}.{method}"`
+  (`openai.chat`, not `openai`).
+
+**Go / Java / Kotlin / Swift / Dart**
+
+- New error codes 18 / 19 (`CodeLoadAPIKey` / `CodeLoadSetting`,
+  `LoadAPIKeyError` / `LoadSettingError`, `.loadApiKey` / `.loadSetting`),
+  with the consulted environment variable as `EnvVar` / `envVar`.
+- The call-level `body_overrides` / `bodyOverrides` field is deleted from
+  `GenerateTextOptions` (the core no longer accepts the key; leaving it would
+  have been silently ignored). The provider `config_json` helpers
+  (`ProviderConfig` in Go and Dart) drop `max_retries` / `body_overrides` and
+  gain `params`; call-level `max_retries` is unchanged.
 
 ## [0.5.0] - 2026-09-27
 

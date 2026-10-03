@@ -654,5 +654,11 @@ async fn list_models_is_one_signed_exchange_through_the_same_transport() {
     let seen = mock.seen();
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].method, "GET");
+    // The control-plane host (`bedrock.`), not the runtime's and not the
+    // `*.api.amazonaws.com` style.
+    assert_eq!(
+        seen[0].url,
+        "https://bedrock.us-east-1.amazonaws.com/foundation-models"
+    );
     assert_signed(&seen[0], "us-east-1");
 }

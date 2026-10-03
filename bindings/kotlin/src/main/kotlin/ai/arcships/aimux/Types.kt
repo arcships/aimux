@@ -606,8 +606,6 @@ data class GenerateTextOptions(
     @SerialName("provider_options") val providerOptions: Map<String, JsonElement>? = null,
     val reasoning: ReasoningEffort? = null,
     val instructions: String? = null,
-    /** Per-call JSON deep-merge overrides for the request body. Untyped ([JsonElement]). */
-    @SerialName("body_overrides") val bodyOverrides: JsonElement? = null,
     /** Per-call retry count (0 = disable retries). */
     @SerialName("max_retries") val maxRetries: Long? = null,
     /** Emit raw provider stream chunks as `StreamPart.Raw` (debugging; OpenAI-compatible family only). */

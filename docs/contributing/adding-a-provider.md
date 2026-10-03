@@ -14,8 +14,8 @@ simplify some steps below — noted per step).
 | Case | The vendor speaks… | You add | Example |
 |---|---|---|---|
 | 1. OpenAI-compatible | OpenAI Chat Completions wire format, own base URL | one registry row + derived cassettes | `deepinfra` |
-| 2. A new protocol | its own HTTP API for text generation | a `src/<name>/` module implementing `do_generate` / `do_stream` | `cohere` |
-| 3. Single modality | any API, but only one non-text modality | a typed shell + one modality model | `serper` (search), `lmnt` (speech) |
+| 2. A new protocol | its own HTTP API for text generation | a `src/<name>/` package: `XxxProviderSettings` + `create_xxx` + a model implementing `do_generate` / `do_stream` | `cohere` |
+| 3. Single modality | any API, but only one non-text modality | a `XxxProviderSettings` + `create_xxx` factory + one modality model | `serper` (search), `lmnt` (speech) |
 
 If the vendor is OpenAI-compatible **and** needs quirks beyond what a row can
 say (a different auth header, a non-standard error body, message conversion of
@@ -74,9 +74,25 @@ only differs in a few hooks, its own package next to `groq/` and `deepseek/`
 
 1. New directory `aimux-providers/src/<name>/`:
 
-   - `model.rs` — `<Name>Provider` implementing `LanguageModel`:
+   - `mod.rs` — the factory, modelled on the vendor's `@ai-sdk/<name>`
+     package: `<Name>ProviderSettings` (every field optional: `base_url`,
+     `api_key: Option<Resolvable<String>>`, `headers`, `name`, `fetch`,
+     `transform_request_body`), `create_<name>(settings)` (fails only for an
+     unusable `base_url`), an infallible default instance `<name>()`, and
+     `<Name>Provider` with one method per model (`chat(id)`, `embedding(id)`,
+     …) plus the `Provider` trait impl. The key is resolved **on every request**
+     (`None` reads the environment variable, `Some("")` is sent verbatim, a
+     missing key fails the call with `AiMuxError::LoadApiKey`); a required
+     setting that is missing fails the call with `LoadSetting`. Each model
+     reports `provider()` as `"{name}.{method}"` with `name` defaulting to the
+     package name. There is no `Config` type, no `from_env`, no `with_*`
+     builder, and no retry setting: the model reads a private config built by
+     the factory, and retry belongs to the caller (`max_retries` on the call);
+   - `model.rs` — the model implementing `LanguageModel`:
      `do_generate` / `do_stream` (plus other modality traits if the vendor
      offers them: embeddings, image, transcription…);
+   - `options.rs` — the providerOptions / providerMetadata namespace keys,
+     spelled once;
    - `convert.rs` — unified message format ⇄ vendor wire format, both
      directions, including the error-body shape;
    - `types.rs` — vendor request/response structs (`#[serde(default)]` on
@@ -91,7 +107,7 @@ only differs in a few hooks, its own package next to `groq/` and `deepseek/`
 
    ```rust
    pub mod <name>;
-   pub use <name>::{<Name>Config, <Name>Provider};
+   pub use <name>::{<Name>Provider, <Name>ProviderSettings, <name>, create_<name>};
    ```
 
 3. Record real cassettes under `tests/cassettes/<name>/` (RFC-0003; no
@@ -101,8 +117,9 @@ only differs in a few hooks, its own package next to `groq/` and `deepseek/`
    20 modules.
 
 4. Note: protocol providers are **not** name-addressable today — callers use
-   the typed factories (`CohereProvider::new(...)`), and
-   `provider("cohere", ...)` fails with `NoSuchProvider`. A registry row with
+   the typed factories (`create_cohere(CohereProviderSettings {..})` or the
+   default instance `cohere()`), and `provider("cohere", ...)` fails with
+   `NoSuchProvider`. A registry row with
    a `protocol` field arrives with #166 B1 (the `Protocol` enum +
    `from_resolved`); until then, do not add protocol providers to the
    registry JSON.
@@ -112,19 +129,23 @@ only differs in a few hooks, its own package next to `groq/` and `deepseek/`
 1. One file `aimux-providers/src/<name>.rs` (see `serper.rs` for search,
    `lmnt.rs` for speech; `cartesia/` for a vendor with two modalities):
 
-   - `<Name>Config { api_key, base_url }` with `new` / `with_base_url` /
-     `from_env`;
-   - `<Name>Provider` — a shell whose only job is returning the modality
-     model (`search_model()`, `speech_model()`, `image_model()`, …) and
-     reporting its `name()`;
+   - `<Name>ProviderSettings { api_key, base_url, headers, name, fetch, .. }`
+     (all optional), `create_<name>(settings)` and an infallible default
+     instance `<name>()` — the key is resolved per request, as in case 2;
+   - `<Name>Provider` — returns the modality model (`search_model()`,
+     `speech_model()`, `image_model()`, …); the model reports `provider()` as
+     `"{name}.{method}"` (`luma.image`, `tavily.search`);
    - the modality model implementing the trait's operation
      (`SearchModel::do_search`, `SpeechModel::do_speak`, …) as: build the
      request body → send through the provider-utils HTTP helpers → map the
      response into aimux types. Implement **only** the transform functions;
      transport, retry and timeouts are not your problem (Core owns them).
 
-2. `pub mod` + `pub use` in `lib.rs` under the modality's section comment
-   (search-only, speech-only, image-only, video-only, …).
+2. `pub mod` + `pub use` (`<Name>ProviderSettings`, `create_<name>`, `<name>`) in
+   `lib.rs` under the modality's section comment (search-only, speech-only,
+   image-only, video-only, …). Async jobs poll on package constants through
+   `shared/poll.rs`; `scripts/check_provider_boundaries.sh` keeps retry,
+   `options.max_retries` reads and builder-era names out of the package.
 
 3. Cassettes + unit tests asserting the mapped result shapes.
 

@@ -149,8 +149,6 @@ macro_rules! __optional_model {
 // (`presets::create_<name>(PresetSettings)`, `presets::<name>()`) and looked up
 // by name through [`provider`] / [`provider_from_env`]. The hand-written thin
 // wrapper types (`OllamaConfig`, `VllmProvider`, ...) are gone.
-#[doc(hidden)]
-pub mod body_merge;
 pub mod provider;
 pub mod replay;
 pub use preset::{AuthMode, PresetDescriptor, PresetEntry, PresetFamily, PresetSettings};
