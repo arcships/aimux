@@ -83,7 +83,7 @@ aimux 是 **provider 接入与治理的运行时**：
 | D8 | 类型镜像生成：serde → JSON Schema → 各语言，`--check` 门禁扩到全部输出 |
 | P | stdio 入口往返开销纳入性能门禁 |
 
-版本语义：新 ABI 加入，旧导出并存（#166 要求共存至少一个 minor 版本）；绑定按各自节奏迁移。此处的“旧导出”指全链路对齐切换后的 C ABI；该切换本身不提供共存期，C2 转发 shim 与 C4 旧导出清理随之取消（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）。
+版本语义：新 ABI 加入，旧导出并存（#166 要求共存至少一个 minor 版本）；绑定按各自节奏迁移。“共存至少一个 minor”不再作为承诺：全链路对齐切换本身没有共存期，之后 ops ABI 引入时的旧符号也按切换门一次替换；C2 转发 shim 与 C4 旧导出清理随之取消（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）。
 
 ### 0.9.0 ——「治理」（~3-4 周）
 
