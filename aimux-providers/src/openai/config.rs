@@ -4,9 +4,9 @@
 //! (`{ provider, url, headers, fetch }`): the model asks it for a URL, for the
 //! request headers (evaluated per request, so a key is loaded when a call is
 //! made and never when the provider is created) and for the transport. It has
-//! no getters for the credential or the settings that produced it; the one
-//! field that names an origin, `base_url`, exists so the transport can refuse
-//! to send credentialed headers anywhere else.
+//! no getters for the credential or the settings that produced it. The
+//! credential origin is the one of each request's own URL, so the transport
+//! refuses to send credentialed headers to any other origin after a redirect.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,14 +20,17 @@ use aimux_provider_utils::{
     normalize_headers,
 };
 
+use super::responses::ResponsesProfile;
+
 pub use crate::shared::TransformRequestBody;
 
-/// Maps an endpoint path (`"/chat/completions"`) to the full request URL.
-pub(crate) type UrlFn = Arc<dyn Fn(&str) -> String + Send + Sync>;
+/// Maps an endpoint path (`"/chat/completions"`) to the full request URL. It
+/// can fail because a host may only know the address when a call is made (an
+/// Azure resource name read from the environment).
+pub(crate) type UrlFn = Arc<dyn Fn(&str) -> Result<String, AiMuxError> + Send + Sync>;
 
-/// What a model needs to talk to the API. Built by `OpenAIProvider`; the
-/// providers that have not moved to their own package yet build it with
-/// [`StaticBearerConfig`].
+/// What a model needs to talk to the API. Built by the provider that owns the
+/// model: `OpenAIProvider`, Azure, Codex and the Hugging Face chat extension.
 #[derive(Clone)]
 pub(crate) struct OpenAIModelConfig {
     /// The identity the model reports from `provider()`.
@@ -43,27 +46,57 @@ pub(crate) struct OpenAIModelConfig {
     pub(crate) supported_urls: SupportedUrls,
     /// Provider-level request-body rewrite.
     pub(crate) transform_request_body: Option<TransformRequestBody>,
-    /// The origin credentialed headers may be sent to. Never read for URLs.
-    pub(crate) base_url: String,
+    /// How the Responses API model reads and writes providerOptions and file
+    /// ids for this host.
+    pub(crate) responses: ResponsesProfile,
 }
 
 impl OpenAIModelConfig {
+    /// A config whose URLs are `base_url` followed by the endpoint path.
+    pub(crate) fn fixed(
+        provider: String,
+        base_url: String,
+        headers: HeadersFn,
+        fetch: Option<FetchFunction>,
+        transform_request_body: Option<TransformRequestBody>,
+    ) -> Self {
+        Self {
+            provider,
+            url: Arc::new(move |path| Ok(format!("{base_url}{path}"))),
+            headers,
+            fetch,
+            supported_urls: SupportedUrls::default(),
+            transform_request_body,
+            responses: ResponsesProfile::default(),
+        }
+    }
+
     /// The full URL of an endpoint path.
-    pub(crate) fn url(&self, path: &str) -> String {
+    ///
+    /// # Errors
+    ///
+    /// Returns the host's setting error (`AiMuxError::LoadSetting` for an
+    /// unset Azure resource name).
+    pub(crate) fn url(&self, path: &str) -> Result<String, AiMuxError> {
         (self.url)(path)
     }
 
     /// The WebSocket form of an endpoint path: `https` becomes `wss` and
     /// `http` becomes `ws`, as the AI SDK's `toWebSocketUrl` does.
-    pub(crate) fn ws_url(&self, path: &str) -> String {
-        let url = self.url(path);
-        if let Some(rest) = url.strip_prefix("https://") {
+    ///
+    /// # Errors
+    ///
+    /// As [`url`](Self::url).
+    #[cfg(feature = "realtime")]
+    pub(crate) fn ws_url(&self, path: &str) -> Result<String, AiMuxError> {
+        let url = self.url(path)?;
+        Ok(if let Some(rest) = url.strip_prefix("https://") {
             format!("wss://{rest}")
         } else if let Some(rest) = url.strip_prefix("http://") {
             format!("ws://{rest}")
         } else {
             url
-        }
+        })
     }
 
     /// Resolve the provider headers, layer the per-call headers over them
@@ -102,10 +135,11 @@ impl OpenAIModelConfig {
         self.with_transport(HttpRequest::new(url, headers, options))
     }
 
-    /// Attach the transport and the credential origin to a request.
+    /// Attach the transport and the credential origin (the request's own) to
+    /// a request.
     pub(crate) fn with_transport(&self, mut request: HttpRequest) -> HttpRequest {
         request.fetch = self.fetch.clone();
-        request.credentialed_origin = Some(self.base_url.clone());
+        request.credentialed_origin = Some(request.url.clone());
         request
     }
 
@@ -114,93 +148,6 @@ impl OpenAIModelConfig {
         match &self.transform_request_body {
             Some(transform) => transform(body),
             None => body,
-        }
-    }
-}
-
-/// A fixed bearer credential, base URL and provider name: the transitional
-/// configuration of the providers that reuse the OpenAI models but have not
-/// moved to their own settings yet (Codex, xAI, Hugging Face). Each of them
-/// is replaced by its package's factory in the native-package groups; nothing
-/// new should use this.
-#[derive(Clone)]
-pub(crate) struct StaticBearerConfig {
-    provider: String,
-    secret: String,
-    origin: String,
-    extra_headers: Option<HashMap<String, String>>,
-}
-
-impl std::fmt::Debug for StaticBearerConfig {
-    /// Never prints the credential or header values.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StaticBearerConfig")
-            .field("provider", &self.provider)
-            .field("origin", &self.origin)
-            .finish_non_exhaustive()
-    }
-}
-
-impl StaticBearerConfig {
-    pub(crate) fn new(provider: &str, secret: impl Into<String>, origin: impl AsRef<str>) -> Self {
-        Self {
-            provider: provider.to_string(),
-            secret: secret.into(),
-            origin: aimux_provider_utils::without_trailing_slash(origin.as_ref()),
-            extra_headers: None,
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn with_origin(mut self, origin: impl AsRef<str>) -> Self {
-        self.origin = aimux_provider_utils::without_trailing_slash(origin.as_ref());
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn with_extra_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.extra_headers = Some(headers);
-        self
-    }
-
-    /// The base URL requests are sent to.
-    pub(crate) fn origin(&self) -> &str {
-        &self.origin
-    }
-
-    /// The credential, for the providers that build their own requests.
-    pub(crate) fn secret(&self) -> &str {
-        &self.secret
-    }
-
-    /// The model configuration for `method` (`"chat"`, `"responses"`,
-    /// `"models"`, ...): provider `"{provider}.{method}"`, headers
-    /// `Authorization: Bearer <secret>` then the extra headers.
-    pub(crate) fn model_config(&self, method: &str) -> OpenAIModelConfig {
-        let mut fixed = HeaderMapOpt::new();
-        fixed.insert(
-            "Authorization".to_string(),
-            Some(format!("Bearer {}", self.secret)),
-        );
-        let headers = match &self.extra_headers {
-            Some(extra) => {
-                let extra: HeaderMapOpt = extra
-                    .iter()
-                    .map(|(k, v)| (k.clone(), Some(v.clone())))
-                    .collect();
-                combine_headers(&[&fixed, &extra])
-            }
-            None => fixed,
-        };
-        let base = self.origin.clone();
-        OpenAIModelConfig {
-            provider: format!("{}.{method}", self.provider),
-            url: Arc::new(move |path| format!("{base}{path}")),
-            headers: aimux_provider_utils::Resolvable::Value(headers),
-            fetch: None,
-            supported_urls: SupportedUrls::default(),
-            transform_request_body: None,
-            base_url: self.origin.clone(),
         }
     }
 }

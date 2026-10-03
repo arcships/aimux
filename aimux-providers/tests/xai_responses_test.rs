@@ -28,7 +28,16 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
 use aimux_core::types::ReasoningEffort;
 
-use aimux_providers::{XAIConfig, XAIProvider};
+use aimux_providers::{XAIProvider, XAIProviderSettings, create_xai};
+
+fn test_provider(api_key: &str, base_url: impl Into<String>) -> XAIProvider {
+    create_xai(XAIProviderSettings {
+        api_key: Some(api_key.to_string().into()),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -70,8 +79,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
 }
 
 fn make_provider(server: &MockServer) -> XAIProvider {
-    let config = XAIConfig::new("test-api-key").with_base_url(server.uri());
-    XAIProvider::new(config)
+    test_provider("test-api-key", server.uri())
 }
 
 fn xai_provider_options(opts: Value) -> Option<HashMap<String, Value>> {
@@ -121,7 +129,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -157,7 +165,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -189,7 +197,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -219,7 +227,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -246,7 +254,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -283,7 +291,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![
                 FunctionTool::new(
@@ -347,7 +355,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -407,7 +415,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -461,7 +469,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-3-mini");
+        let model = provider.responses("grok-3-mini");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -508,7 +516,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -557,7 +565,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             prompt: vec![
                 LanguageModelPromptMessage {
@@ -607,7 +615,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             provider_options: xai_provider_options(json!({ "reasoningEffort": "high" })),
             ..default_options(test_prompt())
@@ -632,7 +640,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             provider_options: xai_provider_options(json!({ "reasoningSummary": "concise" })),
             ..default_options(test_prompt())
@@ -660,7 +668,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             provider_options: xai_provider_options(
                 json!({ "reasoningEffort": "high", "reasoningSummary": "detailed" }),
@@ -690,7 +698,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             provider_options: xai_provider_options(json!({ "store": false })),
             ..default_options(test_prompt())
@@ -717,7 +725,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             provider_options: xai_provider_options(json!({ "store": true })),
             ..default_options(test_prompt())
@@ -744,7 +752,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             provider_options: xai_provider_options(json!({ "previousResponseId": "resp_456" })),
             ..default_options(test_prompt())
@@ -772,7 +780,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             provider_options: xai_provider_options(
                 json!({ "include": ["file_search_call.results"] }),
@@ -802,7 +810,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             provider_options: xai_provider_options(
                 json!({ "include": ["file_search_call.results"], "store": false }),
@@ -834,7 +842,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4.3");
+        let model = provider.responses("grok-4.3");
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::High),
             ..default_options(test_prompt())
@@ -859,7 +867,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4.3");
+        let model = provider.responses("grok-4.3");
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::None),
             ..default_options(test_prompt())
@@ -884,7 +892,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4.3");
+        let model = provider.responses("grok-4.3");
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::None),
             provider_options: xai_provider_options(json!({ "reasoningEffort": "high" })),
@@ -910,7 +918,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4.20-reasoning");
+        let model = provider.responses("grok-4.20-reasoning");
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::None),
             ..default_options(test_prompt())
@@ -944,7 +952,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             stop_sequences: Some(vec!["\n\n".to_string(), "STOP".to_string()]),
             ..default_options(test_prompt())
@@ -972,7 +980,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             response_format: Some(ResponseFormat::Json {
                 schema: Some(json!({
@@ -1010,7 +1018,7 @@ mod settings {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             response_format: Some(ResponseFormat::Json {
                 schema: None,
@@ -1067,7 +1075,7 @@ mod tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = generate_text(
             &model,
             "Inspect the media",
@@ -1131,7 +1139,7 @@ mod tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![Tool::Provider(ProviderTool {
                 id: "xai.web_search".to_string(),
@@ -1181,7 +1189,7 @@ mod tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![Tool::Provider(ProviderTool {
                 id: "xai.web_search".to_string(),
@@ -1231,7 +1239,7 @@ mod tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![Tool::Provider(ProviderTool {
                 id: "xai.web_search".to_string(),
@@ -1271,7 +1279,7 @@ mod tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![Tool::Provider(ProviderTool {
                 id: "xai.x_search".to_string(),
@@ -1311,7 +1319,7 @@ mod tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![Tool::Provider(ProviderTool {
                 id: "xai.code_execution".to_string(),
@@ -1351,7 +1359,7 @@ mod tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![Tool::Provider(ProviderTool {
                 id: "xai.code_execution".to_string(),
@@ -1391,7 +1399,7 @@ mod tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![Tool::Provider(ProviderTool {
                 id: "xai.web_search".to_string(),
@@ -1444,7 +1452,7 @@ mod tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![Tool::Provider(ProviderTool {
                 id: "xai.file_search".to_string(),
@@ -1524,7 +1532,7 @@ mod tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![Tool::Provider(ProviderTool {
                 id: "xai.file_search".to_string(),
@@ -1566,7 +1574,7 @@ mod tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![
                 FunctionTool::new(
@@ -1612,7 +1620,7 @@ mod tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![
                 FunctionTool::new(
@@ -1688,7 +1696,7 @@ mod citations {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -1768,7 +1776,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -1830,7 +1838,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -1873,7 +1881,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-code-fast-1");
+        let model = provider.responses("grok-code-fast-1");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -1938,7 +1946,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -1983,7 +1991,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![Tool::Provider(ProviderTool {
                 id: "xai.web_search".to_string(),
@@ -2062,7 +2070,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let options = CallOptions {
             tools: Some(vec![
                 FunctionTool::new(
@@ -2153,7 +2161,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -2199,7 +2207,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -2238,7 +2246,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -2287,7 +2295,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -2330,7 +2338,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let model = provider.responses("grok-4-fast-non-reasoning");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await

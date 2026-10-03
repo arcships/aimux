@@ -26,10 +26,11 @@ pub mod convert;
 pub mod responses_convert;
 pub mod types;
 
+pub(crate) use convert::ResponsesProfile;
 pub use convert::{
-    ResponsesInputResult, ResponsesRequestBodyResult, build_responses_request_body,
-    convert_responses_usage, convert_to_responses_input, map_responses_finish_reason,
-    prepare_responses_tools,
+    ResponsesInputResult, ResponsesNamespace, ResponsesRequestBodyResult,
+    build_responses_request_body, build_responses_request_body_for, convert_responses_usage,
+    convert_to_responses_input, map_responses_finish_reason, prepare_responses_tools,
 };
 
 use std::collections::HashMap;
@@ -71,18 +72,24 @@ impl OpenAIResponsesModel {
         self.config.request_headers(call_headers).await
     }
 
-    fn endpoint(&self) -> String {
+    fn endpoint(&self) -> Result<String, AiMuxError> {
         self.config.url("/responses")
     }
 
-    /// The provider-metadata key: `"azure"` when the provider string contains
-    /// `"azure"`, otherwise `"openai"`. Mirrors the TS `providerOptionsName`.
+    /// The request body for one call: built with the host's providerOptions
+    /// namespace, file-id prefixes applied, then the provider-level rewrite.
+    fn request_body(&self, options: &CallOptions, stream: bool) -> ResponsesRequestBodyResult {
+        let profile = &self.config.responses;
+        let mut result =
+            build_responses_request_body_for(profile.namespace, &self.model_id, options, stream);
+        convert::apply_file_id_prefixes(&mut result.body, &profile.file_id_prefixes);
+        result.body = self.config.transform_body(result.body);
+        result
+    }
+
+    /// The provider-metadata key of the host.
     fn provider_options_name(&self) -> &str {
-        if self.config.provider.contains("azure") {
-            "azure"
-        } else {
-            "openai"
-        }
+        self.config.responses.namespace.write_key()
     }
 }
 
@@ -102,11 +109,11 @@ impl LanguageModel for OpenAIResponsesModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.request_headers(options.headers.as_ref()).await?;
-        let request_result = build_responses_request_body(&self.model_id, options, false);
-        let body = self.config.transform_body(request_result.body);
+        let request_result = self.request_body(options, false);
+        let body = request_result.body;
         let provider_key = self.provider_options_name().to_string();
 
-        let endpoint = self.endpoint();
+        let endpoint = self.endpoint()?;
         let resp = aimux_provider_utils::post_json_to_api(
             self.config.http_request(endpoint.clone(), headers, options),
             body.clone(),
@@ -136,8 +143,8 @@ impl LanguageModel for OpenAIResponsesModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.request_headers(options.headers.as_ref()).await?;
-        let request_result = build_responses_request_body(&self.model_id, options, true);
-        let body = self.config.transform_body(request_result.body);
+        let request_result = self.request_body(options, true);
+        let body = request_result.body;
         let warnings = request_result.warnings;
         let provider_key = self.provider_options_name().to_string();
 
@@ -146,12 +153,12 @@ impl LanguageModel for OpenAIResponsesModel {
         let store_flag = options
             .provider_options
             .as_ref()
-            .and_then(|m| m.get("openai"))
+            .and_then(|m| self.config.responses.namespace.find_in(m))
             .and_then(|o| o.get("store"))
             .and_then(serde_json::Value::as_bool)
             == Some(true);
 
-        let endpoint = self.endpoint();
+        let endpoint = self.endpoint()?;
         let resp = aimux_provider_utils::post_json_to_api(
             self.config.http_request(endpoint.clone(), headers, options),
             body.clone(),

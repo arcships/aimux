@@ -1125,21 +1125,24 @@ pub async fn cohere(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::cohere::{CohereConfig, CohereProvider};
+            use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
 
-            let mut cfg = CohereConfig::new(api_key);
+            let mut cfg = CohereProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                ..Default::default()
+            };
             match config {
                 Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
+                    cfg.base_url = Some(url);
                 }
                 Some(Either::B(opts)) => {
                     if let Some(url) = &opts.base_url {
-                        cfg = cfg.with_base_url(url);
+                        cfg.base_url = Some(url.clone());
                     }
                 }
                 None => {}
             }
-            let provider = CohereProvider::new(cfg);
+            let provider = create_cohere(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
@@ -1163,21 +1166,24 @@ pub async fn mistral(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::mistral::{MistralConfig, MistralProvider};
+            use aimux_providers::mistral::{MistralProviderSettings, create_mistral};
 
-            let mut cfg = MistralConfig::new(api_key);
+            let mut cfg = MistralProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                ..Default::default()
+            };
             match config {
                 Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
+                    cfg.base_url = Some(url);
                 }
                 Some(Either::B(opts)) => {
                     if let Some(url) = &opts.base_url {
-                        cfg = cfg.with_base_url(url);
+                        cfg.base_url = Some(url.clone());
                     }
                 }
                 None => {}
             }
-            let provider = MistralProvider::new(cfg);
+            let provider = create_mistral(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
@@ -1201,21 +1207,24 @@ pub async fn xai(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::xai::{XAIConfig, XAIProvider};
+            use aimux_providers::xai::{XAIProviderSettings, create_xai};
 
-            let mut cfg = XAIConfig::new(api_key);
+            let mut cfg = XAIProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                ..Default::default()
+            };
             match config {
                 Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
+                    cfg.base_url = Some(url);
                 }
                 Some(Either::B(opts)) => {
                     if let Some(url) = &opts.base_url {
-                        cfg = cfg.with_base_url(url);
+                        cfg.base_url = Some(url.clone());
                     }
                 }
                 None => {}
             }
-            let provider = XAIProvider::new(cfg);
+            let provider = create_xai(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
@@ -1392,29 +1401,34 @@ pub async fn azure(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::azure::{AzureConfig, AzureProvider};
+            use aimux_providers::azure::{AzureOpenAIProviderSettings, create_azure};
 
-            let mut cfg = AzureConfig::new().with_api_key(api_key);
+            let mut cfg = AzureOpenAIProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                ..Default::default()
+            };
             match config {
                 Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
+                    cfg.base_url = Some(url);
                 }
                 Some(Either::B(opts)) => {
                     if let Some(url) = &opts.base_url {
-                        cfg = cfg.with_base_url(url);
+                        cfg.base_url = Some(url.clone());
                     }
                 }
                 None => {}
             }
-            if let Some(version) = api_version {
-                if !version.is_empty() {
-                    cfg = cfg.with_api_version(version);
-                }
+            // A dated `api_version` belongs to the deployment URL form.
+            if let Some(version) = api_version
+                && !version.is_empty()
+            {
+                cfg.api_version = Some(version);
+                cfg.use_deployment_based_urls = true;
             }
             if !resource_name.is_empty() {
-                cfg = cfg.with_resource_name(resource_name);
+                cfg.resource_name = Some(resource_name);
             }
-            let provider = AzureProvider::new(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
+            let provider = create_azure(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&deployment)
                 .map_err(|e| AiMuxBindingError::from(&e))?;

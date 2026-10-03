@@ -20,7 +20,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::HttpRequest;
+use crate::shared::EndpointConfig;
 
 use super::convert::{build_request_body_with_warnings, convert_xai_usage, parse_finish_reason};
 use super::types::{XaiChatResponse, XaiStreamChunk};
@@ -42,50 +42,19 @@ fn generate_source_id() -> String {
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct XaiModel {
     model_id: String,
-    config: super::XAIConfig,
+    config: EndpointConfig,
 }
 
 impl XaiModel {
-    #[must_use]
-    pub fn new(model_id: String, config: super::XAIConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
     }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key()),
-        );
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/chat/completions", self.config.base_url())
-    }
-}
-
-/// Build the header list for a JSON POST: auth/extra headers + `Content-Type`.
-///
-/// Returns a `Vec<(String, String)>` for `HttpRequest` — no reqwest types.
-fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
-    let mut list: Vec<(String, String)> = headers
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-    list.push(("Content-Type".to_string(), "application/json".to_string()));
-    list
 }
 
 #[async_trait]
 impl LanguageModel for XaiModel {
     fn provider(&self) -> &str {
-        "xai.chat"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -93,12 +62,12 @@ impl LanguageModel for XaiModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request_result = build_request_body_with_warnings(&self.model_id, options, false)?;
-        let body = request_result.body;
+        let body = exchange.transform_body(request_result.body);
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), build_header_list(&headers), options),
+            exchange.request(exchange.url("/chat/completions"), options),
             body.clone(),
             super::xai_successful_response_handler::<XaiChatResponse>(),
             super::xai_failed_response_handler(),
@@ -228,14 +197,14 @@ impl LanguageModel for XaiModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request_result = build_request_body_with_warnings(&self.model_id, options, true)?;
-        let body = request_result.body;
+        let body = exchange.transform_body(request_result.body);
         let warnings = request_result.warnings;
-        let endpoint = self.endpoint();
+        let endpoint = exchange.url("/chat/completions");
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(endpoint.clone(), build_header_list(&headers), options),
+            exchange.request(endpoint.clone(), options),
             body.clone(),
             super::xai_event_source_response_handler::<Value>(),
             super::xai_failed_response_handler(),

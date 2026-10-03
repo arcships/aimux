@@ -27,8 +27,8 @@ use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
 use aimux_providers::open_responses::{
-    OpenResponsesConfig, OpenResponsesModel, OpenResponsesProvider,
-    convert_to_open_responses_input, map_open_responses_finish_reason,
+    OpenResponsesModel, OpenResponsesProviderSettings, convert_to_open_responses_input,
+    create_open_responses, map_open_responses_finish_reason,
 };
 
 // ============================================================================
@@ -49,15 +49,15 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
     CallOptions::new(prompt)
 }
 
-/// Build an Open Responses config whose URL points at the mock server.
-fn make_config(server: &MockServer) -> OpenResponsesConfig {
-    OpenResponsesConfig::new("lmstudio", "lmstudio", server.uri())
+/// Build Open Responses settings whose base URL points at the mock server.
+fn make_settings(server: &MockServer) -> OpenResponsesProviderSettings {
+    OpenResponsesProviderSettings::new("lmstudio", server.uri())
 }
 
 /// Create a model pointing at the mock server.
 fn make_model(server: &MockServer, model_id: &str) -> OpenResponsesModel {
-    let provider = OpenResponsesProvider::new(make_config(server));
-    provider.model(model_id)
+    let provider = create_open_responses(make_settings(server)).expect("valid settings");
+    provider.responses(model_id)
 }
 
 /// Mount a JSON response on any path.

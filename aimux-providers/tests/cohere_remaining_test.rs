@@ -25,7 +25,16 @@ use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 use aimux_providers::cohere::convert::{
     convert_prompt_to_cohere, prepare_tools, resolve_cohere_thinking,
 };
-use aimux_providers::{CohereConfig, CohereProvider};
+use aimux_providers::{CohereProvider, CohereProviderSettings, create_cohere};
+
+fn test_provider(api_key: &str, base_url: impl Into<String>) -> CohereProvider {
+    create_cohere(CohereProviderSettings {
+        api_key: Some(api_key.to_string().into()),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -576,9 +585,8 @@ async fn should_extract_reasoning_from_response() {
     )
     .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -615,9 +623,8 @@ async fn should_map_reasoning_high_to_thinking_enabled() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let options = CallOptions {
         reasoning: Some(ReasoningEffort::High),
@@ -640,9 +647,8 @@ async fn should_map_reasoning_none_to_thinking_disabled() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let options = CallOptions {
         reasoning: Some(ReasoningEffort::None),
@@ -660,9 +666,8 @@ async fn should_prefer_provider_options_over_reasoning() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let mut po = std::collections::HashMap::new();
     po.insert(
@@ -686,9 +691,8 @@ async fn should_not_set_thinking_when_no_reasoning() {
     let server = MockServer::start().await;
     mock_json_response(&server, ok_cohere_body()).await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.chat("command-r-plus");
 
     let result = model
         .do_generate(&default_options(test_prompt()))

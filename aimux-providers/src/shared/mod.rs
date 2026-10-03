@@ -3,8 +3,10 @@
 //! Only transport plumbing lives here: how the provider-level request headers
 //! are produced. Nothing in this module knows a vendor.
 
+mod discovery;
 mod exchange;
 
+pub(crate) use discovery::list_data_models;
 pub(crate) use exchange::{Endpoint, EndpointConfig};
 
 use std::sync::Arc;
@@ -13,6 +15,42 @@ use serde_json::Value;
 
 use aimux_core::AiMuxError;
 use aimux_provider_utils::{HeaderMapOpt, HeadersFn, Resolvable, combine_headers, load_api_key};
+
+/// A host part (a Vertex location, an Azure resource name) is one DNS label: letters, digits and hyphens, not starting or
+/// ending with a hyphen (`isValidHostnamePart`).
+pub(crate) fn is_valid_hostname_part(part: &str) -> bool {
+    let bytes = part.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 63
+        && bytes
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || *b == b'-')
+        && bytes[0] != b'-'
+        && bytes[bytes.len() - 1] != b'-'
+}
+
+/// A providerOptions container that can be asked for one namespace.
+pub(crate) trait ProviderOptionsMap {
+    fn lookup(&self, key: &str) -> Option<&Value>;
+}
+
+impl ProviderOptionsMap for std::collections::HashMap<String, Value> {
+    fn lookup(&self, key: &str) -> Option<&Value> {
+        self.get(key)
+    }
+}
+
+impl ProviderOptionsMap for Value {
+    fn lookup(&self, key: &str) -> Option<&Value> {
+        self.get(key)
+    }
+}
+
+impl ProviderOptionsMap for serde_json::Map<String, Value> {
+    fn lookup(&self, key: &str) -> Option<&Value> {
+        self.get(key)
+    }
+}
 
 /// A provider-level rewrite of every JSON request body, called once after the
 /// body is serialized and before it is sent.

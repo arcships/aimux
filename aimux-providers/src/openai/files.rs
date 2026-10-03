@@ -132,6 +132,7 @@ impl Files for OpenAIFiles {
         );
 
         let header_list = self.config.request_headers(None).await?;
+        let url = self.config.url("/files")?;
 
         // `send()` returns Ok only for 2xx; non-2xx responses are mapped to an
         // error internally using the shared error structure. The multipart body
@@ -147,11 +148,8 @@ impl Files for OpenAIFiles {
         let resp = retries
             .retry(|| {
                 aimux_provider_utils::post_to_api(
-                    self.config.http_request(
-                        self.config.url("/files"),
-                        header_list.clone(),
-                        options,
-                    ),
+                    self.config
+                        .http_request(url.clone(), header_list.clone(), options),
                     HttpBody::Bytes(body.clone(), content_type.clone()),
                     aimux_provider_utils::create_json_response_handler(),
                     super::openai_failed_response_handler(),

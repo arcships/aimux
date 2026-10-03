@@ -132,9 +132,9 @@ impl LanguageModel for OpenAIModel {
             .config
             .request_headers(options.headers.as_ref())
             .await?;
-        let http = self
-            .config
-            .http_request(self.config.url("/chat/completions"), headers, options);
+        let http =
+            self.config
+                .http_request(self.config.url("/chat/completions")?, headers, options);
         execute_generate(
             http,
             &self.model_id,
@@ -149,9 +149,9 @@ impl LanguageModel for OpenAIModel {
             .config
             .request_headers(options.headers.as_ref())
             .await?;
-        let http = self
-            .config
-            .http_request(self.config.url("/chat/completions"), headers, options);
+        let http =
+            self.config
+                .http_request(self.config.url("/chat/completions")?, headers, options);
         execute_stream(
             http,
             &self.model_id,
@@ -731,7 +731,7 @@ pub(crate) async fn list_models_once(
     let headers = config.request_headers(None).await?;
     let resp = aimux_provider_utils::get_from_api(
         config.with_transport(HttpRequest {
-            url: config.url("/models"),
+            url: config.url("/models")?,
             headers,
             ..Default::default()
         }),

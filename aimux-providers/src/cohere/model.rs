@@ -4,11 +4,9 @@
 //! format (not OpenAI-compatible) and streams named SSE events
 //! (`event: type\ndata: json`).
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use futures::StreamExt;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
@@ -17,39 +15,20 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::HttpRequest;
+use crate::shared::EndpointConfig;
 
-use super::CohereConfig;
 use super::convert::{build_request_body, parse_finish_reason};
 use super::types::{ChatResponse, StreamEvent, TokenPair};
 
 /// A Cohere language model.
 pub struct CohereModel {
     model_id: String,
-    config: CohereConfig,
+    config: EndpointConfig,
 }
 
 impl CohereModel {
-    pub fn new(model_id: String, config: CohereConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/chat", self.config.base_url)
     }
 }
 
@@ -91,7 +70,7 @@ struct PendingToolCall {
 #[async_trait]
 impl LanguageModel for CohereModel {
     fn provider(&self) -> &str {
-        "cohere"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -100,17 +79,10 @@ impl LanguageModel for CohereModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let body_result = build_request_body(&self.model_id, options, false);
-        let body = body_result.body.clone();
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(body_result.body.clone());
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(
-                self.endpoint(),
-                headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                options,
-            ),
+            exchange.request(exchange.url("/chat"), options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler(),
             super::cohere_failed_response_handler(),
@@ -191,7 +163,9 @@ impl LanguageModel for CohereModel {
                     source_type: "document".to_string(),
                     url: None,
                     title: Some(title),
-                    provider_metadata: Some(json!({ "cohere": cohere_meta })),
+                    provider_metadata: Some(super::options::cohere_metadata(Value::Object(
+                        cohere_meta,
+                    ))),
                 });
             }
         }
@@ -240,18 +214,11 @@ impl LanguageModel for CohereModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let body_result = build_request_body(&self.model_id, options, true);
-        let body = body_result.body.clone();
-        let headers = self.build_headers(options.headers.as_ref());
-        let endpoint = self.endpoint();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(body_result.body.clone());
+        let endpoint = exchange.url("/chat");
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(
-                endpoint.clone(),
-                headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                options,
-            ),
+            exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<StreamEvent>(),
             super::cohere_failed_response_handler(),
@@ -549,7 +516,7 @@ impl LanguageModel for CohereModel {
                 } else {
                     final_usage
                 },
-                provider_metadata: Some(serde_json::json!({ "cohere": {} })),
+                provider_metadata: Some(super::options::cohere_metadata(serde_json::json!({}))),
             });
         };
 

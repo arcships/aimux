@@ -17,7 +17,8 @@ use serde_json::Value;
 use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
 use aimux_provider_utils::{
-    ExchangeContext, FetchFunction, HeaderMapOpt, HttpRequest, combine_headers, normalize_headers,
+    ExchangeContext, FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, combine_headers,
+    normalize_headers,
 };
 
 use super::TransformRequestBody;
@@ -54,6 +55,40 @@ pub(crate) struct EndpointConfig {
 }
 
 impl EndpointConfig {
+    /// A config for a provider whose base URL is fixed when it is created and
+    /// whose headers are evaluated on every request (the common case).
+    pub(crate) fn fixed(
+        provider: String,
+        base_url: String,
+        headers: HeadersFn,
+        fetch: Option<FetchFunction>,
+        transform_request_body: Option<TransformRequestBody>,
+    ) -> Self {
+        Self {
+            provider,
+            endpoint: Arc::new(move || {
+                let base_url = base_url.clone();
+                let headers = headers.clone();
+                Box::pin(async move {
+                    Ok(Endpoint {
+                        base_url,
+                        headers: headers.resolve().await?,
+                    })
+                })
+            }),
+            fetch,
+            supported_urls: Arc::new(|_| SupportedUrls::default()),
+            transform_request_body,
+        }
+    }
+
+    /// The same config with the URLs the model fetches itself.
+    #[must_use]
+    pub(crate) fn with_supported_urls(mut self, urls: SupportedUrlsFn) -> Self {
+        self.supported_urls = urls;
+        self
+    }
+
     /// Resolve the endpoint and layer the per-call headers over the provider
     /// headers (case-insensitive, later wins, `None` removes).
     ///

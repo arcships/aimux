@@ -10,8 +10,6 @@
 //! - Usage supports `num_cached_tokens` / `prompt_tokens_details.cached_tokens`.
 //! - Finish reasons include `model_length`.
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::Value;
@@ -23,39 +21,20 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::HttpRequest;
+use crate::shared::EndpointConfig;
 
-use super::MistralConfig;
 use super::convert::{build_request_body, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
 
-/// An Mistral language model.
+/// A Mistral language model.
 pub struct MistralModel {
     model_id: String,
-    config: MistralConfig,
+    config: EndpointConfig,
 }
 
 impl MistralModel {
-    pub fn new(model_id: String, config: MistralConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/chat/completions", self.config.base_url)
     }
 }
 
@@ -194,7 +173,11 @@ fn extract_reasoning_content(content: &Option<Value>) -> Option<String> {
 #[async_trait]
 impl LanguageModel for MistralModel {
     fn provider(&self) -> &str {
-        "mistral"
+        &self.config.provider
+    }
+
+    fn supported_urls(&self) -> aimux_core::language_model::SupportedUrls {
+        (self.config.supported_urls)(&self.model_id)
     }
 
     fn model_id(&self) -> &str {
@@ -202,17 +185,11 @@ impl LanguageModel for MistralModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options, false);
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(build_request_body(&self.model_id, options, false));
+        let endpoint = exchange.url("/chat/completions");
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(
-                self.endpoint(),
-                headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                options,
-            ),
+            exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler(),
             super::mistral_failed_response_handler(),
@@ -298,17 +275,11 @@ impl LanguageModel for MistralModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options, true);
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(build_request_body(&self.model_id, options, true));
+        let endpoint = exchange.url("/chat/completions");
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(
-                self.endpoint(),
-                headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                options,
-            ),
+            exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             super::mistral_failed_response_handler(),
@@ -328,13 +299,13 @@ impl LanguageModel for MistralModel {
         {
             return Err(super::mistral_stream_error(
                 err_obj,
-                &self.endpoint(),
+                &endpoint,
                 body.clone(),
                 response_headers.clone(),
             ));
         }
 
-        let stream_error_url = self.endpoint();
+        let stream_error_url = endpoint;
         let stream_error_body = body.clone();
         let stream_response_headers = response_headers.clone();
 
@@ -580,7 +551,7 @@ impl LanguageModel for MistralModel {
                 } else {
                     final_usage
                 },
-                provider_metadata: Some(serde_json::json!({ "mistral": {} })),
+                provider_metadata: Some(super::options::mistral_metadata(serde_json::json!({}))),
             });
         };
 

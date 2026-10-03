@@ -31,10 +31,33 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
-use aimux_providers::{
-    ProviderOptions, huggingface::HuggingFaceConfig, huggingface::HuggingFaceProvider, provider,
-    xai::XAIConfig, xai::XAIProvider,
-};
+use aimux_providers::huggingface::{HuggingFaceProviderSettings, create_huggingface};
+use aimux_providers::xai::{XAIProviderSettings, create_xai};
+use aimux_providers::{ProviderOptions, provider};
+
+/// xAI's Chat Completions model (an aimux extension of the package), pointed at
+/// `base_url`.
+fn xai_chat(base_url: String, model_id: &str) -> Arc<dyn LanguageModel> {
+    let provider = create_xai(XAIProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(base_url),
+        ..Default::default()
+    })
+    .expect("valid settings");
+    Arc::new(provider.chat_completions(model_id))
+}
+
+/// Hugging Face's Chat Completions model (an aimux extension of the package),
+/// pointed at `base_url`.
+fn huggingface_chat(base_url: String, model_id: &str) -> Arc<dyn LanguageModel> {
+    let provider = create_huggingface(HuggingFaceProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(base_url),
+        ..Default::default()
+    })
+    .expect("valid settings");
+    Arc::new(provider.chat_completions(model_id))
+}
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -120,16 +143,14 @@ fn text_deltas(parts: &[StreamPart]) -> Vec<String> {
 macro_rules! openai_compatible_tests {
     (
         $mod_name:ident,
-        $config:ty,
-        $provider:ty,
+        $ctor:path,
         $model_id:literal
     ) => {
         mod $mod_name {
             use super::*;
 
             fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
-                let config = <$config>::new("test-api-key").with_base_url(server.uri());
-                Arc::new(<$provider>::new(config).model($model_id))
+                $ctor(server.uri(), $model_id)
             }
         mod $mod_name {
             use super::*;
@@ -477,7 +498,7 @@ openai_compatible_tests!(
 );
 openai_compatible_tests!(perplexity, "perplexity", "sonar");
 openai_compatible_tests!(cerebras, "cerebras", "llama-3.3-70b");
-openai_compatible_tests!(xai, XAIConfig, XAIProvider, "grok-2");
+openai_compatible_tests!(xai, xai_chat, "grok-2");
 openai_compatible_tests!(moonshotai, "moonshotai", "moonshot-v1-8k");
 
 // Second batch of OpenAI-compatible thin wrappers.
@@ -489,8 +510,7 @@ openai_compatible_tests!(
 openai_compatible_tests!(baseten, "baseten", "deepseek-ai/DeepSeek-V3-0324");
 openai_compatible_tests!(
     huggingface,
-    HuggingFaceConfig,
-    HuggingFaceProvider,
+    huggingface_chat,
     "meta-llama/Llama-3.3-70B-Instruct"
 );
 openai_compatible_tests!(alibaba, "alibaba", "qwen-max");
@@ -537,16 +557,14 @@ fn tool_call_completion_body() -> Value {
 macro_rules! openai_compatible_tool_tests {
     (
         $mod_name:ident,
-        $config:ty,
-        $provider:ty,
+        $ctor:path,
         $model_id:literal
     ) => {
         mod $mod_name {
             use super::*;
 
             fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
-                let config = <$config>::new("test-api-key").with_base_url(server.uri());
-                Arc::new(<$provider>::new(config).model($model_id))
+                $ctor(server.uri(), $model_id)
             }
         mod $mod_name {
             use super::*;
@@ -736,7 +754,7 @@ openai_compatible_tool_tests!(
 );
 openai_compatible_tool_tests!(perplexity_tools, "perplexity", "sonar");
 openai_compatible_tool_tests!(cerebras_tools, "cerebras", "llama-3.3-70b");
-openai_compatible_tool_tests!(xai_tools, XAIConfig, XAIProvider, "grok-2");
+openai_compatible_tool_tests!(xai_tools, xai_chat, "grok-2");
 openai_compatible_tool_tests!(moonshotai_tools, "moonshotai", "moonshot-v1-8k");
 openai_compatible_tool_tests!(
     deepinfra_tools,
@@ -746,8 +764,7 @@ openai_compatible_tool_tests!(
 openai_compatible_tool_tests!(baseten_tools, "baseten", "deepseek-ai/DeepSeek-V3-0324");
 openai_compatible_tool_tests!(
     huggingface_tools,
-    HuggingFaceConfig,
-    HuggingFaceProvider,
+    huggingface_chat,
     "meta-llama/Llama-3.3-70B-Instruct"
 );
 openai_compatible_tool_tests!(alibaba_tools, "alibaba", "qwen-max");

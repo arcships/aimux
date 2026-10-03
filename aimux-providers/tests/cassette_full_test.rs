@@ -451,16 +451,19 @@ async fn replay_gemini() {
 
 #[tokio::test]
 async fn replay_cohere() {
-    use aimux_providers::cohere::{CohereConfig, CohereProvider};
+    use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
 
     let server = MockServer::start().await;
     let n = replay::mount_cassettes(&server, "tests/cassettes/cohere").await;
     assert!(n > 0);
 
-    let provider = CohereProvider::new(
-        CohereConfig::new("test-key").with_base_url(format!("{}/v2", server.uri())),
-    );
-    let model = provider.model("command-r-plus");
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(format!("{}/v2", server.uri())),
+        ..Default::default()
+    })
+    .expect("valid settings");
+    let model = provider.chat("command-r-plus");
 
     let result = generate_text(&model, "Hello", GenerateTextOptions::default())
         .await

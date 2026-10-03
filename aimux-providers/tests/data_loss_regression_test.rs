@@ -49,8 +49,8 @@ use aimux_providers::bedrock::{
 };
 use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
 use aimux_providers::{
-    CohereConfig, CohereProvider, GoogleProvider, GoogleProviderSettings, MistralConfig,
-    MistralProvider, create_google,
+    CohereProviderSettings, GoogleProvider, GoogleProviderSettings, MistralProviderSettings,
+    create_cohere, create_google, create_mistral,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1121,11 +1121,14 @@ async fn finding_25_cohere_citation_metadata_preserved_field_by_field() {
     let server = MockServer::start().await;
     mount(&server, &c).await;
 
-    let provider = CohereProvider::new(
-        CohereConfig::new("test-key").with_base_url(format!("{}/v2", server.uri())),
-    );
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(format!("{}/v2", server.uri())),
+        ..Default::default()
+    })
+    .expect("valid settings");
     let result = provider
-        .model("command-r-plus")
+        .chat("command-r-plus")
         .do_generate(&opts())
         .await
         .expect("do_generate should succeed");
@@ -1178,11 +1181,14 @@ async fn finding_13_mistral_thinking_parts_become_reasoning_in_generate() {
     let server = MockServer::start().await;
     mount(&server, &c).await;
 
-    let provider = MistralProvider::new(
-        MistralConfig::new("test-key").with_base_url(format!("{}/v1", server.uri())),
-    );
+    let provider = create_mistral(MistralProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .expect("valid settings");
     let result = provider
-        .model("mistral-small-latest")
+        .chat("mistral-small-latest")
         .do_generate(&opts())
         .await
         .expect("do_generate should succeed");

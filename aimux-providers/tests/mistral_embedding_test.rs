@@ -10,7 +10,16 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
-use aimux_providers::{MistralConfig, MistralProvider};
+use aimux_providers::{MistralProvider, MistralProviderSettings, create_mistral};
+
+fn test_provider(api_key: &str, base_url: impl Into<String>) -> MistralProvider {
+    create_mistral(MistralProviderSettings {
+        api_key: Some(api_key.to_string().into()),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 const TEST_VALUES: &[&str] = &["sunny day at the beach", "rainy day in the city"];
 
@@ -61,9 +70,8 @@ async fn should_extract_embedding() {
         .mount(&server)
         .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.embedding_model("mistral-embed");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.embedding("mistral-embed");
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -87,9 +95,8 @@ async fn should_extract_usage() {
         .mount(&server)
         .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.embedding_model("mistral-embed");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.embedding("mistral-embed");
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -113,9 +120,8 @@ async fn should_expose_raw_response() {
         .mount(&server)
         .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.embedding_model("mistral-embed");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.embedding("mistral-embed");
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -145,9 +151,8 @@ async fn should_pass_model_and_values() {
         .mount(&server)
         .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.embedding_model("mistral-embed");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.embedding("mistral-embed");
 
     let _ = model
         .do_embed(&default_options(test_values()))
@@ -178,9 +183,8 @@ async fn should_pass_headers() {
         .mount(&server)
         .await;
 
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.embedding_model("mistral-embed");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.embedding("mistral-embed");
 
     let mut request_headers = HashMap::new();
     request_headers.insert(

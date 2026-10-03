@@ -472,13 +472,14 @@ pub fn cohere_embedding(
     model_id: &str,
     base_url: Option<&str>,
 ) -> PyResult<EmbeddingModel> {
-    use aimux_providers::cohere::{CohereConfig, CohereProvider};
-    let mut config = CohereConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model(model_id);
+    use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
+    let model = provider.embedding(model_id);
     Ok(EmbeddingModel {
         inner: Arc::new(model),
     })
@@ -492,13 +493,14 @@ pub fn cohere_reranking(
     model_id: &str,
     base_url: Option<&str>,
 ) -> PyResult<RerankingModel> {
-    use aimux_providers::cohere::{CohereConfig, CohereProvider};
-    let mut config = CohereConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = CohereProvider::new(config);
-    let model = provider.reranking_model(model_id);
+    use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
+    let model = provider.reranking(model_id);
     Ok(RerankingModel {
         inner: Arc::new(model),
     })

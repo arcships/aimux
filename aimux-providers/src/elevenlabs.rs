@@ -13,7 +13,7 @@
 //! returns raw binary audio. The `output_format` is passed as a query parameter.
 //! `instructions` is not supported and emits a warning.
 
-use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
@@ -24,7 +24,19 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use aimux_provider_utils::{HttpBody, HttpRequest, load_api_key};
+use aimux_core::embedding_model::EmbeddingModel;
+use aimux_core::image_model::ImageModel;
+use aimux_core::language_model::LanguageModel;
+use aimux_core::provider::Provider;
+use aimux_provider_utils::{
+    FetchFunction, HeaderMapOpt, HeadersFn, HttpBody, Resolvable, validate_base_url,
+};
+
+use crate::shared::{
+    AuthScheme, Credential, EndpointConfig, TransformRequestBody, credential_headers,
+};
+
+pub(crate) mod options;
 
 /// ElevenLabs errors: `{"detail": {"status": "invalid_api_key", "message": ...}}`
 /// where `detail.status` is the machine code. FastAPI validation errors carry
@@ -64,78 +76,181 @@ fn elevenlabs_failed_response_handler() -> aimux_provider_utils::ResponseHandler
     aimux_provider_utils::create_json_error_response_handler(elevenlabs_error_parts)
 }
 
-// ── Config ───────────────────────────────────────────────────────────────────
+// ── Settings ─────────────────────────────────────────────────────────────────
 
-/// Configuration for the ElevenLabs provider.
-#[derive(Debug, Clone)]
-pub struct ElevenLabsConfig {
-    pub api_key: String,
-    /// Base URL for the ElevenLabs API (no trailing slash). Defaults to
-    /// `https://api.elevenlabs.io`.
-    pub base_url: String,
-    /// Extra headers merged into every request.
-    pub headers: Option<HashMap<String, String>>,
+const DEFAULT_BASE_URL: &str = "https://api.elevenlabs.io";
+const API_KEY_ENV_VAR: &str = "ELEVENLABS_API_KEY";
+const DEFAULT_NAME: &str = "elevenlabs";
+
+/// Settings of [`create_elevenlabs`] (the AI SDK's `ElevenLabsProviderSettings`).
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request, including the WebSocket handshake of realtime
+/// transcription.
+#[derive(Clone, Default)]
+pub struct ElevenLabsProviderSettings {
+    /// Base URL for the API calls. Default `https://api.elevenlabs.io`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key, sent as `xi-api-key`. `None` loads `ELEVENLABS_API_KEY`
+    /// when a request is made and fails that request with
+    /// `AiMuxError::LoadApiKey` if it is unset. An explicit value is used as
+    /// given, `""` included: it never falls back to the environment. A
+    /// [`Resolvable::Future`] is awaited once, an [`Resolvable::AsyncFn`] on
+    /// every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including `xi-api-key`. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings
+    /// (`"{name}.speech"`, `"{name}.transcription"`). Default `"elevenlabs"`.
+    /// The providerOptions key stays `elevenlabs`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
+    /// Rewrites every JSON request body once, after it is serialized and
+    /// before it is sent.
+    pub transform_request_body: Option<TransformRequestBody>,
+    /// Opens the WebSocket of realtime transcription (the AI SDK's
+    /// `webSocket`). `None` uses the built-in tungstenite connector.
+    #[cfg(feature = "realtime")]
+    pub web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
 }
 
-impl ElevenLabsConfig {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: "https://api.elevenlabs.io".to_string(),
-            headers: None,
-        }
+impl std::fmt::Debug for ElevenLabsProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug = f.debug_struct("ElevenLabsProviderSettings");
+        debug
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .field(
+                "transform_request_body",
+                &self.transform_request_body.is_some(),
+            );
+        #[cfg(feature = "realtime")]
+        debug.field("web_socket", &self.web_socket.is_some());
+        debug.finish()
     }
+}
 
-    /// Override the base URL (for testing or proxies).
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = url.into().trim_end_matches('/').to_string();
-        self
-    }
+/// Create an ElevenLabs provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_elevenlabs(
+    settings: ElevenLabsProviderSettings,
+) -> Result<ElevenLabsProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(ElevenLabsProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: credential_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "ElevenLabs"),
+            AuthScheme::Header("xi-api-key"),
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+        transform_request_body: settings.transform_request_body,
+        #[cfg(feature = "realtime")]
+        web_socket: settings.web_socket,
+    })
+}
 
-    /// Attach extra headers merged into every request.
-    #[must_use]
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = Some(headers);
-        self
-    }
-
-    /// Create from environment variable `ELEVENLABS_API_KEY`.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when `ELEVENLABS_API_KEY` is not set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "ELEVENLABS_API_KEY", "ElevenLabs")?;
-        Ok(Self::new(api_key))
-    }
+/// The default provider: `create_elevenlabs` with default settings, created
+/// on first use. Creating it reads nothing from the environment and cannot
+/// fail; a missing key surfaces from the first request instead.
+pub fn elevenlabs() -> &'static ElevenLabsProvider {
+    static DEFAULT: OnceLock<ElevenLabsProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_elevenlabs(ElevenLabsProviderSettings::default())
+            .expect("default ElevenLabs settings are always valid")
+    })
 }
 
 // ── Provider ─────────────────────────────────────────────────────────────────
 
-/// ElevenLabs provider — creates `ElevenLabsSpeechModel` instances.
+/// ElevenLabs provider (the AI SDK's `ElevenLabsProvider`) — creates speech
+/// and transcription models. Cheap to clone the models out of; it holds no
+/// HTTP client.
 pub struct ElevenLabsProvider {
-    config: ElevenLabsConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
+    transform_request_body: Option<TransformRequestBody>,
+    #[cfg(feature = "realtime")]
+    web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
 }
 
 impl ElevenLabsProvider {
-    #[must_use]
-    pub fn new(config: ElevenLabsConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            self.transform_request_body.clone(),
+        )
     }
 
-    /// Create a speech (TTS) model instance for the given model name (e.g.
-    /// `"eleven_multilingual_v2"`).
+    /// A speech (TTS) model (e.g. `"eleven_multilingual_v2"`); `provider()`
+    /// is `"{name}.speech"`.
     #[must_use]
     pub fn speech(&self, model_id: &str) -> ElevenLabsSpeechModel {
-        ElevenLabsSpeechModel::new(model_id.to_string(), self.config.clone())
+        ElevenLabsSpeechModel::from_config(model_id.to_string(), self.model_config("speech"))
     }
 
-    /// Create a transcription (STT) model instance for the given model name
-    /// (e.g. `"scribe_v1"`). Uses the `/v1/speech-to-text` endpoint.
+    /// A transcription (STT) model (e.g. `"scribe_v1"`); `provider()` is
+    /// `"{name}.transcription"`. Uses the `/v1/speech-to-text` endpoint.
     #[must_use]
     pub fn transcription(&self, model_id: &str) -> ElevenLabsTranscriptionModel {
-        ElevenLabsTranscriptionModel::new(model_id.to_string(), self.config.clone())
+        ElevenLabsTranscriptionModel::from_config(
+            model_id.to_string(),
+            self.model_config("transcription"),
+            #[cfg(feature = "realtime")]
+            self.web_socket.clone(),
+        )
+    }
+}
+
+impl Provider for ElevenLabsProvider {
+    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "languageModel"))
+    }
+
+    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
+    }
+
+    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "imageModel"))
+    }
+
+    fn transcription_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn TranscriptionModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.transcription(model_id))))
+    }
+
+    fn speech_model(&self, model_id: &str) -> Option<Result<Arc<dyn SpeechModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.speech(model_id))))
     }
 }
 
@@ -150,40 +265,19 @@ const DEFAULT_OUTPUT_FORMAT: &str = "mp3_44100_128";
 /// An ElevenLabs speech (TTS) model.
 pub struct ElevenLabsSpeechModel {
     model_id: String,
-    config: ElevenLabsConfig,
+    config: EndpointConfig,
 }
 
 impl ElevenLabsSpeechModel {
-    #[must_use]
-    pub fn new(model_id: String, config: ElevenLabsConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert("xi-api-key".to_string(), self.config.api_key.clone());
-        if let Some(ref config_headers) = self.config.headers {
-            for (k, v) in config_headers {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self, voice_id: &str) -> String {
-        format!("{}/v1/text-to-speech/{}", self.config.base_url, voice_id)
     }
 }
 
 #[async_trait]
 impl SpeechModel for ElevenLabsSpeechModel {
     fn provider(&self) -> &str {
-        "elevenlabs.speech"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -193,32 +287,22 @@ impl SpeechModel for ElevenLabsSpeechModel {
     async fn do_generate(&self, options: &SpeechCallOptions) -> Result<SpeechResult, AiMuxError> {
         let (body, query_params, warnings, voice_id) = build_request(options, &self.model_id)?;
 
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
+        let endpoint = exchange.url(&format!("/v1/text-to-speech/{voice_id}"));
         let url = if query_params.is_empty() {
-            self.endpoint(&voice_id)
+            endpoint
         } else {
             let qs: Vec<String> = query_params
                 .iter()
                 .map(|(k, v)| format!("{k}={v}"))
                 .collect();
-            format!("{}?{}", self.endpoint(&voice_id), qs.join("&"))
+            format!("{endpoint}?{}", qs.join("&"))
         };
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url,
-                headers: headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                ..Default::default()
-            },
-            Value::Object(body.clone()),
+            exchange.request(url, options),
+            exchange.transform_body(Value::Object(body.clone())),
             aimux_provider_utils::create_binary_response_handler(),
             elevenlabs_failed_response_handler(),
         )
@@ -457,7 +541,7 @@ struct ElevenLabsPronunciationLocator {
 fn parse_elevenlabs_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Option<ElevenLabsSpeechProviderOptions> {
-    let provider_opts = options.and_then(|opts| opts.get("elevenlabs"))?;
+    let provider_opts = options::elevenlabs_options(options)?;
     let opts = provider_opts.as_object()?;
 
     let voice_settings = opts
@@ -581,33 +665,25 @@ struct ElevenLabsTranscriptionResponse {
 /// Endpoint: `POST {base_url}/v1/speech-to-text` (multipart form-data)
 pub struct ElevenLabsTranscriptionModel {
     model_id: String,
-    config: ElevenLabsConfig,
+    config: EndpointConfig,
+    #[cfg(feature = "realtime")]
+    web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
 }
 
 impl ElevenLabsTranscriptionModel {
-    #[must_use]
-    pub fn new(model_id: String, config: ElevenLabsConfig) -> Self {
-        Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert("xi-api-key".to_string(), self.config.api_key.clone());
-        if let Some(ref config_headers) = self.config.headers {
-            for (k, v) in config_headers {
-                headers.insert(k.clone(), v.clone());
-            }
+    pub(crate) fn from_config(
+        model_id: String,
+        config: EndpointConfig,
+        #[cfg(feature = "realtime")] web_socket: Option<
+            Arc<dyn aimux_provider_utils::ws::WsConnector>,
+        >,
+    ) -> Self {
+        Self {
+            model_id,
+            config,
+            #[cfg(feature = "realtime")]
+            web_socket,
         }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/v1/speech-to-text", self.config.base_url)
     }
 }
 
@@ -631,7 +707,7 @@ fn is_realtime_transcription_model_id(model_id: &str) -> bool {
 #[async_trait]
 impl TranscriptionModel for ElevenLabsTranscriptionModel {
     fn provider(&self) -> &str {
-        "elevenlabs"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -662,9 +738,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
         form.text("diarize", "true")?;
 
         // Parse provider options.
-        if let Some(ref po) = options.provider_options
-            && let Some(el) = po.get("elevenlabs")
-        {
+        if let Some(el) = options::elevenlabs_options(options.provider_options.as_ref()) {
             if let Some(v) = el.get("diarize").and_then(serde_json::Value::as_bool) {
                 form.text("diarize", &v.to_string())?;
             }
@@ -690,17 +764,10 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
 
         let (body_bytes, content_type) = form.finish();
 
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest::new(
-                self.endpoint(),
-                headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                options,
-            ),
+            exchange.request(exchange.url("/v1/speech-to-text"), options),
             HttpBody::Bytes(body_bytes, content_type),
             aimux_provider_utils::create_json_response_handler::<ElevenLabsTranscriptionResponse>(),
             elevenlabs_failed_response_handler(),
@@ -785,9 +852,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
         // languageCode + includeTimestamps. Anything else waits for a user.
         let mut language_code: Option<String> = None;
         let mut include_timestamps = false;
-        if let Some(ref po) = options.provider_options
-            && let Some(el) = po.get("elevenlabs")
-        {
+        if let Some(el) = options::elevenlabs_options(options.provider_options.as_ref()) {
             if let Some(v) = el.get("languageCode").and_then(serde_json::Value::as_str) {
                 language_code = Some(v.to_string());
             }
@@ -816,7 +881,8 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
             }
         };
 
-        let base = self.config.base_url.trim_end_matches('/');
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let base = exchange.base_url();
         let (scheme, host) = if let Some(rest) = base.strip_prefix("https://") {
             ("wss", rest)
         } else if let Some(rest) = base.strip_prefix("http://") {
@@ -844,10 +910,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
             )
         };
 
-        let header_list: Vec<(String, String)> = self
-            .build_headers(options.headers.as_ref())
-            .into_iter()
-            .collect();
+        let header_list = exchange.headers();
 
         // Connect BEFORE the stream so connect failures surface from
         // do_stream's Result (same contract as the OpenAI realtime path).
@@ -857,7 +920,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
             subprotocols: Vec::new(),
             abort_signal: options.abort_signal.clone(),
             timeout: options.timeout,
-            connector: None,
+            connector: self.web_socket.clone(),
         };
         let mut ws = ws_connect(&req).await?;
 

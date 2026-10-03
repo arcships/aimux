@@ -209,7 +209,7 @@ pub fn remove_additional_properties_false(value: &Value) -> Value {
 fn xai_option(options: &Option<HashMap<String, Value>>, key: &str) -> Option<Value> {
     options
         .as_ref()
-        .and_then(|m| m.get("xai"))
+        .and_then(|m| super::options::xai_options(Some(m)))
         .and_then(|o| o.get(key))
         .cloned()
 }
@@ -217,7 +217,7 @@ fn xai_option(options: &Option<HashMap<String, Value>>, key: &str) -> Option<Val
 fn get_image_detail(provider_options: &Option<Value>) -> Option<Value> {
     provider_options
         .as_ref()
-        .and_then(|po| po.get("xai"))
+        .and_then(|po| super::options::xai_options(Some(po)))
         .and_then(|o| o.get("imageDetail"))
         .cloned()
 }
@@ -408,7 +408,7 @@ fn convert_user_part(part: &ContentPart, _index: usize) -> Result<Value, AiMuxEr
         } => {
             let _ = media_type;
             let _ = provider_options;
-            let file_id = resolve_provider_reference(reference, "xai")
+            let file_id = resolve_provider_reference(reference, super::options::NAMESPACE)
                 .map_err(AiMuxError::InvalidArgument)?;
             Ok(json!({ "type": "file", "file": { "file_id": file_id } }))
         }

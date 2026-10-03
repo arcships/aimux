@@ -75,15 +75,15 @@ use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 use aimux_providers::anthropic_aws::{
     AnthropicAwsAuth, AnthropicAwsProviderSettings, create_anthropic_aws,
 };
-use aimux_providers::azure::{AzureConfig, AzureProvider};
+use aimux_providers::azure::{AzureOpenAIProviderSettings, create_azure};
 use aimux_providers::bedrock::{AmazonBedrockProviderSettings, create_amazon_bedrock};
-use aimux_providers::cohere::{CohereConfig, CohereProvider};
+use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
 use aimux_providers::google::{GoogleProviderSettings, create_google};
-use aimux_providers::mistral::{MistralConfig, MistralProvider};
+use aimux_providers::mistral::{MistralProviderSettings, create_mistral};
 use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
 use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
 use aimux_providers::vertex::{VertexProviderSettings, create_google_vertex};
-use aimux_providers::xai::{XAIConfig, XAIProvider};
+use aimux_providers::xai::{XAIProviderSettings, create_xai};
 use aimux_providers::{ProviderOptions, provider, provider_discovery, provider_handle};
 
 use futures::StreamExt;
@@ -1215,13 +1215,9 @@ pub extern "C" fn aimux_azure_new(
         let api_key = str_arg(api_key, "api_key")?;
         let resource_name = str_arg(resource_name, "resource_name")?;
         let deployment = str_arg(deployment, "deployment")?;
-        let mut config = AzureConfig::new()
-            .with_api_key(api_key)
-            .with_resource_name(resource_name);
-        if let Some(v) = opt_str_arg(api_version, "api_version")?.filter(|v| !v.is_empty()) {
-            config = config.with_api_version(v);
-        }
-        let m = AzureProvider::new(config)?.language_model(&deployment)?;
+        let api_version = opt_str_arg(api_version, "api_version")?.filter(|v| !v.is_empty());
+        let m = azure_provider(api_key, Some(resource_name), None, api_version)?
+            .language_model(&deployment)?;
         Ok(intern_model(m))
     })
 }
@@ -1240,13 +1236,9 @@ pub extern "C" fn aimux_azure_new_with_base(
         let api_key = str_arg(api_key, "api_key")?;
         let base_url = str_arg(base_url, "base_url")?;
         let deployment = str_arg(deployment, "deployment")?;
-        let mut config = AzureConfig::new()
-            .with_api_key(api_key)
-            .with_base_url(base_url);
-        if let Some(v) = opt_str_arg(api_version, "api_version")?.filter(|v| !v.is_empty()) {
-            config = config.with_api_version(v);
-        }
-        let m = AzureProvider::new(config)?.language_model(&deployment)?;
+        let api_version = opt_str_arg(api_version, "api_version")?.filter(|v| !v.is_empty());
+        let m = azure_provider(api_key, None, Some(base_url), api_version)?
+            .language_model(&deployment)?;
         Ok(intern_model(m))
     })
 }
@@ -1303,6 +1295,68 @@ fn google_provider(
         base_url,
         ..Default::default()
     })
+}
+
+/// A Cohere provider for an explicit key handed over by the host, with an
+/// optional base URL.
+fn cohere_provider(
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<aimux_providers::cohere::CohereProvider, AiMuxError> {
+    create_cohere(CohereProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        base_url,
+        ..Default::default()
+    })
+}
+
+/// A Mistral provider for an explicit key handed over by the host, with an
+/// optional base URL.
+fn mistral_provider(
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<aimux_providers::mistral::MistralProvider, AiMuxError> {
+    create_mistral(MistralProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        base_url,
+        ..Default::default()
+    })
+}
+
+/// An xAI provider for an explicit key handed over by the host, with an
+/// optional base URL.
+fn xai_provider(
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<aimux_providers::xai::XAIProvider, AiMuxError> {
+    create_xai(XAIProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        base_url,
+        ..Default::default()
+    })
+}
+
+/// An Azure OpenAI provider for an explicit key, with either a resource name
+/// or a base URL. A dated `api_version` belongs to the deployment URL form
+/// (`{base}/deployments/{deployment}{path}?api-version=`), so passing one
+/// selects it; without one the AI SDK's v1 form is used.
+fn azure_provider(
+    api_key: String,
+    resource_name: Option<String>,
+    base_url: Option<String>,
+    api_version: Option<String>,
+) -> Result<aimux_providers::azure::AzureOpenAIProvider, AiMuxError> {
+    let mut settings = AzureOpenAIProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        resource_name,
+        base_url,
+        ..Default::default()
+    };
+    if let Some(version) = api_version {
+        settings.api_version = Some(version);
+        settings.use_deployment_based_urls = true;
+    }
+    create_azure(settings)
 }
 
 /// Create a Bedrock model instance (AWS SigV4 credentials).
@@ -1425,7 +1479,7 @@ pub extern "C" fn aimux_cohere_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let m = CohereProvider::new(CohereConfig::new(api_key)).language_model(&model_id)?;
+        let m = cohere_provider(api_key, None)?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1440,11 +1494,7 @@ pub extern "C" fn aimux_cohere_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = CohereConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let m = CohereProvider::new(config).language_model(&model_id)?;
+        let m = cohere_provider(api_key, parse_base_url(base_url)?)?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1458,7 +1508,7 @@ pub extern "C" fn aimux_mistral_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let m = MistralProvider::new(MistralConfig::new(api_key)).language_model(&model_id)?;
+        let m = mistral_provider(api_key, None)?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1473,11 +1523,7 @@ pub extern "C" fn aimux_mistral_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = MistralConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let m = MistralProvider::new(config).language_model(&model_id)?;
+        let m = mistral_provider(api_key, parse_base_url(base_url)?)?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1491,7 +1537,7 @@ pub extern "C" fn aimux_xai_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let m = XAIProvider::new(XAIConfig::new(api_key)).language_model(&model_id)?;
+        let m = xai_provider(api_key, None)?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1506,11 +1552,7 @@ pub extern "C" fn aimux_xai_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = XAIConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let m = XAIProvider::new(config).language_model(&model_id)?;
+        let m = xai_provider(api_key, parse_base_url(base_url)?)?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -2294,7 +2336,7 @@ pub extern "C" fn aimux_cohere_embedding_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let model = CohereProvider::new(CohereConfig::new(api_key)).embedding_model(&model_id);
+        let model = cohere_provider(api_key, None)?.embedding(&model_id);
         Ok(intern_handle(HandleEntry::Embedding(Arc::new(model))))
     })
 }
@@ -2308,11 +2350,7 @@ pub extern "C" fn aimux_cohere_embedding_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = CohereConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let model = CohereProvider::new(config).embedding_model(&model_id);
+        let model = cohere_provider(api_key, parse_base_url(base_url)?)?.embedding(&model_id);
         Ok(intern_handle(HandleEntry::Embedding(Arc::new(model))))
     })
 }
@@ -2821,7 +2859,7 @@ pub extern "C" fn aimux_cohere_reranking_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let model = CohereProvider::new(CohereConfig::new(api_key)).reranking_model(&model_id);
+        let model = cohere_provider(api_key, None)?.reranking(&model_id);
         Ok(intern_handle(HandleEntry::Reranking(Arc::new(model))))
     })
 }
@@ -2835,11 +2873,7 @@ pub extern "C" fn aimux_cohere_reranking_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = CohereConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let model = CohereProvider::new(config).reranking_model(&model_id);
+        let model = cohere_provider(api_key, parse_base_url(base_url)?)?.reranking(&model_id);
         Ok(intern_handle(HandleEntry::Reranking(Arc::new(model))))
     })
 }

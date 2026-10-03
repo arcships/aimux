@@ -556,13 +556,14 @@ pub async fn cohere_embedding(
 ) -> AimuxResult<EmbeddingModel> {
     AimuxResult({
         let __r: crate::error::MResult<EmbeddingModel> = async {
-            use aimux_providers::cohere::{CohereConfig, CohereProvider};
-            let mut config = CohereConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = CohereProvider::new(config);
-            let model = provider.embedding_model(&model_id);
+            use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
+            let provider = create_cohere(CohereProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                base_url,
+                ..Default::default()
+            })
+            .map_err(|e| AiMuxBindingError::from(&e))?;
+            let model = provider.embedding(&model_id);
             Ok(EmbeddingModel {
                 inner: Arc::new(model),
             })
@@ -581,13 +582,14 @@ pub async fn cohere_reranking(
 ) -> AimuxResult<RerankingModel> {
     AimuxResult({
         let __r: crate::error::MResult<RerankingModel> = async {
-            use aimux_providers::cohere::{CohereConfig, CohereProvider};
-            let mut config = CohereConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = CohereProvider::new(config);
-            let model = provider.reranking_model(&model_id);
+            use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
+            let provider = create_cohere(CohereProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                base_url,
+                ..Default::default()
+            })
+            .map_err(|e| AiMuxBindingError::from(&e))?;
+            let model = provider.reranking(&model_id);
             Ok(RerankingModel {
                 inner: Arc::new(model),
             })

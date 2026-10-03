@@ -516,13 +516,14 @@ fn google(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn cohere(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::cohere::{CohereConfig, CohereProvider};
+    use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
 
-    let mut config = CohereConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = CohereProvider::new(config);
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -537,13 +538,14 @@ fn cohere(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn mistral(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::mistral::{MistralConfig, MistralProvider};
+    use aimux_providers::mistral::{MistralProviderSettings, create_mistral};
 
-    let mut config = MistralConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = MistralProvider::new(config);
+    let provider = create_mistral(MistralProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -558,13 +560,14 @@ fn mistral(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mo
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn xai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::xai::{XAIConfig, XAIProvider};
+    use aimux_providers::xai::{XAIProviderSettings, create_xai};
 
-    let mut config = XAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = XAIProvider::new(config);
+    let provider = create_xai(XAIProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -687,21 +690,24 @@ fn azure(
     base_url: Option<&str>,
 ) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::azure::{AzureConfig, AzureProvider};
+    use aimux_providers::azure::{AzureOpenAIProviderSettings, create_azure};
 
-    let mut config = AzureConfig::new().with_api_key(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    if let Some(version) = api_version {
-        if !version.is_empty() {
-            config = config.with_api_version(version);
-        }
+    let mut config = AzureOpenAIProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    };
+    // A dated `api_version` belongs to the deployment URL form.
+    if let Some(version) = api_version
+        && !version.is_empty()
+    {
+        config.api_version = Some(version.to_string());
+        config.use_deployment_based_urls = true;
     }
     if !resource_name.is_empty() {
-        config = config.with_resource_name(resource_name);
+        config.resource_name = Some(resource_name.to_string());
     }
-    let provider = AzureProvider::new(config).map_err(|e| to_py_err(&e))?;
+    let provider = create_azure(config).map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(deployment)
         .map_err(|e| to_py_err(&e))?;

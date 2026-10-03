@@ -74,7 +74,7 @@ impl EmbeddingModel for OpenAIEmbeddingModel {
 
         let resp = aimux_provider_utils::post_json_to_api(
             self.config
-                .http_request(self.config.url("/embeddings"), headers, options),
+                .http_request(self.config.url("/embeddings")?, headers, options),
             body,
             aimux_provider_utils::create_json_response_handler(),
             super::openai_failed_response_handler(),

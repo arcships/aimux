@@ -28,10 +28,11 @@ use aimux_provider_utils::Resolvable;
 use aimux_providers::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use aimux_providers::{
-    AmazonBedrockProvider, AmazonBedrockProviderSettings, CohereConfig, CohereProvider,
-    GoogleProvider, GoogleProviderSettings, HuggingFaceConfig, HuggingFaceProvider, MistralConfig,
-    MistralProvider, ProviderOptions, XAIConfig, XAIProvider, create_amazon_bedrock, create_google,
-    provider,
+    AmazonBedrockProvider, AmazonBedrockProviderSettings, CohereProvider, CohereProviderSettings,
+    GoogleProvider, GoogleProviderSettings, HuggingFaceProvider, HuggingFaceProviderSettings,
+    MistralProvider, MistralProviderSettings, ProviderOptions, XAIProvider, XAIProviderSettings,
+    create_amazon_bedrock, create_cohere, create_google, create_huggingface, create_mistral,
+    create_xai, provider,
 };
 
 /// The native OpenAI package pointed at the mock server.
@@ -339,8 +340,12 @@ mod xai_conformance {
     fn make_provider(server: &MockServer) -> XAIProvider {
         // Cassettes are recorded against /v1/responses; the responses model
         // appends `/responses` to the base URL, so base must include `/v1`.
-        let config = XAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-        XAIProvider::new(config)
+        create_xai(XAIProviderSettings {
+            api_key: Some("test-key".to_string().into()),
+            base_url: Some(format!("{}/v1", server.uri())),
+            ..Default::default()
+        })
+        .expect("valid settings")
     }
 
     #[tokio::test]
@@ -349,7 +354,7 @@ mod xai_conformance {
         mount_cassettes(&server, "tests/cassettes/xai").await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-3-mini");
+        let model = provider.responses("grok-3-mini");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -432,8 +437,12 @@ mod mistral_conformance {
     fn make_provider(server: &MockServer) -> MistralProvider {
         // Cassettes record paths under /v1/chat/completions, matching Mistral's
         // default base URL https://api.mistral.ai/v1.
-        let config = MistralConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-        MistralProvider::new(config)
+        create_mistral(MistralProviderSettings {
+            api_key: Some("test-key".to_string().into()),
+            base_url: Some(format!("{}/v1", server.uri())),
+            ..Default::default()
+        })
+        .expect("valid settings")
     }
 
     #[tokio::test]
@@ -442,7 +451,7 @@ mod mistral_conformance {
         mount_cassettes(&server, "tests/cassettes/mistral").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("mistral-large-latest");
+        let model = provider.chat("mistral-large-latest");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -975,8 +984,12 @@ mod cohere_conformance {
     fn make_provider(server: &MockServer) -> CohereProvider {
         // Cassettes record paths under /v2/chat, matching Cohere's default base
         // URL https://api.cohere.com/v2; the model appends `/chat`.
-        let config = CohereConfig::new("test-key").with_base_url(format!("{}/v2", server.uri()));
-        CohereProvider::new(config)
+        create_cohere(CohereProviderSettings {
+            api_key: Some("test-key".to_string().into()),
+            base_url: Some(format!("{}/v2", server.uri())),
+            ..Default::default()
+        })
+        .expect("valid settings")
     }
 
     #[tokio::test]
@@ -985,7 +998,7 @@ mod cohere_conformance {
         mount_cassettes(&server, "tests/cassettes/cohere").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("command-r-08-2024");
+        let model = provider.chat("command-r-08-2024");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -1019,9 +1032,12 @@ mod huggingface_conformance {
         // Cassettes record paths under /together/v1/chat/completions (HF routes
         // together-hosted models through this prefix). The OpenAI model appends
         // `/chat/completions` to the base URL.
-        let config = HuggingFaceConfig::new("test-key")
-            .with_base_url(format!("{}/together/v1", server.uri()));
-        HuggingFaceProvider::new(config)
+        create_huggingface(HuggingFaceProviderSettings {
+            api_key: Some("test-key".to_string().into()),
+            base_url: Some(format!("{}/together/v1", server.uri())),
+            ..Default::default()
+        })
+        .expect("valid settings")
     }
 
     #[tokio::test]
@@ -1030,7 +1046,7 @@ mod huggingface_conformance {
         mount_cassettes(&server, "tests/cassettes/huggingface").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("deepseek-ai/DeepSeek-R1");
+        let model = provider.chat_completions("deepseek-ai/DeepSeek-R1");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 

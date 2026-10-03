@@ -40,7 +40,7 @@ use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::files_model::Files;
 use aimux_core::image_model::ImageModel;
-use aimux_core::language_model::{LanguageModel, SupportedUrls};
+use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
@@ -227,16 +227,13 @@ pub struct OpenAIProvider {
 
 impl OpenAIProvider {
     fn model_config(&self, method: &str) -> OpenAIModelConfig {
-        let base = self.base_url.clone();
-        OpenAIModelConfig {
-            provider: format!("{}.{method}", self.name),
-            url: Arc::new(move |path| format!("{base}{path}")),
-            headers: self.headers.clone(),
-            fetch: self.fetch.clone(),
-            supported_urls: SupportedUrls::default(),
-            transform_request_body: self.transform_request_body.clone(),
-            base_url: self.base_url.clone(),
-        }
+        OpenAIModelConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            self.transform_request_body.clone(),
+        )
     }
 
     /// A chat-completions model; `provider()` is `"{name}.chat"`.

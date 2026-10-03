@@ -10,7 +10,16 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
-use aimux_providers::{CohereConfig, CohereProvider};
+use aimux_providers::{CohereProvider, CohereProviderSettings, create_cohere};
+
+fn test_provider(api_key: &str, base_url: impl Into<String>) -> CohereProvider {
+    create_cohere(CohereProviderSettings {
+        api_key: Some(api_key.to_string().into()),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 const TEST_VALUES: &[&str] = &["sunny day at the beach", "rainy day in the city"];
 
@@ -58,9 +67,8 @@ async fn should_extract_embedding() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model("embed-english-v3.0");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.embedding("embed-english-v3.0");
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -97,9 +105,8 @@ async fn should_expose_raw_response() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model("embed-english-v3.0");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.embedding("embed-english-v3.0");
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -126,9 +133,8 @@ async fn should_extract_usage() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model("embed-english-v3.0");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.embedding("embed-english-v3.0");
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -148,9 +154,8 @@ async fn should_pass_model_and_values() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model("embed-english-v3.0");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.embedding("embed-english-v3.0");
 
     let _ = model
         .do_embed(&default_options(test_values()))
@@ -179,9 +184,8 @@ async fn should_pass_input_type_setting() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model("embed-english-v3.0");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.embedding("embed-english-v3.0");
 
     let mut provider_options = HashMap::new();
     provider_options.insert(
@@ -214,9 +218,8 @@ async fn should_pass_output_dimension_setting() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model("embed-v4.0");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.embedding("embed-v4.0");
 
     let mut provider_options = HashMap::new();
     provider_options.insert("cohere".to_string(), json!({"outputDimension": 256}));
@@ -247,9 +250,8 @@ async fn should_pass_headers() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model("embed-english-v3.0");
+    let provider = test_provider("test-api-key", server.uri());
+    let model = provider.embedding("embed-english-v3.0");
 
     let mut request_headers = HashMap::new();
     request_headers.insert(

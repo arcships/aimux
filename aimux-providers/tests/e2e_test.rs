@@ -17,8 +17,8 @@ use aimux_provider_utils::Resolvable;
 use aimux_providers::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use aimux_providers::{
-    CohereConfig, CohereProvider, GoogleProviderSettings, MistralConfig, MistralProvider,
-    create_google,
+    CohereProviderSettings, GoogleProviderSettings, MistralProviderSettings, create_cohere,
+    create_google, create_mistral,
 };
 
 /// The native Anthropic package pointed at a mock server.
@@ -1003,8 +1003,13 @@ async fn e2e_mistral_generate_text() {
         .mount(&server)
         .await;
 
-    let provider = MistralProvider::new(MistralConfig::new("test-key").with_base_url(server.uri()));
-    let model = provider.model("mistral-small-latest");
+    let provider = create_mistral(MistralProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .expect("valid settings");
+    let model = provider.chat("mistral-small-latest");
 
     let result = generate_text(&model, "What is Rust?", GenerateTextOptions::default())
         .await
@@ -1045,8 +1050,13 @@ async fn e2e_mistral_stream_text() {
         .mount(&server)
         .await;
 
-    let provider = MistralProvider::new(MistralConfig::new("test-key").with_base_url(server.uri()));
-    let model = provider.model("mistral-small-latest");
+    let provider = create_mistral(MistralProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .expect("valid settings");
+    let model = provider.chat("mistral-small-latest");
 
     let result = stream_text(&model, "Say hello", GenerateTextOptions::default())
         .await
@@ -1089,8 +1099,13 @@ async fn e2e_cohere_generate_text() {
         .mount(&server)
         .await;
 
-    let provider = CohereProvider::new(CohereConfig::new("test-key").with_base_url(server.uri()));
-    let model = provider.model("command-r-plus");
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .expect("valid settings");
+    let model = provider.chat("command-r-plus");
 
     let result = generate_text(&model, "What is Rust?", GenerateTextOptions::default())
         .await
@@ -1139,8 +1154,13 @@ async fn e2e_cohere_stream_text() {
         .mount(&server)
         .await;
 
-    let provider = CohereProvider::new(CohereConfig::new("test-key").with_base_url(server.uri()));
-    let model = provider.model("command-r-plus");
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .expect("valid settings");
+    let model = provider.chat("command-r-plus");
 
     let result = stream_text(&model, "Say hello", GenerateTextOptions::default())
         .await

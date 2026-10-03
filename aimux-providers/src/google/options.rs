@@ -70,22 +70,7 @@ impl Namespace {
     }
 }
 
-/// A providerOptions container that can be asked for one namespace.
-pub(crate) trait ProviderOptionsMap {
-    fn lookup(&self, key: &str) -> Option<&Value>;
-}
-
-impl ProviderOptionsMap for std::collections::HashMap<String, Value> {
-    fn lookup(&self, key: &str) -> Option<&Value> {
-        self.get(key)
-    }
-}
-
-impl ProviderOptionsMap for Map<String, Value> {
-    fn lookup(&self, key: &str) -> Option<&Value> {
-        self.get(key)
-    }
-}
+pub(crate) use crate::shared::ProviderOptionsMap;
 
 /// The options under the public Gemini key only (`providerOptions.google`),
 /// for the surfaces the AI SDK keys by `google` alone (embeddings, images,

@@ -313,7 +313,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
 
         let resp = aimux_provider_utils::post_to_api(
             self.config
-                .http_request(self.config.url("/audio/transcriptions"), headers, options),
+                .http_request(self.config.url("/audio/transcriptions")?, headers, options),
             HttpBody::Bytes(body_bytes, content_type),
             aimux_provider_utils::create_json_response_handler::<OpenAITranscriptionResponse>(),
             super::openai_failed_response_handler(),
@@ -400,7 +400,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
 
         // wss URL from the REST base URL (https→wss / http→ws), matching the
         // AI SDK's toWebSocketUrl.
-        let ws_url = self.config.ws_url("/realtime?intent=transcription");
+        let ws_url = self.config.ws_url("/realtime?intent=transcription")?;
 
         // session.update — exact upstream wire shape (RFC-0028 §3.2 B1): the
         // model rides in session.audio.input.transcription.model, NOT in the

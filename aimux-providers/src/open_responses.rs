@@ -27,7 +27,14 @@ use aimux_core::types::{
     FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Usage, Warning,
 };
 
-use aimux_provider_utils::HttpRequest;
+use aimux_core::embedding_model::EmbeddingModel;
+use aimux_core::image_model::ImageModel;
+use aimux_core::provider::Provider;
+use aimux_provider_utils::{
+    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, validate_base_url,
+};
+
+use crate::shared::{Credential, EndpointConfig, TransformRequestBody, provider_headers};
 
 fn open_responses_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -80,157 +87,178 @@ fn open_responses_successful_response_handler() -> aimux_provider_utils::Respons
     })
 }
 
-// == Config ==
+// == Settings ==
 
-/// Configuration for the Open Responses provider.
+/// Settings of [`create_open_responses`].
 ///
-/// Mirrors the TS `OpenResponsesConfig`. The `url` is the **full endpoint
-/// URL** (e.g. `https://localhost:1234/v1/responses`), not a base URL.
-pub struct OpenResponsesConfig {
-    /// Provider name reported by `LanguageModel::provider`.
-    pub provider: String,
-    /// Key used to look up provider-specific options in `providerOptions`.
-    pub provider_options_name: String,
-    /// Full endpoint URL for the Responses API.
-    pub url: String,
-    /// Optional header factory - called on every request and merged with
-    /// per-request headers (e.g. `Authorization`).
-    pub headers: Option<Arc<dyn Fn() -> HashMap<String, String> + Send + Sync>>,
-    /// ID generator (retained for API parity with the TS config; not used
-    /// by the model itself).
-    pub generate_id: Arc<dyn Fn() -> String + Send + Sync>,
-    /// 凭证来源(RFC-0023):`None` = 未标注(回放时由 headers 闭包推断);
-    /// `Some("explicit")` / `Some("env:VAR")` = 调用方显式标注。Open Responses
-    /// 是通用包装,认证由调用方经 `headers` 闭包管理,故默认 `None`。
-    pub api_key_source: Option<String>,
+/// Everything but `api_key` and `headers` is fixed when the provider is
+/// created; those two are evaluated on every request.
+#[derive(Clone)]
+pub struct OpenResponsesProviderSettings {
+    /// The provider name: `provider()` is `"{name}.responses"` and its first
+    /// dot-separated segment is the providerOptions key the model reads.
+    pub name: String,
+    /// Base URL of the server (e.g. `http://localhost:1234/v1`); requests go
+    /// to `{base_url}/responses`. A trailing slash is removed.
+    pub base_url: String,
+    /// The API key, sent as `Authorization: Bearer`. `None` sends no
+    /// credential (a local server) and reads no environment variable. An
+    /// explicit value is used as given, `""` included.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers, resolved on every request (a `None` value removes a
+    /// header, including `Authorization`). Per-call headers win over these.
+    pub headers: Option<Resolvable<HeaderMapOpt>>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
+    /// Rewrites every JSON request body once, after it is serialized and
+    /// before it is sent.
+    pub transform_request_body: Option<TransformRequestBody>,
 }
 
-impl std::fmt::Debug for OpenResponsesConfig {
+impl OpenResponsesProviderSettings {
+    /// Settings with the two required fields; the rest unset.
+    #[must_use]
+    pub fn new(name: impl Into<String>, base_url: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            base_url: base_url.into(),
+            api_key: None,
+            headers: None,
+            fetch: None,
+            transform_request_body: None,
+        }
+    }
+}
+
+impl std::fmt::Debug for OpenResponsesProviderSettings {
+    /// Never prints the key or header values.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OpenResponsesConfig")
-            .field("provider", &self.provider)
-            .field("provider_options_name", &self.provider_options_name)
-            .field("url", &self.url)
+        f.debug_struct("OpenResponsesProviderSettings")
+            .field("name", &self.name)
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
             .field("headers", &self.headers.is_some())
-            .field("generate_id", &"<closure>")
-            .field("api_key_source", &self.api_key_source)
+            .field("fetch", &self.fetch.is_some())
+            .field(
+                "transform_request_body",
+                &self.transform_request_body.is_some(),
+            )
             .finish()
     }
 }
 
-impl OpenResponsesConfig {
-    /// Create a new config with the given provider name, provider-options
-    /// name, and endpoint URL. `headers` defaults to `None` and `generate_id`
-    /// defaults to a simple counter.
-    pub fn new(
-        provider: impl Into<String>,
-        provider_options_name: impl Into<String>,
-        url: impl Into<String>,
-    ) -> Self {
-        Self {
-            provider: provider.into(),
-            provider_options_name: provider_options_name.into(),
-            url: url.into(),
-            headers: None,
-            generate_id: Arc::new(|| {
-                use std::sync::atomic::{AtomicU64, Ordering};
-                static COUNTER: AtomicU64 = AtomicU64::new(0);
-                let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-                format!("id-{n}")
-            }),
-            api_key_source: None,
+/// The first dot-separated segment of a provider name, trimmed: the
+/// providerOptions key of the provider.
+fn options_name_of(name: &str) -> String {
+    name.split('.')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+/// Create an Open Responses provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `name` is empty or `base_url` is
+/// not an `http(s)` URL with a host. Credentials are resolved per request, not
+/// here.
+pub fn create_open_responses(
+    settings: OpenResponsesProviderSettings,
+) -> Result<OpenResponsesProvider, AiMuxError> {
+    if settings.name.trim().is_empty() {
+        return Err(AiMuxError::InvalidArgument(
+            "Open Responses requires a non-empty `name`.".to_string(),
+        ));
+    }
+    let base_url = validate_base_url(&settings.base_url)?;
+    let credential = match settings.api_key {
+        Some(key) => Credential::Explicit(key),
+        None => Credential::None,
+    };
+    let provider_layer = provider_headers(credential, Vec::new(), None);
+    let user = settings.headers;
+    let headers: HeadersFn = Resolvable::from_async_fn(move || {
+        let provider_layer = provider_layer.clone();
+        let user = user.clone();
+        async move {
+            let layer = provider_layer.resolve().await?;
+            match &user {
+                Some(user) => Ok(combine_headers(&[&layer, &user.resolve().await?])),
+                None => Ok(layer),
+            }
         }
-    }
-
-    /// Set a header factory.
-    #[must_use]
-    pub fn with_headers<F>(mut self, headers: F) -> Self
-    where
-        F: Fn() -> HashMap<String, String> + Send + Sync + 'static,
-    {
-        self.headers = Some(Arc::new(headers));
-        self
-    }
-
-    /// Set a generate-id factory.
-    #[must_use]
-    pub fn with_generate_id<F>(mut self, generate_id: F) -> Self
-    where
-        F: Fn() -> String + Send + Sync + 'static,
-    {
-        self.generate_id = Arc::new(generate_id);
-        self
-    }
-
-    /// 标注凭证来源(如 `env:VAR`)。Open Responses 的认证由调用方经
-    /// `headers` 闭包管理;仅作信息保留——录制只记 provider/model 身份,不再读它。
-    #[must_use]
-    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.api_key_source = source.map(std::string::ToString::to_string);
-        self
-    }
+    });
+    Ok(OpenResponsesProvider {
+        name: settings.name,
+        base_url,
+        headers,
+        fetch: settings.fetch,
+        transform_request_body: settings.transform_request_body,
+    })
 }
 
 // == Provider ==
 
 /// Open Responses provider - creates [`OpenResponsesModel`] instances.
 pub struct OpenResponsesProvider {
-    config: OpenResponsesConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
+    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl OpenResponsesProvider {
+    /// A Responses model; `provider()` is `"{name}.responses"`.
     #[must_use]
-    pub fn new(config: OpenResponsesConfig) -> Self {
-        Self { config }
+    pub fn responses(&self, model_id: &str) -> OpenResponsesModel {
+        OpenResponsesModel {
+            model_id: model_id.to_string(),
+            provider_options_name: options_name_of(&self.name),
+            config: EndpointConfig::fixed(
+                format!("{}.responses", self.name),
+                self.base_url.clone(),
+                self.headers.clone(),
+                self.fetch.clone(),
+                self.transform_request_body.clone(),
+            ),
+        }
     }
 
-    /// Create a model instance for the given model id.
+    /// The provider as a function: the default language model for an id. The
+    /// same model as [`responses`](Self::responses) and
+    /// [`language_model`](Provider::language_model).
     #[must_use]
-    pub fn model(&self, model_id: &str) -> OpenResponsesModel {
-        OpenResponsesModel::new(model_id.to_string(), &self.config)
+    pub fn call(&self, model_id: &str) -> Arc<dyn LanguageModel> {
+        Arc::new(self.responses(model_id))
     }
 }
 
-crate::impl_single_modality_provider!(OpenResponsesProvider, language_model, |p, id| p.model(id));
+impl Provider for OpenResponsesProvider {
+    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        Ok(self.call(model_id))
+    }
+
+    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
+    }
+
+    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "imageModel"))
+    }
+}
 
 // == Model ==
 
 /// An Open Responses language model.
 pub struct OpenResponsesModel {
     model_id: String,
-    config: OpenResponsesConfig,
-}
-
-impl OpenResponsesModel {
-    #[must_use]
-    pub fn new(model_id: String, config: &OpenResponsesConfig) -> Self {
-        Self {
-            model_id,
-            config: OpenResponsesConfig {
-                provider: config.provider.clone(),
-                provider_options_name: config.provider_options_name.clone(),
-                url: config.url.clone(),
-                headers: config.headers.clone(),
-                generate_id: config.generate_id.clone(),
-                api_key_source: config.api_key_source.clone(),
-            },
-        }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = self
-            .config
-            .headers
-            .as_ref()
-            .map(|h| h())
-            .unwrap_or_default();
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
+    /// The providerOptions key read (first segment of the provider name).
+    provider_options_name: String,
+    config: EndpointConfig,
 }
 
 #[async_trait]
@@ -244,16 +272,13 @@ impl LanguageModel for OpenResponsesModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let (body, warnings) =
-            build_request_body(&self.model_id, options, &self.config.provider_options_name);
+            build_request_body(&self.model_id, options, &self.provider_options_name);
+        let body = exchange.transform_body(body);
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(
-                self.config.url.clone(),
-                headers.into_iter().collect(),
-                options,
-            ),
+            exchange.request(exchange.url("/responses"), options),
             body.clone(),
             open_responses_successful_response_handler(),
             open_responses_failed_response_handler(),
@@ -384,24 +409,21 @@ impl LanguageModel for OpenResponsesModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let (body, warnings) =
-            build_request_body(&self.model_id, options, &self.config.provider_options_name);
+            build_request_body(&self.model_id, options, &self.provider_options_name);
 
         let stream_body = {
             let mut b = body.clone();
             if let Some(obj) = b.as_object_mut() {
                 obj.insert("stream".to_string(), json!(true));
             }
-            b
+            exchange.transform_body(b)
         };
+        let endpoint = exchange.url("/responses");
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(
-                self.config.url.clone(),
-                headers.into_iter().collect(),
-                options,
-            ),
+            exchange.request(endpoint.clone(), options),
             stream_body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             open_responses_failed_response_handler(),
@@ -440,7 +462,7 @@ impl LanguageModel for OpenResponsesModel {
                 provider_code,
                 status_code,
                 event,
-                self.config.url.clone(),
+                endpoint,
                 stream_body,
                 response_headers.clone(),
             ));

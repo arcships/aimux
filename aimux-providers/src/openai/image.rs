@@ -121,7 +121,7 @@ impl ImageModel for OpenAIImageModel {
 
             let resp = aimux_provider_utils::post_to_api(
                 self.config
-                    .http_request(self.config.url("/images/edits"), headers, options),
+                    .http_request(self.config.url("/images/edits")?, headers, options),
                 HttpBody::Bytes(form_body, content_type),
                 aimux_provider_utils::create_json_response_handler(),
                 super::openai_failed_response_handler(),
@@ -143,7 +143,7 @@ impl ImageModel for OpenAIImageModel {
 
             let resp = aimux_provider_utils::post_json_to_api(
                 self.config
-                    .http_request(self.config.url("/images/generations"), headers, options),
+                    .http_request(self.config.url("/images/generations")?, headers, options),
                 body.clone(),
                 aimux_provider_utils::create_json_response_handler(),
                 super::openai_failed_response_handler(),

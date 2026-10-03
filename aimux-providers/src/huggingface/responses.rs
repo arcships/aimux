@@ -35,12 +35,7 @@ use aimux_core::types::{
     FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage, Warning,
 };
 
-use aimux_provider_utils::HttpRequest;
-
-use super::HuggingFaceConfig;
-use crate::openai::responses::responses_convert::build_header_list;
-
-const PROVIDER_NAME: &str = "huggingface";
+use crate::shared::EndpointConfig;
 
 fn huggingface_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -127,41 +122,22 @@ fn huggingface_stream_error(
 
 /// A Hugging Face Responses API language model.
 ///
-/// Created via [`super::HuggingFaceProvider::responses_model`].
+/// Created via [`super::HuggingFaceProvider::responses`].
 pub struct HuggingFaceResponsesModel {
     model_id: String,
-    config: HuggingFaceConfig,
+    config: EndpointConfig,
 }
 
 impl HuggingFaceResponsesModel {
-    #[must_use]
-    pub fn new(model_id: String, config: HuggingFaceConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/responses", self.config.0.origin())
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.0.secret()),
-        );
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
     }
 }
 
 #[async_trait]
 impl LanguageModel for HuggingFaceResponsesModel {
     fn provider(&self) -> &str {
-        PROVIDER_NAME
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -169,12 +145,12 @@ impl LanguageModel for HuggingFaceResponsesModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request = build_request_body_with_warnings(&self.model_id, options, false)?;
-        let body = request.body;
-        let headers = self.build_headers(options.headers.as_ref());
+        let body = exchange.transform_body(request.body);
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), build_header_list(&headers), options),
+            exchange.request(exchange.url("/responses"), options),
             body.clone(),
             huggingface_successful_response_handler(),
             huggingface_failed_response_handler(),
@@ -207,9 +183,9 @@ impl LanguageModel for HuggingFaceResponsesModel {
             finish_reason,
             usage,
             warnings: request.warnings,
-            provider_metadata: Some(json!({
-                "huggingface": { "responseId": response_id }
-            })),
+            provider_metadata: Some(super::options::huggingface_metadata(
+                json!({ "responseId": response_id }),
+            )),
             response: ResponseMetadata {
                 id: response_id,
                 timestamp: format_timestamp(created_at),
@@ -221,12 +197,13 @@ impl LanguageModel for HuggingFaceResponsesModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request = build_request_body_with_warnings(&self.model_id, options, true)?;
-        let body = request.body;
-        let headers = self.build_headers(options.headers.as_ref());
+        let body = exchange.transform_body(request.body);
+        let endpoint = exchange.url("/responses");
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), build_header_list(&headers), options),
+            exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             huggingface_failed_response_handler(),
@@ -240,16 +217,12 @@ impl LanguageModel for HuggingFaceResponsesModel {
             first_event => first_event,
         };
         if let Some(Ok(event)) = first_event.as_ref()
-            && let Some(error) = huggingface_stream_error(
-                event,
-                &self.endpoint(),
-                body.clone(),
-                response_headers.clone(),
-            )
+            && let Some(error) =
+                huggingface_stream_error(event, &endpoint, body.clone(), response_headers.clone())
         {
             return Err(error);
         }
-        let stream_error_url = self.endpoint();
+        let stream_error_url = endpoint;
         let stream_request_body = body.clone();
         let stream_response_headers = response_headers.clone();
 
@@ -326,9 +299,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                     .to_string();
                                                 yield Ok(StreamPart::TextStart {
                                                     id: id.clone(),
-                                                    provider_metadata: Some(json!({
-                                                        "huggingface": { "itemId": id }
-                                                    })),
+                                                    provider_metadata: Some(super::options::huggingface_metadata(json!({ "itemId": id }))),
                                                 });
                                             }
                                         }
@@ -360,9 +331,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 .to_string();
                                             yield Ok(StreamPart::ReasoningStart {
                                                 id: id.clone(),
-                                                provider_metadata: Some(json!({
-                                                    "huggingface": { "itemId": id }
-                                                })),
+                                                provider_metadata: Some(super::options::huggingface_metadata(json!({ "itemId": id }))),
                                             });
                                         }
                                         _ => {}
@@ -534,9 +503,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
             yield Ok(StreamPart::Finish {
                 finish_reason,
                 usage,
-                provider_metadata: Some(json!({
-                    "huggingface": { "responseId": response_id }
-                })),
+                provider_metadata: Some(super::options::huggingface_metadata(json!({ "responseId": response_id }))),
             });
         };
 
@@ -613,7 +580,7 @@ pub fn build_request_body_with_warnings(
     let hf_options = options
         .provider_options
         .as_ref()
-        .and_then(|m| m.get("huggingface"));
+        .and_then(|m| super::options::huggingface_options(Some(m)));
     let metadata = hf_options.and_then(|o| o.get("metadata")).cloned();
     let instructions = hf_options
         .and_then(|o| o.get("instructions"))
@@ -1079,9 +1046,9 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Text {
                         text: text.to_string(),
-                        provider_metadata: Some(json!({
-                            "huggingface": { "itemId": item_id }
-                        })),
+                        provider_metadata: Some(super::options::huggingface_metadata(
+                            json!({ "itemId": item_id }),
+                        )),
                     });
 
                     // Process annotations → source parts.
@@ -1112,9 +1079,9 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Reasoning {
                         text: text.to_string(),
-                        provider_metadata: Some(json!({
-                            "huggingface": { "itemId": item_id }
-                        })),
+                        provider_metadata: Some(super::options::huggingface_metadata(
+                            json!({ "itemId": item_id }),
+                        )),
                     });
                 }
             }

@@ -277,7 +277,7 @@ fn xai_option(
 ) -> Option<Value> {
     options
         .as_ref()
-        .and_then(|m| m.get("xai"))
+        .and_then(|m| crate::xai::options::xai_options(Some(m)))
         .and_then(|o| o.get(key))
         .cloned()
 }
@@ -384,8 +384,11 @@ pub fn convert_to_xai_responses_input(
                             ..
                         } => {
                             let _ = (media_type, provider_options);
-                            let file_id = resolve_provider_reference(reference, "xai")
-                                .map_err(AiMuxError::InvalidArgument)?;
+                            let file_id = resolve_provider_reference(
+                                reference,
+                                crate::xai::options::NAMESPACE,
+                            )
+                            .map_err(AiMuxError::InvalidArgument)?;
                             content_parts.push(json!({ "type": "input_file", "file_id": file_id }));
                         }
                         _ => {
@@ -407,7 +410,7 @@ pub fn convert_to_xai_responses_input(
                         } => {
                             let id = provider_options
                                 .as_ref()
-                                .and_then(|po| po.get("xai"))
+                                .and_then(|po| crate::xai::options::xai_options(Some(po)))
                                 .and_then(|x| x.get("itemId"))
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
@@ -431,7 +434,7 @@ pub fn convert_to_xai_responses_input(
                             let is_provider_executed = provider_executed.unwrap_or_else(|| {
                                 provider_options
                                     .as_ref()
-                                    .and_then(|po| po.get("xai"))
+                                    .and_then(|po| crate::xai::options::xai_options(Some(po)))
                                     .and_then(|x| x.get("providerExecuted"))
                                     .and_then(serde_json::Value::as_bool)
                                     .unwrap_or(false)
@@ -441,7 +444,7 @@ pub fn convert_to_xai_responses_input(
                             }
                             let id = provider_options
                                 .as_ref()
-                                .and_then(|po| po.get("xai"))
+                                .and_then(|po| crate::xai::options::xai_options(Some(po)))
                                 .and_then(|x| x.get("itemId"))
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
@@ -468,13 +471,13 @@ pub fn convert_to_xai_responses_input(
                         } => {
                             let item_id = provider_options
                                 .as_ref()
-                                .and_then(|po| po.get("xai"))
+                                .and_then(|po| crate::xai::options::xai_options(Some(po)))
                                 .and_then(|x| x.get("itemId"))
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
                             let encrypted_content = provider_options
                                 .as_ref()
-                                .and_then(|po| po.get("xai"))
+                                .and_then(|po| crate::xai::options::xai_options(Some(po)))
                                 .and_then(|x| x.get("reasoningEncryptedContent"))
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
@@ -557,7 +560,7 @@ fn convert_image_part(
     // Image detail provider option.
     if let Some(detail) = provider_options
         .as_ref()
-        .and_then(|po| po.get("xai"))
+        .and_then(|po| crate::xai::options::xai_options(Some(po)))
         .and_then(|x| x.get("imageDetail"))
     {
         part["detail"] = detail.clone();

@@ -39,11 +39,71 @@ pub use crate::openai::convert_common::SystemMessageMode as ResponsesSystemMessa
 
 // -- Provider options helper -------------------------------------------------
 
-/// Get a value from `provider_options.openai.<key>`.
-fn openai_option(options: &Option<HashMap<String, Value>>, key: &str) -> Option<Value> {
+/// The providerOptions keys a Responses model reads, in order of precedence
+/// (the first one present wins as a whole), and the key it writes response
+/// metadata under. The AI SDK's `OpenAIResponsesLanguageModel` picks
+/// `providerOptionsName` from the host: `openai` for the OpenAI API, `azure`
+/// for Azure (which still falls back to `openai` when no `azure` options were
+/// given).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResponsesNamespace {
+    read: &'static [&'static str],
+    write: &'static str,
+}
+
+impl ResponsesNamespace {
+    /// The OpenAI API: reads and writes `openai`.
+    pub const OPENAI: Self = Self::new(&["openai"], "openai");
+
+    /// A host namespace. `read` is non-empty and in order of precedence;
+    /// `write` is the metadata key.
+    #[must_use]
+    pub const fn new(read: &'static [&'static str], write: &'static str) -> Self {
+        Self { read, write }
+    }
+
+    /// The key response metadata is written under.
+    #[must_use]
+    pub fn write_key(self) -> &'static str {
+        self.write
+    }
+
+    /// The first present options object among the read keys.
+    fn find(self, provider_options: &Value) -> Option<&Value> {
+        self.read.iter().find_map(|key| provider_options.get(*key))
+    }
+
+    /// [`find`](Self::find) for the map form (`CallOptions::provider_options`).
+    pub(crate) fn find_in(self, provider_options: &HashMap<String, Value>) -> Option<&Value> {
+        self.read.iter().find_map(|key| provider_options.get(*key))
+    }
+}
+
+impl Default for ResponsesNamespace {
+    fn default() -> Self {
+        Self::OPENAI
+    }
+}
+
+/// How a host differs in the Responses API model: its namespace, and the
+/// prefixes that mark a file part's data as an uploaded file id instead of
+/// content to inline (`fileIdPrefixes` in the AI SDK).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ResponsesProfile {
+    pub(crate) namespace: ResponsesNamespace,
+    /// Empty: no file part is treated as a file id.
+    pub(crate) file_id_prefixes: Vec<&'static str>,
+}
+
+/// Get a value from the host namespace's options (`openai.<key>` for OpenAI).
+fn openai_option(
+    ns: ResponsesNamespace,
+    options: &Option<HashMap<String, Value>>,
+    key: &str,
+) -> Option<Value> {
     options
         .as_ref()
-        .and_then(|m| m.get("openai"))
+        .and_then(|m| ns.find_in(m))
         .and_then(|o| o.get(key))
         .cloned()
 }
@@ -70,7 +130,9 @@ pub struct ResponsesInputResult {
 /// `has_previous_response_id` is true, assistant reasoning/function-call items
 /// that already carry an `itemId` are skipped (they live in the previous
 /// response chain).
+#[must_use]
 pub fn convert_to_responses_input(
+    ns: ResponsesNamespace,
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,
     store: bool,
@@ -101,7 +163,11 @@ pub fn convert_to_responses_input(
                 }
             },
             Role::User => {
-                let content: Vec<Value> = msg.content.iter().map(convert_user_part).collect();
+                let content: Vec<Value> = msg
+                    .content
+                    .iter()
+                    .map(|part| convert_user_part(ns, part))
+                    .collect();
                 input.push(json!({ "role": "user", "content": content }));
             }
             Role::Assistant => {
@@ -111,7 +177,7 @@ pub fn convert_to_responses_input(
                             text,
                             provider_options,
                         } => {
-                            let id = item_id(provider_options);
+                            let id = item_id(ns, provider_options);
                             if has_previous_response_id && id.is_some() {
                                 continue;
                             }
@@ -119,7 +185,7 @@ pub fn convert_to_responses_input(
                                 input.push(json!({ "type": "item_reference", "id": id }));
                                 continue;
                             }
-                            let phase = phase_from_provider_options(provider_options);
+                            let phase = phase_from_provider_options(ns, provider_options);
                             let mut item = json!({
                                 "role": "assistant",
                                 "content": [{ "type": "output_text", "text": text }],
@@ -139,19 +205,19 @@ pub fn convert_to_responses_input(
                             provider_options,
                             ..
                         } => {
-                            let id = item_id(provider_options);
+                            let id = item_id(ns, provider_options);
                             if has_previous_response_id && id.is_some() {
                                 continue;
                             }
-                            let namespace = namespace_from_provider_options(provider_options);
+                            let namespace = namespace_from_provider_options(ns, provider_options);
                             let mut item = json!({
                                 "type": "function_call",
                                 "call_id": tool_call_id,
                                 "name": tool_name,
                                 "arguments": serialize_arguments(tool_input),
                             });
-                            if let Some(ref ns) = namespace {
-                                item["namespace"] = json!(ns);
+                            if let Some(ref namespace) = namespace {
+                                item["namespace"] = json!(namespace);
                             }
                             input.push(item);
                         }
@@ -160,7 +226,7 @@ pub fn convert_to_responses_input(
                             provider_options,
                             ..
                         } => {
-                            let reasoning_id = openai_sub_option(provider_options, "itemId");
+                            let reasoning_id = openai_sub_option(ns, provider_options, "itemId");
                             if has_previous_response_id && reasoning_id.is_some() {
                                 continue;
                             }
@@ -169,6 +235,7 @@ pub fn convert_to_responses_input(
                                     input.push(json!({ "type": "item_reference", "id": rid }));
                                 } else {
                                     let encrypted = openai_sub_option(
+                                        ns,
                                         provider_options,
                                         "reasoningEncryptedContent",
                                     );
@@ -189,6 +256,7 @@ pub fn convert_to_responses_input(
                                 }
                             } else {
                                 let encrypted = openai_sub_option(
+                                    ns,
                                     provider_options,
                                     "reasoningEncryptedContent",
                                 );
@@ -271,7 +339,7 @@ fn join_text_parts(parts: &[ContentPart]) -> String {
 }
 
 /// Convert a single user-message content part into the Responses input shape.
-fn convert_user_part(part: &ContentPart) -> Value {
+fn convert_user_part(ns: ResponsesNamespace, part: &ContentPart) -> Value {
     match part {
         ContentPart::Text { text, .. } => json!({ "type": "input_text", "text": text }),
         ContentPart::Image {
@@ -283,7 +351,7 @@ fn convert_user_part(part: &ContentPart) -> Value {
                 use base64::Engine;
                 base64::engine::general_purpose::STANDARD.encode(image)
             };
-            let detail = openai_sub_option(provider_options, "imageDetail");
+            let detail = openai_sub_option(ns, provider_options, "imageDetail");
             let mut img = json!({
                 "type": "input_image",
                 "image_url": format!("data:{};base64,{}", media_type, b64),
@@ -346,40 +414,50 @@ fn serialize_arguments(input: &Value) -> String {
 }
 
 /// Read the `itemId` from a content part's `providerOptions.openai.itemId`.
-fn item_id(provider_options: &Option<Value>) -> Option<String> {
+fn item_id(ns: ResponsesNamespace, provider_options: &Option<Value>) -> Option<String> {
     provider_options
         .as_ref()
-        .and_then(|v| v.get("openai"))
+        .and_then(|v| ns.find(v))
         .and_then(|o| o.get("itemId"))
         .and_then(|v| v.as_str())
         .map(std::string::ToString::to_string)
 }
 
 /// Read the `phase` from a content part's `providerOptions.openai.phase`.
-fn phase_from_provider_options(provider_options: &Option<Value>) -> Option<String> {
+fn phase_from_provider_options(
+    ns: ResponsesNamespace,
+    provider_options: &Option<Value>,
+) -> Option<String> {
     provider_options
         .as_ref()
-        .and_then(|v| v.get("openai"))
+        .and_then(|v| ns.find(v))
         .and_then(|o| o.get("phase"))
         .and_then(|v| v.as_str())
         .map(std::string::ToString::to_string)
 }
 
 /// Read the `namespace` from a content part's `providerOptions.openai.namespace`.
-fn namespace_from_provider_options(provider_options: &Option<Value>) -> Option<String> {
+fn namespace_from_provider_options(
+    ns: ResponsesNamespace,
+    provider_options: &Option<Value>,
+) -> Option<String> {
     provider_options
         .as_ref()
-        .and_then(|v| v.get("openai"))
+        .and_then(|v| ns.find(v))
         .and_then(|o| o.get("namespace"))
         .and_then(|v| v.as_str())
         .map(std::string::ToString::to_string)
 }
 
 /// Read a sub-key from `providerOptions.openai.<key>` on a content part.
-fn openai_sub_option(provider_options: &Option<Value>, key: &str) -> Option<Value> {
+fn openai_sub_option(
+    ns: ResponsesNamespace,
+    provider_options: &Option<Value>,
+    key: &str,
+) -> Option<Value> {
     provider_options
         .as_ref()
-        .and_then(|v| v.get("openai"))
+        .and_then(|v| ns.find(v))
         .and_then(|o| o.get(key))
         .cloned()
 }
@@ -513,26 +591,28 @@ fn push_unsupported_call_option_warnings(options: &CallOptions, warnings: &mut V
 /// wins over top-level `reasoning`), `reasoningSummary` (defaults to "detailed"
 /// when an effort other than "none" applies), and whether the model reasons.
 fn resolve_responses_reasoning(
+    ns: ResponsesNamespace,
     provider_opts: &Option<HashMap<String, Value>>,
     options: &CallOptions,
     caps: &ModelCapabilities,
 ) -> (Option<String>, Option<String>, bool) {
-    let resolved_reasoning_effort: Option<String> = openai_option(provider_opts, "reasoningEffort")
-        .map(|v| {
-            v.as_str()
-                .map(std::string::ToString::to_string)
-                .unwrap_or_else(|| v.to_string())
-        })
-        .or_else(|| {
-            if options.reasoning.is_some_and(ReasoningEffort::is_custom) {
-                options.reasoning.map(|r| r.to_string())
-            } else {
-                None
-            }
-        });
+    let resolved_reasoning_effort: Option<String> =
+        openai_option(ns, provider_opts, "reasoningEffort")
+            .map(|v| {
+                v.as_str()
+                    .map(std::string::ToString::to_string)
+                    .unwrap_or_else(|| v.to_string())
+            })
+            .or_else(|| {
+                if options.reasoning.is_some_and(ReasoningEffort::is_custom) {
+                    options.reasoning.map(|r| r.to_string())
+                } else {
+                    None
+                }
+            });
 
     let resolved_reasoning_summary: Option<String> =
-        openai_option(provider_opts, "reasoningSummary")
+        openai_option(ns, provider_opts, "reasoningSummary")
             .map(|v| {
                 v.as_str()
                     .map(std::string::ToString::to_string)
@@ -549,7 +629,7 @@ fn resolve_responses_reasoning(
                 }
             });
 
-    let is_reasoning_model = openai_option(provider_opts, "forceReasoning")
+    let is_reasoning_model = openai_option(ns, provider_opts, "forceReasoning")
         .map(|v| v.as_bool().unwrap_or(false))
         .unwrap_or(caps.is_reasoning_model);
 
@@ -562,11 +642,12 @@ fn resolve_responses_reasoning(
 
 /// Warn when `conversation` and `previousResponseId` are both set.
 fn warn_conversation_conflict(
+    ns: ResponsesNamespace,
     provider_opts: &Option<HashMap<String, Value>>,
     warnings: &mut Vec<Warning>,
 ) {
-    let has_conversation = openai_option(provider_opts, "conversation").is_some();
-    let has_previous_response_id = openai_option(provider_opts, "previousResponseId").is_some();
+    let has_conversation = openai_option(ns, provider_opts, "conversation").is_some();
+    let has_previous_response_id = openai_option(ns, provider_opts, "previousResponseId").is_some();
     if has_conversation && has_previous_response_id {
         warnings.push(Warning::Unsupported {
             feature: "conversation".to_string(),
@@ -578,11 +659,12 @@ fn warn_conversation_conflict(
 }
 
 fn resolve_responses_system_message_mode(
+    ns: ResponsesNamespace,
     provider_opts: &Option<HashMap<String, Value>>,
     is_reasoning_model: bool,
     caps: &ModelCapabilities,
 ) -> SystemMessageMode {
-    openai_option(provider_opts, "systemMessageMode")
+    openai_option(ns, provider_opts, "systemMessageMode")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string))
         .map(|s| match s.as_str() {
             "developer" => SystemMessageMode::Developer,
@@ -598,14 +680,15 @@ fn resolve_responses_system_message_mode(
 
 /// temperature / top_p, subject to reasoning-model restrictions.
 fn apply_responses_sampling(
+    ns: ResponsesNamespace,
     body: &mut Value,
     options: &CallOptions,
-    provider_opts: &Option<HashMap<String, Value>>,
     caps: &ModelCapabilities,
     is_reasoning_model: bool,
     resolved_reasoning_effort: &Option<String>,
     warnings: &mut Vec<Warning>,
 ) {
+    let provider_opts = &options.provider_options;
     let mut temperature = options.temperature;
     let mut top_p = options.top_p;
 
@@ -635,7 +718,7 @@ fn apply_responses_sampling(
             "reasoningMode",
             "reasoningContext",
         ] {
-            if openai_option(provider_opts, key).is_some() {
+            if openai_option(ns, provider_opts, key).is_some() {
                 warnings.push(Warning::Unsupported {
                     feature: key.to_string(),
                     details: Some(format!("{key} is not supported for non-reasoning models")),
@@ -654,6 +737,7 @@ fn apply_responses_sampling(
 
 /// `text.format` (json_schema / json_object) plus `verbosity`.
 fn apply_responses_text_format(
+    ns: ResponsesNamespace,
     body: &mut Value,
     options: &CallOptions,
     provider_opts: &Option<HashMap<String, Value>>,
@@ -669,7 +753,7 @@ fn apply_responses_text_format(
                 let mut text = json!({});
                 match schema {
                     Some(schema) => {
-                        let strict_json = openai_option(provider_opts, "strictJsonSchema")
+                        let strict_json = openai_option(ns, provider_opts, "strictJsonSchema")
                             .and_then(|v| v.as_bool())
                             .unwrap_or(true);
                         text["format"] = json!({
@@ -689,7 +773,7 @@ fn apply_responses_text_format(
         }
     }
 
-    if let Some(verbosity) = openai_option(provider_opts, "textVerbosity") {
+    if let Some(verbosity) = openai_option(ns, provider_opts, "textVerbosity") {
         let text = body.get_mut("text").and_then(|t| t.as_object_mut());
         match text {
             Some(obj) => {
@@ -705,11 +789,12 @@ fn apply_responses_text_format(
 /// The computed `include` list (store=false on reasoning models adds
 /// `reasoning.encrypted_content`).
 fn resolve_responses_include(
+    ns: ResponsesNamespace,
     provider_opts: &Option<HashMap<String, Value>>,
     is_reasoning_model: bool,
 ) -> Option<Vec<Value>> {
     let mut include: Option<Vec<Value>> =
-        openai_option(provider_opts, "include").and_then(|v| v.as_array().cloned());
+        openai_option(ns, provider_opts, "include").and_then(|v| v.as_array().cloned());
 
     let add_include = |key: &str, inc: &mut Option<Vec<Value>>| {
         let already = inc
@@ -724,7 +809,7 @@ fn resolve_responses_include(
     };
 
     // store defaults to true; only the explicit `false` triggers encrypted_content.
-    let store_explicit = openai_option(provider_opts, "store").and_then(|v| v.as_bool());
+    let store_explicit = openai_option(ns, provider_opts, "store").and_then(|v| v.as_bool());
     if store_explicit == Some(false) && is_reasoning_model {
         add_include("reasoning.encrypted_content", &mut include);
     }
@@ -735,11 +820,12 @@ fn resolve_responses_include(
 /// Pass-through of the remaining Responses provider options (only sent when
 /// set).
 fn apply_responses_provider_options(
+    ns: ResponsesNamespace,
     body: &mut Value,
     provider_opts: &Option<HashMap<String, Value>>,
 ) {
     let mut set = |key: &str, body_key: &str| {
-        if let Some(v) = openai_option(provider_opts, key) {
+        if let Some(v) = openai_option(ns, provider_opts, key) {
             body[body_key] = v;
         }
     };
@@ -759,12 +845,13 @@ fn apply_responses_provider_options(
 
 /// `service_tier` with model-capability validation.
 fn apply_responses_service_tier(
+    ns: ResponsesNamespace,
     body: &mut Value,
     provider_opts: &Option<HashMap<String, Value>>,
     caps: &ModelCapabilities,
     warnings: &mut Vec<Warning>,
 ) {
-    if let Some(st) = openai_option(provider_opts, "serviceTier")
+    if let Some(st) = openai_option(ns, provider_opts, "serviceTier")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string))
     {
         match st.as_str() {
@@ -792,6 +879,7 @@ fn apply_responses_service_tier(
 
 /// `reasoning` block for reasoning models.
 fn apply_responses_reasoning_block(
+    ns: ResponsesNamespace,
     body: &mut Value,
     provider_opts: &Option<HashMap<String, Value>>,
     is_reasoning_model: bool,
@@ -803,9 +891,9 @@ fn apply_responses_reasoning_block(
     }
     let effort = resolved_reasoning_effort.as_ref();
     let summary = resolved_reasoning_summary.as_ref();
-    let mode = openai_option(provider_opts, "reasoningMode")
+    let mode = openai_option(ns, provider_opts, "reasoningMode")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string));
-    let context = openai_option(provider_opts, "reasoningContext")
+    let context = openai_option(ns, provider_opts, "reasoningContext")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string));
 
     if effort.is_some() || summary.is_some() || mode.is_some() || context.is_some() {
@@ -836,6 +924,18 @@ pub fn build_responses_request_body(
     options: &CallOptions,
     stream: bool,
 ) -> ResponsesRequestBodyResult {
+    build_responses_request_body_for(ResponsesNamespace::OPENAI, model_id, options, stream)
+}
+
+/// [`build_responses_request_body`] for a host with its own providerOptions
+/// namespace.
+#[must_use]
+pub fn build_responses_request_body_for(
+    ns: ResponsesNamespace,
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+) -> ResponsesRequestBodyResult {
     let mut warnings: Vec<Warning> = Vec::new();
     let caps = get_model_capabilities(model_id);
     let provider_opts = &options.provider_options;
@@ -845,21 +945,22 @@ pub fn build_responses_request_body(
 
     // -- Reasoning resolution --
     let (resolved_reasoning_effort, resolved_reasoning_summary, is_reasoning_model) =
-        resolve_responses_reasoning(provider_opts, options, &caps);
+        resolve_responses_reasoning(ns, provider_opts, options, &caps);
 
     // -- conversation + previousResponseId conflict --
-    warn_conversation_conflict(provider_opts, &mut warnings);
+    warn_conversation_conflict(ns, provider_opts, &mut warnings);
 
     // -- System message mode --
     let system_message_mode =
-        resolve_responses_system_message_mode(provider_opts, is_reasoning_model, &caps);
+        resolve_responses_system_message_mode(ns, provider_opts, is_reasoning_model, &caps);
 
     // -- Input conversion --
-    let store_bool = openai_option(provider_opts, "store")
+    let store_bool = openai_option(ns, provider_opts, "store")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
-    let has_previous_response_id = openai_option(provider_opts, "previousResponseId").is_some();
+    let has_previous_response_id = openai_option(ns, provider_opts, "previousResponseId").is_some();
     let input_result = convert_to_responses_input(
+        ns,
         &options.prompt,
         system_message_mode,
         store_bool,
@@ -883,9 +984,9 @@ pub fn build_responses_request_body(
 
     // temperature / top_p (subject to reasoning-model restrictions)
     apply_responses_sampling(
+        ns,
         &mut body,
         options,
-        provider_opts,
         &caps,
         is_reasoning_model,
         &resolved_reasoning_effort,
@@ -893,27 +994,28 @@ pub fn build_responses_request_body(
     );
 
     // -- Response format (text.format) + verbosity --
-    apply_responses_text_format(&mut body, options, provider_opts);
+    apply_responses_text_format(ns, &mut body, options, provider_opts);
 
     // -- include (computed) --
-    let include = resolve_responses_include(provider_opts, is_reasoning_model);
+    let include = resolve_responses_include(ns, provider_opts, is_reasoning_model);
     if let Some(inc) = include {
         body["include"] = json!(inc);
     }
 
     // -- store (only sent when explicitly set) --
-    if let Some(s) = openai_option(provider_opts, "store").and_then(|v| v.as_bool()) {
+    if let Some(s) = openai_option(ns, provider_opts, "store").and_then(|v| v.as_bool()) {
         body["store"] = json!(s);
     }
 
     // -- Other provider options (only sent when set) --
-    apply_responses_provider_options(&mut body, provider_opts);
+    apply_responses_provider_options(ns, &mut body, provider_opts);
 
     // -- service_tier (with capability validation) --
-    apply_responses_service_tier(&mut body, provider_opts, &caps, &mut warnings);
+    apply_responses_service_tier(ns, &mut body, provider_opts, &caps, &mut warnings);
 
     // -- reasoning block (reasoning models only) --
     apply_responses_reasoning_block(
+        ns,
         &mut body,
         provider_opts,
         is_reasoning_model,
@@ -934,6 +1036,87 @@ pub fn build_responses_request_body(
     }
 
     ResponsesRequestBodyResult { body, warnings }
+}
+
+// -- File id prefixes --------------------------------------------------------
+
+/// Apply the host's file-id prefixes (`fileIdPrefixes` in the AI SDK) to a
+/// built request body: when a file content part's base64 data starts with one
+/// of `prefixes`, it is an uploaded file's id and the part carries a `file_id`
+/// field instead of `image_url` / `file_data`. A no-op for no prefixes.
+pub(crate) fn apply_file_id_prefixes(body: &mut Value, prefixes: &[&str]) {
+    if prefixes.is_empty() {
+        return;
+    }
+    if let Some(input) = body.get_mut("input").and_then(|v| v.as_array_mut()) {
+        for msg in input.iter_mut() {
+            if let Some(content) = msg.get_mut("content").and_then(|v| v.as_array_mut()) {
+                for part in content.iter_mut() {
+                    apply_prefix_to_part(part, prefixes);
+                }
+            }
+        }
+    }
+}
+
+/// Check if a content part's `image_url` or `file_data` contains a data URL
+/// whose payload starts with a file-id prefix and, if so, replace it with a
+/// `file_id`.
+///
+/// For `input_file` parts whose media type is an image, the type is also
+/// changed to `input_image`, mirroring the AI SDK, which sends image files as
+/// `input_image` with a `file_id`.
+fn apply_prefix_to_part(part: &mut Value, prefixes: &[&str]) {
+    let is_file_id = |data: &str| prefixes.iter().any(|prefix| data.starts_with(prefix));
+    // input_image: { type: "input_image", image_url: "data:<mime>;base64,<data>" }
+    if part.get("type").and_then(|v| v.as_str()) == Some("input_image") {
+        let file_id = part
+            .get("image_url")
+            .and_then(|v| v.as_str())
+            .and_then(extract_base64_data)
+            .filter(|data| is_file_id(data))
+            .map(std::string::ToString::to_string);
+        if let Some(file_id) = file_id
+            && let Some(obj) = part.as_object_mut()
+        {
+            obj.remove("image_url");
+            obj.insert("file_id".to_string(), json!(file_id));
+        }
+    }
+
+    // input_file: { type: "input_file", file_data: "data:<mime>;base64,<data>" }
+    if part.get("type").and_then(|v| v.as_str()) == Some("input_file") {
+        let file_data = part
+            .get("file_data")
+            .and_then(|v| v.as_str())
+            .map(std::string::ToString::to_string);
+        if let Some(file_data) = file_data {
+            let media_type = extract_media_type(&file_data).unwrap_or("");
+            if let Some(data) = extract_base64_data(&file_data)
+                && is_file_id(data)
+                && let Some(obj) = part.as_object_mut()
+            {
+                obj.remove("file_data");
+                obj.remove("filename");
+                obj.insert("file_id".to_string(), json!(data));
+                if media_type.starts_with("image/") {
+                    obj.insert("type".to_string(), json!("input_image"));
+                }
+            }
+        }
+    }
+}
+
+/// Extract the MIME type from a `data:<mime>;base64,<payload>` URL.
+fn extract_media_type(data_url: &str) -> Option<&str> {
+    let prefix = data_url.strip_prefix("data:")?;
+    let end = prefix.find(";base64,")?;
+    Some(&prefix[..end])
+}
+
+/// Extract the base64 payload from a `data:<mime>;base64,<payload>` URL.
+fn extract_base64_data(data_url: &str) -> Option<&str> {
+    data_url.split_once(";base64,").map(|(_, rest)| rest)
 }
 
 // -- Usage conversion --------------------------------------------------------

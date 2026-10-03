@@ -23,14 +23,16 @@ pub fn build_model(
     base_url: Option<&str>,
 ) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
     macro_rules! native {
-        ($provider_mod:ident, $config:ident, $provider_type:ident, $env:literal) => {{
+        ($provider_mod:ident, $settings:ident, $create:ident, $env:literal) => {{
             let key = native_key(provider, $env, api_key.clone())?;
-            let mut cfg = aimux_providers::$provider_mod::$config::new(key);
-            if let Some(url) = base_url {
-                cfg = cfg.with_base_url(url);
-            }
-            let p = aimux_providers::$provider_mod::$provider_type::new(cfg);
-            Ok(Arc::from(p.model(model_id)))
+            let p = aimux_providers::$provider_mod::$create(
+                aimux_providers::$provider_mod::$settings {
+                    api_key: Some(key.into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            aimux_core::provider::Provider::language_model(&p, model_id)
         }};
     }
 
@@ -68,9 +70,19 @@ pub fn build_model(
             )?;
             Ok(Arc::new(provider.chat(model_id)))
         }
-        "mistral" => native!(mistral, MistralConfig, MistralProvider, "MISTRAL_API_KEY"),
-        "xai" => native!(xai, XAIConfig, XAIProvider, "XAI_API_KEY"),
-        "cohere" => native!(cohere, CohereConfig, CohereProvider, "COHERE_API_KEY"),
+        "mistral" => native!(
+            mistral,
+            MistralProviderSettings,
+            create_mistral,
+            "MISTRAL_API_KEY"
+        ),
+        "xai" => native!(xai, XAIProviderSettings, create_xai, "XAI_API_KEY"),
+        "cohere" => native!(
+            cohere,
+            CohereProviderSettings,
+            create_cohere,
+            "COHERE_API_KEY"
+        ),
         _ => {
             let mut options = ProviderOptions::default();
             if let Some(url) = base_url {

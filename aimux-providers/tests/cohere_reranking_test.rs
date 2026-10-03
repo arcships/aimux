@@ -10,7 +10,16 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::reranking_model::{RerankingCallOptions, RerankingDocuments, RerankingModel};
-use aimux_providers::{CohereConfig, CohereProvider};
+use aimux_providers::{CohereProvider, CohereProviderSettings, create_cohere};
+
+fn test_provider(api_key: &str, base_url: impl Into<String>) -> CohereProvider {
+    create_cohere(CohereProviderSettings {
+        api_key: Some(api_key.to_string().into()),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // -- helpers -----------------------------------------------------------------
 
@@ -29,8 +38,7 @@ fn rerank_response_body() -> Value {
 }
 
 fn provider(server: &MockServer) -> CohereProvider {
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    CohereProvider::new(config)
+    test_provider("test-api-key", server.uri())
 }
 
 fn cohere_provider_options() -> HashMap<String, Value> {
@@ -94,7 +102,7 @@ async fn json_docs_should_send_request_with_stringified_json_documents() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("rerank-english-v3.0");
+    let model = provider.reranking("rerank-english-v3.0");
 
     model
         .do_rerank(&json_docs_opts("rainy day", 2))
@@ -124,7 +132,7 @@ async fn json_docs_should_send_request_with_correct_headers() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("rerank-english-v3.0");
+    let model = provider.reranking("rerank-english-v3.0");
 
     model
         .do_rerank(&json_docs_opts("rainy day", 2))
@@ -149,7 +157,7 @@ async fn json_docs_should_return_result_with_warnings() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("rerank-english-v3.0");
+    let model = provider.reranking("rerank-english-v3.0");
 
     let result = model
         .do_rerank(&json_docs_opts("rainy day", 2))
@@ -176,7 +184,7 @@ async fn json_docs_should_return_result_with_correct_ranking() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("rerank-english-v3.0");
+    let model = provider.reranking("rerank-english-v3.0");
 
     let result = model
         .do_rerank(&json_docs_opts("rainy day", 2))
@@ -196,7 +204,7 @@ async fn json_docs_should_not_return_provider_metadata() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("rerank-english-v3.0");
+    let model = provider.reranking("rerank-english-v3.0");
 
     let result = model
         .do_rerank(&json_docs_opts("rainy day", 2))
@@ -212,7 +220,7 @@ async fn json_docs_should_return_result_with_correct_response() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("rerank-english-v3.0");
+    let model = provider.reranking("rerank-english-v3.0");
 
     let result = model
         .do_rerank(&json_docs_opts("rainy day", 2))
@@ -237,7 +245,7 @@ async fn text_docs_should_send_request_with_text_documents() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("rerank-english-v3.0");
+    let model = provider.reranking("rerank-english-v3.0");
 
     model
         .do_rerank(&text_docs_opts("rainy day", 2))
@@ -259,7 +267,7 @@ async fn text_docs_should_send_request_with_correct_headers() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("rerank-english-v3.0");
+    let model = provider.reranking("rerank-english-v3.0");
 
     model
         .do_rerank(&text_docs_opts("rainy day", 2))
@@ -284,7 +292,7 @@ async fn text_docs_should_return_result_without_warnings() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("rerank-english-v3.0");
+    let model = provider.reranking("rerank-english-v3.0");
 
     let result = model
         .do_rerank(&text_docs_opts("rainy day", 2))
@@ -301,7 +309,7 @@ async fn text_docs_should_return_result_with_correct_ranking() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("rerank-english-v3.0");
+    let model = provider.reranking("rerank-english-v3.0");
 
     let result = model
         .do_rerank(&text_docs_opts("rainy day", 2))
@@ -319,7 +327,7 @@ async fn text_docs_should_not_return_provider_metadata() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("rerank-english-v3.0");
+    let model = provider.reranking("rerank-english-v3.0");
 
     let result = model
         .do_rerank(&text_docs_opts("rainy day", 2))
@@ -335,7 +343,7 @@ async fn text_docs_should_return_result_with_correct_response() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("rerank-english-v3.0");
+    let model = provider.reranking("rerank-english-v3.0");
 
     let result = model
         .do_rerank(&text_docs_opts("rainy day", 2))

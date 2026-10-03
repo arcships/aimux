@@ -16,8 +16,8 @@ use aimux_providers::openai_compatible::{
     OpenAICompatibleProviderSettings, create_openai_compatible,
 };
 use aimux_providers::{
-    GoogleProviderSettings, SerperConfig, SerperProvider, VoyageConfig, VoyageProvider,
-    create_google, provider_discovery, provider_handle,
+    GoogleProviderSettings, SerperConfig, SerperProvider, VoyageProviderSettings, create_google,
+    create_voyage, provider_discovery, provider_handle,
 };
 
 /// Unwrap the `NoSuchModel` model type of a failed `Arc<dyn _>` lookup
@@ -63,7 +63,13 @@ fn google_offers_video_and_files() {
 
 #[test]
 fn embedding_only_vendor_rejects_language_and_image_models() {
-    let p: Arc<dyn Provider> = Arc::new(VoyageProvider::new(VoyageConfig::new("k")));
+    let p: Arc<dyn Provider> = Arc::new(
+        create_voyage(VoyageProviderSettings {
+            api_key: Some("k".to_string().into()),
+            ..Default::default()
+        })
+        .expect("valid settings"),
+    );
     assert_eq!(
         no_such_model_type(p.language_model("m"), "m"),
         "languageModel"

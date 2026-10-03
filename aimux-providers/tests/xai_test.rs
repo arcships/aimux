@@ -32,7 +32,16 @@ use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
 use aimux_providers::xai::convert::supports_reasoning_effort;
-use aimux_providers::{XAIConfig, XAIProvider};
+use aimux_providers::{XAIProvider, XAIProviderSettings, create_xai};
+
+fn test_provider(api_key: &str, base_url: impl Into<String>) -> XAIProvider {
+    create_xai(XAIProviderSettings {
+        api_key: Some(api_key.to_string().into()),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -156,8 +165,7 @@ fn reasoning_deltas(parts: &[StreamPart]) -> Vec<String> {
 
 /// Build a provider pointed at the mock server.
 fn make_provider(server: &MockServer) -> XAIProvider {
-    let config = XAIConfig::new("test-api-key").with_base_url(server.uri());
-    XAIProvider::new(config)
+    test_provider("test-api-key", server.uri())
 }
 
 /// Provider options with a single xai key.
@@ -271,7 +279,7 @@ mod convert_usage {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -314,7 +322,7 @@ mod convert_usage {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -362,7 +370,7 @@ mod convert_usage {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -405,7 +413,7 @@ mod convert_usage {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -445,7 +453,7 @@ mod convert_usage {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -487,7 +495,7 @@ mod convert_usage {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -518,7 +526,7 @@ mod prepare_tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -540,7 +548,7 @@ mod prepare_tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             tools: Some(vec![]),
             ..default_options(test_prompt())
@@ -563,7 +571,7 @@ mod prepare_tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             tools: Some(vec![Tool::from(FunctionTool {
                 name: "testFunction".to_string(),
@@ -598,7 +606,7 @@ mod prepare_tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             tools: Some(vec![Tool::Provider(ProviderTool {
                 id: "xai.unsupported_tool".to_string(),
@@ -643,7 +651,7 @@ mod prepare_tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             tools: Some(vec![
                 Tool::from(FunctionTool {
@@ -696,7 +704,7 @@ mod prepare_tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             tools: Some(vec![Tool::from(FunctionTool::new(
                 "testFunction",
@@ -722,7 +730,7 @@ mod prepare_tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             tools: Some(vec![Tool::from(FunctionTool::new(
                 "testFunction",
@@ -748,7 +756,7 @@ mod prepare_tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             tools: Some(vec![Tool::from(FunctionTool::new(
                 "testFunction",
@@ -774,7 +782,7 @@ mod prepare_tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             tools: Some(vec![Tool::from(FunctionTool::new(
                 "testFunction",
@@ -803,7 +811,7 @@ mod prepare_tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             tools: Some(vec![Tool::from(FunctionTool {
                 name: "testFunction".to_string(),
@@ -832,7 +840,7 @@ mod prepare_tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             tools: Some(vec![Tool::from(FunctionTool {
                 name: "testFunction".to_string(),
@@ -861,7 +869,7 @@ mod prepare_tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             tools: Some(vec![Tool::from(FunctionTool {
                 name: "testFunction".to_string(),
@@ -890,7 +898,7 @@ mod prepare_tools {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             tools: Some(vec![Tool::from(FunctionTool {
                 name: "test-tool".to_string(),
@@ -940,7 +948,7 @@ mod convert_messages {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -962,7 +970,7 @@ mod convert_messages {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let prompt = vec![
             LanguageModelPromptMessage {
                 role: Role::System,
@@ -996,7 +1004,7 @@ mod convert_messages {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let prompt = vec![
             LanguageModelPromptMessage {
                 role: Role::User,
@@ -1027,7 +1035,7 @@ mod convert_messages {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let prompt = vec![LanguageModelPromptMessage {
             role: Role::User,
             content: vec![
@@ -1060,7 +1068,7 @@ mod convert_messages {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let prompt = vec![LanguageModelPromptMessage {
             role: Role::User,
             content: vec![ContentPart::file_url(
@@ -1091,7 +1099,7 @@ mod convert_messages {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let prompt = vec![LanguageModelPromptMessage {
             role: Role::User,
             content: vec![ContentPart::file_reference(
@@ -1119,7 +1127,7 @@ mod convert_messages {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let prompt = vec![LanguageModelPromptMessage {
             role: Role::User,
             content: vec![ContentPart::file_reference(
@@ -1146,7 +1154,7 @@ mod convert_messages {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let prompt = vec![
             LanguageModelPromptMessage {
                 role: Role::Assistant,
@@ -1198,7 +1206,7 @@ mod convert_messages {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let prompt = vec![LanguageModelPromptMessage {
             role: Role::Assistant,
             content: vec![
@@ -1227,7 +1235,7 @@ mod convert_messages {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let prompt = vec![LanguageModelPromptMessage {
             role: Role::Assistant,
             content: vec![
@@ -1259,7 +1267,7 @@ mod convert_messages {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let prompt = vec![LanguageModelPromptMessage {
             role: Role::User,
             content: vec![
@@ -1291,7 +1299,7 @@ mod convert_messages {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let prompt = vec![LanguageModelPromptMessage {
             role: Role::User,
             content: vec![
@@ -1320,7 +1328,7 @@ mod do_generate {
     #[tokio::test]
     async fn instantiated_correctly() {
         let provider = make_provider(&MockServer::start().await);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         assert_eq!(model.model_id(), "grok-3");
         assert_eq!(model.provider(), "xai.chat");
     }
@@ -1347,7 +1355,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -1394,7 +1402,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -1430,7 +1438,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -1455,7 +1463,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -1484,7 +1492,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -1505,7 +1513,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let _ = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -1529,7 +1537,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             tools: Some(vec![Tool::from(FunctionTool {
                 name: "test-tool".to_string(),
@@ -1575,7 +1583,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             provider_options: xai_options("parallel_function_calling", json!(false)),
             ..default_options(test_prompt())
@@ -1597,7 +1605,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             provider_options: xai_provider_options(json!({
                 "logprobs": true,
@@ -1623,7 +1631,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             provider_options: xai_options("topLogprobs", json!(3)),
             ..default_options(test_prompt())
@@ -1646,7 +1654,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             provider_options: xai_provider_options(json!({
                 "searchParameters": {
@@ -1680,7 +1688,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             provider_options: xai_provider_options(json!({
                 "searchParameters": {
@@ -1728,7 +1736,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             response_format: Some(ResponseFormat::Json {
                 schema: Some(json!({
@@ -1775,7 +1783,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -1815,7 +1823,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             provider_options: xai_provider_options(json!({
                 "searchParameters": { "mode": "auto", "returnCitations": true }
@@ -1857,7 +1865,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let prompt = vec![
             LanguageModelPromptMessage {
                 role: Role::User,
@@ -1897,7 +1905,7 @@ mod do_generate {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -1946,7 +1954,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -1992,7 +2000,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -2040,7 +2048,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -2081,7 +2089,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -2123,7 +2131,7 @@ mod do_stream {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             provider_options: xai_provider_options(json!({
                 "searchParameters": { "mode": "auto", "returnCitations": true }
@@ -2165,7 +2173,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
+        let model = provider.chat_completions("grok-3-mini");
         let options = CallOptions {
             provider_options: xai_options("reasoningEffort", json!("high")),
             ..default_options(test_prompt())
@@ -2187,7 +2195,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
+        let model = provider.chat_completions("grok-3-mini");
         let options = CallOptions {
             provider_options: xai_options("reasoningEffort", json!("none")),
             ..default_options(test_prompt())
@@ -2209,7 +2217,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
+        let model = provider.chat_completions("grok-3-mini");
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::High),
             ..default_options(test_prompt())
@@ -2231,7 +2239,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
+        let model = provider.chat_completions("grok-3-mini");
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::Medium),
             ..default_options(test_prompt())
@@ -2253,7 +2261,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
+        let model = provider.chat_completions("grok-3-mini");
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::Xhigh),
             ..default_options(test_prompt())
@@ -2275,7 +2283,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
+        let model = provider.chat_completions("grok-3-mini");
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::None),
             ..default_options(test_prompt())
@@ -2297,7 +2305,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
+        let model = provider.chat_completions("grok-3-mini");
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::Medium),
             provider_options: xai_options("reasoningEffort", json!("high")),
@@ -2320,7 +2328,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-4.20-reasoning");
+        let model = provider.chat_completions("grok-4.20-reasoning");
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::None),
             ..default_options(test_prompt())
@@ -2349,7 +2357,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-4.20-reasoning");
+        let model = provider.chat_completions("grok-4.20-reasoning");
         let options = CallOptions {
             provider_options: xai_options("reasoningEffort", json!("none")),
             ..default_options(test_prompt())
@@ -2371,7 +2379,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
+        let model = provider.chat_completions("grok-3-mini");
         let options = CallOptions {
             provider_options: xai_options("reasoningEffort", json!("low")),
             ..default_options(test_prompt())
@@ -2404,7 +2412,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
+        let model = provider.chat_completions("grok-3-mini");
         let options = CallOptions {
             provider_options: xai_options("reasoningEffort", json!("high")),
             ..default_options(test_prompt())
@@ -2449,7 +2457,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
+        let model = provider.chat_completions("grok-3-mini");
         let options = CallOptions {
             provider_options: xai_options("reasoningEffort", json!("low")),
             ..default_options(test_prompt())
@@ -2498,7 +2506,7 @@ mod reasoning {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
+        let model = provider.chat_completions("grok-3-mini");
         let options = CallOptions {
             provider_options: xai_options("reasoningEffort", json!("low")),
             ..default_options(test_prompt())
@@ -2550,7 +2558,7 @@ mod error_handling {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model.do_generate(&default_options(test_prompt())).await;
 
         assert!(result.is_err());
@@ -2576,7 +2584,7 @@ mod error_handling {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model.do_generate(&default_options(test_prompt())).await;
 
         assert!(result.is_err());
@@ -2603,7 +2611,7 @@ mod error_handling {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model.do_generate(&default_options(test_prompt())).await;
 
         assert!(result.is_err());
@@ -2629,7 +2637,7 @@ mod error_handling {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model.do_stream(&default_options(test_prompt())).await;
 
         assert!(result.is_err());
@@ -2657,7 +2665,7 @@ mod error_handling {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let result = model.do_generate(&default_options(test_prompt())).await;
 
         assert!(
@@ -2685,7 +2693,7 @@ mod provider {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
 
         assert_eq!(model.model_id(), "grok-3");
         assert_eq!(model.provider(), "xai.chat");
@@ -2701,9 +2709,8 @@ mod provider {
             .mount(&server)
             .await;
 
-        let config = XAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = XAIProvider::new(config);
-        let model = provider.model("grok-3");
+        let provider = test_provider("test-api-key", server.uri());
+        let model = provider.chat_completions("grok-3");
         let _ = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -2725,7 +2732,7 @@ mod provider {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let mut headers = HashMap::new();
         headers.insert(
             "Custom-Request-Header".to_string(),
@@ -2765,7 +2772,7 @@ mod provider {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-2");
+        let model = provider.chat_completions("grok-2");
         let _ = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -2796,7 +2803,7 @@ mod provider {
             .await;
 
         let provider = make_provider(&server);
-        let model = provider.model("grok-3");
+        let model = provider.chat_completions("grok-3");
         let options = CallOptions {
             top_k: Some(40.0),
             frequency_penalty: Some(0.5),

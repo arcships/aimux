@@ -5,8 +5,6 @@
 //!
 //! Endpoint: `POST {base_url}/embed`
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -16,45 +14,24 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::HttpRequest;
-
-use super::CohereConfig;
+use crate::shared::EndpointConfig;
 
 /// A Cohere embedding model (e.g. `"embed-english-v3.0"`).
 pub struct CohereEmbeddingModel {
     model_id: String,
-    config: CohereConfig,
+    config: EndpointConfig,
 }
 
 impl CohereEmbeddingModel {
-    #[must_use]
-    pub fn new(model_id: String, config: CohereConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/embed", self.config.base_url)
     }
 }
 
 #[async_trait]
 impl EmbeddingModel for CohereEmbeddingModel {
     fn provider(&self) -> &str {
-        "cohere"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -95,17 +72,11 @@ impl EmbeddingModel for CohereEmbeddingModel {
             body.insert("output_dimension".to_string(), json!(output_dimension));
         }
 
-        let headers = self.build_headers(options.headers.as_ref());
-
-        let mut header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        header_list.push(("Content-Type".to_string(), "application/json".to_string()));
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), header_list, options),
-            Value::Object(body),
+            exchange.request(exchange.url("/embed"), options),
+            exchange.transform_body(Value::Object(body)),
             aimux_provider_utils::create_json_response_handler(),
             super::cohere_failed_response_handler(),
         )
@@ -168,7 +139,7 @@ struct CohereEmbeddingProviderOptions {
 fn parse_cohere_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> CohereEmbeddingProviderOptions {
-    let provider_opts = options.and_then(|opts| opts.get("cohere"));
+    let provider_opts = super::options::cohere_options(options);
     CohereEmbeddingProviderOptions {
         input_type: provider_opts
             .and_then(|o| o.get("inputType"))

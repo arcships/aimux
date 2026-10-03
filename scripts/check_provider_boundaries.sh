@@ -17,6 +17,10 @@
 #   7. Google, Vertex and Bedrock keep no builder-era config state, the SigV4
 #      shim stays deleted, and their providerOptions / providerMetadata keys
 #      are spelled once, in `google/options.rs` and `bedrock/options.rs`.
+#   8. Azure, xAI, Mistral, Cohere, Hugging Face, Codex, Open Responses, Voyage
+#      and ElevenLabs keep no builder-era config state (and `StaticBearerConfig`
+#      stays deleted), and their providerOptions / providerMetadata keys are
+#      spelled once, in each package's `options.rs`.
 #
 # Usage: bash scripts/check_provider_boundaries.sh   (exit 1 on any violation)
 
@@ -72,7 +76,8 @@ for pattern in \
     'fn retry_config' \
     'RetryConfig' \
     'Provider::name' \
-    'fn specification_version'; do
+    'fn specification_version' \
+    'StaticBearerConfig'; do
     violation "removed name \`$pattern\` is back" "$(search_removed "$pattern")"
 done
 
@@ -195,6 +200,37 @@ rule7c_hits="$(
         ' || true
 )"
 violation 'providerOptions namespace key spelled outside google/options.rs or bedrock/options.rs' "$rule7c_hits"
+
+# ── Rule 8: the vendor packages read their settings through the model config ──
+#
+# No `XxxConfig` / `AzureAuth` / `TokenProvider` / `StaticBearerConfig` /
+# `body_overrides` / `api_key_source` / `from_env`, and the namespace keys
+# (`azure`, `xai`, `mistral`, `cohere`, `huggingface`, `voyage`, `elevenlabs`)
+# are quoted only in the package's `options.rs` (comments, unit tests and the
+# `DEFAULT_NAME` provider-name constants aside). Codex reads the OpenAI
+# Responses namespace through the shared model, and Open Responses derives its
+# key from the provider name, so neither spells a key.
+vendor_family='aimux-providers/src/azure aimux-providers/src/xai aimux-providers/src/mistral aimux-providers/src/cohere aimux-providers/src/voyage aimux-providers/src/huggingface aimux-providers/src/huggingface.rs aimux-providers/src/codex.rs aimux-providers/src/open_responses.rs aimux-providers/src/elevenlabs aimux-providers/src/elevenlabs.rs'
+rule8_hits="$(
+    # shellcheck disable=SC2086
+    grep -rnE '\b(AzureConfig|AzureAuth|TokenProvider|XAIConfig|MistralConfig|CohereConfig|VoyageConfig|HuggingFaceConfig|CodexConfig|OpenResponsesConfig|ElevenLabsConfig|StaticBearerConfig)\b|body_overrides|api_key_source|from_env' \
+        $vendor_family --include='*.rs' || true
+)"
+violation 'Azure / xAI / Mistral / Cohere / Hugging Face / Codex / Open Responses / Voyage / ElevenLabs reads builder-era config state' "$rule8_hits"
+rule8b_hits="$(
+    # Non-test, non-comment lines of every file but the options helpers.
+    find $vendor_family -name '*.rs' ! -name options.rs -print0 |
+        xargs -0 awk '
+            FNR == 1 { in_tests = 0 }
+            /^#\[cfg\(test\)\]/ { in_tests = 1 }
+            in_tests { next }
+            /^[[:space:]]*\/\// { next }
+            /"(azure|xai|mistral|cohere|huggingface|voyage|elevenlabs)"/ && !/DEFAULT_NAME/ {
+                printf "%s:%d:%s\n", FILENAME, FNR, $0
+            }
+        ' || true
+)"
+violation 'vendor providerOptions namespace key spelled outside the package options.rs' "$rule8b_hits"
 
 if [[ "$status" -eq 0 ]]; then
     echo 'provider boundaries: ok'

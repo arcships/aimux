@@ -10,8 +10,7 @@
 | category | count |
 |----------|-------|
 | Registry-backed OpenAI-compatible (`provider(name, ...)`) | 283 |
-| Non-registry: Native protocol providers | 12 |
-| Non-registry: OpenAI-compatible wrapper that has not moved to its own package yet | 1 |
+| Non-registry: Native protocol providers | 13 |
 | Non-registry: Speech-only providers (TTS) | 4 |
 | Non-registry: Transcription-only providers (STT) | 5 |
 | Non-registry: Image-only providers | 4 |
@@ -319,35 +318,30 @@
 
 These providers are **not** name-addressable: `provider("anthropic", ...)` fails with `NoSuchProvider`. Use the typed entry points below (Rust type names; per-binding constructors: see [reference.md](reference.md)).
 
-### Native protocol providers — 12
+### Native protocol providers — 13
 
 | module | typed entry points |
 |--------|--------------------|
 | `anthropic` | `AnthropicProvider` / `AnthropicProviderSettings` / `create_anthropic` |
 | `anthropic_aws` | `AnthropicAwsProvider` / `AnthropicAwsProviderSettings` / `create_anthropic_aws` |
-| `azure` | `AzureConfig` / `AzureProvider` / `TokenProvider` |
+| `azure` | `AzureOpenAIProvider` / `AzureOpenAIProviderSettings` / `create_azure` |
 | `bedrock` | `AmazonBedrockProvider` / `AmazonBedrockProviderSettings` / `create_amazon_bedrock` |
-| `cohere` | `CohereConfig` / `CohereProvider` |
+| `cohere` | `CohereProvider` / `CohereProviderSettings` / `create_cohere` |
 | `google` | `GoogleProvider` / `GoogleProviderSettings` / `create_google` |
-| `mistral` | `MistralConfig` / `MistralProvider` |
+| `mistral` | `MistralProvider` / `MistralProviderSettings` / `create_mistral` |
 | `openai` | `OpenAIProvider` / `OpenAIProviderSettings` / `create_openai` |
 | `vertex` | `VertexProvider` / `VertexProviderSettings` / `create_google_vertex` |
-| `voyage` | `VoyageConfig` / `VoyageProvider` |
-| `codex` | `CodexConfig` / `CodexProvider` |
-| `xai` | `XAIConfig` / `XAIProvider` |
-
-### OpenAI-compatible wrapper that has not moved to its own package yet — 1
-
-| module | typed entry points |
-|--------|--------------------|
-| `huggingface` | `HuggingFaceConfig` / `HuggingFaceProvider` |
+| `voyage` | `VoyageProvider` / `VoyageProviderSettings` / `create_voyage` |
+| `codex` | `CodexProvider` / `CodexProviderSettings` / `create_codex` |
+| `xai` | `XAIProvider` / `XAIProviderSettings` / `create_xai` |
+| `huggingface` | `HuggingFaceProvider` / `HuggingFaceProviderSettings` / `create_huggingface` |
 
 ### Speech-only providers (TTS) — 4
 
 | module | typed entry points |
 |--------|--------------------|
 | `cartesia` | `CartesiaConfig` / `CartesiaProvider` |
-| `elevenlabs` | `ElevenLabsConfig` / `ElevenLabsProvider` |
+| `elevenlabs` | `ElevenLabsProvider` / `ElevenLabsProviderSettings` / `create_elevenlabs` |
 | `hume` | `HumeConfig` / `HumeProvider` |
 | `lmnt` | `LMNTConfig` / `LMNTProvider` |
 
@@ -380,7 +374,7 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 
 | module | typed entry points |
 |--------|--------------------|
-| `open_responses` | `OpenResponsesConfig` / `OpenResponsesProvider` |
+| `open_responses` | `OpenResponsesProvider` / `OpenResponsesProviderSettings` / `create_open_responses` |
 
 ### Modality-specific providers (non-language, e.g. rerank-only) — 1
 

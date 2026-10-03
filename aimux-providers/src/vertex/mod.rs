@@ -47,7 +47,7 @@ use aimux_provider_utils::{
 };
 use std::sync::OnceLock;
 
-use crate::shared::{Endpoint, EndpointConfig, TransformRequestBody};
+use crate::shared::{Endpoint, EndpointConfig, TransformRequestBody, is_valid_hostname_part};
 
 mod anthropic_model;
 mod embedding;
@@ -140,19 +140,6 @@ impl std::fmt::Debug for VertexProviderSettings {
             )
             .finish()
     }
-}
-
-/// A location is one DNS label: letters, digits and hyphens, not starting or
-/// ending with a hyphen (`isValidHostnamePart`).
-fn is_valid_hostname_part(part: &str) -> bool {
-    let bytes = part.as_bytes();
-    !bytes.is_empty()
-        && bytes.len() <= 63
-        && bytes
-            .iter()
-            .all(|b| b.is_ascii_alphanumeric() || *b == b'-')
-        && bytes[0] != b'-'
-        && bytes[bytes.len() - 1] != b'-'
 }
 
 fn validate_location(location: &str) -> Result<(), AiMuxError> {

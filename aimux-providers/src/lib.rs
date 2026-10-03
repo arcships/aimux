@@ -184,7 +184,6 @@ pub mod voyage;
 pub mod codex;
 pub mod xai;
 
-// OpenAI-compatible wrapper that has not moved to its own package yet.
 pub mod huggingface;
 
 // Speech-only providers (TTS).
@@ -223,18 +222,25 @@ pub use anthropic_aws::{
     AnthropicAwsAuth, AnthropicAwsProvider, AnthropicAwsProviderSettings, create_anthropic_aws,
 };
 pub use azure::{
-    AzureAuth, AzureConfig, AzureModel, AzureProvider, AzureResponsesModel, TokenProvider,
+    AzureChatModel, AzureOpenAIProvider, AzureOpenAIProviderSettings, AzureResponsesModel, azure,
+    create_azure,
 };
 pub use bedrock::{
     AmazonBedrockProvider, AmazonBedrockProviderSettings, BedrockEmbeddingModel, BedrockImageModel,
     BedrockModel, BedrockRerankingModel, amazon_bedrock, create_amazon_bedrock,
 };
-pub use cohere::{CohereConfig, CohereEmbeddingModel, CohereProvider};
+pub use cohere::{
+    CohereEmbeddingModel, CohereModel, CohereProvider, CohereProviderSettings,
+    CohereRerankingModel, cohere, create_cohere,
+};
 pub use google::{
     GoogleEmbeddingModel, GoogleFiles, GoogleImageModel, GoogleImageSettings, GoogleModel,
     GoogleProvider, GoogleProviderSettings, GoogleVideoModel, create_google, google,
 };
-pub use mistral::{MistralConfig, MistralEmbeddingModel, MistralProvider};
+pub use mistral::{
+    MistralEmbeddingModel, MistralModel, MistralProvider, MistralProviderSettings, create_mistral,
+    mistral,
+};
 pub use openai::{
     OpenAIEmbeddingModel, OpenAIImageModel, OpenAIProvider, OpenAIProviderSettings,
     OpenAIResponsesModel, OpenAISpeechModel, OpenAITranscriptionModel, create_openai,
@@ -244,22 +250,29 @@ pub use vertex::{
     VertexProviderSettings, VertexTranscriptionModel, VertexVideoModel, create_google_vertex,
     google_vertex,
 };
-pub use voyage::{VoyageConfig, VoyageEmbeddingModel, VoyageProvider};
+pub use voyage::{
+    VoyageEmbeddingModel, VoyageProvider, VoyageProviderSettings, VoyageRerankingModel,
+    create_voyage, voyage,
+};
 
 pub use codex::{
     CODEX_API_BASE_URL, CODEX_API_KEY_ENV_VAR, CODEX_OAUTH_TOKEN_URL, CODEX_SUBSCRIPTION_BASE_URL,
-    CodexConfig, CodexMode, CodexModel, CodexProvider, CodexTokens, codex_refresh,
-    codex_refresh_at,
+    CodexMode, CodexModel, CodexProvider, CodexProviderSettings, CodexTokens, codex, codex_refresh,
+    codex_refresh_at, create_codex,
 };
-pub use xai::{XAIConfig, XAIProvider};
+pub use xai::{XAIProvider, XAIProviderSettings, XaiModel, XaiResponsesModel, create_xai, xai};
 
 pub use cartesia::{
     CartesiaConfig, CartesiaProvider, CartesiaSpeechModel, CartesiaTranscriptionModel,
 };
 pub use elevenlabs::{
-    ElevenLabsConfig, ElevenLabsProvider, ElevenLabsSpeechModel, ElevenLabsTranscriptionModel,
+    ElevenLabsProvider, ElevenLabsProviderSettings, ElevenLabsSpeechModel,
+    ElevenLabsTranscriptionModel, create_elevenlabs, elevenlabs,
 };
-pub use huggingface::{HuggingFaceConfig, HuggingFaceProvider};
+pub use huggingface::{
+    HuggingFaceProvider, HuggingFaceProviderSettings, HuggingFaceResponsesModel,
+    create_huggingface, huggingface,
+};
 pub use hume::{HumeConfig, HumeProvider, HumeSpeechModel};
 pub use lmnt::{LMNTConfig, LMNTProvider, LMNTSpeechModel};
 
@@ -278,7 +291,9 @@ pub use prodia::{ProdiaConfig, ProdiaImageModel, ProdiaProvider, ProdiaVideoMode
 pub use replicate::{ReplicateConfig, ReplicateImageModel, ReplicateProvider, ReplicateVideoModel};
 pub use revai::{RevaiConfig, RevaiProvider, RevaiTranscriptionModel};
 
-pub use open_responses::{OpenResponsesConfig, OpenResponsesModel, OpenResponsesProvider};
+pub use open_responses::{
+    OpenResponsesModel, OpenResponsesProvider, OpenResponsesProviderSettings, create_open_responses,
+};
 
 // Modality-specific providers (non-language, e.g. rerank-only).
 pub mod jina_ai;

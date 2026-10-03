@@ -169,9 +169,14 @@ async fn cassette_cohere_embedding_query() {
     // Cohere base_url: the cassette path is /v2/embed, so base_url = server/v2
     let base_url = format!("{}/v2", server.uri());
 
-    use aimux_providers::cohere::{CohereConfig, CohereProvider};
-    let provider = CohereProvider::new(CohereConfig::new("test-key").with_base_url(base_url));
-    let model = provider.embedding_model("embed-english-v3.0");
+    use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(base_url),
+        ..Default::default()
+    })
+    .expect("valid settings");
+    let model = provider.embedding("embed-english-v3.0");
 
     let opts = EmbeddingCallOptions::new("hello");
     let result = model.do_embed(&opts).await;
