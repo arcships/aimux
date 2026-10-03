@@ -24,7 +24,7 @@
 //! is reported under the name.
 //!
 //! Vendor packages ([`groq`](crate::groq), [`deepseek`](crate::deepseek)) and the
-//! generated presets ([`presets`](crate::presets)) are built on the same
+//! registry presets ([`preset`](crate::preset)) are built on the same
 //! internals; the shared model never branches on a vendor name.
 
 pub(crate) mod chat;

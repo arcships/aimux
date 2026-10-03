@@ -27,8 +27,8 @@ use serde_json::json;
 
 /// The chat model of a registry preset, built the way the registry builds it.
 fn preset_chat(name: &str, model_id: &str) -> OpenAICompatibleChatModel {
-    let entry = aimux_providers::presets::lookup(name).unwrap();
-    (entry.create)(PresetSettings::default())
+    let entry = aimux_providers::preset::lookup(name).unwrap();
+    aimux_providers::preset::PresetProvider::create(entry.descriptor, PresetSettings::default())
         .unwrap()
         .chat(model_id)
 }

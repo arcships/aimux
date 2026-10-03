@@ -192,7 +192,7 @@ def build_page():
     w("")
     w(
         f"**{len(registry)} registry-backed OpenAI-compatible providers** "
-        f"(construct via `provider(name, ...)` or `presets::create_<name>`) + "
+        f"(create presets by name via `provider(name, ...)`) + "
         f"**{non_registry} non-registry providers** "
         "(construct via the typed factories listed below)."
     )

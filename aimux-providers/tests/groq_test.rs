@@ -1945,7 +1945,13 @@ mod package {
         let model = provider("groq", Some("k".into()), "m", None).unwrap();
         assert_eq!(model.provider(), "groq.chat");
         assert_eq!(
-            aimux_providers::presets::groq().chat("m").provider(),
+            aimux_providers::preset::PresetProvider::create(
+                aimux_providers::preset::lookup("groq").unwrap().descriptor,
+                aimux_providers::PresetSettings::default()
+            )
+            .unwrap()
+            .chat("m")
+            .provider(),
             "groq.chat"
         );
     }

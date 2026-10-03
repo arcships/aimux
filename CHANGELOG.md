@@ -166,16 +166,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is honoured (`reasoningEffort`, `thinking`).
 - Presets: `provider_registry.json` has 283 rows (251 + the 32 former thin
   wrapper vendors, whose types are deleted — `OllamaConfig`, `VllmProvider`,
-  the `vertex_ai_*_models` family, …). `scripts/gen_presets.py` generates
-  `aimux-providers/src/presets/` (`create_<name>(PresetSettings)` +
-  `<name>()`); rows carry `auth: api_key | none` (`none` sends no
+  the `vertex_ai_*_models` family, …). The JSON is embedded and parsed once
+  into a runtime descriptor table in `preset.rs`; there are no per-name
+  Rust functions. Presets are created by name via `provider(name, ...)` or
+  `PresetProvider::create(preset::lookup(name).unwrap().descriptor, settings)`.
+  Rows carry `auth: api_key | none` (`none` sends no
   `Authorization`; `PLACEHOLDER_API_KEY` is gone), `base_url_env` and
   template `params` (env, default, derived host maps). Only declared
   parameters are accepted, host parameters reject `/ @ : ?`, and an
   unexpanded placeholder is an error. Unknown names are `NoSuchProvider`;
   nothing falls back to OpenAI. `litellm_proxy` reads `LITELLM_PROXY_BASE_URL`
-  (the old wrapper read its API-key variable as a URL). `gen_presets.py
-  --check` and `scripts/check_provider_boundaries.sh` run in CI.
+  (the old wrapper read its API-key variable as a URL). Registry validation
+  runs in the table test, and
+  `scripts/check_provider_boundaries.sh` runs in CI.
 - Groq and DeepSeek are standalone packages (`create_groq`, `create_deepseek`)
   built on the compat internals; the native OpenAI package no longer knows any
   other vendor. Compat providers expose chat, embedding and image only (the

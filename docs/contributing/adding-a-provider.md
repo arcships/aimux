@@ -47,15 +47,14 @@ only differs in a few hooks, its own package next to `groq/` and `deepseek/`
 2. Regenerate what is generated from the registry and commit its output:
 
    ```sh
-   python scripts/gen_presets.py          # aimux-providers/src/presets/*.rs
    python scripts/gen_providers_doc.py    # docs/api/providers.md (totals + list)
    ```
 
-   Both generators exist so the registry is the one source: every row becomes
-   `presets::create_<name>(PresetSettings)` plus a `presets::<name>()` default
-   instance, and the by-name `provider(name, ...)` entry point looks the row up.
-   CI runs both with `--check` in the `contract-tests` job and fails if the
-   committed output is stale.
+   The registry is embedded and parsed once into a runtime descriptor table.
+   Create presets by name through `provider(name, ...)`; there are no per-name
+   Rust functions. The table test validates all rows and creates each with
+   default settings. CI checks the generated documentation with `--check`
+   in the `contract-tests` job.
 
 3. Derive replay cassettes: add a tuple to `PROVIDERS` in
    `scripts/generate_thin_wrapper_cassettes.py`, then run it. It derives
@@ -153,7 +152,7 @@ only differs in a few hooks, its own package next to `groq/` and `deepseek/`
 
 - **A generator may stay in `scripts/` only if its output carries a
   "GENERATED — do not edit" header and CI runs it with `--check`.** Today
-  that is `gen_presets.py` and `gen_providers_doc.py` (the `contract-tests`
+  that is `gen_providers_doc.py` (the `contract-tests`
   job).
   `gen_ts_types.py` regenerates the ts-rs TypeScript
   types through `cargo test -p aimux-core --lib export` (the export tests

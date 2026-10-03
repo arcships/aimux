@@ -1,13 +1,9 @@
 //! Registry-backed provider construction (RFC-0017 phase 4, RFC-0036 section 5).
 //!
-//! Single source of truth: [`provider_registry.json`](provider_registry.json),
-//! edited by hand (one row per provider) and compiled by
-//! `scripts/gen_presets.py` into the explicit factories of [`crate::presets`]
-//! (`presets::create_<name>(PresetSettings)`, `presets::<name>()`). The by-name
-//! entry points below look a row up in that table and call its factory, so
-//! there is exactly one construction path per vendor; they add the runtime
-//! overlay (RFC-0020) and the `Option<ProviderOptions>` / `Option<String>`
-//! argument shapes the bindings use.
+//! Single source of truth: `provider_registry.json`, parsed once into the
+//! runtime table in [`crate::preset`]. The by-name entry points look up a
+//! descriptor and call [`PresetProvider::create`], adding the runtime overlay
+//! (RFC-0020) and the argument shapes the bindings use.
 //!
 //! An unknown name is [`AiMuxError::NoSuchProvider`]: it never falls back to
 //! another provider. An overlay entry or a registry row that cannot be built
@@ -42,8 +38,8 @@ use aimux_provider_utils::{Resolvable, load_api_key, validate_base_url};
 
 use crate::openai_compatible::config::{BaseUrl, ChatDialect};
 use crate::openai_compatible::{Assembly, ChatProfile, OpenAICompatibleProvider};
+use crate::preset;
 use crate::preset::{PresetDescriptor, PresetProvider, PresetSettings};
-use crate::presets;
 use crate::shared::Credential;
 
 /// Chat capabilities of an external provider entry, expressed as data
@@ -199,7 +195,7 @@ pub fn reject_removed_provider_options(
 /// Build a language model for a provider by name.
 ///
 /// Lookup order: runtime overlay (RFC-0020 [`register_provider`]) → the
-/// registry presets ([`crate::presets`]) → [`AiMuxError::NoSuchProvider`].
+/// registry presets ([`crate::preset`]) → [`AiMuxError::NoSuchProvider`].
 ///
 /// - `api_key = None` reads the provider's env var from the registry entry
 ///   (or the external entry's `env_var` / `api_key` field) - now, so a missing
@@ -528,13 +524,13 @@ fn resolve_provider(
     } else {
         // 2. The registry presets. An unknown name is an error, never a
         //    different provider.
-        let entry = presets::lookup(name).ok_or_else(|| AiMuxError::NoSuchProvider {
+        let entry = preset::lookup(name).ok_or_else(|| AiMuxError::NoSuchProvider {
             // Display derives from the id alone; valid names are discoverable
             // via `provider_names()` - listing hundreds of names here would
             // ride along in every error, across the C ABI.
             provider_id: name.to_string(),
         })?;
-        let preset = (entry.create)(preset_settings(api_key, options))?;
+        let preset = PresetProvider::create(entry.descriptor, preset_settings(api_key, options))?;
         // The by-name entry point refuses a provider that cannot be used:
         // an unexpandable template or an unset key variable fails here, not
         // on the first request.
@@ -674,7 +670,7 @@ pub fn provider_from_env(
 
 /// Names of all built-in registry providers.
 pub fn provider_names() -> impl Iterator<Item = &'static str> {
-    presets::names()
+    preset::names()
 }
 
 /// Public lookup of a registered provider's descriptor - used by tests that
@@ -682,7 +678,7 @@ pub fn provider_names() -> impl Iterator<Item = &'static str> {
 /// constructing a model. Returns `None` for unknown provider names.
 #[must_use]
 pub fn provider_registry_entry(name: &str) -> Option<&'static PresetDescriptor> {
-    presets::lookup(name).map(|entry| entry.descriptor)
+    preset::lookup(name).map(|entry| entry.descriptor)
 }
 
 #[cfg(test)]

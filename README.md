@@ -51,8 +51,8 @@ difference: aimux is an access layer, those are orchestration layers.
   mixture-of-agents style (RFC-0022). Both are plain `LanguageModel`s.
 - **Config-driven provider registry** — `provider_registry.json` describes
   each registry-backed OpenAI-compatible provider (base URL, env var, auth
-  mode, template parameters); `scripts/gen_presets.py` turns every row into a
-  `create_<name>(settings)` factory, and one unified `provider(name, ...)`
+  mode, template parameters); the embedded JSON is parsed once into a runtime
+  descriptor table, and one unified `provider(name, ...)`
   entry in every binding looks them up by name. Native packages follow the AI
   SDK shape: `XxxProviderSettings` + `create_xxx()` + a default `xxx()`.
 - **Fast and small** — Rust core, release profile tuned for binary size

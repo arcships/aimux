@@ -43,7 +43,6 @@ Provider changes also run the generator and boundary checks CI runs in the
 `contract-tests` job:
 
 ```bash
-python3 scripts/gen_presets.py --check        # registry -> aimux-providers/src/presets
 python3 scripts/gen_providers_doc.py --check  # docs/api/providers.md
 python3 scripts/gen_ts_types.py --check       # ts-rs types for the Node binding
 bash scripts/check_provider_boundaries.sh     # factory-shape rules for provider packages
@@ -84,8 +83,8 @@ aimux distinguishes three kinds of providers:
 2. **OpenAI-compatible preset** — the majority. One row of
    `aimux-providers/src/provider_registry.json` (base URL, key variable or
    `auth: none`, optional URL variable and template parameters) that
-   `scripts/gen_presets.py` turns into `presets::create_<name>` /
-   `presets::<name>()`. Vendors with behavior of their own get a package on
+   is embedded and parsed once into a runtime table. Create presets by name
+   through `provider(name, ...)`. Vendors with behavior of their own get a package on
    the shared compatible chat model (`groq/`, `deepseek/`) instead of a
    branch on their name.
 3. **Modality-specific** — speech, image, video, transcription, etc.

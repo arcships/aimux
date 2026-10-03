@@ -169,10 +169,15 @@ async fn ollama_preset_lists_models_without_authorization() {
         )
         .mount(&server)
         .await;
-    let provider = aimux_providers::presets::create_ollama(aimux_providers::PresetSettings {
-        base_url: Some(format!("{}/v1", server.uri())),
-        ..Default::default()
-    })
+    let provider = aimux_providers::preset::PresetProvider::create(
+        aimux_providers::preset::lookup("ollama")
+            .unwrap()
+            .descriptor,
+        aimux_providers::PresetSettings {
+            base_url: Some(format!("{}/v1", server.uri())),
+            ..Default::default()
+        },
+    )
     .unwrap();
     let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
     assert_eq!(models.len(), 2);

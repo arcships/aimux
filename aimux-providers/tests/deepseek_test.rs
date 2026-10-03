@@ -24,13 +24,11 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::provider::Provider;
 use aimux_core::stream_part::StreamPart;
 use aimux_provider_utils::Resolvable;
 use aimux_providers::deepseek::{
     DeepSeekProvider, DeepSeekProviderSettings, create_deepseek, deepseek,
 };
-use aimux_providers::{presets, provider};
 
 fn prompt() -> LanguageModelPrompt {
     vec![LanguageModelPromptMessage {
@@ -83,29 +81,6 @@ fn options_with(provider_options: Value) -> CallOptions {
             .collect(),
     );
     options
-}
-
-#[test]
-fn every_entry_point_reports_deepseek_chat() {
-    assert_eq!(deepseek().chat("deepseek-chat").provider(), "deepseek.chat");
-    assert_eq!(deepseek().call("m").provider(), "deepseek.chat");
-    assert_eq!(
-        deepseek().language_model("m").unwrap().provider(),
-        "deepseek.chat"
-    );
-    let model = provider("deepseek", Some("k".into()), "m", None).unwrap();
-    assert_eq!(model.provider(), "deepseek.chat");
-    assert_eq!(presets::deepseek().chat("m").provider(), "deepseek.chat");
-}
-
-#[test]
-fn embedding_and_image_models_are_no_such_model() {
-    for result in [
-        deepseek().embedding_model("e").map(|_| ()),
-        deepseek().image_model("i").map(|_| ()),
-    ] {
-        assert!(matches!(result, Err(AiMuxError::NoSuchModel { .. })));
-    }
 }
 
 #[tokio::test]

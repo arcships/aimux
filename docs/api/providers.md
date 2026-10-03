@@ -24,7 +24,7 @@
 | Non-registry: Search-only providers (web search modality) | 11 |
 | **Total providers** | **327** |
 
-**283 registry-backed OpenAI-compatible providers** (construct via `provider(name, ...)` or `presets::create_<name>`) + **44 non-registry providers** (construct via the typed factories listed below).
+**283 registry-backed OpenAI-compatible providers** (create presets by name via `provider(name, ...)`) + **44 non-registry providers** (construct via the typed factories listed below).
 
 ## Registry-backed (OpenAI-compatible) — 283
 

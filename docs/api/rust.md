@@ -56,9 +56,9 @@ provider-level rewrite of the request body is `transform_request_body`.
 Retry is not a provider setting: `max_retries` on the call options (default
 2, 2000 ms initial delay, factor 2).
 
-The 283 OpenAI-compatible registry providers are generated presets
-(`presets::create_groq(PresetSettings)` / `presets::groq()`), and are also
-reachable by string name:
+The 283 OpenAI-compatible registry providers use a runtime table parsed once
+from the embedded JSON. There are no per-name Rust functions; create presets
+by string name:
 
 > **Scope:** `provider(name)` covers the registry OpenAI-compatible providers
 > (and runtime overlays); Anthropic/Google/Bedrock/multimodal/local use their

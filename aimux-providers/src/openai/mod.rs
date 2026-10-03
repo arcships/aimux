@@ -8,7 +8,7 @@
 //!
 //! This package is the native OpenAI API only. Servers that merely speak the
 //! same wire format are served by [`crate::openai_compatible`] (and the
-//! generated presets built on it).
+//! registry presets built on it).
 
 pub(crate) mod config;
 pub mod convert;

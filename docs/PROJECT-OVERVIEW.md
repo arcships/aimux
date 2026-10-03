@@ -209,7 +209,7 @@ let provider = create_openai_compatible(OpenAICompatibleProviderSettings {
 let model = provider.chat("acme-large");
 ```
 
-The 283 registry providers are rows of `provider_registry.json` (base URL, key variable, `auth: api_key | none`, template parameters, `max_tokens_key`, `family`); `scripts/gen_presets.py` turns each row into `presets::create_<name>(PresetSettings)` plus a default instance `presets::<name>()`, and `provider(name, ...)` looks the row up at runtime — this is why the 283 compatible providers need no shell types.
+The 283 registry providers are rows of `provider_registry.json` (base URL, key variable, `auth: api_key | none`, template parameters, `max_tokens_key`, `family`); the embedded JSON is parsed once into a runtime descriptor table, and `provider(name, ...)` creates presets by name — this is why the 283 compatible providers need no shell types.
 
 #### 3. JSON string FFI boundary
 
@@ -417,11 +417,11 @@ Not a single trick, but systematic design choices:
 Don't write an independent model for each provider — that would explode. One compatible chat model plus a per-vendor preset row (and, where a vendor needs more, a small package such as `groq/` or `deepseek/` built on the same internals) describes the differences:
 
 ```rust
-// a registry row becomes a factory; the default instance reads GROQ_API_KEY per request
-let model = aimux_providers::presets::groq().chat("llama-3.3-70b-versatile");
+// Create a model by registry name.
+let model = aimux_providers::provider("groq", None, "llama-3.3-70b-versatile", None)?;
 ```
 
-The native protocol providers have independent models + convert (handling differences such as Anthropic message format / Google generateContent / Bedrock SigV4), while the OpenAI-compatible providers are registry-backed (provider_registry.json + generated presets + unified provider(name, ...) entry, RFC-0017 phase 4, RFC-0036).
+The native protocol providers have independent models + convert (handling differences such as Anthropic message format / Google generateContent / Bedrock SigV4), while the OpenAI-compatible providers are registry-backed (provider_registry.json + runtime descriptor table + unified provider(name, ...) entry, RFC-0017 phase 4, RFC-0036).
 
 ### 4. Recorded testing with 2650 cassettes
 

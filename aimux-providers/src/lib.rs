@@ -143,12 +143,8 @@ macro_rules! __optional_model {
     };
 }
 
-// Registry-backed provider construction (RFC-0017 phase 4, RFC-0036): every
-// OpenAI-compatible vendor is a row of `provider_registry.json`, compiled by
-// `scripts/gen_presets.py` into the explicit factories of `presets`
-// (`presets::create_<name>(PresetSettings)`, `presets::<name>()`) and looked up
-// by name through [`provider`] / [`provider_from_env`]. The hand-written thin
-// wrapper types (`OllamaConfig`, `VllmProvider`, ...) are gone.
+// Registry-backed provider construction: the embedded `provider_registry.json`
+// is parsed once into `preset` descriptors and used by the by-name entry points.
 pub mod provider;
 pub mod replay;
 pub use preset::{AuthMode, PresetDescriptor, PresetEntry, PresetFamily, PresetSettings};
@@ -174,7 +170,6 @@ pub mod mistral;
 pub mod openai;
 pub mod openai_compatible;
 pub mod preset;
-pub mod presets;
 pub(crate) mod shared;
 pub mod vertex;
 pub mod voyage;

@@ -1,13 +1,10 @@
-//! Presets: the registry rows as explicit factories.
+//! Presets: a runtime table parsed once from the embedded registry.
 //!
 //! A preset is an OpenAI-compatible vendor described by data: a name, a
 //! default base URL, the environment variable of its key (or no key at all),
 //! an optional environment variable for the base URL and optional template
-//! parameters. `scripts/gen_presets.py` turns every row of
-//! `provider_registry.json` into a module under [`crate::presets`] with a
-//! [`PresetDescriptor`] constant, a `create_<name>(PresetSettings)` factory and
-//! a `<name>()` default instance. All of them end in
-//! [`PresetProvider::create`], which assembles an
+//! parameters. [`lookup`] finds a descriptor by name; [`PresetProvider::create`]
+//! assembles an
 //! [`OpenAICompatibleProvider`]; the vendor families that have their own
 //! package ([`crate::groq`], [`crate::deepseek`]) contribute their dialect.
 //!
@@ -17,9 +14,8 @@
 //! - **Creating** a preset validates the explicit settings only: a base URL
 //!   must be `http(s)` with a host, the `params` keys must be declared by the
 //!   descriptor and their values must be plain host or path segments. It reads
-//!   no environment variable, so `create_<name>(PresetSettings::default())`
-//!   and the `<name>()` default instance never fail and never read the
-//!   environment.
+//!   no environment variable; creating any valid row with default settings
+//!   cannot fail.
 //! - **Requests** evaluate the rest, on every request: the API key (the
 //!   explicit one, or the descriptor's environment variable; unset fails the
 //!   request with `LoadApiKey`) and the base URL (explicit, then the
@@ -30,8 +26,10 @@
 //!   no placeholder and sends no `Authorization` header, unless the caller
 //!   gives an explicit key.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, OnceLock};
+
+use serde::Deserialize;
 
 use futures::future::BoxFuture;
 
@@ -96,7 +94,7 @@ pub struct ParamSpec {
     pub derive: Option<DeriveSpec>,
 }
 
-/// One registry row, as generated into [`crate::presets`].
+/// One row of the embedded provider registry.
 #[derive(Debug, Clone, Copy)]
 pub struct PresetDescriptor {
     pub name: &'static str,
@@ -158,12 +156,193 @@ impl std::fmt::Debug for PresetSettings {
     }
 }
 
-/// A registry row and the function that creates its provider: what the
-/// generated [`crate::presets`] table holds and the by-name entry points look up.
+/// A registry descriptor found by the by-name entry points.
 #[derive(Clone, Copy)]
 pub struct PresetEntry {
     pub descriptor: &'static PresetDescriptor,
-    pub create: fn(PresetSettings) -> Result<PresetProvider, AiMuxError>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegistryRow {
+    name: &'static str,
+    display: &'static str,
+    base_url: &'static str,
+    #[serde(default, deserialize_with = "registry_optional")]
+    env_var: Option<&'static str>,
+    #[serde(default, deserialize_with = "registry_optional")]
+    auth: Option<&'static str>,
+    #[serde(default, deserialize_with = "registry_optional")]
+    family: Option<&'static str>,
+    #[serde(default, deserialize_with = "registry_optional")]
+    base_url_env: Option<&'static str>,
+    #[serde(default)]
+    params: Vec<RegistryParam>,
+    #[serde(default)]
+    profile: HashMap<&'static str, &'static str>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegistryParam {
+    name: &'static str,
+    #[serde(default, deserialize_with = "registry_optional")]
+    env: Option<Vec<&'static str>>,
+    #[serde(default, deserialize_with = "registry_optional")]
+    default: Option<&'static str>,
+    #[serde(default, deserialize_with = "registry_optional")]
+    derive: Option<RegistryDerive>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegistryDerive {
+    from: &'static str,
+    map: HashMap<&'static str, &'static str>,
+    otherwise: &'static str,
+}
+
+// Missing optional fields are allowed; explicit null is not a valid value.
+fn registry_optional<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    d: D,
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(d).map(Some)
+}
+
+fn load_registry() -> Vec<PresetEntry> {
+    // Leak the parsed JSON once so descriptors can borrow even escaped strings.
+    let json: Vec<serde_json::Value> = serde_json::from_str(include_str!("provider_registry.json"))
+        .expect("invalid provider_registry.json: expected an array of rows");
+    let json = json.leak();
+    let mut rows: Vec<RegistryRow> = json
+        .iter()
+        .map(|row| {
+            RegistryRow::deserialize(row)
+                .unwrap_or_else(|error| panic!("registry row {}: {error}", row["name"]))
+        })
+        .collect();
+    rows.sort_by_key(|row| row.name);
+    let identifier = regex::Regex::new(r"^[a-z][a-z0-9_]*$").unwrap();
+    let env_name = regex::Regex::new(r"^[A-Z][A-Z0-9_]*$").unwrap();
+    let placeholder = regex::Regex::new(r"\{([^{}]*)\}").unwrap();
+    let mut seen = HashSet::new();
+    let mut entries = Vec::with_capacity(rows.len());
+    for row in rows {
+        let check =
+            |valid: bool, message: &str| assert!(valid, "registry row '{}': {message}", row.name);
+        check(identifier.is_match(row.name), "invalid name");
+        check(seen.insert(row.name), "duplicate registry name");
+        check(!row.display.is_empty(), "missing display");
+        check(
+            row.base_url.starts_with("http://") || row.base_url.starts_with("https://"),
+            "base_url must start with http(s)://",
+        );
+        check(row.base_url.is_ascii(), "base_url must be ASCII");
+        check(
+            !row.base_url.contains(['<', '>', '$']),
+            "base_url contains <, > or $",
+        );
+        let auth = match row.auth.unwrap_or("api_key") {
+            "api_key" => AuthMode::ApiKey,
+            "none" => AuthMode::None,
+            value => panic!("registry row '{}': unknown auth {value:?}", row.name),
+        };
+        check(
+            match auth {
+                AuthMode::ApiKey => row.env_var.is_some_and(|var| !var.is_empty()),
+                AuthMode::None => row.env_var.is_none(),
+            },
+            "env_var must be nonempty for api_key and absent for none",
+        );
+        let family = match row.family.unwrap_or("openai-compatible") {
+            "openai-compatible" => PresetFamily::OpenAICompatible,
+            "groq" => PresetFamily::Groq,
+            "deepseek" => PresetFamily::DeepSeek,
+            value => panic!("registry row '{}': unknown family {value:?}", row.name),
+        };
+        check(
+            row.base_url_env.is_none_or(|var| env_name.is_match(var)),
+            "invalid base_url_env name",
+        );
+        check(
+            row.profile.keys().all(|key| *key == "max_tokens_key"),
+            "unknown profile key",
+        );
+        let max_tokens_key = row.profile.get("max_tokens_key").copied();
+        check(
+            max_tokens_key.is_none_or(|key| matches!(key, "max_tokens" | "max_completion_tokens")),
+            "invalid max_tokens_key",
+        );
+        let mut params = Vec::with_capacity(row.params.len());
+        for param in row.params {
+            check(identifier.is_match(param.name), "bad param name");
+            let derive = param.derive.map(|derive| {
+                check(
+                    param.env.is_none() && param.default.is_none(),
+                    "derived param has env/default",
+                );
+                DeriveSpec {
+                    from: derive.from,
+                    map: derive.map.into_iter().collect::<Vec<_>>().leak(),
+                    otherwise: derive.otherwise,
+                }
+            });
+            params.push(ParamSpec {
+                name: param.name,
+                env: param.env.unwrap_or_default().leak(),
+                default: param.default,
+                derive,
+            });
+        }
+        let names: HashSet<_> = params.iter().map(|param| param.name).collect();
+        check(names.len() == params.len(), "duplicate param names");
+        for param in &params {
+            if let Some(derive) = param.derive {
+                check(
+                    params
+                        .iter()
+                        .any(|source| source.name == derive.from && source.derive.is_none()),
+                    "derive.from must name a plain param",
+                );
+            }
+        }
+        let placeholders: HashSet<_> = placeholder
+            .captures_iter(row.base_url)
+            .map(|c| c.get(1).unwrap().as_str())
+            .collect();
+        check(placeholders == names, "URL placeholders differ from params");
+        entries.push(PresetEntry {
+            descriptor: Box::leak(Box::new(PresetDescriptor {
+                name: row.name,
+                display: row.display,
+                family,
+                base_url: row.base_url,
+                env_var: row.env_var.unwrap_or_default(),
+                auth,
+                base_url_env: row.base_url_env,
+                max_tokens_key,
+                params: params.leak(),
+            })),
+        });
+    }
+    entries
+}
+
+/// Every preset, in name order. Invalid registry data panics on first use.
+pub fn entries() -> impl Iterator<Item = &'static PresetEntry> {
+    static TABLE: OnceLock<Vec<PresetEntry>> = OnceLock::new();
+    TABLE.get_or_init(load_registry).iter()
+}
+
+/// The names of every preset, in order.
+pub fn names() -> impl Iterator<Item = &'static str> {
+    entries().map(|entry| entry.descriptor.name)
+}
+
+/// The preset called `name`, or `None`; unknown names never fall back.
+#[must_use]
+pub fn lookup(name: &str) -> Option<&'static PresetEntry> {
+    entries().find(|entry| entry.descriptor.name == name)
 }
 
 /// A preset provider: an [`OpenAICompatibleProvider`] configured from a

@@ -36,7 +36,7 @@ use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::preset::PresetProvider;
-use aimux_providers::{PresetSettings, presets, provider};
+use aimux_providers::{PresetSettings, preset, provider};
 
 // Shared cassette-replay infrastructure (same `mod common` used by
 // `conformance_test.rs`).
@@ -121,11 +121,14 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
 
 /// The OpenRouter preset at `base_url` with an explicit key.
 fn openrouter_at(base_url: String, key: &str) -> PresetProvider {
-    presets::create_openrouter(PresetSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(key.to_string())),
-        base_url: Some(base_url),
-        ..Default::default()
-    })
+    PresetProvider::create(
+        preset::lookup("openrouter").unwrap().descriptor,
+        PresetSettings {
+            api_key: Some(aimux_provider_utils::Resolvable::Value(key.to_string())),
+            base_url: Some(base_url),
+            ..Default::default()
+        },
+    )
     .unwrap()
 }
 
@@ -137,12 +140,18 @@ fn make_provider(server: &MockServer) -> PresetProvider {
 // Provider configuration
 // ════════════════════════════════════════════════════════════════════════════
 
-/// The preset's models report `openrouter.chat`; the default instance needs
+/// The preset's models report `openrouter.chat`; creation with default settings needs
 /// neither a key nor the environment.
 #[test]
 fn model_provider_is_openrouter() {
     assert_eq!(
-        presets::openrouter().chat("openai/gpt-4o-mini").provider(),
+        PresetProvider::create(
+            preset::lookup("openrouter").unwrap().descriptor,
+            PresetSettings::default()
+        )
+        .unwrap()
+        .chat("openai/gpt-4o-mini")
+        .provider(),
         "openrouter.chat"
     );
 }
