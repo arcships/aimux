@@ -212,7 +212,6 @@ fn anthropic_golden() {
             "model": "claude-sonnet-4-5",
             "messages": [ { "role": "user", "content": [ { "type": "text", "text": "Hello" } ] } ],
             "max_tokens": 1000 + 4096,
-            "stream": false,
             "thinking": { "type": "enabled", "budget_tokens": 4096 },
             "stop_sequences": ["END"]
         }),

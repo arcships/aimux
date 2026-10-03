@@ -323,8 +323,8 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 
 | module | typed entry points |
 |--------|--------------------|
-| `anthropic` | `AnthropicConfig` / `AnthropicProvider` |
-| `anthropic_aws` | `AnthropicAwsProvider` / `AnthropicAwsProviderConfig` |
+| `anthropic` | `AnthropicProvider` / `AnthropicProviderSettings` / `create_anthropic` |
+| `anthropic_aws` | `AnthropicAwsProvider` / `AnthropicAwsProviderSettings` / `create_anthropic_aws` |
 | `azure` | `AzureConfig` / `AzureProvider` / `TokenProvider` |
 | `bedrock` | `BedrockProvider` / `BedrockProviderConfig` |
 | `cohere` | `CohereConfig` / `CohereProvider` |

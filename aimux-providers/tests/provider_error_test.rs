@@ -31,7 +31,7 @@ use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::stream_part::StreamPart;
 use aimux_provider_utils::Resolvable;
-use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
+use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use futures::StreamExt;
 use wiremock::matchers::{method, path};
@@ -344,8 +344,13 @@ mod anthropic_generate_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = AnthropicConfig::new("test-api-key").with_base_url(server.uri());
-        AnthropicProvider::new(config).model("claude-3-haiku-20240307")
+        create_anthropic(AnthropicProviderSettings {
+            api_key: Some("test-api-key".to_string().into()),
+            base_url: Some(format!("{}/v1", server.uri())),
+            ..Default::default()
+        })
+        .unwrap()
+        .messages("claude-3-haiku-20240307")
     }
 
     /// Anthropic 401 → `ApiCall` (401). Anthropic body shape:
@@ -473,8 +478,13 @@ mod anthropic_stream_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = AnthropicConfig::new("test-api-key").with_base_url(server.uri());
-        AnthropicProvider::new(config).model("claude-3-haiku-20240307")
+        create_anthropic(AnthropicProviderSettings {
+            api_key: Some("test-api-key".to_string().into()),
+            base_url: Some(format!("{}/v1", server.uri())),
+            ..Default::default()
+        })
+        .unwrap()
+        .messages("claude-3-haiku-20240307")
     }
 
     /// TS: "should throw an api error when the server is returning a 529

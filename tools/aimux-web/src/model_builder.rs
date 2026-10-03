@@ -46,12 +46,17 @@ pub fn build_model(
             )?;
             Ok(Arc::new(provider.chat(model_id)))
         }
-        "anthropic" => native!(
-            anthropic,
-            AnthropicConfig,
-            AnthropicProvider,
-            "ANTHROPIC_API_KEY"
-        ),
+        "anthropic" => {
+            let key = native_key(provider, "ANTHROPIC_API_KEY", api_key.clone())?;
+            let provider = aimux_providers::anthropic::create_anthropic(
+                aimux_providers::anthropic::AnthropicProviderSettings {
+                    api_key: Some(key.into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Arc::new(provider.messages(model_id)))
+        }
         "google" => native!(
             google,
             GoogleConfig,

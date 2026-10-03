@@ -10,6 +10,8 @@
 use aimux_core::types::Warning;
 use serde_json::Value;
 
+use super::options::{CANONICAL, anthropic_options};
+
 /// Anthropic allows a maximum of 4 cache breakpoints per request.
 const MAX_CACHE_BREAKPOINTS: u32 = 4;
 
@@ -20,8 +22,18 @@ const MAX_CACHE_BREAKPOINTS: u32 = 4;
 /// The value is passed through unchanged (the Anthropic API validates it).
 #[must_use]
 pub fn extract_cache_control(provider_options: Option<&Value>) -> Option<Value> {
-    let opts = provider_options?;
-    let anthropic = opts.get("anthropic")?;
+    extract_cache_control_for(provider_options, CANONICAL)
+}
+
+/// [`extract_cache_control`] for a provider created with a custom `name`: the
+/// options are read from `providerOptions.anthropic` merged with
+/// `providerOptions[name]`, the custom key winning.
+#[must_use]
+pub(crate) fn extract_cache_control_for(
+    provider_options: Option<&Value>,
+    options_name: &str,
+) -> Option<Value> {
+    let anthropic = anthropic_options(provider_options, options_name)?;
     anthropic
         .get("cacheControl")
         .or_else(|| anthropic.get("cache_control"))
@@ -31,16 +43,35 @@ pub fn extract_cache_control(provider_options: Option<&Value>) -> Option<Value> 
 /// Tracks cache breakpoint usage across a single prompt conversion and emits
 /// warnings when cache_control is set in an unsupported context or when the
 /// breakpoint limit is exceeded.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CacheControlValidator {
     breakpoint_count: u32,
     warnings: Vec<Warning>,
+    options_name: String,
+}
+
+impl Default for CacheControlValidator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CacheControlValidator {
+    /// A validator reading `providerOptions.anthropic`.
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self::for_options_name(CANONICAL)
+    }
+
+    /// A validator for a provider whose providerOptions key is `options_name`
+    /// (read in addition to `anthropic`).
+    #[must_use]
+    pub(crate) fn for_options_name(options_name: &str) -> Self {
+        Self {
+            breakpoint_count: 0,
+            warnings: Vec::new(),
+            options_name: options_name.to_string(),
+        }
     }
 
     /// Resolve the `cache_control` value (if any) for a content block, applying
@@ -62,7 +93,7 @@ impl CacheControlValidator {
         context_type: &str,
         can_cache: bool,
     ) -> Option<Value> {
-        let cache_control_value = extract_cache_control(provider_options);
+        let cache_control_value = extract_cache_control_for(provider_options, &self.options_name);
 
         let cc = cache_control_value?;
 

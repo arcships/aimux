@@ -11,6 +11,9 @@
 #   4. The shared protocol packages never compare a provider name: vendor
 #      behavior is injected (flags, hooks, a dialect), not branched on.
 #   5. The builder-era compat types and the placeholder key stay removed.
+#   6. The Anthropic family (anthropic, anthropic_aws, anthropic on Vertex)
+#      keeps no builder-era `AnthropicConfig` state, and the canonical
+#      providerOptions key is spelled once, in `anthropic/options.rs`.
 #
 # Usage: bash scripts/check_provider_boundaries.sh   (exit 1 on any violation)
 
@@ -133,6 +136,27 @@ rule5_hits="$(
         aimux-providers/src aimux-providers/tests --include='*.rs' || true
 )"
 violation 'OpenAIConfig / OpenAIConfigProvider / OpenAICompatProfile / PLACEHOLDER_API_KEY / openai_legacy is back in aimux-providers' "$rule5_hits"
+
+# ── Rule 6: the Anthropic family reads its settings only through the model config ─
+#
+# No `AnthropicConfig` / `body_overrides` / `api_key_source` / `from_env`, and
+# the providerOptions namespace goes through `options::anthropic_options` /
+# `CANONICAL`: a `"anthropic"` literal anywhere else would read or write a key
+# that ignores the provider's custom name.
+anthropic_family='aimux-providers/src/anthropic aimux-providers/src/anthropic_aws aimux-providers/src/vertex/anthropic_model.rs'
+rule6_hits="$(
+    # shellcheck disable=SC2086
+    grep -rnE 'AnthropicConfig\b|body_overrides|api_key_source|from_env' \
+        $anthropic_family --include='*.rs' || true
+)"
+violation 'Anthropic family reads builder-era AnthropicConfig state' "$rule6_hits"
+rule6b_hits="$(
+    # shellcheck disable=SC2086
+    { grep -rnE '"anthropic"' $anthropic_family --include='*.rs' || true; } |
+        grep -v '^aimux-providers/src/anthropic/options\.rs:' ||
+        true
+)"
+violation '"anthropic" literal outside aimux-providers/src/anthropic/options.rs (use options::CANONICAL / anthropic_options)' "$rule6b_hits"
 
 if [[ "$status" -eq 0 ]]; then
     echo 'provider boundaries: ok'

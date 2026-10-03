@@ -216,8 +216,12 @@ pub mod open_responses;
 // Rust consumers and the FFI layer share one implementation.
 pub use aimux_provider_utils::logging::init_logging;
 
-pub use anthropic::{AnthropicConfig, AnthropicProvider};
-pub use anthropic_aws::{AnthropicAwsAuth, AnthropicAwsProvider, AnthropicAwsProviderConfig};
+pub use anthropic::{
+    AnthropicMessagesModel, AnthropicProvider, AnthropicProviderSettings, create_anthropic,
+};
+pub use anthropic_aws::{
+    AnthropicAwsAuth, AnthropicAwsProvider, AnthropicAwsProviderSettings, create_anthropic_aws,
+};
 pub use azure::{
     AzureAuth, AzureConfig, AzureModel, AzureProvider, AzureResponsesModel, TokenProvider,
 };

@@ -33,6 +33,7 @@ hex = "0.4"
 chrono = "0.4"
 url = { workspace = true }
 percent-encoding = "2"
+regex = "1"
 
 [features]
 default = ["realtime"]

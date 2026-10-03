@@ -25,11 +25,12 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 
 use aimux_provider_utils::Resolvable;
+use aimux_providers::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use aimux_providers::{
-    AnthropicConfig, AnthropicProvider, BedrockProvider, BedrockProviderConfig, CohereConfig,
-    CohereProvider, GoogleConfig, GoogleProvider, HuggingFaceConfig, HuggingFaceProvider,
-    MistralConfig, MistralProvider, ProviderOptions, XAIConfig, XAIProvider, provider,
+    BedrockProvider, BedrockProviderConfig, CohereConfig, CohereProvider, GoogleConfig,
+    GoogleProvider, HuggingFaceConfig, HuggingFaceProvider, MistralConfig, MistralProvider,
+    ProviderOptions, XAIConfig, XAIProvider, provider,
 };
 
 /// The native OpenAI package pointed at the mock server.
@@ -126,8 +127,12 @@ mod anthropic_conformance {
     use super::*;
 
     fn make_provider(server: &MockServer) -> AnthropicProvider {
-        let config = AnthropicConfig::new("test-key").with_base_url(server.uri());
-        AnthropicProvider::new(config)
+        create_anthropic(AnthropicProviderSettings {
+            api_key: Some("test-key".to_string().into()),
+            base_url: Some(format!("{}/v1", server.uri())),
+            ..Default::default()
+        })
+        .unwrap()
     }
 
     /// doGenerate with a non-streaming cassette should return text content.
@@ -137,7 +142,7 @@ mod anthropic_conformance {
         mount_cassettes(&server, "tests/cassettes/anthropic").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("claude-sonnet-4-6");
+        let model = provider.messages("claude-sonnet-4-6");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -171,7 +176,7 @@ mod anthropic_conformance {
         mount_cassettes(&server, "tests/cassettes/anthropic").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("claude-sonnet-4-6");
+        let model = provider.messages("claude-sonnet-4-6");
 
         let result = model.do_stream(&default_options(test_prompt())).await;
 

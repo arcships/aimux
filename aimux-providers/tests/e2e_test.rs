@@ -14,11 +14,21 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
 use aimux_core::types::FinishReasonUnified;
 use aimux_provider_utils::Resolvable;
+use aimux_providers::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use aimux_providers::{
-    AnthropicConfig, AnthropicProvider, CohereConfig, CohereProvider, GoogleConfig, GoogleProvider,
-    MistralConfig, MistralProvider,
+    CohereConfig, CohereProvider, GoogleConfig, GoogleProvider, MistralConfig, MistralProvider,
 };
+
+/// The native Anthropic package pointed at a mock server.
+fn anthropic_at(server_uri: String, key: &str) -> AnthropicProvider {
+    create_anthropic(AnthropicProviderSettings {
+        api_key: Some(key.to_string().into()),
+        base_url: Some(format!("{server_uri}/v1")),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 /// The native OpenAI package pointed at a mock server.
 fn openai_at(base_url: String, key: &str) -> OpenAIProvider {
@@ -232,9 +242,8 @@ async fn e2e_anthropic_generate_text() {
         .mount(&server)
         .await;
 
-    let provider =
-        AnthropicProvider::new(AnthropicConfig::new("test-key").with_base_url(server.uri()));
-    let model = provider.model("claude-3-5-sonnet-20241022");
+    let provider = anthropic_at(server.uri(), "test-key");
+    let model = provider.messages("claude-3-5-sonnet-20241022");
 
     let result = generate_text(
         &model,
@@ -281,9 +290,8 @@ async fn e2e_anthropic_stream_text() {
         .mount(&server)
         .await;
 
-    let provider =
-        AnthropicProvider::new(AnthropicConfig::new("test-key").with_base_url(server.uri()));
-    let model = provider.model("claude-3-5-sonnet-20241022");
+    let provider = anthropic_at(server.uri(), "test-key");
+    let model = provider.messages("claude-3-5-sonnet-20241022");
 
     let result = stream_text(
         &model,
@@ -309,9 +317,8 @@ async fn e2e_anthropic_error_429() {
         .mount(&server)
         .await;
 
-    let provider =
-        AnthropicProvider::new(AnthropicConfig::new("test-key").with_base_url(server.uri()));
-    let model = provider.model("claude-3-5-sonnet-20241022");
+    let provider = anthropic_at(server.uri(), "test-key");
+    let model = provider.messages("claude-3-5-sonnet-20241022");
 
     let result = generate_text(&model, "test", GenerateTextOptions::default()).await;
 
@@ -416,9 +423,8 @@ async fn e2e_anthropic_stream_part_sequence() {
         .mount(&server)
         .await;
 
-    let provider =
-        AnthropicProvider::new(AnthropicConfig::new("test-key").with_base_url(server.uri()));
-    let model = provider.model("claude-3-5-sonnet-20241022");
+    let provider = anthropic_at(server.uri(), "test-key");
+    let model = provider.messages("claude-3-5-sonnet-20241022");
 
     let result = stream_text(&model, "test", GenerateTextOptions::default())
         .await
@@ -485,9 +491,7 @@ async fn e2e_provider_interchangeability() {
         .mount(&anthropic_server)
         .await;
 
-    let anthropic =
-        AnthropicProvider::new(AnthropicConfig::new("key").with_base_url(anthropic_server.uri()))
-            .model("claude-3");
+    let anthropic = anthropic_at(anthropic_server.uri(), "key").messages("claude-3");
 
     let anthropic_result = generate_text(&anthropic, "test", GenerateTextOptions::default())
         .await

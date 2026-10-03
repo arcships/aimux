@@ -36,8 +36,8 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, ProviderTool};
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::anthropic::AnthropicConfig;
-use aimux_providers::anthropic::model::AnthropicModel;
+use aimux_providers::anthropic::AnthropicMessagesModel;
+use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -57,12 +57,15 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
     CallOptions::new(prompt)
 }
 
-/// Build an `AnthropicModel` whose base URL points at the wiremock server.
-fn make_model(server: &MockServer) -> AnthropicModel {
-    AnthropicModel::new(
-        "claude-3-haiku-20240307".to_string(),
-        AnthropicConfig::new("test-api-key").with_base_url(server.uri()),
-    )
+/// Build an `AnthropicMessagesModel` whose base URL points at the wiremock server.
+fn make_model(server: &MockServer) -> AnthropicMessagesModel {
+    create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap()
+    .messages("claude-3-haiku-20240307")
 }
 
 /// Mount a JSON response on `/v1/messages`.
@@ -554,8 +557,8 @@ mod do_generate {
         assert_eq!(body["model"], "claude-3-haiku-20240307");
         assert_eq!(body["messages"][0]["role"], "user");
         assert_eq!(body["messages"][0]["content"][0]["text"], "Hello");
-        // Non-streaming request sets stream: false.
-        assert_eq!(body["stream"], false);
+        // A non-streaming request carries no `stream` key (the AI SDK's body).
+        assert!(body.get("stream").is_none());
     }
 
     /// Anthropic system message is a top-level `system` field, not in messages.

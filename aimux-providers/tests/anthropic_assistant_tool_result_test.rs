@@ -26,9 +26,8 @@ use aimux_core::message::{MessageContent, ModelMessage, Role};
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::tool::{ProviderTool, Tool};
-use aimux_providers::anthropic::AnthropicConfig;
 use aimux_providers::anthropic::convert::build_request_body_with_warnings;
-use aimux_providers::anthropic::model::AnthropicModel;
+use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -609,10 +608,13 @@ async fn web_search_result_round_trips_through_a_generate_call() {
         "anthropic.web_search_20250305",
         "mySearch",
     )]);
-    let model = AnthropicModel::new(
-        "claude-sonnet-4-5".to_string(),
-        AnthropicConfig::new("test-api-key").with_base_url(server.uri()),
-    );
+    let model = create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap()
+    .messages("claude-sonnet-4-5");
     let result = model.do_generate(&options).await.unwrap();
 
     // Replay the parsed tool result on an assistant message.
@@ -677,10 +679,13 @@ async fn public_response_messages_replay_server_call_and_result_next_turn() {
         .await;
 
     let tool = provider_tool("anthropic.web_search_20250305", "mySearch");
-    let model = AnthropicModel::new(
-        "claude-sonnet-4-5".to_string(),
-        AnthropicConfig::new("test-api-key").with_base_url(server.uri()),
-    );
+    let model = create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap()
+    .messages("claude-sonnet-4-5");
     let generated = generate_text(
         &model,
         "Search for Rust",
@@ -758,10 +763,13 @@ async fn public_response_messages_replay_renamed_client_executed_provider_tool_n
         .await;
 
     let tool = provider_tool("anthropic.bash_20250124", "terminal");
-    let model = AnthropicModel::new(
-        "claude-sonnet-4-5".to_string(),
-        AnthropicConfig::new("test-api-key").with_base_url(server.uri()),
-    );
+    let model = create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap()
+    .messages("claude-sonnet-4-5");
     let generated = generate_text(
         &model,
         "Show the current directory",

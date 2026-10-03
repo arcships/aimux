@@ -118,9 +118,13 @@ async fn anthropic_list_models() {
     let cassette = Path::new("tests/cassettes/anthropic/list_models_smoke.json");
     let _ = mount_cassette_file(&server, cassette).await;
     let base_url = server.uri().trim_end_matches('/').to_string();
-    use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
-    let config = AnthropicConfig::new("test-key").with_base_url(&base_url);
-    let provider = AnthropicProvider::new(config);
+    use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
+    let provider = create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(format!("{base_url}/v1")),
+        ..Default::default()
+    })
+    .unwrap();
     let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
     assert!(!models.is_empty());
     assert!(models.iter().all(|m| !m.id.is_empty()));

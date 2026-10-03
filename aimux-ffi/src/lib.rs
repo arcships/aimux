@@ -71,8 +71,10 @@ use aimux_core::provider::Provider;
 use aimux_core::recording::RecordingError;
 use aimux_core::tool::ToolCall;
 use aimux_core::trace::{RingTraceStore, TraceFilter, TraceLayer};
-use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
-use aimux_providers::anthropic_aws::{AnthropicAwsProvider, AnthropicAwsProviderConfig};
+use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
+use aimux_providers::anthropic_aws::{
+    AnthropicAwsAuth, AnthropicAwsProviderSettings, create_anthropic_aws,
+};
 use aimux_providers::azure::{AzureConfig, AzureProvider};
 use aimux_providers::bedrock::{BedrockProvider, BedrockProviderConfig};
 use aimux_providers::cohere::{CohereConfig, CohereProvider};
@@ -1099,6 +1101,36 @@ pub extern "C" fn aimux_openai_new_with_base(
     })
 }
 
+/// An Anthropic provider for an explicit key handed over by the host, with an
+/// optional base URL. The key is an explicit value (`""` included), so it
+/// never falls back to `ANTHROPIC_API_KEY`.
+fn anthropic_provider(
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<aimux_providers::anthropic::AnthropicProvider, AiMuxError> {
+    create_anthropic(AnthropicProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        base_url,
+        ..Default::default()
+    })
+}
+
+/// An Anthropic-on-AWS provider for an explicit API key and region.
+fn anthropic_aws_provider(
+    api_key: String,
+    region: String,
+    base_url: Option<String>,
+) -> Result<aimux_providers::anthropic_aws::AnthropicAwsProvider, AiMuxError> {
+    create_anthropic_aws(AnthropicAwsProviderSettings {
+        region: Some(region),
+        auth: Some(AnthropicAwsAuth::ApiKey(
+            aimux_provider_utils::Resolvable::Value(api_key),
+        )),
+        base_url,
+        ..Default::default()
+    })
+}
+
 /// Create an Anthropic model instance. AiMuxError: invalid model id.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_anthropic_new(
@@ -1108,7 +1140,7 @@ pub extern "C" fn aimux_anthropic_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let m = AnthropicProvider::new(AnthropicConfig::new(api_key)).language_model(&model_id)?;
+        let m = anthropic_provider(api_key, None)?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1125,11 +1157,8 @@ pub extern "C" fn aimux_anthropic_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = AnthropicConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let m = AnthropicProvider::new(config).language_model(&model_id)?;
+        let m =
+            anthropic_provider(api_key, parse_base_url(base_url)?)?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1146,9 +1175,7 @@ pub extern "C" fn aimux_anthropic_aws_new(
         let api_key = str_arg(api_key, "api_key")?;
         let region = str_arg(region, "region")?;
         let model_id = str_arg(model_id, "model_id")?;
-        let m =
-            AnthropicAwsProvider::new(AnthropicAwsProviderConfig::with_api_key(api_key, region))
-                .language_model(&model_id)?;
+        let m = anthropic_aws_provider(api_key, region, None)?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1166,11 +1193,8 @@ pub extern "C" fn aimux_anthropic_aws_new_with_base(
         let api_key = str_arg(api_key, "api_key")?;
         let region = str_arg(region, "region")?;
         let model_id = str_arg(model_id, "model_id")?;
-        let mut config = AnthropicAwsProviderConfig::with_api_key(api_key, region);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let m = AnthropicAwsProvider::new(config).language_model(&model_id)?;
+        let m = anthropic_aws_provider(api_key, region, parse_base_url(base_url)?)?
+            .language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }

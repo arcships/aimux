@@ -370,16 +370,19 @@ async fn replay_chatgpt() {}
 
 #[tokio::test]
 async fn replay_anthropic() {
-    use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
+    use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
     let server = MockServer::start().await;
     let n = replay::mount_cassettes(&server, "tests/cassettes/anthropic").await;
     assert!(n > 0);
 
-    let provider = AnthropicProvider::new(
-        AnthropicConfig::new("test-key").with_base_url(format!("{}/v1", server.uri())),
-    );
-    let model = provider.model("claude-sonnet-4-6");
+    let provider = create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.messages("claude-sonnet-4-6");
 
     let result = generate_text(&model, "Hello", GenerateTextOptions::default())
         .await

@@ -113,7 +113,16 @@ fn build_model(
             )?;
             Ok(Arc::new(provider.chat(model_id)))
         }
-        "anthropic" => Ok(native!(anthropic, AnthropicConfig, AnthropicProvider)),
+        "anthropic" => {
+            let provider = aimux_providers::anthropic::create_anthropic(
+                aimux_providers::anthropic::AnthropicProviderSettings {
+                    api_key: Some(api_key.clone().into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Arc::new(provider.messages(model_id)))
+        }
         "mistral" => Ok(native!(mistral, MistralConfig, MistralProvider)),
         "xai" => Ok(native!(xai, XAIConfig, XAIProvider)),
         "cohere" => Ok(native!(cohere, CohereConfig, CohereProvider)),

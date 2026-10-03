@@ -42,8 +42,8 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{ProviderTool, Tool};
 
 use aimux_provider_utils::Resolvable;
-use aimux_providers::anthropic::AnthropicConfig;
-use aimux_providers::anthropic::model::AnthropicModel;
+use aimux_providers::anthropic::AnthropicMessagesModel;
+use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 use aimux_providers::bedrock::{BedrockAuth, BedrockConfig, BedrockModel, event_stream};
 use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
 use aimux_providers::{
@@ -705,11 +705,14 @@ async fn finding_14_gemini_grounding_chunks_become_sources() {
 // camel-cased to match the upstream contract.
 // ═══════════════════════════════════════════════════════════════════════════
 
-fn anthropic_at(uri: &str) -> AnthropicModel {
-    AnthropicModel::new(
-        "claude-sonnet-4-0".to_string(),
-        AnthropicConfig::new("test-api-key").with_base_url(uri.to_string()),
-    )
+fn anthropic_at(uri: &str) -> AnthropicMessagesModel {
+    create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(format!("{uri}/v1")),
+        ..Default::default()
+    })
+    .unwrap()
+    .messages("claude-sonnet-4-0")
 }
 
 #[tokio::test]

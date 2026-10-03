@@ -1,5 +1,4 @@
-//! Helpers the OpenAI-shaped packages (`openai`, `openai_compatible`, the
-//! presets) share.
+//! Helpers the native packages and the presets share.
 //!
 //! Only transport plumbing lives here: how the provider-level request headers
 //! are produced. Nothing in this module knows a vendor.
@@ -15,7 +14,7 @@ use aimux_provider_utils::{HeaderMapOpt, HeadersFn, Resolvable, combine_headers,
 /// body is serialized and before it is sent.
 pub type TransformRequestBody = Arc<dyn Fn(Value) -> Value + Send + Sync>;
 
-/// Where the `Authorization: Bearer` credential of a provider comes from.
+/// Where the credential of a provider comes from.
 #[derive(Clone, Debug)]
 pub(crate) enum Credential {
     /// No credential: no `Authorization` header is produced and no key is
@@ -46,24 +45,41 @@ impl Credential {
         }
     }
 
-    async fn bearer(&self) -> Result<Option<String>, AiMuxError> {
+    async fn secret(&self) -> Result<Option<String>, AiMuxError> {
         match self {
             Self::None => Ok(None),
-            Self::Explicit(key) => Ok(Some(format!("Bearer {}", key.resolve().await?))),
-            Self::Env { var, description } => Ok(Some(format!(
-                "Bearer {}",
-                load_api_key(None, var, description)?
-            ))),
+            Self::Explicit(key) => Ok(Some(key.resolve().await?)),
+            Self::Env { var, description } => Ok(Some(load_api_key(None, var, description)?)),
         }
     }
 }
 
-/// Provider headers, evaluated on every request: the credential first, then
-/// the fixed headers (organization, project, ...), then the user's headers,
-/// which may override or remove any of them (case-insensitively, `None`
-/// removes).
+/// How the credential is put on the wire.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum AuthScheme {
+    /// `Authorization: Bearer <secret>`.
+    Bearer,
+    /// `<name>: <secret>` (`x-api-key`).
+    Header(&'static str),
+}
+
+/// Provider headers with a bearer credential: [`credential_headers`] with
+/// [`AuthScheme::Bearer`].
 pub(crate) fn provider_headers(
     credential: Credential,
+    fixed: Vec<(String, String)>,
+    user: Option<HeaderMapOpt>,
+) -> HeadersFn {
+    credential_headers(credential, AuthScheme::Bearer, fixed, user)
+}
+
+/// Provider headers, evaluated on every request: the credential first, then
+/// the fixed headers (organization, project, version, ...), then the user's
+/// headers, which may override or remove any of them (case-insensitively,
+/// `None` removes).
+pub(crate) fn credential_headers(
+    credential: Credential,
+    scheme: AuthScheme,
     fixed: Vec<(String, String)>,
     user: Option<HeaderMapOpt>,
 ) -> HeadersFn {
@@ -73,8 +89,18 @@ pub(crate) fn provider_headers(
         let user = user.clone();
         async move {
             let mut layer = HeaderMapOpt::new();
-            if let Some(bearer) = credential.bearer().await? {
-                layer.insert("Authorization".to_string(), Some(bearer));
+            if let Some(secret) = credential.secret().await? {
+                match scheme {
+                    AuthScheme::Bearer => {
+                        layer.insert(
+                            "Authorization".to_string(),
+                            Some(format!("Bearer {secret}")),
+                        );
+                    }
+                    AuthScheme::Header(name) => {
+                        layer.insert(name.to_string(), Some(secret));
+                    }
+                }
             }
             for (name, value) in fixed {
                 layer.insert(name, Some(value));

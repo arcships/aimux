@@ -455,13 +455,14 @@ fn openai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn anthropic(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
+    use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
-    let mut config = AnthropicConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = AnthropicProvider::new(config);
+    let provider = create_anthropic(AnthropicProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -636,13 +637,19 @@ fn anthropic_aws(
     base_url: Option<&str>,
 ) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::anthropic_aws::{AnthropicAwsProvider, AnthropicAwsProviderConfig};
+    use aimux_providers::anthropic_aws::{
+        AnthropicAwsAuth, AnthropicAwsProviderSettings, create_anthropic_aws,
+    };
 
-    let mut config = AnthropicAwsProviderConfig::with_api_key(api_key, region);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = AnthropicAwsProvider::new(config);
+    let provider = create_anthropic_aws(AnthropicAwsProviderSettings {
+        region: Some(region.to_string()),
+        auth: Some(AnthropicAwsAuth::ApiKey(
+            aimux_provider_utils::Resolvable::Value(api_key.to_string()),
+        )),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;

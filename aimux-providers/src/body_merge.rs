@@ -1,9 +1,9 @@
-//! JSON patch merging for provider-level request-body overrides.
+//! JSON patch merging for request-body overrides.
 //!
-//! Anthropic still reads `body_overrides` from its config; the OpenAI package
-//! expresses the same need as a `transform_request_body` closure. The merge
-//! lives here, outside any one provider package, until the Anthropic package
-//! moves to the same closure and this module goes away with it.
+//! No provider package reads `body_overrides` any more: provider-level body
+//! rewrites are a `transform_request_body` closure on the provider settings.
+//! The merge helper stays for the tests that exercise deep-merge semantics on
+//! built request bodies, and goes with them when those are rewritten.
 
 use serde_json::Value;
 

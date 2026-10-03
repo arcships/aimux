@@ -1,127 +1,112 @@
-//! Anthropic language model — implements `LanguageModel` trait.
+//! The Anthropic Messages language model — implements `LanguageModel`.
 //!
-//! The request body building, HTTP send and response/SSE parsing live in the
-//! shared [`super::stream`] core; this module only wires the standard Anthropic
-//! endpoint, Bearer/x-api-key auth and `Json` body encoding.
-
-use std::collections::{BTreeSet, HashMap};
+//! One model serves every host of the Messages API (`api.anthropic.com`,
+//! Claude Platform on AWS, Anthropic on Vertex): it builds the request body,
+//! asks its model configuration for the URL, the headers and the transport
+//! and hands the result to the shared [`super::stream`] core, which sends it
+//! and parses the response or the SSE stream.
 
 use async_trait::async_trait;
+use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
+use aimux_core::types::Warning;
+use aimux_provider_utils::HttpRequest;
 
-use super::AnthropicConfig;
-use super::convert::build_request_body_with_warnings;
-use super::stream::{BodyEncoding, anthropic_generate_core, anthropic_stream_core};
+use super::config::AnthropicModelConfig;
+use super::convert::build_request_body_for;
+use super::stream::{anthropic_generate_core, anthropic_stream_core};
 use super::tool_name_mapping::ToolNameMapping;
-use crate::body_merge::apply_body_overrides;
 
-/// An Anthropic language model (e.g. `claude-sonnet-4-20250514`).
-pub struct AnthropicModel {
-    model_id: String,
-    config: AnthropicConfig,
+/// One call, ready to send.
+struct PreparedCall {
+    http: HttpRequest,
+    body: Value,
+    warnings: Vec<Warning>,
 }
 
-impl AnthropicModel {
-    #[must_use]
-    pub fn new(model_id: String, config: AnthropicConfig) -> Self {
+/// An Anthropic Messages model (e.g. `claude-sonnet-4-20250514`), created by
+/// `provider.messages(id)`.
+pub struct AnthropicMessagesModel {
+    model_id: String,
+    config: AnthropicModelConfig,
+}
+
+impl AnthropicMessagesModel {
+    /// A model of the host the config describes.
+    pub(crate) fn with_config(model_id: String, config: AnthropicModelConfig) -> Self {
         Self { model_id, config }
     }
 
-    fn endpoint(&self) -> String {
-        format!("{}/v1/messages", self.config.base_url)
-    }
-
-    /// Build the auth-header closure for the standard (Bearer/x-api-key) path.
-    ///
-    /// The body bytes are ignored (no request signing). Config-level and
-    /// per-call headers and the `anthropic-beta` header are merged last-wins,
-    /// matching the original `HashMap` semantics.
-    fn make_header_builder(
+    /// Build the request for one call: the body (host preparation and the
+    /// provider's `transform_request_body` applied), its warnings, and the
+    /// URL/headers/transport the exchange goes through.
+    async fn prepare(
         &self,
-        extra: Option<&HashMap<String, String>>,
-        betas: BTreeSet<String>,
-    ) -> impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError> {
-        let api_version = self.config.api_version.clone();
-        let auth_token = self.config.auth_token.clone();
-        let api_key = self.config.api_key.clone();
-        let cfg_headers = self.config.headers.clone();
-        let extra = extra.cloned();
-        move |_body: &[u8], _url: &str| -> Result<Vec<(String, String)>, AiMuxError> {
-            let mut headers: HashMap<String, String> = HashMap::new();
-            headers.insert("anthropic-version".to_string(), api_version.clone());
-            // Auth: prefer bearer token, fall back to x-api-key.
-            if let Some(token) = &auth_token {
-                headers.insert("authorization".to_string(), format!("Bearer {token}"));
-            } else {
-                headers.insert("x-api-key".to_string(), api_key.clone());
-            }
-            // Extra config-level headers (lower precedence than per-call headers).
-            if let Some(cfg_headers) = &cfg_headers {
-                for (k, v) in cfg_headers {
-                    headers.insert(k.clone(), v.clone());
-                }
-            }
-            if let Some(extra) = &extra {
-                for (k, v) in extra {
-                    headers.insert(k.clone(), v.clone());
-                }
-            }
-            if !betas.is_empty() {
-                headers.insert(
-                    "anthropic-beta".to_string(),
-                    betas.iter().cloned().collect::<Vec<_>>().join(","),
-                );
-            }
-            Ok(headers.into_iter().collect())
-        }
+        options: &CallOptions,
+        stream: bool,
+    ) -> Result<PreparedCall, AiMuxError> {
+        let built = build_request_body_for(
+            &self.model_id,
+            options,
+            stream,
+            &self.config.request_profile(),
+        )?;
+        let body = self.config.transform_body(built.body);
+        let headers = self
+            .config
+            .request_headers(options.headers.as_ref(), &built.betas)
+            .await?;
+        let http = self.config.http_request(
+            self.config.messages_url(&self.model_id, stream),
+            headers,
+            options,
+        );
+        Ok(PreparedCall {
+            http,
+            body,
+            warnings: built.warnings,
+        })
     }
 }
 
 #[async_trait]
-impl LanguageModel for AnthropicModel {
+impl LanguageModel for AnthropicMessagesModel {
+    /// `"{name}"`: `"anthropic.messages"` unless the provider was named.
     fn provider(&self) -> &str {
-        &self.config.name
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
         &self.model_id
     }
 
+    fn supported_urls(&self) -> SupportedUrls {
+        self.config.supported_urls.clone()
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let mut req = build_request_body_with_warnings(&self.model_id, options, false)?;
-        apply_body_overrides(&mut req.body, self.config.body_overrides.as_ref());
-        let endpoint = self.endpoint();
-        let build_headers = self.make_header_builder(options.headers.as_ref(), req.betas);
+        let call = self.prepare(options, false).await?;
         anthropic_generate_core(
-            &endpoint,
-            req.body,
-            req.warnings,
-            build_headers,
-            BodyEncoding::Json,
-            options.abort_signal.clone(),
-            options.recording_context.clone(),
+            call.http,
+            call.body,
+            call.warnings,
+            &self.config,
             &ToolNameMapping::new(options.tools.as_deref()),
         )
         .await
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let mut req = build_request_body_with_warnings(&self.model_id, options, true)?;
-        apply_body_overrides(&mut req.body, self.config.body_overrides.as_ref());
-        let endpoint = self.endpoint();
-        let build_headers = self.make_header_builder(options.headers.as_ref(), req.betas);
+        let call = self.prepare(options, true).await?;
         anthropic_stream_core(
-            &endpoint,
-            req.body,
-            req.warnings,
-            build_headers,
-            BodyEncoding::Json,
-            options.abort_signal.clone(),
-            options.recording_context.clone(),
+            call.http,
+            call.body,
+            call.warnings,
+            &self.config,
             ToolNameMapping::new(options.tools.as_deref()),
         )
         .await

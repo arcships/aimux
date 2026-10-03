@@ -1011,27 +1011,30 @@ pub async fn anthropic(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
+            use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
-            let mut cfg = AnthropicConfig::new(api_key);
+            let mut settings = AnthropicProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                ..Default::default()
+            };
             match config {
                 Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
+                    settings.base_url = Some(url);
                 }
                 Some(Either::B(opts)) => {
                     opts.reject_removed_keys()?;
                     if let Some(url) = &opts.base_url {
-                        cfg = cfg.with_base_url(url);
+                        settings.base_url = Some(url.clone());
                     }
                     if let Some(ref json_str) = opts.headers {
                         let h: std::collections::HashMap<String, String> =
                             parse_wire_json("config.headers", json_str)?;
-                        cfg = cfg.with_headers(h);
+                        settings.headers = Some(h.into_iter().map(|(k, v)| (k, Some(v))).collect());
                     }
                 }
                 None => {}
             }
-            let provider = AnthropicProvider::new(cfg);
+            let provider = create_anthropic(settings).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
@@ -1317,23 +1320,30 @@ pub async fn anthropic_aws(
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
             use aimux_providers::anthropic_aws::{
-                AnthropicAwsProvider, AnthropicAwsProviderConfig,
+                AnthropicAwsAuth, AnthropicAwsProviderSettings, create_anthropic_aws,
             };
 
-            let mut cfg = AnthropicAwsProviderConfig::with_api_key(api_key, region);
+            let mut settings = AnthropicAwsProviderSettings {
+                region: Some(region),
+                auth: Some(AnthropicAwsAuth::ApiKey(
+                    aimux_provider_utils::Resolvable::Value(api_key),
+                )),
+                ..Default::default()
+            };
             if let Some(cfg_config) = config {
                 match cfg_config {
                     Either::A(url) => {
-                        cfg = cfg.with_base_url(url);
+                        settings.base_url = Some(url);
                     }
                     Either::B(opts) => {
                         if let Some(url) = &opts.base_url {
-                            cfg = cfg.with_base_url(url);
+                            settings.base_url = Some(url.clone());
                         }
                     }
                 }
             }
-            let provider = AnthropicAwsProvider::new(cfg);
+            let provider =
+                create_anthropic_aws(settings).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;

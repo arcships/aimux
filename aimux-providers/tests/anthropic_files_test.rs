@@ -9,7 +9,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
 use aimux_core::shared::FileBytes;
-use aimux_providers::{AnthropicConfig, AnthropicProvider};
+use aimux_providers::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -28,8 +28,12 @@ fn file_response_body() -> Value {
 
 /// Build an `AnthropicProvider` pointing at the mock server.
 fn provider(server: &MockServer) -> AnthropicProvider {
-    let config = AnthropicConfig::new("test-api-key").with_base_url(server.uri());
-    AnthropicProvider::new(config)
+    create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap()
 }
 
 /// Build `UploadFileCallOptions` with binary data.
@@ -295,7 +299,7 @@ async fn handles_base64_string_data() {
 
 #[tokio::test]
 async fn has_correct_provider_name() {
-    let provider = AnthropicProvider::new(AnthropicConfig::new("test-api-key"));
+    let provider = create_anthropic(AnthropicProviderSettings::default()).unwrap();
     let files = provider.files();
 
     assert_eq!(files.provider(), "anthropic.files");

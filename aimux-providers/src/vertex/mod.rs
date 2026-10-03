@@ -31,7 +31,7 @@ mod model;
 mod transcription;
 mod video;
 
-pub use anthropic_model::{VertexAnthropicConfig, VertexAnthropicModel};
+pub use anthropic_model::{VertexAnthropicModel, VertexAnthropicSettings};
 pub use embedding::VertexEmbeddingModel;
 pub use image::VertexImageModel;
 pub use model::{VertexConfig, VertexModel};
@@ -228,12 +228,11 @@ impl VertexProvider {
             .strip_suffix("/publishers/google")
             .map(std::string::ToString::to_string)
             .unwrap_or_else(|| self.config.base_url.clone());
-        Ok(VertexAnthropicModel::new(
-            model_id.to_string(),
-            VertexAnthropicConfig {
+        Ok(anthropic_model::model(
+            model_id,
+            &VertexAnthropicSettings {
                 base_url,
                 auth: self.config.auth.clone(),
-                api_key_source: self.config.api_key_source.clone(),
             },
         ))
     }
