@@ -46,7 +46,7 @@
 规则:
 
 - **L0 passthrough 是私有 API 的兜底**(原则 4):新端点、新参数不必等 L1/L2 跟进即可调用,且被录制、被治理。
-- **L2 独立版本化**(`data_format_version`),不随 1.0 冻结。L2 的选型(继续 AI SDK 形态 / 转向 Open Responses items / 自有模型)另立调研 RFC,评估指标:
+- **L2 独立版本化**(`data_format_version`),不随 1.0 冻结。L2 的选型已定为 AI SDK V4 形态,实施设计见 docs/aisdk-architecture-alignment.md,调研 RFC 撤销（见 [docs/aisdk-architecture-alignment.md §0.7](../docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）;原定评估指标保留作为基线升级时的核对项:
   1. 各协议 L1 → L2 往返保真率(原生字段落入 `provider_metadata` / 丢失的比例);
   2. 过去 12 个月跟随 AI SDK spec 的变更次数与改动面;
   3. Open Responses items 对 aimux 现有 8 个模态与 reasoning / 缓存 / 引用语义的覆盖度。
