@@ -58,10 +58,10 @@ mod provider_config {
 
     /// TS: `createOpenAI()` provider name is "openai".
     #[test]
-    fn provider_name_is_openai() {
+    fn model_provider_is_openai() {
         let config = OpenAIConfig::new("test-key");
         let provider = OpenAIProvider::new(config);
-        assert_eq!(provider.name(), "openai");
+        assert_eq!(provider.model("gpt-4o").provider(), "openai");
     }
 
     /// TS: default base URL is `https://api.openai.com/v1`.

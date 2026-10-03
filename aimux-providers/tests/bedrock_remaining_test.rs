@@ -32,7 +32,6 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, Tool, ToolChoice};
-use aimux_core::provider::Provider;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
@@ -446,13 +445,11 @@ fn provider_from_env_missing_credentials_errors() {
     clear_bedrock_env();
 }
 
-/// The `BedrockProvider` exposes its name and can vend language models.
+/// The `BedrockProvider` can vend language models.
 #[test]
-fn provider_name_and_language_model() {
+fn provider_vends_language_model() {
     let provider =
         BedrockProvider::new(BedrockProviderConfig::with_bearer_token("tok", "us-east-1"));
-    assert_eq!(provider.name(), "amazon-bedrock");
-
     let model = provider.model("anthropic.claude-3-5-sonnet-20240620-v1:0");
     assert_eq!(
         model.model_id(),

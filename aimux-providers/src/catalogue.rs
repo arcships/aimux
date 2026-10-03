@@ -3,7 +3,7 @@
 //! Provides [`get_model_specs`] — a thin function that fetches the community
 //! model catalogue (anya2a `dist/all.json`) and returns a [`Catalogue`] of
 //! [`ModelSpec`] entries. This is **deliberately decoupled** from
-//! `Provider::list_models`: the host calls both independently and merges them
+//! `ProviderDiscovery::list_models`: the host calls both independently and merges them
 //! as needed.
 //!
 //! `get_model_specs` does **no caching, no FS writes, no TTL** — it is a pure

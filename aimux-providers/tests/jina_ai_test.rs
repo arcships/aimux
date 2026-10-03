@@ -306,23 +306,24 @@ async fn status_401_maps_to_auth_error() {
 // -- Provider trait ----------------------------------------------------------
 
 #[tokio::test]
-async fn provider_name_is_jina_ai() {
+async fn reranking_model_provider_is_jina_ai() {
     let config = JinaAiConfig::new(API_KEY);
     let provider = JinaAiProvider::new(config);
-    assert_eq!(provider.name(), "jina_ai");
+    assert_eq!(provider.reranking_model(MODEL).provider(), "jina_ai");
 }
 
 #[test]
-fn language_model_returns_unsupported_error() {
+fn language_model_returns_no_such_model() {
     let config = JinaAiConfig::new(API_KEY);
     let provider = JinaAiProvider::new(config);
     match provider.language_model(MODEL) {
-        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
-            assert!(
-                msg.contains("provider 'jina_ai' does not provide language models"),
-                "unexpected message: {msg}"
-            );
+        Err(AiMuxError::NoSuchModel {
+            model_id,
+            model_type,
+        }) => {
+            assert_eq!(model_id, MODEL);
+            assert_eq!(model_type, "languageModel");
         }
-        _ => panic!("expected Unsupported error, got success or another error variant"),
+        _ => panic!("expected NoSuchModel error, got success or another error variant"),
     }
 }

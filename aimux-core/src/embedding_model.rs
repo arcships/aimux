@@ -117,11 +117,6 @@ pub struct EmbeddingResponse {
 ///   `true`; otherwise they should return an error.
 #[async_trait]
 pub trait EmbeddingModel: Send + Sync {
-    /// Specification version (always `"v4"`).
-    fn specification_version(&self) -> &'static str {
-        "v4"
-    }
-
     /// Provider name, e.g. `"openai"`.
     fn provider(&self) -> &str;
 

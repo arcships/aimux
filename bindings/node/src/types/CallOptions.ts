@@ -77,12 +77,6 @@ provider_options: { [key in string]: JsonValue } | null,
  */
 reasoning: ReasoningEffort | null, 
 /**
- * Per-call request body overrides. Deep-merged into the provider-built
- * request body (after any built-in vendor override) before sending.
- * `null` values delete the corresponding key. See RFC-0017.
- */
-body_overrides: JsonValue | null, 
-/**
  * Per-call retry count override. `None` uses the provider's configured
  * Core operation retry. `Some(0)` disables retries.
  */

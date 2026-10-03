@@ -17,6 +17,7 @@
 
 use futures::StreamExt;
 use serde_json::{Value, json};
+use std::sync::Arc;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -146,9 +147,9 @@ macro_rules! openai_compatible_tests {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
                 let config = <$config>::new("test-api-key").with_base_url(server.uri());
-                Box::new(<$provider>::new(config).model($model_id))
+                Arc::new(<$provider>::new(config).model($model_id))
             }
         mod $mod_name {
             use super::*;
@@ -315,7 +316,7 @@ macro_rules! openai_compatible_tests {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
                 provider(
                     $provider_name,
                     Some("test-api-key".to_string()),
@@ -563,9 +564,9 @@ macro_rules! openai_compatible_tool_tests {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
                 let config = <$config>::new("test-api-key").with_base_url(server.uri());
-                Box::new(<$provider>::new(config).model($model_id))
+                Arc::new(<$provider>::new(config).model($model_id))
             }
         mod $mod_name {
             use super::*;
@@ -651,7 +652,7 @@ macro_rules! openai_compatible_tool_tests {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
                 provider(
                     $provider_name,
                     Some("test-api-key".to_string()),

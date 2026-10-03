@@ -1,4 +1,4 @@
-//! Integration tests for `Provider::list_models` (RFC-0027).
+//! Integration tests for `ProviderDiscovery::list_models` (RFC-0027).
 //!
 //! `list_models` returns `RuntimeModel` (provider's official data only).
 //! Community catalogue (`get_model_specs`) is tested separately — the two are
@@ -14,10 +14,10 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::model_catalogue::RuntimeModel;
-use aimux_core::provider::Provider;
+use aimux_core::provider::ProviderDiscovery;
 use aimux_providers::catalogue;
 use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-use aimux_providers::{ProviderOptions, provider_handle};
+use aimux_providers::{ProviderOptions, provider_discovery, provider_handle};
 
 async fn mount_cassette_file(server: &MockServer, cassette_path: &Path) -> String {
     let text = std::fs::read_to_string(cassette_path)
@@ -71,7 +71,7 @@ async fn openai_provider_list_models() {
 
 #[tokio::test]
 #[serial]
-async fn deepseek_provider_list_models_via_handle() {
+async fn deepseek_provider_list_models_via_discovery_handle() {
     let server = MockServer::start().await;
     let cassette = Path::new("tests/cassettes/deepseek/list_models_smoke.json");
     let recorded_path = mount_cassette_file(&server, cassette).await;
@@ -80,7 +80,7 @@ async fn deepseek_provider_list_models_via_handle() {
         base_url: Some(base_url),
         ..Default::default()
     };
-    let handle = provider_handle("deepseek", Some("test-key".into()), Some(opts)).unwrap();
+    let handle = provider_discovery("deepseek", Some("test-key".into()), Some(opts)).unwrap();
     let models = handle.list_models().await.unwrap();
     assert_eq!(models.len(), 2);
     assert!(models.iter().any(|m| m.id == "deepseek-v4-flash"));
@@ -98,8 +98,10 @@ async fn provider_handle_then_language_model() {
         base_url: Some(base_url),
         ..Default::default()
     };
+    let discovery =
+        provider_discovery("deepseek", Some("test-key".into()), Some(opts.clone())).unwrap();
     let handle = provider_handle("deepseek", Some("test-key".into()), Some(opts)).unwrap();
-    let models = handle.list_models().await.unwrap();
+    let models = discovery.list_models().await.unwrap();
     let first_id = models[0].id.clone();
     let _model = handle.language_model(&first_id).unwrap();
 }
@@ -225,28 +227,15 @@ fn provider_handle_unknown_name() {
     }
 }
 
-#[tokio::test]
-async fn unsupported_provider_returns_unsupported() {
-    struct StubProvider;
-    impl Provider for StubProvider {
-        fn name(&self) -> &str {
-            "stub"
+#[test]
+fn discovery_for_unknown_provider_is_no_such_provider() {
+    // `Arc<dyn ProviderDiscovery>` is not `Debug`, so match instead of `unwrap_err`.
+    match provider_discovery("no-such-provider", Some("k".into()), None) {
+        Err(aimux_core::AiMuxError::NoSuchProvider { provider_id }) => {
+            assert_eq!(provider_id, "no-such-provider");
         }
-        fn language_model(
-            &self,
-            _model_id: &str,
-        ) -> Result<Box<dyn aimux_core::language_model::LanguageModel>, aimux_core::AiMuxError>
-        {
-            Err(aimux_core::AiMuxError::UnsupportedFunctionality(
-                "none".into(),
-            ))
-        }
+        _ => panic!("expected NoSuchProvider"),
     }
-    let err = StubProvider.list_models().await.unwrap_err();
-    assert!(matches!(
-        err,
-        aimux_core::AiMuxError::UnsupportedFunctionality(_)
-    ));
 }
 
 #[test]

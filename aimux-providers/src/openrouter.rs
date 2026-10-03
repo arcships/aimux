@@ -6,8 +6,6 @@
 //! is delegated to the shared [`OpenAIProvider`].
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
 use aimux_provider_utils::load_api_key;
 
 use crate::openai::{
@@ -77,14 +75,6 @@ impl OpenRouterProvider {
     }
 }
 
-impl Provider for OpenRouterProvider {
-    fn name(&self) -> &str {
-        PROVIDER_NAME
-    }
+crate::impl_single_modality_provider!(OpenRouterProvider, language_model, |p, id| p.model(id));
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
-    }
-
-    crate::delegate_list_models!();
-}
+crate::delegate_list_models!(OpenRouterProvider);

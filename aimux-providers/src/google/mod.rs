@@ -25,11 +25,16 @@ pub use embedding::GoogleEmbeddingModel;
 pub use image::{GoogleImageModel, GoogleImageSettings};
 pub use video::GoogleVideoModel;
 
+use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
+use aimux_core::files_model::Files;
+use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
+use aimux_core::provider::{Provider, ProviderDiscovery};
+use aimux_core::video_model::VideoModel;
 use aimux_provider_utils::{load_api_key, without_trailing_slash};
 use serde_json::Value;
+use std::sync::Arc;
 
 pub(crate) fn google_stream_error(
     error: &types::GoogleError,
@@ -82,9 +87,8 @@ pub(crate) fn google_failed_response_handler() -> aimux_provider_utils::Response
 pub struct GoogleConfig {
     pub api_key: String,
     pub base_url: String,
-    /// api_key 来源(RFC-0023 `ProviderRecord.api_key_source`):`None` = 显式
-    /// (config_snapshot 记为 "explicit");`Some("env:VAR")` = 来自环境变量。
-    /// 不存明文之外的信息,仅用于回放重建。
+    /// api_key 来源标签:`None` = 显式传入;`Some("env:VAR")` = 来自环境变量。
+    /// 仅作信息保留——录制(`ProviderRecord`)只记 provider/model 身份,不再读它。
     pub api_key_source: Option<String>,
 }
 
@@ -187,14 +191,28 @@ impl GoogleProvider {
 }
 
 impl Provider for GoogleProvider {
-    fn name(&self) -> &str {
-        "google"
+    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        Ok(Arc::new(self.model(model_id)))
     }
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
+    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+        Ok(Arc::new(self.embedding_model(model_id)))
     }
 
+    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+        Ok(Arc::new(self.image(model_id)))
+    }
+
+    fn video_model(&self, model_id: &str) -> Option<Result<Arc<dyn VideoModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.video(model_id))))
+    }
+
+    fn files(&self) -> Option<Arc<dyn Files>> {
+        Some(Arc::new(self.files()))
+    }
+}
+
+impl ProviderDiscovery for GoogleProvider {
     /// List models via `GET {base_url}/models` (Gemini native), enriched with
     /// the community catalogue portrait when available (RFC-0027).
     fn list_models(

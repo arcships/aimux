@@ -1,4 +1,4 @@
-﻿//! Remaining Google Vertex AI provider tests — ported from the TS SDK suite.
+//! Remaining Google Vertex AI provider tests — ported from the TS SDK suite.
 //!
 //! Mirrors `reference/ai/packages/google-vertex/src/google-vertex-provider.test.ts`
 //! (provider configuration: auth headers, base URL, env-var resolution, project
@@ -77,10 +77,13 @@ async fn mock_ok(server: &MockServer) {
 // ════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn provider_name_is_google_vertex() {
+async fn model_provider_is_google_vertex() {
     let config = VertexProviderConfig::new("test-token", "my-project", "us-central1");
     let provider = VertexProvider::new(config);
-    assert_eq!(provider.name(), "google.vertex");
+    assert_eq!(
+        provider.model("gemini-2.0-flash").unwrap().provider(),
+        "google.vertex"
+    );
 }
 
 #[tokio::test]

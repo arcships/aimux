@@ -17,7 +17,6 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::{AiMuxError, ApiCallError};
-use aimux_core::provider::Provider;
 use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoFrameType, VideoModel,
     VideoOperationStart, VideoOperationStatus, VideoPollConfig, VideoResponse, VideoResult,
@@ -125,11 +124,7 @@ impl RunwaymlProvider {
     }
 }
 
-impl Provider for RunwaymlProvider {
-    fn name(&self) -> &str {
-        PROVIDER_NAME
-    }
-}
+crate::impl_single_modality_provider!(RunwaymlProvider, video_model, |p, id| p.video(id));
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

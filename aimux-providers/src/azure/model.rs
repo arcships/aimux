@@ -23,10 +23,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
+use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::provider::Provider;
+use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::result::{GenerateResult, StreamResult};
 
 use aimux_provider_utils::{load_api_key, with_user_agent_suffix, without_trailing_slash};
@@ -257,14 +259,20 @@ impl AzureProvider {
 }
 
 impl Provider for AzureProvider {
-    fn name(&self) -> &str {
-        "azure"
+    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        Ok(Arc::new(self.deployment(model_id)))
     }
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.deployment(model_id)))
+    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
     }
 
+    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "imageModel"))
+    }
+}
+
+impl ProviderDiscovery for AzureProvider {
     /// List deployments via `GET {prefix}/deployments?api-version=...`
     /// (Azure OpenAI, RFC-0027). Azure lists *deployments*, not models — each
     /// deployment's `id` is the model_id used by `language_model`.
@@ -467,27 +475,6 @@ impl LanguageModel for AzureModel {
         &self.deployment
     }
 
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        use aimux_core::recording::ProviderRecord;
-        ProviderRecord {
-            provider: self.provider().to_string(),
-            model_id: self.model_id().to_string(),
-            base_url: self.config.base_url.clone(),
-            // Azure 不记录明文 key/token;来源按构造方式标注(env/explicit)。
-            api_key_source: self
-                .config
-                .api_key_source
-                .clone()
-                .unwrap_or_else(|| "explicit".to_string()),
-            profile: None,
-            provider_options: Some(serde_json::json!({
-                "resource_name": self.config.resource_name,
-                "api_version": self.config.api_version,
-                "use_deployment_based_urls": self.config.use_deployment_based_urls,
-            })),
-        }
-    }
-
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
         execute_generate(
@@ -497,6 +484,7 @@ impl LanguageModel for AzureModel {
             options,
             "azure",
             &crate::openai::OpenAICompatProfile::full(),
+            None,
         )
         .await
     }
@@ -510,6 +498,7 @@ impl LanguageModel for AzureModel {
             options,
             "azure",
             &crate::openai::OpenAICompatProfile::full(),
+            None,
         )
         .await
     }
@@ -577,26 +566,5 @@ mod tests {
             m.endpoint(),
             "https://other.openai.azure.com/openai/v1/chat/completions?api-version=2024-10-21"
         );
-    }
-
-    /// RFC-0023:config_snapshot 反映 provider/model_id、base_url、api_key_source。
-    #[test]
-    fn config_snapshot_matches_config() {
-        let m = AzureModel::new(
-            "gpt-4o".to_string(),
-            AzureConfig::new()
-                .with_base_url("https://gateway.example.com/openai")
-                .with_api_version("2025-04-01-preview")
-                .use_v1_urls()
-                .with_api_key("k"),
-        );
-        let snap = m.config_snapshot();
-        assert_eq!(snap.provider, "azure");
-        assert_eq!(snap.model_id, "gpt-4o");
-        assert_eq!(
-            snap.base_url.as_deref(),
-            Some("https://gateway.example.com/openai")
-        );
-        assert_eq!(snap.api_key_source, "explicit");
     }
 }

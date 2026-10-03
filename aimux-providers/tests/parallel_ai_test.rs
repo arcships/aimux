@@ -193,24 +193,25 @@ async fn status_403_maps_to_provider_error() {
 // -- Provider trait ----------------------------------------------------------
 
 #[tokio::test]
-async fn provider_name_is_parallel_ai() {
+async fn search_model_provider_is_parallel_ai() {
     let config = ParallelAiConfig::new(API_KEY);
     let provider = ParallelAiProvider::new(config);
-    assert_eq!(provider.name(), "parallel_ai");
+    assert_eq!(provider.search_model().provider(), "parallel_ai");
 }
 
 #[test]
-fn language_model_returns_unsupported_error() {
+fn language_model_returns_no_such_model() {
     let config = ParallelAiConfig::new(API_KEY);
     let provider = ParallelAiProvider::new(config);
     match provider.language_model("parallel-search") {
-        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
-            assert!(
-                msg.contains("provider 'parallel_ai' does not provide language models"),
-                "unexpected message: {msg}"
-            );
+        Err(AiMuxError::NoSuchModel {
+            model_id,
+            model_type,
+        }) => {
+            assert_eq!(model_id, "parallel-search");
+            assert_eq!(model_type, "languageModel");
         }
-        _ => panic!("expected Unsupported error, got success or another error variant"),
+        _ => panic!("expected NoSuchModel error, got success or another error variant"),
     }
 }
 

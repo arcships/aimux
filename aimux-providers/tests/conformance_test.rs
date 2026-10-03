@@ -13,6 +13,7 @@ mod common;
 
 use common::replay::mount_cassettes;
 use futures::StreamExt;
+use std::sync::Arc;
 use wiremock::MockServer;
 
 use aimux_core::content::ContentPart;
@@ -273,7 +274,7 @@ mod openai_conformance {
 mod deepseek_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
         provider(
             "deepseek",
             Some("test-key".to_string()),
@@ -364,7 +365,7 @@ mod xai_conformance {
 mod groq_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
         // Cassettes record paths under /openai/v1/chat/completions, matching
         // Groq's default base URL https://api.groq.com/openai/v1.
         provider(
@@ -457,7 +458,7 @@ mod mistral_conformance {
 mod perplexity_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
         provider(
             "perplexity",
             Some("test-key".to_string()),
@@ -618,7 +619,7 @@ mod openrouter_conformance {
 mod copilot_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
         // Copilot's base URL has no `/v1` prefix; the OpenAIProvider appends
         // `/chat/completions` directly, matching the cassette path
         // `/chat/completions`.
@@ -669,7 +670,7 @@ mod copilot_conformance {
 mod doubleword_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
         // Doubleword's base URL includes `/v1`; the OpenAIProvider appends
         // `/chat/completions`, so we point at `<server>/v1` to match the
         // cassette path `/v1/chat/completions`.
@@ -880,7 +881,7 @@ mod bedrock_conformance {
 mod cerebras_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
         // Cassettes record paths under /v1/chat/completions, matching Cerebras's
         // default base URL https://api.cerebras.ai/v1.
         provider(
@@ -1018,7 +1019,7 @@ mod huggingface_conformance {
 mod zai_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
         // Cassettes record paths under /api/paas/v4/chat/completions, matching
         // Zai's base URL https://api.z.ai/api/paas/v4.
         provider(
@@ -1234,8 +1235,8 @@ macro_rules! thin_wrapper_conformance {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-                Box::new(
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+                Arc::new(
                     <$provider>::new(<$config>::new("test-key").with_base_url(format!(
                         "{}{}",
                         server.uri(),
@@ -1252,7 +1253,7 @@ macro_rules! thin_wrapper_conformance {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
                 provider(
                     $name,
                     Some("test-key".to_string()),

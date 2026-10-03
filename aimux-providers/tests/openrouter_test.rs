@@ -1,4 +1,4 @@
-﻿//! Provider-specific tests for the OpenRouter provider.
+//! Provider-specific tests for the OpenRouter provider.
 //!
 //! OpenRouter is a thin OpenAI-compatible wrapper over [`OpenAIProvider`]. The
 //! behaviours verified here are the ones the wrapper is responsible for:
@@ -129,10 +129,13 @@ fn make_provider(server: &MockServer) -> OpenRouterProvider {
 
 /// `createOpenRouter()` produces a provider whose name is "openrouter".
 #[test]
-fn provider_name_is_openrouter() {
+fn model_provider_is_openrouter() {
     let config = OpenRouterConfig::new("test-key");
     let provider = OpenRouterProvider::new(config);
-    assert_eq!(provider.name(), "openrouter");
+    assert_eq!(
+        provider.model("openai/gpt-4o-mini").provider(),
+        "openrouter"
+    );
 }
 
 /// Custom API key is sent in the `Authorization: Bearer` header.

@@ -114,11 +114,6 @@ pub struct CallOptions {
     /// Anthropic `thinking` config.
     pub reasoning: Option<ReasoningEffort>,
 
-    /// Per-call request body overrides. Deep-merged into the provider-built
-    /// request body (after any built-in vendor override) before sending.
-    /// `null` values delete the corresponding key. See RFC-0017.
-    pub body_overrides: Option<Value>,
-
     /// Per-call retry count override. `None` uses the provider's configured
     /// Core operation retry. `Some(0)` disables retries.
     pub max_retries: Option<u32>,
@@ -207,7 +202,6 @@ impl CallOptions {
             headers: None,
             provider_options: None,
             reasoning: None,
-            body_overrides: None,
             max_retries: None,
             timeout: None,
             session_id: None,

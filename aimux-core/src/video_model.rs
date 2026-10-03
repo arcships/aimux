@@ -287,11 +287,6 @@ impl Default for VideoPollConfig {
 /// same operation reference.
 #[async_trait]
 pub trait VideoModel: Send + Sync {
-    /// Specification version (always `"v4"`).
-    fn specification_version(&self) -> &'static str {
-        "v4"
-    }
-
     /// Provider name, e.g. `"fal"`.
     fn provider(&self) -> &str;
 

@@ -28,6 +28,7 @@ httpdate = { workspace = true }
 rand = { workspace = true }
 base64 = "0.22"
 jsonschema = { workspace = true }
+regex = "1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }

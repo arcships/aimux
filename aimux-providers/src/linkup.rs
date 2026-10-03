@@ -15,7 +15,6 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
@@ -103,11 +102,7 @@ impl LinkupProvider {
     }
 }
 
-impl Provider for LinkupProvider {
-    fn name(&self) -> &str {
-        "linkup"
-    }
-}
+crate::impl_single_modality_provider!(LinkupProvider, search_model, |p, _id| p.search_model());
 
 /// Build the Linkup `/v1/search` request body (pure function).
 fn build_request_body(options: &SearchCallOptions, linkup_options: &LinkupOptions) -> Value {

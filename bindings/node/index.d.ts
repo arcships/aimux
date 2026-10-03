@@ -484,15 +484,15 @@ export interface ProviderConfig {
   /** OpenAI project ID (sent via `OpenAI-Project` header). */
   project?: string
   /**
-   * No longer applied: retry is a per-call setting (`maxRetries` in the
-   * call options). TODO(A5): remove this field and reject it.
+   * Rejected with `InvalidArgumentError`: retry is a per-call setting
+   * (`maxRetries` in the call options). The field exists only so passing it
+   * is reported instead of ignored.
    */
   maxRetries?: number
   /**
-   * Provider-level request body overrides as a JSON string (deep-merged
-   * into every request). Per-call `bodyOverrides` in GenerateTextOptions
-   * takes precedence. Pass a JSON object string, e.g.
-   * `'{"enable_thinking": false}'`.
+   * Rejected with `InvalidArgumentError`: request-body overrides were
+   * removed. The field exists only so passing it is reported instead of
+   * ignored.
    */
   bodyOverrides?: string
 }

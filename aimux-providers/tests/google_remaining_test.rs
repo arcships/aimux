@@ -1322,11 +1322,13 @@ mod provider_config_tests {
     }
 
     #[tokio::test]
-    async fn provider_name_is_google() {
-        use aimux_core::provider::Provider;
+    async fn model_provider_is_google() {
         let config = GoogleConfig::new("test-api-key");
         let provider = GoogleProvider::new(config);
-        assert_eq!(provider.name(), "google");
+        assert_eq!(
+            provider.model("gemini-2.0-flash").provider(),
+            "google.generative-ai"
+        );
     }
 
     #[tokio::test]
@@ -1430,7 +1432,6 @@ mod provider_config_tests {
     #[tokio::test]
     async fn language_model_trait_method_returns_boxed_model() {
         use aimux_core::provider::Provider;
-
         let config = GoogleConfig::new("test-api-key");
         let provider = GoogleProvider::new(config);
         let model = provider.language_model("gemini-2.0-flash").unwrap();

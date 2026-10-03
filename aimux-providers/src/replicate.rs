@@ -320,7 +320,7 @@ impl ImageModel for ReplicateImageModel {
 
         let rh = resp.response_headers;
         let rb: Value = resp.value;
-        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
+        let retries = retry::prepare_retries(None, options.abort_signal.clone());
 
         // Extract output (string or array of strings)
         let urls: Vec<String> = match &rb["output"] {

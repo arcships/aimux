@@ -27,6 +27,7 @@
 //! resulting request path is `/chat/completions`.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -66,7 +67,7 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 }
 
 /// Build a DeepSeek provider whose base URL points at the mock server.
-fn make_provider(server: &MockServer, model_id: &str) -> Box<dyn LanguageModel> {
+fn make_provider(server: &MockServer, model_id: &str) -> Arc<dyn LanguageModel> {
     provider(
         "deepseek",
         Some("test-api-key".to_string()),

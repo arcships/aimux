@@ -15,7 +15,6 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
@@ -78,11 +77,7 @@ impl ParallelAiProvider {
     }
 }
 
-impl Provider for ParallelAiProvider {
-    fn name(&self) -> &str {
-        "parallel_ai"
-    }
-}
+crate::impl_single_modality_provider!(ParallelAiProvider, search_model, |p, _id| p.search_model());
 
 /// Build the Parallel AI `/v1/search` request body (pure function).
 ///

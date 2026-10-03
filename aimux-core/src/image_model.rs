@@ -181,11 +181,6 @@ pub struct ImageResponse {
 /// Aligned with V4 `ImageModelV4`.
 #[async_trait]
 pub trait ImageModel: Send + Sync {
-    /// Specification version (always `"v4"`).
-    fn specification_version(&self) -> &'static str {
-        "v4"
-    }
-
     /// Provider name, e.g. `"openai"`.
     fn provider(&self) -> &str;
 

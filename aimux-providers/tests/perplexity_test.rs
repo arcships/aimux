@@ -23,6 +23,7 @@
 use futures::StreamExt;
 use serde_json::{Value, json};
 use serial_test::serial;
+use std::sync::Arc;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -92,7 +93,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     parts
 }
 
-fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
     provider(
         "perplexity",
         Some("test-api-key".to_string()),

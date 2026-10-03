@@ -284,7 +284,7 @@ impl TranscriptionModel for FalTranscriptionModel {
         .await?;
 
         let job: FalJobResponse = resp.value;
-        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
+        let retries = retry::prepare_retries(None, options.abort_signal.clone());
 
         // Poll for result.
         let raw_body: Value;
@@ -590,7 +590,7 @@ impl ImageModel for FalImageModel {
 
         let rh = resp.response_headers;
         let rb: Value = resp.value;
-        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
+        let retries = retry::prepare_retries(None, options.abort_signal.clone());
 
         let target_images: Vec<Value> = if let Some(i) = rb.get("images").and_then(|v| v.as_array())
         {

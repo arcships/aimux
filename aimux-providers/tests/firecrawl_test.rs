@@ -14,9 +14,9 @@ fn make_provider(server: &MockServer) -> FirecrawlProvider {
 }
 
 #[test]
-fn provider_name_is_firecrawl() {
+fn search_model_provider_is_firecrawl() {
     let provider = FirecrawlProvider::new(FirecrawlConfig::new("test-key"));
-    assert_eq!(provider.name(), "firecrawl");
+    assert_eq!(provider.search_model().provider(), "firecrawl");
 }
 
 #[test]

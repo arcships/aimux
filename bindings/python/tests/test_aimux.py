@@ -51,12 +51,22 @@ def test_provider_accepts_full_config():
             "headers": {"X-Custom": "1"},
             "organization": "org-1",
             "project": "proj-1",
-            "max_retries": 0,
-            "body_overrides": {"temperature": 0.1},
         },
     )
     assert model is not None
     assert hasattr(model, "generate_text")
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [("max_retries", 0), ("body_overrides", {"temperature": 0.1})],
+)
+def test_provider_rejects_removed_config_keys(key, value):
+    """max_retries is call-level and body_overrides is gone: neither is silently ignored."""
+    from aimux import provider
+
+    with pytest.raises(Exception, match=key):
+        provider("groq", "sk-test-fake-key", "llama-3.3-70b", config={key: value})
 
 
 def test_provider_base_url_param_wins_over_config():
@@ -82,7 +92,7 @@ def test_provider_invalid_config_raises():
             "groq",
             "sk-test-fake-key",
             "llama-3.3-70b",
-            config={"max_retries": "not-a-number"},
+            config={"headers": "not-a-map"},
         )
 
 

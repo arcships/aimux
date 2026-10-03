@@ -614,14 +614,25 @@ pub struct ProviderConfig {
     pub organization: Option<String>,
     /// OpenAI project ID (sent via `OpenAI-Project` header).
     pub project: Option<String>,
-    /// No longer applied: retry is a per-call setting (`maxRetries` in the
-    /// call options). TODO(A5): remove this field and reject it.
+    /// Rejected with `InvalidArgumentError`: retry is a per-call setting
+    /// (`maxRetries` in the call options). The field exists only so passing it
+    /// is reported instead of ignored.
     pub max_retries: Option<u32>,
-    /// Provider-level request body overrides as a JSON string (deep-merged
-    /// into every request). Per-call `bodyOverrides` in GenerateTextOptions
-    /// takes precedence. Pass a JSON object string, e.g.
-    /// `'{"enable_thinking": false}'`.
+    /// Rejected with `InvalidArgumentError`: request-body overrides were
+    /// removed. The field exists only so passing it is reported instead of
+    /// ignored.
     pub body_overrides: Option<String>,
+}
+
+impl ProviderConfig {
+    /// Fail on the two removed keys instead of dropping them silently.
+    fn reject_removed_keys(&self) -> MResult<()> {
+        aimux_providers::reject_removed_provider_options(
+            self.max_retries.is_some(),
+            self.body_overrides.is_some(),
+        )
+        .map_err(|e| AiMuxBindingError::from(&e))
+    }
 }
 
 /// Convert a ProviderConfig (from JS) into OpenAIConfig builder steps.
@@ -629,6 +640,7 @@ fn apply_provider_config_openai(
     mut config: aimux_providers::openai::OpenAIConfig,
     cfg: &ProviderConfig,
 ) -> MResult<aimux_providers::openai::OpenAIConfig> {
+    cfg.reject_removed_keys()?;
     if let Some(url) = &cfg.base_url {
         config = config.with_base_url(url);
     }
@@ -642,10 +654,6 @@ fn apply_provider_config_openai(
     }
     if let Some(ref proj) = cfg.project {
         config = config.with_project(proj);
-    }
-    if let Some(ref json_str) = cfg.body_overrides {
-        let overrides: serde_json::Value = parse_wire_json("config.bodyOverrides", json_str)?;
-        config = config.with_body_overrides(overrides);
     }
     Ok(config)
 }
@@ -997,6 +1005,7 @@ pub async fn anthropic(
                     cfg = cfg.with_base_url(url);
                 }
                 Some(Either::B(opts)) => {
+                    opts.reject_removed_keys()?;
                     if let Some(url) = &opts.base_url {
                         cfg = cfg.with_base_url(url);
                     }
@@ -1004,11 +1013,6 @@ pub async fn anthropic(
                         let h: std::collections::HashMap<String, String> =
                             parse_wire_json("config.headers", json_str)?;
                         cfg = cfg.with_headers(h);
-                    }
-                    if let Some(ref json_str) = opts.body_overrides {
-                        let overrides: serde_json::Value =
-                            parse_wire_json("config.bodyOverrides", json_str)?;
-                        cfg = cfg.with_body_overrides(overrides);
                     }
                 }
                 None => {}
@@ -1423,6 +1427,7 @@ pub async fn provider(
 #[napi]
 pub struct ProviderHandle {
     inner: Arc<dyn aimux_core::provider::Provider>,
+    discovery: Arc<dyn aimux_core::provider::ProviderDiscovery>,
 }
 
 #[napi]
@@ -1437,7 +1442,7 @@ impl ProviderHandle {
         AimuxResult({
             let __r: crate::error::MResult<String> = async {
                 let models = self
-                    .inner
+                    .discovery
                     .list_models()
                     .await
                     .map_err(|e| AiMuxBindingError::from(&e))?;
@@ -1490,11 +1495,11 @@ pub async fn create_provider(
                 Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
                 None => None,
             };
-            let p = aimux_providers::provider_handle(&name, api_key, options)
+            let inner = aimux_providers::provider_handle(&name, api_key.clone(), options.clone())
                 .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(ProviderHandle {
-                inner: Arc::from(p),
-            })
+            let discovery = aimux_providers::provider_discovery(&name, api_key, options)
+                .map_err(|e| AiMuxBindingError::from(&e))?;
+            Ok(ProviderHandle { inner, discovery })
         }
         .await;
         __r
@@ -1529,6 +1534,7 @@ fn provider_options_from_config(
             ..Default::default()
         }),
         Some(Either::B(cfg)) => {
+            cfg.reject_removed_keys()?;
             let mut o = aimux_providers::ProviderOptions::default();
             if let Some(url) = cfg.base_url {
                 o.base_url = Some(url);
@@ -1541,12 +1547,6 @@ fn provider_options_from_config(
             }
             if let Some(proj) = cfg.project {
                 o.project = Some(proj);
-            }
-            if let Some(max) = cfg.max_retries {
-                o.max_retries = Some(max);
-            }
-            if let Some(ref json_str) = cfg.body_overrides {
-                o.body_overrides = Some(parse_wire_json("config.bodyOverrides", json_str)?);
             }
             Some(o)
         }

@@ -62,10 +62,9 @@ test('stream error path yields a typed AimuxError', async (t) => {
   // Unreachable port: connection is refused immediately; no retries.
   const model = await openai('test-key', 'gpt-4o', {
     baseUrl: 'http://127.0.0.1:1',
-    maxRetries: 0,
   })
   const err = (await t.throwsAsync(async () => {
-    for await (const _part of streamText(model, 'hello')) {
+    for await (const _part of streamText(model, 'hello', { max_retries: 0 })) {
       // never yields
     }
   })) as AimuxError
@@ -116,9 +115,9 @@ test('APICallError carries every field the response produced', async (t) => {
     res.end(body)
   })
   try {
-    const model = await native.openai('test-key', 'gpt-4o', { baseUrl: url, maxRetries: 0 })
+    const model = await native.openai('test-key', 'gpt-4o', { baseUrl: url })
     const err = (await t.throwsAsync(() =>
-      model.generateText(JSON.stringify('hi')),
+      model.generateText(JSON.stringify('hi'), JSON.stringify({ max_retries: 0 })),
     )) as APICallError
     t.true(err instanceof APICallError)
     t.true(err instanceof native.APICallError)
@@ -153,9 +152,9 @@ test('exhausted retries throw RetryError with the per-attempt history', async (t
     res.end(body)
   })
   try {
-    const model = await native.openai('test-key', 'gpt-4o', { baseUrl: url, maxRetries: 1 })
+    const model = await native.openai('test-key', 'gpt-4o', { baseUrl: url })
     const err = (await t.throwsAsync(() =>
-      model.generateText(JSON.stringify('hi')),
+      model.generateText(JSON.stringify('hi'), JSON.stringify({ max_retries: 1 })),
     )) as RetryError
     t.true(err instanceof RetryError)
     t.true(err instanceof AimuxError)
@@ -209,7 +208,7 @@ test('typed initRecordingRing keeps core errors in the AimuxError hierarchy', (t
 })
 
 test('malformed prompt JSON is a plain napi InvalidArg error, not a core error', async (t) => {
-  const model = await openai('test-key', 'gpt-4o', { baseUrl: 'http://127.0.0.1:1', maxRetries: 0 })
+  const model = await openai('test-key', 'gpt-4o', { baseUrl: 'http://127.0.0.1:1' })
   // The typed generateText() always stringifies; hit the raw JSON-text path.
   const err = (await t.throwsAsync(() => model.generateText('{not json'))) as Error & {
     code?: string

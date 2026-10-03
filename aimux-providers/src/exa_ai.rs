@@ -11,7 +11,6 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
@@ -86,11 +85,7 @@ impl ExaAiProvider {
     }
 }
 
-impl Provider for ExaAiProvider {
-    fn name(&self) -> &str {
-        "exa_ai"
-    }
-}
+crate::impl_single_modality_provider!(ExaAiProvider, search_model, |p, _id| p.search_model());
 
 fn build_request_body(options: &SearchCallOptions) -> Value {
     let mut body = json!({

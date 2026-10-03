@@ -126,33 +126,6 @@ impl LanguageModel for AnthropicAwsModel {
         &self.model_id
     }
 
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        use aimux_core::recording::ProviderRecord;
-        // M2b: record identity + credential source + endpoint config. Only the
-        // auth *kind* is serialized — never the SigV4 credentials or api-key
-        // plaintext.
-        let auth_kind = match &self.config.auth {
-            AnthropicAwsAuth::ApiKey(_) => "api_key",
-            AnthropicAwsAuth::SigV4(_) => "sigv4",
-        };
-        ProviderRecord {
-            provider: self.provider().to_string(),
-            model_id: self.model_id.clone(),
-            base_url: Some(self.config.base_url.clone()),
-            api_key_source: self
-                .config
-                .api_key_source
-                .clone()
-                .unwrap_or_else(|| "explicit".to_string()),
-            profile: None,
-            provider_options: Some(serde_json::json!({
-                "auth_kind": auth_kind,
-                "api_version": self.config.api_version,
-                "workspace_id": self.config.workspace_id,
-            })),
-        }
-    }
-
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let req = build_request_body_with_warnings(&self.model_id, options, false)?;
         let endpoint = self.endpoint();

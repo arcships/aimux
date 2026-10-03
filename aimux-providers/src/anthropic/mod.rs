@@ -13,11 +13,15 @@ pub mod usage;
 
 use std::collections::HashMap;
 
+use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
+use aimux_core::files_model::Files;
+use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
+use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::load_api_key;
 use serde_json::Value;
+use std::sync::Arc;
 
 pub(crate) fn anthropic_failed_response_handler()
 -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -58,9 +62,9 @@ pub struct AnthropicConfig {
     pub headers: Option<HashMap<String, String>>,
     /// Provider 级请求体覆盖（RFC-0017）。在标准请求体之后 deep-merge。
     pub body_overrides: Option<Value>,
-    /// api_key 来源(RFC-0023 `ProviderRecord.api_key_source`):`None` = 显式
-    /// (config_snapshot 记为 "explicit");`Some("env:VAR")` = 来自环境变量;
-    /// `Some("none")` = 本地/匿名占位。不存明文之外的信息。
+    /// api_key 来源标签:`None` = 显式传入;`Some("env:VAR")` = 来自环境变量;
+    /// `Some("none")` = 本地/匿名占位。仅作信息保留——录制只记 provider/model
+    /// 身份,不再读它。
     pub api_key_source: Option<String>,
 }
 
@@ -277,14 +281,24 @@ impl AnthropicProvider {
 }
 
 impl Provider for AnthropicProvider {
-    fn name(&self) -> &str {
-        "anthropic"
+    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        Ok(Arc::new(self.model(model_id)))
     }
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
+    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
     }
 
+    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "imageModel"))
+    }
+
+    fn files(&self) -> Option<Arc<dyn Files>> {
+        Some(Arc::new(self.files()))
+    }
+}
+
+impl ProviderDiscovery for AnthropicProvider {
     /// List models via `GET {base_url}/v1/models` (Anthropic native), enriched
     /// with the community catalogue portrait when available (RFC-0027).
     fn list_models(

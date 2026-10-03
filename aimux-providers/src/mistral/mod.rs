@@ -13,11 +13,14 @@ mod types;
 
 pub use embedding::MistralEmbeddingModel;
 
+use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
+use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
+use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{load_api_key, without_trailing_slash};
 use serde_json::Value;
+use std::sync::Arc;
 
 pub(crate) fn mistral_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {
@@ -145,14 +148,20 @@ impl MistralProvider {
 }
 
 impl Provider for MistralProvider {
-    fn name(&self) -> &str {
-        "mistral"
+    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        Ok(Arc::new(self.model(model_id)))
     }
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
+    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+        Ok(Arc::new(self.embedding_model(model_id)))
     }
 
+    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "imageModel"))
+    }
+}
+
+impl ProviderDiscovery for MistralProvider {
     /// List models via `GET {base_url}/models` (OpenAI-compatible, RFC-0027).
     fn list_models(
         &self,

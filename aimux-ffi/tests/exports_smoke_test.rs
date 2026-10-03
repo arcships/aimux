@@ -494,7 +494,7 @@ fn constructor_exports_build_and_release_handles() {
     );
 
     // Registry-backed constructors (RFC-0017 / RFC-0027).
-    let provider_opts = c(r#"{"base_url":"http://127.0.0.1:1","max_retries":0}"#);
+    let provider_opts = c(r#"{"base_url":"http://127.0.0.1:1"}"#);
     ctor!(
         "provider_new",
         aimux_provider_new(
@@ -899,12 +899,12 @@ fn transcription_session_reaches_clean_terminal_error() {
 
 #[test]
 fn provider_discovery_and_catalogue_exports_fail_cleanly() {
-    // Provider handle bound to the unreachable host with retries disabled.
+    // Provider handle bound to the unreachable host.
     let mut provider = 0;
     let e = aimux_provider_handle_new(
         c("groq").as_ptr(),
         c(FAKE_KEY).as_ptr(),
-        c(r#"{"base_url":"http://127.0.0.1:1","max_retries":0}"#).as_ptr(),
+        c(r#"{"base_url":"http://127.0.0.1:1"}"#).as_ptr(),
         &mut provider,
     );
     expect_handle(e, provider, "provider_handle_new");
@@ -1284,4 +1284,27 @@ fn tool_call_repair_exports_reject_bad_arguments() {
     );
     expect_failure(e, "apply_tool_call_repair (unknown reply tag)");
     assert!(out.is_null());
+}
+
+/// `max_retries` (call-level) and `body_overrides` (removed) in a provider
+/// `config_json` are invalid arguments, not silently ignored.
+#[test]
+fn provider_config_json_rejects_removed_keys() {
+    for (config, key) in [
+        (r#"{"max_retries":0}"#, "max_retries"),
+        (r#"{"body_overrides":{"a":1}}"#, "body_overrides"),
+    ] {
+        let mut handle = 7;
+        let e = aimux_provider_new(
+            c("groq").as_ptr(),
+            c(FAKE_KEY).as_ptr(),
+            c("llama-3.3-70b").as_ptr(),
+            c(config).as_ptr(),
+            &mut handle,
+        );
+        assert_eq!(handle, 0, "failure writes the sentinel");
+        let (code, m) = expect_aimux_error(e, "provider_new (removed config key)");
+        assert_eq!(code, AIMUX_E_INVALID_ARGUMENT, "{m}");
+        assert!(m.contains(key), "message names `{key}`: {m}");
+    }
 }

@@ -32,7 +32,7 @@ use serde_json::{Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::provider::Provider;
+use aimux_core::provider::ProviderDiscovery;
 use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_core::types::Warning;
 
@@ -175,15 +175,9 @@ impl CodexProvider {
     }
 }
 
-impl Provider for CodexProvider {
-    fn name(&self) -> &str {
-        "codex"
-    }
+crate::impl_single_modality_provider!(CodexProvider, language_model, |p, id| p.model(id));
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
-    }
-
+impl ProviderDiscovery for CodexProvider {
     /// List models via `GET {base_url}/models` (OpenAI-compatible), enriched
     /// with the community catalogue portrait when available (RFC-0027).
     fn list_models(
@@ -380,14 +374,7 @@ impl CodexModel {
 
         let endpoint = self.endpoint();
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: endpoint.clone(),
-                headers: build_header_list(&headers),
-                abort_signal: opts.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
+            HttpRequest::new(endpoint.clone(), build_header_list(&headers), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             crate::openai::openai_failed_response_handler(),
@@ -428,23 +415,6 @@ impl LanguageModel for CodexModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        use aimux_core::recording::ProviderRecord;
-        ProviderRecord {
-            provider: self.provider().to_string(),
-            model_id: self.model_id.clone(),
-            base_url: Some(self.config.openai.base_url.clone()),
-            api_key_source: self
-                .config
-                .openai
-                .api_key_source
-                .clone()
-                .unwrap_or_else(|| "explicit".to_string()),
-            profile: None,
-            provider_options: None,
-        }
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
@@ -545,23 +515,4 @@ pub async fn codex_refresh_at(
             .map(str::to_string),
         expires_in_secs: data.get("expires_in").and_then(serde_json::Value::as_u64),
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn config_snapshot_matches_model_identity() {
-        let config = CodexConfig::new("sk-test");
-        let model = CodexModel {
-            model_id: "gpt-5.2-codex".to_string(),
-            config,
-        };
-        let snap = model.config_snapshot();
-        assert_eq!(snap.provider, model.provider());
-        assert_eq!(snap.model_id, model.model_id());
-        assert!(snap.base_url.is_some());
-        assert_eq!(snap.api_key_source, "explicit");
-    }
 }

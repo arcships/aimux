@@ -1,11 +1,10 @@
-//! Tests for RFC-0017 phase 1: `body_overrides` (JSON deep-merge) and
-//! `max_retries` (per-call retry override).
+//! Tests for provider-level `body_overrides` (RFC-0017) and `max_retries`
+//! (per-call retry override).
 //!
-//! `body_overrides` is a per-call JSON object deep-merged into the
-//! provider-built request body after built-in vendor overrides. It lets users
-//! inject/override arbitrary request fields (e.g. `enable_thinking`,
-//! `thinking_budget`) without closure bridging — critical for aimux's
-//! multi-language C ABI architecture. `null` values delete keys.
+//! `body_overrides` is a JSON object configured on the provider and deep-merged
+//! into the built request body right before sending (`apply_body_overrides`).
+//! `null` values delete keys. There is no per-call override: `CallOptions` no
+//! longer carries `body_overrides`.
 //!
 //! stage2-001 (RFC-0017 phase 2) additions: `max_tokens_key` branch and direct
 //! `reasoning` → `reasoning_effort` passthrough. The old "reasoning no-mapping"
@@ -18,8 +17,8 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::types::{ReasoningEffort, Warning};
-use aimux_providers::openai::convert::build_request_body;
 use aimux_providers::openai::convert::build_request_body_with_warnings;
+use aimux_providers::openai::convert::{apply_body_overrides, build_request_body};
 use serde_json::{Value, json};
 
 fn user_prompt() -> LanguageModelPrompt {
@@ -30,12 +29,12 @@ fn user_prompt() -> LanguageModelPrompt {
     }]
 }
 
-fn opts_with_overrides(prompt: LanguageModelPrompt, body_overrides: Value) -> CallOptions {
-    CallOptions {
-        prompt,
-        body_overrides: Some(body_overrides),
-        ..CallOptions::default()
-    }
+/// The request body the OpenAI chat converter builds, with the provider-level
+/// overrides applied the way `execute_generate` / `execute_stream` do.
+fn body_with_overrides(options: &CallOptions, stream: bool, overrides: Value) -> Value {
+    let mut body = build_request_body("gpt-4o", options, stream).unwrap();
+    apply_body_overrides(&mut body, Some(&overrides));
+    body
 }
 
 // ── body_overrides: inject ───────────────────────────────────────────────────
@@ -43,8 +42,8 @@ fn opts_with_overrides(prompt: LanguageModelPrompt, body_overrides: Value) -> Ca
 /// A top-level key in body_overrides is injected into the request body.
 #[test]
 fn body_overrides_injects_new_field() {
-    let opts = opts_with_overrides(user_prompt(), json!({ "enable_thinking": false }));
-    let body = build_request_body("gpt-4o", &opts, false).unwrap();
+    let opts = CallOptions::new(user_prompt());
+    let body = body_with_overrides(&opts, false, json!({ "enable_thinking": false }));
     assert_eq!(body["enable_thinking"], json!(false));
     assert_eq!(body["model"], json!("gpt-4o"));
 }
@@ -52,8 +51,8 @@ fn body_overrides_injects_new_field() {
 /// body_overrides can inject nested objects.
 #[test]
 fn body_overrides_injects_nested_object() {
-    let opts = opts_with_overrides(user_prompt(), json!({ "thinking": { "type": "disabled" } }));
-    let body = build_request_body("gpt-4o", &opts, false).unwrap();
+    let opts = CallOptions::new(user_prompt());
+    let body = body_with_overrides(&opts, false, json!({ "thinking": { "type": "disabled" } }));
     assert_eq!(body["thinking"], json!({ "type": "disabled" }));
 }
 
@@ -62,9 +61,9 @@ fn body_overrides_injects_nested_object() {
 /// body_overrides overwrites an existing field (e.g. temperature).
 #[test]
 fn body_overrides_overwrites_existing_field() {
-    let mut opts = opts_with_overrides(user_prompt(), json!({ "temperature": 0.1 }));
+    let mut opts = CallOptions::new(user_prompt());
     opts.temperature = Some(0.9); // set by standard option
-    let body = build_request_body("gpt-4o", &opts, false).unwrap();
+    let body = body_with_overrides(&opts, false, json!({ "temperature": 0.1 }));
     // body_overrides wins over standard option
     assert_eq!(body["temperature"], json!(0.1));
 }
@@ -78,11 +77,10 @@ fn body_overrides_overwrites_vendor_override_field() {
     let opts = CallOptions {
         prompt: user_prompt(),
         reasoning: Some(aimux_core::types::ReasoningEffort::None),
-        body_overrides: Some(json!({ "thinking": { "type": "enabled" } })),
         ..CallOptions::default()
     };
     // DeepSeek profile 已回归 full()（特化退役）,body_overrides 注入 thinking。
-    let body = aimux_providers::openai::convert::build_request_body_with_warnings(
+    let mut body = aimux_providers::openai::convert::build_request_body_with_warnings(
         "deepseek-v4-flash",
         &opts,
         false,
@@ -91,6 +89,10 @@ fn body_overrides_overwrites_vendor_override_field() {
     )
     .unwrap()
     .body;
+    apply_body_overrides(
+        &mut body,
+        Some(&json!({ "thinking": { "type": "enabled" } })),
+    );
     assert_eq!(body["thinking"], json!({ "type": "enabled" }));
 }
 
@@ -102,12 +104,14 @@ fn body_overrides_deep_merges_nested_objects() {
     // The standard body has stream_options: { include_usage: true } for streams.
     // body_overrides adds another key to stream_options without clobbering
     // include_usage.
-    let opts = opts_with_overrides(
-        user_prompt(),
-        json!({ "stream_options": { "include_usage": false } }),
+    let opts = CallOptions::new(user_prompt());
+    let body = body_with_overrides(
+        &opts,
+        true,
+        json!({ "stream_options": { "include_usage": false, "extra": 1 } }),
     );
-    let body = build_request_body("gpt-4o", &opts, true).unwrap();
     assert_eq!(body["stream_options"]["include_usage"], json!(false));
+    assert_eq!(body["stream_options"]["extra"], json!(1));
 }
 
 // ── body_overrides: null = delete ────────────────────────────────────────────
@@ -116,11 +120,13 @@ fn body_overrides_deep_merges_nested_objects() {
 /// request body.
 #[test]
 fn body_overrides_null_deletes_key() {
-    let opts = opts_with_overrides(
-        user_prompt(),
+    let mut opts = CallOptions::new(user_prompt());
+    opts.temperature = Some(0.5);
+    let body = body_with_overrides(
+        &opts,
+        true,
         json!({ "stream_options": null, "temperature": null }),
     );
-    let body = build_request_body("gpt-4o", &opts, true).unwrap();
     assert!(
         body.get("stream_options").is_none(),
         "stream_options should be deleted by null"
@@ -134,11 +140,12 @@ fn body_overrides_null_deletes_key() {
 /// null in a nested object deletes the nested key.
 #[test]
 fn body_overrides_null_deletes_nested_key() {
-    let opts = opts_with_overrides(
-        user_prompt(),
+    let opts = CallOptions::new(user_prompt());
+    let body = body_with_overrides(
+        &opts,
+        true,
         json!({ "stream_options": { "include_usage": null } }),
     );
-    let body = build_request_body("gpt-4o", &opts, true).unwrap();
     // stream_options still exists but include_usage is gone
     assert!(body.get("stream_options").is_some());
     assert!(body["stream_options"].get("include_usage").is_none());
@@ -146,14 +153,62 @@ fn body_overrides_null_deletes_nested_key() {
 
 // ── body_overrides: no overrides = unchanged ─────────────────────────────────
 
-/// When body_overrides is None, the request body is identical to the standard
-/// build (no merge happens).
+/// With no overrides, the request body is identical to the standard build.
 #[test]
 fn no_body_overrides_leaves_body_unchanged() {
     let opts = CallOptions::new(user_prompt());
-    let body = build_request_body("gpt-4o", &opts, false).unwrap();
-    assert_eq!(body["model"], json!("gpt-4o"));
-    assert!(body.get("enable_thinking").is_none());
+    let standard = build_request_body("gpt-4o", &opts, false).unwrap();
+    let mut applied = standard.clone();
+    apply_body_overrides(&mut applied, None);
+    assert_eq!(applied, standard);
+    assert!(applied.get("enable_thinking").is_none());
+}
+
+// ── body_overrides: provider-level, end to end ───────────────────────────────
+
+/// The overrides configured on the provider reach the wire for both
+/// `do_generate` and `do_stream`; `CallOptions` has no override of its own.
+#[tokio::test]
+async fn provider_body_overrides_reach_the_request() {
+    use aimux_core::language_model::LanguageModel;
+    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 1711115037,
+            "model": "gpt-4o",
+            "choices": [{
+                "index": 0,
+                "message": { "role": "assistant", "content": "hi" },
+                "finish_reason": "stop"
+            }],
+            "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 }
+        })))
+        .mount(&server)
+        .await;
+
+    let config = OpenAIConfig::new("test-key")
+        .with_base_url(server.uri())
+        .with_body_overrides(json!({ "enable_thinking": false, "temperature": null }));
+    let model = OpenAIProvider::new(config).model("gpt-4o");
+    let mut options = CallOptions::new(user_prompt());
+    options.temperature = Some(0.7);
+    model.do_generate(&options).await.unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    let sent: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(sent["enable_thinking"], json!(false));
+    assert!(
+        sent.get("temperature").is_none(),
+        "null deletes the standard field: {sent}"
+    );
 }
 
 // ── max_retries ──────────────────────────────────────────────────────────────

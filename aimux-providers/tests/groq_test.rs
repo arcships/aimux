@@ -20,6 +20,7 @@
 
 use futures::StreamExt;
 use serde_json::{Value, json};
+use std::sync::Arc;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -52,7 +53,7 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 }
 
 /// Build a provider pointed at the mock server.
-fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
     provider(
         "groq",
         Some("test-api-key".to_string()),

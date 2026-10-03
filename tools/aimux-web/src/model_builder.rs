@@ -58,7 +58,7 @@ pub fn build_model(
             }
             let model = aimux_providers::provider(provider, api_key, model_id, Some(options))
                 .map_err(|e| AiMuxError::InvalidArgument(format!("provider '{provider}': {e}")))?;
-            Ok(Arc::from(model))
+            Ok(model)
         }
     }
 }

@@ -2193,12 +2193,6 @@ pub fn build_request_body_with_warnings(
     // providerOptions.anthropic.contextManagement → context_management is not
     // yet implemented (build_context_management pending).
 
-    // Per-call request body overrides (RFC-0017): deep-merge user-supplied
-    // JSON into the built body. `null` values delete the corresponding key.
-    if let Some(ref overrides) = options.body_overrides {
-        crate::openai::convert::deep_merge_json(&mut body, overrides);
-    }
-
     Ok(RequestBodyResult {
         body,
         warnings,

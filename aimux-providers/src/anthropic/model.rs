@@ -17,6 +17,7 @@ use super::AnthropicConfig;
 use super::convert::build_request_body_with_warnings;
 use super::stream::{BodyEncoding, anthropic_generate_core, anthropic_stream_core};
 use super::tool_name_mapping::ToolNameMapping;
+use crate::openai::convert::apply_body_overrides;
 
 /// An Anthropic language model (e.g. `claude-sonnet-4-20250514`).
 pub struct AnthropicModel {
@@ -90,33 +91,9 @@ impl LanguageModel for AnthropicModel {
         &self.model_id
     }
 
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        use aimux_core::recording::ProviderRecord;
-        ProviderRecord {
-            provider: self.provider().to_string(),
-            model_id: self.model_id.clone(),
-            base_url: Some(self.config.base_url.clone()),
-            api_key_source: self
-                .config
-                .api_key_source
-                .clone()
-                .unwrap_or_else(|| "explicit".to_string()),
-            profile: None,
-            // RFC-0023 C6: ProviderOptions-shaped object (headers/body_overrides
-            // are the shared ProviderOptions fields) plus the
-            // Anthropic-specific `api_version`. Sensitive headers are redacted
-            // at the recording boundary (recording.rs redacts provider_options).
-            provider_options: Some(serde_json::json!({
-                "headers": self.config.headers,
-                "api_version": self.config.api_version,
-                "body_overrides": self.config.body_overrides,
-            })),
-        }
-    }
-
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let options = merge_anthropic_body_overrides(options, &self.config.body_overrides);
-        let req = build_request_body_with_warnings(&self.model_id, &options, false)?;
+        let mut req = build_request_body_with_warnings(&self.model_id, options, false)?;
+        apply_body_overrides(&mut req.body, self.config.body_overrides.as_ref());
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref(), req.betas);
         anthropic_generate_core(
@@ -133,8 +110,8 @@ impl LanguageModel for AnthropicModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let options = merge_anthropic_body_overrides(options, &self.config.body_overrides);
-        let req = build_request_body_with_warnings(&self.model_id, &options, true)?;
+        let mut req = build_request_body_with_warnings(&self.model_id, options, true)?;
+        apply_body_overrides(&mut req.body, self.config.body_overrides.as_ref());
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref(), req.betas);
         anthropic_stream_core(
@@ -148,43 +125,5 @@ impl LanguageModel for AnthropicModel {
             ToolNameMapping::new(options.tools.as_deref()),
         )
         .await
-    }
-}
-
-/// Merge provider-level body_overrides into per-call options (RFC-0017).
-fn merge_anthropic_body_overrides(
-    options: &CallOptions,
-    provider_overrides: &Option<serde_json::Value>,
-) -> CallOptions {
-    match (provider_overrides, &options.body_overrides) {
-        (Some(provider), Some(call)) => {
-            let mut merged = provider.clone();
-            crate::openai::convert::deep_merge_json(&mut merged, call);
-            let mut opts = options.clone();
-            opts.body_overrides = Some(merged);
-            opts
-        }
-        (Some(provider), None) => {
-            let mut opts = options.clone();
-            opts.body_overrides = Some(provider.clone());
-            opts
-        }
-        (None, _) => options.clone(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn config_snapshot_matches_model_identity() {
-        let config = AnthropicConfig::new("sk-test");
-        let model = AnthropicModel::new("claude-sonnet-4-20250514".to_string(), config);
-        let snap = model.config_snapshot();
-        assert_eq!(snap.provider, model.provider());
-        assert_eq!(snap.model_id, model.model_id());
-        assert!(snap.base_url.is_some());
-        assert_eq!(snap.api_key_source, "explicit");
     }
 }

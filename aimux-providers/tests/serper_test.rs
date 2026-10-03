@@ -14,9 +14,9 @@ fn make_provider(server: &MockServer) -> SerperProvider {
 }
 
 #[test]
-fn provider_name_is_serper() {
+fn search_model_provider_is_serper() {
     let provider = SerperProvider::new(SerperConfig::new("test-key"));
-    assert_eq!(provider.name(), "serper");
+    assert_eq!(provider.search_model().provider(), "serper");
 }
 
 #[test]

@@ -82,7 +82,7 @@ use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
 use aimux_providers::vertex::{VertexProvider, VertexProviderConfig};
 use aimux_providers::xai::{XAIConfig, XAIProvider};
-use aimux_providers::{ProviderOptions, provider, provider_handle};
+use aimux_providers::{ProviderOptions, provider, provider_discovery, provider_handle};
 
 use futures::StreamExt;
 use tokio::runtime::Runtime;
@@ -96,7 +96,7 @@ use tokio::runtime::Runtime;
 #[derive(Clone)]
 enum HandleEntry {
     Language(Arc<dyn LanguageModel>),
-    Provider(Arc<dyn aimux_core::provider::Provider>),
+    Provider(ProviderEntry),
     Embedding(Arc<dyn aimux_core::embedding_model::EmbeddingModel>),
     Speech(Arc<dyn aimux_core::speech_model::SpeechModel>),
     Image(Arc<dyn aimux_core::image_model::ImageModel>),
@@ -108,6 +108,16 @@ enum HandleEntry {
     /// Live transcription streaming session (RFC-0028 Phase 2).
     TranscriptionSession(Arc<transcription_session::TranscriptionFfiSession>),
     Abort(AbortSignal),
+}
+
+/// A provider handle: the model factory plus its runtime-discovery side.
+///
+/// `Provider` has no `list_models` (AI SDK `ProviderV4` has none); discovery
+/// is the separate `ProviderDiscovery` trait, so the handle keeps both.
+#[derive(Clone)]
+struct ProviderEntry {
+    provider: Arc<dyn aimux_core::provider::Provider>,
+    discovery: Arc<dyn aimux_core::provider::ProviderDiscovery>,
 }
 
 type Registry = HashMap<u64, HandleEntry>;
@@ -1053,7 +1063,7 @@ pub extern "C" fn aimux_openai_new(
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
         let m = OpenAIProvider::new(OpenAIConfig::new(api_key)).language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1074,7 +1084,7 @@ pub extern "C" fn aimux_openai_new_with_base(
             config = config.with_base_url(url);
         }
         let m = OpenAIProvider::new(config).language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1088,7 +1098,7 @@ pub extern "C" fn aimux_anthropic_new(
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
         let m = AnthropicProvider::new(AnthropicConfig::new(api_key)).language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1109,7 +1119,7 @@ pub extern "C" fn aimux_anthropic_new_with_base(
             config = config.with_base_url(url);
         }
         let m = AnthropicProvider::new(config).language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1128,7 +1138,7 @@ pub extern "C" fn aimux_anthropic_aws_new(
         let m =
             AnthropicAwsProvider::new(AnthropicAwsProviderConfig::with_api_key(api_key, region))
                 .language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1150,7 +1160,7 @@ pub extern "C" fn aimux_anthropic_aws_new_with_base(
             config = config.with_base_url(url);
         }
         let m = AnthropicAwsProvider::new(config).language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1177,7 +1187,7 @@ pub extern "C" fn aimux_azure_new(
             config = config.with_api_version(v);
         }
         let m = AzureProvider::new(config)?.language_model(&deployment)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1202,7 +1212,7 @@ pub extern "C" fn aimux_azure_new_with_base(
             config = config.with_api_version(v);
         }
         let m = AzureProvider::new(config)?.language_model(&deployment)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1232,7 +1242,7 @@ pub extern "C" fn aimux_bedrock_new(
             region,
         ))
         .language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1262,7 +1272,7 @@ pub extern "C" fn aimux_bedrock_new_with_base(
             config = config.with_base_url(url);
         }
         let m = BedrockProvider::new(config).language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1288,7 +1298,7 @@ pub extern "C" fn aimux_vertex_new(
         )?;
         let m = VertexProvider::new(VertexProviderConfig::new(access_token, project, location))
             .language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1318,7 +1328,7 @@ pub extern "C" fn aimux_vertex_new_with_base(
             config = config.with_base_url(url);
         }
         let m = VertexProvider::new(config).language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1332,7 +1342,7 @@ pub extern "C" fn aimux_cohere_new(
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
         let m = CohereProvider::new(CohereConfig::new(api_key)).language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1351,7 +1361,7 @@ pub extern "C" fn aimux_cohere_new_with_base(
             config = config.with_base_url(url);
         }
         let m = CohereProvider::new(config).language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1365,7 +1375,7 @@ pub extern "C" fn aimux_mistral_new(
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
         let m = MistralProvider::new(MistralConfig::new(api_key)).language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1384,7 +1394,7 @@ pub extern "C" fn aimux_mistral_new_with_base(
             config = config.with_base_url(url);
         }
         let m = MistralProvider::new(config).language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1398,7 +1408,7 @@ pub extern "C" fn aimux_xai_new(
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
         let m = XAIProvider::new(XAIConfig::new(api_key)).language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1417,7 +1427,7 @@ pub extern "C" fn aimux_xai_new_with_base(
             config = config.with_base_url(url);
         }
         let m = XAIProvider::new(config).language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1428,8 +1438,9 @@ pub extern "C" fn aimux_xai_new_with_base(
 ///   entry (replaces the retired `aimux_deepseek_new` etc.).
 /// - `model_id` — model id string.
 /// - `config_json` — optional JSON object of `ProviderOptions`
-///   (`{"base_url": "...", "headers": {...}, "max_retries": 0, "body_overrides": {...}}`);
-///   NULL / empty / "null" for defaults.
+///   (`{"base_url": "...", "headers": {...}, "organization": "...", "project": "..."}`);
+///   NULL / empty / "null" for defaults. `max_retries` (call-level) and
+///   `body_overrides` (removed) are rejected as invalid arguments.
 ///
 /// AiMuxError: unknown provider, bad config shape, missing env key, or
 /// invalid model id.
@@ -1448,7 +1459,7 @@ pub extern "C" fn aimux_provider_new(
         let key = opt_str_arg(api_key, "api_key")?;
         let opts = parse_provider_options(config_json)?;
         let m = provider(&name, key, &model_id, opts)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1464,7 +1475,7 @@ pub extern "C" fn aimux_provider_from_env(
         let name = str_arg(name, "name")?;
         let model_id = str_arg(model_id, "model_id")?;
         let m = provider(&name, None, &model_id, None)?;
-        Ok(intern_model(Arc::from(m)))
+        Ok(intern_model(m))
     })
 }
 
@@ -1492,8 +1503,12 @@ pub extern "C" fn aimux_provider_handle_new(
         let name = str_arg(name, "name")?;
         let key = opt_str_arg(api_key, "api_key")?;
         let opts = parse_provider_options(config_json)?;
-        let p = provider_handle(&name, key, opts)?;
-        Ok(intern_handle(HandleEntry::Provider(Arc::from(p))))
+        let provider = provider_handle(&name, key.clone(), opts.clone())?;
+        let discovery = provider_discovery(&name, key, opts)?;
+        Ok(intern_handle(HandleEntry::Provider(ProviderEntry {
+            provider,
+            discovery,
+        })))
     })
 }
 
@@ -1515,7 +1530,7 @@ pub extern "C" fn aimux_provider_list_models(
             }
             .into());
         };
-        run_json(p.list_models())
+        run_json(p.discovery.list_models())
     })
 }
 
@@ -1538,8 +1553,8 @@ pub extern "C" fn aimux_provider_model(
             .into());
         };
         let model_id = str_arg(model_id, "model_id")?;
-        let m = p.language_model(&model_id)?;
-        Ok(intern_model(Arc::from(m)))
+        let m = p.provider.language_model(&model_id)?;
+        Ok(intern_model(m))
     })
 }
 

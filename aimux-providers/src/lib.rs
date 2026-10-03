@@ -4,28 +4,170 @@
 //!
 //! Each provider implements the `LanguageModel` trait from `aimux-core`.
 
-/// Delegate `Provider::list_models` to the inner `OpenAIProvider` (field `.0`).
+/// Emit `impl ProviderDiscovery for $ty`, delegating `list_models` to the inner
+/// `OpenAIProvider` (field `.0`).
 ///
 /// Used by newtype providers that wrap `OpenAIProvider` (e.g. `OllamaProvider`,
-/// `VllmProvider`, `VertexAiOpenaiModelsProvider`, …). Inserts the full trait
-/// method signature so the wrapping provider needs no extra imports.
+/// `VllmProvider`, `VertexAiOpenaiModelsProvider`, …). Spells out the full
+/// trait path so the wrapping provider needs no extra imports.
 #[macro_export]
 macro_rules! delegate_list_models {
-    () => {
-        fn list_models(
+    ($ty:ty) => {
+        impl ::aimux_core::provider::ProviderDiscovery for $ty {
+            fn list_models(
+                &self,
+            ) -> ::std::pin::Pin<
+                ::std::boxed::Box<
+                    dyn ::std::future::Future<
+                            Output = ::std::result::Result<
+                                ::std::vec::Vec<::aimux_core::model_catalogue::RuntimeModel>,
+                                ::aimux_core::AiMuxError,
+                            >,
+                        > + ::std::marker::Send
+                        + '_,
+                >,
+            > {
+                ::aimux_core::provider::ProviderDiscovery::list_models(&self.0)
+            }
+        }
+    };
+}
+
+/// One required `Provider` method that this vendor does not offer: returns
+/// `NoSuchModel` with the AI SDK `modelType`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __unsupported_required_model {
+    ($method:ident, $trait:ident, $model_type:literal) => {
+        fn $method(
             &self,
-        ) -> ::std::pin::Pin<
-            ::std::boxed::Box<
-                dyn ::std::future::Future<
-                        Output = ::std::result::Result<
-                            ::std::vec::Vec<aimux_core::model_catalogue::RuntimeModel>,
-                            aimux_core::AiMuxError,
-                        >,
-                    > + ::std::marker::Send
-                    + '_,
+            id: &str,
+        ) -> ::std::result::Result<
+            ::std::sync::Arc<dyn ::aimux_core::$trait>,
+            ::aimux_core::AiMuxError,
+        > {
+            ::std::result::Result::Err(::aimux_core::AiMuxError::no_such_model(id, $model_type))
+        }
+    };
+}
+
+/// Emit `impl Provider for $ty` for a vendor that offers exactly one modality.
+///
+/// The first argument after the type names the `Provider` method to wire
+/// (`language_model`, `embedding_model`, `image_model`, `transcription_model`,
+/// `speech_model`, `reranking_model`, `video_model` or `search_model`); the
+/// closure-like tail binds the provider and the model id and evaluates to the
+/// (infallible) concrete model. The two other required methods return
+/// `NoSuchModel`; the other optional ones keep their `None` default.
+///
+/// ```ignore
+/// impl_single_modality_provider!(VllmProvider, language_model, |p, id| p.model(id));
+/// impl_single_modality_provider!(SerperProvider, search_model, |p, _id| p.search_model());
+/// ```
+#[macro_export]
+macro_rules! impl_single_modality_provider {
+    ($ty:ty, language_model, |$p:ident, $id:ident| $build:expr) => {
+        impl ::aimux_core::Provider for $ty {
+            fn language_model(
+                &self,
+                $id: &str,
+            ) -> ::std::result::Result<
+                ::std::sync::Arc<dyn ::aimux_core::LanguageModel>,
+                ::aimux_core::AiMuxError,
+            > {
+                let $p = self;
+                ::std::result::Result::Ok(::std::sync::Arc::new($build))
+            }
+            $crate::__unsupported_required_model!(
+                embedding_model,
+                EmbeddingModel,
+                "embeddingModel"
+            );
+            $crate::__unsupported_required_model!(image_model, ImageModel, "imageModel");
+        }
+    };
+    ($ty:ty, embedding_model, |$p:ident, $id:ident| $build:expr) => {
+        impl ::aimux_core::Provider for $ty {
+            $crate::__unsupported_required_model!(language_model, LanguageModel, "languageModel");
+            fn embedding_model(
+                &self,
+                $id: &str,
+            ) -> ::std::result::Result<
+                ::std::sync::Arc<dyn ::aimux_core::EmbeddingModel>,
+                ::aimux_core::AiMuxError,
+            > {
+                let $p = self;
+                ::std::result::Result::Ok(::std::sync::Arc::new($build))
+            }
+            $crate::__unsupported_required_model!(image_model, ImageModel, "imageModel");
+        }
+    };
+    ($ty:ty, image_model, |$p:ident, $id:ident| $build:expr) => {
+        impl ::aimux_core::Provider for $ty {
+            $crate::__unsupported_required_model!(language_model, LanguageModel, "languageModel");
+            $crate::__unsupported_required_model!(
+                embedding_model,
+                EmbeddingModel,
+                "embeddingModel"
+            );
+            fn image_model(
+                &self,
+                $id: &str,
+            ) -> ::std::result::Result<
+                ::std::sync::Arc<dyn ::aimux_core::ImageModel>,
+                ::aimux_core::AiMuxError,
+            > {
+                let $p = self;
+                ::std::result::Result::Ok(::std::sync::Arc::new($build))
+            }
+        }
+    };
+    ($ty:ty, $method:ident, |$p:ident, $id:ident| $build:expr) => {
+        impl ::aimux_core::Provider for $ty {
+            $crate::__unsupported_required_model!(language_model, LanguageModel, "languageModel");
+            $crate::__unsupported_required_model!(
+                embedding_model,
+                EmbeddingModel,
+                "embeddingModel"
+            );
+            $crate::__unsupported_required_model!(image_model, ImageModel, "imageModel");
+            $crate::__optional_model!($method, |$p, $id| $build);
+        }
+    };
+}
+
+/// One optional `Provider` method wired to a concrete model (see
+/// [`impl_single_modality_provider!`]).
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __optional_model {
+    (transcription_model, |$p:ident, $id:ident| $build:expr) => {
+        $crate::__optional_model!(@emit transcription_model, TranscriptionModel, |$p, $id| $build);
+    };
+    (speech_model, |$p:ident, $id:ident| $build:expr) => {
+        $crate::__optional_model!(@emit speech_model, SpeechModel, |$p, $id| $build);
+    };
+    (reranking_model, |$p:ident, $id:ident| $build:expr) => {
+        $crate::__optional_model!(@emit reranking_model, RerankingModel, |$p, $id| $build);
+    };
+    (video_model, |$p:ident, $id:ident| $build:expr) => {
+        $crate::__optional_model!(@emit video_model, VideoModel, |$p, $id| $build);
+    };
+    (search_model, |$p:ident, $id:ident| $build:expr) => {
+        $crate::__optional_model!(@emit search_model, SearchModel, |$p, $id| $build);
+    };
+    (@emit $method:ident, $trait:ident, |$p:ident, $id:ident| $build:expr) => {
+        fn $method(
+            &self,
+            $id: &str,
+        ) -> ::std::option::Option<
+            ::std::result::Result<
+                ::std::sync::Arc<dyn ::aimux_core::$trait>,
+                ::aimux_core::AiMuxError,
             >,
         > {
-            self.0.list_models()
+            let $p = self;
+            ::std::option::Option::Some(::std::result::Result::Ok(::std::sync::Arc::new($build)))
         }
     };
 }
@@ -38,8 +180,8 @@ pub mod provider;
 pub mod replay;
 pub use provider::{
     ExternalProviderEntry, ProviderOptions, ProviderProfile, is_external_provider,
-    load_providers_from_json, provider, provider_from_env, provider_handle, provider_names,
-    provider_registry_entry, register_provider,
+    load_providers_from_json, provider, provider_discovery, provider_from_env, provider_handle,
+    provider_names, provider_registry_entry, register_provider, reject_removed_provider_options,
 };
 pub use replay::rebuild_provider;
 

@@ -334,7 +334,7 @@ impl ImageModel for LumaImageModel {
                 AiMuxError::InvalidResponseData("missing id in Luma response".to_string())
             })?
             .to_string();
-        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
+        let retries = retry::prepare_retries(None, options.abort_signal.clone());
 
         // Poll for completion
         let mut image_url = None;

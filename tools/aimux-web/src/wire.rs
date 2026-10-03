@@ -83,8 +83,6 @@ pub struct WireOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub body_overrides: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_raw_chunks: Option<bool>,
@@ -273,7 +271,6 @@ pub fn to_generate_options(
             .map(|ts| ts.iter().map(to_function_tool).collect()),
         response_format,
         headers: o.headers.clone(),
-        body_overrides: o.body_overrides.clone(),
         max_retries: o.max_retries,
         session_id: session_id.map(str::to_string),
         include_raw_chunks: o.include_raw_chunks,

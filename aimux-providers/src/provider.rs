@@ -17,14 +17,14 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use serde::Deserialize;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
+use aimux_core::provider::{Provider, ProviderDiscovery};
 
 use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
 
@@ -118,7 +118,14 @@ fn base_url_has_placeholder(base_url: &str) -> bool {
 }
 
 /// Per-call construction options for [`provider`] (overrides the registry entry).
+///
+/// Deserializing a JSON object that carries `max_retries` or `body_overrides`
+/// fails: retry is a call-level option (`CallOptions::max_retries`) and
+/// request-body overrides are gone, so neither is silently ignored here. The
+/// FFI `config_json` and the Node/Python configs reach this check and report it
+/// as `InvalidArgument`.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "ProviderOptionsWire")]
 pub struct ProviderOptions {
     /// Override the registry base URL.
     pub base_url: Option<String>,
@@ -128,10 +135,65 @@ pub struct ProviderOptions {
     pub organization: Option<String>,
     /// OpenAI project ID (`OpenAI-Project` header).
     pub project: Option<String>,
-    /// Retry count override; `Some(0)` disables retries.
-    pub max_retries: Option<u32>,
-    /// Request-body overrides (deep-merged; RFC-0017 phase 1).
-    pub body_overrides: Option<Value>,
+}
+
+/// Wire shape of [`ProviderOptions`]: the same keys plus the two removed ones,
+/// kept only so their presence can be reported instead of dropped.
+#[derive(Deserialize)]
+struct ProviderOptionsWire {
+    base_url: Option<String>,
+    headers: Option<HashMap<String, String>>,
+    organization: Option<String>,
+    project: Option<String>,
+    max_retries: Option<Value>,
+    body_overrides: Option<Value>,
+}
+
+impl TryFrom<ProviderOptionsWire> for ProviderOptions {
+    type Error = String;
+
+    fn try_from(wire: ProviderOptionsWire) -> Result<Self, Self::Error> {
+        if wire.max_retries.is_some() {
+            return Err(MAX_RETRIES_REJECTED.to_string());
+        }
+        if wire.body_overrides.is_some() {
+            return Err(BODY_OVERRIDES_REJECTED.to_string());
+        }
+        Ok(Self {
+            base_url: wire.base_url,
+            headers: wire.headers,
+            organization: wire.organization,
+            project: wire.project,
+        })
+    }
+}
+
+const MAX_RETRIES_REJECTED: &str = "`max_retries` is a call-level option: pass it in the call \
+     options (`maxRetries`), not in the provider configuration";
+
+const BODY_OVERRIDES_REJECTED: &str = "`body_overrides` is no longer supported: request-body \
+     overrides were removed from the provider configuration and the call options";
+
+/// Report a provider configuration that still carries `max_retries` or
+/// `body_overrides`, for configuration shapes that are not [`ProviderOptions`]
+/// JSON (the Node and Python `ProviderConfig`). Pass whether each key was
+/// given.
+///
+/// # Errors
+///
+/// Returns [`AiMuxError::InvalidArgument`] naming the first removed key that
+/// was given.
+pub fn reject_removed_provider_options(
+    max_retries: bool,
+    body_overrides: bool,
+) -> Result<(), AiMuxError> {
+    if max_retries {
+        return Err(AiMuxError::InvalidArgument(MAX_RETRIES_REJECTED.into()));
+    }
+    if body_overrides {
+        return Err(AiMuxError::InvalidArgument(BODY_OVERRIDES_REJECTED.into()));
+    }
+    Ok(())
 }
 
 /// Build a language model for a provider by name.
@@ -157,7 +219,7 @@ pub fn provider(
     api_key: Option<String>,
     model_id: &str,
     options: Option<ProviderOptions>,
-) -> Result<Box<dyn LanguageModel>, AiMuxError> {
+) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
     let p = provider_handle(name, api_key, options)?;
     p.language_model(model_id)
 }
@@ -359,8 +421,8 @@ impl ResolvedEntry {
 ///
 /// Unlike [`provider`] (which binds to a single `model_id` and returns a
 /// `LanguageModel`), this returns the [`Provider`] itself, so callers can call
-/// [`Provider::list_models`] for runtime discovery, then
-/// [`Provider::language_model`] on a chosen id.
+/// [`Provider::language_model`] on a chosen id. For runtime model discovery
+/// build the handle with [`provider_discovery`] instead.
 ///
 /// Same key/options semantics as [`provider`].
 ///
@@ -373,9 +435,33 @@ pub fn provider_handle(
     name: impl AsRef<str>,
     api_key: Option<String>,
     options: Option<ProviderOptions>,
-) -> Result<Box<dyn Provider>, AiMuxError> {
-    let name = name.as_ref();
+) -> Result<Arc<dyn Provider>, AiMuxError> {
+    resolve_provider(name.as_ref(), api_key, options).map(|p| p as Arc<dyn Provider>)
+}
 
+/// Build a **discovery handle** for a built-in or externally-registered
+/// provider by name: the [`ProviderDiscovery`] side of [`provider_handle`]
+/// (RFC-0027), used to call [`ProviderDiscovery::list_models`].
+///
+/// Same lookup, key and options semantics as [`provider_handle`].
+///
+/// # Errors
+///
+/// Same as [`provider_handle`].
+pub fn provider_discovery(
+    name: impl AsRef<str>,
+    api_key: Option<String>,
+    options: Option<ProviderOptions>,
+) -> Result<Arc<dyn ProviderDiscovery>, AiMuxError> {
+    resolve_provider(name.as_ref(), api_key, options).map(|p| p as Arc<dyn ProviderDiscovery>)
+}
+
+/// Shared lookup behind [`provider_handle`] and [`provider_discovery`].
+fn resolve_provider(
+    name: &str,
+    api_key: Option<String>,
+    options: Option<ProviderOptions>,
+) -> Result<Arc<OpenAIProvider>, AiMuxError> {
     // 1. Runtime overlay (RFC-0020) — registered entries take precedence.
     let resolved = if let Some(ext) = overlays().read().unwrap().get(name) {
         ResolvedEntry::from_external(ext)
@@ -411,7 +497,7 @@ pub fn provider_handle(
 
     let mut config = build_resolved_config(&resolved, key, options);
     config = config.with_api_key_source(source.as_deref());
-    Ok(Box::new(OpenAIProvider::new(config)))
+    Ok(Arc::new(OpenAIProvider::new(config)))
 }
 
 /// Resolve the api key for a [`ResolvedEntry`]. Returns `(key, source)` where
@@ -501,11 +587,6 @@ fn build_resolved_config(
         if let Some(project) = opts.project {
             config = config.with_project(project);
         }
-        // TODO(A3): `opts.max_retries` is no longer read (retry is
-        // call-level); reject it with InvalidArgument (RFC-0036 D-g).
-        if let Some(overrides) = opts.body_overrides {
-            config = config.with_body_overrides(overrides);
-        }
     }
     config
 }
@@ -541,7 +622,7 @@ pub fn provider_from_env(
     name: impl AsRef<str>,
     model_id: &str,
     options: Option<ProviderOptions>,
-) -> Result<Box<dyn LanguageModel>, AiMuxError> {
+) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
     provider(name, None, model_id, options)
 }
 
@@ -760,15 +841,43 @@ mod tests {
         clear_overlay("test-relay-new");
     }
 
-    #[test]
-    fn external_provider_overrides_builtin() {
+    #[tokio::test]
+    async fn external_provider_overrides_builtin() {
+        use aimux_core::content::ContentPart;
+        use aimux_core::language_model_message::LanguageModelPromptMessage;
+        use aimux_core::message::Role;
+        use aimux_core::options::CallOptions;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
         // Register an overlay for the built-in "groq" name with a different
         // base_url; provider() must resolve to the overlay, not the registry.
+        // The registry entry for groq points at api.groq.com, so a request
+        // that reaches the mock server proves which path ran.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1711115037,
+                "model": "llama-3.3-70b",
+                "choices": [{
+                    "index": 0,
+                    "message": { "role": "assistant", "content": "hi" },
+                    "finish_reason": "stop"
+                }],
+                "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
         clear_overlay("groq"); // hermetic start (other tests may use "groq")
         register_provider(ExternalProviderEntry {
             name: "groq".into(),
             display: Some("Groq Override".into()),
-            base_url: "https://my-groq-relay.example/v1".into(),
+            base_url: server.uri(),
             env_var: Some("GROQ_API_KEY".into()),
             api_key: Some("dummy".into()),
             protocol: "openai_compat".into(),
@@ -781,18 +890,17 @@ mod tests {
             comment: None,
         })
         .unwrap();
-        // Actually call provider() (not just read the overlay map) to verify
-        // the lookup path routes to the overlay. The registry entry for groq
-        // has base_url "https://api.groq.com/openai/v1"; the overlay's is
-        // different, so config_snapshot().base_url tells us which path ran.
         let model = provider("groq", None, "llama-3.3-70b", None).unwrap();
-        let snap = model.config_snapshot();
-        assert_eq!(
-            snap.base_url.as_deref(),
-            Some("https://my-groq-relay.example/v1"),
-            "provider() must resolve via the overlay, not the built-in registry"
-        );
+        let result = model
+            .do_generate(&CallOptions::new(vec![LanguageModelPromptMessage {
+                role: Role::User,
+                content: vec![ContentPart::text("Hello")],
+                ..Default::default()
+            }]))
+            .await;
         clear_overlay("groq");
+        result.expect("provider() must resolve via the overlay, not the built-in registry");
+        // `expect(1)` above is verified when `server` drops.
     }
 
     #[test]

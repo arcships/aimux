@@ -179,23 +179,24 @@ async fn status_401_maps_to_auth_error() {
 // -- Provider trait ----------------------------------------------------------
 
 #[tokio::test]
-async fn provider_name_is_you_com() {
+async fn search_model_provider_is_you_com() {
     let config = YouComConfig::new(API_KEY);
     let provider = YouComProvider::new(config);
-    assert_eq!(provider.name(), "you_com");
+    assert_eq!(provider.search_model().provider(), "you_com");
 }
 
 #[test]
-fn language_model_returns_unsupported_error() {
+fn language_model_returns_no_such_model() {
     let config = YouComConfig::new(API_KEY);
     let provider = YouComProvider::new(config);
     match provider.language_model("youcom-search") {
-        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
-            assert!(
-                msg.contains("provider 'you_com' does not provide language models"),
-                "unexpected message: {msg}"
-            );
+        Err(AiMuxError::NoSuchModel {
+            model_id,
+            model_type,
+        }) => {
+            assert_eq!(model_id, "youcom-search");
+            assert_eq!(model_type, "languageModel");
         }
-        _ => panic!("expected Unsupported error, got success or another error variant"),
+        _ => panic!("expected NoSuchModel error, got success or another error variant"),
     }
 }

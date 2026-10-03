@@ -16,8 +16,7 @@
 //! Reference: <https://docs.anthropic.com/en/api/messages>
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
+use aimux_core::provider::ProviderDiscovery;
 use aimux_provider_utils::without_trailing_slash;
 
 mod model;
@@ -193,15 +192,9 @@ impl AnthropicAwsProvider {
     }
 }
 
-impl Provider for AnthropicAwsProvider {
-    fn name(&self) -> &str {
-        "anthropic-aws"
-    }
+crate::impl_single_modality_provider!(AnthropicAwsProvider, language_model, |p, id| p.model(id));
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
-    }
-
+impl ProviderDiscovery for AnthropicAwsProvider {
     /// List models via `GET {base_url}/models` (Anthropic-compatible, RFC-0027).
     /// API-key auth uses a simple header; SigV4 auth is not supported for
     /// listing (returns `Unsupported`).

@@ -14,7 +14,6 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::provider::Provider;
 use aimux_core::reranking_model::{
     RerankingCallOptions, RerankingDocuments, RerankingModel, RerankingRank, RerankingResponse,
     RerankingResult,
@@ -106,11 +105,8 @@ impl JinaAiProvider {
     }
 }
 
-impl Provider for JinaAiProvider {
-    fn name(&self) -> &str {
-        "jina_ai"
-    }
-}
+crate::impl_single_modality_provider!(JinaAiProvider, reranking_model, |p, id| p
+    .reranking_model(id));
 
 /// Jina AI provider-specific reranking options.
 #[derive(Debug, Clone, Default)]

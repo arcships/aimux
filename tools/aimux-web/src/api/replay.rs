@@ -60,29 +60,15 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
         AiMuxError::InvalidArgument(format!("recording '{}' not found", req.call_id))
     })?;
 
-    // Resolve the key for provider rebuild: the recording's own env: source
-    // first, then the request spec, with the Settings key store as the
-    // fallback (RFC-0029 §5.5).
-    let provider_name = recording.provider.provider.clone();
-    let key = match recording.provider.api_key_source.as_str() {
-        s if s.starts_with("env:") => {
-            wire::resolve_api_key(Some(s), &provider_name, &state.keys, state.loopback)?
-        }
-        "none" => wire::resolve_api_key(None, &provider_name, &state.keys, state.loopback)?,
-        _ => wire::resolve_api_key(
-            req.api_key.as_deref(),
-            &provider_name,
-            &state.keys,
-            state.loopback,
-        )
-        .map_err(|_| {
-            AiMuxError::InvalidArgument(
-                "this recording has no env key source — pass api_key=\"env:VAR\" or save the \
-                 provider key in Settings to replay"
-                    .into(),
-            )
-        })?,
-    };
+    // Resolve the key for provider rebuild: the request spec first, then the
+    // Settings key store; otherwise the provider's registered env var is read
+    // (RFC-0029 §5.5). The recording stores no credential source.
+    let key = wire::resolve_api_key(
+        req.api_key.as_deref(),
+        &recording.provider.provider_id,
+        &state.keys,
+        state.loopback,
+    )?;
 
     let model = aimux_providers::rebuild_provider(&recording.provider, key.as_deref())?;
 
@@ -135,8 +121,14 @@ fn mock_load_inner(state: AppState, req: MockLoadRequest) -> Result<Response, Ai
         if line.is_empty() {
             continue;
         }
-        let rec: Recording = serde_json::from_str(line)
-            .map_err(|e| AiMuxError::JsonParse(format!("mock load line {}: {e}", idx + 1)))?;
+        let rec: Recording = serde_json::from_str(line).map_err(|e| {
+            let msg = format!("mock load line {}: {e}", idx + 1);
+            if e.classify() == serde_json::error::Category::Data {
+                AiMuxError::InvalidArgument(msg)
+            } else {
+                AiMuxError::JsonParse(msg)
+            }
+        })?;
         recordings.push(rec);
     }
     if recordings.is_empty() {

@@ -315,6 +315,18 @@ pub fn is_retryable_status(status: u16) -> bool {
 }
 
 impl AiMuxError {
+    /// Build a [`NoSuchModel`](Self::NoSuchModel) for `model_id`.
+    ///
+    /// `model_type` is the AI SDK's `modelType` (`"languageModel"`,
+    /// `"embeddingModel"`, `"imageModel"`, …).
+    #[must_use]
+    pub fn no_such_model(model_id: &str, model_type: &str) -> Self {
+        Self::NoSuchModel {
+            model_id: model_id.to_string(),
+            model_type: model_type.to_string(),
+        }
+    }
+
     /// Returns `true` for a malformed individual stream frame that does not
     /// prove the underlying transport has failed. Stream reducers may report
     /// these errors and continue polling for later, independently framed data.

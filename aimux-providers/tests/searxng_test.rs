@@ -175,24 +175,25 @@ async fn status_401_maps_to_auth_error() {
 // -- Provider trait ----------------------------------------------------------
 
 #[tokio::test]
-async fn provider_name_is_searxng() {
+async fn search_model_provider_is_searxng() {
     let config = SearxngConfig::new("http://localhost:8080");
     let provider = SearxngProvider::new(config);
-    assert_eq!(provider.name(), "searxng");
+    assert_eq!(provider.search_model().provider(), "searxng");
 }
 
 #[test]
-fn language_model_returns_unsupported_error() {
+fn language_model_returns_no_such_model() {
     let config = SearxngConfig::new("http://localhost:8080");
     let provider = SearxngProvider::new(config);
     match provider.language_model("searxng-search") {
-        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
-            assert!(
-                msg.contains("provider 'searxng' does not provide language models"),
-                "unexpected message: {msg}"
-            );
+        Err(AiMuxError::NoSuchModel {
+            model_id,
+            model_type,
+        }) => {
+            assert_eq!(model_id, "searxng-search");
+            assert_eq!(model_type, "languageModel");
         }
-        _ => panic!("expected Unsupported error, got success or another error variant"),
+        _ => panic!("expected NoSuchModel error, got success or another error variant"),
     }
 }
 

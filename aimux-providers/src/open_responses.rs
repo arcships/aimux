@@ -20,7 +20,6 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ToolChoice};
-use aimux_core::provider::Provider;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::Tool;
@@ -163,9 +162,8 @@ impl OpenResponsesConfig {
         self
     }
 
-    /// 标注凭证来源(RFC-0023 回放重建用)。Open Responses 的认证由调用方经
-    /// `headers` 闭包管理;此 setter 让调用方显式标注来源(如 `env:VAR`),
-    /// 覆盖 `config_snapshot` 对闭包的推断。
+    /// 标注凭证来源(如 `env:VAR`)。Open Responses 的认证由调用方经
+    /// `headers` 闭包管理;仅作信息保留——录制只记 provider/model 身份,不再读它。
     #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
         self.api_key_source = source.map(std::string::ToString::to_string);
@@ -193,15 +191,7 @@ impl OpenResponsesProvider {
     }
 }
 
-impl Provider for OpenResponsesProvider {
-    fn name(&self) -> &str {
-        &self.config.provider
-    }
-
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
-    }
-}
+crate::impl_single_modality_provider!(OpenResponsesProvider, language_model, |p, id| p.model(id));
 
 // == Model ==
 
@@ -241,42 +231,6 @@ impl OpenResponsesModel {
         }
         headers
     }
-
-    /// Resolve the credential source for `config_snapshot` (M2b).
-    ///
-    /// Priority:
-    /// 1. An explicit `api_key_source` set via [`OpenResponsesConfig::with_api_key_source`]
-    ///    (e.g. `"env:VAR"`) — lets callers mark env-sourced auth precisely.
-    /// 2. Otherwise, inspect the `headers` closure for a known auth header
-    ///    *key* (`authorization` / `x-api-key` / `x-goog-api-key` / `api-key`).
-    ///    Only key names are inspected — header *values* are never recorded, so
-    ///    no secret leaks. If an auth header is present the source is
-    ///    `"explicit"` (caller-managed); this is the same closure already
-    ///    invoked by `build_headers` on every request, so calling it here is
-    ///    no riskier.
-    /// 3. No headers closure (and no explicit source) → `"none"` (e.g. a local
-    ///    LM Studio server with no auth).
-    fn resolve_api_key_source(&self) -> String {
-        if let Some(source) = &self.config.api_key_source {
-            return source.clone();
-        }
-        let Some(headers_factory) = &self.config.headers else {
-            return "none".to_string();
-        };
-        let headers = headers_factory();
-        let has_auth = headers.keys().any(|k| {
-            let lower = k.to_ascii_lowercase();
-            matches!(
-                lower.as_str(),
-                "authorization" | "x-api-key" | "x-goog-api-key" | "api-key"
-            )
-        });
-        if has_auth {
-            "explicit".to_string()
-        } else {
-            "none".to_string()
-        }
-    }
 }
 
 #[async_trait]
@@ -287,26 +241,6 @@ impl LanguageModel for OpenResponsesModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        use aimux_core::recording::ProviderRecord;
-        // M2b: generic Responses wrapper — auth is caller-managed via the
-        // `headers` closure. Record the real credential source: an explicit
-        // marker if set, else inferred from the closure (auth header key
-        // present → "explicit"; no closure → "none"). Only key names are
-        // inspected — header values (secrets) are never serialized.
-        ProviderRecord {
-            provider: self.provider().to_string(),
-            model_id: self.model_id.clone(),
-            base_url: Some(self.config.url.clone()),
-            api_key_source: self.resolve_api_key_source(),
-            profile: None,
-            provider_options: Some(serde_json::json!({
-                "provider_options_name": self.config.provider_options_name,
-                "has_headers": self.config.headers.is_some(),
-            })),
-        }
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {

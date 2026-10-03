@@ -26,9 +26,15 @@ use std::collections::HashMap;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 
-use aimux_core::provider::Provider;
+use aimux_core::embedding_model::EmbeddingModel;
+use aimux_core::files_model::Files;
+use aimux_core::image_model::ImageModel;
+use aimux_core::provider::{Provider, ProviderDiscovery};
+use aimux_core::speech_model::SpeechModel;
+use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{load_api_key, without_trailing_slash};
 use serde_json::Value;
+use std::sync::Arc;
 
 pub(crate) fn openai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {
@@ -144,7 +150,7 @@ impl OpenAICompatProfile {
     }
 
     /// DeepSeek profile：特化已退役（RFC-0017 阶段 2），回归 `full()`——
-    /// thinking / effort 映射等厂商差异由用户 bodyOverrides 定义。
+    /// thinking / effort 映射等厂商差异由 provider 级 body_overrides 定义。
     /// 保留此薄封装以维持注册表与调用方结构不变。
     #[must_use]
     pub fn deepseek() -> Self {
@@ -152,60 +158,13 @@ impl OpenAICompatProfile {
     }
 }
 
-/// RFC-0023:从 `OpenAIConfig` 构建 `ProviderRecord`(共享给 chat/responses 两个 model)。
-pub(crate) fn config_snapshot_from_config(
-    provider: &str,
-    model_id: &str,
-    config: &OpenAIConfig,
-) -> aimux_core::recording::ProviderRecord {
-    use aimux_core::recording::ProviderRecord;
-    ProviderRecord {
-        provider: provider.to_string(),
-        model_id: model_id.to_string(),
-        base_url: Some(config.base_url.clone()),
-        // 来源字段缺失时保守记为 explicit(显式 key 最常见;不泄露明文)。
-        api_key_source: config
-            .api_key_source
-            .clone()
-            .unwrap_or_else(|| "explicit".to_string()),
-        profile: Some(profile_to_json(&config.profile)),
-        provider_options: provider_options_to_json(config),
-    }
-}
-
-/// profile → JSON(`&'static str` 字段序列化为 String,回放重建时转回)。
-fn profile_to_json(p: &OpenAICompatProfile) -> serde_json::Value {
-    serde_json::json!({
-        "supports_top_k": p.supports_top_k,
-        "supports_tools": p.supports_tools,
-        "supports_response_format": p.supports_response_format,
-        "stream_usage_key": p.stream_usage_key,
-        "max_tokens_key": p.max_tokens_key,
-    })
-}
-
-/// 可重建的 provider_options(与 `provider::ProviderOptions` 序列化形状一致,
-/// rebuild_provider 直接反序列化)。base_url 已放 `ProviderRecord.base_url`,不重复。
-fn provider_options_to_json(config: &OpenAIConfig) -> Option<serde_json::Value> {
-    let opts = crate::provider::ProviderOptions {
-        base_url: None,
-        headers: config.headers.clone(),
-        organization: config.org_id.clone(),
-        project: config.project.clone(),
-        max_retries: None,
-        body_overrides: config.body_overrides.clone(),
-    };
-    serde_json::to_value(opts).ok()
-}
-
 /// Configuration for the OpenAI provider.
 #[derive(Debug, Clone)]
 pub struct OpenAIConfig {
     pub api_key: String,
-    /// api_key 来源(RFC-0023 `ProviderRecord.api_key_source` 分类):
-    /// `Some("env:VAR")` = 来自环境变量;`Some("none")` = 本地无认证占位;
-    /// `None` = 显式传 key(config_snapshot 记为 "explicit")。不存明文之外
-    /// 的信息,仅用于回放重建(S-1 建议的来源追踪字段)。
+    /// api_key 来源标签:`Some("env:VAR")` = 来自环境变量;`Some("none")` =
+    /// 本地无认证占位;`None` = 显式传 key。仅作信息保留——录制只记
+    /// provider/model 身份,不再读它。
     pub api_key_source: Option<String>,
     pub base_url: String,
     pub org_id: Option<String>,
@@ -221,8 +180,7 @@ pub struct OpenAIConfig {
     /// 薄封装用 `with_profile()` 设置差异。
     pub profile: OpenAICompatProfile,
     /// Provider 级请求体覆盖（RFC-0017）。在标准请求体 + 内置厂商 override
-    /// 之后 deep-merge。per-call 的 `CallOptions.body_overrides` 在此之后
-    /// 再 merge（覆盖 provider 级）。
+    /// 之后 deep-merge，发送前最后一步。没有调用级覆盖(`CallOptions` 已无此字段)。
     pub body_overrides: Option<Value>,
 }
 
@@ -374,21 +332,36 @@ impl OpenAIProvider {
 }
 
 impl Provider for OpenAIProvider {
-    fn name(&self) -> &str {
-        "openai"
+    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        Ok(Arc::new(self.model(model_id)))
     }
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
+    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+        Ok(Arc::new(self.embedding_model(model_id)))
     }
 
-    /// List models via `GET {base_url}/models` (OpenAI-compatible), enriched
-    /// with the community catalogue portrait when available (RFC-0027).
-    ///
-    /// The provider name used for catalogue lookup is `config.provider` (the
-    /// registry entry name, e.g. `"deepseek"`), not the hardcoded `"openai"`
-    /// returned by [`name`](Provider::name) — that lets the same shared impl
-    /// attach the right portrait per registry-backed provider.
+    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+        Ok(Arc::new(self.image(model_id)))
+    }
+
+    fn transcription_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn TranscriptionModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.transcription(model_id))))
+    }
+
+    fn speech_model(&self, model_id: &str) -> Option<Result<Arc<dyn SpeechModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.speech(model_id))))
+    }
+
+    fn files(&self) -> Option<Arc<dyn Files>> {
+        Some(Arc::new(self.files()))
+    }
+}
+
+impl ProviderDiscovery for OpenAIProvider {
+    /// List models via `GET {base_url}/models` (OpenAI-compatible, RFC-0027).
     fn list_models(
         &self,
     ) -> std::pin::Pin<

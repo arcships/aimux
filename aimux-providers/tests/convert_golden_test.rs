@@ -66,7 +66,6 @@ fn openai_chat_golden() {
         tools: Some(vec![Tool::Function(weather_tool())]),
         tool_choice: ToolChoice::Auto,
         response_format: Some(json_schema_format()),
-        body_overrides: Some(json!({ "user": "override-me" })),
         ..CallOptions::default()
     };
 
@@ -114,14 +113,12 @@ fn openai_chat_golden() {
                     }
                 }
             ],
-            "tool_choice": "auto",
-            "user": "override-me"
+            "tool_choice": "auto"
         }),
         "openai chat body diverged: {}",
         result.body
     );
-    // `temperature` is stripped for reasoning models with a warning; the
-    // body override `user` lands after built-in fields.
+    // `temperature` is stripped for reasoning models with a warning.
     assert_eq!(result.body.get("temperature"), None);
     assert_eq!(
         serde_json::to_value(&result.warnings).unwrap(),

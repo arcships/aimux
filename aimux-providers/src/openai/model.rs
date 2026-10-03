@@ -25,7 +25,9 @@ use aimux_provider_utils::{
 };
 
 use super::OpenAIConfig;
-use super::convert::{RequestBodyResult, build_request_body_with_warnings, parse_finish_reason};
+use super::convert::{
+    RequestBodyResult, apply_body_overrides, build_request_body_with_warnings, parse_finish_reason,
+};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
 
 /// An OpenAI-compatible language model.
@@ -82,30 +84,6 @@ pub fn build_auth_headers(config: &super::OpenAIConfig) -> HashMap<String, Strin
         }
     }
     headers
-}
-
-/// Merge provider-level `body_overrides` into the per-call options (RFC-0017).
-///
-/// Provider-level overrides are applied first (lower priority); per-call
-/// `body_overrides` from `CallOptions` are merged on top. If neither is
-/// present, the options are returned unchanged (cheap clone).
-fn merge_body_overrides(options: &CallOptions, provider_overrides: &Option<Value>) -> CallOptions {
-    match (provider_overrides, &options.body_overrides) {
-        (Some(provider), Some(call)) => {
-            // Merge: provider first, then call (call wins).
-            let mut merged = provider.clone();
-            crate::openai::convert::deep_merge_json(&mut merged, call);
-            let mut opts = options.clone();
-            opts.body_overrides = Some(merged);
-            opts
-        }
-        (Some(provider), None) => {
-            let mut opts = options.clone();
-            opts.body_overrides = Some(provider.clone());
-            opts
-        }
-        (None, _) => options.clone(),
-    }
 }
 
 // ── Usage conversion ─────────────────────────────────────────────────────────
@@ -193,34 +171,30 @@ impl LanguageModel for OpenAIModel {
         &self.model_id
     }
 
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        super::config_snapshot_from_config(&self.config.provider, &self.model_id, &self.config)
-    }
-
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
-        let options = merge_body_overrides(options, &self.config.body_overrides);
         execute_generate(
             &self.endpoint(),
             &headers,
             &self.model_id,
-            &options,
+            options,
             &self.config.provider,
             &self.config.profile,
+            self.config.body_overrides.as_ref(),
         )
         .await
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
-        let options = merge_body_overrides(options, &self.config.body_overrides);
         execute_stream(
             &self.endpoint(),
             &headers,
             &self.model_id,
-            &options,
+            options,
             &self.config.provider,
             &self.config.profile,
+            self.config.body_overrides.as_ref(),
         )
         .await
     }
@@ -262,9 +236,11 @@ pub async fn execute_generate(
     options: &CallOptions,
     provider: &str,
     profile: &super::OpenAICompatProfile,
+    body_overrides: Option<&Value>,
 ) -> Result<GenerateResult, AiMuxError> {
-    let request_result =
+    let mut request_result =
         build_request_body_with_warnings(model_id, options, false, provider, profile)?;
+    apply_body_overrides(&mut request_result.body, body_overrides);
     let body = request_result.body;
 
     let resp = aimux_provider_utils::post_json_to_api(
@@ -414,9 +390,11 @@ pub async fn execute_stream(
     options: &CallOptions,
     provider: &str,
     profile: &super::OpenAICompatProfile,
+    body_overrides: Option<&Value>,
 ) -> Result<StreamResult, AiMuxError> {
-    let request_result =
+    let mut request_result =
         build_request_body_with_warnings(model_id, options, true, provider, profile)?;
+    apply_body_overrides(&mut request_result.body, body_overrides);
     // M9 (RFC-0016): keep the warnings computed while building the body —
     // they are emitted in `StreamStart` below instead of being dropped.
     let RequestBodyResult { body, warnings } = request_result;

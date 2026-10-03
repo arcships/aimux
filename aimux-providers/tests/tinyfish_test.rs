@@ -198,23 +198,24 @@ async fn status_401_maps_to_auth_error() {
 // -- Provider trait ----------------------------------------------------------
 
 #[tokio::test]
-async fn provider_name_is_tinyfish() {
+async fn search_model_provider_is_tinyfish() {
     let config = TinyfishConfig::new(API_KEY);
     let provider = TinyfishProvider::new(config);
-    assert_eq!(provider.name(), "tinyfish");
+    assert_eq!(provider.search_model().provider(), "tinyfish");
 }
 
 #[test]
-fn language_model_returns_unsupported_error() {
+fn language_model_returns_no_such_model() {
     let config = TinyfishConfig::new(API_KEY);
     let provider = TinyfishProvider::new(config);
     match provider.language_model("tinyfish-search") {
-        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
-            assert!(
-                msg.contains("provider 'tinyfish' does not provide language models"),
-                "unexpected message: {msg}"
-            );
+        Err(AiMuxError::NoSuchModel {
+            model_id,
+            model_type,
+        }) => {
+            assert_eq!(model_id, "tinyfish-search");
+            assert_eq!(model_type, "languageModel");
         }
-        _ => panic!("expected Unsupported error, got success or another error variant"),
+        _ => panic!("expected NoSuchModel error, got success or another error variant"),
     }
 }

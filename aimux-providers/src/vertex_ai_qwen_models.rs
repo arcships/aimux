@@ -20,8 +20,6 @@
 //! Sample model ids: `"qwen/qwen3-coder-480b-a35b-instruct-maas"`, `"qwen/qwen3-next-80b-a3b-instruct-maas"`.
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
 
 use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIModel, OpenAIProvider};
 
@@ -124,14 +122,7 @@ impl VertexAiQwenModelsProvider {
     }
 }
 
-impl Provider for VertexAiQwenModelsProvider {
-    fn name(&self) -> &str {
-        PROVIDER_NAME
-    }
+crate::impl_single_modality_provider!(VertexAiQwenModelsProvider, language_model, |p, id| p
+    .model(id));
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
-    }
-
-    crate::delegate_list_models!();
-}
+crate::delegate_list_models!(VertexAiQwenModelsProvider);

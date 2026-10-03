@@ -116,7 +116,7 @@ fn build_model(
             }
             let model = aimux_providers::provider(provider, Some(api_key), model_id, Some(options))
                 .map_err(|e| anyhow::anyhow!("provider '{provider}': {e}"))?;
-            Ok(Arc::from(model))
+            Ok(model)
         }
     }
 }

@@ -9,9 +9,14 @@ pub mod reranking;
 pub use embedding::VoyageEmbeddingModel;
 pub use reranking::VoyageRerankingModel;
 
+use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
+use aimux_core::image_model::ImageModel;
+use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
+use aimux_core::reranking_model::RerankingModel;
 use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use std::sync::Arc;
 
 pub(crate) fn voyage_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {
@@ -88,7 +93,22 @@ impl VoyageProvider {
 }
 
 impl Provider for VoyageProvider {
-    fn name(&self) -> &str {
-        "voyage"
+    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "languageModel"))
+    }
+
+    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+        Ok(Arc::new(self.embedding_model(model_id)))
+    }
+
+    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "imageModel"))
+    }
+
+    fn reranking_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn RerankingModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.reranking_model(model_id))))
     }
 }

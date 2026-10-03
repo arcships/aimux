@@ -14,10 +14,15 @@
 //!
 //! Reference: <https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/call-gemini>
 
+use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
+use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
+use aimux_core::provider::{Provider, ProviderDiscovery};
+use aimux_core::transcription_model::TranscriptionModel;
+use aimux_core::video_model::VideoModel;
 use aimux_provider_utils::without_trailing_slash;
+use std::sync::Arc;
 
 mod anthropic_model;
 mod embedding;
@@ -320,14 +325,37 @@ impl VertexProvider {
 }
 
 impl Provider for VertexProvider {
-    fn name(&self) -> &str {
-        "google.vertex"
+    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        Ok(Arc::new(self.model(model_id)?))
     }
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)?))
+    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+        Ok(Arc::new(self.embedding_model(model_id)))
     }
 
+    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+        Ok(Arc::new(self.image(model_id)))
+    }
+
+    fn transcription_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn TranscriptionModel>, AiMuxError>> {
+        Some(
+            self.transcription(model_id)
+                .map(|m| Arc::new(m) as Arc<dyn TranscriptionModel>),
+        )
+    }
+
+    fn video_model(&self, model_id: &str) -> Option<Result<Arc<dyn VideoModel>, AiMuxError>> {
+        Some(
+            self.video(model_id)
+                .map(|m| Arc::new(m) as Arc<dyn VideoModel>),
+        )
+    }
+}
+
+impl ProviderDiscovery for VertexProvider {
     /// List models via `GET {base_url}/models` (Gemini native, RFC-0027).
     fn list_models(
         &self,

@@ -15,7 +15,6 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use serde_json::Value;
 
-use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
@@ -162,11 +161,7 @@ impl StabilityProvider {
     }
 }
 
-impl Provider for StabilityProvider {
-    fn name(&self) -> &str {
-        "stability"
-    }
-}
+crate::impl_single_modality_provider!(StabilityProvider, image_model, |p, id| p.image(id));
 
 /// A Stability image generation model.
 pub struct StabilityImageModel {

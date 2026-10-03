@@ -3,9 +3,10 @@
 //! 设计来源：[stage2-reasoning-map.md](../../docs/plan/analysis/stage2-reasoning-map.md) §4 I4-I5、§5。
 //!
 //! 覆盖：
-//! - **I4**：退役后 DeepSeek 请求体不含 `thinking` 注入（除非用户 bodyOverrides 注入）
-//! - **I5**：用户 `body_overrides: { thinking: { type: 'disabled' } }` → 请求体含之
-//!   （阶段 1 能力回归）
+//! - **I4**：退役后 DeepSeek 请求体不含 `thinking` 注入（除非 provider 级
+//!   body_overrides 注入）
+//! - **I5**：provider 级 `body_overrides: { thinking: { type: 'disabled' } }` →
+//!   请求体含之（阶段 1 能力回归；调用级覆盖已删除）
 //! - **max_tokens_key 矩阵**：8 家接线（stepfun/siliconflow/sarvam/reka_ai/publicai/
 //!   perplexity → `"max_tokens"`；groq/heroku → `"max_completion_tokens"`）×
 //!   推理/非推理两分支。profile 取自注册表 `provider_registry_entry(name)`
@@ -20,7 +21,7 @@ use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::types::{ReasoningEffort, Warning};
 use aimux_providers::openai::OpenAICompatProfile;
-use aimux_providers::openai::convert::build_request_body_with_warnings;
+use aimux_providers::openai::convert::{apply_body_overrides, build_request_body_with_warnings};
 use aimux_providers::provider_registry_entry;
 use serde_json::json;
 
@@ -94,20 +95,19 @@ fn i4_deepseek_no_thinking_when_reasoning_unset() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// I5: 用户 body_overrides 注入 thinking → 请求体含之（阶段 1 能力回归）
+// I5: provider 级 body_overrides 注入 thinking → 请求体含之（阶段 1 能力回归）
 // ════════════════════════════════════════════════════════════════════════════
 
-/// I5: 用户 `body_overrides: { thinking: { type: 'disabled' } }` 原样进入请求体。
+/// I5: provider 级 `body_overrides: { thinking: { type: 'disabled' } }` 原样进入请求体。
 /// 关思考的语义完全由用户定义（退役后不再由 reasoning:'none' 自动注入）。
 #[test]
 fn i5_body_overrides_injects_thinking_disabled() {
     let opts = CallOptions {
         prompt: user_prompt(),
         reasoning: Some(ReasoningEffort::None),
-        body_overrides: Some(json!({ "thinking": { "type": "disabled" } })),
         ..CallOptions::default()
     };
-    let result = build_request_body_with_warnings(
+    let mut result = build_request_body_with_warnings(
         "deepseek-reasoner",
         &opts,
         false,
@@ -115,20 +115,23 @@ fn i5_body_overrides_injects_thinking_disabled() {
         &OpenAICompatProfile::deepseek(),
     )
     .unwrap();
+    apply_body_overrides(
+        &mut result.body,
+        Some(&json!({ "thinking": { "type": "disabled" } })),
+    );
     assert_eq!(result.body["thinking"], json!({ "type": "disabled" }));
     assert_eq!(result.body["reasoning_effort"], json!("none"));
 }
 
-/// I5 补充: 用户注入 `thinking: { type: 'enabled' }` 同样原样进入请求体
-/// （开思考回归——退役前由特化注入，现由用户定义）。
+/// I5 补充: 注入 `thinking: { type: 'enabled' }` 同样原样进入请求体
+/// （开思考回归——退役前由特化注入，现由 provider 级覆盖定义）。
 #[test]
 fn i5_body_overrides_injects_thinking_enabled() {
     let opts = CallOptions {
         prompt: user_prompt(),
-        body_overrides: Some(json!({ "thinking": { "type": "enabled" } })),
         ..CallOptions::default()
     };
-    let result = build_request_body_with_warnings(
+    let mut result = build_request_body_with_warnings(
         "deepseek-reasoner",
         &opts,
         false,
@@ -136,6 +139,10 @@ fn i5_body_overrides_injects_thinking_enabled() {
         &OpenAICompatProfile::deepseek(),
     )
     .unwrap();
+    apply_body_overrides(
+        &mut result.body,
+        Some(&json!({ "thinking": { "type": "enabled" } })),
+    );
     assert_eq!(result.body["thinking"], json!({ "type": "enabled" }));
 }
 

@@ -143,46 +143,13 @@ impl LanguageModel for VertexAnthropicModel {
         &self.model_id
     }
 
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        use aimux_core::recording::ProviderRecord;
-        // M2b: record identity + credential source + auth kind. Never serialize
-        // the bearer token or API key plaintext.
-        let auth_kind = match &self.config.auth {
-            VertexAuth::BearerToken(_) => "bearer_token",
-            VertexAuth::ApiKey(_) => "api_key",
-        };
-        ProviderRecord {
-            provider: self.provider().to_string(),
-            model_id: self.model_id.clone(),
-            base_url: Some(self.config.base_url.clone()),
-            api_key_source: self
-                .config
-                .api_key_source
-                .clone()
-                .unwrap_or_else(|| "explicit".to_string()),
-            profile: None,
-            provider_options: Some(serde_json::json!({
-                "auth_kind": auth_kind,
-                "anthropic_version": ANTHROPIC_VERTEX_VERSION,
-            })),
-        }
-    }
-
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let req = build_request_body_with_warnings(&self.model_id, options, false)?;
         let body = self.wrap_raw_predict_body(req.body);
         let url = self.generate_endpoint();
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: url.clone(),
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
+            HttpRequest::new(url.clone(), headers, options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler(),
             crate::google::google_failed_response_handler(),
@@ -232,15 +199,7 @@ impl LanguageModel for VertexAnthropicModel {
         let url = self.stream_endpoint();
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: url.clone(),
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
+            HttpRequest::new(url.clone(), headers, options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<StreamEvent>(),
             crate::google::google_failed_response_handler(),

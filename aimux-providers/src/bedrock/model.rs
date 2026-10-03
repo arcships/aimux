@@ -160,46 +160,13 @@ impl LanguageModel for BedrockModel {
         &self.model_id
     }
 
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        use aimux_core::recording::ProviderRecord;
-        // M2b: record identity + credential source + region (encoded in
-        // base_url) + retry. Never serialize the SigV4 credentials or bearer
-        // token plaintext — only the auth *kind* and source marker.
-        let auth_kind = match &self.config.auth {
-            BedrockAuth::BearerToken(_) => "bearer_token",
-            BedrockAuth::SigV4(_) => "sigv4",
-        };
-        ProviderRecord {
-            provider: self.provider().to_string(),
-            model_id: self.model_id.clone(),
-            base_url: Some(self.config.base_url.clone()),
-            api_key_source: self
-                .config
-                .api_key_source
-                .clone()
-                .unwrap_or_else(|| "explicit".to_string()),
-            profile: None,
-            provider_options: Some(serde_json::json!({
-                "auth_kind": auth_kind,
-            })),
-        }
-    }
-
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let body = build_request_body(&self.model_id, options);
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.endpoint(false);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url,
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
+            HttpRequest::new(url, headers, options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_json_response_handler(),
             super::bedrock_failed_response_handler(),
@@ -258,15 +225,7 @@ impl LanguageModel for BedrockModel {
         let url = self.endpoint(true);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url,
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
+            HttpRequest::new(url, headers, options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             bedrock_event_stream_response_handler(),
             super::bedrock_failed_response_handler(),

@@ -15,15 +15,13 @@
 pub mod responses;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
+use aimux_core::provider::ProviderDiscovery;
 use aimux_provider_utils::load_api_key;
 
 use crate::openai::{OpenAIConfig, OpenAIModel};
 
 const DEFAULT_BASE_URL: &str = "https://router.huggingface.co/v1";
 const ENV_VAR: &str = "HUGGINGFACE_API_KEY";
-const PROVIDER_NAME: &str = "huggingface";
 
 /// Configuration for the Hugging Face provider (wraps [`OpenAIConfig`]).
 #[derive(Debug, Clone)]
@@ -59,11 +57,6 @@ impl HuggingFaceConfig {
         self.0 = self.0.with_api_key_source(source);
         self
     }
-
-    /// 内部 `OpenAIConfig` 引用(config_snapshot 复用 OpenAI helper 用,M2b)。
-    pub(crate) fn openai_config(&self) -> &OpenAIConfig {
-        &self.0
-    }
 }
 
 /// Hugging Face provider — creates [`OpenAIModel`] (chat) and
@@ -96,15 +89,9 @@ impl HuggingFaceProvider {
     }
 }
 
-impl Provider for HuggingFaceProvider {
-    fn name(&self) -> &str {
-        PROVIDER_NAME
-    }
+crate::impl_single_modality_provider!(HuggingFaceProvider, language_model, |p, id| p.model(id));
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
-    }
-
+impl ProviderDiscovery for HuggingFaceProvider {
     fn list_models(
         &self,
     ) -> std::pin::Pin<

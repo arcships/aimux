@@ -15,7 +15,6 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
@@ -84,11 +83,7 @@ impl SearxngProvider {
     }
 }
 
-impl Provider for SearxngProvider {
-    fn name(&self) -> &str {
-        "searxng"
-    }
-}
+crate::impl_single_modality_provider!(SearxngProvider, search_model, |p, _id| p.search_model());
 
 /// A single SearXNG result entry. All fields are optional so unknown-but-legal
 /// values degrade safely.

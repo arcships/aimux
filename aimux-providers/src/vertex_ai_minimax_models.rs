@@ -20,8 +20,6 @@
 //! Sample model ids: `"minimax/minimax-m2-maas"`.
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
 
 use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIModel, OpenAIProvider};
 
@@ -124,14 +122,7 @@ impl VertexAiMinimaxModelsProvider {
     }
 }
 
-impl Provider for VertexAiMinimaxModelsProvider {
-    fn name(&self) -> &str {
-        PROVIDER_NAME
-    }
+crate::impl_single_modality_provider!(VertexAiMinimaxModelsProvider, language_model, |p, id| p
+    .model(id));
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
-    }
-
-    crate::delegate_list_models!();
-}
+crate::delegate_list_models!(VertexAiMinimaxModelsProvider);

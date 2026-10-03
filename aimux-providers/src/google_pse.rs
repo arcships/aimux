@@ -16,7 +16,6 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
@@ -120,11 +119,7 @@ impl GooglePseProvider {
     }
 }
 
-impl Provider for GooglePseProvider {
-    fn name(&self) -> &str {
-        "google_pse"
-    }
-}
+crate::impl_single_modality_provider!(GooglePseProvider, search_model, |p, _id| p.search_model());
 
 /// Resolve the `cx` (search-engine ID): prefer the config value, then
 /// `provider_options["google_pse"]["cx"]`.

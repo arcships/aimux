@@ -138,11 +138,6 @@ pub struct SearchResponse {
 /// implement `do_search`; users never call it directly.
 #[async_trait]
 pub trait SearchModel: Send + Sync {
-    /// Specification version (always `"v4"`).
-    fn specification_version(&self) -> &'static str {
-        "v4"
-    }
-
     /// Provider name, e.g. `"tavily"`.
     fn provider(&self) -> &str;
 

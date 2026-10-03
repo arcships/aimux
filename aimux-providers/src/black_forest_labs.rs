@@ -346,7 +346,7 @@ impl ImageModel for BlackForestLabsImageModel {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
+        let retries = retry::prepare_retries(None, options.abort_signal.clone());
 
         // Poll for result
         let poll_interval = bfl_opts

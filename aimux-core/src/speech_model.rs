@@ -137,11 +137,6 @@ pub struct SpeechResponse {
 /// Aligned with V4 `SpeechModelV4`.
 #[async_trait]
 pub trait SpeechModel: Send + Sync {
-    /// Specification version (always `"v4"`).
-    fn specification_version(&self) -> &'static str {
-        "v4"
-    }
-
     /// Provider name, e.g. `"openai"`.
     fn provider(&self) -> &str;
 

@@ -265,7 +265,7 @@ impl TranscriptionModel for RevaiTranscriptionModel {
             )
         })?;
         let submission_language = submit_response.language;
-        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
+        let retries = retry::prepare_retries(None, options.abort_signal.clone());
 
         // Poll for completion.
         let job_status: RevaiJobResponse;

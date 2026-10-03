@@ -14,9 +14,9 @@ fn make_provider(server: &MockServer) -> TavilyProvider {
 }
 
 #[test]
-fn provider_name_is_tavily() {
+fn search_model_provider_is_tavily() {
     let provider = TavilyProvider::new(TavilyConfig::new("test-key"));
-    assert_eq!(provider.name(), "tavily");
+    assert_eq!(provider.search_model().provider(), "tavily");
 }
 
 #[test]

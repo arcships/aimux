@@ -294,14 +294,6 @@ async fn handles_base64_string_data() {
 }
 
 #[tokio::test]
-async fn has_specification_version_v4() {
-    let provider = AnthropicProvider::new(AnthropicConfig::new("test-api-key"));
-    let files = provider.files();
-
-    assert_eq!(files.specification_version(), "v4");
-}
-
-#[tokio::test]
 async fn has_correct_provider_name() {
     let provider = AnthropicProvider::new(AnthropicConfig::new("test-api-key"));
     let files = provider.files();

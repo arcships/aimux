@@ -14,9 +14,9 @@ fn make_provider(server: &MockServer) -> ExaAiProvider {
 }
 
 #[test]
-fn provider_name_is_exa_ai() {
+fn search_model_provider_is_exa_ai() {
     let provider = ExaAiProvider::new(ExaAiConfig::new("test-key"));
-    assert_eq!(provider.name(), "exa_ai");
+    assert_eq!(provider.search_model().provider(), "exa_ai");
 }
 
 #[test]

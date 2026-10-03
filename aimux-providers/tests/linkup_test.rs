@@ -261,24 +261,25 @@ async fn status_403_maps_to_provider_error() {
 // -- Provider trait ----------------------------------------------------------
 
 #[tokio::test]
-async fn provider_name_is_linkup() {
+async fn search_model_provider_is_linkup() {
     let config = LinkupConfig::new(API_KEY);
     let provider = LinkupProvider::new(config);
-    assert_eq!(provider.name(), "linkup");
+    assert_eq!(provider.search_model().provider(), "linkup");
 }
 
 #[test]
-fn language_model_returns_unsupported_error() {
+fn language_model_returns_no_such_model() {
     let config = LinkupConfig::new(API_KEY);
     let provider = LinkupProvider::new(config);
     match provider.language_model("linkup-search") {
-        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
-            assert!(
-                msg.contains("provider 'linkup' does not provide language models"),
-                "unexpected message: {msg}"
-            );
+        Err(AiMuxError::NoSuchModel {
+            model_id,
+            model_type,
+        }) => {
+            assert_eq!(model_id, "linkup-search");
+            assert_eq!(model_type, "languageModel");
         }
-        _ => panic!("expected Unsupported error, got success or another error variant"),
+        _ => panic!("expected NoSuchModel error, got success or another error variant"),
     }
 }
 

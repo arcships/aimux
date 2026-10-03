@@ -78,11 +78,10 @@ async fn mount_success_mocks(server: &MockServer) {
 // -- constructor tests -------------------------------------------------------
 
 #[tokio::test]
-async fn should_expose_correct_provider_and_specification_version() {
+async fn should_expose_correct_provider() {
     let provider = GoogleProvider::new(GoogleConfig::new("test-api-key"));
     let files = provider.files();
     assert_eq!(files.provider(), "google.generative-ai");
-    assert_eq!(files.specification_version(), "v4");
 }
 
 // -- upload initiation tests -------------------------------------------------

@@ -21,7 +21,6 @@ use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::provider::Provider;
 use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
@@ -216,11 +215,7 @@ impl AwsPollyProvider {
     }
 }
 
-impl Provider for AwsPollyProvider {
-    fn name(&self) -> &str {
-        PROVIDER_NAME
-    }
-}
+crate::impl_single_modality_provider!(AwsPollyProvider, speech_model, |p, id| p.speech(id));
 
 // ── Speech model ─────────────────────────────────────────────────────────────
 

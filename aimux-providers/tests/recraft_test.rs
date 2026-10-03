@@ -238,21 +238,21 @@ async fn status_500_maps_to_provider_error() {
 // ════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn provider_name_is_recraft() {
+async fn image_model_provider_is_recraft() {
     let server = MockServer::start().await;
     let config = RecraftConfig::new(API_KEY).with_base_url(server.uri());
     let provider = RecraftProvider::new(config);
-    assert_eq!(provider.name(), "recraft");
+    assert_eq!(provider.image("recraftv3").provider(), "recraft");
 }
 
 #[test]
-fn language_model_returns_unsupported_error() {
+fn language_model_returns_no_such_model() {
     let config = RecraftConfig::new(API_KEY);
     let provider = RecraftProvider::new(config);
     let result = provider.language_model("recraftv3");
     assert!(
-        matches!(result, Err(AiMuxError::UnsupportedFunctionality(_))),
-        "expected Unsupported error"
+        matches!(result, Err(AiMuxError::NoSuchModel { ref model_type, .. }) if model_type == "languageModel"),
+        "expected NoSuchModel error"
     );
 }
 

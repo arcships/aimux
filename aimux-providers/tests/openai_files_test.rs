@@ -272,11 +272,10 @@ async fn should_handle_base64_string_data() {
 }
 
 #[tokio::test]
-async fn should_set_specification_version_and_provider() {
+async fn should_set_provider() {
     let provider = OpenAIProvider::new(OpenAIConfig::new("test-api-key"));
     let files = provider.files();
 
-    assert_eq!(files.specification_version(), "v4");
     assert_eq!(files.provider(), "openai.files");
 }
 

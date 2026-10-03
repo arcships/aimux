@@ -15,7 +15,6 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
@@ -102,11 +101,7 @@ impl YouComProvider {
     }
 }
 
-impl Provider for YouComProvider {
-    fn name(&self) -> &str {
-        PROVIDER_NAME
-    }
-}
+crate::impl_single_modality_provider!(YouComProvider, search_model, |p, _id| p.search_model());
 
 // ── Request builder ──────────────────────────────────────────────────────────
 

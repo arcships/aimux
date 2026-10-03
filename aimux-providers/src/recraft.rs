@@ -18,7 +18,6 @@ use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
-use aimux_core::provider::Provider;
 use aimux_core::retry;
 use aimux_core::shared::Warning;
 use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
@@ -106,11 +105,7 @@ impl RecraftProvider {
     }
 }
 
-impl Provider for RecraftProvider {
-    fn name(&self) -> &str {
-        PROVIDER_NAME
-    }
-}
+crate::impl_single_modality_provider!(RecraftProvider, image_model, |p, id| p.image(id));
 
 /// A Recraft image generation model.
 pub struct RecraftImageModel {
@@ -343,7 +338,7 @@ impl ImageModel for RecraftImageModel {
 
         let response_headers = resp.response_headers;
         let value: Value = resp.value;
-        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
+        let retries = retry::prepare_retries(None, options.abort_signal.clone());
 
         let images = extract_images(
             &value,

@@ -7,7 +7,7 @@
 //! suites verify:
 //!
 //! - `from_env()` loads the correct environment variable.
-//! - `Provider::name()` returns the documented provider string.
+//! - the provider's models report the documented provider string.
 //! - Custom headers are forwarded to the HTTP request.
 //! - The default base URL constant is wired correctly (verified via a mock
 //!   round-trip that relies on `with_base_url`).
@@ -69,13 +69,16 @@ mod huggingface_config {
     use super::*;
 
     /// TS: `createHuggingFace()` should create a provider with default
-    /// configuration. In Rust we verify the provider name and that a model
-    /// can be created.
+    /// configuration. In Rust we verify that a model can be created. The chat
+    /// model is the shared OpenAI-compatible model, so `provider()` carries the
+    /// protocol name until each wrapper gets its own settings-level name.
     #[test]
-    fn provider_name_is_huggingface() {
+    fn model_is_created_with_default_configuration() {
         let config = HuggingFaceConfig::new("test-key");
         let provider = HuggingFaceProvider::new(config);
-        assert_eq!(provider.name(), "huggingface");
+        let model = provider.model("any");
+        assert_eq!(model.model_id(), "any");
+        assert_eq!(model.provider(), "openai");
     }
 
     /// TS: `createHuggingFace({ apiKey: 'custom-key' })` �?custom API key

@@ -682,8 +682,9 @@ fn azure(
 /// Create a language model from the built-in registry by provider name
 /// (RFC-0017 phase 4). `api_key=None` reads the provider's env var.
 /// `config_json` is a serialized `ProviderOptions` object (`base_url` /
-/// `headers` / `organization` / `project` / `max_retries` /
-/// `body_overrides`); the `base_url` parameter wins over the JSON field.
+/// `headers` / `organization` / `project`; `max_retries` and `body_overrides`
+/// are rejected as invalid arguments); the `base_url` parameter wins over the
+/// JSON field.
 #[pyfunction]
 #[pyo3(signature = (name, api_key, model_id, base_url=None, config_json=None))]
 fn provider(
@@ -717,6 +718,7 @@ fn provider(
 #[pyclass]
 struct ProviderHandle {
     inner: Arc<dyn aimux_core::provider::Provider>,
+    discovery: Arc<dyn aimux_core::provider::ProviderDiscovery>,
 }
 
 #[pymethods]
@@ -726,7 +728,7 @@ impl ProviderHandle {
     fn list_models(&self) -> PyResult<String> {
         let rt = runtime();
         let models = rt
-            .block_on(async { self.inner.list_models().await })
+            .block_on(async { self.discovery.list_models().await })
             .map_err(|e| to_py_err(&e))?;
         serialize_result(&models)
     }
@@ -763,10 +765,11 @@ fn create_provider(
     if let Some(url) = base_url {
         options.get_or_insert_with(Default::default).base_url = Some(url.to_string());
     }
-    let p = aimux_providers::provider_handle(name, api_key, options).map_err(|e| to_py_err(&e))?;
-    Ok(ProviderHandle {
-        inner: Arc::from(p),
-    })
+    let inner = aimux_providers::provider_handle(name, api_key.clone(), options.clone())
+        .map_err(|e| to_py_err(&e))?;
+    let discovery =
+        aimux_providers::provider_discovery(name, api_key, options).map_err(|e| to_py_err(&e))?;
+    Ok(ProviderHandle { inner, discovery })
 }
 
 /// Fetch the community model catalogue (RFC-0027) and return it as a JSON

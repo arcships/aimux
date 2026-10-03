@@ -20,11 +20,15 @@ pub mod reranking;
 pub mod sigv4;
 mod types;
 
+use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
+use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
+use aimux_core::provider::{Provider, ProviderDiscovery};
+use aimux_core::reranking_model::RerankingModel;
 use aimux_provider_utils::without_trailing_slash;
 use serde_json::Value;
+use std::sync::Arc;
 
 pub use embedding::BedrockEmbeddingModel;
 pub use image::BedrockImageModel;
@@ -259,14 +263,27 @@ impl BedrockProvider {
 }
 
 impl Provider for BedrockProvider {
-    fn name(&self) -> &str {
-        "amazon-bedrock"
+    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        Ok(Arc::new(self.model(model_id)))
     }
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
+    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+        Ok(Arc::new(self.embedding_model(model_id)))
     }
 
+    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+        Ok(Arc::new(self.image(model_id)))
+    }
+
+    fn reranking_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn RerankingModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.reranking_model(model_id))))
+    }
+}
+
+impl ProviderDiscovery for BedrockProvider {
     /// List foundation models via AWS Bedrock `ListFoundationModels` API
     /// (SigV4-signed GET, RFC-0027).
     fn list_models(
