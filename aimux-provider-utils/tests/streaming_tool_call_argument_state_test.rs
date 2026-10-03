@@ -12,6 +12,7 @@ fn starts_with_structured_value_true() {
 
 #[test]
 fn starts_with_structured_value_false() {
+    // TS covers `undefined` and `null` separately; Rust has one `None`.
     assert!(!starts_with_structured_value(None));
     for value in ["", "   ", "1", "\"value\""] {
         assert!(!starts_with_structured_value(Some(value)), "{value:?}");
