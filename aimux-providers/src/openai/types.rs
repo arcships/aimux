@@ -156,8 +156,10 @@ pub struct Delta {
 
 #[derive(Debug, Deserialize)]
 pub struct DeltaToolCall {
+    /// Optional: some OpenAI-compatible providers omit it (the AI SDK schema
+    /// is `index: z.number().nullish()`); the tracker falls back to id/name.
     #[serde(default)]
-    pub index: usize,
+    pub index: Option<usize>,
     #[serde(default)]
     pub id: Option<String>,
     #[serde(default)]
