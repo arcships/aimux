@@ -231,6 +231,7 @@ impl AnthropicProvider {
             base_url: self.base_url.clone(),
             provider_options_name: options::options_name_of(&self.name),
             hooks: AnthropicModelHooks::default(),
+            resolve: None,
         }
     }
 
@@ -305,6 +306,7 @@ impl ProviderDiscovery for AnthropicProvider {
 pub(crate) async fn list_models_once(
     config: &AnthropicModelConfig,
 ) -> Result<Vec<RuntimeModel>, AiMuxError> {
+    let config = &config.resolved().await?;
     #[derive(serde::Deserialize)]
     struct Resp {
         #[serde(default)]

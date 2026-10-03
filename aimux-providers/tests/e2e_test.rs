@@ -17,7 +17,8 @@ use aimux_provider_utils::Resolvable;
 use aimux_providers::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use aimux_providers::{
-    CohereConfig, CohereProvider, GoogleConfig, GoogleProvider, MistralConfig, MistralProvider,
+    CohereConfig, CohereProvider, GoogleProviderSettings, MistralConfig, MistralProvider,
+    create_google,
 };
 
 /// The native Anthropic package pointed at a mock server.
@@ -911,8 +912,13 @@ async fn e2e_google_generate_text() {
         .mount(&server)
         .await;
 
-    let provider = GoogleProvider::new(GoogleConfig::new("test-key").with_base_url(server.uri()));
-    let model = provider.model("gemini-2.0-flash");
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.chat("gemini-2.0-flash");
 
     let result = generate_text(&model, "What is Rust?", GenerateTextOptions::default())
         .await
@@ -950,8 +956,13 @@ async fn e2e_google_stream_text() {
         .mount(&server)
         .await;
 
-    let provider = GoogleProvider::new(GoogleConfig::new("test-key").with_base_url(server.uri()));
-    let model = provider.model("gemini-2.0-flash");
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.chat("gemini-2.0-flash");
 
     let result = stream_text(&model, "Say hello", GenerateTextOptions::default())
         .await

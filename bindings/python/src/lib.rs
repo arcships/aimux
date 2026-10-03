@@ -494,13 +494,14 @@ fn deepseek(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<M
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn google(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::google::{GoogleConfig, GoogleProvider};
+    use aimux_providers::google::{GoogleProviderSettings, create_google};
 
-    let mut config = GoogleConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = GoogleProvider::new(config);
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -584,13 +585,22 @@ fn bedrock(
     base_url: Option<&str>,
 ) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::bedrock::{BedrockProvider, BedrockProviderConfig};
+    use aimux_providers::bedrock::{AmazonBedrockProviderSettings, create_amazon_bedrock};
 
-    let mut config = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = BedrockProvider::new(config);
+    let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+        credential_provider: Some(aimux_provider_utils::Resolvable::Value(
+            aimux_provider_utils::AwsCredentials {
+                access_key_id: access_key_id.to_string(),
+                secret_access_key: secret_access_key.to_string(),
+                session_token: None,
+                region: region.to_string(),
+            },
+        )),
+        region: Some(region.to_string()),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;
@@ -611,13 +621,18 @@ fn vertex(
     base_url: Option<&str>,
 ) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::vertex::{VertexProvider, VertexProviderConfig};
+    use aimux_providers::vertex::{VertexProviderSettings, create_google_vertex};
 
-    let mut config = VertexProviderConfig::new(access_token, project, location);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = VertexProvider::new(config);
+    let provider = create_google_vertex(VertexProviderSettings {
+        access_token: Some(aimux_provider_utils::Resolvable::Value(
+            access_token.to_string(),
+        )),
+        project: Some(project.to_string()),
+        location: Some(location.to_string()),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;

@@ -95,7 +95,8 @@ impl Files for AnthropicFiles {
         );
 
         let betas = std::collections::BTreeSet::from([FILES_BETA_HEADER.to_string()]);
-        let header_list = self.config.request_headers(None, &betas).await?;
+        let config = self.config.resolved().await?;
+        let header_list = config.request_headers(None, &betas).await?;
 
         // `send()` returns Ok only for 2xx; non-2xx responses are mapped to an
         // error internally using the shared error structure. The multipart body
@@ -111,11 +112,7 @@ impl Files for AnthropicFiles {
         let resp = retries
             .retry(|| {
                 aimux_provider_utils::post_to_api(
-                    self.config.http_request(
-                        self.config.url("/files"),
-                        header_list.clone(),
-                        options,
-                    ),
+                    config.http_request(config.url("/files"), header_list.clone(), options),
                     HttpBody::Bytes(body.clone(), content_type.clone()),
                     aimux_provider_utils::create_json_response_handler(),
                     self.config.failed_response_handler(),

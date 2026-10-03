@@ -399,7 +399,7 @@ async fn anthropic_aws_sigv4_auth() {
     let model = create_anthropic_aws(AnthropicAwsProviderSettings {
         base_url: Some(server.uri()),
         auth: Some(AnthropicAwsAuth::SigV4(
-            aimux_providers::bedrock::AwsCredentials {
+            aimux_provider_utils::AwsCredentials {
                 access_key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
                 secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
                 session_token: None,

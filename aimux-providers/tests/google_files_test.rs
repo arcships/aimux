@@ -16,7 +16,18 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
 use aimux_core::shared::{FileBytes, SharedProviderOptions};
-use aimux_providers::{GoogleConfig, GoogleProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{GoogleProvider, GoogleProviderSettings, create_google};
+
+/// A Google provider with the test key, pointed at `base_url` when given.
+fn test_google(key: &str, base_url: Option<String>) -> GoogleProvider {
+    create_google(GoogleProviderSettings {
+        api_key: Some(Resolvable::Value(key.to_string())),
+        base_url,
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // -- helpers -----------------------------------------------------------------
 
@@ -36,9 +47,7 @@ fn default_file_resource() -> Value {
 }
 
 fn provider(server: &MockServer) -> GoogleProvider {
-    let config =
-        GoogleConfig::new("test-api-key").with_base_url(format!("{}/v1beta", server.uri()));
-    GoogleProvider::new(config)
+    test_google("test-api-key", Some(format!("{}/v1beta", server.uri())))
 }
 
 fn upload_options() -> UploadFileCallOptions {
@@ -79,9 +88,9 @@ async fn mount_success_mocks(server: &MockServer) {
 
 #[tokio::test]
 async fn should_expose_correct_provider() {
-    let provider = GoogleProvider::new(GoogleConfig::new("test-api-key"));
+    let provider = test_google("test-api-key", None);
     let files = provider.files();
-    assert_eq!(files.provider(), "google.generative-ai");
+    assert_eq!(files.provider(), "google.generative-ai.files");
 }
 
 // -- upload initiation tests -------------------------------------------------
@@ -598,11 +607,11 @@ async fn should_omit_optional_fields_from_metadata_when_not_present() {
     assert!(google.get("sha256Hash").is_none());
 }
 
-/// A transient 503 on the upload stage followed by 200 must succeed, and
-/// must not re-run the init stage — a retried upload reuses the
-/// already-minted `upload_url` instead of requesting a new one.
+/// A transient 503 on the upload stage is reported as it happened: nothing
+/// retries a file upload (a replay would resend the file body), and the init
+/// stage that minted the `upload_url` is not replayed either.
 #[tokio::test]
-async fn transient_upload_failure_is_retried_without_re_initiating() {
+async fn transient_upload_failure_is_not_retried() {
     let server = MockServer::start().await;
     let upload_url = format!("{}/resume", server.uri());
 
@@ -622,13 +631,8 @@ async fn transient_upload_failure_is_retried_without_re_initiating() {
     Mock::given(method("POST"))
         .and(path("/resume"))
         .respond_with(move |_: &wiremock::Request| {
-            if upload_observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
-                ResponseTemplate::new(503)
-                    .insert_header("retry-after-ms", "0")
-                    .set_body_json(json!({"error": {"message": "try again"}}))
-            } else {
-                ResponseTemplate::new(200).set_body_json(json!({ "file": default_file_resource() }))
-            }
+            upload_observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            ResponseTemplate::new(503).set_body_json(json!({"error": {"message": "try again"}}))
         })
         .mount(&server)
         .await;
@@ -636,16 +640,14 @@ async fn transient_upload_failure_is_retried_without_re_initiating() {
     let provider = provider(&server);
     let files = provider.files();
 
-    let result = files.upload_file(&upload_options()).await.unwrap();
+    let error = files.upload_file(&upload_options()).await.unwrap_err();
 
-    assert_eq!(
-        result.provider_reference.get("google"),
-        Some(&"https://generativelanguage.googleapis.com/v1beta/files/abc123".to_string())
+    assert!(
+        error
+            .to_string()
+            .contains("Failed to upload file data: try again"),
+        "{error}"
     );
-    assert_eq!(
-        init_attempts.load(std::sync::atomic::Ordering::SeqCst),
-        1,
-        "the init stage must not be replayed by an upload-stage retry"
-    );
-    assert_eq!(upload_attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert_eq!(init_attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(upload_attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
 }

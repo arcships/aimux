@@ -375,7 +375,7 @@ mod tests {
         );
     }
 
-    /// Pins the signer byte-for-byte to the pre-move `bedrock::sigv4`
+    /// Pins the signer byte-for-byte to the pre-move Bedrock signer
     /// implementation: the expected values come from an independent
     /// re-implementation of that exact algorithm run at the same fixed time.
     #[test]

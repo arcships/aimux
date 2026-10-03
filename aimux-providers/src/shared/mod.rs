@@ -3,6 +3,10 @@
 //! Only transport plumbing lives here: how the provider-level request headers
 //! are produced. Nothing in this module knows a vendor.
 
+mod exchange;
+
+pub(crate) use exchange::{Endpoint, EndpointConfig};
+
 use std::sync::Arc;
 
 use serde_json::Value;

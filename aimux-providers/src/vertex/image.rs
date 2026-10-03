@@ -7,12 +7,12 @@
 //! - **Imagen** models (non-`gemini-*`): `POST {base_url}/models/{id}:predict`
 //! - **Gemini** image models (`gemini-*`): `POST {base_url}/models/{id}:generateContent`
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
 use crate::google::google_failed_response_handler;
+use crate::google::options::{vertex_metadata_map, vertex_options};
+use crate::shared::EndpointConfig;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
@@ -20,10 +20,6 @@ use aimux_core::image_model::{
     ImageResult, ImageUsage,
 };
 use aimux_core::shared::Warning;
-
-use aimux_provider_utils::HttpRequest;
-
-use super::{VertexAuth, VertexConfig};
 
 fn is_gemini_model(model_id: &str) -> bool {
     model_id.starts_with("gemini-")
@@ -35,43 +31,25 @@ fn is_gemini_model(model_id: &str) -> bool {
 /// `Client` internally (RFC-0009 §4.1).
 pub struct VertexImageModel {
     model_id: String,
-    config: VertexConfig,
+    config: EndpointConfig,
 }
 
 impl VertexImageModel {
-    #[must_use]
-    pub fn new(model_id: String, config: VertexConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
     }
 
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> Vec<(String, String)> {
-        let mut h = vec![("Content-Type".into(), "application/json".into())];
-        match &self.config.auth {
-            VertexAuth::BearerToken(token) => {
-                h.push(("Authorization".into(), format!("Bearer {token}")));
-            }
-            VertexAuth::ApiKey(key) => {
-                h.push(("x-goog-api-key".into(), key.clone()));
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                h.push((k.clone(), v.clone()));
-            }
-        }
-        h
+    fn predict_path(&self) -> String {
+        format!("/models/{}:predict", self.model_id)
     }
 
-    fn predict_endpoint(&self) -> String {
-        format!("{}/models/{}:predict", self.config.base_url, self.model_id)
-    }
-    fn generate_content_endpoint(&self) -> String {
+    fn generate_content_path(&self) -> String {
         let mp = if self.model_id.contains('/') {
             self.model_id.clone()
         } else {
             format!("models/{}", self.model_id)
         };
-        format!("{}/{}:generateContent", self.config.base_url, mp)
+        format!("/{mp}:generateContent")
     }
 
     fn get_base64_data(file: &ImageFile) -> Result<String, AiMuxError> {
@@ -104,11 +82,8 @@ impl VertexImageModel {
             });
         }
 
-        // Parse provider options (googleVertex or vertex)
-        let gv_opts = options
-            .provider_options
-            .get("googleVertex")
-            .or_else(|| options.provider_options.get("vertex"));
+        // Parse provider options (`googleVertex`)
+        let gv_opts = vertex_options(Some(&options.provider_options));
         let edit_opts = gv_opts.and_then(|o| o.get("edit"));
         let edit_mode = edit_opts
             .and_then(|e| e.get("mode"))
@@ -191,11 +166,11 @@ impl VertexImageModel {
             json!({ "instances": [{ "prompt": options.prompt }], "parameters": parameters })
         };
 
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.predict_endpoint(), headers, options),
-            body,
+            exchange.request(exchange.url(&self.predict_path()), options),
+            exchange.transform_body(body),
             aimux_provider_utils::create_json_response_handler(),
             crate::google::google_failed_response_handler(),
         )
@@ -235,9 +210,7 @@ impl VertexImageModel {
             .unwrap_or_default();
 
         let payload = json!({ "images": image_metas });
-        let mut metadata = HashMap::new();
-        metadata.insert("googleVertex".into(), payload.clone());
-        metadata.insert("vertex".into(), payload);
+        let metadata = vertex_metadata_map(&payload);
 
         Ok(ImageResult {
             images: ImageOutputs::Base64(images),
@@ -314,10 +287,7 @@ impl VertexImageModel {
         }
 
         // Passthrough provider options
-        let gv_opts = options
-            .provider_options
-            .get("googleVertex")
-            .or_else(|| options.provider_options.get("vertex"));
+        let gv_opts = vertex_options(Some(&options.provider_options));
         if let Some(obj) = gv_opts.and_then(|v| v.as_object()) {
             for (k, v) in obj {
                 if matches!(k.as_str(), "responseModalities" | "imageConfig") {
@@ -328,11 +298,11 @@ impl VertexImageModel {
         }
 
         let body = json!({ "contents": [{ "role": "user", "parts": parts }], "generationConfig": Value::Object(gc) });
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.generate_content_endpoint(), headers, options),
-            body,
+            exchange.request(exchange.url(&self.generate_content_path()), options),
+            exchange.transform_body(body),
             aimux_provider_utils::create_json_response_handler(),
             google_failed_response_handler(),
         )
@@ -382,9 +352,7 @@ impl VertexImageModel {
         });
 
         let payload = json!({ "images": images.iter().map(|_| json!({})).collect::<Vec<_>>() });
-        let mut metadata = HashMap::new();
-        metadata.insert("googleVertex".into(), payload.clone());
-        metadata.insert("vertex".into(), payload);
+        let metadata = vertex_metadata_map(&payload);
 
         Ok(ImageResult {
             images: ImageOutputs::Base64(images),
@@ -403,7 +371,7 @@ impl VertexImageModel {
 #[async_trait]
 impl ImageModel for VertexImageModel {
     fn provider(&self) -> &str {
-        "google.vertex"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id

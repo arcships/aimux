@@ -43,8 +43,19 @@ use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::Warning;
 
+use aimux_provider_utils::Resolvable;
 use aimux_providers::google::convert::build_request_body;
-use aimux_providers::{GoogleConfig, GoogleProvider};
+use aimux_providers::{GoogleProvider, GoogleProviderSettings, create_google};
+
+/// A Google provider with the test key, pointed at `base_url` when given.
+fn test_google(key: &str, base_url: Option<String>) -> GoogleProvider {
+    create_google(GoogleProviderSettings {
+        api_key: Some(Resolvable::Value(key.to_string())),
+        base_url,
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -97,7 +108,7 @@ fn google_maps_tool() -> Tool {
 
 /// Build a `GoogleProvider` pointed at a mock `server`.
 fn provider_at(uri: &str) -> GoogleProvider {
-    GoogleProvider::new(GoogleConfig::new("test-api-key").with_base_url(uri))
+    test_google("test-api-key", Some((uri).to_string()))
 }
 
 /// Mock a JSON `generateContent` response for `model`.
@@ -487,7 +498,7 @@ mod prepare_tools {
                 { "fileSearch": { "fileSearchStoreNames": ["fileSearchStores/example-store"] } },
                 { "functionDeclarations": [
                     { "name": "getWeather", "description": "Get the weather",
-                      "parameters": { "type": "object",
+                      "parametersJsonSchema": { "type": "object",
                                       "properties": { "location": { "type": "string" } } } }
                 ] }
             ])
@@ -523,7 +534,7 @@ mod prepare_tools {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-2.5-flash");
+        let model = provider_at(&server.uri()).chat("gemini-2.5-flash");
         let result = model
             .do_generate(&options_with_tools(
                 test_prompt(),
@@ -565,7 +576,7 @@ mod prepare_tools {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-1.5-flash");
+        let model = provider_at(&server.uri()).chat("gemini-1.5-flash");
         let result = model
             .do_generate(&options_with_tools(
                 test_prompt(),
@@ -612,7 +623,7 @@ mod prepare_tools {
             )
             .with_description("A test function".to_string()),
         );
-        let model = provider_at(&server.uri()).model("gemini-2.5-flash");
+        let model = provider_at(&server.uri()).chat("gemini-2.5-flash");
         let result = model
             .do_generate(&options_with_tools(
                 test_prompt(),
@@ -654,7 +665,7 @@ mod prepare_tools {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let model = provider_at(&server.uri()).chat("gemini-2.0-pro");
         let result = model
             .do_generate(&options_with_tools(
                 test_prompt(),
@@ -684,7 +695,7 @@ mod prepare_tools {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let model = provider_at(&server.uri()).chat("gemini-2.0-pro");
         let result = model
             .do_generate(&options_with_tools(test_prompt(), vec![url_context_tool()]))
             .await
@@ -752,7 +763,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -788,7 +799,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -837,7 +848,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -887,7 +898,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -922,7 +933,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -960,7 +971,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -1006,7 +1017,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -1046,7 +1057,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_generate(&default_options(test_prompt()))
             .await
@@ -1092,7 +1103,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let model = provider_at(&server.uri()).chat("gemini-2.0-pro");
         let result = model
             .do_generate(&options_with_tools(
                 test_prompt(),
@@ -1127,7 +1138,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let model = provider_at(&server.uri()).chat("gemini-2.0-pro");
         let result = model
             .do_generate(&options_with_tools(
                 test_prompt(),
@@ -1170,7 +1181,7 @@ mod do_generate {
             }),
         )
         .await;
-        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let model = provider_at(&server.uri()).chat("gemini-2.0-pro");
         let tool = provider_tool("google.code_execution", "runCode", json!({}));
 
         let result = generate_text(
@@ -1272,7 +1283,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let model = provider_at(&server.uri()).chat("gemini-2.0-pro");
         let result = model
             .do_generate(&options_with_tools(
                 test_prompt(),
@@ -1341,7 +1352,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let model = provider_at(&server.uri()).chat("gemini-2.0-pro");
         let result = model
             .do_generate(&options_with_tools(
                 test_prompt(),
@@ -1385,7 +1396,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let model = provider_at(&server.uri()).chat("gemini-2.0-pro");
         let result = model
             .do_generate(&options_with_tools(
                 test_prompt(),
@@ -1435,7 +1446,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let model = provider_at(&server.uri()).chat("gemini-2.0-pro");
         let result = model
             .do_generate(&options_with_tools(
                 test_prompt(),
@@ -1490,7 +1501,7 @@ mod do_generate {
             "test-tool".to_string(),
             json!({ "type": "object", "properties": { "value": { "type": "string" } } }),
         ));
-        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let model = provider_at(&server.uri()).chat("gemini-2.0-pro");
         let result = model
             .do_generate(&options_with_tools(
                 test_prompt(),
@@ -1558,7 +1569,7 @@ mod do_generate {
             "weather".to_string(),
             json!({ "type": "object", "properties": { "location": { "type": "string" } } }),
         ));
-        let model = provider_at(&server.uri()).model("gemini-3-pro-preview");
+        let model = provider_at(&server.uri()).chat("gemini-3-pro-preview");
         let result = model
             .do_generate(&options_with_tools(
                 test_prompt(),
@@ -1645,7 +1656,7 @@ mod do_generate {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-3-pro-preview");
+        let model = provider_at(&server.uri()).chat("gemini-3-pro-preview");
         let result = model
             .do_generate(&options_with_tools(
                 test_prompt(),
@@ -1743,7 +1754,7 @@ mod do_stream {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -1787,7 +1798,7 @@ mod do_stream {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -1841,7 +1852,7 @@ mod do_stream {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -1877,7 +1888,7 @@ mod do_stream {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -1920,7 +1931,7 @@ mod do_stream {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let model = provider_at(&server.uri()).chat("gemini-2.0-pro");
         let tool = provider_tool("google.code_execution", "runCode", json!({}));
         let result = model
             .do_stream(&options_with_tools(test_prompt(), vec![tool.clone()]))
@@ -2046,7 +2057,7 @@ mod do_stream {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let model = provider_at(&server.uri()).chat("gemini-2.0-pro");
         let result = model
             .do_stream(&options_with_tools(
                 test_prompt(),
@@ -2104,7 +2115,7 @@ mod do_stream {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-2.0-pro");
+        let model = provider_at(&server.uri()).chat("gemini-2.0-pro");
         let result = model
             .do_stream(&options_with_tools(
                 test_prompt(),
@@ -2176,7 +2187,7 @@ mod do_stream {
             "weather".to_string(),
             json!({ "type": "object", "properties": { "location": { "type": "string" } } }),
         ));
-        let model = provider_at(&server.uri()).model("gemini-3-pro-preview");
+        let model = provider_at(&server.uri()).chat("gemini-3-pro-preview");
         let result = model
             .do_stream(&options_with_tools(
                 test_prompt(),
@@ -2289,7 +2300,7 @@ mod do_stream {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -2330,7 +2341,7 @@ mod do_stream {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -2370,7 +2381,7 @@ mod do_stream {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await
@@ -2421,7 +2432,7 @@ mod do_stream {
         )
         .await;
 
-        let model = provider_at(&server.uri()).model("gemini-pro");
+        let model = provider_at(&server.uri()).chat("gemini-pro");
         let result = model
             .do_stream(&default_options(test_prompt()))
             .await

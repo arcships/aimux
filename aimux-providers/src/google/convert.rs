@@ -18,6 +18,7 @@
 //! fields we actually read back are `text`, function tool parts, and native
 //! provider-executed tool parts.
 
+use super::options::Namespace;
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
@@ -58,33 +59,6 @@ pub struct GooglePrompt {
     pub contents: Vec<Value>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProviderMetadataNamespace {
-    Google,
-    Vertex,
-}
-
-/// Resolve per-part provider options in the same precedence order as the AI
-/// SDK. Vertex prefers `googleVertex`, then legacy `vertex`; `google` is only a
-/// cross-provider fallback. The public Google provider uses the inverse
-/// fallback so transcripts survive gateway/provider failover.
-fn read_provider_options(
-    provider_options: Option<&Value>,
-    namespace: ProviderMetadataNamespace,
-) -> Option<&Value> {
-    let provider_options = provider_options?;
-    match namespace {
-        ProviderMetadataNamespace::Google => provider_options
-            .get("google")
-            .or_else(|| provider_options.get("googleVertex"))
-            .or_else(|| provider_options.get("vertex")),
-        ProviderMetadataNamespace::Vertex => provider_options
-            .get("googleVertex")
-            .or_else(|| provider_options.get("vertex"))
-            .or_else(|| provider_options.get("google")),
-    }
-}
-
 // ── convertToGoogleMessages ──────────────────────────────────────────────────
 
 /// Convert a provider-facing prompt into Google's `{ systemInstruction, contents }`.
@@ -105,12 +79,12 @@ fn read_provider_options(
 /// by Gemini thinking models on follow-up turns).
 #[must_use]
 pub fn convert_to_google_messages(prompt: &LanguageModelPrompt) -> GooglePrompt {
-    convert_to_google_messages_for_namespace(prompt, ProviderMetadataNamespace::Google)
+    convert_to_google_messages_for_namespace(prompt, Namespace::Google)
 }
 
 fn convert_to_google_messages_for_namespace(
     prompt: &LanguageModelPrompt,
-    namespace: ProviderMetadataNamespace,
+    namespace: Namespace,
 ) -> GooglePrompt {
     let mut system_parts: Vec<Value> = Vec::new();
     let mut contents: Vec<Value> = Vec::new();
@@ -213,10 +187,7 @@ fn convert_user_parts(content: &[ContentPart]) -> Vec<Value> {
 ///
 /// - `Text` → `{ text }` (skipped when empty, matching the TS SDK).
 /// - `ToolCall` → `{ functionCall: { id?, name, args } }`.
-fn convert_assistant_parts(
-    content: &[ContentPart],
-    namespace: ProviderMetadataNamespace,
-) -> Vec<Value> {
+fn convert_assistant_parts(content: &[ContentPart], namespace: Namespace) -> Vec<Value> {
     let mut parts = Vec::new();
     for part in content {
         match part {
@@ -228,7 +199,8 @@ fn convert_assistant_parts(
                     let mut p = json!({ "text": text });
                     // Echo thoughtSignature from provider_options if present
                     // (upstream convert-to-google-messages.ts:355-377).
-                    if let Some(sig) = read_provider_options(provider_options.as_ref(), namespace)
+                    if let Some(sig) = namespace
+                        .read(provider_options.as_ref())
                         .and_then(|g| g.get("thoughtSignature"))
                         .and_then(|v| v.as_str())
                     {
@@ -247,10 +219,10 @@ fn convert_assistant_parts(
                     // Prefer explicit signature field, then fall back to provider_options.
                     if let Some(sig) = signature.as_ref() {
                         p["thoughtSignature"] = json!(sig);
-                    } else if let Some(sig) =
-                        read_provider_options(provider_options.as_ref(), namespace)
-                            .and_then(|g| g.get("thoughtSignature"))
-                            .and_then(|v| v.as_str())
+                    } else if let Some(sig) = namespace
+                        .read(provider_options.as_ref())
+                        .and_then(|g| g.get("thoughtSignature"))
+                        .and_then(|v| v.as_str())
                     {
                         p["thoughtSignature"] = json!(sig);
                     }
@@ -265,7 +237,7 @@ fn convert_assistant_parts(
                 provider_options,
                 ..
             } => {
-                let google_options = read_provider_options(provider_options.as_ref(), namespace);
+                let google_options = namespace.read(provider_options.as_ref());
                 let server_tool_call_id = google_options
                     .and_then(|options| options.get("serverToolCallId"))
                     .and_then(|value| value.as_str());
@@ -325,7 +297,7 @@ fn convert_assistant_parts(
                 // upstream convert-to-google-messages.ts:518-540.
                 // If it carries serverToolCallId + serverToolType, emit as
                 // a toolResponse; otherwise skip (upstream returns undefined).
-                if let Some(opts) = read_provider_options(provider_options.as_ref(), namespace) {
+                if let Some(opts) = namespace.read(provider_options.as_ref()) {
                     let server_id = opts.get("serverToolCallId").and_then(|v| v.as_str());
                     let server_type = opts.get("serverToolType").and_then(|v| v.as_str());
                     if let (Some(sid), Some(st)) = (server_id, server_type) {
@@ -436,16 +408,7 @@ pub fn prepare_tools(tools: &Option<Vec<FunctionTool>>, tool_choice: &ToolChoice
             if t.strict == Some(true) {
                 has_strict = true;
             }
-            let mut decl = json!({
-                "name": t.name,
-                "parameters": convert_json_schema_to_openapi_schema(&t.input_schema, true),
-            });
-            if let Some(desc) = &t.description {
-                decl["description"] = json!(desc);
-            } else {
-                decl["description"] = json!("");
-            }
-            decl
+            build_function_declaration(t)
         })
         .collect();
 
@@ -794,9 +757,10 @@ fn push_provider_tool(
 
 /// Build a single `functionDeclarations` entry from a `FunctionTool`.
 ///
-/// `parameters` is omitted when the converted schema is null (empty object
-/// schemas at the root), matching the TS `convertJSONSchemaToOpenAPISchema`
-/// returning `undefined`.
+/// The tool's input schema goes out as `parametersJsonSchema`, unchanged, the
+/// way `@ai-sdk/google` sends it (Gemini accepts JSON Schema natively). An
+/// empty root object schema (`{ type: "object", properties: {} }`) is
+/// omitted.
 fn build_function_declaration(ft: &FunctionTool) -> Value {
     let mut decl = Map::new();
     decl.insert("name".to_string(), json!(ft.name));
@@ -804,9 +768,10 @@ fn build_function_declaration(ft: &FunctionTool) -> Value {
         "description".to_string(),
         json!(ft.description.as_deref().unwrap_or("")),
     );
-    let params = convert_json_schema_to_openapi_schema(&ft.input_schema, true);
-    if !params.is_null() {
-        decl.insert("parameters".to_string(), params);
+    // The OpenAPI conversion is the emptiness test: it returns null for an
+    // empty root object schema.
+    if !convert_json_schema_to_openapi_schema(&ft.input_schema, true).is_null() {
+        decl.insert("parametersJsonSchema".to_string(), ft.input_schema.clone());
     }
     Value::Object(decl)
 }
@@ -997,10 +962,11 @@ fn is_empty_object_schema(obj: &Map<String, Value>) -> bool {
 
 /// Build the Gemini `generateContent` request body from `CallOptions`.
 ///
-/// Mirrors `getArgs` in `google-language-model.ts`. Provider-specific options
-/// (`thinkingConfig`, `safetySettings`, `cachedContent`, `labels`,
-/// `serviceTier`, …) are not yet surfaced through `CallOptions` in the Rust
-/// port and are therefore omitted.
+/// Mirrors `getArgs` in `google-language-model.ts`: the sampling settings, the
+/// response format, and the provider options the SDK maps (`thinkingConfig`,
+/// `responseModalities`, `audioTimestamp`, `mediaResolution`, `imageConfig`
+/// into `generationConfig`; `safetySettings`, `cachedContent`, `labels`,
+/// `serviceTier` and `retrievalConfig` next to it).
 ///
 /// This is the request-body-only entry point; warnings about unsupported tools
 /// are discarded. Use [`build_request_body_with_warnings`] to surface them.
@@ -1013,12 +979,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
 /// namespaces when replaying response parts.
 #[must_use]
 pub(crate) fn build_vertex_request_body(model_id: &str, options: &CallOptions) -> Value {
-    build_request_body_with_warnings_for_namespace(
-        model_id,
-        options,
-        ProviderMetadataNamespace::Vertex,
-    )
-    .0
+    build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Vertex).0
 }
 
 /// Build the Gemini `generateContent` request body **and** collect the tool
@@ -1029,17 +990,13 @@ pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
 ) -> (Value, Vec<Warning>) {
-    build_request_body_with_warnings_for_namespace(
-        model_id,
-        options,
-        ProviderMetadataNamespace::Google,
-    )
+    build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Google)
 }
 
 fn build_request_body_with_warnings_for_namespace(
     model_id: &str,
     options: &CallOptions,
-    namespace: ProviderMetadataNamespace,
+    namespace: Namespace,
 ) -> (Value, Vec<Warning>) {
     let GooglePrompt {
         system_instruction,
@@ -1087,23 +1044,56 @@ fn build_request_body_with_warnings_for_namespace(
         }
     }
 
+    // Provider options (`providerOptions.google`, or `googleVertex` for
+    // Vertex): the generation-config members, then the top-level ones.
+    let provider_options = namespace.read_in(options.provider_options.as_ref());
+    let option = |name: &str| {
+        provider_options
+            .and_then(|o| o.get(name))
+            .filter(|v| !v.is_null())
+    };
+    for name in [
+        "responseModalities",
+        "thinkingConfig",
+        "audioTimestamp",
+        "mediaResolution",
+        "imageConfig",
+    ] {
+        if let Some(value) = option(name) {
+            generation_config.insert(name.to_string(), value.clone());
+        }
+    }
+
     let mut body = Map::new();
     body.insert("contents".to_string(), Value::Array(contents));
     if let Some(sys) = system_instruction {
         body.insert("systemInstruction".to_string(), sys);
     }
-    if !generation_config.is_empty() {
-        body.insert(
-            "generationConfig".to_string(),
-            Value::Object(generation_config),
-        );
+    // Always present, even when empty (`generationConfig: {}`), like the SDK.
+    body.insert(
+        "generationConfig".to_string(),
+        Value::Object(generation_config),
+    );
+    for name in ["safetySettings", "cachedContent", "labels", "serviceTier"] {
+        if let Some(value) = option(name) {
+            body.insert(name.to_string(), value.clone());
+        }
     }
 
     let prepared = prepare_all_tools(&options.tools, &options.tool_choice, model_id);
     if let Some(tools) = prepared.tools {
         body.insert("tools".to_string(), Value::Array(tools));
     }
-    if let Some(tc) = prepared.tool_config {
+    let mut tool_config = prepared.tool_config;
+    if let Some(retrieval) = option("retrievalConfig") {
+        let mut config = match tool_config.take() {
+            Some(Value::Object(config)) => config,
+            _ => Map::new(),
+        };
+        config.insert("retrievalConfig".to_string(), retrieval.clone());
+        tool_config = Some(Value::Object(config));
+    }
+    if let Some(tc) = tool_config {
         body.insert("toolConfig".to_string(), tc);
     }
 
@@ -1345,8 +1335,7 @@ mod tests {
             },
         ]);
 
-        let converted =
-            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex);
+        let converted = convert_to_google_messages_for_namespace(&prompt, Namespace::Vertex);
         assert_eq!(
             converted.contents[0]["parts"],
             json!([
@@ -1367,22 +1356,54 @@ mod tests {
             thought_signature: None,
             provider_options: Some(json!({
                 "googleVertex": { "thoughtSignature": "google-vertex" },
-                "vertex": { "thoughtSignature": "vertex" },
                 "google": { "thoughtSignature": "google" },
             })),
         };
         let prompt = assistant_prompt(vec![content]);
 
-        let vertex =
-            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex);
+        let vertex = convert_to_google_messages_for_namespace(&prompt, Namespace::Vertex);
         assert_eq!(
             vertex.contents[0]["parts"][0]["thoughtSignature"],
             "google-vertex"
         );
 
-        let google =
-            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Google);
+        let google = convert_to_google_messages_for_namespace(&prompt, Namespace::Google);
         assert_eq!(google.contents[0]["parts"][0]["thoughtSignature"], "google");
+    }
+
+    #[test]
+    fn legacy_and_foreign_keys_are_not_read() {
+        let content = |options: Value| ContentPart::ToolCall {
+            tool_call_id: "call-1".to_string(),
+            tool_name: "weather".to_string(),
+            input: json!({}),
+            provider_executed: None,
+            thought_signature: None,
+            provider_options: Some(options),
+        };
+        // The historical `vertex` alias is read by neither namespace.
+        let legacy = assistant_prompt(vec![content(json!({
+            "vertex": { "thoughtSignature": "legacy" },
+        }))]);
+        for namespace in [Namespace::Vertex, Namespace::Google] {
+            let converted = convert_to_google_messages_for_namespace(&legacy, namespace);
+            assert!(
+                converted.contents[0]["parts"][0]
+                    .get("thoughtSignature")
+                    .is_none(),
+                "{namespace:?}"
+            );
+        }
+        // The Google package does not read the Vertex key.
+        let vertex_only = assistant_prompt(vec![content(json!({
+            "googleVertex": { "thoughtSignature": "vertex-only" },
+        }))]);
+        let converted = convert_to_google_messages_for_namespace(&vertex_only, Namespace::Google);
+        assert!(
+            converted.contents[0]["parts"][0]
+                .get("thoughtSignature")
+                .is_none()
+        );
     }
 
     #[test]
@@ -1398,8 +1419,7 @@ mod tests {
             })),
         }]);
 
-        let converted =
-            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex);
+        let converted = convert_to_google_messages_for_namespace(&prompt, Namespace::Vertex);
         assert_eq!(
             converted.contents[0]["parts"][0]["thoughtSignature"],
             "gateway-signature"

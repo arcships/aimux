@@ -64,36 +64,37 @@ pub struct CandidateContent {
 // ── Usage metadata ───────────────────────────────────────────────────────────
 
 /// `usageMetadata` block. Mirrors `convert-google-usage.ts`'s
-/// `GoogleUsageMetadata`.
+/// `GoogleUsageMetadata`. Fields the response did not carry stay absent when
+/// the block is echoed in `providerMetadata`, as in the AI SDK.
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleUsageMetadata {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_token_count: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub candidates_token_count: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_token_count: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_content_token_count: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thoughts_token_count: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub traffic_type: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_tokens_details: Option<Vec<TokenDetail>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub candidates_tokens_details: Option<Vec<TokenDetail>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenDetail {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modality: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_count: Option<u32>,
 }
 

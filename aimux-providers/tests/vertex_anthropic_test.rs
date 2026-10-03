@@ -23,9 +23,8 @@ use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::vertex::{
-    VertexAnthropicModel, VertexAuth, VertexProvider, VertexProviderConfig,
-};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::vertex::{VertexAnthropicModel, VertexProviderSettings, create_google_vertex};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -55,16 +54,15 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 /// exercises the `/publishers/google` → `/publishers/anthropic` base-URL
 /// rewrite performed by [`VertexProvider::anthropic_model`].
 fn make_model(server: &MockServer) -> VertexAnthropicModel {
-    let config = VertexProviderConfig {
-        base_url: format!("{}/publishers/google", server.uri()),
+    create_google_vertex(VertexProviderSettings {
+        base_url: Some(format!("{}/publishers/google", server.uri())),
         project: Some("test-project".to_string()),
         location: Some("us-central1".to_string()),
-        auth: VertexAuth::BearerToken("test-token".to_string()),
-        api_key_source: None,
-    };
-    VertexProvider::new(config)
-        .anthropic_model(MODEL_ID)
-        .expect("anthropic_model should succeed")
+        access_token: Some(Resolvable::Value("test-token".to_string())),
+        ..Default::default()
+    })
+    .expect("valid settings")
+    .anthropic_model(MODEL_ID)
 }
 
 async fn mock_raw_predict_json(server: &MockServer, status: u16, body: Value) {

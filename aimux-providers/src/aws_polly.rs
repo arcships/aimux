@@ -3,9 +3,9 @@
 //! Implements the `SpeechModel` trait against the Amazon Polly `SynthesizeSpeech`
 //! API (`POST https://polly.{region}.amazonaws.com/v1/speech`).
 //!
-//! Authentication uses AWS Signature Version 4 (SigV4), reusing the
-//! [`AwsCredentials`] / [`sign_request`] helpers shared with the Bedrock
-//! provider. The service name is `"polly"`.
+//! Authentication uses AWS Signature Version 4 (SigV4), applied by the shared
+//! [`SigV4Fetch`] transport decorator over the final request bytes (the same
+//! decorator Bedrock uses). The service name is `"polly"`.
 //!
 //! The Polly API accepts a JSON request body describing the synthesis job and
 //! returns the synthesized audio as a binary stream (the response body is *not*
@@ -26,9 +26,9 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use aimux_provider_utils::{HttpBody, HttpRequest};
-
-use crate::bedrock::sigv4::{AwsCredentials, sign_request};
+use aimux_provider_utils::{
+    AwsCredentials, FetchFunction, HttpBody, HttpRequest, Resolvable, SigV4Fetch, default_fetch,
+};
 
 /// Provider canonical name.
 const PROVIDER_NAME: &str = "amazon-polly";
@@ -252,35 +252,26 @@ impl SpeechModel for AwsPollySpeechModel {
             .map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
         let url = self.endpoint();
 
-        // SigV4 sign the request. User-supplied extra headers are included in
-        // the canonical headers; `Content-Type` is added separately (mirrors the
-        // Bedrock provider). The signed body bytes are sent verbatim via
-        // `HttpBody::Bytes` so the `x-amz-content-sha256` hash still matches —
-        // re-serializing the JSON would invalidate the signature.
-        let creds = self.config.credentials();
-        let mut extra_headers: Vec<(String, String)> = Vec::new();
-        if let Some(ref headers) = options.headers {
-            for (k, v) in headers {
-                extra_headers.push((k.clone(), v.clone()));
-            }
-        }
-        let signed = sign_request(
-            &creds,
+        // The request is signed by the transport, over the exact bytes sent:
+        // user-supplied headers and `Content-Type` are part of the signature.
+        let extra_headers: Vec<(String, String)> = options
+            .headers
+            .iter()
+            .flatten()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let signing: FetchFunction = std::sync::Arc::new(SigV4Fetch::new(
+            default_fetch(),
+            Resolvable::Value(self.config.credentials()),
             SERVICE_NAME,
-            "POST",
-            &url,
-            &body_str,
-            &extra_headers,
-        );
+        ));
 
         let resp = aimux_provider_utils::post_to_api(
             HttpRequest {
                 url,
-                headers: signed.headers,
-
+                headers: extra_headers,
                 abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
+                fetch: Some(signing),
                 ..Default::default()
             },
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),

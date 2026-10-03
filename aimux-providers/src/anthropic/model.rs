@@ -49,19 +49,15 @@ impl AnthropicMessagesModel {
         options: &CallOptions,
         stream: bool,
     ) -> Result<PreparedCall, AiMuxError> {
-        let built = build_request_body_for(
-            &self.model_id,
-            options,
-            stream,
-            &self.config.request_profile(),
-        )?;
-        let body = self.config.transform_body(built.body);
-        let headers = self
-            .config
+        let config = self.config.resolved().await?;
+        let built =
+            build_request_body_for(&self.model_id, options, stream, &config.request_profile())?;
+        let body = config.transform_body(built.body);
+        let headers = config
             .request_headers(options.headers.as_ref(), &built.betas)
             .await?;
-        let http = self.config.http_request(
-            self.config.messages_url(&self.model_id, stream),
+        let http = config.http_request(
+            config.messages_url(&self.model_id, stream),
             headers,
             options,
         );

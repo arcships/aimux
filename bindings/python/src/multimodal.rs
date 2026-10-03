@@ -516,13 +516,14 @@ pub fn google_embedding(
     model_id: &str,
     base_url: Option<&str>,
 ) -> PyResult<EmbeddingModel> {
-    use aimux_providers::google::{GoogleConfig, GoogleProvider};
-    let mut config = GoogleConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = GoogleProvider::new(config);
-    let model = provider.embedding_model(model_id);
+    use aimux_providers::google::{GoogleProviderSettings, create_google};
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
+    let model = provider.embedding(model_id);
     Ok(EmbeddingModel {
         inner: Arc::new(model),
     })
@@ -532,12 +533,13 @@ pub fn google_embedding(
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 pub fn google_image(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<ImageModel> {
-    use aimux_providers::google::{GoogleConfig, GoogleProvider};
-    let mut config = GoogleConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = GoogleProvider::new(config);
+    use aimux_providers::google::{GoogleProviderSettings, create_google};
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider.image(model_id);
     Ok(ImageModel {
         inner: Arc::new(model),
@@ -548,12 +550,13 @@ pub fn google_image(api_key: &str, model_id: &str, base_url: Option<&str>) -> Py
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 pub fn google_video(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<VideoModel> {
-    use aimux_providers::google::{GoogleConfig, GoogleProvider};
-    let mut config = GoogleConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = GoogleProvider::new(config);
+    use aimux_providers::google::{GoogleProviderSettings, create_google};
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider.video(model_id);
     Ok(VideoModel {
         inner: Arc::new(model),

@@ -12,6 +12,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
+use futures::future::BoxFuture;
 use serde_json::Value;
 
 use aimux_core::AiMuxError;
@@ -33,6 +34,12 @@ pub(crate) type RequestUrlFn = Arc<dyn Fn(&str, bool) -> String + Send + Sync>;
 
 /// Rewrites the request body a host-specific way.
 pub(crate) type BodyFn = Arc<dyn Fn(Value) -> Value + Send + Sync>;
+
+/// Builds the configuration of one request, for hosts whose endpoint or
+/// credentials (a Vertex project and location, say) can only be known when a
+/// call is made.
+pub(crate) type ResolveFn =
+    Arc<dyn Fn() -> BoxFuture<'static, Result<AnthropicModelConfig, AiMuxError>> + Send + Sync>;
 
 /// Builds the host's error handler for non-2xx responses.
 pub(crate) type ErrorHandlerFn = fn() -> ResponseHandler<AiMuxError>;
@@ -94,9 +101,27 @@ pub(crate) struct AnthropicModelConfig {
     pub(crate) provider_options_name: String,
     /// Host differences.
     pub(crate) hooks: AnthropicModelHooks,
+    /// Late binding: when set, every request uses the configuration this
+    /// returns (its own `resolve` is `None`) instead of the fields above,
+    /// which then only describe the model's static identity.
+    pub(crate) resolve: Option<ResolveFn>,
 }
 
 impl AnthropicModelConfig {
+    /// The configuration to use for one request: itself, or what the host's
+    /// `resolve` builds now.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error of the host's setting or credential loading, for
+    /// instance `AiMuxError::LoadSetting` for an unset Vertex project.
+    pub(crate) async fn resolved(&self) -> Result<Self, AiMuxError> {
+        match &self.resolve {
+            Some(resolve) => resolve().await,
+            None => Ok(self.clone()),
+        }
+    }
+
     /// The full URL of an endpoint path.
     pub(crate) fn url(&self, path: &str) -> String {
         (self.url)(path)

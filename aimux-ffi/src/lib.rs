@@ -76,13 +76,13 @@ use aimux_providers::anthropic_aws::{
     AnthropicAwsAuth, AnthropicAwsProviderSettings, create_anthropic_aws,
 };
 use aimux_providers::azure::{AzureConfig, AzureProvider};
-use aimux_providers::bedrock::{BedrockProvider, BedrockProviderConfig};
+use aimux_providers::bedrock::{AmazonBedrockProviderSettings, create_amazon_bedrock};
 use aimux_providers::cohere::{CohereConfig, CohereProvider};
-use aimux_providers::google::{GoogleConfig, GoogleProvider};
+use aimux_providers::google::{GoogleProviderSettings, create_google};
 use aimux_providers::mistral::{MistralConfig, MistralProvider};
 use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
 use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
-use aimux_providers::vertex::{VertexProvider, VertexProviderConfig};
+use aimux_providers::vertex::{VertexProviderSettings, create_google_vertex};
 use aimux_providers::xai::{XAIConfig, XAIProvider};
 use aimux_providers::{ProviderOptions, provider, provider_discovery, provider_handle};
 
@@ -1251,6 +1251,60 @@ pub extern "C" fn aimux_azure_new_with_base(
     })
 }
 
+/// A Bedrock provider for explicit SigV4 credentials handed over by the host,
+/// with an optional base URL. The credentials are explicit values, so they
+/// never fall back to the environment.
+fn bedrock_provider(
+    access_key_id: String,
+    secret_access_key: String,
+    region: String,
+    base_url: Option<String>,
+) -> Result<aimux_providers::bedrock::AmazonBedrockProvider, AiMuxError> {
+    create_amazon_bedrock(AmazonBedrockProviderSettings {
+        credential_provider: Some(aimux_provider_utils::Resolvable::Value(
+            aimux_provider_utils::AwsCredentials {
+                access_key_id,
+                secret_access_key,
+                session_token: None,
+                region: region.clone(),
+            },
+        )),
+        region: Some(region),
+        base_url,
+        ..Default::default()
+    })
+}
+
+/// A Vertex AI provider for an explicit access token, project and location,
+/// with an optional base URL.
+fn vertex_provider(
+    access_token: String,
+    project: String,
+    location: String,
+    base_url: Option<String>,
+) -> Result<aimux_providers::vertex::VertexProvider, AiMuxError> {
+    create_google_vertex(VertexProviderSettings {
+        access_token: Some(aimux_provider_utils::Resolvable::Value(access_token)),
+        project: Some(project),
+        location: Some(location),
+        base_url,
+        ..Default::default()
+    })
+}
+
+/// A Google provider for an explicit key handed over by the host, with an
+/// optional base URL.
+fn google_provider(
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<aimux_providers::google::GoogleProvider, AiMuxError> {
+    create_google(GoogleProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        base_url,
+        ..Default::default()
+    })
+}
+
 /// Create a Bedrock model instance (AWS SigV4 credentials).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_bedrock_new(
@@ -1271,12 +1325,8 @@ pub extern "C" fn aimux_bedrock_new(
             model_id,
             "model_id",
         )?;
-        let m = BedrockProvider::new(BedrockProviderConfig::new(
-            access_key_id,
-            secret_access_key,
-            region,
-        ))
-        .language_model(&model_id)?;
+        let m = bedrock_provider(access_key_id, secret_access_key, region, None)?
+            .language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1302,11 +1352,13 @@ pub extern "C" fn aimux_bedrock_new_with_base(
             model_id,
             "model_id",
         )?;
-        let mut config = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let m = BedrockProvider::new(config).language_model(&model_id)?;
+        let m = bedrock_provider(
+            access_key_id,
+            secret_access_key,
+            region,
+            parse_base_url(base_url)?,
+        )?
+        .language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1331,8 +1383,8 @@ pub extern "C" fn aimux_vertex_new(
             model_id,
             "model_id",
         )?;
-        let m = VertexProvider::new(VertexProviderConfig::new(access_token, project, location))
-            .language_model(&model_id)?;
+        let m =
+            vertex_provider(access_token, project, location, None)?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1358,11 +1410,8 @@ pub extern "C" fn aimux_vertex_new_with_base(
             model_id,
             "model_id",
         )?;
-        let mut config = VertexProviderConfig::new(access_token, project, location);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let m = VertexProvider::new(config).language_model(&model_id)?;
+        let m = vertex_provider(access_token, project, location, parse_base_url(base_url)?)?
+            .language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -2276,7 +2325,7 @@ pub extern "C" fn aimux_google_embedding_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let model = GoogleProvider::new(GoogleConfig::new(api_key)).embedding_model(&model_id);
+        let model = google_provider(api_key, None)?.embedding(&model_id);
         Ok(intern_handle(HandleEntry::Embedding(Arc::new(model))))
     })
 }
@@ -2290,11 +2339,7 @@ pub extern "C" fn aimux_google_embedding_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = GoogleConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let model = GoogleProvider::new(config).embedding_model(&model_id);
+        let model = google_provider(api_key, parse_base_url(base_url)?)?.embedding(&model_id);
         Ok(intern_handle(HandleEntry::Embedding(Arc::new(model))))
     })
 }
@@ -2418,7 +2463,7 @@ pub extern "C" fn aimux_google_image_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let model = GoogleProvider::new(GoogleConfig::new(api_key)).image(&model_id);
+        let model = google_provider(api_key, None)?.image(&model_id);
         Ok(intern_handle(HandleEntry::Image(Arc::new(model))))
     })
 }
@@ -2432,11 +2477,7 @@ pub extern "C" fn aimux_google_image_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = GoogleConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let model = GoogleProvider::new(config).image(&model_id);
+        let model = google_provider(api_key, parse_base_url(base_url)?)?.image(&model_id);
         Ok(intern_handle(HandleEntry::Image(Arc::new(model))))
     })
 }
@@ -2837,7 +2878,7 @@ pub extern "C" fn aimux_google_video_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let model = GoogleProvider::new(GoogleConfig::new(api_key)).video(&model_id);
+        let model = google_provider(api_key, None)?.video(&model_id);
         Ok(intern_handle(HandleEntry::Video(Arc::new(model))))
     })
 }
@@ -2851,11 +2892,7 @@ pub extern "C" fn aimux_google_video_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = GoogleConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let model = GoogleProvider::new(config).video(&model_id);
+        let model = google_provider(api_key, parse_base_url(base_url)?)?.video(&model_id);
         Ok(intern_handle(HandleEntry::Video(Arc::new(model))))
     })
 }

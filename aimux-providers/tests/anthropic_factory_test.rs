@@ -55,7 +55,7 @@ use aimux_providers::anthropic::{AnthropicProviderSettings, anthropic, create_an
 use aimux_providers::anthropic_aws::{
     AnthropicAwsAuth, AnthropicAwsProviderSettings, anthropic_aws, create_anthropic_aws,
 };
-use aimux_providers::vertex::{VertexAuth, VertexProvider, VertexProviderConfig};
+use aimux_providers::vertex::{VertexProviderSettings, create_google_vertex};
 
 // ── injected transport ───────────────────────────────────────────────────────
 
@@ -1231,18 +1231,18 @@ async fn vertex_is_the_same_model_with_a_different_envelope() {
         .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(text_response_value()))
         .mount(&mock_server)
         .await;
-    let model = VertexProvider::new(VertexProviderConfig {
-        base_url: format!(
+    let model = create_google_vertex(VertexProviderSettings {
+        base_url: Some(format!(
             "{}/projects/p/locations/l/publishers/google",
             mock_server.uri()
-        ),
+        )),
         project: Some("p".to_string()),
         location: Some("l".to_string()),
-        auth: VertexAuth::BearerToken("vertex-token".to_string()),
-        api_key_source: None,
+        access_token: Some(Resolvable::Value("vertex-token".to_string())),
+        ..Default::default()
     })
-    .anthropic_model("claude-sonnet-4-5")
-    .unwrap();
+    .unwrap()
+    .anthropic_model("claude-sonnet-4-5");
     assert_eq!(model.provider(), "googleVertex.anthropic.messages");
 
     let mut options = user_prompt("hi");

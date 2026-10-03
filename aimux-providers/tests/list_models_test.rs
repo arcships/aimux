@@ -143,9 +143,13 @@ async fn google_list_models() {
             .strip_suffix("/models")
             .unwrap_or(&recorded_path)
     );
-    use aimux_providers::google::{GoogleConfig, GoogleProvider};
-    let config = GoogleConfig::new("test-key").with_base_url(&base_url);
-    let provider = GoogleProvider::new(config);
+    use aimux_providers::google::{GoogleProviderSettings, create_google};
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(base_url),
+        ..Default::default()
+    })
+    .unwrap();
     let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
     assert!(!models.is_empty());
     assert!(models.iter().all(|m| !m.id.starts_with("models/")));

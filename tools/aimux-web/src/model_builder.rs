@@ -57,12 +57,17 @@ pub fn build_model(
             )?;
             Ok(Arc::new(provider.messages(model_id)))
         }
-        "google" => native!(
-            google,
-            GoogleConfig,
-            GoogleProvider,
-            "GOOGLE_GENERATIVE_AI_API_KEY"
-        ),
+        "google" => {
+            let key = native_key(provider, "GOOGLE_GENERATIVE_AI_API_KEY", api_key.clone())?;
+            let provider = aimux_providers::google::create_google(
+                aimux_providers::google::GoogleProviderSettings {
+                    api_key: Some(key.into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Arc::new(provider.chat(model_id)))
+        }
         "mistral" => native!(mistral, MistralConfig, MistralProvider, "MISTRAL_API_KEY"),
         "xai" => native!(xai, XAIConfig, XAIProvider, "XAI_API_KEY"),
         "cohere" => native!(cohere, CohereConfig, CohereProvider, "COHERE_API_KEY"),

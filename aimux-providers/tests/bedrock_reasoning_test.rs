@@ -1,4 +1,4 @@
-﻿//! Bedrock reasoning / thinking tests, translated from the TypeScript suite.
+//! Bedrock reasoning / thinking tests, translated from the TypeScript suite.
 //!
 //! Translation sources (under `reference/ai/packages/amazon-bedrock/src/`):
 //! - `amazon-bedrock-chat-language-model.test.ts`
@@ -41,9 +41,12 @@ use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
 
+use aimux_provider_utils::Resolvable;
 use aimux_providers::bedrock::convert::convert_prompt_to_bedrock;
 use aimux_providers::bedrock::event_stream;
-use aimux_providers::bedrock::{BedrockAuth, BedrockConfig, BedrockModel};
+use aimux_providers::bedrock::{
+    AmazonBedrockProviderSettings, BedrockModel, create_amazon_bedrock,
+};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -79,20 +82,20 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 }
 
 fn make_model(server: &MockServer) -> BedrockModel {
-    BedrockModel::new(
-        MODEL_ID.to_string(),
-        BedrockConfig {
-            base_url: server.uri(),
-            auth: BedrockAuth::BearerToken("test-token".to_string()),
-            api_key_source: None,
-        },
-    )
+    create_amazon_bedrock(AmazonBedrockProviderSettings {
+        base_url: Some(server.uri()),
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        region: Some("us-east-1".to_string()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+    .chat(MODEL_ID)
 }
 
 /// Wrap a `bedrock`-keyed provider-options value for `CallOptions.provider_options`.
 fn bedrock_provider_options(value: Value) -> Option<HashMap<String, Value>> {
     let mut map = HashMap::new();
-    map.insert("bedrock".to_string(), value);
+    map.insert("amazonBedrock".to_string(), value);
     Some(map)
 }
 
@@ -327,7 +330,7 @@ async fn bedrock_generate_reasoning_response() {
         .as_ref()
         .expect("reasoning provider_metadata should be set");
     assert_eq!(rmeta["amazonBedrock"]["signature"], REASONING_SIGNATURE);
-    assert_eq!(rmeta["bedrock"]["signature"], REASONING_SIGNATURE);
+    assert_eq!(rmeta["amazonBedrock"]["signature"], REASONING_SIGNATURE);
 
     // content[1] — text.
     assert_eq!(
@@ -381,7 +384,7 @@ async fn bedrock_generate_reasoning_text_with_signature() {
     assert_eq!(rtext, "I need to think about this problem carefully...");
     let rmeta = rmeta.as_ref().expect("provider_metadata should be set");
     assert_eq!(rmeta["amazonBedrock"]["signature"], "abc123signature");
-    assert_eq!(rmeta["bedrock"]["signature"], "abc123signature");
+    assert_eq!(rmeta["amazonBedrock"]["signature"], "abc123signature");
 
     assert_eq!(as_text(&result.content[1]), "The answer is 42.");
 }
@@ -422,13 +425,13 @@ async fn bedrock_generate_reasoning_preserve_empty_text_between_reasoning() {
     assert_eq!(result.content.len(), 4);
     let (t0, m0) = as_reasoning(&result.content[0]);
     assert_eq!(t0, "thinking...");
-    assert_eq!(m0.as_ref().unwrap()["bedrock"]["signature"], "sig-1");
+    assert_eq!(m0.as_ref().unwrap()["amazonBedrock"]["signature"], "sig-1");
 
     assert_eq!(as_text(&result.content[1]), "");
 
     let (t2, m2) = as_reasoning(&result.content[2]);
     assert_eq!(t2, "more thinking...");
-    assert_eq!(m2.as_ref().unwrap()["bedrock"]["signature"], "sig-2");
+    assert_eq!(m2.as_ref().unwrap()["amazonBedrock"]["signature"], "sig-2");
 
     assert_eq!(as_text(&result.content[3]), "The answer is 42.");
 }
@@ -513,7 +516,10 @@ async fn bedrock_generate_reasoning_redacted() {
         rmeta["amazonBedrock"]["redactedData"],
         "redacted-reasoning-data"
     );
-    assert_eq!(rmeta["bedrock"]["redactedData"], "redacted-reasoning-data");
+    assert_eq!(
+        rmeta["amazonBedrock"]["redactedData"],
+        "redacted-reasoning-data"
+    );
     assert_eq!(as_text(&result.content[1]), "The answer is 42.");
 }
 
@@ -553,12 +559,12 @@ async fn bedrock_generate_reasoning_multiple_blocks() {
 
     let (t0, m0) = as_reasoning(&result.content[0]);
     assert_eq!(t0, "First reasoning block");
-    assert_eq!(m0.as_ref().unwrap()["bedrock"]["signature"], "sig1");
+    assert_eq!(m0.as_ref().unwrap()["amazonBedrock"]["signature"], "sig1");
 
     let (t1, m1) = as_reasoning(&result.content[1]);
     assert_eq!(t1, "");
     assert_eq!(
-        m1.as_ref().unwrap()["bedrock"]["redactedData"],
+        m1.as_ref().unwrap()["amazonBedrock"]["redactedData"],
         "redacted-data"
     );
 
@@ -747,7 +753,7 @@ async fn bedrock_stream_reasoning_and_text() {
     });
     let reasoning_end_meta = reasoning_end_meta.expect("ReasoningEnd with provider_metadata");
     assert_eq!(
-        reasoning_end_meta["bedrock"]["signature"].as_str(),
+        reasoning_end_meta["amazonBedrock"]["signature"].as_str(),
         Some(STREAM_SIGNATURE)
     );
     // Dual-key shape matches the non-streaming path.
@@ -1010,7 +1016,7 @@ fn convert_reasoning_redacted_content_type() {
             text: String::new(),
             signature: None,
             provider_options: Some(
-                json!({ "bedrock": { "redactedData": "Redacted reasoning information" } }),
+                json!({ "amazonBedrock": { "redactedData": "Redacted reasoning information" } }),
             ),
         }]),
     ];

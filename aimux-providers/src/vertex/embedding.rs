@@ -8,12 +8,12 @@
 //!   `POST {base_url}/models/{model}:embedContent` (single value only)
 //! - Others: `POST {base_url}/models/{model}:predict` (batch)
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
 use crate::google::google_failed_response_handler;
+use crate::google::options::Namespace;
+use crate::shared::EndpointConfig;
 
 use aimux_core::embedding_model::{
     EmbeddingCallOptions, EmbeddingModel, EmbeddingResponse, EmbeddingResult, EmbeddingUsage,
@@ -21,42 +21,18 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::HttpRequest;
-
-use super::VertexAuth;
-use super::model::VertexConfig;
-
 /// A Google Vertex AI embedding model (e.g. `"textembedding-gecko@001"`).
 ///
 /// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the process-wide shared
 /// `Client` internally (RFC-0009 §4.1).
 pub struct VertexEmbeddingModel {
     model_id: String,
-    config: VertexConfig,
+    config: EndpointConfig,
 }
 
 impl VertexEmbeddingModel {
-    #[must_use]
-    pub fn new(model_id: String, config: VertexConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> Vec<(String, String)> {
-        let mut headers = vec![("Content-Type".to_string(), "application/json".to_string())];
-        match &self.config.auth {
-            VertexAuth::BearerToken(token) => {
-                headers.push(("Authorization".to_string(), format!("Bearer {token}")));
-            }
-            VertexAuth::ApiKey(key) => {
-                headers.push(("x-goog-api-key".to_string(), key.clone()));
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.push((k.clone(), v.clone()));
-            }
-        }
-        headers
     }
 }
 
@@ -69,7 +45,7 @@ fn uses_embed_content_endpoint(model_id: &str) -> bool {
 #[async_trait]
 impl EmbeddingModel for VertexEmbeddingModel {
     fn provider(&self) -> &str {
-        "google.vertex"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -92,10 +68,10 @@ impl EmbeddingModel for VertexEmbeddingModel {
         &self,
         options: &EmbeddingCallOptions,
     ) -> Result<EmbeddingResult, AiMuxError> {
-        // Parse provider options: try "googleVertex", then "vertex", then "google".
+        // Parse provider options: `googleVertex`, then `google`.
         let vertex_options = parse_vertex_provider_options(options.provider_options.as_ref());
 
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         if uses_embed_content_endpoint(&self.model_id) {
             // gemini-embedding-2: use :embedContent endpoint (single value).
@@ -132,22 +108,11 @@ impl EmbeddingModel for VertexEmbeddingModel {
                 Value::Object(embed_config),
             );
 
-            let url = format!(
-                "{}/models/{}:embedContent",
-                self.config.base_url, self.model_id
-            );
+            let url = exchange.url(&format!("/models/{}:embedContent", self.model_id));
 
             let resp = aimux_provider_utils::post_json_to_api(
-                HttpRequest {
-                    url,
-                    headers,
-
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                    ..Default::default()
-                },
-                Value::Object(body),
+                exchange.request(url, options),
+                exchange.transform_body(Value::Object(body)),
                 aimux_provider_utils::create_json_response_handler(),
                 google_failed_response_handler(),
             )
@@ -217,19 +182,11 @@ impl EmbeddingModel for VertexEmbeddingModel {
         body.insert("instances".to_string(), Value::Array(instances));
         body.insert("parameters".to_string(), Value::Object(parameters));
 
-        let url = format!("{}/models/{}:predict", self.config.base_url, self.model_id);
+        let url = exchange.url(&format!("/models/{}:predict", self.model_id));
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url,
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                ..Default::default()
-            },
-            Value::Object(body),
+            exchange.request(url, options),
+            exchange.transform_body(Value::Object(body)),
             aimux_provider_utils::create_json_response_handler(),
             crate::google::google_failed_response_handler(),
         )
@@ -298,16 +255,12 @@ struct VertexEmbeddingProviderOptions {
 
 /// Parse Vertex embedding provider options.
 ///
-/// Tries the `"googleVertex"` key first, then `"vertex"`, then `"google"`
-/// (matching the TS fallback chain).
+/// Tries the `googleVertex` key first, then `google` (the shared Gemini
+/// model's key).
 fn parse_vertex_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> VertexEmbeddingProviderOptions {
-    let opts = options;
-    let provider_opts = opts
-        .and_then(|o| o.get("googleVertex"))
-        .or_else(|| opts.and_then(|o| o.get("vertex")))
-        .or_else(|| opts.and_then(|o| o.get("google")));
+    let provider_opts = Namespace::Vertex.read_in(options);
 
     VertexEmbeddingProviderOptions {
         output_dimensionality: provider_opts

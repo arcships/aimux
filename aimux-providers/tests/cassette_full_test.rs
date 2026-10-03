@@ -474,17 +474,21 @@ async fn replay_cohere() {
 
 #[tokio::test]
 async fn replay_bedrock() {
-    use aimux_providers::bedrock::{BedrockProvider, BedrockProviderConfig};
+    use aimux_providers::bedrock::{AmazonBedrockProviderSettings, create_amazon_bedrock};
 
     let server = MockServer::start().await;
     let n = replay::mount_cassettes(&server, "tests/cassettes/bedrock").await;
     assert!(n > 0);
 
-    let provider = BedrockProvider::new(
-        BedrockProviderConfig::new("test-key", "test-secret", "us-east-1")
-            .with_base_url(server.uri()),
-    );
-    let model = provider.model("us.anthropic.claude-sonnet-4-20250514-v1:0");
+    let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+        access_key_id: Some("test-key".to_string()),
+        secret_access_key: Some("test-secret".to_string()),
+        region: Some("us-east-1".to_string()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.chat("us.anthropic.claude-sonnet-4-20250514-v1:0");
 
     let result = generate_text(&model, "Hello", GenerateTextOptions::default())
         .await

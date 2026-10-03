@@ -215,6 +215,7 @@ impl AnthropicAwsProvider {
             base_url: self.base_url.clone(),
             provider_options_name: self.provider_options_name.clone(),
             hooks: AnthropicModelHooks::default(),
+            resolve: None,
         }
     }
 

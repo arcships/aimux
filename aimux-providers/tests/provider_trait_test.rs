@@ -16,8 +16,8 @@ use aimux_providers::openai_compatible::{
     OpenAICompatibleProviderSettings, create_openai_compatible,
 };
 use aimux_providers::{
-    GoogleConfig, GoogleProvider, SerperConfig, SerperProvider, VoyageConfig, VoyageProvider,
-    provider_discovery, provider_handle,
+    GoogleProviderSettings, SerperConfig, SerperProvider, VoyageConfig, VoyageProvider,
+    create_google, provider_discovery, provider_handle,
 };
 
 /// Unwrap the `NoSuchModel` model type of a failed `Arc<dyn _>` lookup
@@ -52,7 +52,7 @@ fn openai_offers_every_modality_it_has_constructors_for() {
 
 #[test]
 fn google_offers_video_and_files() {
-    let p: Arc<dyn Provider> = Arc::new(GoogleProvider::new(GoogleConfig::new("k")));
+    let p: Arc<dyn Provider> = Arc::new(create_google(GoogleProviderSettings::default()).unwrap());
     assert!(p.language_model("gemini-2.0-flash").is_ok());
     assert!(p.embedding_model("text-embedding-004").is_ok());
     assert!(p.image_model("imagen-3.0-generate-002").is_ok());

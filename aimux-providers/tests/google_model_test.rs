@@ -24,10 +24,21 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
+use aimux_provider_utils::Resolvable;
 use aimux_providers::google::convert::{
     build_request_body, convert_to_google_messages, prepare_tools,
 };
-use aimux_providers::{GoogleConfig, GoogleProvider};
+use aimux_providers::{GoogleProvider, GoogleProviderSettings, create_google};
+
+/// A Google provider with the test key, pointed at `base_url` when given.
+fn test_google(key: &str, base_url: Option<String>) -> GoogleProvider {
+    create_google(GoogleProviderSettings {
+        api_key: Some(Resolvable::Value(key.to_string())),
+        base_url,
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -190,9 +201,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -234,9 +244,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -269,9 +278,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -300,9 +308,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -331,9 +338,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -363,9 +369,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -406,9 +411,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&options_with_tools(test_prompt(), vec![weather_tool()]))
@@ -461,9 +465,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.5-pro");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.5-pro");
 
         let result = model
             .do_generate(&options_with_tools(test_prompt(), vec![weather_tool()]))
@@ -510,9 +513,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -540,9 +542,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -578,9 +579,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -614,9 +614,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -659,9 +658,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -707,9 +705,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -750,9 +747,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -792,9 +788,8 @@ mod do_generate {
             .mount(&server)
             .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -821,9 +816,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -858,9 +852,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&options_with_tools(test_prompt(), vec![weather_tool()]))
@@ -907,9 +900,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&options_with_tools(test_prompt(), vec![weather_tool()]))
@@ -966,9 +958,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&options_with_tools(test_prompt(), vec![weather_tool()]))
@@ -997,9 +988,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -1023,9 +1013,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -1046,9 +1035,8 @@ mod do_generate {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -1084,9 +1072,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, "gemini-2.0-flash", &body).await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1146,9 +1133,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, "gemini-2.0-flash", &body).await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_stream(&options_with_tools(test_prompt(), vec![weather_tool()]))
@@ -1207,9 +1193,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, "gemini-2.5-pro", &body).await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.5-pro");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.5-pro");
 
         let result = model
             .do_stream(&options_with_tools(test_prompt(), vec![weather_tool()]))
@@ -1252,9 +1237,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, "gemini-2.5-pro", &body).await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.5-pro");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.5-pro");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1301,9 +1285,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, "gemini-2.0-flash", &body).await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1339,9 +1322,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, "gemini-2.0-flash", &body).await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_stream(&options_with_tools(test_prompt(), vec![weather_tool()]))
@@ -1388,9 +1370,8 @@ mod do_stream {
         )]);
         mock_sse_response(&server, "gemini-2.0-flash", &body).await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1430,9 +1411,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, "gemini-2.0-flash", &body).await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1467,9 +1447,8 @@ mod do_stream {
         ]);
         mock_sse_response(&server, "gemini-2.0-flash", &body).await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1522,9 +1501,8 @@ mod error_handling {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let err = model
             .do_generate(&default_options(test_prompt()))
@@ -1554,9 +1532,8 @@ mod error_handling {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let err = model
             .do_generate(&default_options(test_prompt()))
@@ -1586,9 +1563,8 @@ mod error_handling {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let err = model
             .do_generate(&default_options(test_prompt()))
@@ -1617,9 +1593,8 @@ mod error_handling {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let err = model
             .do_generate(&default_options(test_prompt()))
@@ -1646,9 +1621,8 @@ mod error_handling {
             .mount(&server)
             .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let err = model
             .do_stream(&default_options(test_prompt()))
@@ -1669,9 +1643,8 @@ mod error_handling {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let err = model
             .do_generate(&default_options(test_prompt()))
@@ -1697,9 +1670,8 @@ mod error_handling {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let err = model
             .do_generate(&default_options(test_prompt()))
@@ -1728,9 +1700,8 @@ mod error_handling {
             .mount(&server)
             .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let err = model
             .do_stream(&default_options(test_prompt()))
@@ -1759,9 +1730,8 @@ mod error_handling {
             .mount(&server)
             .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let err = model
             .do_stream(&default_options(test_prompt()))
@@ -2081,9 +2051,9 @@ mod request_body {
         assert_eq!(decls.len(), 1);
         assert_eq!(decls[0]["name"], "weather");
         assert_eq!(decls[0]["description"], "Get the weather");
-        // The JSON schema's $schema / additionalProperties are dropped by the
-        // OpenAPI conversion; the resulting parameters have type/properties/required.
-        let params = &decls[0]["parameters"];
+        // The input schema is sent unchanged as `parametersJsonSchema`.
+        assert!(decls[0].get("parameters").is_none());
+        let params = &decls[0]["parametersJsonSchema"];
         assert_eq!(params["type"], "object");
         assert_eq!(params["properties"]["location"]["type"], "string");
         assert_eq!(params["required"][0], "location");
@@ -2205,13 +2175,67 @@ mod request_body {
         assert!((fp - 0.3).abs() < 1e-5, "frequencyPenalty was {fp}");
     }
 
-    // ── should omit generationConfig when no options set ─────────────────────
+    // ── should send an empty generationConfig when no options set ────────────
 
     #[test]
-    fn should_omit_generation_config_when_empty() {
+    fn should_send_empty_generation_config_when_no_options_set() {
         let body = build_request_body("gemini-2.0-flash", &default_options(test_prompt()));
-        // The Rust impl omits generationConfig when empty (unlike TS which sends {}).
-        assert!(body.get("generationConfig").is_none());
+        // Like the SDK, `generationConfig` is always present, even as `{}`.
+        assert_eq!(body["generationConfig"], json!({}));
+    }
+
+    // ── provider options map onto the body ───────────────────────────────────
+
+    #[test]
+    fn provider_options_map_onto_generation_config_and_the_body() {
+        let mut opts = default_options(test_prompt());
+        opts.provider_options = Some(
+            [(
+                "google".to_string(),
+                json!({
+                    "thinkingConfig": { "includeThoughts": true, "thinkingBudget": 1024 },
+                    "responseModalities": ["TEXT", "IMAGE"],
+                    "safetySettings": [{ "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH" }],
+                    "cachedContent": "cachedContents/abc",
+                    "labels": { "team": "blue" },
+                    "serviceTier": "priority",
+                    "retrievalConfig": { "latLng": { "latitude": 1.0, "longitude": 2.0 } },
+                }),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        let body = build_request_body("gemini-2.0-flash", &opts);
+        assert_eq!(
+            body["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            1024
+        );
+        assert_eq!(
+            body["generationConfig"]["responseModalities"],
+            json!(["TEXT", "IMAGE"])
+        );
+        assert_eq!(body["safetySettings"][0]["threshold"], "BLOCK_ONLY_HIGH");
+        assert_eq!(body["cachedContent"], "cachedContents/abc");
+        assert_eq!(body["labels"]["team"], "blue");
+        assert_eq!(body["serviceTier"], "priority");
+        assert_eq!(
+            body["toolConfig"]["retrievalConfig"]["latLng"]["latitude"],
+            1.0
+        );
+        // Options for other providers are not read.
+        let mut other = default_options(test_prompt());
+        other.provider_options = Some(
+            [(
+                "openai".to_string(),
+                json!({ "thinkingConfig": { "x": 1 } }),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        assert_eq!(
+            build_request_body("gemini-2.0-flash", &other)["generationConfig"],
+            json!({})
+        );
     }
 
     // ── JSON response format without schema ──────────────────────────────────
@@ -2245,9 +2269,8 @@ mod request_body {
         )
         .await;
 
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("test-api-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         let mut opts = default_options(test_prompt());
         let mut headers = std::collections::HashMap::new();
@@ -2289,9 +2312,8 @@ mod request_body {
         )
         .await;
 
-        let config = GoogleConfig::new("my-secret-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
+        let provider = test_google("my-secret-key", Some((server.uri()).to_string()));
+        let model = provider.chat("gemini-2.0-flash");
 
         model
             .do_generate(&default_options(test_prompt()))
@@ -2688,8 +2710,9 @@ mod prepare_tools_tests {
         let decls = tools[0]["functionDeclarations"].as_array().unwrap();
         assert_eq!(decls[0]["name"], "testFunction");
         assert_eq!(decls[0]["description"], "A test function");
-        // Empty object schema at root → null parameters (OpenAPI conversion).
-        assert!(decls[0]["parameters"].is_null());
+        // Empty object schema at root → no parameters at all.
+        assert!(decls[0].get("parametersJsonSchema").is_none());
+        assert!(decls[0].get("parameters").is_none());
         // No tool_config when not strict and choice is auto → AUTO.
         assert_eq!(
             result.tool_config.unwrap()["functionCallingConfig"]["mode"],

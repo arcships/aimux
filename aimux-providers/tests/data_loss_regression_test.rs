@@ -44,10 +44,13 @@ use aimux_core::tool::{ProviderTool, Tool};
 use aimux_provider_utils::Resolvable;
 use aimux_providers::anthropic::AnthropicMessagesModel;
 use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
-use aimux_providers::bedrock::{BedrockAuth, BedrockConfig, BedrockModel, event_stream};
+use aimux_providers::bedrock::{
+    AmazonBedrockProviderSettings, BedrockModel, create_amazon_bedrock, event_stream,
+};
 use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
 use aimux_providers::{
-    CohereConfig, CohereProvider, GoogleConfig, GoogleProvider, MistralConfig, MistralProvider,
+    CohereConfig, CohereProvider, GoogleProvider, GoogleProviderSettings, MistralConfig,
+    MistralProvider, create_google,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -323,7 +326,12 @@ const PNG_BASE64_PREFIX: &str = "iVBORw0KGgoAAAANSUhEUgAA";
 const NANO_BANANA_BASE64_LEN: usize = 258_820;
 
 fn google_at(uri: &str) -> GoogleProvider {
-    GoogleProvider::new(GoogleConfig::new("test-api-key").with_base_url(format!("{uri}/v1beta")))
+    create_google(GoogleProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(format!("{uri}/v1beta")),
+        ..Default::default()
+    })
+    .unwrap()
 }
 
 #[tokio::test]
@@ -333,7 +341,7 @@ async fn finding_1_gemini_inline_data_surfaces_as_file() {
     mount(&server, &c).await;
 
     let result = google_at(&server.uri())
-        .model("gemini-2.5-flash-image")
+        .chat("gemini-2.5-flash-image")
         .do_generate(&opts())
         .await
         .expect("do_generate should succeed");
@@ -366,7 +374,7 @@ async fn finding_1_gemini_image_and_text_output_both_survive() {
     mount(&server, &c).await;
 
     let result = google_at(&server.uri())
-        .model("gemini-2.5-flash-image")
+        .chat("gemini-2.5-flash-image")
         .do_generate(&opts())
         .await
         .expect("do_generate should succeed");
@@ -429,7 +437,7 @@ async fn finding_1_gemini_inline_data_streams_as_file_part() {
 
     let parts = collect(
         google_at(&server.uri())
-            .model("gemini-2.5-flash-image")
+            .chat("gemini-2.5-flash-image")
             .do_stream(&opts())
             .await
             .expect("do_stream should succeed"),
@@ -476,7 +484,7 @@ async fn finding_3_gemini_thought_part_becomes_reasoning_not_text() {
     mount(&server, &c).await;
 
     let result = google_at(&server.uri())
-        .model("gemini-3-pro-preview")
+        .chat("gemini-3-pro-preview")
         .do_generate(&opts())
         .await
         .expect("do_generate should succeed");
@@ -517,7 +525,7 @@ async fn finding_5_gemini_thought_signature_reaches_provider_metadata() {
     mount(&server, &c).await;
 
     let result = google_at(&server.uri())
-        .model("gemini-3-pro-preview")
+        .chat("gemini-3-pro-preview")
         .do_generate(&opts())
         .await
         .expect("do_generate should succeed");
@@ -555,7 +563,7 @@ async fn finding_5_gemini_function_call_thought_signature_round_trips() {
     mount(&server, &c).await;
 
     let result = google_at(&server.uri())
-        .model("gemini-2.5-flash")
+        .chat("gemini-2.5-flash")
         .do_generate(&opts())
         .await
         .expect("do_generate should succeed");
@@ -590,7 +598,7 @@ async fn finding_12_gemini_code_execution_result_surfaced_with_matching_call_id(
     mount(&server, &c).await;
 
     let result = google_at(&server.uri())
-        .model("gemini-3-flash-preview")
+        .chat("gemini-3-flash-preview")
         .do_generate(&opts_with_tools(vec![provider_tool(
             "google.code_execution",
             "code_execution",
@@ -660,7 +668,7 @@ async fn finding_14_gemini_grounding_chunks_become_sources() {
     mount(&server, &c).await;
 
     let result = google_at(&server.uri())
-        .model("gemini-2.5-pro")
+        .chat("gemini-2.5-pro")
         .do_generate(&opts_with_tools(vec![provider_tool(
             "google.google_search",
             "google_search",
@@ -1315,14 +1323,14 @@ async fn finding_30_openai_responses_url_citation_annotation_becomes_source() {
 const BEDROCK_MODEL: &str = "us.anthropic.claude-sonnet-4-20250514-v1:0";
 
 fn bedrock_at(uri: &str, model: &str) -> BedrockModel {
-    BedrockModel::new(
-        model.to_string(),
-        BedrockConfig {
-            base_url: uri.to_string(),
-            auth: BedrockAuth::BearerToken("test-token".to_string()),
-            api_key_source: None,
-        },
-    )
+    create_amazon_bedrock(AmazonBedrockProviderSettings {
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        region: Some("us-east-1".to_string()),
+        base_url: Some(uri.to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .chat(model)
 }
 
 /// The real signature recorded in
@@ -1364,9 +1372,9 @@ async fn finding_10_bedrock_generate_reasoning_signature_in_provider_metadata() 
         &sig[..sig.len().min(24)]
     );
     assert_eq!(sig.len(), 496, "the signature must not be truncated");
-    assert_eq!(
-        m["bedrock"]["signature"], m["amazonBedrock"]["signature"],
-        "the signature is mirrored under both provider keys"
+    assert!(
+        m.get("bedrock").is_none(),
+        "the legacy provider key is not written"
     );
 
     // The visible answer is separate from the reasoning.
@@ -1458,7 +1466,7 @@ async fn finding_10_bedrock_stream_reasoning_signature_emitted_as_metadata_delta
         })
         .expect("the ReasoningEnd must carry the signature");
     assert_eq!(end_meta["amazonBedrock"]["signature"], json!(signature));
-    assert_eq!(end_meta["bedrock"]["signature"], json!(signature));
+    assert!(end_meta.get("bedrock").is_none());
 }
 
 #[tokio::test]
@@ -1511,9 +1519,9 @@ async fn finding_27_bedrock_stream_performance_config_and_service_tier_reach_fin
         meta["amazonBedrock"]["serviceTier"],
         json!({ "type": "flex" })
     );
-    assert_eq!(
-        meta["bedrock"], meta["amazonBedrock"],
-        "both provider keys carry the same payload"
+    assert!(
+        meta.get("bedrock").is_none(),
+        "the legacy provider key is not written"
     );
 }
 
@@ -1571,7 +1579,7 @@ async fn finding_27_bedrock_stream_guardrail_trace_reaches_finish() {
         json!(397),
         "nested metrics must not be flattened away"
     );
-    assert_eq!(meta["bedrock"]["trace"], meta["amazonBedrock"]["trace"]);
+    assert!(meta.get("bedrock").is_none());
 }
 
 #[tokio::test]
@@ -1612,5 +1620,5 @@ async fn finding_26_bedrock_stream_stop_sequence_reaches_finish() {
         })
         .expect("Finish must carry provider_metadata");
     assert_eq!(meta["amazonBedrock"]["stopSequence"], json!("STOP"));
-    assert_eq!(meta["bedrock"]["stopSequence"], json!("STOP"));
+    assert!(meta.get("bedrock").is_none());
 }

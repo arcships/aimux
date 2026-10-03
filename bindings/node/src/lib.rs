@@ -1084,21 +1084,24 @@ pub async fn google(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::google::{GoogleConfig, GoogleProvider};
+            use aimux_providers::google::{GoogleProviderSettings, create_google};
 
-            let mut cfg = GoogleConfig::new(api_key);
+            let mut settings = GoogleProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                ..Default::default()
+            };
             match config {
                 Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
+                    settings.base_url = Some(url);
                 }
                 Some(Either::B(opts)) => {
                     if let Some(url) = &opts.base_url {
-                        cfg = cfg.with_base_url(url);
+                        settings.base_url = Some(url.clone());
                     }
                 }
                 None => {}
             }
-            let provider = GoogleProvider::new(cfg);
+            let provider = create_google(settings).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
@@ -1238,22 +1241,34 @@ pub async fn bedrock(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::bedrock::{BedrockProvider, BedrockProviderConfig};
+            use aimux_providers::bedrock::{AmazonBedrockProviderSettings, create_amazon_bedrock};
 
-            let mut cfg = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
+            let mut settings = AmazonBedrockProviderSettings {
+                credential_provider: Some(aimux_provider_utils::Resolvable::Value(
+                    aimux_provider_utils::AwsCredentials {
+                        access_key_id,
+                        secret_access_key,
+                        session_token: None,
+                        region: region.clone(),
+                    },
+                )),
+                region: Some(region),
+                ..Default::default()
+            };
             if let Some(cfg_config) = config {
                 match cfg_config {
                     Either::A(url) => {
-                        cfg = cfg.with_base_url(url);
+                        settings.base_url = Some(url);
                     }
                     Either::B(opts) => {
                         if let Some(url) = &opts.base_url {
-                            cfg = cfg.with_base_url(url);
+                            settings.base_url = Some(url.clone());
                         }
                     }
                 }
             }
-            let provider = BedrockProvider::new(cfg);
+            let provider =
+                create_amazon_bedrock(settings).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
@@ -1279,22 +1294,28 @@ pub async fn vertex(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::vertex::{VertexProvider, VertexProviderConfig};
+            use aimux_providers::vertex::{VertexProviderSettings, create_google_vertex};
 
-            let mut cfg = VertexProviderConfig::new(access_token, project, location);
+            let mut settings = VertexProviderSettings {
+                access_token: Some(aimux_provider_utils::Resolvable::Value(access_token)),
+                project: Some(project),
+                location: Some(location),
+                ..Default::default()
+            };
             if let Some(cfg_config) = config {
                 match cfg_config {
                     Either::A(url) => {
-                        cfg = cfg.with_base_url(url);
+                        settings.base_url = Some(url);
                     }
                     Either::B(opts) => {
                         if let Some(url) = &opts.base_url {
-                            cfg = cfg.with_base_url(url);
+                            settings.base_url = Some(url.clone());
                         }
                     }
                 }
             }
-            let provider = VertexProvider::new(cfg);
+            let provider =
+                create_google_vertex(settings).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;

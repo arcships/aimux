@@ -226,12 +226,13 @@ pub use azure::{
     AzureAuth, AzureConfig, AzureModel, AzureProvider, AzureResponsesModel, TokenProvider,
 };
 pub use bedrock::{
-    BedrockAuth, BedrockEmbeddingModel, BedrockImageModel, BedrockProvider, BedrockProviderConfig,
+    AmazonBedrockProvider, AmazonBedrockProviderSettings, BedrockEmbeddingModel, BedrockImageModel,
+    BedrockModel, BedrockRerankingModel, amazon_bedrock, create_amazon_bedrock,
 };
 pub use cohere::{CohereConfig, CohereEmbeddingModel, CohereProvider};
 pub use google::{
-    GoogleConfig, GoogleEmbeddingModel, GoogleImageModel, GoogleImageSettings, GoogleProvider,
-    GoogleVideoModel,
+    GoogleEmbeddingModel, GoogleFiles, GoogleImageModel, GoogleImageSettings, GoogleModel,
+    GoogleProvider, GoogleProviderSettings, GoogleVideoModel, create_google, google,
 };
 pub use mistral::{MistralConfig, MistralEmbeddingModel, MistralProvider};
 pub use openai::{
@@ -239,8 +240,9 @@ pub use openai::{
     OpenAIResponsesModel, OpenAISpeechModel, OpenAITranscriptionModel, create_openai,
 };
 pub use vertex::{
-    VertexAuth, VertexEmbeddingModel, VertexImageModel, VertexProvider, VertexProviderConfig,
-    VertexTranscriptionModel, VertexVideoModel,
+    VertexAnthropicModel, VertexEmbeddingModel, VertexImageModel, VertexModel, VertexProvider,
+    VertexProviderSettings, VertexTranscriptionModel, VertexVideoModel, create_google_vertex,
+    google_vertex,
 };
 pub use voyage::{VoyageConfig, VoyageEmbeddingModel, VoyageProvider};
 

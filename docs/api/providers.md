@@ -326,12 +326,12 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `anthropic` | `AnthropicProvider` / `AnthropicProviderSettings` / `create_anthropic` |
 | `anthropic_aws` | `AnthropicAwsProvider` / `AnthropicAwsProviderSettings` / `create_anthropic_aws` |
 | `azure` | `AzureConfig` / `AzureProvider` / `TokenProvider` |
-| `bedrock` | `BedrockProvider` / `BedrockProviderConfig` |
+| `bedrock` | `AmazonBedrockProvider` / `AmazonBedrockProviderSettings` / `create_amazon_bedrock` |
 | `cohere` | `CohereConfig` / `CohereProvider` |
-| `google` | `GoogleConfig` / `GoogleProvider` |
+| `google` | `GoogleProvider` / `GoogleProviderSettings` / `create_google` |
 | `mistral` | `MistralConfig` / `MistralProvider` |
 | `openai` | `OpenAIProvider` / `OpenAIProviderSettings` / `create_openai` |
-| `vertex` | `VertexProvider` / `VertexProviderConfig` |
+| `vertex` | `VertexProvider` / `VertexProviderSettings` / `create_google_vertex` |
 | `voyage` | `VoyageConfig` / `VoyageProvider` |
 | `codex` | `CodexConfig` / `CodexProvider` |
 | `xai` | `XAIConfig` / `XAIProvider` |

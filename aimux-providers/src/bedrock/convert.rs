@@ -14,6 +14,7 @@
 //! - Consecutive same-role messages are merged into a single message (matching
 //!   the TS `groupIntoBlocks` behaviour).
 
+use super::options;
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
@@ -274,7 +275,7 @@ fn push_file_block(
 }
 
 /// Extract a `{ cachePoint: {...} }` block from a part's `providerOptions`
-/// (`bedrock.cachePoint` or `amazonBedrock.cachePoint`), if present.
+/// (`amazonBedrock.cachePoint`), if present.
 fn part_cache_point(part: &ContentPart) -> Option<Value> {
     let po = match part {
         ContentPart::Text {
@@ -291,31 +292,18 @@ fn part_cache_point(part: &ContentPart) -> Option<Value> {
         } => provider_options.as_ref()?,
         _ => return None,
     };
-    for key in &["bedrock", "amazonBedrock"] {
-        if let Some(cp) = po.get(key).and_then(|v| v.get("cachePoint")) {
-            return Some(json!({ "cachePoint": cp.clone() }));
-        }
-    }
-    None
+    let cp = options::read_value(Some(po))?.get("cachePoint")?;
+    Some(json!({ "cachePoint": cp.clone() }))
 }
 
-/// Whether `citations.enabled` is set on a part's `bedrock`/`amazonBedrock`
-/// provider options.
+/// Whether `citations.enabled` is set on a part's `amazonBedrock` provider
+/// options.
 fn citations_enabled(provider_options: &Option<Value>) -> bool {
-    let Some(po) = provider_options.as_ref() else {
-        return false;
-    };
-    for key in &["bedrock", "amazonBedrock"] {
-        if let Some(enabled) = po
-            .get(key)
-            .and_then(|b| b.get("citations"))
-            .and_then(|c| c.get("enabled"))
-            .and_then(serde_json::Value::as_bool)
-        {
-            return enabled;
-        }
-    }
-    false
+    options::read_value(provider_options.as_ref())
+        .and_then(|b| b.get("citations"))
+        .and_then(|c| c.get("enabled"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
 }
 
 /// Resolve a tool result `output` value into Bedrock's `toolResult.content`
@@ -522,10 +510,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
     let (system, messages) = convert_prompt_to_bedrock(&options.prompt);
 
     // Extract Bedrock-specific provider options.
-    let bedrock_opts = options
-        .provider_options
-        .as_ref()
-        .and_then(|po| po.get("bedrock"));
+    let bedrock_opts = options::read(options.provider_options.as_ref());
     let reasoning_config = bedrock_opts.and_then(|bo| bo.get("reasoningConfig"));
     let user_amrf = bedrock_opts.and_then(|bo| bo.get("additionalModelRequestFields"));
 

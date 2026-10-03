@@ -14,6 +14,9 @@
 #   6. The Anthropic family (anthropic, anthropic_aws, anthropic on Vertex)
 #      keeps no builder-era `AnthropicConfig` state, and the canonical
 #      providerOptions key is spelled once, in `anthropic/options.rs`.
+#   7. Google, Vertex and Bedrock keep no builder-era config state, the SigV4
+#      shim stays deleted, and their providerOptions / providerMetadata keys
+#      are spelled once, in `google/options.rs` and `bedrock/options.rs`.
 #
 # Usage: bash scripts/check_provider_boundaries.sh   (exit 1 on any violation)
 
@@ -157,6 +160,41 @@ rule6b_hits="$(
         true
 )"
 violation '"anthropic" literal outside aimux-providers/src/anthropic/options.rs (use options::CANONICAL / anthropic_options)' "$rule6b_hits"
+
+# ── Rule 7: Google, Vertex and Bedrock read their settings through the model config ─
+#
+# No `GoogleConfig` / `VertexProviderConfig` / `BedrockProviderConfig` /
+# `body_overrides` / `api_key_source` / `from_env`; `bedrock::sigv4` is gone
+# (signing is the `SigV4Fetch` decorator); and the canonical namespace keys
+# (`google`, `googleVertex`, `amazonBedrock`) are quoted only in the two
+# `options.rs` helpers (comments, unit tests and the SigV4 service name
+# aside). The historical `vertex` / `bedrock` aliases are not ported at all, so
+# they are flagged too: no model may read or write them.
+gvb_family='aimux-providers/src/google aimux-providers/src/vertex aimux-providers/src/bedrock'
+rule7_hits="$(
+    # shellcheck disable=SC2086
+    grep -rnE 'GoogleConfig\b|VertexProviderConfig|BedrockProviderConfig|VertexAuth\b|BedrockAuth\b|api_key_source|from_env|body_overrides' \
+        $gvb_family --include='*.rs' || true
+)"
+violation 'Google / Vertex / Bedrock reads builder-era config state' "$rule7_hits"
+rule7b_hits="$(
+    search_removed 'bedrock::sigv4|bedrock/sigv4' | grep -v '^\./scripts/check_provider_boundaries\.sh:' || true
+)"
+violation 'bedrock::sigv4 is back (use SigV4Fetch)' "$rule7b_hits"
+rule7c_hits="$(
+    # Non-test, non-comment lines of every file but the two helpers.
+    find $gvb_family -name '*.rs' ! -name options.rs -print0 |
+        xargs -0 awk '
+            FNR == 1 { in_tests = 0 }
+            /^#\[cfg\(test\)\]/ { in_tests = 1 }
+            in_tests { next }
+            /^[[:space:]]*\/\// { next }
+            /"(google|googleVertex|vertex|amazonBedrock|bedrock)"/ && !/SIGV4_SERVICE/ {
+                printf "%s:%d:%s\n", FILENAME, FNR, $0
+            }
+        ' || true
+)"
+violation 'providerOptions namespace key spelled outside google/options.rs or bedrock/options.rs' "$rule7c_hits"
 
 if [[ "$status" -eq 0 ]]; then
     echo 'provider boundaries: ok'

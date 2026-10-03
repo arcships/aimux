@@ -1,4 +1,4 @@
-﻿//! Rust translations of the Amazon Bedrock Reranking model tests.
+//! Rust translations of the Amazon Bedrock Reranking model tests.
 //!
 //! Source: `reference/ai/packages/amazon-bedrock/src/reranking/amazon-bedrock-reranking-model.test.ts`
 //! (13 test cases across "json documents" and "text documents" groups).
@@ -10,7 +10,10 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::reranking_model::{RerankingCallOptions, RerankingDocuments, RerankingModel};
-use aimux_providers::{BedrockProvider, BedrockProviderConfig};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{
+    AmazonBedrockProvider, AmazonBedrockProviderSettings, create_amazon_bedrock,
+};
 
 // -- helpers -----------------------------------------------------------------
 
@@ -23,16 +26,20 @@ fn rerank_response_body() -> Value {
     })
 }
 
-fn provider(server: &MockServer) -> BedrockProvider {
-    let config = BedrockProviderConfig::with_bearer_token("test-auth", "us-west-2")
-        .with_base_url(server.uri());
-    BedrockProvider::new(config)
+fn provider(server: &MockServer) -> AmazonBedrockProvider {
+    create_amazon_bedrock(AmazonBedrockProviderSettings {
+        api_key: Some(Resolvable::Value("test-auth".to_string())),
+        region: Some("us-west-2".to_string()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .expect("valid settings")
 }
 
 fn bedrock_provider_options() -> HashMap<String, Value> {
     let mut po = HashMap::new();
     po.insert(
-        "bedrock".to_string(),
+        "amazonBedrock".to_string(),
         json!({
             "nextToken": "test-token",
             "additionalModelRequestFields": { "test": "test-value" }
@@ -93,7 +100,7 @@ async fn json_docs_should_send_request_with_stringified_json_documents() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("cohere.rerank-v3-5:0");
+    let model = provider.reranking("cohere.rerank-v3-5:0");
 
     model
         .do_rerank(&json_docs_opts("rainy day", 2))
@@ -141,7 +148,7 @@ async fn json_docs_should_send_bedrock_reranking_configuration_wire_key() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("cohere.rerank-v3-5:0");
+    let model = provider.reranking("cohere.rerank-v3-5:0");
 
     model
         .do_rerank(&json_docs_opts("rainy day", 2))
@@ -165,7 +172,7 @@ async fn json_docs_should_send_request_with_correct_headers() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("cohere.rerank-v3-5:0");
+    let model = provider.reranking("cohere.rerank-v3-5:0");
 
     model
         .do_rerank(&json_docs_opts("rainy day", 2))
@@ -190,7 +197,7 @@ async fn json_docs_should_return_result_without_warnings() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("cohere.rerank-v3-5:0");
+    let model = provider.reranking("cohere.rerank-v3-5:0");
 
     let result = model
         .do_rerank(&json_docs_opts("rainy day", 2))
@@ -206,7 +213,7 @@ async fn json_docs_should_return_result_with_correct_ranking() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("cohere.rerank-v3-5:0");
+    let model = provider.reranking("cohere.rerank-v3-5:0");
 
     let result = model
         .do_rerank(&json_docs_opts("rainy day", 2))
@@ -226,7 +233,7 @@ async fn json_docs_should_not_return_provider_metadata() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("cohere.rerank-v3-5:0");
+    let model = provider.reranking("cohere.rerank-v3-5:0");
 
     let result = model
         .do_rerank(&json_docs_opts("rainy day", 2))
@@ -242,7 +249,7 @@ async fn json_docs_should_return_result_with_correct_response() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("cohere.rerank-v3-5:0");
+    let model = provider.reranking("cohere.rerank-v3-5:0");
 
     let result = model
         .do_rerank(&json_docs_opts("rainy day", 2))
@@ -265,7 +272,7 @@ async fn text_docs_should_send_request_with_text_documents() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("cohere.rerank-v3-5:0");
+    let model = provider.reranking("cohere.rerank-v3-5:0");
 
     model
         .do_rerank(&text_docs_opts("rainy day", 2))
@@ -303,7 +310,7 @@ async fn text_docs_should_send_request_with_correct_headers() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("cohere.rerank-v3-5:0");
+    let model = provider.reranking("cohere.rerank-v3-5:0");
 
     model
         .do_rerank(&text_docs_opts("rainy day", 2))
@@ -328,7 +335,7 @@ async fn text_docs_should_return_result_without_warnings() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("cohere.rerank-v3-5:0");
+    let model = provider.reranking("cohere.rerank-v3-5:0");
 
     let result = model
         .do_rerank(&text_docs_opts("rainy day", 2))
@@ -344,7 +351,7 @@ async fn text_docs_should_return_result_with_correct_ranking() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("cohere.rerank-v3-5:0");
+    let model = provider.reranking("cohere.rerank-v3-5:0");
 
     let result = model
         .do_rerank(&text_docs_opts("rainy day", 2))
@@ -362,7 +369,7 @@ async fn text_docs_should_not_return_provider_metadata() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("cohere.rerank-v3-5:0");
+    let model = provider.reranking("cohere.rerank-v3-5:0");
 
     let result = model
         .do_rerank(&text_docs_opts("rainy day", 2))
@@ -378,7 +385,7 @@ async fn text_docs_should_return_result_with_correct_response() {
     mount_rerank_mock(&server).await;
 
     let provider = provider(&server);
-    let model = provider.reranking_model("cohere.rerank-v3-5:0");
+    let model = provider.reranking("cohere.rerank-v3-5:0");
 
     let result = model
         .do_rerank(&text_docs_opts("rainy day", 2))

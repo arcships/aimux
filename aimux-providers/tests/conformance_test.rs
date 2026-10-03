@@ -28,9 +28,10 @@ use aimux_provider_utils::Resolvable;
 use aimux_providers::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use aimux_providers::{
-    BedrockProvider, BedrockProviderConfig, CohereConfig, CohereProvider, GoogleConfig,
-    GoogleProvider, HuggingFaceConfig, HuggingFaceProvider, MistralConfig, MistralProvider,
-    ProviderOptions, XAIConfig, XAIProvider, provider,
+    AmazonBedrockProvider, AmazonBedrockProviderSettings, CohereConfig, CohereProvider,
+    GoogleProvider, GoogleProviderSettings, HuggingFaceConfig, HuggingFaceProvider, MistralConfig,
+    MistralProvider, ProviderOptions, XAIConfig, XAIProvider, create_amazon_bedrock, create_google,
+    provider,
 };
 
 /// The native OpenAI package pointed at the mock server.
@@ -520,9 +521,12 @@ mod gemini_conformance {
     use super::*;
 
     fn make_provider(server: &MockServer) -> GoogleProvider {
-        let config =
-            GoogleConfig::new("test-key").with_base_url(format!("{}/v1beta", server.uri()));
-        GoogleProvider::new(config)
+        create_google(GoogleProviderSettings {
+            api_key: Some("test-key".to_string().into()),
+            base_url: Some(format!("{}/v1beta", server.uri())),
+            ..Default::default()
+        })
+        .unwrap()
     }
 
     #[tokio::test]
@@ -531,7 +535,7 @@ mod gemini_conformance {
         mount_cassettes(&server, "tests/cassettes/gemini").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("gemini-2.5-flash");
+        let model = provider.chat("gemini-2.5-flash");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -559,7 +563,7 @@ mod gemini_conformance {
         mount_cassettes(&server, "tests/cassettes/gemini").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("gemini-2.5-flash");
+        let model = provider.chat("gemini-2.5-flash");
 
         let result = model.do_stream(&default_options(test_prompt())).await;
 
@@ -842,12 +846,16 @@ mod mistralrs_conformance {
 mod bedrock_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> BedrockProvider {
+    fn make_provider(server: &MockServer) -> AmazonBedrockProvider {
         // Bearer-token auth bypasses SigV4 signing so the mock server sees
         // plain requests — matching how the rig cassettes were recorded.
-        let config = BedrockProviderConfig::with_bearer_token("test-token", "us-east-1")
-            .with_base_url(server.uri());
-        BedrockProvider::new(config)
+        create_amazon_bedrock(AmazonBedrockProviderSettings {
+            api_key: Some("test-token".to_string().into()),
+            region: Some("us-east-1".to_string()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        })
+        .unwrap()
     }
 
     #[tokio::test]
@@ -856,7 +864,7 @@ mod bedrock_conformance {
         mount_cassettes(&server, "tests/cassettes/bedrock").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("amazon.nova-lite-v1:0");
+        let model = provider.chat("amazon.nova-lite-v1:0");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -884,7 +892,7 @@ mod bedrock_conformance {
         mount_cassettes(&server, "tests/cassettes/bedrock").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("amazon.nova-lite-v1:0");
+        let model = provider.chat("amazon.nova-lite-v1:0");
 
         let result = model.do_stream(&default_options(test_prompt())).await;
 

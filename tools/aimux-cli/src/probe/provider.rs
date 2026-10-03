@@ -126,7 +126,16 @@ fn build_model(
         "mistral" => Ok(native!(mistral, MistralConfig, MistralProvider)),
         "xai" => Ok(native!(xai, XAIConfig, XAIProvider)),
         "cohere" => Ok(native!(cohere, CohereConfig, CohereProvider)),
-        "google" => Ok(native!(google, GoogleConfig, GoogleProvider)),
+        "google" => {
+            let provider = aimux_providers::google::create_google(
+                aimux_providers::google::GoogleProviderSettings {
+                    api_key: Some(api_key.clone().into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Arc::new(provider.chat(model_id)))
+        }
         _ => {
             let mut options = ProviderOptions::default();
             if let Some(url) = base_url {

@@ -15,7 +15,18 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::{AspectRatio, Size};
 use aimux_core::types::Warning;
-use aimux_providers::{GoogleConfig, GoogleImageSettings, GoogleProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{GoogleImageSettings, GoogleProvider, GoogleProviderSettings, create_google};
+
+/// A Google provider with the test key, pointed at `base_url` when given.
+fn test_google(key: &str, base_url: Option<String>) -> GoogleProvider {
+    create_google(GoogleProviderSettings {
+        api_key: Some(Resolvable::Value(key.to_string())),
+        base_url,
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -113,8 +124,7 @@ async fn should_pass_headers() {
     let server = MockServer::start().await;
     mock_imagen_response(&server, imagen_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("imagen-3.0-generate-002");
 
     let mut opts = options(PROMPT);
@@ -144,8 +154,7 @@ async fn should_pass_headers() {
 /// TS: "should respect maxImagesPerCall setting"
 #[tokio::test]
 async fn should_respect_max_images_per_call_setting() {
-    let config = GoogleConfig::new("test-api-key");
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", None);
     let model = provider.image_with_settings(
         "imagen-3.0-generate-002",
         GoogleImageSettings {
@@ -158,8 +167,7 @@ async fn should_respect_max_images_per_call_setting() {
 /// TS: "should use default maxImagesPerCall when not specified"
 #[tokio::test]
 async fn should_use_default_max_images_per_call_when_not_specified() {
-    let config = GoogleConfig::new("test-api-key");
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", None);
     let model = provider.image("imagen-3.0-generate-002");
     assert_eq!(model.max_images_per_call(), Some(4));
 }
@@ -170,8 +178,7 @@ async fn should_extract_the_generated_images() {
     let server = MockServer::start().await;
     mock_imagen_response(&server, imagen_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("imagen-3.0-generate-002");
 
     let mut opts = options(PROMPT);
@@ -196,8 +203,7 @@ async fn sends_aspect_ratio_in_the_request() {
     let server = MockServer::start().await;
     mock_imagen_response(&server, imagen_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("imagen-3.0-generate-002");
 
     let mut opts = options("test prompt");
@@ -219,8 +225,7 @@ async fn should_combine_aspect_ratio_and_provider_options() {
     let server = MockServer::start().await;
     mock_imagen_response(&server, imagen_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("imagen-3.0-generate-002");
 
     let mut opts = options("test prompt");
@@ -246,8 +251,7 @@ async fn should_return_warnings_for_unsupported_settings() {
     let server = MockServer::start().await;
     mock_imagen_response(&server, imagen_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("imagen-3.0-generate-002");
 
     let mut opts = options(PROMPT);
@@ -295,8 +299,7 @@ async fn should_include_response_data_with_timestamp_model_id_and_headers() {
     )
     .await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("imagen-3.0-generate-002");
 
     let mut opts = options(PROMPT);
@@ -328,8 +331,7 @@ async fn should_use_real_date_when_no_custom_date_provider_is_specified() {
     let server = MockServer::start().await;
     mock_imagen_response(&server, imagen_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("imagen-3.0-generate-002");
 
     let mut opts = options(PROMPT);
@@ -356,8 +358,7 @@ async fn should_only_pass_valid_provider_options() {
     let server = MockServer::start().await;
     mock_imagen_response(&server, imagen_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("imagen-3.0-generate-002");
 
     let mut opts = options(PROMPT);
@@ -393,8 +394,7 @@ async fn should_emit_warning_for_google_search_on_imagen() {
     let server = MockServer::start().await;
     mock_imagen_response(&server, imagen_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("imagen-3.0-generate-002");
 
     let mut opts = options(PROMPT);
@@ -420,8 +420,7 @@ async fn should_throw_error_when_files_are_provided() {
     let server = MockServer::start().await;
     mock_imagen_response(&server, imagen_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("imagen-3.0-generate-002");
 
     let mut opts = options("Edit this image");
@@ -440,8 +439,7 @@ async fn should_throw_error_when_mask_is_provided() {
     let server = MockServer::start().await;
     mock_imagen_response(&server, imagen_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("imagen-3.0-generate-002");
 
     let mut opts = options("Edit this image");
@@ -461,8 +459,7 @@ async fn should_throw_error_when_mask_is_provided() {
 /// TS: "should return 10 for Gemini image models by default"
 #[tokio::test]
 async fn gemini_should_return_10_for_max_images_per_call() {
-    let config = GoogleConfig::new("test-api-key");
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", None);
     let model = provider.image("gemini-2.5-flash-image");
     assert_eq!(model.max_images_per_call(), Some(10));
 }
@@ -470,8 +467,7 @@ async fn gemini_should_return_10_for_max_images_per_call() {
 /// TS: "should respect custom maxImagesPerCall setting"
 #[tokio::test]
 async fn gemini_should_respect_custom_max_images_per_call() {
-    let config = GoogleConfig::new("test-api-key");
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", None);
     let model = provider.image_with_settings(
         "gemini-2.5-flash-image",
         GoogleImageSettings {
@@ -487,8 +483,7 @@ async fn gemini_should_extract_the_generated_image() {
     let server = MockServer::start().await;
     mock_gemini_response(&server, gemini_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("A beautiful sunset");
@@ -510,8 +505,7 @@ async fn gemini_should_send_correct_request_body() {
     let server = MockServer::start().await;
     mock_gemini_response(&server, gemini_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("A beautiful sunset");
@@ -537,8 +531,7 @@ async fn gemini_should_pass_aspect_ratio_via_image_config() {
     let server = MockServer::start().await;
     mock_gemini_response(&server, gemini_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("A beautiful sunset");
@@ -561,8 +554,7 @@ async fn gemini_should_support_21_9_aspect_ratio() {
     let server = MockServer::start().await;
     mock_gemini_response(&server, gemini_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("A cinematic landscape");
@@ -585,8 +577,7 @@ async fn gemini_should_pass_seed_in_generation_config() {
     let server = MockServer::start().await;
     mock_gemini_response(&server, gemini_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("A beautiful sunset");
@@ -628,8 +619,7 @@ async fn gemini_should_include_usage_in_response() {
     )
     .await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("A beautiful sunset");
@@ -649,8 +639,7 @@ async fn gemini_should_return_warning_for_size() {
     let server = MockServer::start().await;
     mock_gemini_response(&server, gemini_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("A beautiful sunset");
@@ -671,8 +660,7 @@ async fn gemini_should_not_send_tools_when_no_google_search() {
     let server = MockServer::start().await;
     mock_gemini_response(&server, gemini_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("A beautiful sunset");
@@ -691,8 +679,7 @@ async fn gemini_should_forward_google_search_as_tool() {
     let server = MockServer::start().await;
     mock_gemini_response(&server, gemini_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("A beautiful sunset");
@@ -718,8 +705,7 @@ async fn gemini_should_not_leak_google_search_into_passthrough() {
     let server = MockServer::start().await;
     mock_gemini_response(&server, gemini_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("A beautiful sunset");
@@ -740,8 +726,7 @@ async fn gemini_should_include_input_images_for_editing() {
     let server = MockServer::start().await;
     mock_gemini_response(&server, gemini_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("Add a hat to this cat");
@@ -767,8 +752,7 @@ async fn gemini_should_throw_error_when_n_gt_1() {
     let server = MockServer::start().await;
     mock_gemini_response(&server, gemini_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("A beautiful sunset");
@@ -786,8 +770,7 @@ async fn gemini_should_throw_error_when_mask_is_provided() {
     let server = MockServer::start().await;
     mock_gemini_response(&server, gemini_response_body()).await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("Edit this image");
@@ -835,8 +818,7 @@ async fn gemini_should_forward_grounding_metadata() {
     )
     .await;
 
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
+    let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.image("gemini-2.5-flash-image");
 
     let mut opts = options("A beautiful sunset");

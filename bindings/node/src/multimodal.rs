@@ -606,13 +606,14 @@ pub async fn google_embedding(
 ) -> AimuxResult<EmbeddingModel> {
     AimuxResult({
         let __r: crate::error::MResult<EmbeddingModel> = async {
-            use aimux_providers::google::{GoogleConfig, GoogleProvider};
-            let mut config = GoogleConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = GoogleProvider::new(config);
-            let model = provider.embedding_model(&model_id);
+            use aimux_providers::google::{GoogleProviderSettings, create_google};
+            let provider = create_google(GoogleProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                base_url,
+                ..Default::default()
+            })
+            .map_err(|e| AiMuxBindingError::from(&e))?;
+            let model = provider.embedding(&model_id);
             Ok(EmbeddingModel {
                 inner: Arc::new(model),
             })
@@ -631,12 +632,13 @@ pub async fn google_image(
 ) -> AimuxResult<ImageModel> {
     AimuxResult({
         let __r: crate::error::MResult<ImageModel> = async {
-            use aimux_providers::google::{GoogleConfig, GoogleProvider};
-            let mut config = GoogleConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = GoogleProvider::new(config);
+            use aimux_providers::google::{GoogleProviderSettings, create_google};
+            let provider = create_google(GoogleProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                base_url,
+                ..Default::default()
+            })
+            .map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider.image(&model_id);
             Ok(ImageModel {
                 inner: Arc::new(model),
@@ -656,12 +658,13 @@ pub async fn google_video(
 ) -> AimuxResult<VideoModel> {
     AimuxResult({
         let __r: crate::error::MResult<VideoModel> = async {
-            use aimux_providers::google::{GoogleConfig, GoogleProvider};
-            let mut config = GoogleConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = GoogleProvider::new(config);
+            use aimux_providers::google::{GoogleProviderSettings, create_google};
+            let provider = create_google(GoogleProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                base_url,
+                ..Default::default()
+            })
+            .map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider.video(&model_id);
             Ok(VideoModel {
                 inner: Arc::new(model),

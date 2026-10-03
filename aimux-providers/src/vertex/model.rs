@@ -4,8 +4,6 @@
 //! [`crate::google::types`] response types. Only the endpoint construction and
 //! authentication differ from the public Gemini API provider.
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -17,24 +15,15 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::HttpRequest;
-
 use crate::google::convert::{
     build_vertex_request_body, code_execution_tool_name, convert_usage, extract_sources,
     parse_finish_reason,
 };
 use crate::google::types::{Candidate, GenerateContentResponse, GoogleStreamEvent};
 
-use super::VertexAuth;
-
-/// Configuration for a Vertex model instance (cloned from the provider).
-#[derive(Debug, Clone)]
-pub struct VertexConfig {
-    pub base_url: String,
-    pub auth: VertexAuth,
-    /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
-    pub api_key_source: Option<String>,
-}
+use crate::google::options::Namespace;
+use crate::shared::EndpointConfig;
+use aimux_core::language_model::SupportedUrls;
 
 /// A Google Vertex AI language model.
 ///
@@ -42,72 +31,50 @@ pub struct VertexConfig {
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct VertexModel {
     model_id: String,
-    config: VertexConfig,
+    config: EndpointConfig,
 }
 
 impl VertexModel {
-    #[must_use]
-    pub fn new(model_id: String, config: VertexConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> Vec<(String, String)> {
-        let mut headers = vec![("Content-Type".to_string(), "application/json".to_string())];
-        match &self.config.auth {
-            VertexAuth::BearerToken(token) => {
-                headers.push(("Authorization".to_string(), format!("Bearer {token}")));
-            }
-            VertexAuth::ApiKey(key) => {
-                headers.push(("x-goog-api-key".to_string(), key.clone()));
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.push((k.clone(), v.clone()));
-            }
-        }
-        headers
     }
 
     /// The effective base URL for this model. Tuned models addressed via
     /// `endpoints/{id}` are served from `…/locations/{region}/endpoints/{id}`
     /// (no `/publishers/google` suffix), so the suffix is stripped from the
-    /// configured base URL. Mirrors the TS `loadBaseURL({ endpoint: true })`.
-    fn effective_base_url(&self) -> &str {
-        if self.model_id.starts_with("endpoints/") {
-            // Strip the trailing `/publishers/google` (if present).
-            if let Some(stripped) = self.config.base_url.strip_suffix("/publishers/google") {
-                return stripped;
-            }
+    /// resolved base URL. Mirrors the TS `loadBaseURL({ endpoint: true })`.
+    fn effective_base_url<'a>(&self, base_url: &'a str) -> &'a str {
+        if self.model_id.starts_with("endpoints/")
+            && let Some(stripped) = base_url.strip_suffix("/publishers/google")
+        {
+            return stripped;
         }
-        &self.config.base_url
+        base_url
     }
 
-    /// `…/models/{model}:generateContent`
-    fn generate_endpoint(&self) -> String {
-        let model_path = if self.model_id.contains('/') {
+    fn model_path(&self) -> String {
+        if self.model_id.contains('/') {
             self.model_id.clone()
         } else {
             format!("models/{}", self.model_id)
-        };
+        }
+    }
+
+    /// `…/models/{model}:generateContent`
+    fn generate_endpoint(&self, base_url: &str) -> String {
         format!(
             "{}/{}:generateContent",
-            self.effective_base_url(),
-            model_path
+            self.effective_base_url(base_url),
+            self.model_path()
         )
     }
 
     /// `…/models/{model}:streamGenerateContent?alt=sse`
-    fn stream_endpoint(&self) -> String {
-        let model_path = if self.model_id.contains('/') {
-            self.model_id.clone()
-        } else {
-            format!("models/{}", self.model_id)
-        };
+    fn stream_endpoint(&self, base_url: &str) -> String {
         format!(
             "{}/{}:streamGenerateContent?alt=sse",
-            self.effective_base_url(),
-            model_path
+            self.effective_base_url(base_url),
+            self.model_path()
         )
     }
 }
@@ -115,19 +82,24 @@ impl VertexModel {
 #[async_trait]
 impl LanguageModel for VertexModel {
     fn provider(&self) -> &str {
-        "google.vertex"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
         &self.model_id
     }
 
+    fn supported_urls(&self) -> SupportedUrls {
+        (self.config.supported_urls)(&self.model_id)
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let body = build_vertex_request_body(&self.model_id, options);
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(body);
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.generate_endpoint(), headers, options),
+            exchange.request(self.generate_endpoint(exchange.base_url()), options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler(),
             crate::google::google_failed_response_handler(),
@@ -190,10 +162,11 @@ impl LanguageModel for VertexModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let body = build_vertex_request_body(&self.model_id, options);
-        let headers = self.build_headers(options.headers.as_ref());
-        let endpoint = self.stream_endpoint();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(body);
+        let endpoint = self.stream_endpoint(exchange.base_url());
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(endpoint.clone(), headers, options),
+            exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<GoogleStreamEvent>(),
             crate::google::google_failed_response_handler(),
@@ -605,10 +578,7 @@ impl LanguageModel for VertexModel {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn vertex_provider_metadata(payload: Value) -> Value {
-    json!({
-        "googleVertex": payload.clone(),
-        "vertex": payload,
-    })
+    Namespace::Vertex.metadata(payload)
 }
 
 fn vertex_server_tool_metadata(
