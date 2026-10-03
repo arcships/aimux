@@ -27,12 +27,14 @@ use aimux_core::stream_part::StreamPart;
 use aimux_provider_utils::Resolvable;
 use aimux_providers::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
+use aimux_providers::openai_compatible::{
+    OpenAICompatibleProvider, OpenAICompatibleProviderSettings, create_openai_compatible,
+};
 use aimux_providers::{
     AmazonBedrockProvider, AmazonBedrockProviderSettings, CohereProvider, CohereProviderSettings,
-    GoogleProvider, GoogleProviderSettings, HuggingFaceProvider, HuggingFaceProviderSettings,
-    MistralProvider, MistralProviderSettings, ProviderOptions, XAIProvider, XAIProviderSettings,
-    create_amazon_bedrock, create_cohere, create_google, create_huggingface, create_mistral,
-    create_xai, provider,
+    GoogleProvider, GoogleProviderSettings, MistralProvider, MistralProviderSettings,
+    ProviderOptions, XAIProvider, XAIProviderSettings, create_amazon_bedrock, create_cohere,
+    create_google, create_mistral, create_xai, provider,
 };
 
 /// The native OpenAI package pointed at the mock server.
@@ -1028,13 +1030,16 @@ mod cohere_conformance {
 mod huggingface_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> HuggingFaceProvider {
+    fn make_provider(server: &MockServer) -> OpenAICompatibleProvider {
         // Cassettes record paths under /together/v1/chat/completions (HF routes
-        // together-hosted models through this prefix). The OpenAI model appends
-        // `/chat/completions` to the base URL.
-        create_huggingface(HuggingFaceProviderSettings {
-            api_key: Some("test-key".to_string().into()),
-            base_url: Some(format!("{}/together/v1", server.uri())),
+        // together-hosted models through this prefix). The Hugging Face package
+        // serves the Responses API only, so the router's Chat Completions
+        // endpoint is reached through the OpenAI-compatible package, which
+        // appends `/chat/completions` to the base URL.
+        create_openai_compatible(OpenAICompatibleProviderSettings {
+            name: "huggingface".to_string(),
+            base_url: format!("{}/together/v1", server.uri()),
+            api_key: Some(Resolvable::Value("test-key".to_string())),
             ..Default::default()
         })
         .expect("valid settings")
@@ -1046,7 +1051,7 @@ mod huggingface_conformance {
         mount_cassettes(&server, "tests/cassettes/huggingface").await;
 
         let provider = make_provider(&server);
-        let model = provider.chat_completions("deepseek-ai/DeepSeek-R1");
+        let model = provider.chat("deepseek-ai/DeepSeek-R1");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 

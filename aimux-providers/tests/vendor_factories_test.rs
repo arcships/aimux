@@ -176,7 +176,6 @@ fn provider_strings_follow_the_ai_sdk() {
     let xai = create_xai(XAIProviderSettings::default()).unwrap();
     assert_eq!(xai.responses("m").provider(), "xai.responses");
     assert_eq!(xai.language_model("m").unwrap().provider(), "xai.responses");
-    assert_eq!(xai.chat_completions("m").provider(), "xai.chat");
 
     let mistral = create_mistral(MistralProviderSettings::default()).unwrap();
     assert_eq!(mistral.chat("m").provider(), "mistral.chat");
@@ -196,7 +195,6 @@ fn provider_strings_follow_the_ai_sdk() {
         hf.language_model("m").unwrap().provider(),
         "huggingface.responses"
     );
-    assert_eq!(hf.chat_completions("m").provider(), "huggingface.chat");
 
     let codex = create_codex(CodexProviderSettings::default()).unwrap();
     assert_eq!(codex.responses("m").provider(), "codex.responses");

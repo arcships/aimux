@@ -592,6 +592,20 @@ pub fn build_responses_request_body(
     let mut warnings: Vec<Warning> = Vec::new();
     let xai_opts = &options.provider_options;
 
+    if options.frequency_penalty.is_some() {
+        warnings.push(Warning::Unsupported {
+            feature: "frequencyPenalty".to_string(),
+            details: None,
+        });
+    }
+
+    if options.presence_penalty.is_some() {
+        warnings.push(Warning::Unsupported {
+            feature: "presencePenalty".to_string(),
+            details: None,
+        });
+    }
+
     if options.stop_sequences.is_some() {
         warnings.push(Warning::Unsupported {
             feature: "stopSequences".to_string(),
@@ -684,6 +698,9 @@ pub fn build_responses_request_body(
     }
     if let Some(tp) = options.top_p {
         body["top_p"] = json!(tp);
+    }
+    if let Some(tk) = options.top_k {
+        body["top_k"] = json!(tk);
     }
     if let Some(seed) = options.seed {
         body["seed"] = json!(seed);

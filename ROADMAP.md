@@ -26,7 +26,7 @@ aimux 是 **provider 接入与治理的运行时**：
 │   ├─→ #174 Auth L1 ──→ #175 Auth L2          ← 依赖 B1
 │   └─→ #167 transport-level replay ──→ #179 replay 子命令   ← 依赖 B1
 ├─ C 轨 FFI（现 123 个 extern "C"，#166 基线 109）→ ops 协议（C1 升级为传输无关协议：op 表 / 二进制帧 / 版本协商）
-│   └─ C2 构造器转发 shim 是 B4/B5 前置
+│   └─ C2 构造器转发 shim 取消：B4/B5 的直接构造调用点随 provider 工厂切换一次迁移（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）
 ├─ D 轨 8 种绑定重写为 ops 薄封装（依赖 C1）+ D8 类型镜像生成
 ├─ E 轨 内部清理（#164 已合入，改为 master 上独立 PR）+ 文档三层重组
 │
@@ -52,7 +52,7 @@ aimux 是 **provider 接入与治理的运行时**：
 | E1 | 内部清理 + 文档三层重组 |
 | #185 | `ToolInput{Raw,Parsed}`；tracker 不删，改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils（#204（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）） |
 | #170 / #171 前半 | sync/probe 脚本 + scheduled Action；27 个 base_url 分歧 triage |
-| **B1 + C2** | 解锁项：protocol 列 + `from_resolved`；40 个 FFI 构造器转发 shim |
+| **B1** | 解锁项：registry 列作为 preset descriptor 的数据来源，构造由 `create_xxx` 工厂承接（不做 `from_resolved`）；C2 的 40 个 FFI 构造器转发 shim 取消（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | **ops 协议 schema** | op 表、消息与错误信封、二进制帧、版本协商——先以文档 + 测试落地（RFC-0036 §4） |
 | **L0 passthrough** | 原样调用任意 provider 端点，享受 auth / 重试 / 录制 |
 
@@ -66,30 +66,30 @@ aimux 是 **provider 接入与治理的运行时**：
 | 项 | 内容 |
 |---|---|
 | B2–B8 | 17 个 LanguageModel 实现 → ~7 个协议；33 个 wrapper 退役；responses 家族合并（遵循 #166 修正 3/6） |
-| #174 / #175 | registry `auth` schema + `apply_auth()`；Credential 解析序 + CredentialStore + TokenRefresher |
+| #174 / #175 | registry `auth` 列作为 preset descriptor 数据，鉴权在各厂商包内以 headers 闭包 / fetch 装饰器实现；CredentialStore + TokenRefresher 随宿主回调后置（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | L2 补齐 | `StreamPart::Raw` / `provider_metadata` 在各协议接线——投影不下的不得静默丢弃 |
 | **S3** | `cargo-bloat` 审计 0.5.0 增重（Android `.so` 13.4 → 21 MB）；feature gating 仅作可选小体积路径，默认全量 |
 | ~~调研 RFC~~ | ~~L2 数据模型选型（AI SDK 形态 / Open Responses items / 自有），指标见 RFC-0036 §3~~ 撤销：选型已定为 AI SDK V4 形态（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 
-版本语义：Rust API 大 breaking（33 wrapper 退役）；C ABI 经 C2 转发不受影响。
+版本语义：Rust API、binding wire 与 C ABI 在全链路对齐切换时一次性 breaking（33 wrapper 退役、构造器替换），不经 C2 转发（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）。
 
 ### 0.8.0 ——「ops 协议落地」（~4-5 周）
 
 | 项 | 内容 |
 |---|---|
-| C1 | 9 个导出 + `dispatch`，**同一 dispatch 同时服务 FFI 与 stdio CLI**；旧导出保留共存 |
+| C1 | 9 个导出 + `dispatch`，**同一 dispatch 同时服务 FFI 与 stdio CLI**；旧符号按切换门一次替换，不共存（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | C3 | `aimux_error_*` 访问器 → 错误 JSON 信封（含派生 `retry_after_ms`） |
 | D1–D7 | 8 种绑定迁到 ops 薄封装。D1 Kotlin（只依赖 Java artifact）与 D5 Flutter ffigen 过渡版不依赖 C1，可在 0.6/0.7 提前做 |
 | D8 | 类型镜像生成：serde → JSON Schema → 各语言，`--check` 门禁扩到全部输出 |
 | P | stdio 入口往返开销纳入性能门禁 |
 
-版本语义：新 ABI 加入，旧导出并存（#166 要求共存至少一个 minor 版本）；绑定按各自节奏迁移。“共存至少一个 minor”不再作为承诺：全链路对齐切换本身没有共存期，之后 ops ABI 引入时的旧符号也按切换门一次替换；C2 转发 shim 与 C4 旧导出清理随之取消（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）。
+版本语义：新 ABI 按切换门一次替换旧符号，不提供共存期（#166 原要求的“共存至少一个 minor”撤销）；全链路对齐切换本身同样没有共存期，C2 转发 shim 与 C4 旧导出清理随之取消（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）。
 
 ### 0.9.0 ——「治理」（~3-4 周）
 
 | 项 | 内容 |
 |---|---|
-| #167 | transport-level replay：mock 挂 HTTP 层跑真协议代码，覆盖全协议 / 全模态；`ProviderRecord` = registry 行 + protocol |
+| #167 | transport-level replay：mock 挂 HTTP 层跑真协议代码，覆盖全协议 / 全模态；录制只存身份，不保存可重建的 `ProviderRecord`（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | 漂移检测 | #170 扩展：定期重录，与 cassette 字节级 diff |
 | 能力矩阵 | provider × 能力，每格由探测或录制支撑 |
 | CLI | `aimux probe / replay / diff`（#179 replay 子命令并入）；#181 debug CLI 并入 |
@@ -98,7 +98,7 @@ aimux 是 **provider 接入与治理的运行时**：
 
 | 项 | 内容 |
 |---|---|
-| C4 | 8 种绑定全部迁移后删除旧导出、旧头文件、旧 FFI 测试 |
+| ~~C4~~ | ~~8 种绑定全部迁移后删除旧导出、旧头文件、旧 FFI 测试~~ 取消：旧导出在切换时随绑定一起删除，1.0 不再补删（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | 冻结范围 | ops 协议与 L0 / L1 契约。**L2 独立版本化，不随 1.0 冻结** |
 | 发布判据 | #166 ledger 全勾（B9 / #171 后半除外）；错误模型 #95 与请求管线 #164 稳定一个周期；各门禁（S2 / P）连续绿 |
 

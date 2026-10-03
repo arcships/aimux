@@ -9,10 +9,10 @@
 //! The AI SDK's package serves the Responses API only
 //! ([`responses::HuggingFaceResponsesModel`], the lightest Responses
 //! implementation: function tools only, no built-in tools), and
-//! [`language_model`](Provider::language_model) returns it. The router also
-//! speaks OpenAI Chat Completions at `https://router.huggingface.co/v1`;
-//! [`HuggingFaceProvider::chat_completions`] keeps that surface as an aimux
-//! extension, outside the [`Provider`] trait.
+//! [`language_model`](Provider::language_model) returns it. There is no Chat
+//! Completions model in this package; the router's OpenAI-compatible endpoint
+//! is reachable through `create_openai_compatible` with
+//! `https://router.huggingface.co/v1`.
 
 pub(crate) mod options;
 pub mod responses;
@@ -32,7 +32,6 @@ use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
-use crate::openai::OpenAIModel;
 use crate::openai::config::OpenAIModelConfig;
 use crate::shared::{Credential, EndpointConfig, provider_headers};
 
@@ -172,15 +171,6 @@ impl HuggingFaceProvider {
             model_id.to_string(),
             self.endpoint_config("responses"),
         )
-    }
-
-    /// aimux extension, not in the AI SDK package: a Chat Completions model
-    /// through the router's OpenAI-compatible endpoint (e.g.
-    /// `"meta-llama/Llama-3.3-70B-Instruct"`); `provider()` is
-    /// `"{name}.chat"`. It is not reachable through [`Provider`].
-    #[must_use]
-    pub fn chat_completions(&self, model_id: &str) -> OpenAIModel {
-        OpenAIModel::from_config(model_id.to_string(), self.openai_config("chat"))
     }
 
     /// The provider as a function: the default language model for an id. The

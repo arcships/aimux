@@ -8,22 +8,15 @@
 //!
 //! The AI SDK's xAI package serves the Responses API only
 //! ([`XaiResponsesModel`], `provider()` = `xai.responses`), and
-//! [`language_model`](Provider::language_model) returns it. xAI also speaks
-//! OpenAI-compatible Chat Completions at `https://api.x.ai/v1`; with enough
-//! provider-specific behaviour (reasoning content extraction, citations,
-//! search parameters, xai-keyed provider options, non-inclusive cached tokens,
-//! reasoning-effort model gating, 200-status errors) to need its own model
-//! ([`XaiModel`]). That model is kept as an aimux extension,
-//! [`XAIProvider::chat_completions`], outside the [`Provider`] trait.
+//! [`language_model`](Provider::language_model) returns it. There is no Chat
+//! Completions model in this package; xAI's OpenAI-compatible endpoint is
+//! reachable through `create_openai_compatible` with `https://api.x.ai/v1`.
 
 pub mod convert;
-mod model;
 pub(crate) mod options;
 pub mod responses;
-mod types;
 
 pub use crate::shared::TransformRequestBody;
-pub use model::XaiModel;
 pub use responses::XaiResponsesModel;
 
 use std::sync::{Arc, OnceLock};
@@ -346,14 +339,6 @@ impl XAIProvider {
     #[must_use]
     pub fn responses(&self, model_id: &str) -> XaiResponsesModel {
         XaiResponsesModel::from_config(model_id.to_string(), self.model_config("responses"))
-    }
-
-    /// aimux extension, not in the AI SDK package: a Chat Completions model
-    /// (e.g. `"grok-3"`); `provider()` is `"{name}.chat"`. It is not
-    /// reachable through [`Provider`].
-    #[must_use]
-    pub fn chat_completions(&self, model_id: &str) -> XaiModel {
-        XaiModel::from_config(model_id.to_string(), self.model_config("chat"))
     }
 
     /// The provider as a function: the default language model for an id. The

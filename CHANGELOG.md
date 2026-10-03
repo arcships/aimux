@@ -192,8 +192,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `bedrock.{region}.amazonaws.com` (it used `….api.amazonaws.com`).
 - Azure defaults to `api_version = "v1"` with `/v1{path}`; a dated
   `api_version` selects the deployment URL form. xAI, Hugging Face and Azure
-  default to the Responses API (`chat_completions(id)` is the chat extension);
-  the OpenAI default `language_model` stays chat (upstream: Responses; see the
+  default to the Responses API. **xAI and Hugging Face no longer have a Chat
+  Completions model**: the AI SDK packages serve Responses only, so `XaiModel`
+  and the Hugging Face chat model are removed (no `chat` / `chat_completions`
+  method). To keep calling those endpoints, use
+  `create_openai_compatible` with `https://api.x.ai/v1` or
+  `https://router.huggingface.co/v1`; the xAI-specific chat response
+  handling (citations, search parameters, 200-status errors) is not available
+  on that path. The xAI Responses model now sends `top_k` and warns for
+  `frequencyPenalty` and `presencePenalty`, as upstream does. The OpenAI default `language_model` stays chat (upstream: Responses; see the
   RFC-0036 §5 table). Codex is `codex.responses`, its ChatGPT-account base URL
   defaults to `https://chatgpt.com/backend-api/codex` (it was missing
   `/codex`), and `store: false` is a package rule. `open_responses`: `url` →

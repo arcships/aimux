@@ -48,6 +48,25 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
     CallOptions::new(prompt)
 }
 
+/// A minimal Responses API body returning one text message.
+fn responses_body() -> Value {
+    json!({
+        "id": "resp_test",
+        "model": "test-model",
+        "object": "response",
+        "created_at": 1741257730,
+        "status": "completed",
+        "usage": { "input_tokens": 12, "output_tokens": 25, "total_tokens": 37 },
+        "output": [{
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "status": "completed",
+            "content": [{ "type": "output_text", "text": "Hello, World!" }]
+        }]
+    })
+}
+
 fn text_completion_body() -> Value {
     json!({
         "id": "chatcmpl-test",
@@ -80,19 +99,13 @@ mod huggingface_config {
     }
 
     /// TS: `createHuggingFace()` should create a provider with default
-    /// configuration. In Rust we verify that a model can be created. The chat
-    /// model is the shared OpenAI-compatible model, so `provider()` carries the
-    /// protocol name until each wrapper gets its own settings-level name.
+    /// configuration. In Rust we verify that a model can be created.
     #[test]
     fn model_is_created_with_default_configuration() {
         let provider = hf_provider("test-key", None);
-        let model = provider.chat_completions("any");
+        let model = provider.responses("any");
         assert_eq!(model.model_id(), "any");
-        assert_eq!(model.provider(), "huggingface.chat");
-        assert_eq!(
-            provider.responses("any").provider(),
-            "huggingface.responses"
-        );
+        assert_eq!(model.provider(), "huggingface.responses");
     }
 
     /// TS: `createHuggingFace({ apiKey: 'custom-key' })` �?custom API key
@@ -101,14 +114,14 @@ mod huggingface_config {
     async fn custom_api_key_used_in_auth_header() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/chat/completions"))
+            .and(path("/responses"))
             .and(header("authorization", "Bearer my-custom-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(responses_body()))
             .mount(&server)
             .await;
 
         let provider = hf_provider("my-custom-key", Some(server.uri()));
-        let model = provider.chat_completions("meta-llama/Llama-3.3-70B-Instruct");
+        let model = provider.responses("meta-llama/Llama-3.3-70B-Instruct");
 
         model
             .do_generate(&default_options(test_prompt()))
@@ -122,14 +135,14 @@ mod huggingface_config {
     async fn custom_headers_forwarded() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/chat/completions"))
+            .and(path("/responses"))
             .and(header("x-custom-header", "test-value"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(responses_body()))
             .mount(&server)
             .await;
 
         let provider = hf_provider("test-key", Some(server.uri()));
-        let model = provider.chat_completions("meta-llama/Llama-3.3-70B-Instruct");
+        let model = provider.responses("meta-llama/Llama-3.3-70B-Instruct");
 
         let mut options = default_options(test_prompt());
         options.headers = Some(
@@ -166,9 +179,9 @@ mod huggingface_config {
 
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/chat/completions"))
+            .and(path("/responses"))
             .and(header("authorization", "Bearer env-test-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(responses_body()))
             .mount(&server)
             .await;
         let provider = create_huggingface(HuggingFaceProviderSettings {
@@ -176,7 +189,7 @@ mod huggingface_config {
             ..Default::default()
         })
         .expect("created without a key");
-        let model = provider.chat_completions("any");
+        let model = provider.responses("any");
 
         let err = model
             .do_generate(&default_options(test_prompt()))

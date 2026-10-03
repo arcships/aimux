@@ -4,7 +4,7 @@
 >
 > **Date**: 2026-09-29
 >
-> **Reference baseline**: `reference/aisdk-review/node_modules`(本地安装、带 `src/`):`ai` 7.0.122、`@ai-sdk/provider` 4.0.19、`@ai-sdk/provider-utils` 5.0.51、openai 4.0.80、anthropic 4.0.68、google 4.0.85、google-vertex 5.0.98、amazon-bedrock 5.0.100、azure 4.0.84、xai 5.0.12、mistral 4.0.54、cohere 4.0.52、deepseek 3.0.56、groq 4.0.52、openai-compatible 3.0.59、gateway 4.0.100
+> **Reference baseline**: `reference/aisdk-review/node_modules`(本地安装、带 `src/`):`ai` 7.0.122、`@ai-sdk/provider` 4.0.19、`@ai-sdk/provider-utils` 5.0.51、openai 4.0.80、anthropic 4.0.68、google 4.0.85、google-vertex 5.0.98、amazon-bedrock 5.0.100、azure 4.0.84、xai 5.0.12、mistral 4.0.54、cohere 4.0.52、deepseek 3.0.56、groq 4.0.52、openai-compatible 3.0.59、gateway 4.0.100。这是调研与正文 file:line 证据对应的版本;实现用于行为对照的协议 fixture 由随实现提交入库的 `fixtures/aisdk/VERSIONS.json` 单独锁定,可晚于此处,升级时以该文件为准
 >
 > **Scope**: provider 创建与设置求值、model 获取与解析(registry / 默认 provider)、传输(fetch/WS)、调用运行时(retry / timeout / telemetry / scope)、消息协议(用户输入 / provider 输入 / provider 输出 / core 输出四层)、recording / replay / trace / session / catalogue、组合模型、FFI 与 8 个绑定、CLI / Web 工具
 >
@@ -48,7 +48,7 @@ AI SDK 的做法:provider 把 settings 编译成闭包(`url()`、`headers()`(可
 aimux-provider         V4 规范:Provider / 各模态 Model trait、V4 prompt / content / stream part、错误、middleware 规范
   ↑                    (对应 @ai-sdk/provider;无运行时依赖,即第二部分所说的"协议叶子 crate")
 aimux-provider-utils   Fetch / WS / Resolvable / load_* / headers / 单次 HTTP helper / 下载守卫 / 传输诊断 / ModelMessage 用户层类型
-  ↑  ← aimux-stream    (对应 @ai-sdk/provider-utils;aimux-stream 保持独立的 SSE / NDJSON 解析库)
+  ↑  ← aimux-stream    (对应 @ai-sdk/provider-utils;aimux-stream 保持独立的 SSE 解析库)
 aimux-providers        create_xxx 工厂、私有 model config、协议转换、鉴权组合、preset(生成)、catalogue 摄取
 aimux                  用户操作、resolve / registry / custom / wrap、prompt 标准化与下载、retry / timeout、telemetry、operation scope、组合模型
 aimux-devtools         recording(订阅事件 + 传输诊断)、replay_fetch / replay_web_socket、trace middleware、缓存审计、session store
@@ -492,7 +492,7 @@ pub fn create_openai(
 pub fn openai() -> &'static OpenAIProvider;
 ```
 
-具体 provider 暴露 `.call()`、`.chat()`、`.responses()` 和实际支持的模态方法。OpenAI 默认 LM 为 Responses；xAI、Hugging Face 的 V4 入口按本地源码只提供 Responses LM，不新增伪装成 SDK 能力的 `.chat()`；既有 Chat Completions 实现保留为 `Provider` trait 之外的显式扩展方法 `chat_completions(id)`（上游没有该入口，登记为产品差异，见 §5）。
+具体 provider 暴露 `.call()`、`.chat()`、`.responses()` 和实际支持的模态方法。OpenAI 默认 LM 为 Responses；xAI、Hugging Face 按本地源码只提供 Responses LM，不提供 `.chat()`；两者既有的 Chat Completions 实现随切换删除，不保留为 trait 之外的扩展入口（相对 master 的能力变化，记入 CHANGELOG；仍需该端点的调用方用 `create_openai_compatible` 指向对应 base URL）。
 
 config 只对该包及明确的 `internal` 复用接口开放。不得提供公开 config getter。
 
@@ -1144,7 +1144,6 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 语言适配 | `specification_version` / `Provider.name()` | `Provider` 与各模型 trait 不带 `specification_version`，`Provider` 不带 `name()`（D-c）：Rust trait 本身就是版本边界，注册名归持有 registry 的一方，身份由模型自己的 `provider()`（`"{name}.{method}"`）承担 |
 | 语言适配 | Rust `.call()` 的具体形式 | 每个包的 provider 提供 `call(model_id) -> Arc<dyn LanguageModel>`，与 `Provider::language_model` 返回同一个模型；Rust 无可调用对象，绑定侧在语言允许处恢复调用语法 |
 | 产品选择 | OpenAI 默认 `language_model` | 本期保持 chat（`openai.chat`）；上游 `openai(id)` 默认 Responses，对齐延后（S4-7，不在本 PR）。`responses(id)` 显式可用；xAI、Hugging Face、Azure 的默认已是 Responses |
-| 产品选择 | xAI / Hugging Face 的 Chat Completions 入口 | V4 入口（`language_model` / `.call()`）只提供 Responses；既有 Chat Completions 实现保留为 `Provider` trait 之外的显式扩展 `chat_completions(id)`，上游没有该入口（§3.3；驳回表 S4-7） |
 | 产品选择 | Bedrock 上的 Anthropic InvokeModel | aimux 没有 `bedrock.anthropic.messages` 对应的 provider（`anthropic_aws` 是 Claude Platform on AWS，不是 Bedrock InvokeModel）；属新增能力，不在本期 |
 | 产品选择 | Azure 未移植的模型 | deepseek、completion、MAI speech 端点和 Foundry item type 未移植 |
 | 产品选择 | 视频轮询节奏 | provider 没有 poll 设置；`VideoModel::poll_config()` 保留在 core，作为包内常量的来源，调用级 `VideoCallOptions.poll` 逐字段覆盖 |
@@ -1605,7 +1604,7 @@ P1 可以拆成多个审阅工作包，但这些工作包不被描述为独立�
 | 未覆盖项：补回 onStepFinish 转发 | **不接受历史兼容转发。**只保留 onStepEnd；Evaluation 等能力按完整范围处理，不为消除表面缺项增加空事件 |
 | 影响面 S0-2/S0-3：统一 `<optionsName>.<endpoint>` 和首段 namespace | **源码反例足够，不能作为全局规则。**Bedrock 身份不符合该模板，Google/Vertex 与 Responses 有包内分支，Anthropic 有 canonical/custom 合并。保留逐包规则 |
 | 影响面 S1-4：必须使用 RecordingFetch 装饰器 | **机制不必照搬。**需要的是可替换传输与同一录制/回放边界；provider-utils 的统一 leaf 诊断满足要求，且不要求用户手工排列录制包装器 |
-| 影响面 S4-7：xAI 同时保留 chat/responses | **作为 SDK 入口不接受；作为显式扩展保留。**本地 xAI 工厂只暴露 Responses LM，没有 chat LM 工厂，`languageModel` / `.call()` 不提供 chat；既有 Chat Completions 实现只作 trait 外的 `chat_completions(id)` 扩展并登记为产品差异（§3.3、§5）。OpenAI 的 chat 选择继续提供 |
+| 影响面 S4-7：xAI 同时保留 chat/responses | **不符合本地基线。**本地 xAI 工厂只暴露 Responses LM，没有 chat LM 工厂；xAI 与 Hugging Face 既有的 Chat Completions 实现删除，不作为 trait 外扩展保留（§3.3）。OpenAI 的 chat 选择继续提供 |
 | 影响面 S5 的旧数据映射、重建和归一化 | **全部排除。**schema 3 仅处理新录制；live replay 依赖宿主目标引用，不保存或重建 ProviderRecord |
 | 影响面 S7-3/S8-2：本期必须加入所有语言 credential callback ABI | **需求接受，指定机制不接受。**动态凭证可以由 Rust 内建 resolver 表达；任意 C 宿主回调涉及异步 ABI 和重入契约，不能靠函数指针加 ctx 宣称已经解决 |
 
@@ -2685,7 +2684,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 - 不再手写第二份消息 enum、result struct 或字段名映射。
 - Schema 是生成物，不与 Rust 同时人工维护。
 - 自定义 serde 类型必须同时提供生成描述：Optional、base64、ToolChoice、受约束静态/动态工具调用、日期和错误。
-- `ts-rs` 可以继续生成原生 Rust DTO 的 TS 声明，但必须与同源 schema/serde fixture 校验；不能只靠 `derive(TS)` 推断所有自定义行为。
+- `ts-rs` 与 `scripts/gen_*` 退役（§0.5）；TS 声明与其他语言一样由 descriptor + manifest 生成链产出，并与同源 schema/serde fixture 校验，不靠 `derive(TS)` 推断自定义行为。
 - Go 不再用 RawMessage 代替已知协议联合；opaque JSON 字段才使用通用 JSON 类型。
 - Java/Kotlin 不再为必填字段默认填空字符串、空对象。
 - Python/Dart 不再对同一 providerMetadata 字段一处接受 Any、一处强制字典。
