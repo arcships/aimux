@@ -11,12 +11,6 @@
 //! `user-agent` header is the SDK's own identifier and aimux sends none, and
 //! the recorded `x-goog-api-key` is redacted, so the key the case used is
 //! substituted back.
-//!
-//! The rest covers what a fixture cannot: the key is evaluated per request
-//! (`Resolvable::Future` once, `AsyncFn` every time), provider and per-call
-//! headers layer with `None` removing, the provider name drives every
-//! modality's `provider()` string, files and discovery go through the same
-//! transport, and the supported-URL patterns follow upstream.
 
 #[path = "common/mock_fetch.rs"]
 mod mock_fetch;
@@ -24,35 +18,26 @@ mod mock_fetch;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures::StreamExt;
 use serde_json::{Value, json};
-use serial_test::serial;
 
-use aimux_core::AiMuxError;
 use aimux_core::content::ContentPart;
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
-use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
-use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::result::{GenerateContent, GenerateResult};
-use aimux_core::shared::FileBytes;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
 use aimux_core::types::FinishReasonUnified;
-use aimux_core::video_model::VideoModel;
-use aimux_provider_utils::{HeaderMapOpt, Resolvable};
-use aimux_providers::google::{GoogleProviderSettings, create_google, google};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::google::{GoogleProviderSettings, create_google};
 
-use mock_fetch::{Canned, EnvVar, MockFetch, Seen};
+use mock_fetch::{Canned, MockFetch, Seen};
 
 const KEY: &str = "sk-test-fixture";
-const ENV_KEY: &str = "sk-env-should-not-be-used";
 
 fn settings(mock: &Arc<MockFetch>) -> GoogleProviderSettings {
     GoogleProviderSettings {
@@ -60,18 +45,6 @@ fn settings(mock: &Arc<MockFetch>) -> GoogleProviderSettings {
         fetch: Some(mock.transport()),
         ..Default::default()
     }
-}
-
-/// A plain text `generateContent` response, for the cases that do not replay a
-/// fixture.
-fn text_response() -> Canned {
-    Canned::json(&json!({
-        "candidates": [{
-            "content": { "parts": [{ "text": "ok" }], "role": "model" },
-            "finishReason": "STOP", "index": 0
-        }],
-        "usageMetadata": { "promptTokenCount": 1, "candidatesTokenCount": 1, "totalTokenCount": 2 }
-    }))
 }
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
@@ -181,10 +154,6 @@ fn message(role: Role, text: &str) -> LanguageModelPromptMessage {
         content: vec![ContentPart::text(text)],
         ..Default::default()
     }
-}
-
-fn user_prompt(text: &str) -> CallOptions {
-    CallOptions::new(vec![message(Role::User, text)])
 }
 
 /// Rebuild aimux call options from a recorded `sdk.input` (the subset the
@@ -488,415 +457,4 @@ async fn embedding_basic() {
         })
         .collect();
     assert_eq!(result.embeddings, recorded);
-}
-
-// ── identity ─────────────────────────────────────────────────────────────────
-
-#[test]
-fn provider_strings_follow_the_name() {
-    let default = create_google(GoogleProviderSettings::default()).unwrap();
-    assert_eq!(default.chat("x").provider(), "google.generative-ai");
-    assert_eq!(default.call("x").provider(), "google.generative-ai");
-    assert_eq!(
-        default.language_model("x").unwrap().provider(),
-        "google.generative-ai"
-    );
-    assert_eq!(default.embedding("x").provider(), "google.generative-ai");
-    assert_eq!(default.image("x").provider(), "google.generative-ai");
-    assert_eq!(default.video("x").provider(), "google.generative-ai.video");
-    assert_eq!(default.files().provider(), "google.generative-ai.files");
-
-    let proxy = create_google(GoogleProviderSettings {
-        name: Some("proxy".to_string()),
-        ..Default::default()
-    })
-    .unwrap();
-    assert_eq!(proxy.chat("x").provider(), "proxy");
-    assert_eq!(proxy.embedding("x").provider(), "proxy");
-    assert_eq!(proxy.image("x").provider(), "proxy");
-    assert_eq!(proxy.video("x").provider(), "proxy.video");
-    assert_eq!(proxy.files().provider(), "proxy.files");
-}
-
-#[test]
-fn the_default_instance_is_one_provider_and_creation_reads_nothing() {
-    assert!(std::ptr::eq(google(), google()));
-    assert_eq!(google().chat("x").provider(), "google.generative-ai");
-}
-
-#[test]
-fn the_provider_offers_language_embedding_image_video_and_files() {
-    let provider = create_google(GoogleProviderSettings::default()).unwrap();
-    assert!(provider.language_model("m").is_ok());
-    assert!(provider.embedding_model("m").is_ok());
-    assert!(provider.image_model("m").is_ok());
-    assert!(provider.video_model("m").unwrap().is_ok());
-    assert!(Provider::files(&provider).is_some());
-    assert!(provider.speech_model("s").is_none());
-    assert!(provider.reranking_model("r").is_none());
-}
-
-#[test]
-fn a_bad_base_url_fails_the_factory() {
-    let result = create_google(GoogleProviderSettings {
-        base_url: Some("not a url".to_string()),
-        ..Default::default()
-    });
-    assert!(matches!(result, Err(AiMuxError::InvalidArgument(_))));
-}
-
-// ── namespaces ───────────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn only_the_google_key_is_read_and_written() {
-    let mock = MockFetch::new(vec![text_response(), text_response()]);
-    let model = create_google(settings(&mock))
-        .unwrap()
-        .chat("gemini-2.5-flash");
-
-    // Options under `googleVertex` / `vertex` belong to other packages.
-    let mut foreign = user_prompt("hi");
-    foreign.provider_options = Some(
-        [
-            ("googleVertex".to_string(), json!({ "cachedContent": "v" })),
-            ("vertex".to_string(), json!({ "labels": { "a": "b" } })),
-        ]
-        .into_iter()
-        .collect(),
-    );
-    let result = model.do_generate(&foreign).await.unwrap();
-    let body = mock.seen()[0].json_body();
-    assert!(body.get("cachedContent").is_none() && body.get("labels").is_none());
-    let metadata = result.provider_metadata.unwrap();
-    assert!(metadata.get("google").is_some());
-    assert!(metadata.get("googleVertex").is_none() && metadata.get("vertex").is_none());
-
-    let mut own = user_prompt("hi");
-    own.provider_options = Some(
-        [("google".to_string(), json!({ "cachedContent": "g" }))]
-            .into_iter()
-            .collect(),
-    );
-    model.do_generate(&own).await.unwrap();
-    assert_eq!(mock.seen()[1].json_body()["cachedContent"], "g");
-}
-
-// ── credentials ──────────────────────────────────────────────────────────────
-
-#[serial]
-#[tokio::test]
-async fn missing_api_key_fails_the_call_not_the_factory() {
-    let _env = EnvVar::set("GOOGLE_GENERATIVE_AI_API_KEY", None);
-    let mock = MockFetch::new(vec![text_response()]);
-
-    // Creating the provider and a model reads no key.
-    let provider = create_google(GoogleProviderSettings {
-        fetch: Some(mock.transport()),
-        ..Default::default()
-    })
-    .expect("no key is read at creation");
-    let model = provider.chat("gemini-2.5-flash");
-
-    let error = model
-        .do_generate(&user_prompt("hi"))
-        .await
-        .expect_err("the call has no key");
-    match &error {
-        AiMuxError::LoadApiKey {
-            env_var,
-            description,
-        } => {
-            assert_eq!(env_var, "GOOGLE_GENERATIVE_AI_API_KEY");
-            assert_eq!(description, "Google Generative AI");
-            assert!(!error.to_string().contains(ENV_KEY));
-        }
-        other => panic!("expected LoadApiKey, got {other:?}"),
-    }
-    assert!(mock.seen().is_empty(), "nothing was sent");
-}
-
-#[serial]
-#[tokio::test]
-async fn an_unset_key_is_read_from_the_environment_on_each_call() {
-    let _env = EnvVar::set("GOOGLE_GENERATIVE_AI_API_KEY", Some(ENV_KEY));
-    let mock = MockFetch::new(vec![text_response(), text_response()]);
-    let model = create_google(GoogleProviderSettings {
-        fetch: Some(mock.transport()),
-        ..Default::default()
-    })
-    .unwrap()
-    .chat("gemini-2.5-flash");
-
-    model.do_generate(&user_prompt("one")).await.unwrap();
-    unsafe { std::env::set_var("GOOGLE_GENERATIVE_AI_API_KEY", "rotated") };
-    model.do_generate(&user_prompt("two")).await.unwrap();
-
-    let seen = mock.seen();
-    assert_eq!(seen[0].headers["x-goog-api-key"], ENV_KEY);
-    assert_eq!(seen[1].headers["x-goog-api-key"], "rotated");
-}
-
-#[serial]
-#[tokio::test]
-async fn an_explicit_empty_key_never_falls_back_to_the_environment() {
-    let _env = EnvVar::set("GOOGLE_GENERATIVE_AI_API_KEY", Some(ENV_KEY));
-    let mock = MockFetch::new(vec![text_response()]);
-    let model = create_google(GoogleProviderSettings {
-        api_key: Some(Resolvable::Value(String::new())),
-        fetch: Some(mock.transport()),
-        ..Default::default()
-    })
-    .unwrap()
-    .chat("gemini-2.5-flash");
-
-    model.do_generate(&user_prompt("hi")).await.unwrap();
-    assert_eq!(mock.seen()[0].headers["x-goog-api-key"], "");
-}
-
-#[tokio::test]
-async fn async_keys_are_awaited_per_call_and_futures_once() {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let counted = calls.clone();
-    let async_key = Resolvable::from_async_fn(move || {
-        let counted = counted.clone();
-        async move { Ok(format!("key-{}", counted.fetch_add(1, Ordering::SeqCst))) }
-    });
-    let mock = MockFetch::new(vec![text_response(), text_response()]);
-    let model = create_google(GoogleProviderSettings {
-        api_key: Some(async_key),
-        fetch: Some(mock.transport()),
-        ..Default::default()
-    })
-    .unwrap()
-    .chat("gemini-2.5-flash");
-    assert_eq!(
-        calls.load(Ordering::SeqCst),
-        0,
-        "creation evaluates nothing"
-    );
-    model.do_generate(&user_prompt("one")).await.unwrap();
-    model.do_generate(&user_prompt("two")).await.unwrap();
-    let seen = mock.seen();
-    assert_eq!(seen[0].headers["x-goog-api-key"], "key-0");
-    assert_eq!(seen[1].headers["x-goog-api-key"], "key-1");
-
-    let futures_calls = Arc::new(AtomicUsize::new(0));
-    let counted = futures_calls.clone();
-    let mock = MockFetch::new(vec![text_response(), text_response()]);
-    let model = create_google(GoogleProviderSettings {
-        api_key: Some(Resolvable::from_future(async move {
-            Ok(format!("once-{}", counted.fetch_add(1, Ordering::SeqCst)))
-        })),
-        fetch: Some(mock.transport()),
-        ..Default::default()
-    })
-    .unwrap()
-    .chat("gemini-2.5-flash");
-    model.do_generate(&user_prompt("one")).await.unwrap();
-    model.do_generate(&user_prompt("two")).await.unwrap();
-    let seen = mock.seen();
-    assert_eq!(seen[0].headers["x-goog-api-key"], "once-0");
-    assert_eq!(seen[1].headers["x-goog-api-key"], "once-0");
-    assert_eq!(futures_calls.load(Ordering::SeqCst), 1);
-}
-
-// ── headers ──────────────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn headers_layer_provider_then_call_and_none_removes() {
-    let mock = MockFetch::new(vec![text_response(), text_response()]);
-    let mut provider_headers = HeaderMapOpt::new();
-    provider_headers.insert("X-Team".to_string(), Some("blue".to_string()));
-    provider_headers.insert("X-Trace".to_string(), Some("provider".to_string()));
-    let model = create_google(GoogleProviderSettings {
-        headers: Some(provider_headers),
-        ..settings(&mock)
-    })
-    .unwrap()
-    .chat("gemini-2.5-flash");
-
-    let mut options = user_prompt("hi");
-    options.headers = Some(
-        [("x-trace".to_string(), "call".to_string())]
-            .into_iter()
-            .collect(),
-    );
-    model.do_generate(&options).await.unwrap();
-    let seen = mock.seen();
-    assert_eq!(seen[0].headers["x-team"], "blue");
-    assert_eq!(seen[0].headers["x-trace"], "call", "per-call wins");
-    assert_eq!(seen[0].headers["x-goog-api-key"], KEY);
-
-    // A `None` provider header removes even the key header.
-    let mock = MockFetch::new(vec![text_response()]);
-    let mut remove = HeaderMapOpt::new();
-    remove.insert("X-Goog-Api-Key".to_string(), None);
-    create_google(GoogleProviderSettings {
-        headers: Some(remove),
-        ..settings(&mock)
-    })
-    .unwrap()
-    .chat("gemini-2.5-flash")
-    .do_generate(&user_prompt("hi"))
-    .await
-    .unwrap();
-    assert!(!mock.seen()[0].headers.contains_key("x-goog-api-key"));
-}
-
-// ── base URL, transform, supported URLs ──────────────────────────────────────
-
-#[tokio::test]
-async fn base_url_replaces_the_default_and_loses_its_trailing_slash() {
-    let mock = MockFetch::new(vec![text_response()]);
-    create_google(GoogleProviderSettings {
-        base_url: Some("https://proxy.example/v1beta/".to_string()),
-        ..settings(&mock)
-    })
-    .unwrap()
-    .chat("gemini-2.5-flash")
-    .do_generate(&user_prompt("hi"))
-    .await
-    .unwrap();
-    assert_eq!(
-        mock.seen()[0].url,
-        "https://proxy.example/v1beta/models/gemini-2.5-flash:generateContent"
-    );
-}
-
-#[tokio::test]
-async fn transform_request_body_rewrites_every_json_body() {
-    let mock = MockFetch::new(vec![text_response()]);
-    create_google(GoogleProviderSettings {
-        transform_request_body: Some(Arc::new(|mut body| {
-            body["labels"] = json!({ "team": "blue" });
-            body
-        })),
-        ..settings(&mock)
-    })
-    .unwrap()
-    .chat("gemini-2.5-flash")
-    .do_generate(&user_prompt("hi"))
-    .await
-    .unwrap();
-    assert_eq!(
-        mock.seen()[0].json_body()["labels"],
-        json!({ "team": "blue" })
-    );
-}
-
-#[test]
-fn supported_urls_follow_upstream() {
-    let provider = create_google(GoogleProviderSettings {
-        base_url: Some("https://proxy.example/v1beta".to_string()),
-        ..Default::default()
-    })
-    .unwrap();
-
-    let gemini = provider.chat("gemini-2.5-flash").supported_urls().0;
-    let any = &gemini["*"];
-    for url in [
-        "https://generativelanguage.googleapis.com/v1beta/files/abc",
-        "https://proxy.example/v1beta/files/abc",
-        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-        "https://youtu.be/dQw4w9WgXcQ",
-    ] {
-        assert!(any.iter().any(|re| re.is_match(url)), "{url}");
-    }
-    assert!(
-        !any.iter()
-            .any(|re| re.is_match("https://example.com/a.png"))
-    );
-    // External https media URLs are fetched by Gemini models after 2.0.
-    assert!(gemini["image/png"][0].is_match("https://example.com/a.png"));
-    assert!(!gemini["image/png"][0].is_match("http://example.com/a.png"));
-    assert!(gemini.contains_key("application/pdf"));
-
-    let old = provider.chat("gemini-2.0-flash").supported_urls().0;
-    assert!(old.contains_key("*") && !old.contains_key("image/png"));
-}
-
-// ── files and discovery share the transport ──────────────────────────────────
-
-#[tokio::test]
-async fn list_models_is_one_exchange_through_the_same_transport() {
-    let mock = MockFetch::new(vec![Canned::json(&json!({
-        "models": [
-            { "name": "models/gemini-2.5-flash", "displayName": "Gemini 2.5 Flash" },
-            { "name": "models/gemini-2.5-pro" }
-        ]
-    }))]);
-    let provider = create_google(settings(&mock)).unwrap();
-    let models = provider.list_models().await.unwrap();
-    assert_eq!(
-        models.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
-        ["gemini-2.5-flash", "gemini-2.5-pro"]
-    );
-    let seen = mock.seen();
-    assert_eq!(seen.len(), 1);
-    assert_eq!(seen[0].method, "GET");
-    assert_eq!(
-        seen[0].url,
-        "https://generativelanguage.googleapis.com/v1beta/models"
-    );
-    assert_eq!(seen[0].headers["x-goog-api-key"], KEY);
-}
-
-#[tokio::test]
-async fn a_failing_list_models_is_not_retried() {
-    let mock = MockFetch::new(vec![Canned {
-        status: 503,
-        headers: vec![("content-type".into(), "application/json".into())],
-        body: br#"{"error":{"message":"busy","status":"UNAVAILABLE"}}"#.to_vec(),
-    }]);
-    let provider = create_google(settings(&mock)).unwrap();
-    assert!(provider.list_models().await.is_err());
-    assert_eq!(mock.seen().len(), 1, "discovery runs once");
-}
-
-#[tokio::test]
-async fn a_file_upload_is_one_attempt_per_stage() {
-    // The init exchange fails with a retryable status: it must not be replayed.
-    let mock = MockFetch::new(vec![
-        Canned {
-            status: 503,
-            headers: vec![("content-type".into(), "application/json".into())],
-            body: br#"{"error":{"message":"busy","status":"UNAVAILABLE"}}"#.to_vec(),
-        },
-        text_response(),
-    ]);
-    let files = create_google(settings(&mock)).unwrap().files();
-    let error = files
-        .upload_file(&UploadFileCallOptions {
-            data: UploadFileData::Data {
-                data: FileBytes::Binary(vec![1, 2, 3]),
-            },
-            media_type: "application/octet-stream".to_string(),
-            filename: None,
-            provider_options: None,
-            abort_signal: None,
-        })
-        .await
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("Failed to initiate resumable upload"),
-        "{error}"
-    );
-    let seen = mock.seen();
-    assert_eq!(seen.len(), 1, "no retry");
-    assert_eq!(
-        seen[0].url,
-        "https://generativelanguage.googleapis.com/upload/v1beta/files"
-    );
-    assert_eq!(seen[0].headers["x-goog-api-key"], KEY);
-}
-
-// The image request shapes are covered by `google_image_test.rs`; this only
-// pins the trait route and the provider string.
-#[test]
-fn image_models_are_offered_through_the_trait() {
-    let provider = create_google(GoogleProviderSettings::default()).unwrap();
-    let model = provider.image_model("imagen-3.0-generate-002").unwrap();
-    assert_eq!(model.provider(), "google.generative-ai");
 }

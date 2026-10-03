@@ -25,14 +25,6 @@ pub struct Canned {
 }
 
 impl Canned {
-    /// A response with a JSON body and the given status.
-    pub fn json_status(status: u16, body: &Value) -> Self {
-        Self {
-            status,
-            ..Self::json(body)
-        }
-    }
-
     pub fn json(body: &Value) -> Self {
         Self {
             status: 200,
@@ -45,8 +37,6 @@ impl Canned {
 /// One request as the transport saw it.
 #[derive(Clone, Debug)]
 pub struct Seen {
-    /// When the transport received it.
-    pub at: std::time::Instant,
     pub method: String,
     pub url: String,
     /// Lower-cased names (the `http` crate normalizes them).
@@ -87,7 +77,6 @@ impl MockFetch {
 impl Fetch for MockFetch {
     async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
         self.seen.lock().unwrap().push(Seen {
-            at: std::time::Instant::now(),
             method: request.method.to_string(),
             url: request.url.to_string(),
             headers: request
@@ -164,7 +153,6 @@ impl RouteFetch {
 impl Fetch for RouteFetch {
     async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
         let seen = Seen {
-            at: std::time::Instant::now(),
             method: request.method.to_string(),
             url: request.url.to_string(),
             headers: request
