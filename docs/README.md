@@ -16,6 +16,8 @@ Public documentation for aimux — a unified LLM access layer written in Rust.
 | [PERF-RESULTS.md](PERF-RESULTS.md) | Performance benchmark results (aimux vs OpenAI SDK / Vercel AI SDK) |
 | [aimux-vs-aisdk-node.md](aimux-vs-aisdk-node.md) | Node.js developer-experience comparison vs Vercel AI SDK |
 | [ai-sdk-request-pipeline.md](ai-sdk-request-pipeline.md) | AI SDK-aligned request pipeline — operation retry, response handlers, timeout/abort design |
+| [aisdk-architecture-alignment.md](aisdk-architecture-alignment.md) | Full-chain AI SDK alignment design (provider → model, call runtime, message protocol); implementation design under RFC-0036 (Chinese) |
+| [aisdk-architecture-impact-map.md](aisdk-architecture-impact-map.md) | Appendix: repository-wide impact map behind the alignment design (Chinese) |
 
 For the project README, quickstart, and provider/binding tables, see the
 [top-level README](../README.md).
