@@ -13,7 +13,6 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use aimux_core::AiMuxError;
-use aimux_core::ApiCallError;
 use aimux_core::model_catalogue::{
     CatalogueSource, Modality, ModelCapabilities, ModelCost, ModelLimits, ModelModalities,
     ModelSpec, ModelType, ReasoningMode, ReasoningSpec, ReasoningVisibility,
@@ -407,53 +406,22 @@ fn build_cost(m: &Value) -> Option<ModelCost> {
     })
 }
 
+/// Whole-exchange bound for the catalogue download (the aggregate file is a
+/// few MiB; the helper default is tuned for API calls).
+const FETCH_TIMEOUT: Duration = Duration::from_secs(60);
+
 async fn fetch_text(url: &str) -> Result<String, AiMuxError> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
-        .build()
-        .map_err(|e| {
-            AiMuxError::ApiCall(Box::new(ApiCallError {
-                is_retryable: true,
-                ..ApiCallError::new(
-                    format!("get_model_specs: build client: {e}"),
-                    url,
-                    serde_json::json!({}),
-                )
-            }))
-        })?;
-    let resp = client.get(url).send().await.map_err(|e| {
-        AiMuxError::ApiCall(Box::new(ApiCallError {
-            is_retryable: true,
-            ..ApiCallError::new(
-                format!("get_model_specs: fetch {url}: {e}"),
-                url,
-                serde_json::json!({}),
-            )
-        }))
-    })?;
-    if !resp.status().is_success() {
-        let status = resp.status().as_u16();
-        return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-            status_code: Some(status),
-            response_body: resp.text().await.ok().filter(|b| !b.is_empty()),
-            is_retryable: status == 429 || status >= 500,
-            ..ApiCallError::new(
-                format!("get_model_specs: fetch {url}"),
-                url,
-                serde_json::json!({}),
-            )
-        })));
-    }
-    resp.text().await.map_err(|e| {
-        AiMuxError::ApiCall(Box::new(ApiCallError {
-            is_retryable: true,
-            ..ApiCallError::new(
-                format!("get_model_specs: read body: {e}"),
-                url,
-                serde_json::json!({}),
-            )
-        }))
-    })
+    let output = aimux_provider_utils::get_from_api(
+        aimux_provider_utils::HttpRequest {
+            url: url.to_string(),
+            response_timeout: Some(FETCH_TIMEOUT),
+            ..Default::default()
+        },
+        aimux_provider_utils::create_binary_response_handler(),
+        aimux_provider_utils::create_status_code_error_response_handler(),
+    )
+    .await?;
+    Ok(String::from_utf8_lossy(&output.value).into_owned())
 }
 
 #[cfg(test)]

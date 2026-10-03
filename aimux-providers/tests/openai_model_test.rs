@@ -1446,8 +1446,6 @@ mod do_stream {
 
     #[tokio::test]
     async fn first_sse_body_transport_error_enters_core_retry() {
-        use std::time::Duration;
-
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpListener;
 
@@ -1511,15 +1509,8 @@ mod do_stream {
             }
         });
 
-        let provider = OpenAIProvider::new(
-            OpenAIConfig::new("test-api-key")
-                .with_base_url(base_url)
-                .with_retry_config(aimux_core::retry::RetryConfig {
-                    max_retries: 1,
-                    initial_delay: Duration::ZERO,
-                    backoff_factor: 2,
-                }),
-        );
+        let provider =
+            OpenAIProvider::new(OpenAIConfig::new("test-api-key").with_base_url(base_url));
         let result = stream_text(
             &provider.model("gpt-3.5-turbo"),
             "Hello",

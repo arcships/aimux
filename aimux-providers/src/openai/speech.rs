@@ -83,10 +83,6 @@ impl SpeechModel for OpenAISpeechModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
     async fn do_generate(&self, options: &SpeechCallOptions) -> Result<SpeechResult, AiMuxError> {
         let (body, warnings) = build_request_body_and_warnings(options, &self.model_id)?;
 

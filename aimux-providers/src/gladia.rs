@@ -225,11 +225,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
         // retry would re-upload the audio to retry a later stage. An
         // exhausted inner retry returns `AiMuxError::Retry`, which the outer
         // retry passes through, so `do_generate` is never replayed (§6.2).
-        let retries = retry::prepare_retries(
-            options.max_retries,
-            self.retry_config(),
-            options.abort_signal.clone(),
-        );
+        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
 
         // Step 1: Upload audio.
         let mut form = MultipartForm::new();
@@ -324,6 +320,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                             validate_url: true,
                             trusted_origin: Some(self.config.base_url.clone()),
                             credentialed_origin: Some(self.config.base_url.clone()),
+                            fetch: None,
                         },
                         aimux_provider_utils::create_json_response_handler::<GladiaResultResponse>(
                         ),

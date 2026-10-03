@@ -89,10 +89,6 @@ impl LanguageModel for XaiResponsesModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.openai_config().retry_config
-    }
-
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         // M2b: reuse the OpenAI snapshot helper with xAI's provider name.
         crate::openai::config_snapshot_from_config(

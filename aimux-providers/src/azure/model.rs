@@ -29,9 +29,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::provider::Provider;
 use aimux_core::result::{GenerateResult, StreamResult};
 
-use aimux_provider_utils::{
-    RetryConfig, load_api_key, with_user_agent_suffix, without_trailing_slash,
-};
+use aimux_provider_utils::{load_api_key, with_user_agent_suffix, without_trailing_slash};
 
 use crate::azure::responses::AzureResponsesModel;
 use crate::openai::model::{execute_generate, execute_stream};
@@ -87,8 +85,6 @@ pub struct AzureConfig {
     /// api_key 来源(RFC-0023):`None` = explicit (api-key 或 token provider);
     /// `Some("env:VAR")` = 环境变量。不存明文。
     pub api_key_source: Option<String>,
-    /// Retry settings used by Core model operations.
-    pub retry_config: RetryConfig,
 }
 
 impl AzureConfig {
@@ -104,7 +100,6 @@ impl AzureConfig {
             auth: None,
             extra_headers: HashMap::new(),
             api_key_source: None,
-            retry_config: RetryConfig::default(),
         }
     }
 
@@ -147,13 +142,6 @@ impl AzureConfig {
     #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
         self.api_key_source = source.map(std::string::ToString::to_string);
-        self
-    }
-
-    /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
-    #[must_use]
-    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
-        self.retry_config = config;
         self
     }
 
@@ -326,7 +314,7 @@ impl Provider for AzureProvider {
 
             use aimux_provider_utils::HttpRequest;
             // Retry rationale: see `openai::model::execute_list_models`.
-            let resp = aimux_core::retry::prepare_retries(None, config.retry_config, None)
+            let resp = aimux_core::retry::prepare_retries(None, None)
                 .retry(|| {
                     aimux_provider_utils::get_from_api(
                         HttpRequest {
@@ -477,10 +465,6 @@ impl LanguageModel for AzureModel {
 
     fn model_id(&self) -> &str {
         &self.deployment
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
 
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {

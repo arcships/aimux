@@ -92,10 +92,6 @@ impl LanguageModel for XaiModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.openai_config().retry_config
-    }
-
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         // M2b: xAI wraps OpenAIConfig — reuse the OpenAI snapshot helper with
         // xAI's own provider name. api_key_source/profile come from the inner

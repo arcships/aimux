@@ -266,10 +266,6 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
     async fn do_generate(
         &self,
         options: &TranscriptionCallOptions,
@@ -492,6 +488,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             subprotocols: Vec::new(),
             abort_signal: abort.clone(),
             timeout: options.timeout,
+            connector: None,
         };
         let mut ws = ws_connect(&req).await?;
 

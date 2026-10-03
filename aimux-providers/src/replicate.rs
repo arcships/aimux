@@ -310,6 +310,7 @@ impl ImageModel for ReplicateImageModel {
                 validate_url: false,
                 trusted_origin: None,
                 credentialed_origin: None,
+                fetch: None,
             },
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
@@ -319,11 +320,7 @@ impl ImageModel for ReplicateImageModel {
 
         let rh = resp.response_headers;
         let rb: Value = resp.value;
-        let retries = retry::prepare_retries(
-            options.max_retries,
-            self.retry_config(),
-            options.abort_signal.clone(),
-        );
+        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
 
         // Extract output (string or array of strings)
         let urls: Vec<String> = match &rb["output"] {
@@ -354,6 +351,7 @@ impl ImageModel for ReplicateImageModel {
                             validate_url: true,
                             trusted_origin: Some(self.config.base_url.clone()),
                             credentialed_origin: Some(self.config.base_url.clone()),
+                            fetch: None,
                         },
                         aimux_provider_utils::create_binary_response_handler(),
                         replicate_failed_response_handler(),
@@ -488,6 +486,7 @@ impl VideoModel for ReplicateVideoModel {
                 validate_url: false,
                 trusted_origin: None,
                 credentialed_origin: None,
+                fetch: None,
             },
             body,
             aimux_provider_utils::create_json_response_handler(),
@@ -548,6 +547,7 @@ impl VideoModel for ReplicateVideoModel {
                 validate_url: false,
                 trusted_origin: None,
                 credentialed_origin: None,
+                fetch: None,
             },
             aimux_provider_utils::create_json_response_handler::<Value>(),
             replicate_failed_response_handler(),

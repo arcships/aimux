@@ -614,7 +614,8 @@ pub struct ProviderConfig {
     pub organization: Option<String>,
     /// OpenAI project ID (sent via `OpenAI-Project` header).
     pub project: Option<String>,
-    /// Override the provider's retry count. `0` disables retries.
+    /// No longer applied: retry is a per-call setting (`maxRetries` in the
+    /// call options). TODO(A5): remove this field and reject it.
     pub max_retries: Option<u32>,
     /// Provider-level request body overrides as a JSON string (deep-merged
     /// into every request). Per-call `bodyOverrides` in GenerateTextOptions
@@ -641,9 +642,6 @@ fn apply_provider_config_openai(
     }
     if let Some(ref proj) = cfg.project {
         config = config.with_project(proj);
-    }
-    if let Some(max) = cfg.max_retries {
-        config.retry_config.max_retries = max;
     }
     if let Some(ref json_str) = cfg.body_overrides {
         let overrides: serde_json::Value = parse_wire_json("config.bodyOverrides", json_str)?;
@@ -1006,9 +1004,6 @@ pub async fn anthropic(
                         let h: std::collections::HashMap<String, String> =
                             parse_wire_json("config.headers", json_str)?;
                         cfg = cfg.with_headers(h);
-                    }
-                    if let Some(max) = opts.max_retries {
-                        cfg.retry_config.max_retries = max;
                     }
                     if let Some(ref json_str) = opts.body_overrides {
                         let overrides: serde_json::Value =

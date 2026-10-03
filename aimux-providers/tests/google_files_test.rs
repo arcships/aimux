@@ -15,7 +15,6 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
-use aimux_core::retry::RetryConfig;
 use aimux_core::shared::{FileBytes, SharedProviderOptions};
 use aimux_providers::{GoogleConfig, GoogleProvider};
 
@@ -37,16 +36,8 @@ fn default_file_resource() -> Value {
 }
 
 fn provider(server: &MockServer) -> GoogleProvider {
-    provider_with_retries(server, RetryConfig::default().max_retries)
-}
-
-fn provider_with_retries(server: &MockServer, max_retries: u32) -> GoogleProvider {
-    let config = GoogleConfig::new("test-api-key")
-        .with_base_url(format!("{}/v1beta", server.uri()))
-        .with_retry_config(RetryConfig {
-            max_retries,
-            ..Default::default()
-        });
+    let config =
+        GoogleConfig::new("test-api-key").with_base_url(format!("{}/v1beta", server.uri()));
     GoogleProvider::new(config)
 }
 
@@ -406,12 +397,17 @@ async fn should_throw_when_initiation_request_fails() {
 
     Mock::given(method("POST"))
         .and(path("/upload/v1beta/files"))
-        .respond_with(ResponseTemplate::new(500).set_body_string("Init error"))
+        .respond_with(
+            ResponseTemplate::new(500)
+                // Only the message text matters here; a zero retry hint keeps
+                // the default retries instant.
+                .insert_header("retry-after-ms", "0")
+                .set_body_string("Init error"),
+        )
         .mount(&server)
         .await;
 
-    // Only the message text matters here; skip the retries so it stays fast.
-    let provider = provider_with_retries(&server, 0);
+    let provider = provider(&server);
     let files = provider.files();
 
     let result = files.upload_file(&upload_options()).await;
@@ -462,12 +458,17 @@ async fn should_throw_when_upload_request_fails() {
 
     Mock::given(method("POST"))
         .and(path("/resume"))
-        .respond_with(ResponseTemplate::new(500).set_body_string("Upload error"))
+        .respond_with(
+            ResponseTemplate::new(500)
+                // Only the message text matters here; a zero retry hint keeps
+                // the default retries instant.
+                .insert_header("retry-after-ms", "0")
+                .set_body_string("Upload error"),
+        )
         .mount(&server)
         .await;
 
-    // Only the message text matters here; skip the retries so it stays fast.
-    let provider = provider_with_retries(&server, 0);
+    let provider = provider(&server);
     let files = provider.files();
 
     let result = files.upload_file(&upload_options()).await;
@@ -633,7 +634,7 @@ async fn transient_upload_failure_is_retried_without_re_initiating() {
         .mount(&server)
         .await;
 
-    let provider = provider_with_retries(&server, 1);
+    let provider = provider(&server);
     let files = provider.files();
 
     let result = files.upload_file(&upload_options()).await.unwrap();

@@ -172,11 +172,7 @@ impl Files for OpenAIFiles {
         // `do_upload_file`), so the retry lives here — safe for the whole
         // exchange because an upload is not billable and a failed
         // create-a-file request returns no id to replay against (§9.4).
-        let retries = aimux_core::retry::prepare_retries(
-            None,
-            self.config.retry_config,
-            options.abort_signal.clone(),
-        );
+        let retries = aimux_core::retry::prepare_retries(None, options.abort_signal.clone());
         let resp = retries
             .retry(|| {
                 aimux_provider_utils::post_to_api(

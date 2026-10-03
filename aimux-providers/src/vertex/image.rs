@@ -408,9 +408,6 @@ impl ImageModel for VertexImageModel {
     fn model_id(&self) -> &str {
         &self.model_id
     }
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
     fn max_images_per_call(&self) -> Option<u32> {
         if is_gemini_model(&self.model_id) {
             Some(10)

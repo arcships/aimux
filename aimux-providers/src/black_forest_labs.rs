@@ -346,11 +346,7 @@ impl ImageModel for BlackForestLabsImageModel {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let retries = retry::prepare_retries(
-            options.max_retries,
-            self.retry_config(),
-            options.abort_signal.clone(),
-        );
+        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
 
         // Poll for result
         let poll_interval = bfl_opts
@@ -408,6 +404,7 @@ impl ImageModel for BlackForestLabsImageModel {
                             trusted_origin: Some(self.config.base_url.clone()),
                             // Headers are gated per URL by gated_headers above.
                             credentialed_origin: None,
+                            fetch: None,
                         },
                         aimux_provider_utils::create_json_response_handler::<Value>(),
                         bfl_failed_response_handler(),
@@ -485,6 +482,7 @@ impl ImageModel for BlackForestLabsImageModel {
                         trusted_origin: Some(self.config.base_url.clone()),
                         // Headers are gated per URL by gated_headers above.
                         credentialed_origin: None,
+                        fetch: None,
                     },
                     aimux_provider_utils::create_binary_response_handler(),
                     bfl_failed_response_handler(),

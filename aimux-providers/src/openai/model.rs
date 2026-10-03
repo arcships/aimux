@@ -193,10 +193,6 @@ impl LanguageModel for OpenAIModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         super::config_snapshot_from_config(&self.config.provider, &self.model_id, &self.config)
     }
@@ -819,7 +815,6 @@ struct ModelEntry {
 pub async fn execute_list_models(
     base_url: &str,
     headers: &HashMap<String, String>,
-    retry_config: aimux_core::retry::RetryConfig,
 ) -> Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError> {
     // Strip a trailing slash so we don't get `//models`.
     let base = base_url.trim_end_matches('/');
@@ -829,7 +824,7 @@ pub async fn execute_list_models(
     // retries it — apply the Core retry primitive here (a catalogue GET is
     // idempotent) so a transient 429/503/transport failure behaves like every
     // other exchange instead of failing on the first hiccup.
-    let retries = aimux_core::retry::prepare_retries(None, retry_config, None);
+    let retries = aimux_core::retry::prepare_retries(None, None);
     let resp = retries
         .retry(|| {
             aimux_provider_utils::get_from_api(

@@ -80,7 +80,6 @@ fn test_provider(base_url: String) -> VertexProvider {
         location: Some("us-central1".to_string()),
         auth: VertexAuth::BearerToken("test-token".to_string()),
         api_key_source: None,
-        retry_config: aimux_provider_utils::RetryConfig::default(),
     };
     VertexProvider::new(config)
 }
@@ -295,7 +294,6 @@ fn gemini_embedding_2_max_per_call() {
         location: Some("us-central1".to_string()),
         auth: VertexAuth::BearerToken("test".to_string()),
         api_key_source: None,
-        retry_config: aimux_provider_utils::RetryConfig::default(),
     };
     let provider = VertexProvider::new(config);
     let model = provider.embedding_model("gemini-embedding-2");

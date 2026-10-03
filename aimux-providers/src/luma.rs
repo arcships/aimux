@@ -334,11 +334,7 @@ impl ImageModel for LumaImageModel {
                 AiMuxError::InvalidResponseData("missing id in Luma response".to_string())
             })?
             .to_string();
-        let retries = retry::prepare_retries(
-            options.max_retries,
-            self.retry_config(),
-            options.abort_signal.clone(),
-        );
+        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
 
         // Poll for completion
         let mut image_url = None;
@@ -417,6 +413,7 @@ impl ImageModel for LumaImageModel {
                         validate_url: true,
                         trusted_origin: Some(self.config.base_url.clone()),
                         credentialed_origin: Some(self.config.base_url.clone()),
+                        fetch: None,
                     },
                     aimux_provider_utils::create_binary_response_handler(),
                     aimux_provider_utils::create_status_code_error_response_handler(),

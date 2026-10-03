@@ -16,7 +16,7 @@ pub use reranking::CohereRerankingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{RetryConfig, load_api_key, without_trailing_slash};
+use aimux_provider_utils::{load_api_key, without_trailing_slash};
 use serde_json::Value;
 
 pub(crate) fn cohere_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
@@ -40,8 +40,6 @@ pub struct CohereConfig {
     pub base_url: String,
     /// api_key 来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
-    /// Retry settings used by Core model operations.
-    pub retry_config: RetryConfig,
 }
 
 impl CohereConfig {
@@ -51,7 +49,6 @@ impl CohereConfig {
             api_key: api_key.into(),
             base_url: "https://api.cohere.com/v2".to_string(),
             api_key_source: None,
-            retry_config: RetryConfig::default(),
         }
     }
 
@@ -66,13 +63,6 @@ impl CohereConfig {
     #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
         self.api_key_source = source.map(std::string::ToString::to_string);
-        self
-    }
-
-    /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
-    #[must_use]
-    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
-        self.retry_config = config;
         self
     }
 
@@ -152,7 +142,7 @@ impl Provider for CohereProvider {
             ];
             use aimux_provider_utils::HttpRequest;
             // Retry rationale: see `openai::model::execute_list_models`.
-            let resp = aimux_core::retry::prepare_retries(None, config.retry_config, None)
+            let resp = aimux_core::retry::prepare_retries(None, None)
                 .retry(|| {
                     aimux_provider_utils::get_from_api(
                         HttpRequest {

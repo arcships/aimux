@@ -240,11 +240,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
         // retry would re-upload the audio to retry a later stage. An
         // exhausted inner retry returns `AiMuxError::Retry`, which the outer
         // retry passes through, so `do_generate` is never replayed (§6.2).
-        let retries = retry::prepare_retries(
-            options.max_retries,
-            self.retry_config(),
-            options.abort_signal.clone(),
-        );
+        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
 
         // Step 1: Upload audio.
         let resp = retries

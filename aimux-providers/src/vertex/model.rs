@@ -17,7 +17,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::{HttpRequest, RetryConfig};
+use aimux_provider_utils::HttpRequest;
 
 use crate::google::convert::{
     build_vertex_request_body, code_execution_tool_name, convert_usage, extract_sources,
@@ -34,8 +34,6 @@ pub struct VertexConfig {
     pub auth: VertexAuth,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
-    /// Retry settings used by Core model operations.
-    pub retry_config: RetryConfig,
 }
 
 /// A Google Vertex AI language model.
@@ -122,10 +120,6 @@ impl LanguageModel for VertexModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
 
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {

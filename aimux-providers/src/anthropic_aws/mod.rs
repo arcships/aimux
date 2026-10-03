@@ -18,7 +18,7 @@
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{RetryConfig, without_trailing_slash};
+use aimux_provider_utils::without_trailing_slash;
 
 mod model;
 
@@ -46,8 +46,6 @@ pub struct AnthropicAwsProviderConfig {
     pub workspace_id: Option<String>,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
-    /// Retry settings used by Core model operations.
-    pub retry_config: RetryConfig,
 }
 
 impl AnthropicAwsProviderConfig {
@@ -70,7 +68,6 @@ impl AnthropicAwsProviderConfig {
             api_version: "2023-06-01".to_string(),
             workspace_id: None,
             api_key_source: None,
-            retry_config: RetryConfig::default(),
         }
     }
 
@@ -84,7 +81,6 @@ impl AnthropicAwsProviderConfig {
             api_version: "2023-06-01".to_string(),
             workspace_id: None,
             api_key_source: None,
-            retry_config: RetryConfig::default(),
         }
     }
 
@@ -113,13 +109,6 @@ impl AnthropicAwsProviderConfig {
     #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
         self.api_key_source = source.map(std::string::ToString::to_string);
-        self
-    }
-
-    /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
-    #[must_use]
-    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
-        self.retry_config = config;
         self
     }
 
@@ -199,7 +188,6 @@ impl AnthropicAwsProvider {
                 api_version: self.config.api_version.clone(),
                 workspace_id: self.config.workspace_id.clone(),
                 api_key_source: self.config.api_key_source.clone(),
-                retry_config: self.config.retry_config,
             },
         )
     }
@@ -249,7 +237,7 @@ impl Provider for AnthropicAwsProvider {
 
             use aimux_provider_utils::HttpRequest;
             // Retry rationale: see `openai::model::execute_list_models`.
-            let resp = aimux_core::retry::prepare_retries(None, config.retry_config, None)
+            let resp = aimux_core::retry::prepare_retries(None, None)
                 .retry(|| {
                     aimux_provider_utils::get_from_api(
                         HttpRequest {

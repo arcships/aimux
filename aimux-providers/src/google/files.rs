@@ -193,11 +193,7 @@ impl Files for GoogleFiles {
         // here — per stage, not around the whole upload: a failure in the
         // upload or poll stage must not replay the init exchange that minted
         // `upload_url`, nor resend the file body.
-        let retries = aimux_core::retry::prepare_retries(
-            None,
-            self.config.retry_config,
-            options.abort_signal.clone(),
-        );
+        let retries = aimux_core::retry::prepare_retries(None, options.abort_signal.clone());
         let init_resp = retries
             .retry(|| async {
                 aimux_provider_utils::post_json_to_api(
@@ -213,6 +209,7 @@ impl Files for GoogleFiles {
                         validate_url: false,
                         trusted_origin: None,
                         credentialed_origin: None,
+                        fetch: None,
                     },
                     init_body_value.clone(),
                     aimux_provider_utils::ResponseHandler::new(|input| async move {
@@ -277,6 +274,7 @@ impl Files for GoogleFiles {
                         validate_url: true,
                         trusted_origin: Some(self.config.base_url.clone()),
                         credentialed_origin: Some(self.config.base_url.clone()),
+                        fetch: None,
                     },
                     HttpBody::Bytes(file_bytes.clone(), media_type.clone()),
                     aimux_provider_utils::create_json_response_handler::<UploadResponse>(),
@@ -340,6 +338,7 @@ impl Files for GoogleFiles {
                             validate_url: false,
                             trusted_origin: None,
                             credentialed_origin: None,
+                            fetch: None,
                         },
                         aimux_provider_utils::create_json_response_handler::<GoogleFileResource>(),
                         super::google_failed_response_handler(),

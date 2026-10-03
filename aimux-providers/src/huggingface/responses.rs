@@ -168,10 +168,6 @@ impl LanguageModel for HuggingFaceResponsesModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.openai_config().retry_config
-    }
-
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         // M2b: HuggingFace wraps OpenAIConfig — reuse the OpenAI snapshot helper.
         crate::openai::config_snapshot_from_config(

@@ -350,10 +350,6 @@ impl ImageModel for GoogleImageModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
     fn max_images_per_call(&self) -> Option<u32> {
         Some(self.max_images())
     }

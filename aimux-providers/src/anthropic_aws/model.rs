@@ -15,7 +15,6 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
-use aimux_provider_utils::RetryConfig;
 
 use crate::anthropic::convert::build_request_body_with_warnings;
 use crate::anthropic::stream::{BodyEncoding, anthropic_generate_core, anthropic_stream_core};
@@ -33,8 +32,6 @@ pub struct AnthropicAwsConfig {
     pub workspace_id: Option<String>,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
-    /// Retry settings used by Core model operations.
-    pub retry_config: RetryConfig,
 }
 
 /// An Anthropic-AWS language model (e.g. `claude-sonnet-4-20250514`).
@@ -127,10 +124,6 @@ impl LanguageModel for AnthropicAwsModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
 
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {

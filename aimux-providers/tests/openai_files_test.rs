@@ -281,8 +281,8 @@ async fn should_set_specification_version_and_provider() {
 }
 
 /// A transient 503 followed by 200 must succeed: `upload_file` retries the
-/// upload exchange using the provider's configured retry settings, the same
-/// way `list_models` already does.
+/// upload exchange with the default retry settings, the same way
+/// `list_models` already does.
 #[tokio::test]
 async fn transient_failure_is_retried_and_succeeds() {
     let server = MockServer::start().await;
@@ -302,12 +302,7 @@ async fn transient_failure_is_retried_and_succeeds() {
         .mount(&server)
         .await;
 
-    let config = OpenAIConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_retry_config(aimux_core::retry::RetryConfig {
-            max_retries: 1,
-            ..Default::default()
-        });
+    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
     let provider = OpenAIProvider::new(config);
     let files = provider.files();
 

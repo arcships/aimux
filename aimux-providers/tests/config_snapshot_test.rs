@@ -76,7 +76,7 @@ fn google_api_key_source_env_vs_explicit() {
 
 /// Anthropic `from_env` → `env:ANTHROPIC_API_KEY`; `new` → `explicit`. Also
 /// covers C6: the snapshot's `provider_options` is a ProviderOptions-shaped
-/// object carrying `headers`/`api_version`/`max_retries`/`body_overrides`.
+/// object carrying `headers`/`api_version`/`body_overrides`.
 #[test]
 fn anthropic_api_key_source_and_snapshot_shape() {
     let explicit = AnthropicConfig::new("a-explicit");
@@ -102,8 +102,8 @@ fn anthropic_api_key_source_and_snapshot_shape() {
     assert!(opts.get("headers").is_some(), "missing headers: {opts}");
     assert_eq!(opts["api_version"], "2023-06-01");
     assert!(
-        opts.get("max_retries").is_some(),
-        "missing max_retries: {opts}"
+        opts.get("max_retries").is_none(),
+        "retry is call-level and must not be recorded as provider config: {opts}"
     );
     assert!(
         opts.get("body_overrides").is_some(),

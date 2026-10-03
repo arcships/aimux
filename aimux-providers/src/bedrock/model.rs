@@ -20,7 +20,7 @@ use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usa
 
 use serde_json::json;
 
-use aimux_provider_utils::{HttpBody, HttpRequest, RetryConfig};
+use aimux_provider_utils::{HttpBody, HttpRequest};
 
 use super::BedrockAuth;
 use super::convert::{build_request_body, convert_usage, map_finish_reason};
@@ -92,8 +92,6 @@ pub struct BedrockModel {
 pub struct BedrockConfig {
     pub base_url: String,
     pub auth: BedrockAuth,
-    /// Retry settings used by Core model operations.
-    pub retry_config: RetryConfig,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     /// SigV4 记 access-key 来源;BearerToken 记 bearer-token 来源。不存明文。
     pub api_key_source: Option<String>,
@@ -162,10 +160,6 @@ impl LanguageModel for BedrockModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         use aimux_core::recording::ProviderRecord;
         // M2b: record identity + credential source + region (encoded in
@@ -187,7 +181,6 @@ impl LanguageModel for BedrockModel {
             profile: None,
             provider_options: Some(serde_json::json!({
                 "auth_kind": auth_kind,
-                "max_retries": self.config.retry_config.max_retries,
             })),
         }
     }

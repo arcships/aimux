@@ -315,7 +315,6 @@ struct ResolvedEntry {
     headers: Option<HashMap<String, String>>,
     organization: Option<String>,
     project: Option<String>,
-    max_retries: Option<u32>,
     body_overrides: Option<Value>,
 }
 
@@ -332,7 +331,6 @@ impl ResolvedEntry {
             headers: None,
             organization: None,
             project: None,
-            max_retries: None,
             body_overrides: None,
         }
     }
@@ -349,7 +347,6 @@ impl ResolvedEntry {
             headers: entry.headers.clone(),
             organization: entry.organization.clone(),
             project: entry.project.clone(),
-            max_retries: entry.max_retries,
             body_overrides: entry.body_overrides.clone(),
         }
     }
@@ -484,9 +481,8 @@ fn build_resolved_config(
     if let Some(project) = &entry.project {
         config = config.with_project(project.clone());
     }
-    if let Some(max_retries) = entry.max_retries {
-        config.retry_config.max_retries = max_retries;
-    }
+    // TODO(A3): an external entry's `max_retries` is no longer read (retry is
+    // call-level); reject it with InvalidArgument (RFC-0036 D-g).
     if let Some(overrides) = &entry.body_overrides {
         config = config.with_body_overrides(overrides.clone());
     }
@@ -505,9 +501,8 @@ fn build_resolved_config(
         if let Some(project) = opts.project {
             config = config.with_project(project);
         }
-        if let Some(max_retries) = opts.max_retries {
-            config.retry_config.max_retries = max_retries;
-        }
+        // TODO(A3): `opts.max_retries` is no longer read (retry is
+        // call-level); reject it with InvalidArgument (RFC-0036 D-g).
         if let Some(overrides) = opts.body_overrides {
             config = config.with_body_overrides(overrides);
         }

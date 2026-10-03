@@ -148,10 +148,6 @@ pub trait SpeechModel: Send + Sync {
     /// Provider-specific model ID, e.g. `"tts-1"`.
     fn model_id(&self) -> &str;
 
-    fn retry_config(&self) -> crate::retry::RetryConfig {
-        crate::retry::RetryConfig::default()
-    }
-
     /// Generate speech audio from text.
     ///
     /// Naming: the `do_` prefix prevents accidental direct usage by users.
@@ -169,11 +165,7 @@ pub async fn generate_speech(
 ) -> Result<SpeechResult, AiMuxError> {
     let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
     let abort_signal = options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
     timeout::run(
         retries.retry(|| model.do_generate(&options)),
         abort_signal.as_ref(),

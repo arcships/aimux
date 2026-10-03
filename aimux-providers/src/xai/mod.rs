@@ -320,14 +320,10 @@ impl Provider for XAIProvider {
         let config = OpenAIConfig::new(self.config.api_key())
             .with_base_url(self.config.base_url())
             .with_provider(PROVIDER_NAME);
-        // The freshly built OpenAIConfig carries the default retry settings —
-        // use the user's configured ones from the wrapped config instead.
-        let retry_config = self.config.0.retry_config;
         Box::pin(async move {
             let headers = crate::openai::model::build_auth_headers(&config);
             let runtime =
-                crate::openai::model::execute_list_models(&config.base_url, &headers, retry_config)
-                    .await?;
+                crate::openai::model::execute_list_models(&config.base_url, &headers).await?;
             Ok(runtime)
         })
     }

@@ -61,7 +61,6 @@ fn make_model(server: &MockServer) -> VertexAnthropicModel {
         location: Some("us-central1".to_string()),
         auth: VertexAuth::BearerToken("test-token".to_string()),
         api_key_source: None,
-        retry_config: aimux_provider_utils::RetryConfig::default(),
     };
     VertexProvider::new(config)
         .anthropic_model(MODEL_ID)

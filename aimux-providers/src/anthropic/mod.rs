@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{RetryConfig, load_api_key};
+use aimux_provider_utils::load_api_key;
 use serde_json::Value;
 
 pub(crate) fn anthropic_failed_response_handler()
@@ -56,8 +56,6 @@ pub struct AnthropicConfig {
     pub name: String,
     /// Extra headers merged into every request.
     pub headers: Option<HashMap<String, String>>,
-    /// Retry settings used by Core model operations.
-    pub retry_config: RetryConfig,
     /// Provider 级请求体覆盖（RFC-0017）。在标准请求体之后 deep-merge。
     pub body_overrides: Option<Value>,
     /// api_key 来源(RFC-0023 `ProviderRecord.api_key_source`):`None` = 显式
@@ -77,7 +75,6 @@ impl AnthropicConfig {
             api_version: "2023-06-01".to_string(),
             name: "anthropic.messages".to_string(),
             headers: None,
-            retry_config: RetryConfig::default(),
             body_overrides: None,
             api_key_source: None,
         }
@@ -97,13 +94,6 @@ impl AnthropicConfig {
     #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = normalize_base_url(&url.into());
-        self
-    }
-
-    /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
-    #[must_use]
-    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
-        self.retry_config = config;
         self
     }
 
@@ -240,7 +230,6 @@ impl AnthropicConfigBuilder {
                 .name
                 .unwrap_or_else(|| "anthropic.messages".to_string()),
             headers: self.headers,
-            retry_config: RetryConfig::default(),
             body_overrides: self.body_overrides,
             api_key_source: None,
         })
@@ -332,7 +321,7 @@ impl Provider for AnthropicProvider {
 
             use aimux_provider_utils::HttpRequest;
             // Retry rationale: see `openai::model::execute_list_models`.
-            let resp = aimux_core::retry::prepare_retries(None, config.retry_config, None)
+            let resp = aimux_core::retry::prepare_retries(None, None)
                 .retry(|| {
                     aimux_provider_utils::get_from_api(
                         HttpRequest {

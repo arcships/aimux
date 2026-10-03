@@ -27,7 +27,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{RetryConfig, load_api_key, without_trailing_slash};
+use aimux_provider_utils::{load_api_key, without_trailing_slash};
 use serde_json::Value;
 
 pub(crate) fn openai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
@@ -192,7 +192,7 @@ fn provider_options_to_json(config: &OpenAIConfig) -> Option<serde_json::Value> 
         headers: config.headers.clone(),
         organization: config.org_id.clone(),
         project: config.project.clone(),
-        max_retries: Some(config.retry_config.max_retries),
+        max_retries: None,
         body_overrides: config.body_overrides.clone(),
     };
     serde_json::to_value(opts).ok()
@@ -220,8 +220,6 @@ pub struct OpenAIConfig {
     /// 厂商能力差异描述。默认 `full()`（支持全部能力）。
     /// 薄封装用 `with_profile()` 设置差异。
     pub profile: OpenAICompatProfile,
-    /// Retry settings used by Core model operations.
-    pub retry_config: RetryConfig,
     /// Provider 级请求体覆盖（RFC-0017）。在标准请求体 + 内置厂商 override
     /// 之后 deep-merge。per-call 的 `CallOptions.body_overrides` 在此之后
     /// 再 merge（覆盖 provider 级）。
@@ -240,7 +238,6 @@ impl OpenAIConfig {
             headers: None,
             provider: "openai".to_string(),
             profile: OpenAICompatProfile::full(),
-            retry_config: RetryConfig::default(),
             body_overrides: None,
         }
     }
@@ -283,13 +280,6 @@ impl OpenAIConfig {
     #[must_use]
     pub fn with_profile(mut self, profile: OpenAICompatProfile) -> Self {
         self.profile = profile;
-        self
-    }
-
-    /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
-    #[must_use]
-    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
-        self.retry_config = config;
         self
     }
 
@@ -412,8 +402,7 @@ impl Provider for OpenAIProvider {
         let config = self.config.clone();
         Box::pin(async move {
             let headers = model::build_auth_headers(&config);
-            let runtime =
-                model::execute_list_models(&config.base_url, &headers, config.retry_config).await?;
+            let runtime = model::execute_list_models(&config.base_url, &headers).await?;
             Ok(runtime)
         })
     }

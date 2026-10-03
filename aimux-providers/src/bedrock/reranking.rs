@@ -17,7 +17,7 @@ use aimux_core::reranking_model::{
     RerankingResult,
 };
 
-use aimux_provider_utils::{HttpBody, HttpRequest, RetryConfig};
+use aimux_provider_utils::{HttpBody, HttpRequest};
 
 use super::BedrockAuth;
 use super::sigv4::sign_request;
@@ -70,7 +70,6 @@ pub struct BedrockRerankingModel {
     base_url: String,
     region: String,
     auth: BedrockAuth,
-    retry_config: RetryConfig,
 }
 
 impl BedrockRerankingModel {
@@ -81,13 +80,7 @@ impl BedrockRerankingModel {
             base_url,
             region,
             auth,
-            retry_config: RetryConfig::default(),
         }
-    }
-
-    pub(crate) fn with_retry_config(mut self, retry_config: RetryConfig) -> Self {
-        self.retry_config = retry_config;
-        self
     }
 
     fn endpoint(&self) -> String {
@@ -133,10 +126,6 @@ impl RerankingModel for BedrockRerankingModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.retry_config
     }
 
     async fn do_rerank(

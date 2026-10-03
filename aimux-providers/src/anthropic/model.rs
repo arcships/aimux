@@ -90,10 +90,6 @@ impl LanguageModel for AnthropicModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         use aimux_core::recording::ProviderRecord;
         ProviderRecord {
@@ -106,14 +102,13 @@ impl LanguageModel for AnthropicModel {
                 .clone()
                 .unwrap_or_else(|| "explicit".to_string()),
             profile: None,
-            // RFC-0023 C6: ProviderOptions-shaped object (headers/max_retries/
-            // body_overrides are the shared ProviderOptions fields) plus the
+            // RFC-0023 C6: ProviderOptions-shaped object (headers/body_overrides
+            // are the shared ProviderOptions fields) plus the
             // Anthropic-specific `api_version`. Sensitive headers are redacted
             // at the recording boundary (recording.rs redacts provider_options).
             provider_options: Some(serde_json::json!({
                 "headers": self.config.headers,
                 "api_version": self.config.api_version,
-                "max_retries": self.config.retry_config.max_retries,
                 "body_overrides": self.config.body_overrides,
             })),
         }

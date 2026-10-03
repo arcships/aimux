@@ -36,7 +36,7 @@ use aimux_core::provider::Provider;
 use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_core::types::Warning;
 
-use aimux_provider_utils::{HttpRequest, RetryConfig};
+use aimux_provider_utils::HttpRequest;
 
 use crate::openai::responses::responses_convert::{
     build_header_list, build_responses_event_stream, build_responses_generate_result,
@@ -144,13 +144,6 @@ impl CodexConfig {
         self
     }
 
-    /// Override the retry settings used by Core model operations.
-    #[must_use]
-    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
-        self.openai = self.openai.with_retry_config(config);
-        self
-    }
-
     /// Extra headers merged into every request (user-supplied values win over
     /// the subscription-mode defaults).
     #[must_use]
@@ -206,12 +199,8 @@ impl Provider for CodexProvider {
         let config = self.config.openai.clone();
         Box::pin(async move {
             let headers = crate::openai::model::build_auth_headers(&config);
-            let runtime = crate::openai::model::execute_list_models(
-                &config.base_url,
-                &headers,
-                config.retry_config,
-            )
-            .await?;
+            let runtime =
+                crate::openai::model::execute_list_models(&config.base_url, &headers).await?;
             Ok(runtime)
         })
     }
@@ -439,10 +428,6 @@ impl LanguageModel for CodexModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.openai.retry_config
     }
 
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {

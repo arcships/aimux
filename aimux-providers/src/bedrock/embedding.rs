@@ -102,10 +102,6 @@ impl EmbeddingModel for BedrockEmbeddingModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
     fn max_embeddings_per_call(&self) -> Option<u32> {
         if is_cohere_embedding_model(&self.model_id) {
             Some(96)

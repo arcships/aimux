@@ -483,7 +483,10 @@ export interface ProviderConfig {
   organization?: string
   /** OpenAI project ID (sent via `OpenAI-Project` header). */
   project?: string
-  /** Override the provider's retry count. `0` disables retries. */
+  /**
+   * No longer applied: retry is a per-call setting (`maxRetries` in the
+   * call options). TODO(A5): remove this field and reject it.
+   */
   maxRetries?: number
   /**
    * Provider-level request body overrides as a JSON string (deep-merged

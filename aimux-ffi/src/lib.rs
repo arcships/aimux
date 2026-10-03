@@ -474,6 +474,10 @@ fn aimux_error_code_of(err: &AiMuxError) -> i32 {
         AiMuxError::ToolCallRepair { .. } => AIMUX_E_TOOL_CALL_REPAIR,
         AiMuxError::InvalidArgument(_) => AIMUX_E_INVALID_ARGUMENT,
         AiMuxError::InvalidPrompt(_) => AIMUX_E_INVALID_PROMPT,
+        // TODO(A5): dedicated AIMUX_E_LOAD_API_KEY / AIMUX_E_LOAD_SETTING codes
+        // (+ env_var/description getters). Until then the new credential and
+        // setting errors surface as the existing invalid-argument code.
+        AiMuxError::LoadApiKey { .. } | AiMuxError::LoadSetting { .. } => AIMUX_E_INVALID_ARGUMENT,
         AiMuxError::TokenExpired(_) => AIMUX_E_TOKEN_EXPIRED,
         AiMuxError::UnsupportedFunctionality(_) => AIMUX_E_UNSUPPORTED_FUNCTIONALITY,
         AiMuxError::NoSuchModel { .. } => AIMUX_E_NO_SUCH_MODEL,

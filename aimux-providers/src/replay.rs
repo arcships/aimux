@@ -81,9 +81,6 @@ pub fn rebuild_provider(
             if let Some(project) = opts.project {
                 config = config.with_project(project);
             }
-            if let Some(max_retries) = opts.max_retries {
-                config.retry_config.max_retries = max_retries;
-            }
             if let Some(overrides) = opts.body_overrides {
                 config = config.with_body_overrides(overrides);
             }

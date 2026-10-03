@@ -563,11 +563,7 @@ pub async fn generate_text(
     let operation_timeout =
         timeout::OperationTimeout::new(call_options.timeout.unwrap_or_default())?;
     let abort_signal = call_options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        call_options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(call_options.max_retries, abort_signal.clone());
 
     // 2a. RFC-0023: 关闭时零成本(M2 评审)——仅在录制开启时生成 call_id
     //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier
@@ -915,11 +911,7 @@ pub async fn stream_text(
         .map(|duration_ms| timeout::TimeoutDeadline::from_now("First chunk", duration_ms))
         .transpose()?;
     let abort_signal = call_options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        call_options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(call_options.max_retries, abort_signal.clone());
 
     // 2a. RFC-0023: 关闭时零成本(M2 评审)——仅在录制开启时生成 call_id
     //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier

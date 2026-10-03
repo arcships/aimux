@@ -27,7 +27,7 @@ use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::{HttpRequest, RetryConfig};
+use aimux_provider_utils::HttpRequest;
 
 use crate::anthropic::convert::{build_request_body_with_warnings, parse_stop_reason};
 use crate::anthropic::stream::{
@@ -59,8 +59,6 @@ pub struct VertexAnthropicConfig {
     pub auth: VertexAuth,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
-    /// Retry settings used by Core model operations.
-    pub retry_config: RetryConfig,
 }
 
 /// An Anthropic Claude language model served via Vertex AI `rawPredict`.
@@ -143,10 +141,6 @@ impl LanguageModel for VertexAnthropicModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
 
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {

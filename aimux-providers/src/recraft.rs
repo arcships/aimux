@@ -275,6 +275,7 @@ async fn extract_images(
                         validate_url: true,
                         trusted_origin: Some(base_url.to_string()),
                         credentialed_origin: Some(base_url.to_string()),
+                        fetch: None,
                     },
                     aimux_provider_utils::create_binary_response_handler(),
                     recraft_failed_response_handler(),
@@ -332,6 +333,7 @@ impl ImageModel for RecraftImageModel {
                 validate_url: false,
                 trusted_origin: None,
                 credentialed_origin: None,
+                fetch: None,
             },
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
@@ -341,11 +343,7 @@ impl ImageModel for RecraftImageModel {
 
         let response_headers = resp.response_headers;
         let value: Value = resp.value;
-        let retries = retry::prepare_retries(
-            options.max_retries,
-            self.retry_config(),
-            options.abort_signal.clone(),
-        );
+        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
 
         let images = extract_images(
             &value,

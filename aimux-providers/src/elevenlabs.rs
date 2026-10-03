@@ -857,6 +857,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
             subprotocols: Vec::new(),
             abort_signal: options.abort_signal.clone(),
             timeout: options.timeout,
+            connector: None,
         };
         let mut ws = ws_connect(&req).await?;
 

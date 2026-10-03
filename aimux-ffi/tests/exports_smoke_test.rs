@@ -24,7 +24,7 @@
 //! - Every returned error and every returned JSON string is released
 //!   (`aimux_error_free` / `aimux_free_string`).
 //!
-//! Note: multimodal session smoke calls use the default RetryConfig
+//! Note: multimodal session smoke calls use the default retry settings
 //! (2 retries) against a refused port; under `--test-threads=1` this adds
 //! roughly a minute of backoff sleep — run the default parallel profile.
 //!

@@ -120,12 +120,8 @@ impl Provider for HuggingFaceProvider {
         let config = self.config.0.clone();
         Box::pin(async move {
             let headers = crate::openai::model::build_auth_headers(&config);
-            let runtime = crate::openai::model::execute_list_models(
-                &config.base_url,
-                &headers,
-                config.retry_config,
-            )
-            .await?;
+            let runtime =
+                crate::openai::model::execute_list_models(&config.base_url, &headers).await?;
             Ok(runtime)
         })
     }

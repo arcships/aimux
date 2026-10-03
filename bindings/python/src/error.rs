@@ -246,6 +246,11 @@ fn variant_instance<'py>(py: Python<'py>, e: &AiMuxError) -> PyResult<Bound<'py,
         AiMuxError::ToolCallRepair { .. } => py.get_type_bound::<ToolCallRepairError>(),
         AiMuxError::InvalidArgument(_) => py.get_type_bound::<InvalidArgumentError>(),
         AiMuxError::InvalidPrompt(_) => py.get_type_bound::<InvalidPromptError>(),
+        // TODO(A5): dedicated LoadAPIKeyError / LoadSettingError classes; until
+        // then these surface as the existing invalid-argument class.
+        AiMuxError::LoadApiKey { .. } | AiMuxError::LoadSetting { .. } => {
+            py.get_type_bound::<InvalidArgumentError>()
+        }
         AiMuxError::TokenExpired(_) => py.get_type_bound::<TokenExpiredError>(),
         AiMuxError::UnsupportedFunctionality(_) => {
             py.get_type_bound::<UnsupportedFunctionalityError>()

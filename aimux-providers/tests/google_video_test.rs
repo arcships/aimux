@@ -94,12 +94,7 @@ async fn poll_retry_does_not_submit_a_second_generation() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_retry_config(aimux_provider_utils::RetryConfig {
-            max_retries: 1,
-            ..Default::default()
-        });
+    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
     let provider = GoogleProvider::new(config);
     let model = provider.video("veo-3.0-generate-001");
     let mut opts = options("A cat");
@@ -164,12 +159,7 @@ async fn start_retry_reuses_the_same_idempotency_key() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_retry_config(aimux_provider_utils::RetryConfig {
-            max_retries: 1,
-            ..Default::default()
-        });
+    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
     let provider = GoogleProvider::new(config);
     let model = provider.video("veo-3.0-generate-001");
     let mut opts = options("A cat");
@@ -253,16 +243,13 @@ async fn poll_retry_exhaustion_does_not_submit_a_second_generation() {
         .mount(&server)
         .await;
 
-    let config = GoogleConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_retry_config(aimux_provider_utils::RetryConfig {
-            max_retries: 1,
-            ..Default::default()
-        });
+    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
     let provider = GoogleProvider::new(config);
     let model = provider.video("veo-3.0-generate-001");
 
-    let error = generate_video(&model, options("A cat")).await.unwrap_err();
+    let mut opts = options("A cat");
+    opts.max_retries = Some(1);
+    let error = generate_video(&model, opts).await.unwrap_err();
     assert!(matches!(error, AiMuxError::Retry(_)));
 
     let requests = server.received_requests().await.unwrap();

@@ -19,7 +19,7 @@ use aimux_core::video_model::{
     VideoResponse, VideoResult,
 };
 
-use aimux_provider_utils::{HttpRequest, RetryConfig};
+use aimux_provider_utils::HttpRequest;
 
 use super::VertexAuth;
 
@@ -33,7 +33,6 @@ pub struct VertexVideoModel {
     location: String,
     auth: VertexAuth,
     base_url: String,
-    retry_config: RetryConfig,
 }
 
 impl VertexVideoModel {
@@ -51,13 +50,7 @@ impl VertexVideoModel {
             location,
             auth,
             base_url,
-            retry_config: RetryConfig::default(),
         }
-    }
-
-    pub(crate) fn with_retry_config(mut self, retry_config: RetryConfig) -> Self {
-        self.retry_config = retry_config;
-        self
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -113,9 +106,6 @@ impl VideoModel for VertexVideoModel {
     }
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.retry_config
     }
     fn max_videos_per_call(&self) -> Option<u32> {
         Some(1)

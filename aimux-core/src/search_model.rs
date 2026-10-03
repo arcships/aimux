@@ -150,10 +150,6 @@ pub trait SearchModel: Send + Sync {
     /// `"tavily-search"`; others accept endpoint-specific names).
     fn model_id(&self) -> &str;
 
-    fn retry_config(&self) -> crate::retry::RetryConfig {
-        crate::retry::RetryConfig::default()
-    }
-
     /// Execute a search query and return results.
     ///
     /// Naming: the `do_` prefix prevents accidental direct usage by users.
@@ -171,11 +167,7 @@ pub async fn search(
 ) -> Result<SearchResult, AiMuxError> {
     let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
     let abort_signal = options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
     timeout::run(
         retries.retry(|| model.do_search(&options)),
         abort_signal.as_ref(),

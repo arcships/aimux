@@ -204,16 +204,14 @@ async fn list_models_http_error() {
     Mock::given(method("GET"))
         .and(path("/v1/models"))
         .respond_with(
-            ResponseTemplate::new(500).set_body_bytes(br#"{"error":"internal"}"#.to_vec()),
+            ResponseTemplate::new(500)
+                // A zero retry hint keeps the default retries instant.
+                .insert_header("retry-after-ms", "0")
+                .set_body_bytes(br#"{"error":"internal"}"#.to_vec()),
         )
         .mount(&server)
         .await;
-    let config = OpenAIConfig::new("test-key")
-        .with_base_url(format!("{}/v1", server.uri()))
-        .with_retry_config(aimux_provider_utils::RetryConfig {
-            max_retries: 0,
-            ..Default::default()
-        });
+    let config = OpenAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
     let provider = OpenAIProvider::new(config);
     let err = provider.list_models().await.unwrap_err();
     assert!(!err.to_string().is_empty());

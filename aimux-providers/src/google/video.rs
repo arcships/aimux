@@ -69,9 +69,6 @@ impl VideoModel for GoogleVideoModel {
     fn model_id(&self) -> &str {
         &self.model_id
     }
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
     fn max_videos_per_call(&self) -> Option<u32> {
         Some(1)
     }

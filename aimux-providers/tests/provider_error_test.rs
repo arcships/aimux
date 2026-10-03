@@ -30,7 +30,6 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::stream_part::StreamPart;
-use aimux_provider_utils::RetryConfig;
 use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
 use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 use futures::StreamExt;
@@ -79,12 +78,7 @@ mod openai_generate_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = OpenAIConfig::new("test-api-key")
-            .with_base_url(server.uri())
-            .with_retry_config(RetryConfig {
-                max_retries: 0,
-                ..Default::default()
-            });
+        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
         OpenAIProvider::new(config).model("gpt-4o")
     }
 
@@ -222,12 +216,7 @@ mod openai_stream_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = OpenAIConfig::new("test-api-key")
-            .with_base_url(server.uri())
-            .with_retry_config(RetryConfig {
-                max_retries: 0,
-                ..Default::default()
-            });
+        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
         OpenAIProvider::new(config).model("gpt-4o")
     }
 
@@ -345,12 +334,7 @@ mod anthropic_generate_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = AnthropicConfig::new("test-api-key")
-            .with_base_url(server.uri())
-            .with_retry_config(RetryConfig {
-                max_retries: 0,
-                ..Default::default()
-            });
+        let config = AnthropicConfig::new("test-api-key").with_base_url(server.uri());
         AnthropicProvider::new(config).model("claude-3-haiku-20240307")
     }
 
@@ -479,12 +463,7 @@ mod anthropic_stream_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = AnthropicConfig::new("test-api-key")
-            .with_base_url(server.uri())
-            .with_retry_config(RetryConfig {
-                max_retries: 0,
-                ..Default::default()
-            });
+        let config = AnthropicConfig::new("test-api-key").with_base_url(server.uri());
         AnthropicProvider::new(config).model("claude-3-haiku-20240307")
     }
 

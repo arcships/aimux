@@ -215,6 +215,34 @@ pub enum AiMuxError {
     #[error("invalid prompt: {0}")]
     InvalidPrompt(String),
 
+    /// No API key was passed and the fallback environment variable is unset
+    /// (the AI SDK's `LoadAPIKeyError`). Pre-HTTP: no request was made.
+    #[error(
+        "No API key found for {description}. \
+         Please provide it via the `api_key` parameter \
+         or set the `{env_var}` environment variable."
+    )]
+    LoadApiKey {
+        /// The environment variable consulted as the fallback.
+        env_var: String,
+        /// What the key is for, e.g. `"OpenAI"`.
+        description: String,
+    },
+
+    /// A required provider setting was not passed and its fallback
+    /// environment variable is unset (the AI SDK's `LoadSettingError`).
+    #[error(
+        "No value found for setting `{name}`. \
+         Please provide it via the `{name}` parameter \
+         or set the `{env_var}` environment variable."
+    )]
+    LoadSetting {
+        /// The environment variable consulted as the fallback.
+        env_var: String,
+        /// The setting's parameter name, e.g. `"region"`.
+        name: String,
+    },
+
     /// The access token has expired (or was invalidated) and must be refreshed
     /// by the caller. RFC-0018 subscription mode: the library maps a 401 from
     /// the Codex subscription endpoint to this variant; the integrator

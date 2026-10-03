@@ -12,6 +12,7 @@ documentation = "https://docs.rs/aimux-provider-utils"
 aimux-core = { workspace = true }
 aimux-stream = { workspace = true }
 
+async-trait = { workspace = true }
 reqwest = { workspace = true }
 http = "1"
 serde = { workspace = true }
@@ -25,6 +26,9 @@ futures = { workspace = true }
 async-stream = { workspace = true }
 url = { workspace = true }
 chrono = "0.4"
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
 
 # WebSocket client (RFC-0028 realtime transcription). Optional: enabled via
 # the `ws` feature so consumers without realtime needs compile it out.

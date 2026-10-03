@@ -111,10 +111,6 @@ impl LanguageModel for OpenAIResponsesModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         super::config_snapshot_from_config(&self.config.provider, &self.model_id, &self.config)
     }

@@ -102,10 +102,6 @@ impl RerankingModel for CohereRerankingModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
     async fn do_rerank(
         &self,
         options: &RerankingCallOptions,

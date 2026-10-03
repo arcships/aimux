@@ -22,7 +22,7 @@ use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::{HttpRequest, RetryConfig};
+use aimux_provider_utils::HttpRequest;
 
 use super::VertexAuth;
 
@@ -105,7 +105,6 @@ pub struct VertexTranscriptionModel {
     location: String,
     auth: VertexAuth,
     base_url: String,
-    retry_config: RetryConfig,
 }
 
 impl VertexTranscriptionModel {
@@ -123,13 +122,7 @@ impl VertexTranscriptionModel {
             location,
             auth,
             base_url,
-            retry_config: RetryConfig::default(),
         }
-    }
-
-    pub(crate) fn with_retry_config(mut self, retry_config: RetryConfig) -> Self {
-        self.retry_config = retry_config;
-        self
     }
 
     fn auth_header(&self) -> HashMap<String, String> {
@@ -186,10 +179,6 @@ impl TranscriptionModel for VertexTranscriptionModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.retry_config
     }
 
     async fn do_generate(

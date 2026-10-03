@@ -275,6 +275,7 @@ impl TranscriptionModel for FalTranscriptionModel {
                 validate_url: false,
                 trusted_origin: None,
                 credentialed_origin: None,
+                fetch: None,
             },
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
@@ -283,11 +284,7 @@ impl TranscriptionModel for FalTranscriptionModel {
         .await?;
 
         let job: FalJobResponse = resp.value;
-        let retries = retry::prepare_retries(
-            options.max_retries,
-            self.retry_config(),
-            options.abort_signal.clone(),
-        );
+        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
 
         // Poll for result.
         let raw_body: Value;
@@ -315,6 +312,7 @@ impl TranscriptionModel for FalTranscriptionModel {
                             validate_url: false,
                             trusted_origin: None,
                             credentialed_origin: None,
+                            fetch: None,
                         },
                         aimux_provider_utils::create_json_response_handler::<
                             FalTranscriptionResponse,
@@ -582,6 +580,7 @@ impl ImageModel for FalImageModel {
                 validate_url: false,
                 trusted_origin: None,
                 credentialed_origin: None,
+                fetch: None,
             },
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
@@ -591,11 +590,7 @@ impl ImageModel for FalImageModel {
 
         let rh = resp.response_headers;
         let rb: Value = resp.value;
-        let retries = retry::prepare_retries(
-            options.max_retries,
-            self.retry_config(),
-            options.abort_signal.clone(),
-        );
+        let retries = retry::prepare_retries(options.max_retries, options.abort_signal.clone());
 
         let target_images: Vec<Value> = if let Some(i) = rb.get("images").and_then(|v| v.as_array())
         {
@@ -626,6 +621,7 @@ impl ImageModel for FalImageModel {
                                 validate_url: true,
                                 trusted_origin: Some(self.config.base_url.clone()),
                                 credentialed_origin: Some(self.config.base_url.clone()),
+                                fetch: None,
                             },
                             aimux_provider_utils::create_binary_response_handler(),
                             fal_failed_response_handler(),
@@ -836,6 +832,7 @@ impl VideoModel for FalVideoModel {
                 validate_url: false,
                 trusted_origin: None,
                 credentialed_origin: None,
+                fetch: None,
             },
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
@@ -890,6 +887,7 @@ impl VideoModel for FalVideoModel {
                 validate_url: false,
                 trusted_origin: None,
                 credentialed_origin: None,
+                fetch: None,
             },
             aimux_provider_utils::create_json_response_handler::<Value>(),
             fal_failed_response_handler(),

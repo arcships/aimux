@@ -69,10 +69,6 @@ impl EmbeddingModel for GoogleEmbeddingModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
     fn max_embeddings_per_call(&self) -> Option<u32> {
         Some(100)
     }

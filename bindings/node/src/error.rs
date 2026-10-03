@@ -183,6 +183,9 @@ fn aimux_error_class_name(error: &AiMuxError) -> &'static str {
         AiMuxError::ToolCallRepair { .. } => "ToolCallRepairError",
         AiMuxError::InvalidArgument(_) => "InvalidArgumentError",
         AiMuxError::InvalidPrompt(_) => "InvalidPromptError",
+        // TODO(A5): dedicated LoadAPIKeyError / LoadSettingError classes; until
+        // then these surface as the existing invalid-argument class.
+        AiMuxError::LoadApiKey { .. } | AiMuxError::LoadSetting { .. } => "InvalidArgumentError",
         AiMuxError::TokenExpired(_) => "TokenExpiredError",
         AiMuxError::UnsupportedFunctionality(_) => "UnsupportedFunctionalityError",
         AiMuxError::NoSuchModel { .. } => "NoSuchModelError",

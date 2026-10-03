@@ -1311,7 +1311,6 @@ fn bedrock_at(uri: &str, model: &str) -> BedrockModel {
         BedrockConfig {
             base_url: uri.to_string(),
             auth: BedrockAuth::BearerToken("test-token".to_string()),
-            retry_config: aimux_provider_utils::RetryConfig::default(),
             api_key_source: None,
         },
     )
