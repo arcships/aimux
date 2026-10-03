@@ -12,11 +12,15 @@
 //! - `packages/groq/src/groq-chat-language-model-options.test.ts` → Zod schema
 //!   validation (TypeScript-specific; not directly translatable)
 //!
-//! Groq is an OpenAI-compatible thin wrapper. The Rust implementation reuses
-//! `OpenAIConfigProvider` but sets `provider = "groq"` in the config, which enables
-//! groq-specific behaviour in the shared request builder (provider-options key,
-//! browser_search tool, stream_options, etc.). Reasoning effort is a direct
-//! passthrough — no vendor normalization.
+//! Groq is its own package (`aimux_providers::groq`) on the OpenAI-compatible
+//! chat model: `groq.chat` identity, the `groq` providerOptions namespace,
+//! `x_groq` streaming usage, `max_completion_tokens`, the browser_search tool
+//! and Groq's structured-output rules are injected through the package's
+//! dialect, not decided by a provider-name check in the shared converter. The
+//! `provider("groq", ...)` registry entry point builds the same dialect.
+//! Reasoning effort is a direct passthrough - no vendor normalization.
+
+mod common;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -34,6 +38,8 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
+use aimux_provider_utils::Resolvable;
+use aimux_providers::groq::{GroqProviderSettings, create_groq, groq};
 use aimux_providers::{ProviderOptions, provider};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -392,14 +398,16 @@ mod convert_messages {
             )],
             ..Default::default()
         }];
-        // Groq references don't contain an "openai" key, so the converter
-        // returns an InvalidArgument error instead of panicking.
+        // The Groq dialect takes images only: a provider reference is an
+        // InvalidArgument error naming the unsupported functionality.
         let result = model.do_generate(&default_options(prompt)).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
+        assert!(matches!(err, aimux_core::AiMuxError::InvalidArgument(_)));
         assert!(
-            err.to_string().contains("No provider reference found"),
-            "error should mention 'No provider reference found': {err}"
+            err.to_string()
+                .contains("file parts with provider references"),
+            "error should name the unsupported functionality: {err}"
         );
     }
 }
@@ -1887,5 +1895,278 @@ mod auth {
             .get("authorization")
             .expect("missing authorization header");
         assert_eq!(auth, "Bearer test-api-key");
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// The package: identity, namespace, metadata, usage, cassettes
+// ════════════════════════════════════════════════════════════════════════════
+
+mod package {
+    use super::*;
+
+    use serial_test::serial;
+
+    use aimux_core::AiMuxError;
+    use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
+    use aimux_core::provider::Provider;
+
+    fn groq_at(server: &MockServer) -> aimux_providers::groq::GroqProvider {
+        create_groq(GroqProviderSettings {
+            base_url: Some(server.uri()),
+            api_key: Some(Resolvable::Value("test-api-key".to_string())),
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    fn options_with(provider_options: Value) -> CallOptions {
+        let mut options = default_options(test_prompt());
+        options.provider_options = Some(
+            provider_options
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        );
+        options
+    }
+
+    #[test]
+    fn every_entry_point_reports_groq_chat() {
+        assert_eq!(
+            groq().chat("llama-3.3-70b-versatile").provider(),
+            "groq.chat"
+        );
+        assert_eq!(groq().call("m").provider(), "groq.chat");
+        assert_eq!(groq().language_model("m").unwrap().provider(), "groq.chat");
+        // The registry entry point and the preset build the same identity.
+        let model = provider("groq", Some("k".into()), "m", None).unwrap();
+        assert_eq!(model.provider(), "groq.chat");
+        assert_eq!(
+            aimux_providers::presets::groq().chat("m").provider(),
+            "groq.chat"
+        );
+    }
+
+    #[test]
+    fn a_custom_name_changes_identity_only() {
+        let provider = create_groq(GroqProviderSettings {
+            name: Some("groq_eu".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(provider.chat("m").provider(), "groq_eu.chat");
+    }
+
+    #[test]
+    fn embedding_and_image_models_are_no_such_model() {
+        let provider = groq();
+        for result in [
+            provider.embedding_model("e").map(|_| ()),
+            provider.image_model("i").map(|_| ()),
+        ] {
+            assert!(matches!(result, Err(AiMuxError::NoSuchModel { .. })));
+        }
+    }
+
+    #[tokio::test]
+    async fn the_groq_namespace_is_read_and_unknown_fields_pass_through() {
+        let server = MockServer::start().await;
+        mock_json(&server, text_completion_body()).await;
+        let model = groq_at(&server).chat("gemma2-9b-it");
+
+        let result = model
+            .do_generate(&options_with(json!({
+                "groq": {"user": "u1", "reasoningFormat": "parsed", "serviceTier": "flex",
+                         "parallelToolCalls": false, "custom_flag": true},
+                "openai": {"user": "ignored"},
+            })))
+            .await
+            .unwrap();
+
+        let body = result.request_body.unwrap();
+        assert_eq!(body["user"], "u1");
+        assert_eq!(body["reasoning_format"], "parsed");
+        assert_eq!(body["service_tier"], "flex");
+        assert_eq!(body["parallel_tool_calls"], json!(false));
+        assert_eq!(body["custom_flag"], json!(true));
+        assert!(
+            body.get("reasoningFormat").is_none(),
+            "consumed, not forwarded"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_generic_namespace_is_read_too_and_the_groq_one_wins() {
+        let server = MockServer::start().await;
+        mock_json(&server, text_completion_body()).await;
+        let model = groq_at(&server).chat("gemma2-9b-it");
+        let result = model
+            .do_generate(&options_with(json!({
+                "openaiCompatible": {"user": "generic", "reasoningEffort": "low"},
+                "groq": {"user": "groq"},
+            })))
+            .await
+            .unwrap();
+        let body = result.request_body.unwrap();
+        assert_eq!(body["user"], "groq");
+        assert_eq!(body["reasoning_effort"], "low");
+    }
+
+    #[tokio::test]
+    async fn metadata_is_reported_under_groq() {
+        let server = MockServer::start().await;
+        mock_json(&server, text_completion_body()).await;
+        let model = groq_at(&server).chat("gemma2-9b-it");
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        assert_eq!(result.provider_metadata.unwrap(), json!({"groq": {}}));
+    }
+
+    #[tokio::test]
+    async fn streaming_asks_for_no_stream_options_and_reports_x_groq_usage() {
+        let server = MockServer::start().await;
+        let body = sse_body(&[
+            &sse_event(
+                r#"{"id":"c","model":"m","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#,
+            ),
+            &sse_event(
+                r#"{"id":"c","model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"x_groq":{"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"prompt_tokens_details":{"cached_tokens":4}}}}"#,
+            ),
+        ]);
+        mock_sse(&server, body).await;
+        let model = groq_at(&server).chat("m");
+
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        assert!(
+            result
+                .request_body
+                .as_ref()
+                .unwrap()
+                .get("stream_options")
+                .is_none()
+        );
+        let parts = collect_stream(result).await;
+
+        let (usage, metadata) = parts
+            .iter()
+            .find_map(|p| match p {
+                StreamPart::Finish {
+                    usage,
+                    provider_metadata,
+                    ..
+                } => Some((usage.clone(), provider_metadata.clone())),
+                _ => None,
+            })
+            .expect("a finish part");
+        assert_eq!(usage.input_tokens.total, Some(10));
+        assert_eq!(usage.input_tokens.cache_read, Some(4));
+        assert_eq!(usage.input_tokens.no_cache, Some(6));
+        assert_eq!(usage.output_tokens.total, Some(5));
+        assert_eq!(metadata.unwrap(), json!({"groq": {}}));
+    }
+
+    #[tokio::test]
+    async fn the_token_limit_is_max_completion_tokens() {
+        let server = MockServer::start().await;
+        mock_json(&server, text_completion_body()).await;
+        let model = groq_at(&server).chat("gemma2-9b-it");
+        let mut options = default_options(test_prompt());
+        options.max_output_tokens = Some(64);
+        options.top_k = Some(40.0);
+        let result = model.do_generate(&options).await.unwrap();
+        let body = result.request_body.unwrap();
+        assert_eq!(body["max_completion_tokens"], 64);
+        assert!(body.get("max_tokens").is_none());
+        assert!(body.get("top_k").is_none(), "Groq has no top_k");
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| matches!(w, aimux_core::types::Warning::Unsupported { feature, .. } if feature == "topK"))
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn the_key_is_read_from_the_environment_per_request_not_at_creation() {
+        let saved = std::env::var("GROQ_API_KEY").ok();
+        unsafe { std::env::remove_var("GROQ_API_KEY") };
+        let server = MockServer::start().await;
+        mock_json(&server, text_completion_body()).await;
+        let provider = create_groq(GroqProviderSettings {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        })
+        .expect("no key is read at creation");
+        let model = provider.chat("m");
+
+        let error = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, AiMuxError::LoadApiKey { env_var, .. } if env_var == "GROQ_API_KEY"),
+            "{error:?}"
+        );
+        assert!(server.received_requests().await.unwrap().is_empty());
+
+        unsafe { std::env::set_var("GROQ_API_KEY", "env-key") };
+        model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(
+            requests[0].headers.get("authorization").unwrap(),
+            "Bearer env-key"
+        );
+        unsafe {
+            match saved {
+                Some(v) => std::env::set_var("GROQ_API_KEY", v),
+                None => std::env::remove_var("GROQ_API_KEY"),
+            }
+        }
+    }
+
+    /// The recorded Groq exchanges (`tests/cassettes/groq`) replayed through
+    /// the package: generate and stream both parse, and usage is read.
+    #[tokio::test]
+    async fn recorded_groq_cassettes_replay_through_the_package() {
+        let server = MockServer::start().await;
+        let n = common::replay::mount_cassettes(&server, "tests/cassettes/groq").await;
+        assert!(n > 0, "no groq cassettes");
+        let model = create_groq(GroqProviderSettings {
+            base_url: Some(format!("{}/openai/v1", server.uri())),
+            api_key: Some(Resolvable::Value("test-key".to_string())),
+            ..Default::default()
+        })
+        .unwrap()
+        .chat("llama-3.3-70b-versatile");
+
+        let result = generate_text(&model, "Hello", GenerateTextOptions::default())
+            .await
+            .expect("generate_text should succeed with cassette replay");
+        assert!(!result.text.is_empty() || !result.tool_calls.is_empty());
+        assert!(result.usage.input_tokens.total.is_some());
+
+        let result = stream_text(&model, "Hello", GenerateTextOptions::default())
+            .await
+            .expect("stream_text should succeed");
+        let mut stream = result.stream;
+        let mut finished = false;
+        while let Some(part) = stream.next().await {
+            if let StreamPart::Finish { .. } = part.expect("stream part") {
+                finished = true;
+            }
+        }
+        assert!(finished, "stream should finish");
     }
 }

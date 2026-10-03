@@ -396,9 +396,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Preset generator drift (aimux-providers/src/presets must match provider_registry.json)
+        run: python3 scripts/gen_presets.py --check
       - name: Providers doc generator drift (docs/api/providers.md must match generator output)
         run: python3 scripts/gen_providers_doc.py --check
-      - name: Provider boundaries (no call-level reads in providers, removed names stay removed)
+      - name: Provider boundaries (no call-level reads or provider-name branches in providers, removed names stay removed)
         run: bash scripts/check_provider_boundaries.sh
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2

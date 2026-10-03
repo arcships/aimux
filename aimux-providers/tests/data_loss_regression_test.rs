@@ -41,12 +41,13 @@ use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{ProviderTool, Tool};
 
+use aimux_provider_utils::Resolvable;
 use aimux_providers::anthropic::AnthropicConfig;
 use aimux_providers::anthropic::model::AnthropicModel;
 use aimux_providers::bedrock::{BedrockAuth, BedrockConfig, BedrockModel, event_stream};
+use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
 use aimux_providers::{
     CohereConfig, CohereProvider, GoogleConfig, GoogleProvider, MistralConfig, MistralProvider,
-    OpenAIConfig, OpenAIConfigProvider,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1202,8 +1203,13 @@ async fn finding_13_mistral_thinking_parts_become_reasoning_in_generate() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 fn openai_responses_at(uri: &str, model: &str) -> impl LanguageModel {
-    OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(format!("{uri}/v1")))
-        .responses_model(model)
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(format!("{uri}/v1")),
+        ..Default::default()
+    })
+    .unwrap()
+    .responses(model)
 }
 
 #[tokio::test]

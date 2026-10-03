@@ -4,7 +4,7 @@
 //! - `packages/perplexity/src/perplexity-language-model.test.ts`
 //! - `packages/perplexity/src/convert-to-perplexity-messages.test.ts`
 //!
-//! Perplexity is a thin OpenAI-compatible wrapper over [`OpenAIConfigProvider`]. The
+//! Perplexity is a registry preset of the OpenAI-compatible package. The
 //! behaviours verified here are the ones the wrapper is responsible for:
 //!
 //! - Provider configuration: name, `PERPLEXITY_API_KEY` env var, custom API

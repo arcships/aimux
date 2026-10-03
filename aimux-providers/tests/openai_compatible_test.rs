@@ -1,7 +1,7 @@
 //! Wiremock tests for the OpenAI-compatible provider wrappers.
 //!
 //! Each of the 8 wrappers (groq, deepseek, togetherai, fireworks, perplexity,
-//! cerebras, xai, moonshotai) is a thin layer over [`OpenAIConfigProvider`] that
+//! cerebras, xai, moonshotai) is a registry preset over the OpenAI-compatible package that
 //! only fixes the default base URL and the API-key environment variable. These
 //! tests verify, for every wrapper, the four behaviours that the wrapper is
 //! responsible for getting right:
@@ -32,27 +32,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
 use aimux_providers::{
-    ProviderOptions, bedrock_mantle::BedrockMantleConfig, bedrock_mantle::BedrockMantleProvider,
-    huggingface::HuggingFaceConfig, huggingface::HuggingFaceProvider, provider,
-    vertex_ai_ai21_models::VertexAiAi21ModelsConfig,
-    vertex_ai_ai21_models::VertexAiAi21ModelsProvider,
-    vertex_ai_anthropic_models::VertexAiAnthropicModelsConfig,
-    vertex_ai_anthropic_models::VertexAiAnthropicModelsProvider,
-    vertex_ai_deepseek_models::VertexAiDeepseekModelsConfig,
-    vertex_ai_deepseek_models::VertexAiDeepseekModelsProvider,
-    vertex_ai_llama_models::VertexAiLlamaModelsConfig,
-    vertex_ai_llama_models::VertexAiLlamaModelsProvider,
-    vertex_ai_minimax_models::VertexAiMinimaxModelsConfig,
-    vertex_ai_minimax_models::VertexAiMinimaxModelsProvider,
-    vertex_ai_mistral_models::VertexAiMistralModelsConfig,
-    vertex_ai_mistral_models::VertexAiMistralModelsProvider,
-    vertex_ai_moonshot_models::VertexAiMoonshotModelsConfig,
-    vertex_ai_moonshot_models::VertexAiMoonshotModelsProvider,
-    vertex_ai_openai_models::VertexAiOpenaiModelsConfig,
-    vertex_ai_openai_models::VertexAiOpenaiModelsProvider,
-    vertex_ai_qwen_models::VertexAiQwenModelsConfig,
-    vertex_ai_qwen_models::VertexAiQwenModelsProvider,
-    vertex_ai_zai_models::VertexAiZaiModelsConfig, vertex_ai_zai_models::VertexAiZaiModelsProvider,
+    ProviderOptions, huggingface::HuggingFaceConfig, huggingface::HuggingFaceProvider, provider,
     xai::XAIConfig, xai::XAIProvider,
 };
 
@@ -1084,8 +1064,7 @@ openai_compatible_tests!(
 );
 openai_compatible_tests!(
     bedrock_mantle,
-    BedrockMantleConfig,
-    BedrockMantleProvider,
+    "bedrock_mantle",
     "bedrock_mantle/openai.gpt-oss-120b"
 );
 openai_compatible_tests!(cherryin, "cherryin", "BAAI/bge-reranker-v2-m3(free)");
@@ -1186,64 +1165,55 @@ openai_compatible_tests!(zeldoc, "zeldoc", "z-code");
 openai_compatible_tests!(privatemode_ai, "privatemode_ai", "gpt-oss-120b");
 openai_compatible_tests!(snowflake, "snowflake", "claude-sonnet-4-5");
 
-// Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers).
+// Vertex AI MaaS partner-model providers (registry presets with template parameters;
+// the tests override the whole base URL).
 openai_compatible_tests!(
     vertex_ai_ai21_models,
-    VertexAiAi21ModelsConfig,
-    VertexAiAi21ModelsProvider,
+    "vertex_ai_ai21_models",
     "ai21/jamba-1.5-large"
 );
 openai_compatible_tests!(
     vertex_ai_anthropic_models,
-    VertexAiAnthropicModelsConfig,
-    VertexAiAnthropicModelsProvider,
+    "vertex_ai_anthropic_models",
     "anthropic/claude-sonnet-4"
 );
 openai_compatible_tests!(
     vertex_ai_deepseek_models,
-    VertexAiDeepseekModelsConfig,
-    VertexAiDeepseekModelsProvider,
+    "vertex_ai_deepseek_models",
     "deepseek-ai/deepseek-v3.1-maas"
 );
 openai_compatible_tests!(
     vertex_ai_llama_models,
-    VertexAiLlamaModelsConfig,
-    VertexAiLlamaModelsProvider,
+    "vertex_ai_llama_models",
     "meta/llama-4-scout-17b-16e-instruct-maas"
 );
 openai_compatible_tests!(
     vertex_ai_minimax_models,
-    VertexAiMinimaxModelsConfig,
-    VertexAiMinimaxModelsProvider,
+    "vertex_ai_minimax_models",
     "minimax/minimax-m2-maas"
 );
 openai_compatible_tests!(
     vertex_ai_mistral_models,
-    VertexAiMistralModelsConfig,
-    VertexAiMistralModelsProvider,
+    "vertex_ai_mistral_models",
     "mistralai/mistral-large-2411"
 );
 openai_compatible_tests!(
     vertex_ai_moonshot_models,
-    VertexAiMoonshotModelsConfig,
-    VertexAiMoonshotModelsProvider,
+    "vertex_ai_moonshot_models",
     "moonshotai/kimi-k2-thinking-maas"
 );
 openai_compatible_tests!(
     vertex_ai_openai_models,
-    VertexAiOpenaiModelsConfig,
-    VertexAiOpenaiModelsProvider,
+    "vertex_ai_openai_models",
     "openai/gpt-oss-120b-maas"
 );
 openai_compatible_tests!(
     vertex_ai_qwen_models,
-    VertexAiQwenModelsConfig,
-    VertexAiQwenModelsProvider,
+    "vertex_ai_qwen_models",
     "qwen/qwen3-coder-480b-a35b-instruct-maas"
 );
 openai_compatible_tests!(
     vertex_ai_zai_models,
-    VertexAiZaiModelsConfig,
-    VertexAiZaiModelsProvider,
+    "vertex_ai_zai_models",
     "zai-org/glm-4.7-maas"
 );

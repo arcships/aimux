@@ -21,7 +21,7 @@ use aimux_provider_utils::load_api_key;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::openai::{OpenAIConfig, OpenAIConfigProvider};
+use crate::openai::config::StaticBearerConfig;
 
 const DEFAULT_BASE_URL: &str = "https://api.x.ai/v1";
 const ENV_VAR: &str = "XAI_API_KEY";
@@ -212,14 +212,18 @@ where
     .streaming()
 }
 
-/// Configuration for the xAI provider (wraps [`OpenAIConfig`]).
+/// Configuration for the xAI provider.
 #[derive(Clone)]
-pub struct XAIConfig(OpenAIConfig);
+pub struct XAIConfig(StaticBearerConfig);
 
 impl XAIConfig {
     /// Create from an API key, using the default xAI base URL.
     pub fn new(api_key: impl Into<String>) -> Self {
-        Self(OpenAIConfig::new(api_key).with_base_url(DEFAULT_BASE_URL))
+        Self(StaticBearerConfig::new(
+            PROVIDER_NAME,
+            api_key,
+            DEFAULT_BASE_URL,
+        ))
     }
 
     /// Create from the `XAI_API_KEY` environment variable.
@@ -235,18 +239,18 @@ impl XAIConfig {
     /// Override the base URL (useful for tests / self-hosted endpoints).
     #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.0 = self.0.with_base_url(url);
+        self.0 = self.0.with_origin(url.into());
         self
     }
 
     /// Get the API key.
     pub(crate) fn api_key(&self) -> &str {
-        &self.0.api_key
+        self.0.secret()
     }
 
     /// Get the base URL.
     pub(crate) fn base_url(&self) -> &str {
-        &self.0.base_url
+        self.0.origin()
     }
 }
 
@@ -298,9 +302,7 @@ impl ProviderDiscovery for XAIProvider {
                 + '_,
         >,
     > {
-        let config = OpenAIConfig::new(self.config.api_key())
-            .with_base_url(self.config.base_url())
-            .with_provider(PROVIDER_NAME);
-        Box::pin(async move { OpenAIConfigProvider::new(config).list_models().await })
+        let config = self.config.0.model_config("models");
+        Box::pin(async move { crate::openai::model::list_models_once(&config).await })
     }
 }

@@ -18,8 +18,13 @@ use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::types::{ReasoningEffort, Warning};
 use aimux_providers::body_merge::apply_body_overrides;
+use aimux_providers::deepseek::deepseek;
+use aimux_providers::groq::groq;
 use aimux_providers::openai::convert::build_request_body;
-use aimux_providers::openai::convert::build_request_body_with_warnings;
+use aimux_providers::openai_compatible::{
+    OpenAICompatibleProviderSettings, create_openai_compatible,
+};
+use aimux_providers::presets;
 use serde_json::{Value, json};
 
 fn user_prompt() -> LanguageModelPrompt {
@@ -80,16 +85,12 @@ fn body_overrides_overwrites_vendor_override_field() {
         reasoning: Some(aimux_core::types::ReasoningEffort::None),
         ..CallOptions::default()
     };
-    // DeepSeek profile 已回归 full()（特化退役）,body_overrides 注入 thinking。
-    let mut body = aimux_providers::openai::convert::build_request_body_with_warnings(
-        "deepseek-v4-flash",
-        &opts,
-        false,
-        "deepseek",
-        &aimux_providers::openai::OpenAICompatProfile::deepseek(),
-    )
-    .unwrap()
-    .body;
+    // DeepSeek 的 thinking 注入由 body_overrides 定义,不是内置特化。
+    let mut body = deepseek()
+        .chat("deepseek-v4-flash")
+        .request_body(&opts, false)
+        .unwrap()
+        .body;
     apply_body_overrides(
         &mut body,
         Some(&json!({ "thinking": { "type": "enabled" } })),
@@ -167,12 +168,13 @@ fn no_body_overrides_leaves_body_unchanged() {
 
 // ── body_overrides: provider-level, end to end ───────────────────────────────
 
-/// The overrides configured on the provider reach the wire for both
-/// `do_generate` and `do_stream`; `CallOptions` has no override of its own.
+/// The compat package expresses a provider-level body rewrite as a
+/// `transform_request_body` closure; `CallOptions` has no override of its own.
 #[tokio::test]
 async fn provider_body_overrides_reach_the_request() {
     use aimux_core::language_model::LanguageModel;
-    use aimux_providers::openai::{OpenAIConfig, OpenAIConfigProvider};
+    use aimux_provider_utils::Resolvable;
+    use aimux_providers::body_merge::deep_merge_json;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -194,9 +196,19 @@ async fn provider_body_overrides_reach_the_request() {
         .mount(&server)
         .await;
 
-    let mut config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-    config.body_overrides = Some(json!({ "enable_thinking": false, "temperature": null }));
-    let model = OpenAIConfigProvider::new(config).model("gpt-4o");
+    let overrides = json!({ "enable_thinking": false, "temperature": null });
+    let model = create_openai_compatible(OpenAICompatibleProviderSettings {
+        name: "acme".to_string(),
+        base_url: server.uri(),
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        transform_request_body: Some(std::sync::Arc::new(move |mut body: Value| {
+            deep_merge_json(&mut body, &overrides);
+            body
+        })),
+        ..Default::default()
+    })
+    .unwrap()
+    .chat("gpt-4o");
     let mut options = CallOptions::new(user_prompt());
     options.temperature = Some(0.7);
     model.do_generate(&options).await.unwrap();
@@ -295,8 +307,8 @@ fn max_retries_can_be_set() {
 
 // ── max_tokens_key (stage2-001, RFC-0017 phase 2 §2.3) ──────────────────────
 
-/// max_tokens_key=Some("max_tokens") + 推理模型 → 发 `max_tokens`,
-/// 不含 `max_completion_tokens`（修推理模型推断 bug）。
+/// 注册表里 `max_tokens_key: "max_tokens"` 的厂商(stepfun)只发 `max_tokens`,
+/// 即使模型名像推理模型(兼容包不按模型名推断)。
 #[test]
 fn max_tokens_key_max_tokens_reasoning_model() {
     let opts = CallOptions {
@@ -304,11 +316,9 @@ fn max_tokens_key_max_tokens_reasoning_model() {
         max_output_tokens: Some(100),
         ..CallOptions::default()
     };
-    let profile = aimux_providers::openai::OpenAICompatProfile {
-        max_tokens_key: Some("max_tokens"),
-        ..aimux_providers::openai::OpenAICompatProfile::full()
-    };
-    let body = build_request_body_with_warnings("o4-mini", &opts, false, "openai", &profile)
+    let body = presets::stepfun()
+        .chat("o4-mini")
+        .request_body(&opts, false)
         .unwrap()
         .body;
     assert_eq!(body["max_tokens"], json!(100));
@@ -318,8 +328,8 @@ fn max_tokens_key_max_tokens_reasoning_model() {
     );
 }
 
-/// max_tokens_key=Some("max_completion_tokens") → 非推理分支也发 mct
-///（groq/heroku:max_tokens 弃用）。
+/// `max_tokens_key: "max_completion_tokens"`(heroku、groq:max_tokens 弃用)→
+/// 非推理模型也发 mct。
 #[test]
 fn max_tokens_key_max_completion_tokens_non_reasoning() {
     let opts = CallOptions {
@@ -327,18 +337,34 @@ fn max_tokens_key_max_completion_tokens_non_reasoning() {
         max_output_tokens: Some(100),
         ..CallOptions::default()
     };
-    let profile = aimux_providers::openai::OpenAICompatProfile {
-        max_tokens_key: Some("max_completion_tokens"),
-        ..aimux_providers::openai::OpenAICompatProfile::full()
+    for chat in [
+        presets::heroku().chat("gpt-4o"),
+        groq().chat("llama-3.3-70b-versatile"),
+    ] {
+        let body = chat.request_body(&opts, false).unwrap().body;
+        assert_eq!(body["max_completion_tokens"], json!(100));
+        assert!(
+            body.get("max_tokens").is_none(),
+            "max_tokens_key=mct 时不应再发 max_tokens"
+        );
+    }
+}
+
+/// 没有 `max_tokens_key` 的兼容厂商发 `max_tokens`(AI SDK 基线)。
+#[test]
+fn compat_without_max_tokens_key_sends_max_tokens() {
+    let opts = CallOptions {
+        prompt: user_prompt(),
+        max_output_tokens: Some(100),
+        ..CallOptions::default()
     };
-    let body = build_request_body_with_warnings("gpt-4o", &opts, false, "openai", &profile)
+    let body = presets::abacus()
+        .chat("o4-mini")
+        .request_body(&opts, false)
         .unwrap()
         .body;
-    assert_eq!(body["max_completion_tokens"], json!(100));
-    assert!(
-        body.get("max_tokens").is_none(),
-        "max_tokens_key=mct 时不应再发 max_tokens"
-    );
+    assert_eq!(body["max_tokens"], json!(100));
+    assert!(body.get("max_completion_tokens").is_none());
 }
 
 // ── reasoning 直传: 无 warning（F6: 旧"无映射提示"warning 块已删除）────────────
@@ -354,14 +380,10 @@ fn groq_none_passthrough_no_warning() {
         reasoning: Some(ReasoningEffort::None),
         ..CallOptions::default()
     };
-    let result = build_request_body_with_warnings(
-        "llama-3.3-70b-versatile",
-        &opts,
-        false,
-        "groq",
-        &aimux_providers::openai::OpenAICompatProfile::groq(),
-    )
-    .unwrap();
+    let result = groq()
+        .chat("llama-3.3-70b-versatile")
+        .request_body(&opts, false)
+        .unwrap();
     assert_eq!(result.body["reasoning_effort"], json!("none"));
     let reasoning_warning = result
         .warnings
@@ -382,14 +404,10 @@ fn no_warning_when_reasoning_translated() {
         reasoning: Some(ReasoningEffort::None),
         ..CallOptions::default()
     };
-    let result = build_request_body_with_warnings(
-        "deepseek-reasoner",
-        &opts,
-        false,
-        "openai",
-        &aimux_providers::openai::OpenAICompatProfile::full(),
-    )
-    .unwrap();
+    let result = presets::abacus()
+        .chat("deepseek-reasoner")
+        .request_body(&opts, false)
+        .unwrap();
     assert_eq!(result.body["reasoning_effort"], json!("none"));
     let reasoning_warning = result
         .warnings

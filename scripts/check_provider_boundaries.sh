@@ -8,9 +8,9 @@
 #      and lets the transport read what it needs.
 #   2. Names removed by the provider-factory rewrite stay removed.
 #   3. The OpenAI package keeps no builder-era `OpenAIConfig` reads.
-#
-# Provider-name literal rules arrive with the preset generator (A3); they are
-# deliberately absent here.
+#   4. The shared protocol packages never compare a provider name: vendor
+#      behavior is injected (flags, hooks, a dialect), not branched on.
+#   5. The builder-era compat types and the placeholder key stay removed.
 #
 # Usage: bash scripts/check_provider_boundaries.sh   (exit 1 on any violation)
 
@@ -83,13 +83,56 @@ violation 'shared_client() used outside aimux-provider-utils/src/fetch.rs' "$sha
 # `openai/` has no `OpenAIConfig` field reads, builder-era names or `from_env`:
 # the credential is loaded in the request headers, the URL comes from the
 # config's `url` closure and provider-level body rewrites are
-# `transform_request_body`. (`OpenAIConfig` itself lives in
-# `aimux-providers/src/openai_legacy.rs` until the compat package replaces it.)
+# `transform_request_body`.
 rule3_hits="$(
     grep -rnE 'config\.api_key\b|config\.base_url\b|body_overrides|api_key_source|from_env' \
         aimux-providers/src/openai --include='*.rs' || true
 )"
 violation 'aimux-providers/src/openai reads builder-era OpenAIConfig state' "$rule3_hits"
+
+# ── Rule 4: no provider-name comparisons in the shared protocol packages ─────
+#
+# `openai/`, `openai_compatible/`, `anthropic/`, `google/`, `bedrock/` and
+# `cohere/` implement a protocol for every vendor that speaks it. Which vendor
+# is in play is data the caller injects (`ChatDialect`, hooks, settings), so a
+# `== "groq"` / `!= "openai"` comparison in there is the branch the factory
+# rewrite removed. The names checked are every registry row plus the native
+# packages; comparisons against media types, tool names and wire tags are fine.
+# (Unit tests live next to the code and compare no provider names.)
+rule4_names="$(
+    python3 - <<'PY'
+import json
+
+with open("aimux-providers/src/provider_registry.json", encoding="utf-8") as f:
+    names = {row["name"] for row in json.load(f)}
+names |= {
+    "openai", "anthropic", "google", "vertex", "bedrock", "cohere", "mistral", "xai",
+    "azure", "groq", "deepseek", "codex", "huggingface", "openai_compatible",
+}
+print("|".join(sorted(names, key=lambda n: (-len(n), n))))
+PY
+)"
+rule4_hits="$(
+    grep -rnE "(==|!=)[[:space:]]*\"($rule4_names)\"" \
+        aimux-providers/src/openai aimux-providers/src/openai_compatible \
+        aimux-providers/src/anthropic aimux-providers/src/google \
+        aimux-providers/src/bedrock aimux-providers/src/cohere --include='*.rs' || true
+)"
+violation 'provider-name comparison in a shared protocol package (aimux-providers/src/{openai,openai_compatible,anthropic,google,bedrock,cohere})' "$rule4_hits"
+
+# `"groq"` / `"deepseek"` literals belong to their own packages and the registry.
+rule4b_hits="$(
+    grep -rnE '"(groq|deepseek)"' \
+        aimux-providers/src/openai aimux-providers/src/openai_compatible --include='*.rs' || true
+)"
+violation 'groq / deepseek literal in the shared OpenAI or compatible package' "$rule4b_hits"
+
+# ── Rule 5: the builder-era compat names stay removed in the providers crate ──
+rule5_hits="$(
+    grep -rnE 'OpenAIConfig\b|OpenAIConfigProvider|OpenAICompatProfile|PLACEHOLDER_API_KEY|openai_legacy' \
+        aimux-providers/src aimux-providers/tests --include='*.rs' || true
+)"
+violation 'OpenAIConfig / OpenAIConfigProvider / OpenAICompatProfile / PLACEHOLDER_API_KEY / openai_legacy is back in aimux-providers' "$rule5_hits"
 
 if [[ "$status" -eq 0 ]]; then
     echo 'provider boundaries: ok'

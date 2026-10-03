@@ -69,14 +69,7 @@ fn openai_chat_golden() {
         ..CallOptions::default()
     };
 
-    let result = openai_build(
-        "o3-mini",
-        &options,
-        false,
-        "openai",
-        &aimux_providers::openai::OpenAICompatProfile::full(),
-    )
-    .expect("openai chat build");
+    let result = openai_build("o3-mini", &options, false).expect("openai chat build");
 
     assert_eq!(
         result.body,

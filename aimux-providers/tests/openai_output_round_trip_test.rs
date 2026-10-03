@@ -33,18 +33,21 @@ use aimux_core::openai_output::{
     ChatCompletionChunk, OpenAiStreamOptions, encode_chunk_sse, to_chat_completion,
     to_chat_completion_stream,
 };
-use aimux_providers::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIConfigProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::deepseek::{DeepSeekProviderSettings, create_deepseek};
+use aimux_providers::openai::{OpenAIModel, OpenAIProviderSettings, create_openai};
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/// Build an OpenAIConfigProvider pointed at the replay server.
-fn openai_provider(uri: &str) -> aimux_providers::openai::OpenAIModel {
-    let provider = OpenAIConfigProvider::new(
-        OpenAIConfig::new("test-key")
-            .with_base_url(format!("{uri}/v1"))
-            .with_profile(OpenAICompatProfile::full()),
-    );
-    provider.model("gpt-4o")
+/// Build the native OpenAI chat model pointed at the replay server.
+fn openai_provider(uri: &str) -> OpenAIModel {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(format!("{uri}/v1")),
+        ..Default::default()
+    })
+    .unwrap()
+    .chat("gpt-4o")
 }
 
 /// Mount a single non-streaming OpenAI response on the mock server.
@@ -838,12 +841,13 @@ async fn cross_protocol_deepseek_with_reasoning() {
         .mount(&server)
         .await;
 
-    let provider = OpenAIConfigProvider::new(
-        OpenAIConfig::new("test-key")
-            .with_base_url(server.uri())
-            .with_profile(OpenAICompatProfile::deepseek()),
-    );
-    let model = provider.model("deepseek-chat");
+    let provider = create_deepseek(DeepSeekProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.chat("deepseek-chat");
 
     let result = generate_text(
         &model,

@@ -3,10 +3,8 @@
 //! Hugging Face exposes an OpenAI-compatible Chat Completions API through its
 //! router at `https://router.huggingface.co/v1`. The TS SDK configures this base
 //! URL and the `HUGGINGFACE_API_KEY` environment variable. The Rust
-//! [`OpenAIConfigProvider`] appends `/chat/completions`
-//! to the configured base URL, yielding
-//! `https://router.huggingface.co/v1/chat/completions`. Everything else is
-//! delegated to the shared `OpenAIConfigProvider`.
+//! chat model appends `/chat/completions` to the configured base URL, yielding
+//! `https://router.huggingface.co/v1/chat/completions`.
 //!
 //! In addition to the Chat Completions API, Hugging Face also exposes a
 //! Responses API (the lightest Responses implementation — function tools only,
@@ -18,19 +16,24 @@ use aimux_core::error::AiMuxError;
 use aimux_core::provider::ProviderDiscovery;
 use aimux_provider_utils::load_api_key;
 
-use crate::openai::{OpenAIConfig, OpenAIConfigProvider, OpenAIModel};
+use crate::openai::OpenAIModel;
+use crate::openai::config::StaticBearerConfig;
 
 const DEFAULT_BASE_URL: &str = "https://router.huggingface.co/v1";
 const ENV_VAR: &str = "HUGGINGFACE_API_KEY";
 
-/// Configuration for the Hugging Face provider (wraps [`OpenAIConfig`]).
+/// Configuration for the Hugging Face provider.
 #[derive(Debug, Clone)]
-pub struct HuggingFaceConfig(OpenAIConfig);
+pub struct HuggingFaceConfig(StaticBearerConfig);
 
 impl HuggingFaceConfig {
     /// Create from an API key, using the default Hugging Face base URL.
     pub fn new(api_key: impl Into<String>) -> Self {
-        Self(OpenAIConfig::new(api_key).with_base_url(DEFAULT_BASE_URL))
+        Self(StaticBearerConfig::new(
+            "huggingface",
+            api_key,
+            DEFAULT_BASE_URL,
+        ))
     }
 
     /// Create from the `HUGGINGFACE_API_KEY` environment variable.
@@ -47,7 +50,7 @@ impl HuggingFaceConfig {
     /// Override the base URL (useful for tests / self-hosted endpoints).
     #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.0 = self.0.with_base_url(url);
+        self.0 = self.0.with_origin(url.into());
         self
     }
 }
@@ -68,7 +71,7 @@ impl HuggingFaceProvider {
     /// (e.g. `"meta-llama/Llama-3.3-70B-Instruct"`).
     #[must_use]
     pub fn model(&self, model_id: &str) -> OpenAIModel {
-        OpenAIModel::new(model_id.to_string(), self.config.0.clone())
+        OpenAIModel::from_config(model_id.to_string(), self.config.0.model_config("chat"))
     }
 
     /// Create a Responses model instance for the given Hugging Face model id.
@@ -95,9 +98,7 @@ impl ProviderDiscovery for HuggingFaceProvider {
                 + '_,
         >,
     > {
-        // HuggingFaceProvider holds an OpenAIConfig (not an
-        // OpenAIConfigProvider directly), so build one for the discovery call.
-        let config = self.config.0.clone();
-        Box::pin(async move { OpenAIConfigProvider::new(config).list_models().await })
+        let config = self.config.0.model_config("models");
+        Box::pin(async move { crate::openai::model::list_models_once(&config).await })
     }
 }

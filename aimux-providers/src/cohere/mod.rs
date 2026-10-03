@@ -158,7 +158,9 @@ impl ProviderDiscovery for CohereProvider {
                 ("Content-Type".to_string(), "application/json".to_string()),
             ];
             use aimux_provider_utils::HttpRequest;
-            // Retry rationale: see `openai::model::execute_list_models`.
+            // Retry rationale: a catalogue GET is idempotent, so a transient failure is retried; the
+            // native-package groups move this to the single-exchange form of
+            // `openai::model::list_models_once`.
             let resp = aimux_core::retry::prepare_retries(None, None)
                 .retry(|| {
                     aimux_provider_utils::get_from_api(

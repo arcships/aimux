@@ -2,7 +2,9 @@
 """Generate docs/api/providers.md — the full provider lookup reference.
 
 Single source of truth:
-- aimux-providers/src/provider_registry.json  (registry of OpenAI-compatible entries)
+- aimux-providers/src/provider_registry.json  (registry of OpenAI-compatible presets:
+                                               name, display, base_url, env_var, auth,
+                                               base_url_env, params, family, profile)
 - aimux-providers/src/lib.rs                   (non-registry modules + categories)
 
 A `pub mod` in lib.rs counts as a provider module iff its `pub use` re-exports
@@ -121,7 +123,7 @@ def module_exports(module):
             j = text.find(";", start)
             body = text[start:j]
             pos = j + 1
-        for name in re.findall(r"\b([A-Z][A-Za-z0-9_]+)", body):
+        for name in re.findall(r"\b([A-Z][A-Za-z0-9_]+|create_[a-z0-9_]+)", body):
             if name not in exports:
                 exports.append(name)
     return exports
@@ -190,17 +192,30 @@ def build_page():
     w("")
     w(
         f"**{len(registry)} registry-backed OpenAI-compatible providers** "
-        f"(construct via `provider(name, ...)`) + "
+        f"(construct via `provider(name, ...)` or `presets::create_<name>`) + "
         f"**{non_registry} non-registry providers** "
         "(construct via the typed factories listed below)."
     )
     w("")
     w(f"## Registry-backed (OpenAI-compatible) — {len(registry)}")
     w("")
-    w("| name | display | env var | base_url |")
-    w("|------|---------|---------|----------|")
+    w("| name | display | auth | env var | base_url |")
+    w("|------|---------|------|---------|----------|")
     for e in sorted(registry, key=lambda x: x["name"]):
-        w(f"| `{e['name']}` | {e.get('display', '')} | `{e.get('env_var', '')}` | `{e.get('base_url', '')}` |")
+        auth = e.get("auth", "api_key")
+        env_var = f"`{e['env_var']}`" if e.get("env_var") else "—"
+        base = f"`{e.get('base_url', '')}`"
+        notes = []
+        if e.get("base_url_env"):
+            notes.append(f"URL from `{e['base_url_env']}`")
+        params = [p["name"] for p in e.get("params", []) if "derive" not in p]
+        if params:
+            notes.append("params: " + ", ".join(f"`{p}`" for p in params))
+        if e.get("family", "openai-compatible") != "openai-compatible":
+            notes.append(f"dialect: `{e['family']}`")
+        if notes:
+            base += " (" + "; ".join(notes) + ")"
+        w(f"| `{e['name']}` | {e.get('display', '')} | {auth} | {env_var} | {base} |")
     w("")
     w("## Typed factories (non-registry)")
     w("")
@@ -218,9 +233,14 @@ def build_page():
         w("|--------|--------------------|")
         for mod in mods:
             exports = module_exports(mod)
-            display = display_from_exports(exports)
-            if display:
-                cols = f"`{display}Config` / `{display}Provider`" if f"{display}Config" in exports or f"{display}Provider" in exports else ", ".join(f"`{e}`" for e in exports)
+            entry_points = [
+                e
+                for e in exports
+                if e.endswith(("Config", "ProviderConfig", "ProviderSettings", "Provider"))
+                or e.startswith("create_")
+            ]
+            if entry_points:
+                cols = " / ".join(f"`{e}`" for e in entry_points)
             else:
                 cols = "`" + "`, `".join(exports) + "`" if exports else "—"
             w(f"| `{mod}` | {cols} |")

@@ -140,14 +140,14 @@ impl HuggingFaceResponsesModel {
     }
 
     fn endpoint(&self) -> String {
-        format!("{}/responses", self.config.0.base_url)
+        format!("{}/responses", self.config.0.origin())
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
         let mut headers = HashMap::new();
         headers.insert(
             "Authorization".to_string(),
-            format!("Bearer {}", self.config.0.api_key),
+            format!("Bearer {}", self.config.0.secret()),
         );
         if let Some(extra) = extra {
             for (k, v) in extra {

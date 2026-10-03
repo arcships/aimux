@@ -25,9 +25,8 @@ use aimux_provider_utils::{
 use super::config::{OpenAIModelConfig, TransformRequestBody};
 use super::convert::{RequestBodyResult, build_request_body_with_warnings, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
-use super::{OpenAICompatProfile, OpenAIConfig};
 
-/// An OpenAI-compatible language model.
+/// An OpenAI chat-completions language model.
 ///
 /// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
@@ -37,14 +36,6 @@ pub struct OpenAIModel {
 }
 
 impl OpenAIModel {
-    /// A chat model configured through the transitional [`OpenAIConfig`]
-    /// builder. The native package builds models through
-    /// [`OpenAIProvider::chat`](super::OpenAIProvider::chat).
-    #[must_use]
-    pub fn new(model_id: String, config: OpenAIConfig) -> Self {
-        Self::from_config(model_id, config.into_model_config("chat"))
-    }
-
     pub(crate) fn from_config(model_id: String, config: OpenAIModelConfig) -> Self {
         Self { model_id, config }
     }
@@ -62,7 +53,7 @@ impl OpenAIModel {
 ///
 /// `usage_raw` is the provider's original `usage` JSON object, preserved
 /// verbatim in `Usage.raw` (M10, RFC-0016). Vendor-specific fields not part
-/// of `UsageResponse` (e.g. DeepSeek `prompt_cache_hit_tokens`) survive only
+/// of `UsageResponse` (e.g. prompt-cache hit counters) survive only
 /// through this raw value.
 fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
     let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
@@ -114,7 +105,7 @@ fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
             ..Default::default()
         },
         // M10 (RFC-0016): keep the provider's original usage JSON verbatim —
-        // vendor-specific fields (e.g. Moonshot `cached_tokens`, DeepSeek
+        // vendor-specific fields (e.g. Moonshot `cached_tokens`, prompt-cache
         // `prompt_cache_hit_tokens`) are otherwise lost for audit/billing.
         raw: usage_raw.cloned(),
     }
@@ -122,10 +113,8 @@ fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
 
 #[async_trait]
 impl LanguageModel for OpenAIModel {
-    /// Provider identity for recording/routing: `"{name}.chat"` for the native
-    /// package (`"openai.chat"` by default). OpenAI-compatible providers
-    /// configured through the builder keep their registry entry name (e.g.
-    /// `"deepseek"`, `"groq"`).
+    /// Provider identity for recording/routing: `"{name}.chat"` (`"openai.chat"`
+    /// by default).
     fn provider(&self) -> &str {
         &self.config.provider
     }
@@ -150,8 +139,6 @@ impl LanguageModel for OpenAIModel {
             http,
             &self.model_id,
             options,
-            &self.config.provider,
-            &self.config.profile,
             self.config.transform_request_body.as_ref(),
         )
         .await
@@ -169,8 +156,6 @@ impl LanguageModel for OpenAIModel {
             http,
             &self.model_id,
             options,
-            &self.config.provider,
-            &self.config.profile,
             self.config.transform_request_body.as_ref(),
         )
         .await
@@ -199,12 +184,9 @@ pub(crate) async fn execute_generate(
     http: HttpRequest,
     model_id: &str,
     options: &CallOptions,
-    provider: &str,
-    profile: &OpenAICompatProfile,
     transform_request_body: Option<&TransformRequestBody>,
 ) -> Result<GenerateResult, AiMuxError> {
-    let request_result =
-        build_request_body_with_warnings(model_id, options, false, provider, profile)?;
+    let request_result = build_request_body_with_warnings(model_id, options, false)?;
     let body = match transform_request_body {
         Some(transform) => transform(request_result.body),
         None => request_result.body,
@@ -241,7 +223,7 @@ pub(crate) async fn execute_generate(
             provider_metadata: None,
         });
     }
-    // Reasoning: prefer reasoning_content over reasoning (DeepSeek/阿里通义).
+    // Reasoning: prefer reasoning_content over reasoning.
     let reasoning_text = choice
         .message
         .reasoning_content
@@ -354,12 +336,9 @@ pub(crate) async fn execute_stream(
     http: HttpRequest,
     model_id: &str,
     options: &CallOptions,
-    provider: &str,
-    profile: &OpenAICompatProfile,
     transform_request_body: Option<&TransformRequestBody>,
 ) -> Result<StreamResult, AiMuxError> {
-    let request_result =
-        build_request_body_with_warnings(model_id, options, true, provider, profile)?;
+    let request_result = build_request_body_with_warnings(model_id, options, true)?;
     // M9 (RFC-0016): keep the warnings computed while building the body —
     // they are emitted in `StreamStart` below instead of being dropped.
     let RequestBodyResult { body, warnings } = request_result;
@@ -400,12 +379,6 @@ pub(crate) async fn execute_stream(
             response_headers.clone(),
         ));
     }
-
-    // Capture the provider's stream usage key before entering the async stream
-    // block (the borrowed `profile` cannot be moved into the generator).
-    // Some(key) → read streaming usage from `chunk[key].usage`;
-    // None → read from the top-level `usage`.
-    let stream_usage_key = profile.stream_usage_key;
 
     // M2 (RFC-0016): capture whether raw chunks should be emitted — the
     // borrowed `options` cannot be moved into the generator.
@@ -469,17 +442,10 @@ pub(crate) async fn execute_stream(
                         break;
                     }
 
-                    // Extract streaming usage based on profile.stream_usage_key
-                    // (captured before the stream block). Some(key) reads usage
-                    // from the provider-specific sub-object `key` (e.g. Groq's
-                    // "x_groq"); None reads the top-level "usage". This is done
-                    // from the raw JSON chunk before it is consumed below.
-                    // `chunk_usage_raw` keeps the provider's original object for
-                    // `Usage.raw` (M10).
-                    let chunk_usage_raw: Option<Value> = match stream_usage_key {
-                        Some(key) => parsed.get(key).and_then(|v| v.get("usage")).cloned(),
-                        None => parsed.get("usage").cloned(),
-                    };
+                    // The chunk's top-level `usage`, taken from the raw JSON before
+                    // the chunk is consumed below. `chunk_usage_raw` keeps the
+                    // provider's original object for `Usage.raw` (M10).
+                    let chunk_usage_raw: Option<Value> = parsed.get("usage").cloned();
                     let chunk_usage: Option<UsageResponse> = chunk_usage_raw
                         .as_ref()
                         .and_then(|u| serde_json::from_value(u.clone()).ok());
@@ -508,7 +474,7 @@ pub(crate) async fn execute_stream(
                         });
                     }
 
-                    // Update usage based on profile.stream_usage_key.
+                    // Update usage from the chunk that carries it.
                     if let Some(usage) = &chunk_usage {
                         final_usage = convert_usage(usage, chunk_usage_raw.as_ref());
                         final_usage_raw = Some(usage.clone());
@@ -784,23 +750,4 @@ pub(crate) async fn list_models_once(
             created: m.created,
         })
         .collect())
-}
-
-/// [`list_models_once`] under the Core retry primitive, for the
-/// OpenAI-compatible consumers configured through [`OpenAIConfig`].
-///
-/// `list_models` is not a Core user operation, so nothing above this call
-/// retries it — apply the Core retry primitive here (a catalogue GET is
-/// idempotent) so a transient 429/503/transport failure behaves like every
-/// other exchange instead of failing on the first hiccup. The native OpenAI
-/// provider does not retry; the compat package settles this in A3.
-///
-/// # Errors
-///
-/// As [`list_models_once`], or the retry error once the budget is spent.
-pub(crate) async fn execute_list_models(
-    config: &OpenAIModelConfig,
-) -> Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError> {
-    let retries = aimux_core::retry::prepare_retries(None, None);
-    retries.retry(|| list_models_once(config)).await
 }

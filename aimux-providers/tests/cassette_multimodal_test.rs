@@ -16,7 +16,21 @@ use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
 use aimux_core::image_model::ImageModel;
 use aimux_core::shared::FileBytes;
 use aimux_core::transcription_model::TranscriptionModel;
-use aimux_providers::openai::{OpenAIConfig, OpenAIConfigProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
+use aimux_providers::openai_compatible::{
+    OpenAICompatibleProviderSettings, create_openai_compatible,
+};
+
+/// The native OpenAI package pointed at the mock server.
+fn native_provider(base_url: String) -> OpenAIProvider {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(base_url),
+        ..Default::default()
+    })
+    .unwrap()
+}
 
 const CASSETTE_DIR: &str = "tests/cassettes";
 
@@ -66,8 +80,8 @@ async fn cassette_openai_embedding_query() {
     let cass = load_cassette("openai", "TestOpenAI.test_query.json").expect("cassette should load");
     let (_server, base_url) = mount_single(&cass).await;
 
-    let provider = OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
-    let model = provider.embedding_model("text-embedding-3-small");
+    let provider = native_provider(base_url);
+    let model = provider.embedding("text-embedding-3-small");
 
     let opts = EmbeddingCallOptions::new("hello");
     let result = model.do_embed(&opts).await.expect("embed should succeed");
@@ -87,8 +101,8 @@ async fn cassette_openai_embedding_documents() {
         load_cassette("openai", "TestOpenAI.test_documents.json").expect("cassette should load");
     let (_server, base_url) = mount_single(&cass).await;
 
-    let provider = OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
-    let model = provider.embedding_model("text-embedding-3-small");
+    let provider = native_provider(base_url);
+    let model = provider.embedding("text-embedding-3-small");
 
     let opts = EmbeddingCallOptions {
         values: vec!["doc1".into(), "doc2".into()],
@@ -112,8 +126,8 @@ async fn cassette_openai_embedding_error() {
         load_cassette("openai", "TestOpenAI.test_embed_error.json").expect("cassette should load");
     let (_server, base_url) = mount_single(&cass).await;
 
-    let provider = OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
-    let model = provider.embedding_model("nonexistent");
+    let provider = native_provider(base_url);
+    let model = provider.embedding("nonexistent");
 
     let opts = EmbeddingCallOptions::new("hello");
     let result = model.do_embed(&opts).await;
@@ -207,7 +221,7 @@ async fn cassette_openai_files_upload() {
         .await;
 
     let base_url = format!("{}/v1", server.uri());
-    let provider = OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
+    let provider = native_provider(base_url);
     let files = provider.files();
 
     let opts = UploadFileCallOptions::new(
@@ -249,13 +263,15 @@ async fn cassette_xai_image_generation() {
         .mount(&server)
         .await;
 
-    // xAI is OpenAI-compatible — use OpenAI provider with xAI base_url
+    // xAI is OpenAI-compatible — use the compatible package with xAI's name
     let base_url = format!("{}/v1", server.uri());
-    let provider = OpenAIConfigProvider::new(
-        OpenAIConfig::new("test-key")
-            .with_base_url(base_url)
-            .with_provider("xai"),
-    );
+    let provider = create_openai_compatible(OpenAICompatibleProviderSettings {
+        name: "xai".to_string(),
+        base_url,
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
     let model = provider.image("grok-2-image");
 
     use aimux_core::image_model::ImageCallOptions;
@@ -311,9 +327,9 @@ async fn cassette_transcription() {
         .mount(&server)
         .await;
 
-    // OpenRouter is OpenAI-compatible
+    // The transcription endpoint is OpenAI's wire format; OpenRouter serves it as is.
     let base_url = format!("{}/api/v1", server.uri());
-    let provider = OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
+    let provider = native_provider(base_url);
     let model = provider.transcription("whisper-1");
 
     use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions};

@@ -21,10 +21,18 @@ use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::types::{ReasoningEffort, Warning};
 use aimux_providers::body_merge::apply_body_overrides;
-use aimux_providers::openai::OpenAICompatProfile;
-use aimux_providers::openai::convert::build_request_body_with_warnings;
-use aimux_providers::provider_registry_entry;
+use aimux_providers::deepseek::deepseek;
+use aimux_providers::openai_compatible::OpenAICompatibleChatModel;
+use aimux_providers::{PresetFamily, PresetSettings, provider_registry_entry};
 use serde_json::json;
+
+/// The chat model of a registry preset, built the way the registry builds it.
+fn preset_chat(name: &str, model_id: &str) -> OpenAICompatibleChatModel {
+    let entry = aimux_providers::presets::lookup(name).unwrap();
+    (entry.create)(PresetSettings::default())
+        .unwrap()
+        .chat(model_id)
+}
 
 fn user_prompt() -> LanguageModelPrompt {
     vec![LanguageModelPromptMessage {
@@ -64,14 +72,10 @@ fn has_reasoning_warning(warnings: &[Warning]) -> bool {
 /// `thinking` 注入（退役语义——thinking 注入不再由内置特化产生）。
 #[test]
 fn i4_deepseek_retired_no_thinking_injection() {
-    let result = build_request_body_with_warnings(
-        "deepseek-reasoner",
-        &opts_with_reasoning(ReasoningEffort::None),
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let result = deepseek()
+        .chat("deepseek-reasoner")
+        .request_body(&opts_with_reasoning(ReasoningEffort::None), false)
+        .unwrap();
     assert_eq!(result.body["reasoning_effort"], json!("none"));
     assert!(
         result.body.get("thinking").is_none(),
@@ -83,14 +87,10 @@ fn i4_deepseek_retired_no_thinking_injection() {
 /// I4 补充: 完全不设 reasoning 时同样不含 thinking（依赖 API 默认）。
 #[test]
 fn i4_deepseek_no_thinking_when_reasoning_unset() {
-    let result = build_request_body_with_warnings(
-        "deepseek-reasoner",
-        &CallOptions::new(user_prompt()),
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let result = deepseek()
+        .chat("deepseek-reasoner")
+        .request_body(&CallOptions::new(user_prompt()), false)
+        .unwrap();
     assert!(result.body.get("thinking").is_none());
     assert!(result.body.get("reasoning_effort").is_none());
 }
@@ -108,14 +108,10 @@ fn i5_body_overrides_injects_thinking_disabled() {
         reasoning: Some(ReasoningEffort::None),
         ..CallOptions::default()
     };
-    let mut result = build_request_body_with_warnings(
-        "deepseek-reasoner",
-        &opts,
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let mut result = deepseek()
+        .chat("deepseek-reasoner")
+        .request_body(&opts, false)
+        .unwrap();
     apply_body_overrides(
         &mut result.body,
         Some(&json!({ "thinking": { "type": "disabled" } })),
@@ -132,14 +128,10 @@ fn i5_body_overrides_injects_thinking_enabled() {
         prompt: user_prompt(),
         ..CallOptions::default()
     };
-    let mut result = build_request_body_with_warnings(
-        "deepseek-reasoner",
-        &opts,
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let mut result = deepseek()
+        .chat("deepseek-reasoner")
+        .request_body(&opts, false)
+        .unwrap();
     apply_body_overrides(
         &mut result.body,
         Some(&json!({ "thinking": { "type": "enabled" } })),
@@ -154,68 +146,25 @@ fn i5_body_overrides_injects_thinking_enabled() {
 // （若注册表行被改回 full()，此处 profile.max_tokens_key 断言即失败，防死代码）。
 // ════════════════════════════════════════════════════════════════════════════
 
-/// 8 家接线清单：(provider 名, 实际 profile, 期望 max_tokens_key)。
-fn wired_vendors() -> Vec<(&'static str, OpenAICompatProfile, &'static str)> {
+/// 8 家接线清单：(provider 名, 期望 max_tokens_key)。
+fn wired_vendors() -> Vec<(&'static str, &'static str)> {
     vec![
-        (
-            "stepfun",
-            provider_registry_entry("stepfun").unwrap(),
-            "max_tokens",
-        ),
-        (
-            "siliconflow",
-            provider_registry_entry("siliconflow").unwrap(),
-            "max_tokens",
-        ),
-        (
-            "sarvam",
-            provider_registry_entry("sarvam").unwrap(),
-            "max_tokens",
-        ),
-        (
-            "reka_ai",
-            provider_registry_entry("reka_ai").unwrap(),
-            "max_tokens",
-        ),
-        (
-            "publicai",
-            provider_registry_entry("publicai").unwrap(),
-            "max_tokens",
-        ),
-        (
-            "perplexity",
-            provider_registry_entry("perplexity").unwrap(),
-            "max_tokens",
-        ),
-        (
-            "groq",
-            provider_registry_entry("groq").unwrap(),
-            "max_completion_tokens",
-        ),
-        (
-            "heroku",
-            provider_registry_entry("heroku").unwrap(),
-            "max_completion_tokens",
-        ),
+        ("stepfun", "max_tokens"),
+        ("siliconflow", "max_tokens"),
+        ("sarvam", "max_tokens"),
+        ("reka_ai", "max_tokens"),
+        ("publicai", "max_tokens"),
+        ("perplexity", "max_tokens"),
+        ("groq", "max_completion_tokens"),
+        ("heroku", "max_completion_tokens"),
     ]
 }
 
 /// 断言单个厂商在指定模型（推理/非推理）下请求体 key 名正确、另一 key 缺席。
-fn assert_vendor_key(
-    provider: &str,
-    profile: &OpenAICompatProfile,
-    expected_key: &str,
-    model_id: &str,
-    branch: &str,
-) {
-    let result = build_request_body_with_warnings(
-        model_id,
-        &opts_with_max_tokens(100),
-        false,
-        provider,
-        profile,
-    )
-    .unwrap();
+fn assert_vendor_key(provider: &str, expected_key: &str, model_id: &str, branch: &str) {
+    let result = preset_chat(provider, model_id)
+        .request_body(&opts_with_max_tokens(100), false)
+        .unwrap();
     assert_eq!(
         result.body[expected_key],
         json!(100),
@@ -237,62 +186,54 @@ fn assert_vendor_key(
     );
 }
 
-/// 接线本身：每个厂商 profile.max_tokens_key 与清单一致（防注册表行被改回）。
+/// 接线本身：注册表行的 max_tokens_key 与清单一致（防注册表行被改回）。groq 行指向
+/// groq 包（family），它的 `max_completion_tokens` 由包内方言定义，由下面的矩阵锁住。
 #[test]
 fn max_tokens_key_wiring_registry() {
-    for (provider, profile, expected) in wired_vendors() {
-        assert_eq!(
-            profile.max_tokens_key,
-            Some(expected),
-            "[{provider}] 注册表接线错误"
-        );
+    for (provider, expected) in wired_vendors() {
+        let descriptor = provider_registry_entry(provider).unwrap();
+        if descriptor.family == PresetFamily::Groq {
+            assert_eq!(
+                descriptor.max_tokens_key, None,
+                "[{provider}] 由 groq 包定义"
+            );
+        } else {
+            assert_eq!(
+                descriptor.max_tokens_key,
+                Some(expected),
+                "[{provider}] 注册表接线错误"
+            );
+        }
     }
 }
 
-/// 矩阵 × 推理分支（o3-mini 是推理模型 → 若未接线会推断发 mct，接线后按厂商 key 发）。
+/// 矩阵 × 推理模型名（兼容包不按模型名推断，按厂商 key 发）。
 #[test]
 fn max_tokens_key_matrix_reasoning_branch() {
-    for (provider, profile, expected) in wired_vendors() {
-        assert_vendor_key(provider, &profile, expected, "o3-mini", "推理");
+    for (provider, expected) in wired_vendors() {
+        assert_vendor_key(provider, expected, "o3-mini", "推理");
     }
 }
 
-/// 矩阵 × 非推理分支（gpt-4o 非推理 → 若未接线会推断发 max_tokens，接线后按厂商 key 发）。
+/// 矩阵 × 非推理模型名。
 #[test]
 fn max_tokens_key_matrix_non_reasoning_branch() {
-    for (provider, profile, expected) in wired_vendors() {
-        assert_vendor_key(provider, &profile, expected, "gpt-4o", "非推理");
+    for (provider, expected) in wired_vendors() {
+        assert_vendor_key(provider, expected, "gpt-4o", "非推理");
     }
 }
 
-/// 未接线厂商（None）保持现状推断：推理模型发 mct、非推理发 max_tokens
-/// （回归护栏——full() 默认不受接线影响）。
+/// 未接线厂商（None）发 `max_tokens`（AI SDK 兼容基线），与模型名无关
+/// （回归护栏——兼容包不做 OpenAI 原生的 mct 推断）。
 #[test]
-fn max_tokens_key_none_keeps_inference() {
-    let profile = OpenAICompatProfile::full();
-    assert_eq!(profile.max_tokens_key, None);
-
-    let reasoning = build_request_body_with_warnings(
-        "o3-mini",
-        &opts_with_max_tokens(100),
-        false,
-        "openai",
-        &profile,
-    )
-    .unwrap();
-    assert_eq!(reasoning.body["max_completion_tokens"], json!(100));
-    assert!(reasoning.body.get("max_tokens").is_none());
-
-    let non_reasoning = build_request_body_with_warnings(
-        "gpt-4o",
-        &opts_with_max_tokens(100),
-        false,
-        "openai",
-        &profile,
-    )
-    .unwrap();
-    assert_eq!(non_reasoning.body["max_tokens"], json!(100));
-    assert!(non_reasoning.body.get("max_completion_tokens").is_none());
+fn max_tokens_key_none_sends_max_tokens() {
+    for model_id in ["o3-mini", "gpt-4o"] {
+        let result = preset_chat("abacus", model_id)
+            .request_body(&opts_with_max_tokens(100), false)
+            .unwrap();
+        assert_eq!(result.body["max_tokens"], json!(100));
+        assert!(result.body.get("max_completion_tokens").is_none());
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -311,14 +252,10 @@ fn no_reasoning_warning_on_direct_passthrough() {
         ReasoningEffort::High,
         ReasoningEffort::Xhigh,
     ] {
-        let result = build_request_body_with_warnings(
-            "deepseek-reasoner",
-            &opts_with_reasoning(effort),
-            false,
-            "deepseek",
-            &OpenAICompatProfile::deepseek(),
-        )
-        .unwrap();
+        let result = deepseek()
+            .chat("deepseek-reasoner")
+            .request_body(&opts_with_reasoning(effort), false)
+            .unwrap();
         assert!(
             !has_reasoning_warning(&result.warnings),
             "effort={} 直传不应产生 reasoning warning: {:?}",
@@ -337,14 +274,13 @@ fn no_reasoning_warning_on_direct_passthrough() {
 #[test]
 fn reasoning_effort_passthrough_all_seven_levels() {
     // provider-default: 不发 reasoning_effort（非自定义）。
-    let default_body = build_request_body_with_warnings(
-        "deepseek-reasoner",
-        &opts_with_reasoning(ReasoningEffort::ProviderDefault),
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let default_body = deepseek()
+        .chat("deepseek-reasoner")
+        .request_body(
+            &opts_with_reasoning(ReasoningEffort::ProviderDefault),
+            false,
+        )
+        .unwrap();
     assert!(
         default_body.body.get("reasoning_effort").is_none(),
         "provider-default 不应发 reasoning_effort"
@@ -358,14 +294,10 @@ fn reasoning_effort_passthrough_all_seven_levels() {
         (ReasoningEffort::High, "high"),
         (ReasoningEffort::Xhigh, "xhigh"),
     ] {
-        let result = build_request_body_with_warnings(
-            "deepseek-reasoner",
-            &opts_with_reasoning(effort),
-            false,
-            "deepseek",
-            &OpenAICompatProfile::deepseek(),
-        )
-        .unwrap();
+        let result = deepseek()
+            .chat("deepseek-reasoner")
+            .request_body(&opts_with_reasoning(effort), false)
+            .unwrap();
         assert_eq!(
             result.body["reasoning_effort"],
             json!(expected),

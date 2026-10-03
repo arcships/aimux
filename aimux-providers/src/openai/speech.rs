@@ -19,7 +19,6 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use super::OpenAIConfig;
 use super::config::OpenAIModelConfig;
 
 /// The output formats accepted by the OpenAI TTS API.
@@ -34,14 +33,6 @@ pub struct OpenAISpeechModel {
 }
 
 impl OpenAISpeechModel {
-    /// A speech model configured through the transitional [`OpenAIConfig`]
-    /// builder. The native package builds models through
-    /// [`OpenAIProvider::speech`](super::OpenAIProvider::speech).
-    #[must_use]
-    pub fn new(model_id: String, config: OpenAIConfig) -> Self {
-        Self::from_config(model_id, config.into_model_config("speech"))
-    }
-
     pub(crate) fn from_config(model_id: String, config: OpenAIModelConfig) -> Self {
         Self { model_id, config }
     }

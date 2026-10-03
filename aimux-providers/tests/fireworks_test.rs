@@ -2,7 +2,7 @@
 //!
 //! Translated from `packages/fireworks/src/fireworks-provider.test.ts`.
 //!
-//! Fireworks is a thin OpenAI-compatible wrapper over [`OpenAIConfigProvider`]. The
+//! Fireworks is a registry preset of the OpenAI-compatible package. The
 //! TS suite is mostly provider-configuration unit tests plus a
 //! `transformRequestBody` that snake-cases `thinking.budgetTokens`,
 //! `reasoningHistory`, `promptCacheKey`, `serviceTier` and remaps

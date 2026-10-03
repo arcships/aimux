@@ -17,47 +17,57 @@ simplify some steps below — noted per step).
 | 2. A new protocol | its own HTTP API for text generation | a `src/<name>/` module implementing `do_generate` / `do_stream` | `cohere` |
 | 3. Single modality | any API, but only one non-text modality | a typed shell + one modality model | `serper` (search), `lmnt` (speech) |
 
-If the vendor is OpenAI-compatible **and** needs quirks beyond a `profile`
-flag (different auth header, non-standard error body, …), it is case 2, not
-case 1.
+If the vendor is OpenAI-compatible **and** needs quirks beyond what a row can
+say (a different auth header, a non-standard error body, message conversion of
+its own, ...), it is case 2 - or, when it shares the compatible chat model and
+only differs in a few hooks, its own package next to `groq/` and `deepseek/`
+(`family` in the row points at it).
 
 ## Case 1 — OpenAI-compatible vendor (registry row)
 
 1. Add one row to `aimux-providers/src/provider_registry.json` (file is
-   sorted by `name`; follow the flat 5-key shape):
+   sorted by `name`):
 
    ```json
    { "name": "example", "display": "Example", "env_var": "EXAMPLE_API_KEY",
      "base_url": "https://api.example.com/v1", "profile": {} }
    ```
 
-   `profile` carries the known quirks — `supports_top_k`, `supports_tools`,
-   `supports_response_format`, `stream_usage_key`, `max_tokens_key` — see
-   the rows that already use one (e.g. `groq`). Anything beyond body-shape
-   flags rides in per-call `body_overrides` (RFC-0017); if the quirk changes
-   auth or error shapes, it is case 2.
+   Optional keys: `auth: "none"` (a local server: no key variable, no
+   `Authorization` header, no placeholder key) with `base_url_env` (the
+   variable holding the base URL); `params` for a templated `base_url`
+   (`{param}` placeholders, each declared with an optional `env` list and
+   `default`; a derived parameter takes `derive: {from, map, otherwise}`);
+   `family` (`"groq"` / `"deepseek"`: the dialect of an own package);
+   `profile.max_tokens_key` (`"max_tokens"` or `"max_completion_tokens"`: the
+   only max-token key the vendor accepts). Anything beyond that rides in a
+   `transform_request_body` closure on the factory; if the quirk changes auth
+   or error shapes, it is case 2.
 
-2. Regenerate the provider documentation and commit its output:
+2. Regenerate what is generated from the registry and commit its output:
 
    ```sh
+   python scripts/gen_presets.py          # aimux-providers/src/presets/*.rs
    python scripts/gen_providers_doc.py    # docs/api/providers.md (totals + list)
    ```
 
-   CI runs it with `--check` in the `contract-tests` job and fails if the
+   Both generators exist so the registry is the one source: every row becomes
+   `presets::create_<name>(PresetSettings)` plus a `presets::<name>()` default
+   instance, and the by-name `provider(name, ...)` entry point looks the row up.
+   CI runs both with `--check` in the `contract-tests` job and fails if the
    committed output is stale.
 
 3. Derive replay cassettes: add a tuple to `PROVIDERS` in
    `scripts/generate_thin_wrapper_cassettes.py`, then run it. It derives
    `thin_wrapper_nonstream.json` / `thin_wrapper_stream.json` under
    `aimux-providers/tests/cassettes/<name>/` from **real OpenAI recordings**
-   (rewriting request path and model id — not fake data), because a
+   (rewriting request path and model id - not fake data), because a
    registry-backed provider's requests are byte-for-byte OpenAI shape.
 
 4. Nothing else: `provider("example", ...)` now works in every binding, and
    env-var key loading follows `env_var` automatically.
 
-> Roadmap note: #166 B2 turns the 33 standalone thin wrappers into registry
-> rows and makes `conformance_test.rs` iterate the registry; the
+> Roadmap note: #166 B2 makes `conformance_test.rs` iterate the registry; the
 > cassette-derivation step above is then replaced by that suite.
 
 ## Case 2 — a new protocol
@@ -122,7 +132,8 @@ case 1.
 
 - **A generator may stay in `scripts/` only if its output carries a
   "GENERATED — do not edit" header and CI runs it with `--check`.** Today
-  that is `gen_providers_doc.py` (the `contract-tests` job).
+  that is `gen_presets.py` and `gen_providers_doc.py` (the `contract-tests`
+  job).
   `gen_ts_types.py` regenerates the ts-rs TypeScript
   types through `cargo test -p aimux-core --lib export` (the export tests
   are the gate).

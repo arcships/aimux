@@ -323,7 +323,9 @@ impl ProviderDiscovery for AzureProvider {
             }
 
             use aimux_provider_utils::HttpRequest;
-            // Retry rationale: see `openai::model::execute_list_models`.
+            // Retry rationale: a catalogue GET is idempotent, so a transient failure is retried; the
+            // native-package groups move this to the single-exchange form of
+            // `openai::model::list_models_once`.
             let resp = aimux_core::retry::prepare_retries(None, None)
                 .retry(|| {
                     aimux_provider_utils::get_from_api(
@@ -483,8 +485,6 @@ impl LanguageModel for AzureModel {
             HttpRequest::new(self.endpoint(), headers.into_iter().collect(), options),
             &self.deployment,
             options,
-            "azure",
-            &crate::openai::OpenAICompatProfile::full(),
             None,
         )
         .await
@@ -496,8 +496,6 @@ impl LanguageModel for AzureModel {
             HttpRequest::new(self.endpoint(), headers.into_iter().collect(), options),
             &self.deployment,
             options,
-            "azure",
-            &crate::openai::OpenAICompatProfile::full(),
             None,
         )
         .await

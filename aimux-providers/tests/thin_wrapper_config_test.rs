@@ -78,7 +78,7 @@ mod huggingface_config {
         let provider = HuggingFaceProvider::new(config);
         let model = provider.model("any");
         assert_eq!(model.model_id(), "any");
-        assert_eq!(model.provider(), "openai");
+        assert_eq!(model.provider(), "huggingface.chat");
     }
 
     /// TS: `createHuggingFace({ apiKey: 'custom-key' })` �?custom API key

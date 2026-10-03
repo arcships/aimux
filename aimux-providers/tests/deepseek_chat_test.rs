@@ -44,8 +44,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::openai::OpenAICompatProfile;
-use aimux_providers::openai::convert::build_request_body_with_warnings;
+use aimux_providers::deepseek::deepseek;
 use aimux_providers::{ProviderOptions, provider};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -345,8 +344,8 @@ async fn should_extract_text_content() {
 /// TS: doGenerate › tool call › "should send correct request body" (line ~318).
 ///
 /// Verifies that tools are correctly serialized in the request body.
-/// stage2-001（RFC-0017 阶段 2）：DeepSeek 特化已退役——`providerOptions.deepseek`
-/// 不再翻译为请求体 `thinking` 字段，用户改用 bodyOverrides 注入（新语义透传）。
+/// RFC-0036：DeepSeek 是独立包，`providerOptions.deepseek` 里 schema 之外的字段
+/// （`thinking`）按 AI SDK 的兼容包语义原样进入请求体，不做内置翻译。
 #[tokio::test]
 async fn should_send_correct_tool_call_request_body() {
     let server = MockServer::start().await;
@@ -356,16 +355,16 @@ async fn should_send_correct_tool_call_request_body() {
 
     let mut options = default_options(test_prompt());
     options.tools = Some(vec![weather_tool().into()]);
-    // 退役后 providerOptions.deepseek.* 被忽略（不再有 apply_deepseek_override）。
     options.provider_options = deepseek_opts(json!({ "thinking": { "type": "enabled" } }));
 
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result.request_body.expect("body");
 
     assert_eq!(body["model"], json!("deepseek-reasoner"));
-    assert!(
-        body.get("thinking").is_none(),
-        "stage2-001: DeepSeek 特化退役,thinking 不再由 providerOptions.deepseek 注入,改用 bodyOverrides"
+    assert_eq!(
+        body["thinking"],
+        json!({ "type": "enabled" }),
+        "providerOptions.deepseek fields outside the schema pass through as given"
     );
     assert_eq!(
         body["tools"],
@@ -775,7 +774,7 @@ async fn should_stream_tool_call() {
 // ════════════════════════════════════════════════════════════════════════════
 // Message conversion — convert-to-deepseek-chat-messages.test.ts
 //
-// These tests call `build_request_body_with_warnings` directly (no HTTP mock
+// These tests call `request_body` of the DeepSeek chat model directly (no HTTP mock
 // needed) and assert on the `body["messages"]` field.
 //
 // Translated from `convert-to-deepseek-chat-messages.test.ts`.
@@ -790,14 +789,10 @@ async fn should_stream_tool_call() {
 #[tokio::test]
 async fn should_convert_user_text_part_to_string_content() {
     let options = default_options(test_prompt());
-    let result = build_request_body_with_warnings(
-        "deepseek-chat",
-        &options,
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let result = deepseek()
+        .chat("deepseek-chat")
+        .request_body(&options, false)
+        .unwrap();
 
     assert_eq!(
         result.body["messages"],
@@ -821,14 +816,10 @@ async fn should_convert_image_file_parts_to_image_url() {
         ..Default::default()
     }];
     let options = default_options(prompt);
-    let result = build_request_body_with_warnings(
-        "deepseek-chat",
-        &options,
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let result = deepseek()
+        .chat("deepseek-chat")
+        .request_body(&options, false)
+        .unwrap();
 
     // Image file parts are converted to image_url (OpenAI-compatible behaviour).
     let messages_str = result.body["messages"].to_string();
@@ -859,14 +850,10 @@ async fn should_accept_top_level_only_mediatype_without_error() {
         ..Default::default()
     }];
     let options = default_options(prompt);
-    let result = build_request_body_with_warnings(
-        "deepseek-chat",
-        &options,
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let result = deepseek()
+        .chat("deepseek-chat")
+        .request_body(&options, false)
+        .unwrap();
 
     // Top-level media type "image" is resolved to image_url (OpenAI-compatible).
     let messages_str = result.body["messages"].to_string();
@@ -901,14 +888,10 @@ async fn should_stringify_arguments_to_tool_calls() {
         },
     ];
     let options = default_options(prompt);
-    let result = build_request_body_with_warnings(
-        "deepseek-chat",
-        &options,
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let result = deepseek()
+        .chat("deepseek-chat")
+        .request_body(&options, false)
+        .unwrap();
 
     let messages = result.body["messages"].as_array().expect("messages array");
     assert_eq!(messages.len(), 2);
@@ -963,14 +946,10 @@ async fn should_handle_text_output_type_in_tool_results() {
         },
     ];
     let options = default_options(prompt);
-    let result = build_request_body_with_warnings(
-        "deepseek-chat",
-        &options,
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let result = deepseek()
+        .chat("deepseek-chat")
+        .request_body(&options, false)
+        .unwrap();
 
     let messages = result.body["messages"].as_array().expect("messages array");
     assert_eq!(messages.len(), 2);
@@ -1000,7 +979,7 @@ async fn should_handle_text_output_type_in_tool_results() {
 // ════════════════════════════════════════════════════════════════════════════
 // Tool preparation — deepseek-prepare-tools.test.ts
 //
-// These tests call `build_request_body_with_warnings` directly and assert on
+// These tests call `request_body` of the DeepSeek chat model directly and assert on
 // the `body["tools"]` field.
 //
 // Translated from `deepseek-prepare-tools.test.ts`.
@@ -1022,14 +1001,10 @@ async fn should_pass_through_strict_mode_when_strict_is_true() {
     };
     let mut options = default_options(test_prompt());
     options.tools = Some(vec![Tool::from(tool)]);
-    let result = build_request_body_with_warnings(
-        "deepseek-chat",
-        &options,
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let result = deepseek()
+        .chat("deepseek-chat")
+        .request_body(&options, false)
+        .unwrap();
 
     assert_eq!(
         result.body["tools"],
@@ -1061,14 +1036,10 @@ async fn should_pass_through_strict_mode_when_strict_is_false() {
     };
     let mut options = default_options(test_prompt());
     options.tools = Some(vec![Tool::from(tool)]);
-    let result = build_request_body_with_warnings(
-        "deepseek-chat",
-        &options,
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let result = deepseek()
+        .chat("deepseek-chat")
+        .request_body(&options, false)
+        .unwrap();
 
     assert_eq!(
         result.body["tools"],
@@ -1100,14 +1071,10 @@ async fn should_not_include_strict_mode_when_strict_is_undefined() {
     };
     let mut options = default_options(test_prompt());
     options.tools = Some(vec![Tool::from(tool)]);
-    let result = build_request_body_with_warnings(
-        "deepseek-chat",
-        &options,
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let result = deepseek()
+        .chat("deepseek-chat")
+        .request_body(&options, false)
+        .unwrap();
 
     assert_eq!(
         result.body["tools"],
@@ -1162,14 +1129,10 @@ async fn should_pass_through_strict_mode_for_multiple_tools() {
     ];
     let mut options = default_options(test_prompt());
     options.tools = Some(tools);
-    let result = build_request_body_with_warnings(
-        "deepseek-chat",
-        &options,
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
+    let result = deepseek()
+        .chat("deepseek-chat")
+        .request_body(&options, false)
+        .unwrap();
 
     let tools_arr = result.body["tools"].as_array().expect("tools array");
     assert_eq!(tools_arr.len(), 3);

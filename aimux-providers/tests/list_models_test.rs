@@ -15,8 +15,9 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::ProviderDiscovery;
+use aimux_provider_utils::Resolvable;
 use aimux_providers::catalogue;
-use aimux_providers::openai::{OpenAIConfig, OpenAIConfigProvider};
+use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
 use aimux_providers::{ProviderOptions, provider_discovery, provider_handle};
 
 async fn mount_cassette_file(server: &MockServer, cassette_path: &Path) -> String {
@@ -62,8 +63,12 @@ async fn openai_provider_list_models() {
     let cassette = Path::new("tests/cassettes/openai/list_models_smoke.json");
     let recorded_path = mount_cassette_file(&server, cassette).await;
     let base_url = base_url_for(&server.uri(), &recorded_path);
-    let config = OpenAIConfig::new("test-key").with_base_url(base_url);
-    let provider = OpenAIConfigProvider::new(config);
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(base_url),
+        ..Default::default()
+    })
+    .unwrap();
     let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
     assert!(models.iter().any(|m| m.id == "gpt-4o"));
     assert!(models.iter().all(|m| m.owned_by.is_some()));
@@ -144,7 +149,7 @@ async fn google_list_models() {
 
 #[tokio::test]
 #[serial]
-async fn ollama_list_models_via_delegate_macro() {
+async fn ollama_preset_lists_models_without_authorization() {
     let server = MockServer::start().await;
     let body = r#"{"data":[{"id":"llama3.2","object":"model","owned_by":"ollama"},{"id":"qwen3:4b","object":"model","owned_by":"ollama"}]}"#;
     Mock::given(method("GET"))
@@ -156,12 +161,20 @@ async fn ollama_list_models_via_delegate_macro() {
         )
         .mount(&server)
         .await;
-    use aimux_providers::ollama::{OllamaConfig, OllamaProvider};
-    let config = OllamaConfig::new("ollama").with_base_url(format!("{}/v1", server.uri()));
-    let provider = OllamaProvider::new(config);
+    let provider = aimux_providers::presets::create_ollama(aimux_providers::PresetSettings {
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap();
     let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
     assert_eq!(models.len(), 2);
     assert!(models.iter().any(|m| m.id == "llama3.2"));
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1, "one exchange, no retry");
+    assert!(
+        requests[0].headers.get("authorization").is_none(),
+        "a keyless preset sends no Authorization header"
+    );
 }
 
 #[tokio::test]
@@ -173,8 +186,12 @@ async fn list_models_malformed_response() {
         .respond_with(ResponseTemplate::new(200).set_body_bytes(b"not json at all".to_vec()))
         .mount(&server)
         .await;
-    let config = OpenAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-    let provider = OpenAIConfigProvider::new(config);
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap();
     let err = provider.list_models().await.unwrap_err();
     assert!(matches!(
         err,
@@ -193,8 +210,12 @@ async fn list_models_empty_data() {
         .respond_with(ResponseTemplate::new(200).set_body_bytes(br#"{"data":[]}"#.to_vec()))
         .mount(&server)
         .await;
-    let config = OpenAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-    let provider = OpenAIConfigProvider::new(config);
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap();
     let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
     assert!(models.is_empty());
 }
@@ -213,8 +234,12 @@ async fn list_models_http_error() {
         )
         .mount(&server)
         .await;
-    let config = OpenAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-    let provider = OpenAIConfigProvider::new(config);
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap();
     let err = provider.list_models().await.unwrap_err();
     assert!(!err.to_string().is_empty());
 }

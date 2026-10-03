@@ -22,7 +22,6 @@ use aimux_core::shared::{SharedProviderMetadata, Warning};
 
 use aimux_provider_utils::HttpBody;
 
-use super::OpenAIConfig;
 use super::config::OpenAIModelConfig;
 
 /// Models that default to `b64_json` response format and therefore do NOT need
@@ -70,14 +69,6 @@ pub struct OpenAIImageModel {
 }
 
 impl OpenAIImageModel {
-    /// An image model configured through the transitional [`OpenAIConfig`]
-    /// builder. The native package builds models through
-    /// [`OpenAIProvider::image`](super::OpenAIProvider::image).
-    #[must_use]
-    pub fn new(model_id: String, config: OpenAIConfig) -> Self {
-        Self::from_config(model_id, config.into_model_config("image"))
-    }
-
     pub(crate) fn from_config(model_id: String, config: OpenAIModelConfig) -> Self {
         Self { model_id, config }
     }

@@ -6,8 +6,9 @@
 //! loaded in the request headers of every call, from the setting or from
 //! `OPENAI_API_KEY`. [`openai()`] is the default instance.
 //!
-//! The model implementations also serve OpenAI-compatible endpoints that are
-//! still configured through the transitional [`OpenAIConfig`] builder.
+//! This package is the native OpenAI API only. Servers that merely speak the
+//! same wire format are served by [`crate::openai_compatible`] (and the
+//! generated presets built on it).
 
 pub(crate) mod config;
 pub mod convert;
@@ -30,8 +31,6 @@ pub use responses::OpenAIResponsesModel;
 pub use speech::OpenAISpeechModel;
 pub use transcription::OpenAITranscriptionModel;
 
-pub use crate::openai_legacy::{OpenAIConfig, OpenAIConfigProvider};
-
 use std::sync::{Arc, OnceLock};
 
 use futures::future::BoxFuture;
@@ -46,10 +45,9 @@ use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
-use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, load_api_key,
-    validate_base_url,
-};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+
+use crate::shared::{Credential, provider_headers};
 
 use config::OpenAIModelConfig;
 
@@ -111,71 +109,6 @@ pub(crate) fn openai_stream_error(
         request_body_values,
         response_headers,
     )
-}
-
-/// 描述 OpenAI 兼容厂商的差异。
-///
-/// 薄封装填这个结构，共享的请求构造和响应解析读它决定行为。
-/// 这样既保持 `dyn LanguageModel` 能跨厂商互换，又能表达差异。
-#[derive(Debug, Clone, Default)]
-pub struct OpenAICompatProfile {
-    /// 是否支持 top_k 参数。Groq 等厂商不支持，设为 false 时请求体不发送 top_k。
-    pub supports_top_k: bool,
-    /// 是否支持 tools。少数厂商不支持，设为 false 时请求体不发送 tools/tool_choice。
-    pub supports_tools: bool,
-    /// 是否支持 response_format。
-    pub supports_response_format: bool,
-    /// 流式 usage 的特殊 key。Groq 用 "x_groq"，大多数厂商用顶层 "usage"（留 None）。
-    pub stream_usage_key: Option<&'static str>,
-    /// max-token 字段的 key（内部数据，非用户概念；RFC-0017 阶段 2）。
-    /// - `Some("max_tokens")`            → 只发 `max_tokens`
-    /// - `Some("max_completion_tokens")` → 只发 `max_completion_tokens`
-    /// - `None`                          → 按模型推断（推理模型 mct / 非推理 max_tokens）
-    pub max_tokens_key: Option<&'static str>,
-}
-
-impl OpenAICompatProfile {
-    /// 默认 profile：支持全部能力，无特殊流式 usage key。
-    /// 适用于 OpenAI 本身和大多数兼容厂商。
-    #[must_use]
-    pub fn full() -> Self {
-        Self {
-            supports_top_k: true,
-            supports_tools: true,
-            supports_response_format: true,
-            stream_usage_key: None,
-            max_tokens_key: None,
-        }
-    }
-
-    /// Groq profile：不支持 top_k，流式 usage 在 x_groq 字段；
-    /// `max_tokens` 已弃用，只发 `max_completion_tokens`（backlog B9）。
-    #[must_use]
-    pub fn groq() -> Self {
-        Self {
-            supports_top_k: false,
-            supports_tools: true,
-            supports_response_format: true,
-            stream_usage_key: Some("x_groq"),
-            max_tokens_key: Some("max_completion_tokens"),
-        }
-    }
-
-    /// 设置 `max_tokens_key`（内部数据，非用户概念）：`"max_tokens"` 或
-    /// `"max_completion_tokens"`。注册表薄封装行用此构建差异 profile。
-    #[must_use]
-    pub fn with_max_tokens_key(mut self, key: &'static str) -> Self {
-        self.max_tokens_key = Some(key);
-        self
-    }
-
-    /// DeepSeek profile：特化已退役（RFC-0017 阶段 2），回归 `full()`——
-    /// thinking / effort 映射等厂商差异由 provider 级请求体改写定义。
-    /// 保留此薄封装以维持注册表与调用方结构不变。
-    #[must_use]
-    pub fn deepseek() -> Self {
-        Self::full()
-    }
 }
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -254,9 +187,14 @@ pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider,
         name,
         base_url,
         headers: provider_headers(
-            settings.api_key,
-            settings.organization,
-            settings.project,
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "OpenAI"),
+            [
+                ("OpenAI-Organization", settings.organization),
+                ("OpenAI-Project", settings.project),
+            ]
+            .into_iter()
+            .filter_map(|(name, value)| value.map(|value| (name.to_string(), value)))
+            .collect(),
             settings.headers,
         ),
         fetch: settings.fetch,
@@ -274,41 +212,6 @@ pub fn openai() -> &'static OpenAIProvider {
         // reject.
         create_openai(OpenAIProviderSettings::default())
             .expect("default OpenAI settings are always valid")
-    })
-}
-
-/// Provider headers, evaluated per request: the credential first, then
-/// organization and project, then the user's headers (which may override or
-/// remove any of them).
-fn provider_headers(
-    api_key: Option<Resolvable<String>>,
-    organization: Option<String>,
-    project: Option<String>,
-    headers: Option<HeaderMapOpt>,
-) -> HeadersFn {
-    Resolvable::from_async_fn(move || {
-        let api_key = api_key.clone();
-        let organization = organization.clone();
-        let project = project.clone();
-        let headers = headers.clone();
-        async move {
-            let key = match &api_key {
-                None => load_api_key(None, API_KEY_ENV_VAR, "OpenAI")?,
-                Some(key) => key.resolve().await?,
-            };
-            let mut fixed = HeaderMapOpt::new();
-            fixed.insert("Authorization".to_string(), Some(format!("Bearer {key}")));
-            if organization.is_some() {
-                fixed.insert("OpenAI-Organization".to_string(), organization);
-            }
-            if project.is_some() {
-                fixed.insert("OpenAI-Project".to_string(), project);
-            }
-            Ok(match &headers {
-                Some(user) => combine_headers(&[&fixed, user]),
-                None => fixed,
-            })
-        }
     })
 }
 
@@ -333,7 +236,6 @@ impl OpenAIProvider {
             supported_urls: SupportedUrls::default(),
             transform_request_body: self.transform_request_body.clone(),
             base_url: self.base_url.clone(),
-            profile: OpenAICompatProfile::full(),
         }
     }
 

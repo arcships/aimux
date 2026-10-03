@@ -38,11 +38,11 @@ use aimux_core::types::Warning;
 
 use aimux_provider_utils::HttpRequest;
 
+use crate::openai::config::StaticBearerConfig;
 use crate::openai::responses::responses_convert::{
     build_responses_event_stream, build_responses_generate_result,
 };
 use crate::openai::responses::{OpenAIResponsesModel, build_responses_request_body};
-use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIConfigProvider};
 
 /// Default API-key base URL (official OpenAI Responses endpoint).
 pub const CODEX_API_BASE_URL: &str = "https://api.openai.com/v1";
@@ -66,7 +66,7 @@ pub enum CodexMode {
 /// Configuration for the Codex provider.
 #[derive(Debug, Clone)]
 pub struct CodexConfig {
-    openai: OpenAIConfig,
+    openai: StaticBearerConfig,
     mode: CodexMode,
     /// Subscription mode: `ChatGPT-Account-Id` header value (optional).
     chatgpt_account_id: Option<String>,
@@ -79,10 +79,7 @@ impl CodexConfig {
     /// API-key mode with the official base URL.
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
-            openai: OpenAIConfig::new(api_key)
-                .with_base_url(CODEX_API_BASE_URL)
-                .with_provider("codex")
-                .with_profile(OpenAICompatProfile::full()),
+            openai: StaticBearerConfig::new("codex", api_key, CODEX_API_BASE_URL),
             mode: CodexMode::ApiKey,
             chatgpt_account_id: None,
             originator: "aimux".to_string(),
@@ -96,10 +93,7 @@ impl CodexConfig {
     /// or refreshes automatically (RFC-0018 §3.2).
     pub fn subscription(account_token: impl Into<String>) -> Self {
         Self {
-            openai: OpenAIConfig::new(account_token)
-                .with_base_url(CODEX_SUBSCRIPTION_BASE_URL)
-                .with_provider("codex")
-                .with_profile(OpenAICompatProfile::full()),
+            openai: StaticBearerConfig::new("codex", account_token, CODEX_SUBSCRIPTION_BASE_URL),
             mode: CodexMode::Subscription,
             chatgpt_account_id: None,
             originator: "aimux".to_string(),
@@ -119,7 +113,7 @@ impl CodexConfig {
     /// Override the base URL (tests / self-hosted endpoints).
     #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.openai = self.openai.with_base_url(url);
+        self.openai = self.openai.with_origin(url.into());
         self
     }
 
@@ -141,7 +135,7 @@ impl CodexConfig {
     /// the subscription-mode defaults).
     #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.openai = self.openai.with_headers(headers);
+        self.openai = self.openai.with_extra_headers(headers);
         self
     }
 }
@@ -183,8 +177,8 @@ impl ProviderDiscovery for CodexProvider {
                 + '_,
         >,
     > {
-        let config = self.config.openai.clone();
-        Box::pin(async move { OpenAIConfigProvider::new(config).list_models().await })
+        let config = self.config.openai.model_config("models");
+        Box::pin(async move { crate::openai::model::list_models_once(&config).await })
     }
 }
 
@@ -197,11 +191,14 @@ pub struct CodexModel {
 
 impl CodexModel {
     fn inner(&self) -> OpenAIResponsesModel {
-        OpenAIResponsesModel::new(self.model_id.clone(), self.config.openai.clone())
+        OpenAIResponsesModel::from_config(
+            self.model_id.clone(),
+            self.config.openai.model_config("responses"),
+        )
     }
 
     fn endpoint(&self) -> String {
-        format!("{}/responses", self.config.openai.base_url)
+        format!("{}/responses", self.config.openai.origin())
     }
 
     /// Subscription mode: fold the channel headers (`Originator`,

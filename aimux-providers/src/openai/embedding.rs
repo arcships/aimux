@@ -14,7 +14,6 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use super::OpenAIConfig;
 use super::config::OpenAIModelConfig;
 
 /// An OpenAI-compatible embedding model.
@@ -27,14 +26,6 @@ pub struct OpenAIEmbeddingModel {
 }
 
 impl OpenAIEmbeddingModel {
-    /// An embedding model configured through the transitional [`OpenAIConfig`]
-    /// builder. The native package builds models through
-    /// [`OpenAIProvider::embedding`](super::OpenAIProvider::embedding).
-    #[must_use]
-    pub fn new(model_id: String, config: OpenAIConfig) -> Self {
-        Self::from_config(model_id, config.into_model_config("embedding"))
-    }
-
     pub(crate) fn from_config(model_id: String, config: OpenAIModelConfig) -> Self {
         Self { model_id, config }
     }

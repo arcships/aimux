@@ -71,8 +71,6 @@ mod tests {
             headers: None,
             organization: None,
             project: None,
-            max_retries: None,
-            body_overrides: None,
             comment: None,
         })
         .unwrap();
@@ -81,7 +79,7 @@ mod tests {
     #[test]
     fn rebuilds_registry_provider_by_id_and_model() {
         let model = rebuild_provider(&record("groq", "llama-3.3-70b"), Some("sk-test")).unwrap();
-        assert_eq!(model.provider(), "groq");
+        assert_eq!(model.provider(), "groq.chat");
         assert_eq!(model.model_id(), "llama-3.3-70b");
     }
 
@@ -90,7 +88,7 @@ mod tests {
         // Only `provider_id` selects the provider; `provider` is informational.
         let p = ProviderRecord::new("deepseek", "something.else", "deepseek-chat");
         let model = rebuild_provider(&p, Some("sk-test")).unwrap();
-        assert_eq!(model.provider(), "deepseek");
+        assert_eq!(model.provider(), "deepseek.chat");
         assert_eq!(model.model_id(), "deepseek-chat");
     }
 
@@ -139,7 +137,7 @@ mod tests {
         let result = rebuild_provider(&record(name, "m"), Some("dummy"));
         crate::provider::clear_overlay(name);
         let model = result.expect("rebuild_provider should accept an overlay provider id");
-        assert_eq!(model.provider(), name);
+        assert_eq!(model.provider(), format!("{name}.chat"));
     }
 
     #[test]

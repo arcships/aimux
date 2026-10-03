@@ -15,17 +15,55 @@ use futures::StreamExt;
 use wiremock::MockServer;
 
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
+use aimux_core::language_model::LanguageModel;
 use aimux_core::stream_part::StreamPart;
-use aimux_providers::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIConfigProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::deepseek::{DeepSeekProviderSettings, create_deepseek};
+use aimux_providers::groq::{GroqProviderSettings, create_groq};
+use aimux_providers::openai_compatible::{
+    OpenAICompatibleProviderSettings, create_openai_compatible,
+};
+
+/// Which chat dialect a cassette directory is replayed through.
+#[derive(Clone, Copy)]
+enum Kind {
+    /// The generic OpenAI-compatible chat model.
+    Generic,
+    DeepSeek,
+    Groq,
+}
+
+fn chat_model(kind: Kind, base_url: String, model_id: &str) -> std::sync::Arc<dyn LanguageModel> {
+    let api_key = Some(Resolvable::Value("test-key".to_string()));
+    match kind {
+        Kind::Generic => create_openai_compatible(OpenAICompatibleProviderSettings {
+            name: "compat".to_string(),
+            base_url,
+            api_key,
+            ..Default::default()
+        })
+        .unwrap()
+        .call(model_id),
+        Kind::DeepSeek => create_deepseek(DeepSeekProviderSettings {
+            base_url: Some(base_url),
+            api_key,
+            ..Default::default()
+        })
+        .unwrap()
+        .call(model_id),
+        Kind::Groq => create_groq(GroqProviderSettings {
+            base_url: Some(base_url),
+            api_key,
+            ..Default::default()
+        })
+        .unwrap()
+        .call(model_id),
+    }
+}
 
 /// Run generate_text + stream_text against a cassette directory.
 /// Hard asserts: must get a valid response with non-empty text and usage.
-async fn replay_openai_compat(
-    cassette_dir: &str,
-    model_id: &str,
-    base_path: &str,
-    profile: OpenAICompatProfile,
-) {
+async fn replay_openai_compat(cassette_dir: &str, model_id: &str, base_path: &str, kind: Kind) {
     let server = MockServer::start().await;
     let n = replay::mount_cassettes(&server, cassette_dir).await;
     assert!(n > 0, "no cassettes loaded from {cassette_dir}");
@@ -36,15 +74,10 @@ async fn replay_openai_compat(
         format!("{}/{}", server.uri(), base_path)
     };
 
-    let provider = OpenAIConfigProvider::new(
-        OpenAIConfig::new("test-key")
-            .with_base_url(base_url)
-            .with_profile(profile),
-    );
-    let model = provider.model(model_id);
+    let model = chat_model(kind, base_url, model_id);
 
     // ── Non-streaming: hard assert ──
-    let result = generate_text(&model, "Hello", GenerateTextOptions::default())
+    let result = generate_text(&*model, "Hello", GenerateTextOptions::default())
         .await
         .expect("{cassette_dir}: generate_text should succeed with cassette replay");
     assert!(
@@ -53,7 +86,7 @@ async fn replay_openai_compat(
     );
 
     // ── Streaming: hard assert ──
-    let result = stream_text(&model, "Hello", GenerateTextOptions::default())
+    let result = stream_text(&*model, "Hello", GenerateTextOptions::default())
         .await
         .expect("{cassette_dir}: stream_text should succeed");
     let mut stream = result.stream;
@@ -78,13 +111,7 @@ async fn replay_openai_compat(
 
 #[tokio::test]
 async fn replay_openai() {
-    replay_openai_compat(
-        "tests/cassettes/openai",
-        "gpt-4o",
-        "v1",
-        OpenAICompatProfile::full(),
-    )
-    .await;
+    replay_openai_compat("tests/cassettes/openai", "gpt-4o", "v1", Kind::Generic).await;
 }
 
 #[tokio::test]
@@ -93,7 +120,7 @@ async fn replay_deepseek() {
         "tests/cassettes/deepseek",
         "deepseek-chat",
         "",
-        OpenAICompatProfile::deepseek(),
+        Kind::DeepSeek,
     )
     .await;
 }
@@ -104,7 +131,7 @@ async fn replay_groq() {
         "tests/cassettes/groq",
         "llama-3.3-70b-versatile",
         "openai/v1",
-        OpenAICompatProfile::groq(),
+        Kind::Groq,
     )
     .await;
 }
@@ -115,20 +142,14 @@ async fn replay_mistral() {
         "tests/cassettes/mistral",
         "ministral-8b-latest",
         "v1",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
 
 #[tokio::test]
 async fn replay_perplexity() {
-    replay_openai_compat(
-        "tests/cassettes/perplexity",
-        "sonar",
-        "",
-        OpenAICompatProfile::full(),
-    )
-    .await;
+    replay_openai_compat("tests/cassettes/perplexity", "sonar", "", Kind::Generic).await;
 }
 
 #[tokio::test]
@@ -137,7 +158,7 @@ async fn replay_cerebras() {
         "tests/cassettes/cerebras",
         "llama3.3-70b",
         "v1",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
@@ -148,7 +169,7 @@ async fn replay_fireworks() {
         "tests/cassettes/fireworks",
         "llama-v3p1-8b-instruct",
         "inference/v1",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
@@ -159,7 +180,7 @@ async fn replay_togetherai() {
         "tests/cassettes/togetherai",
         "meta-llama/Llama-3.1-8B-Instruct-Turbo",
         "v1",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
@@ -170,20 +191,14 @@ async fn replay_moonshotai() {
         "tests/cassettes/moonshotai",
         "moonshot-v1-8k",
         "v1",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
 
 #[tokio::test]
 async fn replay_copilot() {
-    replay_openai_compat(
-        "tests/cassettes/copilot",
-        "gpt-4o",
-        "",
-        OpenAICompatProfile::full(),
-    )
-    .await;
+    replay_openai_compat("tests/cassettes/copilot", "gpt-4o", "", Kind::Generic).await;
 }
 
 #[tokio::test]
@@ -192,7 +207,7 @@ async fn replay_baseten() {
         "tests/cassettes/baseten",
         "meta-llama/Llama-3.1-8B-Instruct",
         "v1",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
@@ -203,7 +218,7 @@ async fn replay_deepinfra() {
         "tests/cassettes/deepinfra",
         "meta-llama/Llama-3.1-8B-Instruct",
         "v1/openai",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
@@ -214,20 +229,14 @@ async fn replay_doubleword() {
         "tests/cassettes/doubleword",
         "Qwen/Qwen3.5-9B",
         "v1",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
 
 #[tokio::test]
 async fn replay_github() {
-    replay_openai_compat(
-        "tests/cassettes/github",
-        "gpt-4o",
-        "",
-        OpenAICompatProfile::full(),
-    )
-    .await;
+    replay_openai_compat("tests/cassettes/github", "gpt-4o", "", Kind::Generic).await;
 }
 
 #[tokio::test]
@@ -236,7 +245,7 @@ async fn replay_llamafile() {
         "tests/cassettes/llamafile",
         "llama3.2:latest",
         "v1",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
@@ -247,7 +256,7 @@ async fn replay_lmstudio() {
         "tests/cassettes/lmstudio",
         "llama-3.2-3b-instruct",
         "v1",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
@@ -258,20 +267,14 @@ async fn replay_mistralrs() {
         "tests/cassettes/mistralrs",
         "Qwen/Qwen3-4B",
         "v1",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
 
 #[tokio::test]
 async fn replay_ollama() {
-    replay_openai_compat(
-        "tests/cassettes/ollama",
-        "qwen3:4b",
-        "v1",
-        OpenAICompatProfile::full(),
-    )
-    .await;
+    replay_openai_compat("tests/cassettes/ollama", "qwen3:4b", "v1", Kind::Generic).await;
 }
 
 #[tokio::test]
@@ -280,7 +283,7 @@ async fn replay_sambanova() {
         "tests/cassettes/sambanova",
         "Meta-Llama-3.1-8B-Instruct",
         "v1",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
@@ -291,20 +294,14 @@ async fn replay_siliconflow() {
         "tests/cassettes/siliconflow",
         "Qwen/Qwen2.5-7B-Instruct",
         "v1",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
 
 #[tokio::test]
 async fn replay_vercel() {
-    replay_openai_compat(
-        "tests/cassettes/vercel",
-        "gpt-4o",
-        "v1",
-        OpenAICompatProfile::full(),
-    )
-    .await;
+    replay_openai_compat("tests/cassettes/vercel", "gpt-4o", "v1", Kind::Generic).await;
 }
 
 #[tokio::test]
@@ -313,7 +310,7 @@ async fn replay_zai() {
         "tests/cassettes/zai",
         "glm-4.7",
         "api/paas/v4",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
@@ -324,7 +321,7 @@ async fn replay_alibaba() {
         "tests/cassettes/alibaba",
         "qwen-plus",
         "compatible-mode/v1",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
@@ -335,7 +332,7 @@ async fn replay_bytedance() {
         "tests/cassettes/bytedance",
         "doubao-pro-32k",
         "api/v3",
-        OpenAICompatProfile::full(),
+        Kind::Generic,
     )
     .await;
 }
@@ -427,12 +424,14 @@ async fn replay_gemini() {
 
     // Use the OpenAI-compatible endpoint — model is in the body,
     // so replay can score and match correctly.
-    let provider = OpenAIConfigProvider::new(
-        OpenAIConfig::new("test-key")
-            .with_base_url(format!("{}/v1beta/openai", server.uri()))
-            .with_provider("google"),
-    );
-    let model = provider.model("gemini-2.5-pro-preview-05-06");
+    let provider = create_openai_compatible(OpenAICompatibleProviderSettings {
+        name: "google".to_string(),
+        base_url: format!("{}/v1beta/openai", server.uri()),
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.chat("gemini-2.5-pro-preview-05-06");
 
     let result = generate_text(&model, "Hello", GenerateTextOptions::default())
         .await

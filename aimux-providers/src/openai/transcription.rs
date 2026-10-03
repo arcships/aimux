@@ -32,7 +32,6 @@ use aimux_core::transcription_model::{
 
 use aimux_provider_utils::{HttpBody, MultipartForm, media_type_to_extension};
 
-use super::OpenAIConfig;
 use super::config::OpenAIModelConfig;
 
 // ── Language map ────────────────────────────────────────────────────────────
@@ -222,14 +221,6 @@ pub struct OpenAITranscriptionModel {
 }
 
 impl OpenAITranscriptionModel {
-    /// A transcription model configured through the transitional
-    /// [`OpenAIConfig`] builder. The native package builds models through
-    /// [`OpenAIProvider::transcription`](super::OpenAIProvider::transcription).
-    #[must_use]
-    pub fn new(model_id: String, config: OpenAIConfig) -> Self {
-        Self::from_config(model_id, config.into_model_config("transcription"))
-    }
-
     pub(crate) fn from_config(model_id: String, config: OpenAIModelConfig) -> Self {
         Self { model_id, config }
     }

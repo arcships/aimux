@@ -43,7 +43,6 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
 
-use super::OpenAIConfig;
 use super::config::OpenAIModelConfig;
 
 /// An OpenAI Responses API language model.
@@ -51,22 +50,14 @@ use super::config::OpenAIModelConfig;
 /// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use
 /// the process-wide shared `Client` internally (RFC-0009 §4.1).
 ///
-/// Created via `OpenAIResponsesProvider` or
-/// directly with [`OpenAIResponsesModel::new`].
+/// Created with
+/// [`OpenAIProvider::responses`](crate::openai::OpenAIProvider::responses).
 pub struct OpenAIResponsesModel {
     model_id: String,
     config: OpenAIModelConfig,
 }
 
 impl OpenAIResponsesModel {
-    /// A Responses model configured through the transitional [`OpenAIConfig`]
-    /// builder. The native package builds models through
-    /// [`OpenAIProvider::responses`](super::OpenAIProvider::responses).
-    #[must_use]
-    pub fn new(model_id: String, config: OpenAIConfig) -> Self {
-        Self::from_config(model_id, config.into_model_config("responses"))
-    }
-
     pub(crate) fn from_config(model_id: String, config: OpenAIModelConfig) -> Self {
         Self { model_id, config }
     }

@@ -16,7 +16,6 @@ use aimux_core::shared::FileBytes;
 
 use aimux_provider_utils::HttpBody;
 
-use super::OpenAIConfig;
 use super::config::OpenAIModelConfig;
 
 /// OpenAI provider-specific file upload options.
@@ -94,14 +93,6 @@ pub struct OpenAIFiles {
 }
 
 impl OpenAIFiles {
-    /// A files interface configured through the transitional [`OpenAIConfig`]
-    /// builder. The native package builds it through
-    /// [`OpenAIProvider::files`](super::OpenAIProvider::files).
-    #[must_use]
-    pub fn new(config: OpenAIConfig) -> Self {
-        Self::from_config(config.into_model_config("files"))
-    }
-
     pub(crate) fn from_config(config: OpenAIModelConfig) -> Self {
         Self { config }
     }
