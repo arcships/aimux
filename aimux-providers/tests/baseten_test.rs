@@ -2,7 +2,7 @@
 //!
 //! Translated from `packages/baseten/src/baseten-provider.unit.test.ts`.
 //!
-//! Baseten is a thin OpenAI-compatible wrapper over [`OpenAIProvider`]. The TS
+//! Baseten is a thin OpenAI-compatible wrapper over [`OpenAIConfigProvider`]. The TS
 //! suite is almost entirely provider-configuration unit tests (mocked
 //! constructor calls asserting the base URL, env var, headers, and model-URL
 //! routing). The Rust wrapper exposes the same configuration surface, so these

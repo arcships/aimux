@@ -26,7 +26,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 
-use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
+use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIConfigProvider};
 
 /// One entry of `provider-registry.json` (registry slice).
 #[derive(Debug, Clone, Deserialize)]
@@ -461,7 +461,7 @@ fn resolve_provider(
     name: &str,
     api_key: Option<String>,
     options: Option<ProviderOptions>,
-) -> Result<Arc<OpenAIProvider>, AiMuxError> {
+) -> Result<Arc<OpenAIConfigProvider>, AiMuxError> {
     // 1. Runtime overlay (RFC-0020) — registered entries take precedence.
     let resolved = if let Some(ext) = overlays().read().unwrap().get(name) {
         ResolvedEntry::from_external(ext)
@@ -493,25 +493,20 @@ fn resolve_provider(
 
     // Resolve the api key. Priority: explicit parameter > entry-level api_key
     // (supports "env:VAR" references) > entry env_var (read from environment).
-    let (key, source) = resolve_key(&resolved, api_key)?;
+    let key = resolve_key(&resolved, api_key)?;
 
-    let mut config = build_resolved_config(&resolved, key, options);
-    config = config.with_api_key_source(source.as_deref());
-    Ok(Arc::new(OpenAIProvider::new(config)))
+    let config = build_resolved_config(&resolved, key, options);
+    Ok(Arc::new(OpenAIConfigProvider::new(config)))
 }
 
-/// Resolve the api key for a [`ResolvedEntry`]. Returns `(key, source)` where
-/// `source` is the origin tag for RFC-0023 replay reconstruction.
+/// Resolve the api key for a [`ResolvedEntry`].
 ///
 /// Priority: explicit `api_key` parameter > entry-level `api_key` field
 /// (supports `"env:VAR"` references, resolved against the environment) >
 /// entry `env_var` (read from the environment via [`load_api_key`]).
-fn resolve_key(
-    entry: &ResolvedEntry,
-    api_key: Option<String>,
-) -> Result<(String, Option<String>), AiMuxError> {
+fn resolve_key(entry: &ResolvedEntry, api_key: Option<String>) -> Result<String, AiMuxError> {
     if let Some(key) = api_key {
-        return Ok((key, Some("explicit".to_string())));
+        return Ok(key);
     }
     if let Some(entry_key) = &entry.api_key
         && !entry_key.is_empty()
@@ -530,9 +525,9 @@ fn resolve_key(
                     entry.name
                 ))
             })?;
-            return Ok((val, Some(format!("env:{var}"))));
+            return Ok(val);
         }
-        return Ok((entry_key.clone(), Some("explicit".to_string())));
+        return Ok(entry_key.clone());
     }
     if entry.env_var.is_empty() {
         return Err(AiMuxError::InvalidArgument(format!(
@@ -540,8 +535,7 @@ fn resolve_key(
             entry.name
         )));
     }
-    let key = aimux_provider_utils::load_api_key(None, &entry.env_var, &entry.display)?;
-    Ok((key, Some(format!("env:{}", entry.env_var))))
+    aimux_provider_utils::load_api_key(None, &entry.env_var, &entry.display)
 }
 
 /// Resolve a [`ResolvedEntry`] + per-call [`ProviderOptions`] into a fully-wired
@@ -569,9 +563,7 @@ fn build_resolved_config(
     }
     // TODO(A3): an external entry's `max_retries` is no longer read (retry is
     // call-level); reject it with InvalidArgument (RFC-0036 D-g).
-    if let Some(overrides) = &entry.body_overrides {
-        config = config.with_body_overrides(overrides.clone());
-    }
+    config.body_overrides = entry.body_overrides.clone();
 
     // Per-call ProviderOptions override on top.
     if let Some(opts) = options {

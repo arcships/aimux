@@ -33,7 +33,19 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
+
+/// A native OpenAI provider against `base_url`. The key is an explicit value,
+/// so the environment is never consulted.
+fn provider_with(api_key: &str, base_url: impl Into<String>) -> OpenAIProvider {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value(api_key.to_string())),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("settings are valid")
+}
 
 // -- helpers -----------------------------------------------------------------
 
@@ -183,8 +195,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let prompt = vec![
             LanguageModelPromptMessage {
@@ -232,8 +243,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let options = CallOptions {
             response_format: Some(aimux_core::options::ResponseFormat::Json {
@@ -268,8 +278,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let options = CallOptions {
             response_format: Some(aimux_core::options::ResponseFormat::Json {
@@ -295,8 +304,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("o1");
+        let model = provider_with("test-key", server.uri()).responses("o1");
 
         let prompt = vec![
             LanguageModelPromptMessage {
@@ -342,8 +350,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-5-mini");
+        let model = provider_with("test-key", server.uri()).responses("gpt-5-mini");
 
         let options = CallOptions {
             provider_options: Some({
@@ -372,8 +379,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let options = CallOptions {
             provider_options: Some({
@@ -401,8 +407,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let options = CallOptions {
             provider_options: Some({
@@ -429,8 +434,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let options = CallOptions {
             provider_options: Some({
@@ -460,8 +464,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let options = CallOptions {
             provider_options: Some({
@@ -498,8 +501,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("o3-mini");
+        let model = provider_with("test-key", server.uri()).responses("o3-mini");
 
         let options = CallOptions {
             provider_options: Some({
@@ -531,8 +533,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-5.1-codex-max");
+        let model = provider_with("test-key", server.uri()).responses("gpt-5.1-codex-max");
 
         let options = CallOptions {
             provider_options: Some({
@@ -559,8 +560,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let options = CallOptions {
             provider_options: Some({
@@ -586,8 +586,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let options = CallOptions {
             provider_options: Some({
@@ -613,8 +612,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let options = CallOptions {
             provider_options: Some({
@@ -640,8 +638,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let options = CallOptions {
             tools: Some(vec![Tool::from(weather_tool())]),
@@ -666,8 +663,7 @@ mod do_generate_request {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let options = CallOptions {
             top_k: Some(40.0),
@@ -697,8 +693,7 @@ mod do_generate_response {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -720,8 +715,7 @@ mod do_generate_response {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -745,8 +739,7 @@ mod do_generate_response {
         let server = MockServer::start().await;
         mock_json_response(&server, text_response_body()).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -796,8 +789,7 @@ mod do_generate_response {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let err = model
             .do_generate(&default_options(test_prompt()))
@@ -848,8 +840,7 @@ mod do_generate_response {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let options = CallOptions {
             tools: Some(vec![Tool::from(weather_tool())]),
@@ -923,8 +914,7 @@ mod do_generate_response {
         )
         .await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("o3-mini");
+        let model = provider_with("test-key", server.uri()).responses("o3-mini");
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -985,8 +975,7 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &chunks).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1090,8 +1079,7 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &chunks).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let options = CallOptions {
             tools: Some(vec![Tool::from(weather_tool())]),
@@ -1197,8 +1185,7 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &chunks).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("o3-mini");
+        let model = provider_with("test-key", server.uri()).responses("o3-mini");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1268,8 +1255,7 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &chunks).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("o3-mini");
+        let model = provider_with("test-key", server.uri()).responses("o3-mini");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1338,8 +1324,7 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &chunks).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("o3-mini");
+        let model = provider_with("test-key", server.uri()).responses("o3-mini");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1394,8 +1379,7 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &chunks).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1449,8 +1433,7 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &chunks).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("o3-mini");
+        let model = provider_with("test-key", server.uri()).responses("o3-mini");
 
         let options = CallOptions {
             provider_options: Some({
@@ -1494,8 +1477,7 @@ mod do_stream {
         ]);
         mock_sse_response(&server, &chunks).await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
+        let model = provider_with("test-key", server.uri()).responses("gpt-4o");
 
         let result = model
             .do_stream(&default_options(test_prompt()))

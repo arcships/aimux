@@ -10,12 +10,15 @@ the [API overview](../API.md).
 
 ```rust
 use aimux_core::prelude::*;
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::{OpenAIProviderSettings, create_openai};
 
 #[tokio::main]
 async fn main() -> Result<(), AiMuxError> {
-    let provider = OpenAIProvider::new(OpenAIConfig::new("sk-..."));
-    let model = provider.model("gpt-4o");
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("sk-...".to_string().into()),
+        ..Default::default()
+    })?;
+    let model = provider.chat("gpt-4o");
     let result = generate_text(&model, "What is Rust?", GenerateTextOptions::default()).await?;
     println!("{}", result.text);
     Ok(())
@@ -30,7 +33,7 @@ All 251 built-in OpenAI-compatible providers are registry-backed: no per-provide
 > **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
 > (`AnthropicProvider::new(..)`); custom endpoints →
-> `ProviderOptions.base_url` / `OpenAIConfig::with_base_url`.
+> `ProviderOptions.base_url` / `OpenAIProviderSettings::base_url`.
 > Full list: [providers.md](providers.md).
 
 ```rust
@@ -300,7 +303,7 @@ The user-facing API consists of the `generate_text()` / `stream_text()` free fun
 > `provider.files()`, `provider.reranking_model(...)`,
 > `provider.search_model(...)`, `provider.video(...)`) are **inherent methods
 > on each provider struct**, not trait methods — they exist only on providers
-> that support the feature (e.g. `OpenAIProvider` has `embedding_model` /
+> that support the feature (e.g. `OpenAIProvider` has `embedding` /
 > `speech` / `image` / `transcription` / `files`; `CohereProvider` has
 > `embedding_model` / `reranking_model`; `BedrockProvider` has `image`).
 

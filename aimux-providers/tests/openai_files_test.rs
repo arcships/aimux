@@ -15,7 +15,19 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
 use aimux_core::shared::{FileBytes, SharedProviderOptions};
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
+
+/// A native OpenAI provider against `base_url`. The key is an explicit value,
+/// so the environment is never consulted.
+fn provider_with(api_key: &str, base_url: impl Into<String>) -> OpenAIProvider {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value(api_key.to_string())),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("settings are valid")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -35,8 +47,7 @@ fn file_response_body(id: &str) -> Value {
 
 /// Build an `OpenAIProvider` pointing at the mock server.
 fn provider(server: &MockServer) -> OpenAIProvider {
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    OpenAIProvider::new(config)
+    provider_with("test-api-key", server.uri())
 }
 
 /// Build `UploadFileCallOptions` with binary data and the given provider options.
@@ -204,12 +215,20 @@ async fn should_pass_auth_headers() {
     let mut extra_headers = HashMap::new();
     extra_headers.insert("Custom-Header".to_string(), "custom-value".to_string());
 
-    let config = OpenAIConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_org_id("test-org")
-        .with_project("test-project")
-        .with_headers(extra_headers);
-    let provider = OpenAIProvider::new(config);
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri()),
+        organization: Some("test-org".to_string()),
+        project: Some("test-project".to_string()),
+        headers: Some(
+            extra_headers
+                .into_iter()
+                .map(|(k, v)| (k, Some(v)))
+                .collect(),
+        ),
+        ..Default::default()
+    })
+    .unwrap();
     let files = provider.files();
 
     let mut po = HashMap::new();
@@ -273,10 +292,15 @@ async fn should_handle_base64_string_data() {
 
 #[tokio::test]
 async fn should_set_provider() {
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-api-key"));
-    let files = provider.files();
+    let provider = create_openai(OpenAIProviderSettings::default()).unwrap();
+    assert_eq!(provider.files().provider(), "openai.files");
 
-    assert_eq!(files.provider(), "openai.files");
+    let named = create_openai(OpenAIProviderSettings {
+        name: Some("proxy".to_string()),
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(named.files().provider(), "proxy.files");
 }
 
 /// A transient 503 followed by 200 must succeed: `upload_file` retries the
@@ -301,8 +325,7 @@ async fn transient_failure_is_retried_and_succeeds() {
         .mount(&server)
         .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let files = provider.files();
 
     let result = files.upload_file(&upload_options(None)).await.unwrap();

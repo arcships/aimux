@@ -30,11 +30,23 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::stream_part::StreamPart;
+use aimux_provider_utils::Resolvable;
 use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
-use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use futures::StreamExt;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+/// A native OpenAI provider against `base_url`. The key is an explicit value,
+/// so the environment is never consulted.
+fn provider_with(api_key: &str, base_url: impl Into<String>) -> OpenAIProvider {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value(api_key.to_string())),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("settings are valid")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -78,8 +90,7 @@ mod openai_generate_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        OpenAIProvider::new(config).model("gpt-4o")
+        provider_with("test-api-key", server.uri()).chat("gpt-4o")
     }
 
     /// TS response-handler: 401 → AuthenticationError.
@@ -216,8 +227,7 @@ mod openai_stream_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        OpenAIProvider::new(config).model("gpt-4o")
+        provider_with("test-api-key", server.uri()).chat("gpt-4o")
     }
 
     /// A non-success HTTP status on the stream endpoint makes `do_stream`

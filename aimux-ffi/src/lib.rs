@@ -78,7 +78,7 @@ use aimux_providers::bedrock::{BedrockProvider, BedrockProviderConfig};
 use aimux_providers::cohere::{CohereConfig, CohereProvider};
 use aimux_providers::google::{GoogleConfig, GoogleProvider};
 use aimux_providers::mistral::{MistralConfig, MistralProvider};
-use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
 use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
 use aimux_providers::vertex::{VertexProvider, VertexProviderConfig};
 use aimux_providers::xai::{XAIConfig, XAIProvider};
@@ -1053,6 +1053,20 @@ fn invoke_stream_callback(callback_name: &str, f: impl FnOnce()) -> Result<(), F
 // C ABI: provider constructors
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// An OpenAI provider for a key handed over the C ABI. The key is an explicit
+/// value, so an empty string is sent as given and never falls back to
+/// `OPENAI_API_KEY`.
+fn openai_provider(
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<aimux_providers::openai::OpenAIProvider, AiMuxError> {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        base_url,
+        ..Default::default()
+    })
+}
+
 /// Create an OpenAI model instance. AiMuxError: invalid model id.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_openai_new(
@@ -1062,7 +1076,7 @@ pub extern "C" fn aimux_openai_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let m = OpenAIProvider::new(OpenAIConfig::new(api_key)).language_model(&model_id)?;
+        let m = openai_provider(api_key, None)?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1079,11 +1093,8 @@ pub extern "C" fn aimux_openai_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = OpenAIConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let m = OpenAIProvider::new(config).language_model(&model_id)?;
+        let provider = openai_provider(api_key, parse_base_url(base_url)?)?;
+        let m = provider.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -2182,7 +2193,7 @@ pub extern "C" fn aimux_openai_embedding_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).embedding_model(&model_id);
+        let model = openai_provider(api_key, None)?.embedding(&model_id);
         Ok(intern_handle(HandleEntry::Embedding(Arc::new(model))))
     })
 }
@@ -2196,11 +2207,8 @@ pub extern "C" fn aimux_openai_embedding_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = OpenAIConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let model = OpenAIProvider::new(config).embedding_model(&model_id);
+        let provider = openai_provider(api_key, parse_base_url(base_url)?)?;
+        let model = provider.embedding(&model_id);
         Ok(intern_handle(HandleEntry::Embedding(Arc::new(model))))
     })
 }
@@ -2308,7 +2316,7 @@ pub extern "C" fn aimux_openai_speech_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).speech(&model_id);
+        let model = openai_provider(api_key, None)?.speech(&model_id);
         Ok(intern_handle(HandleEntry::Speech(Arc::new(model))))
     })
 }
@@ -2322,11 +2330,8 @@ pub extern "C" fn aimux_openai_speech_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = OpenAIConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let model = OpenAIProvider::new(config).speech(&model_id);
+        let provider = openai_provider(api_key, parse_base_url(base_url)?)?;
+        let model = provider.speech(&model_id);
         Ok(intern_handle(HandleEntry::Speech(Arc::new(model))))
     })
 }
@@ -2361,7 +2366,7 @@ pub extern "C" fn aimux_openai_image_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).image(&model_id);
+        let model = openai_provider(api_key, None)?.image(&model_id);
         Ok(intern_handle(HandleEntry::Image(Arc::new(model))))
     })
 }
@@ -2375,11 +2380,8 @@ pub extern "C" fn aimux_openai_image_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = OpenAIConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let model = OpenAIProvider::new(config).image(&model_id);
+        let provider = openai_provider(api_key, parse_base_url(base_url)?)?;
+        let model = provider.image(&model_id);
         Ok(intern_handle(HandleEntry::Image(Arc::new(model))))
     })
 }
@@ -2443,7 +2445,7 @@ pub extern "C" fn aimux_openai_transcription_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).transcription(&model_id);
+        let model = openai_provider(api_key, None)?.transcription(&model_id);
         Ok(intern_handle(HandleEntry::Transcription(Arc::new(model))))
     })
 }
@@ -2457,11 +2459,8 @@ pub extern "C" fn aimux_openai_transcription_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let mut config = OpenAIConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let model = OpenAIProvider::new(config).transcription(&model_id);
+        let provider = openai_provider(api_key, parse_base_url(base_url)?)?;
+        let model = provider.transcription(&model_id);
         Ok(intern_handle(HandleEntry::Transcription(Arc::new(model))))
     })
 }
@@ -2701,7 +2700,7 @@ pub extern "C" fn aimux_openai_files_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let api_key = str_arg(api_key, "api_key")?;
-        let files = OpenAIProvider::new(OpenAIConfig::new(api_key)).files();
+        let files = openai_provider(api_key, None)?.files();
         Ok(intern_handle(HandleEntry::Files(Arc::new(files))))
     })
 }
@@ -2714,11 +2713,8 @@ pub extern "C" fn aimux_openai_files_new_with_base(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let api_key = str_arg(api_key, "api_key")?;
-        let mut config = OpenAIConfig::new(api_key);
-        if let Some(url) = parse_base_url(base_url)? {
-            config = config.with_base_url(url);
-        }
-        let files = OpenAIProvider::new(config).files();
+        let provider = openai_provider(api_key, parse_base_url(base_url)?)?;
+        let files = provider.files();
         Ok(intern_handle(HandleEntry::Files(Arc::new(files))))
     })
 }

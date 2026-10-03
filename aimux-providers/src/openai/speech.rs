@@ -10,8 +10,6 @@
 //! bytes in the response body. The `language` option is not supported and produces
 //! an `unsupported` warning.
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -21,9 +19,8 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use aimux_provider_utils::HttpRequest;
-
 use super::OpenAIConfig;
+use super::config::OpenAIModelConfig;
 
 /// The output formats accepted by the OpenAI TTS API.
 const SUPPORTED_OUTPUT_FORMATS: &[&str] = &["mp3", "opus", "aac", "flac", "wav", "pcm"];
@@ -33,43 +30,20 @@ const SUPPORTED_OUTPUT_FORMATS: &[&str] = &["mp3", "opus", "aac", "flac", "wav",
 /// Works with any OpenAI-compatible `/audio/speech` endpoint.
 pub struct OpenAISpeechModel {
     model_id: String,
-    config: OpenAIConfig,
+    config: OpenAIModelConfig,
 }
 
 impl OpenAISpeechModel {
+    /// A speech model configured through the transitional [`OpenAIConfig`]
+    /// builder. The native package builds models through
+    /// [`OpenAIProvider::speech`](super::OpenAIProvider::speech).
     #[must_use]
     pub fn new(model_id: String, config: OpenAIConfig) -> Self {
+        Self::from_config(model_id, config.into_model_config("speech"))
+    }
+
+    pub(crate) fn from_config(model_id: String, config: OpenAIModelConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(ref org) = self.config.org_id {
-            headers.insert("OpenAI-Organization".to_string(), org.clone());
-        }
-        if let Some(ref project) = self.config.project {
-            headers.insert("OpenAI-Project".to_string(), project.clone());
-        }
-        // Config-level extra headers (lowest priority after auth/org/project).
-        if let Some(ref config_headers) = self.config.headers {
-            for (k, v) in config_headers {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/audio/speech", self.config.base_url)
     }
 }
 
@@ -86,16 +60,16 @@ impl SpeechModel for OpenAISpeechModel {
     async fn do_generate(&self, options: &SpeechCallOptions) -> Result<SpeechResult, AiMuxError> {
         let (body, warnings) = build_request_body_and_warnings(options, &self.model_id)?;
 
-        let headers = self.build_headers(options.headers.as_ref());
-
-        let header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let headers = self
+            .config
+            .request_headers(options.headers.as_ref())
+            .await?;
+        let body = self.config.transform_body(Value::Object(body));
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), header_list, options),
-            Value::Object(body.clone()),
+            self.config
+                .http_request(self.config.url("/audio/speech"), headers, options),
+            body.clone(),
             aimux_provider_utils::create_binary_response_handler(),
             super::openai_failed_response_handler(),
         )
@@ -112,9 +86,7 @@ impl SpeechModel for OpenAISpeechModel {
         Ok(SpeechResult {
             audio: AudioData::Binary(audio_bytes),
             warnings,
-            request: Some(SpeechRequest {
-                body: Some(Value::Object(body)),
-            }),
+            request: Some(SpeechRequest { body: Some(body) }),
             response: SpeechResponse {
                 timestamp: Some(timestamp),
                 model_id: Some(self.model_id.clone()),

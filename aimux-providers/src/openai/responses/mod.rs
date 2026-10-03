@@ -43,10 +43,8 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
 
-use aimux_provider_utils::HttpRequest;
-
 use super::OpenAIConfig;
-use responses_convert::build_header_list;
+use super::config::OpenAIModelConfig;
 
 /// An OpenAI Responses API language model.
 ///
@@ -57,37 +55,33 @@ use responses_convert::build_header_list;
 /// directly with [`OpenAIResponsesModel::new`].
 pub struct OpenAIResponsesModel {
     model_id: String,
-    config: OpenAIConfig,
+    config: OpenAIModelConfig,
 }
 
 impl OpenAIResponsesModel {
+    /// A Responses model configured through the transitional [`OpenAIConfig`]
+    /// builder. The native package builds models through
+    /// [`OpenAIProvider::responses`](super::OpenAIProvider::responses).
     #[must_use]
     pub fn new(model_id: String, config: OpenAIConfig) -> Self {
+        Self::from_config(model_id, config.into_model_config("responses"))
+    }
+
+    pub(crate) fn from_config(model_id: String, config: OpenAIModelConfig) -> Self {
         Self { model_id, config }
     }
 
-    pub(crate) fn build_headers(
+    /// The request headers for one call: provider headers resolved now, with
+    /// the per-call headers layered over them.
+    pub(crate) async fn request_headers(
         &self,
-        extra: Option<&HashMap<String, String>>,
-    ) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(ref org) = self.config.org_id {
-            headers.insert("OpenAI-Organization".to_string(), org.clone());
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
+        call_headers: Option<&HashMap<String, String>>,
+    ) -> Result<Vec<(String, String)>, AiMuxError> {
+        self.config.request_headers(call_headers).await
     }
 
     fn endpoint(&self) -> String {
-        format!("{}/responses", self.config.base_url)
+        self.config.url("/responses")
     }
 
     /// The provider-metadata key: `"azure"` when the provider string contains
@@ -107,19 +101,23 @@ impl LanguageModel for OpenAIResponsesModel {
         &self.config.provider
     }
 
+    fn supported_urls(&self) -> aimux_core::language_model::SupportedUrls {
+        self.config.supported_urls.clone()
+    }
+
     fn model_id(&self) -> &str {
         &self.model_id
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let headers = self.build_headers(options.headers.as_ref());
+        let headers = self.request_headers(options.headers.as_ref()).await?;
         let request_result = build_responses_request_body(&self.model_id, options, false);
-        let body = request_result.body;
+        let body = self.config.transform_body(request_result.body);
         let provider_key = self.provider_options_name().to_string();
 
         let endpoint = self.endpoint();
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(endpoint.clone(), build_header_list(&headers), options),
+            self.config.http_request(endpoint.clone(), headers, options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             super::openai_failed_response_handler(),
@@ -146,9 +144,9 @@ impl LanguageModel for OpenAIResponsesModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let headers = self.build_headers(options.headers.as_ref());
+        let headers = self.request_headers(options.headers.as_ref()).await?;
         let request_result = build_responses_request_body(&self.model_id, options, true);
-        let body = request_result.body;
+        let body = self.config.transform_body(request_result.body);
         let warnings = request_result.warnings;
         let provider_key = self.provider_options_name().to_string();
 
@@ -164,7 +162,7 @@ impl LanguageModel for OpenAIResponsesModel {
 
         let endpoint = self.endpoint();
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(endpoint.clone(), build_header_list(&headers), options),
+            self.config.http_request(endpoint.clone(), headers, options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             super::openai_failed_response_handler(),

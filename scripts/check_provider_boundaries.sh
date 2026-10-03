@@ -7,6 +7,7 @@
 #      a provider hands the options to `HttpRequest::new(url, headers, options)`
 #      and lets the transport read what it needs.
 #   2. Names removed by the provider-factory rewrite stay removed.
+#   3. The OpenAI package keeps no builder-era `OpenAIConfig` reads.
 #
 # Provider-name literal rules arrive with the preset generator (A3); they are
 # deliberately absent here.
@@ -76,6 +77,19 @@ shared_client_hits="$(
         true
 )"
 violation 'shared_client() used outside aimux-provider-utils/src/fetch.rs' "$shared_client_hits"
+
+# ── Rule 3: the OpenAI package reads its settings only through the model config ─
+#
+# `openai/` has no `OpenAIConfig` field reads, builder-era names or `from_env`:
+# the credential is loaded in the request headers, the URL comes from the
+# config's `url` closure and provider-level body rewrites are
+# `transform_request_body`. (`OpenAIConfig` itself lives in
+# `aimux-providers/src/openai_legacy.rs` until the compat package replaces it.)
+rule3_hits="$(
+    grep -rnE 'config\.api_key\b|config\.base_url\b|body_overrides|api_key_source|from_env' \
+        aimux-providers/src/openai --include='*.rs' || true
+)"
+violation 'aimux-providers/src/openai reads builder-era OpenAIConfig state' "$rule3_hits"
 
 if [[ "$status" -eq 0 ]]; then
     echo 'provider boundaries: ok'

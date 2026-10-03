@@ -17,8 +17,9 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::types::{ReasoningEffort, Warning};
+use aimux_providers::body_merge::apply_body_overrides;
+use aimux_providers::openai::convert::build_request_body;
 use aimux_providers::openai::convert::build_request_body_with_warnings;
-use aimux_providers::openai::convert::{apply_body_overrides, build_request_body};
 use serde_json::{Value, json};
 
 fn user_prompt() -> LanguageModelPrompt {
@@ -171,7 +172,7 @@ fn no_body_overrides_leaves_body_unchanged() {
 #[tokio::test]
 async fn provider_body_overrides_reach_the_request() {
     use aimux_core::language_model::LanguageModel;
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+    use aimux_providers::openai::{OpenAIConfig, OpenAIConfigProvider};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -193,10 +194,9 @@ async fn provider_body_overrides_reach_the_request() {
         .mount(&server)
         .await;
 
-    let config = OpenAIConfig::new("test-key")
-        .with_base_url(server.uri())
-        .with_body_overrides(json!({ "enable_thinking": false, "temperature": null }));
-    let model = OpenAIProvider::new(config).model("gpt-4o");
+    let mut config = OpenAIConfig::new("test-key").with_base_url(server.uri());
+    config.body_overrides = Some(json!({ "enable_thinking": false, "temperature": null }));
+    let model = OpenAIConfigProvider::new(config).model("gpt-4o");
     let mut options = CallOptions::new(user_prompt());
     options.temperature = Some(0.7);
     model.do_generate(&options).await.unwrap();
@@ -209,6 +209,68 @@ async fn provider_body_overrides_reach_the_request() {
         sent.get("temperature").is_none(),
         "null deletes the standard field: {sent}"
     );
+}
+
+/// The native package expresses the same provider-level need as a
+/// `transform_request_body` closure: called once per request, after the body
+/// is serialized, for `do_generate` and `do_stream` alike.
+#[tokio::test]
+async fn native_transform_request_body_reaches_the_request() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use aimux_core::language_model::LanguageModel;
+    use aimux_provider_utils::Resolvable;
+    use aimux_providers::body_merge::deep_merge_json;
+    use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 1711115037,
+            "model": "gpt-4o",
+            "choices": [{
+                "index": 0,
+                "message": { "role": "assistant", "content": "hi" },
+                "finish_reason": "stop"
+            }],
+            "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 }
+        })))
+        .mount(&server)
+        .await;
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = calls.clone();
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri()),
+        transform_request_body: Some(Arc::new(move |mut body: Value| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            deep_merge_json(
+                &mut body,
+                &json!({ "enable_thinking": false, "temperature": null }),
+            );
+            body
+        })),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.chat("gpt-4o");
+    let mut options = CallOptions::new(user_prompt());
+    options.temperature = Some(0.7);
+    model.do_generate(&options).await.unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "once per request");
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    let sent: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(sent["enable_thinking"], json!(false));
+    assert!(sent.get("temperature").is_none(), "{sent}");
 }
 
 // ── max_retries ──────────────────────────────────────────────────────────────

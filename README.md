@@ -148,14 +148,12 @@ console.log(result.text)
 
 ```rust
 use aimux_core::prelude::*;
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::openai::openai;
 
 #[tokio::main]
 async fn main() -> Result<(), AiMuxError> {
-    let provider = OpenAIProvider::new(
-        OpenAIConfig::new(std::env::var("OPENAI_API_KEY")?)
-    );
-    let model = provider.model("gpt-4o");
+    // The default provider loads OPENAI_API_KEY when a request is made.
+    let model = openai().chat("gpt-4o");
 
     let result = generate_text(
         &model,

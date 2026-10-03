@@ -103,7 +103,16 @@ fn build_model(
     }
 
     match provider {
-        "openai" => Ok(native!(openai, OpenAIConfig, OpenAIProvider)),
+        "openai" => {
+            let provider = aimux_providers::openai::create_openai(
+                aimux_providers::openai::OpenAIProviderSettings {
+                    api_key: Some(api_key.clone().into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Arc::new(provider.chat(model_id)))
+        }
         "anthropic" => Ok(native!(anthropic, AnthropicConfig, AnthropicProvider)),
         "mistral" => Ok(native!(mistral, MistralConfig, MistralProvider)),
         "xai" => Ok(native!(xai, XAIConfig, XAIProvider)),
@@ -223,8 +232,10 @@ pub async fn run(args: &ProviderArgs) -> anyhow::Result<Option<serde_json::Value
         );
     }
 
+    // Traces carry the model's own provider string (`openai.chat`, `groq`, ...),
+    // which is not the name the user typed on the command line.
     let stats = store.aggregate(&TraceFilter {
-        provider: Some(args.provider.clone()),
+        provider: Some(model.provider().to_string()),
         model: None,
         session_id: Some("aimux-cli-probe".to_string()),
         since_unix_ms: None,

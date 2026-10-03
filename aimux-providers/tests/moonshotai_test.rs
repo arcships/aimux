@@ -4,7 +4,7 @@
 //! - `packages/moonshotai/src/moonshotai-provider.test.ts`
 //! - `packages/moonshotai/src/convert-moonshotai-chat-usage.test.ts`
 //!
-//! Moonshot AI is a thin OpenAI-compatible wrapper over [`OpenAIProvider`].
+//! Moonshot AI is a thin OpenAI-compatible wrapper over [`OpenAIConfigProvider`].
 //! The TS suite has a custom usage converter that recognises a **top-level**
 //! `cached_tokens` field (Moonshot's wire format) and prioritises it over the
 //! nested `prompt_tokens_details.cached_tokens`. The shared OpenAI

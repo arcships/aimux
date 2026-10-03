@@ -35,7 +35,17 @@ pub fn build_model(
     }
 
     match provider {
-        "openai" => native!(openai, OpenAIConfig, OpenAIProvider, "OPENAI_API_KEY"),
+        "openai" => {
+            let key = native_key(provider, "OPENAI_API_KEY", api_key.clone())?;
+            let provider = aimux_providers::openai::create_openai(
+                aimux_providers::openai::OpenAIProviderSettings {
+                    api_key: Some(key.into()),
+                    base_url: base_url.map(str::to_string),
+                    ..Default::default()
+                },
+            )?;
+            Ok(Arc::new(provider.chat(model_id)))
+        }
         "anthropic" => native!(
             anthropic,
             AnthropicConfig,

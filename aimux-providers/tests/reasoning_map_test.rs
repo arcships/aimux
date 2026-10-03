@@ -20,8 +20,9 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::types::{ReasoningEffort, Warning};
+use aimux_providers::body_merge::apply_body_overrides;
 use aimux_providers::openai::OpenAICompatProfile;
-use aimux_providers::openai::convert::{apply_body_overrides, build_request_body_with_warnings};
+use aimux_providers::openai::convert::build_request_body_with_warnings;
 use aimux_providers::provider_registry_entry;
 use serde_json::json;
 

@@ -419,18 +419,28 @@ impl StreamIterator {
 // Provider constructors
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// An OpenAI provider for an explicit key handed over by the host, with an
+/// optional base URL. The key is an explicit value (`""` included), so it never
+/// falls back to `OPENAI_API_KEY`.
+pub(crate) fn openai_provider(
+    api_key: &str,
+    base_url: Option<&str>,
+) -> PyResult<aimux_providers::openai::OpenAIProvider> {
+    aimux_providers::openai::create_openai(aimux_providers::openai::OpenAIProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))
+}
+
 /// Create an OpenAI model instance.
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn openai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
     use aimux_core::provider::Provider;
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = OpenAIProvider::new(config);
+    let provider = openai_provider(api_key, base_url)?;
     let model = provider
         .language_model(model_id)
         .map_err(|e| to_py_err(&e))?;

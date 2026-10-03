@@ -301,7 +301,7 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `cohere` | `CohereConfig` / `CohereProvider` |
 | `google` | `GoogleConfig` / `GoogleProvider` |
 | `mistral` | `MistralConfig` / `MistralProvider` |
-| `openai` | `OpenAIConfig` / `OpenAIProvider` |
+| `openai` | `OpenAIProviderSettings` / `create_openai` / `OpenAIProvider` |
 | `vertex` | `VertexConfig` / `VertexProvider` |
 | `voyage` | `VoyageConfig` / `VoyageProvider` |
 | `codex` | `CodexConfig` / `CodexProvider` |
@@ -415,7 +415,7 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 |--------|--------------------|
 | `bedrock_mantle` | `BedrockMantleConfig` / `BedrockMantleProvider` |
 
-### Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers). Each wraps the shared OpenAIProvider against the Vertex AI MaaS OpenAPI endpoint, authenticating with a Google Cloud Bearer token — 10
+### Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers). Each wraps the shared OpenAIConfigProvider against the Vertex AI MaaS OpenAPI endpoint, authenticating with a Google Cloud Bearer token — 10
 
 | module | typed entry points |
 |--------|--------------------|

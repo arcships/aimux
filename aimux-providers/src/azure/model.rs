@@ -15,8 +15,8 @@
 //!    Entra ID). The two are mutually exclusive.
 //!
 //! The actual request/response conversion is shared with the OpenAI provider
-//! via [`crate::openai::model::execute_generate`] /
-//! [`crate::openai::model::execute_stream`].
+//! via `crate::openai::model::execute_generate` /
+//! `crate::openai::model::execute_stream`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -31,7 +31,9 @@ use aimux_core::options::CallOptions;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::result::{GenerateResult, StreamResult};
 
-use aimux_provider_utils::{load_api_key, with_user_agent_suffix, without_trailing_slash};
+use aimux_provider_utils::{
+    HttpRequest, load_api_key, with_user_agent_suffix, without_trailing_slash,
+};
 
 use crate::azure::responses::AzureResponsesModel;
 use crate::openai::model::{execute_generate, execute_stream};
@@ -478,8 +480,7 @@ impl LanguageModel for AzureModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
         execute_generate(
-            &self.endpoint(),
-            &headers,
+            HttpRequest::new(self.endpoint(), headers.into_iter().collect(), options),
             &self.deployment,
             options,
             "azure",
@@ -492,8 +493,7 @@ impl LanguageModel for AzureModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
         execute_stream(
-            &self.endpoint(),
-            &headers,
+            HttpRequest::new(self.endpoint(), headers.into_iter().collect(), options),
             &self.deployment,
             options,
             "azure",

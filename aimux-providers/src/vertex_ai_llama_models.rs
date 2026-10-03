@@ -14,14 +14,14 @@
 //! used by the native Vertex provider), sent as `Authorization: Bearer <token>`.
 //!
 //! Because the endpoint is OpenAI-compatible, this provider is a thin wrapper
-//! over [`OpenAIProvider`]: only the base URL,
+//! over [`OpenAIConfigProvider`]: only the base URL,
 //! the Bearer-token env var, and the provider name differ. The shared
-//! `OpenAIProvider` appends `/chat/completions` to the configured base URL.
+//! `OpenAIConfigProvider` appends `/chat/completions` to the configured base URL.
 //! Sample model ids: `"meta/llama-4-scout-17b-16e-instruct-maas"`, `"meta/llama-4-maverick-17b-128e-instruct-maas"`.
 
 use aimux_core::error::AiMuxError;
 
-use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIModel, OpenAIProvider};
+use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIConfigProvider, OpenAIModel};
 
 const PROVIDER_NAME: &str = "vertex_ai_llama_models";
 const TOKEN_ENV_VAR: &str = "GOOGLE_VERTEX_ACCESS_TOKEN";
@@ -106,12 +106,12 @@ impl VertexAiLlamaModelsConfig {
 
 /// Meta Llama Vertex AI MaaS provider — creates [`OpenAIModel`] instances pointed
 /// at the Vertex AI MaaS OpenAPI endpoint.
-pub struct VertexAiLlamaModelsProvider(OpenAIProvider);
+pub struct VertexAiLlamaModelsProvider(OpenAIConfigProvider);
 
 impl VertexAiLlamaModelsProvider {
     #[must_use]
     pub fn new(config: VertexAiLlamaModelsConfig) -> Self {
-        Self(OpenAIProvider::new(config.0))
+        Self(OpenAIConfigProvider::new(config.0))
     }
 
     /// Create a model instance for the given Vertex AI MaaS model id

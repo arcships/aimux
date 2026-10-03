@@ -33,13 +33,13 @@ use aimux_core::openai_output::{
     ChatCompletionChunk, OpenAiStreamOptions, encode_chunk_sse, to_chat_completion,
     to_chat_completion_stream,
 };
-use aimux_providers::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
+use aimux_providers::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIConfigProvider};
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/// Build an OpenAIProvider pointed at the replay server.
+/// Build an OpenAIConfigProvider pointed at the replay server.
 fn openai_provider(uri: &str) -> aimux_providers::openai::OpenAIModel {
-    let provider = OpenAIProvider::new(
+    let provider = OpenAIConfigProvider::new(
         OpenAIConfig::new("test-key")
             .with_base_url(format!("{uri}/v1"))
             .with_profile(OpenAICompatProfile::full()),
@@ -838,7 +838,7 @@ async fn cross_protocol_deepseek_with_reasoning() {
         .mount(&server)
         .await;
 
-    let provider = OpenAIProvider::new(
+    let provider = OpenAIConfigProvider::new(
         OpenAIConfig::new("test-key")
             .with_base_url(server.uri())
             .with_profile(OpenAICompatProfile::deepseek()),

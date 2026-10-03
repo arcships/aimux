@@ -4,11 +4,11 @@
 //! Chat Completions API at `http://127.0.0.1:8080/v1`. The `LOCALAI_BASE_URL` environment
 //! variable holds a *base URL* (not an API key); when unset, the default
 //! endpoint is used. A placeholder API key is sent in the `Authorization`
-//! header — the shared `OpenAIProvider` requires a non-empty key string.
+//! header — the shared `OpenAIConfigProvider` requires a non-empty key string.
 
 use aimux_core::error::AiMuxError;
 
-use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIModel, OpenAIProvider};
+use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIConfigProvider, OpenAIModel};
 
 const DEFAULT_BASE_URL: &str = "http://127.0.0.1:8080/v1";
 const ENV_VAR: &str = "LOCALAI_BASE_URL";
@@ -23,8 +23,7 @@ impl LocalaiConfig {
             OpenAIConfig::new(api_key)
                 .with_base_url(DEFAULT_BASE_URL)
                 .with_provider(PROVIDER_NAME)
-                .with_profile(OpenAICompatProfile::full())
-                .with_api_key_source(Some("none")),
+                .with_profile(OpenAICompatProfile::full()),
         )
     }
 
@@ -50,12 +49,12 @@ impl LocalaiConfig {
     }
 }
 
-pub struct LocalaiProvider(OpenAIProvider);
+pub struct LocalaiProvider(OpenAIConfigProvider);
 
 impl LocalaiProvider {
     #[must_use]
     pub fn new(config: LocalaiConfig) -> Self {
-        Self(OpenAIProvider::new(config.0))
+        Self(OpenAIConfigProvider::new(config.0))
     }
 
     #[must_use]

@@ -16,7 +16,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::ProviderDiscovery;
 use aimux_providers::catalogue;
-use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::openai::{OpenAIConfig, OpenAIConfigProvider};
 use aimux_providers::{ProviderOptions, provider_discovery, provider_handle};
 
 async fn mount_cassette_file(server: &MockServer, cassette_path: &Path) -> String {
@@ -63,7 +63,7 @@ async fn openai_provider_list_models() {
     let recorded_path = mount_cassette_file(&server, cassette).await;
     let base_url = base_url_for(&server.uri(), &recorded_path);
     let config = OpenAIConfig::new("test-key").with_base_url(base_url);
-    let provider = OpenAIProvider::new(config);
+    let provider = OpenAIConfigProvider::new(config);
     let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
     assert!(models.iter().any(|m| m.id == "gpt-4o"));
     assert!(models.iter().all(|m| m.owned_by.is_some()));
@@ -174,7 +174,7 @@ async fn list_models_malformed_response() {
         .mount(&server)
         .await;
     let config = OpenAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-    let provider = OpenAIProvider::new(config);
+    let provider = OpenAIConfigProvider::new(config);
     let err = provider.list_models().await.unwrap_err();
     assert!(matches!(
         err,
@@ -194,7 +194,7 @@ async fn list_models_empty_data() {
         .mount(&server)
         .await;
     let config = OpenAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-    let provider = OpenAIProvider::new(config);
+    let provider = OpenAIConfigProvider::new(config);
     let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
     assert!(models.is_empty());
 }
@@ -214,7 +214,7 @@ async fn list_models_http_error() {
         .mount(&server)
         .await;
     let config = OpenAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-    let provider = OpenAIProvider::new(config);
+    let provider = OpenAIConfigProvider::new(config);
     let err = provider.list_models().await.unwrap_err();
     assert!(!err.to_string().is_empty());
 }

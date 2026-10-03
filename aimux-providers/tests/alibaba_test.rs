@@ -5,7 +5,7 @@
 //! - `packages/alibaba/src/alibaba-chat-language-model.test.ts`
 //! - `packages/alibaba/src/convert-alibaba-usage.test.ts`
 //!
-//! Alibaba is a thin OpenAI-compatible wrapper over [`OpenAIProvider`]. The
+//! Alibaba is a thin OpenAI-compatible wrapper over [`OpenAIConfigProvider`]. The
 //! behaviours verified here are the ones the wrapper is responsible for:
 //!
 //! - Provider configuration: name, `ALIBABA_API_KEY` env var, custom API key,

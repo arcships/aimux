@@ -60,7 +60,7 @@ OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI,
 Anthropic-AWS — one constructor per provider: `openai(apiKey, model, baseUrl?)`
 / `anthropic(apiKey, model, baseUrl?)` (Node, Python), `NewOpenAI(apiKey,
 model)` (Go), `Model.openai(apiKey, modelId)` (Java, Kotlin, Flutter),
-`Aimux.openai(apiKey:modelId:)` (Swift), `OpenAIProvider::new(..)` (Rust).
+`Aimux.openai(apiKey:modelId:)` (Swift), `create_openai(..)` (Rust).
 Multimodal, local-inference and search providers have their own constructors
 too — full list: [reference.md](api/reference.md).
 

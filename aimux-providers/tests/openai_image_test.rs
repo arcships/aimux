@@ -21,7 +21,19 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs,
 };
 use aimux_core::shared::{AspectRatio, Size};
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
+
+/// A native OpenAI provider against `base_url`. The key is an explicit value,
+/// so the environment is never consulted.
+fn provider_with(api_key: &str, base_url: impl Into<String>) -> OpenAIProvider {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value(api_key.to_string())),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("settings are valid")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -134,8 +146,7 @@ async fn should_pass_the_model_and_the_settings() {
     let server = MockServer::start().await;
     mock_generations_response(&server, image_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("dall-e-3");
 
     let mut opts = options(PROMPT);
@@ -163,8 +174,7 @@ async fn should_map_provider_options_to_snake_case_for_generations() {
     let server = MockServer::start().await;
     mock_generations_response(&server, image_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -213,12 +223,20 @@ async fn should_pass_headers() {
         "provider-header-value".to_string(),
     );
 
-    let config = OpenAIConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_org_id("test-organization")
-        .with_project("test-project")
-        .with_headers(provider_headers);
-    let provider = OpenAIProvider::new(config);
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri()),
+        organization: Some("test-organization".to_string()),
+        project: Some("test-project".to_string()),
+        headers: Some(
+            provider_headers
+                .into_iter()
+                .map(|(k, v)| (k, Some(v)))
+                .collect(),
+        ),
+        ..Default::default()
+    })
+    .unwrap();
     let model = provider.image("dall-e-3");
 
     let mut opts = options(PROMPT);
@@ -266,8 +284,7 @@ async fn should_extract_the_generated_images() {
     let server = MockServer::start().await;
     mock_generations_response(&server, image_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("dall-e-3");
 
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
@@ -294,8 +311,7 @@ async fn should_return_warnings_for_unsupported_settings() {
     let server = MockServer::start().await;
     mock_generations_response(&server, image_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("dall-e-3");
 
     let mut opts = options(PROMPT);
@@ -330,8 +346,7 @@ async fn should_return_warnings_for_unsupported_settings() {
 /// TS: "should respect maxImagesPerCall setting"
 #[tokio::test]
 async fn should_respect_max_images_per_call_setting() {
-    let config = OpenAIConfig::new("test-api-key");
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", "http://127.0.0.1:1");
 
     let dall_e_2 = provider.image("dall-e-2");
     assert_eq!(dall_e_2.max_images_per_call(), Some(10));
@@ -357,8 +372,7 @@ async fn should_include_response_data_with_timestamp_model_id_and_headers() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("dall-e-3");
 
     let mut opts = options(PROMPT);
@@ -388,8 +402,7 @@ async fn should_use_real_date_when_no_custom_date_provider_is_specified() {
     let server = MockServer::start().await;
     mock_generations_response(&server, image_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("dall-e-3");
 
     let mut opts = options(PROMPT);
@@ -414,8 +427,7 @@ async fn should_not_include_response_format_for_gpt_image_1() {
     let server = MockServer::start().await;
     mock_generations_response(&server, image_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -439,8 +451,7 @@ async fn should_not_include_response_format_for_gpt_image_2() {
     let server = MockServer::start().await;
     mock_generations_response(&server, image_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-2");
 
     let mut opts = options(PROMPT);
@@ -461,8 +472,7 @@ async fn should_not_include_response_format_for_future_gpt_image_models() {
     let server = MockServer::start().await;
     mock_generations_response(&server, image_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-99");
 
     let mut opts = options(PROMPT);
@@ -483,8 +493,7 @@ async fn should_not_include_response_format_for_chatgpt_image_latest() {
     let server = MockServer::start().await;
     mock_generations_response(&server, image_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("chatgpt-image-latest");
 
     let mut opts = options(PROMPT);
@@ -505,8 +514,7 @@ async fn should_not_include_response_format_for_date_suffixed_gpt_image() {
     let server = MockServer::start().await;
     mock_generations_response(&server, image_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1.5-2025-12-16");
 
     let mut opts = options(PROMPT);
@@ -539,8 +547,7 @@ async fn should_handle_null_revised_prompt_responses() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -577,8 +584,7 @@ async fn should_include_response_format_for_dall_e_3() {
     let server = MockServer::start().await;
     mock_generations_response(&server, image_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("dall-e-3");
 
     let mut opts = options(PROMPT);
@@ -598,8 +604,7 @@ async fn should_return_image_meta_data() {
     let server = MockServer::start().await;
     mock_generations_response(&server, image_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("dall-e-3");
 
     let mut opts = options(PROMPT);
@@ -651,8 +656,7 @@ async fn should_map_openai_usage_to_usage() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -699,8 +703,7 @@ async fn should_distribute_input_token_details_evenly_across_images() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -731,8 +734,7 @@ async fn should_call_edits_endpoint_when_files_are_provided() {
     let server = MockServer::start().await;
     mock_edits_response(&server, image_edit_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -753,8 +755,7 @@ async fn should_send_image_as_form_data_with_uint8array_input() {
     let server = MockServer::start().await;
     mock_edits_response(&server, image_edit_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -807,8 +808,7 @@ async fn should_send_image_as_form_data_with_base64_string_input() {
     let server = MockServer::start().await;
     mock_edits_response(&server, image_edit_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -840,8 +840,7 @@ async fn should_send_multiple_images_as_form_data_array() {
     let server = MockServer::start().await;
     mock_edits_response(&server, image_edit_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -868,8 +867,7 @@ async fn should_pass_provider_options_in_form_data() {
     let server = MockServer::start().await;
     mock_edits_response(&server, image_edit_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -912,8 +910,7 @@ async fn should_map_provider_options_to_snake_case_for_edits() {
     let server = MockServer::start().await;
     mock_edits_response(&server, image_edit_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -962,8 +959,7 @@ async fn should_extract_the_edited_images_from_response() {
     let server = MockServer::start().await;
     mock_edits_response(&server, image_edit_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -995,8 +991,7 @@ async fn should_include_response_metadata_for_edited_images() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -1020,8 +1015,7 @@ async fn should_return_warnings_for_unsupported_settings_in_edit_mode() {
     let server = MockServer::start().await;
     mock_edits_response(&server, image_edit_response_body()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);
@@ -1068,8 +1062,7 @@ async fn should_return_usage_information_for_edited_images() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
+    let provider = provider_with("test-api-key", server.uri());
     let model = provider.image("gpt-image-1");
 
     let mut opts = options(PROMPT);

@@ -29,8 +29,8 @@ use aimux_providers::{
     CohereProvider, GoogleConfig, GoogleProvider, HuggingFaceConfig, HuggingFaceProvider,
     LlamafileConfig, LlamafileProvider, LmStudioConfig, LmStudioProvider, MistralConfig,
     MistralProvider, MistralrsConfig, MistralrsProvider, OllamaConfig, OllamaProvider,
-    OpenAIConfig, OpenAIProvider, OpenRouterConfig, OpenRouterProvider, ProviderOptions, XAIConfig,
-    XAIProvider, provider,
+    OpenAIConfig, OpenAIConfigProvider, OpenRouterConfig, OpenRouterProvider, ProviderOptions,
+    XAIConfig, XAIProvider, provider,
 };
 
 // 閳光偓閳光偓 helpers 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
@@ -197,11 +197,11 @@ mod anthropic_conformance {
 mod openai_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> OpenAIProvider {
+    fn make_provider(server: &MockServer) -> OpenAIConfigProvider {
         // Cassettes are recorded against /v1/responses; the responses model
         // appends `/responses` to the base URL, so base must include `/v1`.
         let config = OpenAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-        OpenAIProvider::new(config)
+        OpenAIConfigProvider::new(config)
     }
 
     #[tokio::test]
@@ -620,7 +620,7 @@ mod copilot_conformance {
     use super::*;
 
     fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
-        // Copilot's base URL has no `/v1` prefix; the OpenAIProvider appends
+        // Copilot's base URL has no `/v1` prefix; the OpenAIConfigProvider appends
         // `/chat/completions` directly, matching the cassette path
         // `/chat/completions`.
         provider(
@@ -671,7 +671,7 @@ mod doubleword_conformance {
     use super::*;
 
     fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
-        // Doubleword's base URL includes `/v1`; the OpenAIProvider appends
+        // Doubleword's base URL includes `/v1`; the OpenAIConfigProvider appends
         // `/chat/completions`, so we point at `<server>/v1` to match the
         // cassette path `/v1/chat/completions`.
         provider(
@@ -722,7 +722,7 @@ mod llamafile_conformance {
     use super::*;
 
     fn make_provider(server: &MockServer) -> LlamafileProvider {
-        // llamafile's base URL includes `/v1`; the OpenAIProvider appends
+        // llamafile's base URL includes `/v1`; the OpenAIConfigProvider appends
         // `/chat/completions`, so we point at `<server>/v1` to match the
         // cassette path `/v1/chat/completions`.
         let config = LlamafileConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
@@ -766,7 +766,7 @@ mod mistralrs_conformance {
     use super::*;
 
     fn make_provider(server: &MockServer) -> MistralrsProvider {
-        // mistral.rs's base URL includes `/v1`; the OpenAIProvider appends
+        // mistral.rs's base URL includes `/v1`; the OpenAIConfigProvider appends
         // `/chat/completions`, so we point at `<server>/v1` to match the
         // cassette path `/v1/chat/completions`.
         let config = MistralrsConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
@@ -1141,12 +1141,12 @@ mod ollama_conformance {
 mod chatgpt_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> OpenAIProvider {
+    fn make_provider(server: &MockServer) -> OpenAIConfigProvider {
         // Cassettes record paths under /backend-api/codex/responses; the
         // responses model appends `/responses` to the base URL.
         let config = OpenAIConfig::new("test-key")
             .with_base_url(format!("{}/backend-api/codex", server.uri()));
-        OpenAIProvider::new(config)
+        OpenAIConfigProvider::new(config)
     }
 
     #[tokio::test]
@@ -1216,7 +1216,7 @@ mod chatgpt_conformance {
 // Thin-wrapper conformance (OpenAI-compatible providers without real cassettes)
 //
 // alibaba / baseten / bytedance / deepinfra / fireworks / moonshotai /
-// togetherai / vercel are all thin wrappers around OpenAIProvider. Their
+// togetherai / vercel are all thin wrappers around OpenAIConfigProvider. Their
 // responses are byte-for-byte OpenAI Chat Completions, so cassettes are
 // derived from real OpenAI recordings (path + model rewritten). See
 // scripts/generate_thin_wrapper_cassettes.py.

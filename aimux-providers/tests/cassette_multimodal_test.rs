@@ -16,7 +16,7 @@ use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
 use aimux_core::image_model::ImageModel;
 use aimux_core::shared::FileBytes;
 use aimux_core::transcription_model::TranscriptionModel;
-use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::openai::{OpenAIConfig, OpenAIConfigProvider};
 
 const CASSETTE_DIR: &str = "tests/cassettes";
 
@@ -66,7 +66,7 @@ async fn cassette_openai_embedding_query() {
     let cass = load_cassette("openai", "TestOpenAI.test_query.json").expect("cassette should load");
     let (_server, base_url) = mount_single(&cass).await;
 
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
+    let provider = OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let model = provider.embedding_model("text-embedding-3-small");
 
     let opts = EmbeddingCallOptions::new("hello");
@@ -87,7 +87,7 @@ async fn cassette_openai_embedding_documents() {
         load_cassette("openai", "TestOpenAI.test_documents.json").expect("cassette should load");
     let (_server, base_url) = mount_single(&cass).await;
 
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
+    let provider = OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let model = provider.embedding_model("text-embedding-3-small");
 
     let opts = EmbeddingCallOptions {
@@ -112,7 +112,7 @@ async fn cassette_openai_embedding_error() {
         load_cassette("openai", "TestOpenAI.test_embed_error.json").expect("cassette should load");
     let (_server, base_url) = mount_single(&cass).await;
 
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
+    let provider = OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let model = provider.embedding_model("nonexistent");
 
     let opts = EmbeddingCallOptions::new("hello");
@@ -207,7 +207,7 @@ async fn cassette_openai_files_upload() {
         .await;
 
     let base_url = format!("{}/v1", server.uri());
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
+    let provider = OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let files = provider.files();
 
     let opts = UploadFileCallOptions::new(
@@ -251,7 +251,7 @@ async fn cassette_xai_image_generation() {
 
     // xAI is OpenAI-compatible — use OpenAI provider with xAI base_url
     let base_url = format!("{}/v1", server.uri());
-    let provider = OpenAIProvider::new(
+    let provider = OpenAIConfigProvider::new(
         OpenAIConfig::new("test-key")
             .with_base_url(base_url)
             .with_provider("xai"),
@@ -313,7 +313,7 @@ async fn cassette_transcription() {
 
     // OpenRouter is OpenAI-compatible
     let base_url = format!("{}/api/v1", server.uri());
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
+    let provider = OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let model = provider.transcription("whisper-1");
 
     use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions};

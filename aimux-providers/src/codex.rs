@@ -39,10 +39,10 @@ use aimux_core::types::Warning;
 use aimux_provider_utils::HttpRequest;
 
 use crate::openai::responses::responses_convert::{
-    build_header_list, build_responses_event_stream, build_responses_generate_result,
+    build_responses_event_stream, build_responses_generate_result,
 };
 use crate::openai::responses::{OpenAIResponsesModel, build_responses_request_body};
-use crate::openai::{OpenAICompatProfile, OpenAIConfig};
+use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIConfigProvider};
 
 /// Default API-key base URL (official OpenAI Responses endpoint).
 pub const CODEX_API_BASE_URL: &str = "https://api.openai.com/v1";
@@ -113,14 +113,7 @@ impl CodexConfig {
     /// Returns `AiMuxError::InvalidArgument` when `CODEX_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let key = aimux_provider_utils::load_api_key(None, CODEX_API_KEY_ENV_VAR, "Codex")?;
-        Ok(Self::new(key).with_api_key_source(Some("env:CODEX_API_KEY")))
-    }
-
-    /// 标注 api_key 来源(RFC-0023 回放重建用)。透传到内部 `OpenAIConfig`。
-    #[must_use]
-    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.openai = self.openai.with_api_key_source(source);
-        self
+        Ok(Self::new(key))
     }
 
     /// Override the base URL (tests / self-hosted endpoints).
@@ -191,12 +184,7 @@ impl ProviderDiscovery for CodexProvider {
         >,
     > {
         let config = self.config.openai.clone();
-        Box::pin(async move {
-            let headers = crate::openai::model::build_auth_headers(&config);
-            let runtime =
-                crate::openai::model::execute_list_models(&config.base_url, &headers).await?;
-            Ok(runtime)
-        })
+        Box::pin(async move { OpenAIConfigProvider::new(config).list_models().await })
     }
 }
 
@@ -272,12 +260,12 @@ impl CodexModel {
         options: &CallOptions,
     ) -> Result<GenerateResult, AiMuxError> {
         let opts = self.subscription_options(options);
-        let headers = self.inner().build_headers(opts.headers.as_ref());
+        let headers = self.inner().request_headers(opts.headers.as_ref()).await?;
         let (body, warnings) = self.body(&opts, true)?;
 
         let endpoint = self.endpoint();
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(endpoint.clone(), build_header_list(&headers), &opts),
+            HttpRequest::new(endpoint.clone(), headers, &opts),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             crate::openai::openai_failed_response_handler(),
@@ -369,12 +357,12 @@ impl CodexModel {
     /// Subscription `do_stream`: always streams with `store: false`.
     async fn subscription_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let opts = self.subscription_options(options);
-        let headers = self.inner().build_headers(opts.headers.as_ref());
+        let headers = self.inner().request_headers(opts.headers.as_ref()).await?;
         let (body, warnings) = self.body(&opts, true)?;
 
         let endpoint = self.endpoint();
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(endpoint.clone(), build_header_list(&headers), options),
+            HttpRequest::new(endpoint.clone(), headers, options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             crate::openai::openai_failed_response_handler(),

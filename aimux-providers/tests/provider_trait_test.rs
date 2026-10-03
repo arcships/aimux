@@ -10,7 +10,7 @@ use std::sync::Arc;
 use aimux_core::AiMuxError;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_providers::{
-    GoogleConfig, GoogleProvider, OpenAIConfig, OpenAIProvider, SerperConfig, SerperProvider,
+    GoogleConfig, GoogleProvider, OpenAIConfig, OpenAIConfigProvider, SerperConfig, SerperProvider,
     VllmConfig, VllmProvider, VoyageConfig, VoyageProvider, provider_discovery, provider_handle,
 };
 
@@ -32,7 +32,7 @@ fn no_such_model_type<T: ?Sized>(result: Result<Arc<T>, AiMuxError>, id: &str) -
 
 #[test]
 fn openai_offers_every_modality_it_has_constructors_for() {
-    let p: Arc<dyn Provider> = Arc::new(OpenAIProvider::new(OpenAIConfig::new("k")));
+    let p: Arc<dyn Provider> = Arc::new(OpenAIConfigProvider::new(OpenAIConfig::new("k")));
     assert_eq!(p.language_model("gpt-4o").unwrap().model_id(), "gpt-4o");
     assert!(p.embedding_model("text-embedding-3-small").is_ok());
     assert!(p.image_model("gpt-image-1").is_ok());

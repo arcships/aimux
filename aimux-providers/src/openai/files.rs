@@ -14,9 +14,10 @@ use aimux_core::error::AiMuxError;
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
 use aimux_core::shared::FileBytes;
 
-use aimux_provider_utils::{HttpBody, HttpRequest};
+use aimux_provider_utils::HttpBody;
 
 use super::OpenAIConfig;
+use super::config::OpenAIModelConfig;
 
 /// OpenAI provider-specific file upload options.
 ///
@@ -89,44 +90,27 @@ struct OpenAIFilesResponse {
 /// Aligned with TS `OpenAIFiles`. Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers
 /// uses the process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct OpenAIFiles {
-    config: OpenAIConfig,
+    config: OpenAIModelConfig,
 }
 
 impl OpenAIFiles {
+    /// A files interface configured through the transitional [`OpenAIConfig`]
+    /// builder. The native package builds it through
+    /// [`OpenAIProvider::files`](super::OpenAIProvider::files).
     #[must_use]
     pub fn new(config: OpenAIConfig) -> Self {
+        Self::from_config(config.into_model_config("files"))
+    }
+
+    pub(crate) fn from_config(config: OpenAIModelConfig) -> Self {
         Self { config }
-    }
-
-    fn build_headers(&self) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(ref org) = self.config.org_id {
-            headers.insert("OpenAI-Organization".to_string(), org.clone());
-        }
-        if let Some(ref project) = self.config.project {
-            headers.insert("OpenAI-Project".to_string(), project.clone());
-        }
-        if let Some(ref extra) = self.config.headers {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/files", self.config.base_url)
     }
 }
 
 #[async_trait]
 impl Files for OpenAIFiles {
     fn provider(&self) -> &str {
-        "openai.files"
+        &self.config.provider
     }
 
     async fn upload_file(
@@ -156,11 +140,7 @@ impl Files for OpenAIFiles {
                 .map(|v| ("expires_after", v.to_string())),
         );
 
-        let headers = self.build_headers();
-        let header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let header_list = self.config.request_headers(None).await?;
 
         // `send()` returns Ok only for 2xx; non-2xx responses are mapped to an
         // error internally using the shared error structure. The multipart body
@@ -176,7 +156,11 @@ impl Files for OpenAIFiles {
         let resp = retries
             .retry(|| {
                 aimux_provider_utils::post_to_api(
-                    HttpRequest::new(self.endpoint(), header_list.clone(), options),
+                    self.config.http_request(
+                        self.config.url("/files"),
+                        header_list.clone(),
+                        options,
+                    ),
                     HttpBody::Bytes(body.clone(), content_type.clone()),
                     aimux_provider_utils::create_json_response_handler(),
                     super::openai_failed_response_handler(),

@@ -4,7 +4,7 @@
 //! - `packages/cerebras/src/cerebras-provider.test.ts`
 //! - `packages/cerebras/src/cerebras-chat-language-model.test.ts`
 //!
-//! Cerebras is a thin OpenAI-compatible wrapper over [`OpenAIProvider`]. The TS
+//! Cerebras is a thin OpenAI-compatible wrapper over [`OpenAIConfigProvider`]. The TS
 //! suite is mostly provider-configuration unit tests plus a `transformRequestBody`
 //! that renames assistant `reasoning_content` �?`reasoning`, and fixture-based
 //! finish-reason normalisation for structured-output tool calls. The Rust thin

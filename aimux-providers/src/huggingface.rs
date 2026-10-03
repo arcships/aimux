@@ -3,10 +3,10 @@
 //! Hugging Face exposes an OpenAI-compatible Chat Completions API through its
 //! router at `https://router.huggingface.co/v1`. The TS SDK configures this base
 //! URL and the `HUGGINGFACE_API_KEY` environment variable. The Rust
-//! [`OpenAIProvider`](crate::openai::OpenAIProvider) appends `/chat/completions`
+//! [`OpenAIConfigProvider`] appends `/chat/completions`
 //! to the configured base URL, yielding
 //! `https://router.huggingface.co/v1/chat/completions`. Everything else is
-//! delegated to the shared `OpenAIProvider`.
+//! delegated to the shared `OpenAIConfigProvider`.
 //!
 //! In addition to the Chat Completions API, Hugging Face also exposes a
 //! Responses API (the lightest Responses implementation — function tools only,
@@ -18,7 +18,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::provider::ProviderDiscovery;
 use aimux_provider_utils::load_api_key;
 
-use crate::openai::{OpenAIConfig, OpenAIModel};
+use crate::openai::{OpenAIConfig, OpenAIConfigProvider, OpenAIModel};
 
 const DEFAULT_BASE_URL: &str = "https://router.huggingface.co/v1";
 const ENV_VAR: &str = "HUGGINGFACE_API_KEY";
@@ -41,20 +41,13 @@ impl HuggingFaceConfig {
     /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let key = load_api_key(None, ENV_VAR, "Hugging Face")?;
-        Ok(Self::new(key).with_api_key_source(Some("env:HUGGINGFACE_API_KEY")))
+        Ok(Self::new(key))
     }
 
     /// Override the base URL (useful for tests / self-hosted endpoints).
     #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.0 = self.0.with_base_url(url);
-        self
-    }
-
-    /// 标注 api_key 来源(RFC-0023 回放重建用)。透传到内部 `OpenAIConfig`。
-    #[must_use]
-    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.0 = self.0.with_api_key_source(source);
         self
     }
 }
@@ -102,14 +95,9 @@ impl ProviderDiscovery for HuggingFaceProvider {
                 + '_,
         >,
     > {
-        // HuggingFaceProvider holds an OpenAIConfig (not an OpenAIProvider
-        // directly), so delegate via execute_list_models + catalogue resolve.
+        // HuggingFaceProvider holds an OpenAIConfig (not an
+        // OpenAIConfigProvider directly), so build one for the discovery call.
         let config = self.config.0.clone();
-        Box::pin(async move {
-            let headers = crate::openai::model::build_auth_headers(&config);
-            let runtime =
-                crate::openai::model::execute_list_models(&config.base_url, &headers).await?;
-            Ok(runtime)
-        })
+        Box::pin(async move { OpenAIConfigProvider::new(config).list_models().await })
     }
 }

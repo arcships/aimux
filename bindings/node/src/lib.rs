@@ -635,27 +635,41 @@ impl ProviderConfig {
     }
 }
 
-/// Convert a ProviderConfig (from JS) into OpenAIConfig builder steps.
+/// Map a ProviderConfig (from JS) onto the OpenAI provider settings.
 fn apply_provider_config_openai(
-    mut config: aimux_providers::openai::OpenAIConfig,
+    mut settings: aimux_providers::openai::OpenAIProviderSettings,
     cfg: &ProviderConfig,
-) -> MResult<aimux_providers::openai::OpenAIConfig> {
+) -> MResult<aimux_providers::openai::OpenAIProviderSettings> {
     cfg.reject_removed_keys()?;
     if let Some(url) = &cfg.base_url {
-        config = config.with_base_url(url);
+        settings.base_url = Some(url.clone());
     }
     if let Some(ref json_str) = cfg.headers {
         let h: std::collections::HashMap<String, String> =
             parse_wire_json("config.headers", json_str)?;
-        config = config.with_headers(h);
+        settings.headers = Some(h.into_iter().map(|(k, v)| (k, Some(v))).collect());
     }
     if let Some(ref org) = cfg.organization {
-        config = config.with_org_id(org);
+        settings.organization = Some(org.clone());
     }
     if let Some(ref proj) = cfg.project {
-        config = config.with_project(proj);
+        settings.project = Some(proj.clone());
     }
-    Ok(config)
+    Ok(settings)
+}
+
+/// OpenAI provider settings for an explicit key handed over by the host, with
+/// an optional base URL. The key is an explicit value (`""` included), so it
+/// never falls back to `OPENAI_API_KEY`.
+fn openai_settings(
+    api_key: String,
+    base_url: Option<String>,
+) -> aimux_providers::openai::OpenAIProviderSettings {
+    aimux_providers::openai::OpenAIProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        base_url,
+        ..Default::default()
+    }
 }
 
 /// 初始化全局日志（RFC-0014）。幂等：多次调用无副作用；宿主已自建
@@ -961,19 +975,19 @@ pub async fn openai(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+            use aimux_providers::openai::create_openai;
 
-            let mut cfg = OpenAIConfig::new(api_key);
+            let mut settings = openai_settings(api_key, None);
             match config {
                 Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
+                    settings.base_url = Some(url);
                 }
                 Some(Either::B(opts)) => {
-                    cfg = apply_provider_config_openai(cfg, &opts)?;
+                    settings = apply_provider_config_openai(settings, &opts)?;
                 }
                 None => {}
             }
-            let provider = OpenAIProvider::new(cfg);
+            let provider = create_openai(settings).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;

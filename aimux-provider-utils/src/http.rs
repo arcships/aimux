@@ -513,9 +513,9 @@ fn build_fetch_request(
     for (name, value) in &request.headers {
         let header_name = http::HeaderName::try_from(name)
             .map_err(|_| AiMuxError::InvalidArgument(format!("invalid header name: {name}")))?;
-        let header_value = http::HeaderValue::try_from(value).map_err(|_| {
-            AiMuxError::InvalidArgument(format!("invalid header value for {name}: {value}"))
-        })?;
+        // The value is never echoed: it is commonly a credential.
+        let header_value = http::HeaderValue::try_from(value)
+            .map_err(|_| AiMuxError::InvalidArgument(format!("invalid header value for {name}")))?;
         headers.insert(header_name, header_value);
     }
     let body = match &request.body {

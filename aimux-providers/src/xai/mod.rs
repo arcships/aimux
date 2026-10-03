@@ -21,7 +21,7 @@ use aimux_provider_utils::load_api_key;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::openai::OpenAIConfig;
+use crate::openai::{OpenAIConfig, OpenAIConfigProvider};
 
 const DEFAULT_BASE_URL: &str = "https://api.x.ai/v1";
 const ENV_VAR: &str = "XAI_API_KEY";
@@ -229,14 +229,7 @@ impl XAIConfig {
     /// Returns `AiMuxError::InvalidArgument` when `XAI_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let key = load_api_key(None, ENV_VAR, "xAI")?;
-        Ok(Self::new(key).with_api_key_source(Some("env:XAI_API_KEY")))
-    }
-
-    /// 标注 api_key 来源(RFC-0023 回放重建用)。透传到内部 `OpenAIConfig`。
-    #[must_use]
-    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.0 = self.0.with_api_key_source(source);
-        self
+        Ok(Self::new(key))
     }
 
     /// Override the base URL (useful for tests / self-hosted endpoints).
@@ -308,11 +301,6 @@ impl ProviderDiscovery for XAIProvider {
         let config = OpenAIConfig::new(self.config.api_key())
             .with_base_url(self.config.base_url())
             .with_provider(PROVIDER_NAME);
-        Box::pin(async move {
-            let headers = crate::openai::model::build_auth_headers(&config);
-            let runtime =
-                crate::openai::model::execute_list_models(&config.base_url, &headers).await?;
-            Ok(runtime)
-        })
+        Box::pin(async move { OpenAIConfigProvider::new(config).list_models().await })
     }
 }

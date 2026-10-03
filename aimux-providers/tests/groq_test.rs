@@ -13,7 +13,7 @@
 //!   validation (TypeScript-specific; not directly translatable)
 //!
 //! Groq is an OpenAI-compatible thin wrapper. The Rust implementation reuses
-//! `OpenAIProvider` but sets `provider = "groq"` in the config, which enables
+//! `OpenAIConfigProvider` but sets `provider = "groq"` in the config, which enables
 //! groq-specific behaviour in the shared request builder (provider-options key,
 //! browser_search tool, stream_options, etc.). Reasoning effort is a direct
 //! passthrough — no vendor normalization.

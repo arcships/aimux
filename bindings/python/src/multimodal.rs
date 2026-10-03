@@ -401,13 +401,8 @@ pub fn openai_embedding(
     model_id: &str,
     base_url: Option<&str>,
 ) -> PyResult<EmbeddingModel> {
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = OpenAIProvider::new(config);
-    let model = provider.embedding_model(model_id);
+    let provider = crate::openai_provider(api_key, base_url)?;
+    let model = provider.embedding(model_id);
     Ok(EmbeddingModel {
         inner: Arc::new(model),
     })
@@ -421,12 +416,7 @@ pub fn openai_speech(
     model_id: &str,
     base_url: Option<&str>,
 ) -> PyResult<SpeechModel> {
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = OpenAIProvider::new(config);
+    let provider = crate::openai_provider(api_key, base_url)?;
     let model = provider.speech(model_id);
     Ok(SpeechModel {
         inner: Arc::new(model),
@@ -437,12 +427,7 @@ pub fn openai_speech(
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 pub fn openai_image(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<ImageModel> {
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = OpenAIProvider::new(config);
+    let provider = crate::openai_provider(api_key, base_url)?;
     let model = provider.image(model_id);
     Ok(ImageModel {
         inner: Arc::new(model),
@@ -457,12 +442,7 @@ pub fn openai_transcription(
     model_id: &str,
     base_url: Option<&str>,
 ) -> PyResult<TranscriptionModel> {
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = OpenAIProvider::new(config);
+    let provider = crate::openai_provider(api_key, base_url)?;
     let model = provider.transcription(model_id);
     Ok(TranscriptionModel {
         inner: Arc::new(model),
@@ -473,12 +453,7 @@ pub fn openai_transcription(
 #[pyfunction]
 #[pyo3(signature = (api_key, base_url=None))]
 pub fn openai_files(api_key: &str, base_url: Option<&str>) -> PyResult<Files> {
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = OpenAIProvider::new(config);
+    let provider = crate::openai_provider(api_key, base_url)?;
     let files = provider.files();
     Ok(Files {
         inner: Arc::new(files),

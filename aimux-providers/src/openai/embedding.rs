@@ -5,8 +5,6 @@
 //!
 //! Endpoint: `POST {base_url}/embeddings`
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -16,9 +14,8 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::HttpRequest;
-
 use super::OpenAIConfig;
+use super::config::OpenAIModelConfig;
 
 /// An OpenAI-compatible embedding model.
 ///
@@ -26,43 +23,20 @@ use super::OpenAIConfig;
 /// HTTP client — the `aimux-provider-utils` API helpers use the shared `Client` internally (RFC-0009 §4.1).
 pub struct OpenAIEmbeddingModel {
     model_id: String,
-    config: OpenAIConfig,
+    config: OpenAIModelConfig,
 }
 
 impl OpenAIEmbeddingModel {
+    /// An embedding model configured through the transitional [`OpenAIConfig`]
+    /// builder. The native package builds models through
+    /// [`OpenAIProvider::embedding`](super::OpenAIProvider::embedding).
     #[must_use]
     pub fn new(model_id: String, config: OpenAIConfig) -> Self {
+        Self::from_config(model_id, config.into_model_config("embedding"))
+    }
+
+    pub(crate) fn from_config(model_id: String, config: OpenAIModelConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(ref org) = self.config.org_id {
-            headers.insert("OpenAI-Organization".to_string(), org.clone());
-        }
-        if let Some(ref project) = self.config.project {
-            headers.insert("OpenAI-Project".to_string(), project.clone());
-        }
-        // Config-level extra headers (lowest priority after auth/org/project).
-        if let Some(ref config_headers) = self.config.headers {
-            for (k, v) in config_headers {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/embeddings", self.config.base_url)
     }
 }
 
@@ -101,17 +75,16 @@ impl EmbeddingModel for OpenAIEmbeddingModel {
             body.insert("user".to_string(), json!(user));
         }
 
-        let headers = self.build_headers(options.headers.as_ref());
-
-        let mut header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        header_list.push(("Content-Type".to_string(), "application/json".to_string()));
+        let headers = self
+            .config
+            .request_headers(options.headers.as_ref())
+            .await?;
+        let body = self.config.transform_body(Value::Object(body));
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), header_list, options),
-            Value::Object(body),
+            self.config
+                .http_request(self.config.url("/embeddings"), headers, options),
+            body,
             aimux_provider_utils::create_json_response_handler(),
             super::openai_failed_response_handler(),
         )

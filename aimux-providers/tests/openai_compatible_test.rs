@@ -1,7 +1,7 @@
 //! Wiremock tests for the OpenAI-compatible provider wrappers.
 //!
 //! Each of the 8 wrappers (groq, deepseek, togetherai, fireworks, perplexity,
-//! cerebras, xai, moonshotai) is a thin layer over [`OpenAIProvider`] that
+//! cerebras, xai, moonshotai) is a thin layer over [`OpenAIConfigProvider`] that
 //! only fixes the default base URL and the API-key environment variable. These
 //! tests verify, for every wrapper, the four behaviours that the wrapper is
 //! responsible for getting right:

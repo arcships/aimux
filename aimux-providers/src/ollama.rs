@@ -3,7 +3,7 @@
 //!
 //! Ollama exposes an OpenAI-compatible Chat Completions API at
 //! `http://127.0.0.1:11434/v1` by default. The Rust
-//! [`OpenAIProvider`] appends `/chat/completions`
+//! [`OpenAIConfigProvider`] appends `/chat/completions`
 //! to this base URL, yielding `http://127.0.0.1:11434/v1/chat/completions`.
 //!
 //! Unlike hosted providers, Ollama runs locally and does not require
@@ -11,14 +11,14 @@
 //! holds a *base URL* (not an API key); [`OllamaConfig::from_env`] reads it
 //! and falls back to the default local endpoint when it is unset. A placeholder
 //! API key is sent in the `Authorization` header — Ollama ignores it, but the
-//! shared `OpenAIProvider` requires a non-empty key string.
+//! shared `OpenAIConfigProvider` requires a non-empty key string.
 //!
 //! Note: Ollama also has a native API at `/api/chat` (NDJSON, not SSE). This
 //! provider uses the OpenAI-compatible endpoint only.
 
 use aimux_core::error::AiMuxError;
 
-use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIModel, OpenAIProvider};
+use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIConfigProvider, OpenAIModel};
 
 const DEFAULT_BASE_URL: &str = "http://127.0.0.1:11434/v1";
 /// Environment variable holding the Ollama base URL (not an API key).
@@ -38,8 +38,7 @@ impl OllamaConfig {
             OpenAIConfig::new(api_key)
                 .with_base_url(DEFAULT_BASE_URL)
                 .with_provider(PROVIDER_NAME)
-                .with_profile(OpenAICompatProfile::full())
-                .with_api_key_source(Some("none")),
+                .with_profile(OpenAICompatProfile::full()),
         )
     }
 
@@ -72,12 +71,12 @@ impl OllamaConfig {
 }
 
 /// Ollama provider — creates [`OpenAIModel`] instances pointed at Ollama.
-pub struct OllamaProvider(OpenAIProvider);
+pub struct OllamaProvider(OpenAIConfigProvider);
 
 impl OllamaProvider {
     #[must_use]
     pub fn new(config: OllamaConfig) -> Self {
-        Self(OpenAIProvider::new(config.0))
+        Self(OpenAIConfigProvider::new(config.0))
     }
 
     /// Create a model instance for the given Ollama model id

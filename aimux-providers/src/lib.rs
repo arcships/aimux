@@ -5,9 +5,9 @@
 //! Each provider implements the `LanguageModel` trait from `aimux-core`.
 
 /// Emit `impl ProviderDiscovery for $ty`, delegating `list_models` to the inner
-/// `OpenAIProvider` (field `.0`).
+/// `OpenAIConfigProvider` (field `.0`).
 ///
-/// Used by newtype providers that wrap `OpenAIProvider` (e.g. `OllamaProvider`,
+/// Used by newtype providers that wrap `OpenAIConfigProvider` (e.g. `OllamaProvider`,
 /// `VllmProvider`, `VertexAiOpenaiModelsProvider`, …). Spells out the full
 /// trait path so the wrapping provider needs no extra imports.
 #[macro_export]
@@ -176,6 +176,8 @@ macro_rules! __optional_model {
 // OpenAI-compatible providers are looked up by name from `provider_registry.json`.
 // The 250 per-provider `XxxConfig`/`XxxProvider` shell types were retired in
 // phase 4 — use [`provider`] / [`provider_from_env`] instead.
+#[doc(hidden)]
+pub mod body_merge;
 pub mod provider;
 pub mod replay;
 pub use provider::{
@@ -196,6 +198,7 @@ pub mod cohere;
 pub mod google;
 pub mod mistral;
 pub mod openai;
+mod openai_legacy;
 pub mod vertex;
 pub mod voyage;
 
@@ -272,8 +275,9 @@ pub use google::{
 };
 pub use mistral::{MistralConfig, MistralEmbeddingModel, MistralProvider};
 pub use openai::{
-    OpenAIConfig, OpenAIEmbeddingModel, OpenAIImageModel, OpenAIProvider, OpenAIResponsesModel,
-    OpenAISpeechModel, OpenAITranscriptionModel,
+    OpenAIConfig, OpenAIConfigProvider, OpenAIEmbeddingModel, OpenAIImageModel, OpenAIProvider,
+    OpenAIProviderSettings, OpenAIResponsesModel, OpenAISpeechModel, OpenAITranscriptionModel,
+    create_openai,
 };
 pub use vertex::{
     VertexAuth, VertexEmbeddingModel, VertexImageModel, VertexProvider, VertexProviderConfig,
@@ -365,7 +369,7 @@ pub mod bedrock_mantle;
 pub use bedrock_mantle::{BedrockMantleConfig, BedrockMantleProvider};
 
 // Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers).
-// Each wraps the shared OpenAIProvider against the Vertex AI MaaS OpenAPI
+// Each wraps the shared OpenAIConfigProvider against the Vertex AI MaaS OpenAPI
 // endpoint, authenticating with a Google Cloud Bearer token.
 pub mod vertex_ai_ai21_models;
 pub mod vertex_ai_anthropic_models;

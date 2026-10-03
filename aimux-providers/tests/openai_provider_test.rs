@@ -1,4 +1,4 @@
-﻿//! OpenAI provider configuration and forward-compatible defaults tests.
+//! OpenAI provider configuration and forward-compatible defaults tests.
 //!
 //! Translates the chat-completions-relevant parts of:
 //! - `packages/openai/src/openai-provider.test.ts` — baseURL config, chat routing
@@ -12,13 +12,30 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
+use aimux_core::embedding_model::EmbeddingModel;
+use aimux_core::files_model::Files;
+use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::provider::Provider;
+use aimux_core::speech_model::SpeechModel;
+use aimux_core::transcription_model::TranscriptionModel;
 
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai, openai};
+
+/// A native OpenAI provider against `base_url`. The key is an explicit value,
+/// so the environment is never consulted.
+fn provider_with(api_key: &str, base_url: impl Into<String>) -> OpenAIProvider {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(Resolvable::Value(api_key.to_string())),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("settings are valid")
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -59,36 +76,86 @@ mod provider_config {
     /// TS: `createOpenAI()` provider name is "openai".
     #[test]
     fn model_provider_is_openai() {
-        let config = OpenAIConfig::new("test-key");
-        let provider = OpenAIProvider::new(config);
-        assert_eq!(provider.model("gpt-4o").provider(), "openai");
+        let provider = create_openai(OpenAIProviderSettings::default()).unwrap();
+        assert_eq!(provider.chat("gpt-4o").provider(), "openai.chat");
+        assert_eq!(openai().chat("gpt-4o").provider(), "openai.chat");
     }
 
-    /// TS: default base URL is `https://api.openai.com/v1`.
+    /// TS: `name` replaces the `openai` prefix of every model's provider string.
     #[test]
-    fn default_base_url() {
-        let config = OpenAIConfig::new("test-key");
-        assert_eq!(config.base_url, "https://api.openai.com/v1");
+    fn name_prefixes_every_model() {
+        let provider = create_openai(OpenAIProviderSettings {
+            name: Some("proxy".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(provider.chat("m").provider(), "proxy.chat");
+        assert_eq!(provider.responses("m").provider(), "proxy.responses");
+        assert_eq!(provider.embedding("m").provider(), "proxy.embedding");
+        assert_eq!(provider.image("m").provider(), "proxy.image");
+        assert_eq!(provider.speech("m").provider(), "proxy.speech");
+        assert_eq!(
+            provider.transcription("m").provider(),
+            "proxy.transcription"
+        );
+        assert_eq!(provider.files().provider(), "proxy.files");
     }
 
-    /// TS: custom base URL overrides the default.
+    /// An invalid base URL is the only way creation fails.
     #[test]
-    fn custom_base_url_override() {
-        let config =
-            OpenAIConfig::new("test-key").with_base_url("https://proxy.openai.example/v1/");
-        // `with_base_url` strips trailing slash.
-        assert_eq!(config.base_url, "https://proxy.openai.example/v1");
+    fn invalid_base_url_fails_creation() {
+        for bad in ["", "not a url", "ftp://example.com/v1", "https://"] {
+            let err = create_openai(OpenAIProviderSettings {
+                base_url: Some(bad.to_string()),
+                ..Default::default()
+            })
+            .err()
+            .unwrap_or_else(|| panic!("{bad:?} must be rejected"));
+            assert!(
+                matches!(err, aimux_core::AiMuxError::InvalidArgument(_)),
+                "{bad:?}: {err:?}"
+            );
+        }
     }
 
-    /// TS: `from_env` loads `OPENAI_API_KEY`.
+    /// TS: the key is loaded when a request is made, not when the provider is
+    /// created, so creating a provider with no key and no environment works.
     #[serial]
-    #[test]
-    fn from_env_loads_openai_api_key() {
-        let saved = std::env::var("OPENAI_API_KEY").ok();
-        unsafe { std::env::set_var("OPENAI_API_KEY", "env-test-key") };
+    #[tokio::test]
+    async fn key_is_loaded_per_request_from_the_environment() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
+            .mount(&server)
+            .await;
 
-        let config = OpenAIConfig::from_env();
-        assert!(config.is_ok(), "from_env should succeed with env var set");
+        let saved = std::env::var("OPENAI_API_KEY").ok();
+        unsafe { std::env::remove_var("OPENAI_API_KEY") };
+
+        let provider = create_openai(OpenAIProviderSettings {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        })
+        .expect("creation never reads the key");
+        let model = provider.chat("gpt-4o");
+
+        let missing = model.do_generate(&default_options(test_prompt())).await;
+        assert!(
+            matches!(
+                &missing,
+                Err(aimux_core::AiMuxError::LoadApiKey { env_var, .. })
+                    if env_var == "OPENAI_API_KEY"
+            ),
+            "{missing:?}"
+        );
+
+        // The same model picks the key up as soon as the environment has it.
+        unsafe { std::env::set_var("OPENAI_API_KEY", "env-test-key") };
+        model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .expect("key from the environment");
 
         unsafe {
             match saved {
@@ -96,23 +163,34 @@ mod provider_config {
                 None => std::env::remove_var("OPENAI_API_KEY"),
             }
         }
+
+        let requests = server.received_requests().await.expect("requests recorded");
+        assert_eq!(requests.len(), 1, "the failed call sent nothing");
+        assert_eq!(
+            requests[0]
+                .headers
+                .get("authorization")
+                .and_then(|v| v.to_str().ok()),
+            Some("Bearer env-test-key"),
+        );
     }
 
-    /// TS: `from_env` fails without the env var.
-    #[serial]
-    #[test]
-    fn from_env_fails_without_env_var() {
-        let saved = std::env::var("OPENAI_API_KEY").ok();
-        unsafe { std::env::remove_var("OPENAI_API_KEY") };
+    /// TS: a trailing slash on the base URL is removed.
+    #[tokio::test]
+    async fn base_url_trailing_slash_is_removed() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
+            .mount(&server)
+            .await;
 
-        let config = OpenAIConfig::from_env();
-        assert!(config.is_err(), "from_env should fail without env var");
-
-        unsafe {
-            if let Some(v) = saved {
-                std::env::set_var("OPENAI_API_KEY", v);
-            }
-        }
+        let provider = provider_with("test-key", format!("{}/", server.uri()));
+        provider
+            .chat("gpt-4o")
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .expect("should succeed");
     }
 
     /// TS: chat completions API routes to `/chat/completions`.
@@ -125,9 +203,8 @@ mod provider_config {
             .mount(&server)
             .await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-4o-mini");
+        let provider = provider_with("test-key", server.uri());
+        let model = provider.chat("gpt-4o-mini");
 
         model
             .do_generate(&default_options(test_prompt()))
@@ -145,9 +222,8 @@ mod provider_config {
             .mount(&server)
             .await;
 
-        let config = OpenAIConfig::new("my-custom-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-4o");
+        let provider = provider_with("my-custom-key", server.uri());
+        let model = provider.chat("gpt-4o");
 
         let _ = model
             .do_generate(&default_options(test_prompt()))
@@ -175,8 +251,7 @@ mod provider_config {
             .mount(&server)
             .await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
+        let provider = provider_with("test-key", server.uri());
         let model = provider
             .language_model("gpt-4o")
             .expect("language_model should succeed");
@@ -197,11 +272,14 @@ mod provider_config {
             .mount(&server)
             .await;
 
-        let config = OpenAIConfig::new("test-key")
-            .with_base_url(server.uri())
-            .with_org_id("org-123");
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-4o");
+        let provider = create_openai(OpenAIProviderSettings {
+            api_key: Some(Resolvable::Value("test-key".to_string())),
+            base_url: Some(server.uri()),
+            organization: Some("org-123".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        let model = provider.chat("gpt-4o");
 
         let _ = model
             .do_generate(&default_options(test_prompt()))
@@ -241,9 +319,8 @@ mod forward_compatible_defaults {
             .mount(&server)
             .await;
 
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o1");
+        let provider = provider_with("test-key", server.uri());
+        let model = provider.chat("o1");
 
         let prompt = vec![
             LanguageModelPromptMessage {

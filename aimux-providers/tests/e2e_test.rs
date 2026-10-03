@@ -15,7 +15,7 @@ use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
 use aimux_core::types::FinishReasonUnified;
 use aimux_providers::{
     AnthropicConfig, AnthropicProvider, CohereConfig, CohereProvider, GoogleConfig, GoogleProvider,
-    MistralConfig, MistralProvider, OpenAIConfig, OpenAIProvider,
+    MistralConfig, MistralProvider, OpenAIConfig, OpenAIConfigProvider,
 };
 use futures::StreamExt;
 use serde_json::json;
@@ -53,7 +53,8 @@ async fn e2e_openai_generate_text() {
         .mount(&server)
         .await;
 
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
+    let provider =
+        OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
     let model = provider.model("gpt-4o");
 
     let result = generate_text(&model, "What is Rust?", GenerateTextOptions::default())
@@ -88,7 +89,8 @@ async fn e2e_openai_stream_text() {
         .mount(&server)
         .await;
 
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
+    let provider =
+        OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
     let model = provider.model("gpt-4o");
 
     let result = stream_text(&model, "Say hello", GenerateTextOptions::default())
@@ -141,7 +143,8 @@ async fn e2e_openai_generate_with_tools() {
         .mount(&server)
         .await;
 
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
+    let provider =
+        OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
     let model = provider.model("gpt-4o");
 
     let result = generate_text(
@@ -187,7 +190,8 @@ async fn e2e_openai_error_401() {
         .mount(&server)
         .await;
 
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
+    let provider =
+        OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
     let model = provider.model("gpt-4o");
 
     let result = generate_text(&model, "test", GenerateTextOptions::default()).await;
@@ -340,7 +344,8 @@ async fn e2e_openai_stream_part_sequence() {
         .mount(&server)
         .await;
 
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
+    let provider =
+        OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
     let model = provider.model("gpt-4o");
 
     let result = stream_text(&model, "test", GenerateTextOptions::default())
@@ -453,8 +458,9 @@ async fn e2e_provider_interchangeability() {
         .mount(&openai_server)
         .await;
 
-    let openai = OpenAIProvider::new(OpenAIConfig::new("key").with_base_url(openai_server.uri()))
-        .model("gpt-4o");
+    let openai =
+        OpenAIConfigProvider::new(OpenAIConfig::new("key").with_base_url(openai_server.uri()))
+            .model("gpt-4o");
 
     let openai_result = generate_text(&openai, "test", GenerateTextOptions::default())
         .await
@@ -541,7 +547,8 @@ async fn e2e_openai_tool_call_round_trip() {
         .mount(&server)
         .await;
 
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
+    let provider =
+        OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
     let model = provider.model("gpt-4o");
 
     let weather_tool = || {
@@ -662,7 +669,8 @@ async fn e2e_openai_multi_turn_dialog() {
         .mount(&server)
         .await;
 
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
+    let provider =
+        OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
     let model = provider.model("gpt-4o");
 
     // Full multi-turn conversation:
@@ -734,7 +742,8 @@ async fn e2e_openai_tool_choice_required() {
         .mount(&server)
         .await;
 
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
+    let provider =
+        OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
     let model = provider.model("gpt-4o");
 
     let weather_tool = Tool::Function(
@@ -802,7 +811,8 @@ async fn e2e_openai_stream_tool_calls() {
         .mount(&server)
         .await;
 
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
+    let provider =
+        OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
     let model = provider.model("gpt-4o");
 
     let weather_tool = Tool::Function(

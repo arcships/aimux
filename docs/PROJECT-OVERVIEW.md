@@ -360,12 +360,15 @@ for part in result:
 
 ```rust
 use aimux_core::prelude::*;
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::{OpenAIProviderSettings, create_openai};
 
 #[tokio::main]
 async fn main() -> Result<(), AiMuxError> {
-    let provider = OpenAIProvider::new(OpenAIConfig::new("sk-..."));
-    let model = provider.model("gpt-4o");
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("sk-...".to_string().into()),
+        ..Default::default()
+    })?;
+    let model = provider.chat("gpt-4o");
 
     let result = generate_text(
         &model,

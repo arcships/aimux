@@ -46,7 +46,7 @@ use aimux_providers::anthropic::model::AnthropicModel;
 use aimux_providers::bedrock::{BedrockAuth, BedrockConfig, BedrockModel, event_stream};
 use aimux_providers::{
     CohereConfig, CohereProvider, GoogleConfig, GoogleProvider, MistralConfig, MistralProvider,
-    OpenAIConfig, OpenAIProvider,
+    OpenAIConfig, OpenAIConfigProvider,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1202,7 +1202,7 @@ async fn finding_13_mistral_thinking_parts_become_reasoning_in_generate() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 fn openai_responses_at(uri: &str, model: &str) -> impl LanguageModel {
-    OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(format!("{uri}/v1")))
+    OpenAIConfigProvider::new(OpenAIConfig::new("test-key").with_base_url(format!("{uri}/v1")))
         .responses_model(model)
 }
 

@@ -1,8 +1,15 @@
-//! OpenAI-compatible provider.
+//! OpenAI provider.
 //!
-//! Works with any OpenAI-compatible API endpoint (OpenAI, Azure OpenAI,
-//! Together.ai, Groq, Fireworks, DeepSeek, etc.).
+//! [`create_openai`] is the Rust form of the AI SDK's `createOpenAI`: it takes
+//! [`OpenAIProviderSettings`], validates the base URL, fixes the provider name
+//! and returns an [`OpenAIProvider`]. The API key is not read there; it is
+//! loaded in the request headers of every call, from the setting or from
+//! `OPENAI_API_KEY`. [`openai()`] is the default instance.
+//!
+//! The model implementations also serve OpenAI-compatible endpoints that are
+//! still configured through the transitional [`OpenAIConfig`] builder.
 
+pub(crate) mod config;
 pub mod convert;
 mod convert_common;
 pub mod embedding;
@@ -14,27 +21,40 @@ pub mod speech;
 pub mod transcription;
 mod types;
 
+pub use config::TransformRequestBody;
 pub use embedding::OpenAIEmbeddingModel;
+pub use files::OpenAIFiles;
 pub use image::OpenAIImageModel;
 pub use model::OpenAIModel;
 pub use responses::OpenAIResponsesModel;
 pub use speech::OpenAISpeechModel;
 pub use transcription::OpenAITranscriptionModel;
 
-use std::collections::HashMap;
+pub use crate::openai_legacy::{OpenAIConfig, OpenAIConfigProvider};
 
-use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
+use std::sync::{Arc, OnceLock};
+
+use futures::future::BoxFuture;
+use serde_json::Value;
 
 use aimux_core::embedding_model::EmbeddingModel;
+use aimux_core::error::AiMuxError;
 use aimux_core::files_model::Files;
 use aimux_core::image_model::ImageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
+use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
-use serde_json::Value;
-use std::sync::Arc;
+use aimux_provider_utils::{
+    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, load_api_key,
+    validate_base_url,
+};
+
+use config::OpenAIModelConfig;
+
+/// The chat-completions model of the native package (`provider.chat(id)`).
+pub type OpenAIChatModel = OpenAIModel;
 
 pub(crate) fn openai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {
@@ -150,7 +170,7 @@ impl OpenAICompatProfile {
     }
 
     /// DeepSeek profile：特化已退役（RFC-0017 阶段 2），回归 `full()`——
-    /// thinking / effort 映射等厂商差异由 provider 级 body_overrides 定义。
+    /// thinking / effort 映射等厂商差异由 provider 级请求体改写定义。
     /// 保留此薄封装以维持注册表与调用方结构不变。
     #[must_use]
     pub fn deepseek() -> Self {
@@ -158,186 +178,226 @@ impl OpenAICompatProfile {
     }
 }
 
-/// Configuration for the OpenAI provider.
-#[derive(Debug, Clone)]
-pub struct OpenAIConfig {
-    pub api_key: String,
-    /// api_key 来源标签:`Some("env:VAR")` = 来自环境变量;`Some("none")` =
-    /// 本地无认证占位;`None` = 显式传 key。仅作信息保留——录制只记
-    /// provider/model 身份,不再读它。
-    pub api_key_source: Option<String>,
-    pub base_url: String,
-    pub org_id: Option<String>,
-    /// OpenAI project ID sent via the `OpenAI-Project` header.
-    pub project: Option<String>,
-    /// Extra headers merged into every request.
-    pub headers: Option<HashMap<String, String>>,
-    /// Provider name — controls provider-specific behaviour in the shared
-    /// request builder (e.g. "groq" reads provider options from the "groq"
-    /// key and applies a reasoning-effort map). Defaults to "openai".
-    pub provider: String,
-    /// 厂商能力差异描述。默认 `full()`（支持全部能力）。
-    /// 薄封装用 `with_profile()` 设置差异。
-    pub profile: OpenAICompatProfile,
-    /// Provider 级请求体覆盖（RFC-0017）。在标准请求体 + 内置厂商 override
-    /// 之后 deep-merge，发送前最后一步。没有调用级覆盖(`CallOptions` 已无此字段)。
-    pub body_overrides: Option<Value>,
-}
+const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+const API_KEY_ENV_VAR: &str = "OPENAI_API_KEY";
 
-impl OpenAIConfig {
-    /// Create from an API key (uses default OpenAI base URL).
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            api_key_source: None,
-            base_url: "https://api.openai.com/v1".to_string(),
-            org_id: None,
-            project: None,
-            headers: None,
-            provider: "openai".to_string(),
-            profile: OpenAICompatProfile::full(),
-            body_overrides: None,
-        }
-    }
-
-    /// Use a custom base URL (for Azure, Groq, etc.).
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-
-    #[must_use]
-    pub fn with_org_id(mut self, org_id: impl Into<String>) -> Self {
-        self.org_id = Some(org_id.into());
-        self
-    }
-
-    /// Set the OpenAI project ID (sent via the `OpenAI-Project` header).
-    #[must_use]
-    pub fn with_project(mut self, project: impl Into<String>) -> Self {
-        self.project = Some(project.into());
-        self
-    }
-
-    /// Attach extra headers merged into every request.
-    #[must_use]
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = Some(headers);
-        self
-    }
-
-    /// Set the provider name (e.g. "groq") for provider-specific behaviour.
-    #[must_use]
-    pub fn with_provider(mut self, provider: impl Into<String>) -> Self {
-        self.provider = provider.into();
-        self
-    }
-
-    /// 设置厂商能力差异描述。
-    #[must_use]
-    pub fn with_profile(mut self, profile: OpenAICompatProfile) -> Self {
-        self.profile = profile;
-        self
-    }
-
-    /// 设置 provider 级请求体覆盖（RFC-0017）。
-    #[must_use]
-    pub fn with_body_overrides(mut self, overrides: Value) -> Self {
-        self.body_overrides = Some(overrides);
-        self
-    }
-
-    /// Create from environment variable `OPENAI_API_KEY`.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when `OPENAI_API_KEY` is not set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "OPENAI_API_KEY", "OpenAI")?;
-        Ok(Self::new(api_key).with_api_key_source(Some("env:OPENAI_API_KEY")))
-    }
-
-    /// 标注 api_key 来源(RFC-0023 回放重建用)。
-    #[must_use]
-    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.api_key_source = source.map(std::string::ToString::to_string);
-        self
-    }
-}
-
-/// OpenAI provider — creates `OpenAIModel` instances.
+/// Settings of [`create_openai`] (the AI SDK's `OpenAIProviderSettings`).
 ///
-/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use
-/// the process-wide shared `Client` internally (RFC-0009 §4.1).
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are evaluated
+/// on every request.
+#[derive(Clone, Default)]
+pub struct OpenAIProviderSettings {
+    /// Base URL for the API calls. Default `https://api.openai.com/v1`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `OPENAI_API_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Sent as `OpenAI-Organization`.
+    pub organization: Option<String>,
+    /// Sent as `OpenAI-Project`.
+    pub project: Option<String>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including one of the fixed ones. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of every model's `provider()` string.
+    /// Default `"openai"`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
+    /// Rewrites every JSON request body once, after it is serialized and
+    /// before it is sent.
+    pub transform_request_body: Option<TransformRequestBody>,
+}
+
+impl std::fmt::Debug for OpenAIProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenAIProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field("organization", &self.organization)
+            .field("project", &self.project)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .field(
+                "transform_request_body",
+                &self.transform_request_body.is_some(),
+            )
+            .finish()
+    }
+}
+
+/// Create an OpenAI provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    let name = settings.name.unwrap_or_else(|| "openai".to_string());
+    Ok(OpenAIProvider {
+        name,
+        base_url,
+        headers: provider_headers(
+            settings.api_key,
+            settings.organization,
+            settings.project,
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+        transform_request_body: settings.transform_request_body,
+    })
+}
+
+/// The default provider: `create_openai` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn openai() -> &'static OpenAIProvider {
+    static DEFAULT: OnceLock<OpenAIProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        // The default settings carry no base URL, so validation has nothing to
+        // reject.
+        create_openai(OpenAIProviderSettings::default())
+            .expect("default OpenAI settings are always valid")
+    })
+}
+
+/// Provider headers, evaluated per request: the credential first, then
+/// organization and project, then the user's headers (which may override or
+/// remove any of them).
+fn provider_headers(
+    api_key: Option<Resolvable<String>>,
+    organization: Option<String>,
+    project: Option<String>,
+    headers: Option<HeaderMapOpt>,
+) -> HeadersFn {
+    Resolvable::from_async_fn(move || {
+        let api_key = api_key.clone();
+        let organization = organization.clone();
+        let project = project.clone();
+        let headers = headers.clone();
+        async move {
+            let key = match &api_key {
+                None => load_api_key(None, API_KEY_ENV_VAR, "OpenAI")?,
+                Some(key) => key.resolve().await?,
+            };
+            let mut fixed = HeaderMapOpt::new();
+            fixed.insert("Authorization".to_string(), Some(format!("Bearer {key}")));
+            if organization.is_some() {
+                fixed.insert("OpenAI-Organization".to_string(), organization);
+            }
+            if project.is_some() {
+                fixed.insert("OpenAI-Project".to_string(), project);
+            }
+            Ok(match &headers {
+                Some(user) => combine_headers(&[&fixed, user]),
+                None => fixed,
+            })
+        }
+    })
+}
+
+/// An OpenAI provider (the AI SDK's `OpenAIProvider`). Cheap to clone the
+/// models out of; it holds no HTTP client.
 pub struct OpenAIProvider {
-    config: OpenAIConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
+    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl OpenAIProvider {
-    #[must_use]
-    pub fn new(config: OpenAIConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> OpenAIModelConfig {
+        let base = self.base_url.clone();
+        OpenAIModelConfig {
+            provider: format!("{}.{method}", self.name),
+            url: Arc::new(move |path| format!("{base}{path}")),
+            headers: self.headers.clone(),
+            fetch: self.fetch.clone(),
+            supported_urls: SupportedUrls::default(),
+            transform_request_body: self.transform_request_body.clone(),
+            base_url: self.base_url.clone(),
+            profile: OpenAICompatProfile::full(),
+        }
     }
 
-    /// Create a model instance for the given model name (e.g. `"gpt-4o"`).
+    /// A chat-completions model; `provider()` is `"{name}.chat"`.
     #[must_use]
-    pub fn model(&self, model_id: &str) -> model::OpenAIModel {
-        model::OpenAIModel::new(model_id.to_string(), self.config.clone())
+    pub fn chat(&self, model_id: &str) -> OpenAIChatModel {
+        OpenAIModel::from_config(model_id.to_string(), self.model_config("chat"))
     }
 
-    /// Create a Responses API model instance for the given model name (e.g.
-    /// `"gpt-4o"`). Uses the `/v1/responses` endpoint instead of
-    /// `/v1/chat/completions`.
+    /// A Responses API model; `provider()` is `"{name}.responses"`.
     #[must_use]
-    pub fn responses_model(&self, model_id: &str) -> responses::OpenAIResponsesModel {
-        responses::OpenAIResponsesModel::new(model_id.to_string(), self.config.clone())
+    pub fn responses(&self, model_id: &str) -> OpenAIResponsesModel {
+        OpenAIResponsesModel::from_config(model_id.to_string(), self.model_config("responses"))
     }
 
-    /// Create a Files interface for uploading files to OpenAI.
+    /// An embedding model; `provider()` is `"{name}.embedding"`.
     #[must_use]
-    pub fn files(&self) -> files::OpenAIFiles {
-        files::OpenAIFiles::new(self.config.clone())
+    pub fn embedding(&self, model_id: &str) -> OpenAIEmbeddingModel {
+        OpenAIEmbeddingModel::from_config(model_id.to_string(), self.model_config("embedding"))
     }
 
-    /// Create an embedding model instance for the given model name (e.g.
-    /// `"text-embedding-3-large"`).
+    /// An image model; `provider()` is `"{name}.image"`.
     #[must_use]
-    pub fn embedding_model(&self, model_id: &str) -> embedding::OpenAIEmbeddingModel {
-        embedding::OpenAIEmbeddingModel::new(model_id.to_string(), self.config.clone())
+    pub fn image(&self, model_id: &str) -> OpenAIImageModel {
+        OpenAIImageModel::from_config(model_id.to_string(), self.model_config("image"))
     }
 
-    /// Create a speech (TTS) model instance for the given model name (e.g.
-    /// `"tts-1"`). Uses the `/audio/speech` endpoint.
+    /// A speech (TTS) model; `provider()` is `"{name}.speech"`.
     #[must_use]
-    pub fn speech(&self, model_id: &str) -> speech::OpenAISpeechModel {
-        speech::OpenAISpeechModel::new(model_id.to_string(), self.config.clone())
+    pub fn speech(&self, model_id: &str) -> OpenAISpeechModel {
+        OpenAISpeechModel::from_config(model_id.to_string(), self.model_config("speech"))
     }
 
-    /// Create an image generation model instance for the given model name
-    /// (e.g. `"dall-e-3"` or `"gpt-image-1"`). Uses the `/images/generations`
-    /// endpoint for generation and `/images/edits` for editing.
+    /// A transcription (STT) model; `provider()` is `"{name}.transcription"`.
     #[must_use]
-    pub fn image(&self, model_id: &str) -> image::OpenAIImageModel {
-        image::OpenAIImageModel::new(model_id.to_string(), self.config.clone())
+    pub fn transcription(&self, model_id: &str) -> OpenAITranscriptionModel {
+        OpenAITranscriptionModel::from_config(
+            model_id.to_string(),
+            self.model_config("transcription"),
+        )
     }
 
-    /// Create a transcription (STT) model instance for the given model name
-    /// (e.g. `"whisper-1"` or `"gpt-4o-transcribe"`). Uses the
-    /// `/audio/transcriptions` endpoint.
+    /// The files interface; `provider()` is `"{name}.files"`.
     #[must_use]
-    pub fn transcription(&self, model_id: &str) -> transcription::OpenAITranscriptionModel {
-        transcription::OpenAITranscriptionModel::new(model_id.to_string(), self.config.clone())
+    pub fn files(&self) -> OpenAIFiles {
+        OpenAIFiles::from_config(self.model_config("files"))
+    }
+
+    /// The provider as a function: the default language model for an id. The
+    /// AI SDK's callable provider; it returns the chat model for now, the same
+    /// model as [`language_model`](Provider::language_model).
+    #[must_use]
+    pub fn call(&self, model_id: &str) -> Arc<dyn LanguageModel> {
+        Arc::new(self.chat(model_id))
     }
 }
 
 impl Provider for OpenAIProvider {
     fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
-        Ok(Arc::new(self.model(model_id)))
+        Ok(self.call(model_id))
     }
 
     fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
-        Ok(Arc::new(self.embedding_model(model_id)))
+        Ok(Arc::new(self.embedding(model_id)))
     }
 
     fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
@@ -361,22 +421,9 @@ impl Provider for OpenAIProvider {
 }
 
 impl ProviderDiscovery for OpenAIProvider {
-    /// List models via `GET {base_url}/models` (OpenAI-compatible, RFC-0027).
-    fn list_models(
-        &self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError>,
-                > + Send
-                + '_,
-        >,
-    > {
-        let config = self.config.clone();
-        Box::pin(async move {
-            let headers = model::build_auth_headers(&config);
-            let runtime = model::execute_list_models(&config.base_url, &headers).await?;
-            Ok(runtime)
-        })
+    /// `GET {base_url}/models`: one exchange, no retry.
+    fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
+        let config = self.model_config("models");
+        Box::pin(async move { model::list_models_once(&config).await })
     }
 }

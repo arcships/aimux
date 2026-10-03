@@ -3,13 +3,13 @@
 //! OpenRouter exposes an OpenAI-compatible Chat Completions API at
 //! `https://openrouter.ai/api/v1`. The only provider-specific detail is the
 //! base URL and the `OPENROUTER_API_KEY` environment variable; everything else
-//! is delegated to the shared [`OpenAIProvider`].
+//! is delegated to the shared [`OpenAIConfigProvider`].
 
 use aimux_core::error::AiMuxError;
 use aimux_provider_utils::load_api_key;
 
 use crate::openai::{
-    OpenAICompatProfile, OpenAIConfig, OpenAIModel, OpenAIProvider, OpenAIResponsesModel,
+    OpenAICompatProfile, OpenAIConfig, OpenAIConfigProvider, OpenAIModel, OpenAIResponsesModel,
 };
 
 const DEFAULT_BASE_URL: &str = "https://openrouter.ai/api/v1";
@@ -50,12 +50,12 @@ impl OpenRouterConfig {
 }
 
 /// OpenRouter provider — creates [`OpenAIModel`] instances pointed at OpenRouter.
-pub struct OpenRouterProvider(OpenAIProvider);
+pub struct OpenRouterProvider(OpenAIConfigProvider);
 
 impl OpenRouterProvider {
     #[must_use]
     pub fn new(config: OpenRouterConfig) -> Self {
-        Self(OpenAIProvider::new(config.0))
+        Self(OpenAIConfigProvider::new(config.0))
     }
 
     /// Create a model instance for the given OpenRouter model id
@@ -68,7 +68,7 @@ impl OpenRouterProvider {
     /// Create a Responses-API model instance for the given OpenRouter model id.
     ///
     /// OpenRouter exposes an OpenAI-compatible Responses API at `/v1/responses`.
-    /// This delegates to the underlying [`OpenAIProvider::responses_model`].
+    /// This delegates to the underlying [`OpenAIConfigProvider::responses_model`].
     #[must_use]
     pub fn responses_model(&self, model_id: &str) -> OpenAIResponsesModel {
         self.0.responses_model(model_id)

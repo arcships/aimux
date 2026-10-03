@@ -4,7 +4,7 @@
 //! `https://bedrock-mantle.{region}.api.aws/v1` (region defaults to `us-east-1`).
 //! Provider-specific details are the region-aware base URL and the
 //! `BEDROCK_MANTLE_API_KEY` environment variable; everything else is delegated
-//! to the shared [`OpenAIProvider`].
+//! to the shared [`OpenAIConfigProvider`].
 //!
 //! # Authentication
 //!
@@ -18,7 +18,7 @@
 use aimux_core::error::AiMuxError;
 use aimux_provider_utils::load_api_key;
 
-use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIModel, OpenAIProvider};
+use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIConfigProvider, OpenAIModel};
 
 const DEFAULT_REGION: &str = "us-east-1";
 const ENV_VAR: &str = "BEDROCK_MANTLE_API_KEY";
@@ -84,12 +84,12 @@ impl BedrockMantleConfig {
 }
 
 /// Bedrock Mantle provider — creates [`OpenAIModel`] instances.
-pub struct BedrockMantleProvider(OpenAIProvider);
+pub struct BedrockMantleProvider(OpenAIConfigProvider);
 
 impl BedrockMantleProvider {
     #[must_use]
     pub fn new(config: BedrockMantleConfig) -> Self {
-        Self(OpenAIProvider::new(config.0))
+        Self(OpenAIConfigProvider::new(config.0))
     }
 
     /// Create a model instance for the given model id

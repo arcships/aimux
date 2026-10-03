@@ -450,13 +450,10 @@ pub async fn openai_embedding(
 ) -> AimuxResult<EmbeddingModel> {
     AimuxResult({
         let __r: crate::error::MResult<EmbeddingModel> = async {
-            use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-            let mut config = OpenAIConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = OpenAIProvider::new(config);
-            let model = provider.embedding_model(&model_id);
+            use aimux_providers::openai::create_openai;
+            let provider = create_openai(crate::openai_settings(api_key, base_url))
+                .map_err(|e| AiMuxBindingError::from(&e))?;
+            let model = provider.embedding(&model_id);
             Ok(EmbeddingModel {
                 inner: Arc::new(model),
             })
@@ -475,12 +472,9 @@ pub async fn openai_speech(
 ) -> AimuxResult<SpeechModel> {
     AimuxResult({
         let __r: crate::error::MResult<SpeechModel> = async {
-            use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-            let mut config = OpenAIConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = OpenAIProvider::new(config);
+            use aimux_providers::openai::create_openai;
+            let provider = create_openai(crate::openai_settings(api_key, base_url))
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider.speech(&model_id);
             Ok(SpeechModel {
                 inner: Arc::new(model),
@@ -500,12 +494,9 @@ pub async fn openai_image(
 ) -> AimuxResult<ImageModel> {
     AimuxResult({
         let __r: crate::error::MResult<ImageModel> = async {
-            use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-            let mut config = OpenAIConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = OpenAIProvider::new(config);
+            use aimux_providers::openai::create_openai;
+            let provider = create_openai(crate::openai_settings(api_key, base_url))
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider.image(&model_id);
             Ok(ImageModel {
                 inner: Arc::new(model),
@@ -525,12 +516,9 @@ pub async fn openai_transcription(
 ) -> AimuxResult<TranscriptionModel> {
     AimuxResult({
         let __r: crate::error::MResult<TranscriptionModel> = async {
-            use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-            let mut config = OpenAIConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = OpenAIProvider::new(config);
+            use aimux_providers::openai::create_openai;
+            let provider = create_openai(crate::openai_settings(api_key, base_url))
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider.transcription(&model_id);
             Ok(TranscriptionModel {
                 inner: Arc::new(model),
@@ -546,12 +534,9 @@ pub async fn openai_transcription(
 pub async fn openai_files(api_key: String, base_url: Option<String>) -> AimuxResult<Files> {
     AimuxResult({
         let __r: crate::error::MResult<Files> = async {
-            use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-            let mut config = OpenAIConfig::new(api_key);
-            if let Some(url) = base_url {
-                config = config.with_base_url(url);
-            }
-            let provider = OpenAIProvider::new(config);
+            use aimux_providers::openai::create_openai;
+            let provider = create_openai(crate::openai_settings(api_key, base_url))
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             let files = provider.files();
             Ok(Files {
                 inner: Arc::new(files),

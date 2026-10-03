@@ -2,7 +2,7 @@
 //!
 //! Translated from `packages/deepinfra/src/deepinfra-provider.test.ts`.
 //!
-//! DeepInfra is a thin OpenAI-compatible wrapper over [`OpenAIProvider`]. The
+//! DeepInfra is a thin OpenAI-compatible wrapper over [`OpenAIConfigProvider`]. The
 //! TS suite is mostly provider-configuration unit tests plus image/completion
 //! model construction. The Rust wrapper models only the chat surface, so the
 //! image/completion model tests are not translated. The DeepInfra default base

@@ -16,7 +16,7 @@ use wiremock::MockServer;
 
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::stream_part::StreamPart;
-use aimux_providers::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
+use aimux_providers::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIConfigProvider};
 
 /// Run generate_text + stream_text against a cassette directory.
 /// Hard asserts: must get a valid response with non-empty text and usage.
@@ -36,7 +36,7 @@ async fn replay_openai_compat(
         format!("{}/{}", server.uri(), base_path)
     };
 
-    let provider = OpenAIProvider::new(
+    let provider = OpenAIConfigProvider::new(
         OpenAIConfig::new("test-key")
             .with_base_url(base_url)
             .with_profile(profile),
@@ -427,7 +427,7 @@ async fn replay_gemini() {
 
     // Use the OpenAI-compatible endpoint — model is in the body,
     // so replay can score and match correctly.
-    let provider = OpenAIProvider::new(
+    let provider = OpenAIConfigProvider::new(
         OpenAIConfig::new("test-key")
             .with_base_url(format!("{}/v1beta/openai", server.uri()))
             .with_provider("google"),
