@@ -1095,8 +1095,10 @@ pub extern "C" fn aimux_openai_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        let m = openai_provider(api_key, None)?.language_model(&model_id)?;
-        Ok(intern_model(m))
+        // The bindings' `openai` constructor is the Chat Completions model.
+        Ok(intern_model(Arc::new(
+            openai_provider(api_key, None)?.chat(&model_id),
+        )))
     })
 }
 
@@ -1113,8 +1115,7 @@ pub extern "C" fn aimux_openai_new_with_base(
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
         let provider = openai_provider(api_key, parse_base_url(base_url)?)?;
-        let m = provider.language_model(&model_id)?;
-        Ok(intern_model(m))
+        Ok(intern_model(Arc::new(provider.chat(&model_id))))
     })
 }
 

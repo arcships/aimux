@@ -997,7 +997,6 @@ pub async fn openai(
 ) -> AimuxResult<Model> {
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
-            use aimux_core::provider::Provider;
             use aimux_providers::openai::create_openai;
 
             let mut settings = openai_settings(api_key, None);
@@ -1007,11 +1006,9 @@ pub async fn openai(
             settings.organization = native.organization;
             settings.project = native.project;
             let provider = create_openai(settings).map_err(|e| AiMuxBindingError::from(&e))?;
-            let model = provider
-                .language_model(&model_id)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                inner: model,
+                // This constructor is the Chat Completions model.
+                inner: Arc::new(provider.chat(&model_id)),
                 trace_store: None,
             })
         }

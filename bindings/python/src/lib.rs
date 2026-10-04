@@ -445,14 +445,10 @@ pub(crate) fn openai_provider(
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn openai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
-    use aimux_core::provider::Provider;
-
     let provider = openai_provider(api_key, base_url)?;
-    let model = provider
-        .language_model(model_id)
-        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
-        inner: Arc::from(model),
+        // This constructor is the Chat Completions model.
+        inner: Arc::new(provider.chat(model_id)),
         trace_store: None,
     })
 }
@@ -487,9 +483,13 @@ fn deepseek(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<M
         base_url: Some(url.to_string()),
         ..Default::default()
     });
-    let model =
-        aimux_providers::provider::provider("deepseek", Some(api_key.to_string()), model_id, options)
-            .map_err(|e| to_py_err(&e))?;
+    let model = aimux_providers::provider::provider(
+        "deepseek",
+        Some(api_key.to_string()),
+        model_id,
+        options,
+    )
+    .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
