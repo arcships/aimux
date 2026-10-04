@@ -32,7 +32,7 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 
-use aimux_providers::{ProviderOptions, provider, provider_from_env};
+use aimux_providers::{PresetSettings, create_provider};
 
 fn test_prompt() -> LanguageModelPrompt {
     vec![LanguageModelPromptMessage {
@@ -62,27 +62,31 @@ fn text_completion_body() -> Value {
 }
 
 fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
-    provider(
+    create_provider(
         "cerebras",
-        Some("test-api-key".to_string()),
-        "llama-3.3-70b",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-api-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("llama-3.3-70b")
     .expect("cerebras provider should build")
 }
 
 /// TS: `createCerebras()` produces a provider whose name is "cerebras".
 #[test]
 fn provider_builds_cerebras_model() {
-    let model = provider(
+    let model = create_provider(
         "cerebras",
-        Some("test-key".to_string()),
-        "llama-3.3-70b",
-        None,
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
+            ..Default::default()
+        },
     )
+    .expect("provider should build")
+    .language_model("llama-3.3-70b")
     .expect("cerebras provider should build");
     assert_eq!(model.model_id(), "llama-3.3-70b");
 }
@@ -118,15 +122,16 @@ async fn custom_api_key_used_in_auth_header() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "cerebras",
-        Some("my-custom-key".to_string()),
-        "llama-3.3-70b",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("my-custom-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("llama-3.3-70b")
     .expect("cerebras provider should build");
 
     model
@@ -147,15 +152,16 @@ async fn custom_headers_forwarded() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "cerebras",
-        Some("test-key".to_string()),
-        "llama-3.3-70b",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("llama-3.3-70b")
     .expect("cerebras provider should build");
 
     let mut options = default_options(test_prompt());
@@ -181,15 +187,16 @@ async fn language_model_via_trait() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "cerebras",
-        Some("test-key".to_string()),
-        "llama-3.3-70b",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("llama-3.3-70b")
     .expect("provider should build a model");
 
     model
@@ -207,7 +214,9 @@ fn from_env_loads_cerebras_api_key() {
         std::env::set_var("CEREBRAS_API_KEY", "env-test-key");
     }
 
-    let model = provider_from_env("cerebras", "llama-3.3-70b", None);
+    let model = create_provider("cerebras", PresetSettings::default())
+        .expect("provider should build")
+        .language_model("llama-3.3-70b");
     assert!(model.is_ok(), "from_env should succeed with env var set");
 
     unsafe {
@@ -220,15 +229,19 @@ fn from_env_loads_cerebras_api_key() {
 
 /// TS: without the env var, `createCerebras()` fails.
 #[serial]
-#[test]
-fn from_env_fails_without_env_var() {
+#[tokio::test]
+async fn from_env_fails_without_env_var() {
     let saved = std::env::var("CEREBRAS_API_KEY").ok();
     unsafe {
         std::env::remove_var("CEREBRAS_API_KEY");
     }
 
-    let model = provider_from_env("cerebras", "llama-3.3-70b", None);
-    assert!(model.is_err(), "from_env should fail without env var");
+    let model = create_provider("cerebras", PresetSettings::default())
+        .expect("provider should build")
+        .language_model("llama-3.3-70b")
+        .expect("provider should build a model");
+    let result = model.do_generate(&default_options(test_prompt())).await;
+    assert!(result.is_err(), "from_env should fail without env var");
 
     unsafe {
         if let Some(v) = saved {

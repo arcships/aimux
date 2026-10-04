@@ -31,7 +31,7 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 
-use aimux_providers::{ProviderOptions, provider, provider_from_env};
+use aimux_providers::{PresetSettings, create_provider};
 
 fn test_prompt() -> LanguageModelPrompt {
     vec![LanguageModelPromptMessage {
@@ -61,27 +61,31 @@ fn text_completion_body() -> Value {
 }
 
 fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
-    provider(
+    create_provider(
         "deepinfra",
-        Some("test-api-key".to_string()),
-        "meta-llama/Meta-Llama-3-70B-Instruct",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-api-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("meta-llama/Meta-Llama-3-70B-Instruct")
     .expect("deepinfra provider should build")
 }
 
 /// TS: `createDeepInfra()` produces a model for the "deepinfra" registry entry.
 #[test]
 fn provider_builds_deepinfra_model() {
-    let model = provider(
+    let model = create_provider(
         "deepinfra",
-        Some("test-key".to_string()),
-        "meta-llama/Meta-Llama-3-70B-Instruct",
-        None,
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
+            ..Default::default()
+        },
     )
+    .expect("provider should build")
+    .language_model("meta-llama/Meta-Llama-3-70B-Instruct")
     .expect("deepinfra provider should build");
     assert_eq!(model.model_id(), "meta-llama/Meta-Llama-3-70B-Instruct");
 }
@@ -117,15 +121,16 @@ async fn custom_api_key_used_in_auth_header() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "deepinfra",
-        Some("my-custom-key".to_string()),
-        "meta-llama/Meta-Llama-3-70B-Instruct",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("my-custom-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("meta-llama/Meta-Llama-3-70B-Instruct")
     .expect("deepinfra provider should build");
 
     model
@@ -146,15 +151,16 @@ async fn custom_headers_forwarded() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "deepinfra",
-        Some("test-key".to_string()),
-        "meta-llama/Meta-Llama-3-70B-Instruct",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("meta-llama/Meta-Llama-3-70B-Instruct")
     .expect("deepinfra provider should build");
 
     let mut options = default_options(test_prompt());
@@ -197,7 +203,9 @@ fn from_env_loads_deepinfra_api_key() {
         std::env::set_var("DEEPINFRA_API_KEY", "env-test-key");
     }
 
-    let model = provider_from_env("deepinfra", "meta-llama/Meta-Llama-3-70B-Instruct", None);
+    let model = create_provider("deepinfra", PresetSettings::default())
+        .expect("provider should build")
+        .language_model("meta-llama/Meta-Llama-3-70B-Instruct");
     assert!(model.is_ok(), "from_env should succeed with env var set");
 
     unsafe {
@@ -210,15 +218,19 @@ fn from_env_loads_deepinfra_api_key() {
 
 /// TS: without the env var, `createDeepInfra()` fails.
 #[serial]
-#[test]
-fn from_env_fails_without_env_var() {
+#[tokio::test]
+async fn from_env_fails_without_env_var() {
     let saved = std::env::var("DEEPINFRA_API_KEY").ok();
     unsafe {
         std::env::remove_var("DEEPINFRA_API_KEY");
     }
 
-    let model = provider_from_env("deepinfra", "meta-llama/Meta-Llama-3-70B-Instruct", None);
-    assert!(model.is_err(), "from_env should fail without env var");
+    let model = create_provider("deepinfra", PresetSettings::default())
+        .expect("provider should build")
+        .language_model("meta-llama/Meta-Llama-3-70B-Instruct")
+        .expect("provider should build a model");
+    let result = model.do_generate(&default_options(test_prompt())).await;
+    assert!(result.is_err(), "from_env should fail without env var");
 
     unsafe {
         if let Some(v) = saved {
