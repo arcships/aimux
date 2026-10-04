@@ -19,6 +19,7 @@ pub mod handle_fetch_error;
 pub mod headers;
 pub mod http;
 pub mod logging;
+pub mod media_type;
 pub mod multipart;
 pub mod post_to_api;
 pub mod read_response_with_size_limit;
@@ -46,6 +47,10 @@ pub use headers::{
 };
 pub use http::{ExchangeContext, HttpBody, HttpRequest, ProxyConfig, init_proxy, sleep_or_abort};
 pub use logging::{body_logging_enabled, init_logging, redact_body, redact_error_context};
+pub use media_type::{
+    MAX_ID3_TAG_BYTES, MediaTypeData, detect_media_type, get_top_level_media_type,
+    is_full_media_type, resolve_full_media_type,
+};
 pub use multipart::{MultipartForm, media_type_to_extension};
 pub use post_to_api::{post_form_data_to_api, post_json_to_api, post_to_api};
 pub use resolvable::Resolvable;

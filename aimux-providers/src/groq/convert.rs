@@ -7,6 +7,7 @@ use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
+use aimux_provider_utils::resolve_full_media_type;
 
 fn text_of(content: &[ContentPart]) -> String {
     content
@@ -22,29 +23,11 @@ fn is_image(media_type: &str) -> bool {
     media_type.split('/').next() == Some("image")
 }
 
-/// The media type of image data: a bare `image` or `image/*` is detected from
-/// the first bytes of the base64 data (`resolveFullMediaType`).
-fn resolve_full_media_type(media_type: &str, base64: &str) -> String {
-    if media_type != "image" && !media_type.ends_with("/*") {
-        return media_type.to_string();
-    }
-    if base64.starts_with("/9j/") {
-        "image/jpeg"
-    } else if base64.starts_with("R0lGOD") {
-        "image/gif"
-    } else if base64.starts_with("UklGR") {
-        "image/webp"
-    } else {
-        "image/png"
-    }
-    .to_string()
-}
-
 fn image_url_part(media_type: &str, base64: &str) -> Value {
     json!({
         "type": "image_url",
         "image_url": {
-            "url": format!("data:{};base64,{base64}", resolve_full_media_type(media_type, base64)),
+            "url": format!("data:{media_type};base64,{base64}"),
         },
     })
 }
@@ -62,15 +45,19 @@ fn convert_user_part(part: &ContentPart) -> Result<Option<Value>, AiMuxError> {
                 "file parts with provider references".to_string(),
             ));
         }
-        ContentPart::Image {
-            image, media_type, ..
-        } => Some(image_url_part(media_type, &encode(image))),
+        ContentPart::Image { image, .. } => Some(image_url_part(
+            &resolve_full_media_type(part)?,
+            &encode(image),
+        )),
         ContentPart::File {
             data, media_type, ..
-        } if is_image(media_type) => Some(image_url_part(media_type, &encode(data))),
+        } if is_image(media_type) => Some(image_url_part(
+            &resolve_full_media_type(part)?,
+            &encode(data),
+        )),
         ContentPart::FileBase64 {
             data, media_type, ..
-        } if is_image(media_type) => Some(image_url_part(media_type, data)),
+        } if is_image(media_type) => Some(image_url_part(&resolve_full_media_type(part)?, data)),
         ContentPart::FileUrl {
             url, media_type, ..
         } if is_image(media_type) => Some(json!({
@@ -127,7 +114,7 @@ fn convert_assistant_message(content: &[ContentPart]) -> Value {
 ///
 /// # Errors
 ///
-/// `UnsupportedFunctionality` for a file part that is not an image.
+/// `UnsupportedFunctionality` for a non-image file or an undetectable image subtype.
 pub(crate) fn convert_to_groq_chat_messages(
     prompt: &LanguageModelPrompt,
 ) -> Result<Vec<Value>, AiMuxError> {
