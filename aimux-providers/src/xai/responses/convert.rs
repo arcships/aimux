@@ -11,6 +11,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort, Warning};
 
@@ -271,10 +272,7 @@ fn prepare_provider_tool(
 
 // ── Provider options helpers ─────────────────────────────────────────────────
 
-fn xai_option(
-    options: &Option<std::collections::HashMap<String, Value>>,
-    key: &str,
-) -> Option<Value> {
+fn xai_option(options: &Option<SharedProviderOptions>, key: &str) -> Option<Value> {
     options
         .as_ref()
         .and_then(|m| m.get("xai"))
@@ -538,7 +536,7 @@ fn convert_image_part(
     media_type: &str,
     b64_data: Option<&str>,
     url: Option<&str>,
-    provider_options: &Option<Value>,
+    provider_options: &Option<SharedProviderOptions>,
 ) -> Value {
     let image_url = if let Some(url_str) = url {
         url_str.to_string()

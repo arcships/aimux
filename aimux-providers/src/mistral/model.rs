@@ -21,6 +21,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -599,7 +600,7 @@ impl LanguageModel for MistralModel {
                 } else {
                     final_usage
                 },
-                provider_metadata: Some(serde_json::json!({ "mistral": {} })),
+                provider_metadata: Some(provider_namespace("mistral", serde_json::json!({}))),
             });
         };
 

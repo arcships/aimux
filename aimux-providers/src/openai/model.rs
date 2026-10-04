@@ -18,6 +18,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -381,7 +382,7 @@ pub async fn execute_generate(
             pm_openai["rejectedPredictionTokens"] = json!(rpt);
         }
     }
-    let provider_metadata = Some(serde_json::json!({ "openai": pm_openai }));
+    let provider_metadata = Some(provider_namespace("openai", pm_openai));
 
     Ok(GenerateResult {
         content,
@@ -759,7 +760,7 @@ pub async fn execute_stream(
                     pm_openai["rejectedPredictionTokens"] = json!(rpt);
                 }
             }
-        let provider_metadata = serde_json::json!({ "openai": pm_openai });
+        let provider_metadata = provider_namespace("openai", pm_openai);
 
         // Final part: Finish.
         yield Ok(StreamPart::Finish {

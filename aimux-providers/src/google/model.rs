@@ -14,7 +14,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{
     GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
 };
-use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::shared::{FileBytes, FileData, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
@@ -166,16 +166,17 @@ impl LanguageModel for GoogleModel {
 
         // Provider metadata: wrap the raw Google metadata under a `google`
         // key (matching the TS `wrapProviderMetadata`).
-        let provider_metadata = Some(serde_json::json!({
-            "google": {
+        let provider_metadata = Some(provider_namespace(
+            "google",
+            json!({
                 "promptFeedback": data.prompt_feedback,
                 "groundingMetadata": candidate.grounding_metadata,
                 "urlContextMetadata": candidate.url_context_metadata,
                 "safetyRatings": candidate.safety_ratings,
                 "usageMetadata": data.usage_metadata,
                 "finishMessage": candidate.finish_message,
-            }
-        }));
+            }),
+        ));
 
         Ok(GenerateResult {
             content,
@@ -328,10 +329,10 @@ impl LanguageModel for GoogleModel {
                         {
                             for part in parts {
                                 // thoughtSignature → provider_metadata (upstream :778-782)
-                                let thought_sig_meta: Option<Value> = part
+                                let thought_sig_meta: Option<ProviderMetadata> = part
                                     .get("thoughtSignature")
                                     .and_then(|v| v.as_str())
-                                    .map(|s| json!({ "google": { "thoughtSignature": s } }));
+                                    .map(|s| provider_namespace("google", json!({ "thoughtSignature": s })));
 
                                 // text part
                                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
@@ -515,12 +516,11 @@ impl LanguageModel for GoogleModel {
                                     block_counter += 1;
                                     last_server_tool_call_id = Some(id.clone());
                                     let args = tc.get("args").cloned().unwrap_or(json!({}));
-                                    let mut server_meta = json!({
-                                        "google": { "serverToolCallId": id, "serverToolType": tool_type }
-                                    });
-                                    if let Some(s) = part.get("thoughtSignature").and_then(|v| v.as_str()) {
-                                        server_meta["google"]["thoughtSignature"] = json!(s);
-                                    }
+                                    let server_meta = server_tool_metadata(
+                                        &id,
+                                        tool_type,
+                                        part.get("thoughtSignature").and_then(|v| v.as_str()),
+                                    );
                                     yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: id,
                                         tool_name: format!("server:{tool_type}"),
@@ -545,12 +545,11 @@ impl LanguageModel for GoogleModel {
                                     block_counter += 1;
                                     let response =
                                         tr.get("response").cloned().unwrap_or(json!({}));
-                                    let mut server_meta = json!({
-                                        "google": { "serverToolCallId": id, "serverToolType": tool_type }
-                                    });
-                                    if let Some(s) = part.get("thoughtSignature").and_then(|v| v.as_str()) {
-                                        server_meta["google"]["thoughtSignature"] = json!(s);
-                                    }
+                                    let server_meta = server_tool_metadata(
+                                        &id,
+                                        tool_type,
+                                        part.get("thoughtSignature").and_then(|v| v.as_str()),
+                                    );
                                     yield Ok(StreamPart::ToolResult(ToolResult {
                                         tool_call_id: id,
                                         tool_name: format!("server:{tool_type}"),
@@ -635,16 +634,14 @@ impl LanguageModel for GoogleModel {
                 yield Ok(StreamPart::ReasoningEnd { id, provider_metadata: None});
             }
 
-            let provider_metadata = Some(serde_json::json!({
-                "google": {
-                    "promptFeedback": last_prompt_feedback,
-                    "groundingMetadata": last_grounding_metadata,
-                    "urlContextMetadata": last_url_context_metadata,
-                    "safetyRatings": last_safety_ratings,
-                    "usageMetadata": last_usage_metadata_value,
-                    "finishMessage": last_finish_message,
-                }
-            }));
+            let provider_metadata = Some(provider_namespace("google", json!({
+                "promptFeedback": last_prompt_feedback,
+                "groundingMetadata": last_grounding_metadata,
+                "urlContextMetadata": last_url_context_metadata,
+                "safetyRatings": last_safety_ratings,
+                "usageMetadata": last_usage_metadata_value,
+                "finishMessage": last_finish_message,
+            })));
 
             yield Ok(StreamPart::Finish {
                 finish_reason: if stream_errored {
@@ -677,7 +674,7 @@ fn server_tool_metadata(
     tool_call_id: &str,
     server_tool_type: &str,
     thought_signature: Option<&str>,
-) -> Value {
+) -> ProviderMetadata {
     let mut payload = json!({
         "serverToolCallId": tool_call_id,
         "serverToolType": server_tool_type,
@@ -685,7 +682,7 @@ fn server_tool_metadata(
     if let Some(signature) = thought_signature {
         payload["thoughtSignature"] = json!(signature);
     }
-    json!({ "google": payload })
+    provider_namespace("google", payload)
 }
 
 /// Extract `GenerateContent` items from a non-streaming candidate.
@@ -716,10 +713,10 @@ fn extract_content_from_candidate(
     if let Some(parts) = parts {
         for part in parts {
             // thoughtSignature → provider_metadata (upstream :448-451)
-            let thought_sig_meta: Option<Value> = part
+            let thought_sig_meta: Option<ProviderMetadata> = part
                 .get("thoughtSignature")
                 .and_then(|v| v.as_str())
-                .map(|s| json!({ "google": { "thoughtSignature": s } }));
+                .map(|s| provider_namespace("google", json!({ "thoughtSignature": s })));
 
             // Branch order matches upstream (google-language-model.ts:420-534):
             // executableCode → codeExecutionResult → text → functionCall
@@ -846,12 +843,11 @@ fn extract_content_from_candidate(
                     .get("thoughtSignature")
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string);
-                let mut server_meta = json!({
-                    "google": { "serverToolCallId": id, "serverToolType": tool_type }
-                });
-                if let Some(s) = part.get("thoughtSignature").and_then(|v| v.as_str()) {
-                    server_meta["google"]["thoughtSignature"] = json!(s);
-                }
+                let server_meta = server_tool_metadata(
+                    &id,
+                    tool_type,
+                    part.get("thoughtSignature").and_then(|v| v.as_str()),
+                );
                 content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id,
                     tool_name: format!("server:{tool_type}"),
@@ -874,12 +870,11 @@ fn extract_content_from_candidate(
                     })
                     .unwrap_or_default();
                 let response = tr.get("response").cloned().unwrap_or(json!({}));
-                let mut server_meta = json!({
-                    "google": { "serverToolCallId": id, "serverToolType": tool_type }
-                });
-                if let Some(s) = part.get("thoughtSignature").and_then(|v| v.as_str()) {
-                    server_meta["google"]["thoughtSignature"] = json!(s);
-                }
+                let server_meta = server_tool_metadata(
+                    &id,
+                    tool_type,
+                    part.get("thoughtSignature").and_then(|v| v.as_str()),
+                );
                 content.push(GenerateContent::ToolResult(ToolResult {
                     tool_call_id: id,
                     tool_name: format!("server:{tool_type}"),

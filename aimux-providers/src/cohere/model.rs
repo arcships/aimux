@@ -15,6 +15,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -212,7 +213,7 @@ impl LanguageModel for CohereModel {
                     source_type: "document".to_string(),
                     url: None,
                     title: Some(title),
-                    provider_metadata: Some(json!({ "cohere": cohere_meta })),
+                    provider_metadata: Some(HashMap::from([("cohere".to_string(), cohere_meta)])),
                 }));
             }
         }
@@ -568,7 +569,7 @@ impl LanguageModel for CohereModel {
                 } else {
                     final_usage
                 },
-                provider_metadata: Some(serde_json::json!({ "cohere": {} })),
+                provider_metadata: Some(provider_namespace("cohere", json!({}))),
             });
         };
 

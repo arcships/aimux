@@ -5,6 +5,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
 use serde::Serialize;
@@ -15,7 +16,6 @@ use super::OpenAICompatProfile;
 /// `convert_common` in M10; re-exported for API compatibility).
 pub use super::convert_common::SystemMessageMode;
 use super::convert_common::{ModelCapabilities, get_model_capabilities};
-use std::collections::HashMap;
 
 // ── Model capabilities ──────────────────────────────────────────────────────
 // `GptVersion` / `get_gpt_version` / `get_o_series_version` /
@@ -282,7 +282,7 @@ pub fn convert_prompt_to_openai_messages_with_provider(
 }
 
 /// Get the prompt cache breakpoint from provider options.
-fn get_prompt_cache_breakpoint(provider_options: &Option<Value>) -> Option<Value> {
+fn get_prompt_cache_breakpoint(provider_options: &Option<SharedProviderOptions>) -> Option<Value> {
     provider_options
         .as_ref()
         .and_then(|po| po.get("openai"))
@@ -291,7 +291,7 @@ fn get_prompt_cache_breakpoint(provider_options: &Option<Value>) -> Option<Value
 }
 
 /// Get imageDetail from provider options.
-fn get_image_detail(provider_options: &Option<Value>) -> Option<Value> {
+fn get_image_detail(provider_options: &Option<SharedProviderOptions>) -> Option<Value> {
     provider_options
         .as_ref()
         .and_then(|po| po.get("openai"))
@@ -357,7 +357,7 @@ fn convert_file_part_to_openai(
     url: Option<&str>,
     reference: Option<&Value>,
     filename: Option<&str>,
-    provider_options: &Option<Value>,
+    provider_options: &Option<SharedProviderOptions>,
     part_index: usize,
 ) -> Result<Value, String> {
     let prompt_cache_breakpoint = get_prompt_cache_breakpoint(provider_options);
@@ -898,14 +898,10 @@ pub struct RequestBodyResult {
 }
 
 /// Get a value from provider_options.openai.<key>.
-fn openai_option(
-    options: &Option<HashMap<std::string::String, Value>>,
-    key: &str,
-) -> Option<Value> {
-    use std::collections::HashMap;
+fn openai_option(options: &Option<SharedProviderOptions>, key: &str) -> Option<Value> {
     options
         .as_ref()
-        .and_then(|m: &HashMap<String, Value>| m.get("openai"))
+        .and_then(|m| m.get("openai"))
         .and_then(|o| o.get(key))
         .cloned()
 }
@@ -943,7 +939,7 @@ pub fn build_request_body(
 /// Look up a key from the provider-specific options (groq → "groq" then
 /// "openai"; otherwise "openai").
 fn provider_option(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     key: &str,
 ) -> Option<Value> {
@@ -963,7 +959,7 @@ fn provider_option(
 /// vendor normalization). `providerOptions.reasoningEffort` wins over top-level
 /// `reasoning`; custom top-level levels map verbatim to `reasoning_effort`.
 fn resolve_reasoning_effort(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     reasoning: &Option<ReasoningEffort>,
 ) -> Option<String> {
@@ -983,7 +979,7 @@ fn resolve_reasoning_effort(
 }
 
 fn resolve_is_reasoning_model(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     caps: &ModelCapabilities,
 ) -> bool {
@@ -993,7 +989,7 @@ fn resolve_is_reasoning_model(
 }
 
 fn resolve_system_message_mode(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     is_reasoning_model: bool,
     caps: &ModelCapabilities,
@@ -1021,7 +1017,7 @@ fn resolve_system_message_mode(
 fn apply_max_tokens(
     body: &mut Value,
     options: &CallOptions,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     profile: &OpenAICompatProfile,
     is_reasoning_model: bool,
@@ -1157,7 +1153,7 @@ fn insert_sampling_params(body: &mut Value, params: &SamplingParams, options: &C
 fn apply_response_format(
     body: &mut Value,
     options: &CallOptions,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     profile: &OpenAICompatProfile,
     warnings: &mut Vec<Warning>,
@@ -1237,7 +1233,7 @@ fn apply_response_format(
 /// field (plus Groq's `reasoning_format`).
 fn apply_provider_option_passthrough(
     body: &mut Value,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
 ) {
     let mut set = |key: &str, body_key: &str| {
@@ -1274,7 +1270,7 @@ fn apply_provider_option_passthrough(
 /// without validation).
 fn apply_service_tier(
     body: &mut Value,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     caps: &ModelCapabilities,
     warnings: &mut Vec<Warning>,

@@ -7,6 +7,7 @@
 //! set on a non-cacheable context such as a thinking block) are dropped with a
 //! `Warning::Unsupported`.
 
+use aimux_core::shared::JsonObject;
 use aimux_core::types::Warning;
 use serde_json::Value;
 
@@ -15,13 +16,12 @@ const MAX_CACHE_BREAKPOINTS: u32 = 4;
 
 /// Extract the `cache_control` value from provider metadata, mirroring the TS
 /// `getCacheControl` helper. Accepts both the camelCase `cacheControl` and the
-/// snake_case `cache_control` keys under `providerOptions.anthropic`.
+/// snake_case `cache_control` keys in the `providerOptions.anthropic` namespace.
 ///
 /// The value is passed through unchanged (the Anthropic API validates it).
 #[must_use]
-pub fn extract_cache_control(provider_options: Option<&Value>) -> Option<Value> {
-    let opts = provider_options?;
-    let anthropic = opts.get("anthropic")?;
+pub fn extract_cache_control(anthropic: Option<&JsonObject>) -> Option<Value> {
+    let anthropic = anthropic?;
     anthropic
         .get("cacheControl")
         .or_else(|| anthropic.get("cache_control"))
@@ -46,8 +46,8 @@ impl CacheControlValidator {
     /// Resolve the `cache_control` value (if any) for a content block, applying
     /// the validation rules.
     ///
-    /// - `provider_options` is the part- or message-level provider metadata to
-    ///   read `anthropic.cacheControl` from.
+    /// - `anthropic` is the part- or message-level Anthropic namespace to
+    ///   read `cacheControl` from.
     /// - `context_type` is a human-readable label for the block kind (e.g.
     ///   `"user message part"`, `"thinking block"`) used in warning messages.
     /// - `can_cache` is `false` for contexts that cannot carry cache_control
@@ -58,11 +58,11 @@ impl CacheControlValidator {
     /// or `None` when there is none or it was rejected.
     pub fn get_cache_control(
         &mut self,
-        provider_options: Option<&Value>,
+        anthropic: Option<&JsonObject>,
         context_type: &str,
         can_cache: bool,
     ) -> Option<Value> {
-        let cache_control_value = extract_cache_control(provider_options);
+        let cache_control_value = extract_cache_control(anthropic);
 
         let cc = cache_control_value?;
 

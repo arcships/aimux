@@ -16,8 +16,11 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, Source, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use aimux_core::types::{
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
+};
 
 use aimux_provider_utils::{HttpRequest, RetryConfig};
 
@@ -646,18 +649,17 @@ impl LanguageModel for VertexModel {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn vertex_provider_metadata(payload: Value) -> Value {
-    json!({
-        "googleVertex": payload.clone(),
-        "vertex": payload,
-    })
+fn vertex_provider_metadata(payload: Value) -> ProviderMetadata {
+    let mut metadata = provider_namespace("googleVertex", payload.clone());
+    metadata.extend(provider_namespace("vertex", payload));
+    metadata
 }
 
 fn vertex_server_tool_metadata(
     tool_call_id: &str,
     server_tool_type: &str,
     thought_signature: Option<&str>,
-) -> Value {
+) -> ProviderMetadata {
     let mut payload = json!({
         "serverToolCallId": tool_call_id,
         "serverToolType": server_tool_type,

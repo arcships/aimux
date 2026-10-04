@@ -23,6 +23,7 @@ use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::result::{GenerateContent, Source};
+use aimux_core::shared::{JsonObject, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
 use base64::Engine;
@@ -69,9 +70,9 @@ enum ProviderMetadataNamespace {
 /// cross-provider fallback. The public Google provider uses the inverse
 /// fallback so transcripts survive gateway/provider failover.
 fn read_provider_options(
-    provider_options: Option<&Value>,
+    provider_options: Option<&SharedProviderOptions>,
     namespace: ProviderMetadataNamespace,
-) -> Option<&Value> {
+) -> Option<&JsonObject> {
     let provider_options = provider_options?;
     match namespace {
         ProviderMetadataNamespace::Google => provider_options
@@ -1295,6 +1296,7 @@ pub fn extract_sources(
 mod tests {
     use super::*;
     use aimux_core::language_model_message::LanguageModelPromptMessage;
+    use aimux_core::shared::provider_namespace;
 
     fn assistant_prompt(content: Vec<ContentPart>) -> LanguageModelPrompt {
         vec![LanguageModelPromptMessage {
@@ -1304,13 +1306,14 @@ mod tests {
         }]
     }
 
-    fn code_metadata(namespace: &str, id: &str) -> Value {
-        json!({
-            (namespace): {
+    fn code_metadata(namespace: &str, id: &str) -> SharedProviderOptions {
+        provider_namespace(
+            namespace,
+            json!({
                 "serverToolCallId": id,
                 "serverToolType": "code_execution",
-            }
-        })
+            }),
+        )
     }
 
     #[test]
@@ -1365,11 +1368,14 @@ mod tests {
             input: json!({}),
             provider_executed: None,
             thought_signature: None,
-            provider_options: Some(json!({
-                "googleVertex": { "thoughtSignature": "google-vertex" },
-                "vertex": { "thoughtSignature": "vertex" },
-                "google": { "thoughtSignature": "google" },
-            })),
+            provider_options: Some(
+                serde_json::from_value(json!({
+                    "googleVertex": { "thoughtSignature": "google-vertex" },
+                    "vertex": { "thoughtSignature": "vertex" },
+                    "google": { "thoughtSignature": "google" },
+                }))
+                .unwrap(),
+            ),
         };
         let prompt = assistant_prompt(vec![content]);
 
@@ -1393,9 +1399,12 @@ mod tests {
             input: json!({}),
             provider_executed: None,
             thought_signature: None,
-            provider_options: Some(json!({
-                "google": { "thoughtSignature": "gateway-signature" },
-            })),
+            provider_options: Some(provider_namespace(
+                "google",
+                json!({
+                    "thoughtSignature": "gateway-signature",
+                }),
+            )),
         }]);
 
         let converted =

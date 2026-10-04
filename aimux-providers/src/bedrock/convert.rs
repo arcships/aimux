@@ -18,6 +18,7 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ToolChoice};
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
 use base64::Engine;
@@ -243,7 +244,7 @@ fn push_file_block(
     b64: &str,
     media_type: &str,
     filename: Option<&str>,
-    provider_options: &Option<Value>,
+    provider_options: &Option<SharedProviderOptions>,
     content: &mut Vec<Value>,
     doc_counter: &mut u32,
 ) {
@@ -291,7 +292,7 @@ fn part_cache_point(part: &ContentPart) -> Option<Value> {
         } => provider_options.as_ref()?,
         _ => return None,
     };
-    for key in &["bedrock", "amazonBedrock"] {
+    for key in ["bedrock", "amazonBedrock"] {
         if let Some(cp) = po.get(key).and_then(|v| v.get("cachePoint")) {
             return Some(json!({ "cachePoint": cp.clone() }));
         }
@@ -301,11 +302,11 @@ fn part_cache_point(part: &ContentPart) -> Option<Value> {
 
 /// Whether `citations.enabled` is set on a part's `bedrock`/`amazonBedrock`
 /// provider options.
-fn citations_enabled(provider_options: &Option<Value>) -> bool {
+fn citations_enabled(provider_options: &Option<SharedProviderOptions>) -> bool {
     let Some(po) = provider_options.as_ref() else {
         return false;
     };
-    for key in &["bedrock", "amazonBedrock"] {
+    for key in ["bedrock", "amazonBedrock"] {
         if let Some(enabled) = po
             .get(key)
             .and_then(|b| b.get("citations"))

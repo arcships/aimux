@@ -16,7 +16,7 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::retry;
-use aimux_core::shared::{SharedProviderMetadata, Warning};
+use aimux_core::shared::{SharedProviderMetadata, Warning, provider_namespace};
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
@@ -265,10 +265,8 @@ impl TranscriptionModel for GladiaTranscriptionModel {
             && let Some(gladia) = po.get("gladia")
         {
             // Forward all provider options as-is (the API uses snake_case).
-            if let Some(obj) = gladia.as_object() {
-                for (k, v) in obj {
-                    body.insert(k.clone(), v.clone());
-                }
+            for (k, v) in gladia {
+                body.insert(k.clone(), v.clone());
             }
         }
 
@@ -359,11 +357,8 @@ impl TranscriptionModel for GladiaTranscriptionModel {
 
                 let timestamp = chrono::Utc::now().to_rfc3339();
 
-                let provider_metadata: Option<SharedProviderMetadata> = {
-                    let mut md = HashMap::new();
-                    md.insert("gladia".to_string(), raw_body.clone());
-                    Some(md)
-                };
+                let provider_metadata: Option<SharedProviderMetadata> =
+                    Some(provider_namespace("gladia", raw_body.clone()));
                 return Ok(TranscriptionResult {
                     text: result.transcription.full_transcript,
                     segments,

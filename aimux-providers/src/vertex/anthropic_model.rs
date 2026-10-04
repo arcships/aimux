@@ -25,8 +25,11 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use aimux_core::types::{
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
+};
 
 use aimux_provider_utils::{HttpRequest, RetryConfig};
 
@@ -394,20 +397,18 @@ impl LanguageModel for VertexAnthropicModel {
                                             provider_executed: Some(true),
                                             dynamic: Some(true),
                                             thought_signature: None,
-                                            provider_metadata: Some(json!({
-                                                "anthropic": {
-                                                    "type": "mcp-tool-use",
-                                                    "serverName": server_name,
-                                                }
-                                            })),
+                                            provider_metadata: Some(provider_namespace("anthropic", json!({
+                                                "type": "mcp-tool-use",
+                                                "serverName": server_name,
+                                            }))),
                                         }));
                                     }
                                     ContentBlock::RedactedThinking { data } => {
                                         yield Ok(StreamPart::ReasoningStart {
                                             id: index.to_string(),
-                                            provider_metadata: Some(json!({
-                                                "anthropic": { "redactedData": data }
-                                            })),
+                                            provider_metadata: Some(provider_namespace("anthropic", json!({
+                                                "redactedData": data
+                                            }))),
                                         });
                                         blocks.insert(index, BlockState::Thinking { started: true });
                                     }
@@ -625,7 +626,7 @@ enum BlockState {
         dynamic: Option<bool>,
         provider_tool_name: Option<String>,
         provider_tool_input_type: Option<String>,
-        provider_metadata: Option<Value>,
+        provider_metadata: Option<ProviderMetadata>,
         first_delta: bool,
     },
     Thinking {

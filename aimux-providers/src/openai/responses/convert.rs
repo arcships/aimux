@@ -10,14 +10,13 @@
 //! - `convert-openai-responses-usage.ts` -> [`convert_responses_usage`]
 //! - `map-openai-responses-finish-reason.ts` -> [`map_responses_finish_reason`]
 
-use std::collections::HashMap;
-
 use serde_json::{Value, json};
 
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Usage, Warning};
 
@@ -40,7 +39,7 @@ pub use crate::openai::convert_common::SystemMessageMode as ResponsesSystemMessa
 // -- Provider options helper -------------------------------------------------
 
 /// Get a value from `provider_options.openai.<key>`.
-fn openai_option(options: &Option<HashMap<String, Value>>, key: &str) -> Option<Value> {
+fn openai_option(options: &Option<SharedProviderOptions>, key: &str) -> Option<Value> {
     options
         .as_ref()
         .and_then(|m| m.get("openai"))
@@ -346,7 +345,7 @@ fn serialize_arguments(input: &Value) -> String {
 }
 
 /// Read the `itemId` from a content part's `providerOptions.openai.itemId`.
-fn item_id(provider_options: &Option<Value>) -> Option<String> {
+fn item_id(provider_options: &Option<SharedProviderOptions>) -> Option<String> {
     provider_options
         .as_ref()
         .and_then(|v| v.get("openai"))
@@ -356,7 +355,7 @@ fn item_id(provider_options: &Option<Value>) -> Option<String> {
 }
 
 /// Read the `phase` from a content part's `providerOptions.openai.phase`.
-fn phase_from_provider_options(provider_options: &Option<Value>) -> Option<String> {
+fn phase_from_provider_options(provider_options: &Option<SharedProviderOptions>) -> Option<String> {
     provider_options
         .as_ref()
         .and_then(|v| v.get("openai"))
@@ -366,7 +365,9 @@ fn phase_from_provider_options(provider_options: &Option<Value>) -> Option<Strin
 }
 
 /// Read the `namespace` from a content part's `providerOptions.openai.namespace`.
-fn namespace_from_provider_options(provider_options: &Option<Value>) -> Option<String> {
+fn namespace_from_provider_options(
+    provider_options: &Option<SharedProviderOptions>,
+) -> Option<String> {
     provider_options
         .as_ref()
         .and_then(|v| v.get("openai"))
@@ -376,7 +377,7 @@ fn namespace_from_provider_options(provider_options: &Option<Value>) -> Option<S
 }
 
 /// Read a sub-key from `providerOptions.openai.<key>` on a content part.
-fn openai_sub_option(provider_options: &Option<Value>, key: &str) -> Option<Value> {
+fn openai_sub_option(provider_options: &Option<SharedProviderOptions>, key: &str) -> Option<Value> {
     provider_options
         .as_ref()
         .and_then(|v| v.get("openai"))
@@ -513,7 +514,7 @@ fn push_unsupported_call_option_warnings(options: &CallOptions, warnings: &mut V
 /// wins over top-level `reasoning`), `reasoningSummary` (defaults to "detailed"
 /// when an effort other than "none" applies), and whether the model reasons.
 fn resolve_responses_reasoning(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     options: &CallOptions,
     caps: &ModelCapabilities,
 ) -> (Option<String>, Option<String>, bool) {
@@ -562,7 +563,7 @@ fn resolve_responses_reasoning(
 
 /// Warn when `conversation` and `previousResponseId` are both set.
 fn warn_conversation_conflict(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     warnings: &mut Vec<Warning>,
 ) {
     let has_conversation = openai_option(provider_opts, "conversation").is_some();
@@ -578,7 +579,7 @@ fn warn_conversation_conflict(
 }
 
 fn resolve_responses_system_message_mode(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     is_reasoning_model: bool,
     caps: &ModelCapabilities,
 ) -> SystemMessageMode {
@@ -600,7 +601,7 @@ fn resolve_responses_system_message_mode(
 fn apply_responses_sampling(
     body: &mut Value,
     options: &CallOptions,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     caps: &ModelCapabilities,
     is_reasoning_model: bool,
     resolved_reasoning_effort: &Option<String>,
@@ -656,7 +657,7 @@ fn apply_responses_sampling(
 fn apply_responses_text_format(
     body: &mut Value,
     options: &CallOptions,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
 ) {
     if let Some(ref rf) = options.response_format {
         match rf {
@@ -705,7 +706,7 @@ fn apply_responses_text_format(
 /// The computed `include` list (store=false on reasoning models adds
 /// `reasoning.encrypted_content`).
 fn resolve_responses_include(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     is_reasoning_model: bool,
 ) -> Option<Vec<Value>> {
     let mut include: Option<Vec<Value>> =
@@ -736,7 +737,7 @@ fn resolve_responses_include(
 /// set).
 fn apply_responses_provider_options(
     body: &mut Value,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
 ) {
     let mut set = |key: &str, body_key: &str| {
         if let Some(v) = openai_option(provider_opts, key) {
@@ -760,7 +761,7 @@ fn apply_responses_provider_options(
 /// `service_tier` with model-capability validation.
 fn apply_responses_service_tier(
     body: &mut Value,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     caps: &ModelCapabilities,
     warnings: &mut Vec<Warning>,
 ) {
@@ -793,7 +794,7 @@ fn apply_responses_service_tier(
 /// `reasoning` block for reasoning models.
 fn apply_responses_reasoning_block(
     body: &mut Value,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     is_reasoning_model: bool,
     resolved_reasoning_effort: &Option<String>,
     resolved_reasoning_summary: &Option<String>,

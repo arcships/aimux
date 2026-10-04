@@ -24,7 +24,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::Warning;
+use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
@@ -120,7 +120,7 @@ struct OpenAITranscriptionOptions {
 
 /// Parse provider options from the shared options map.
 fn parse_openai_options(
-    provider_options: Option<&HashMap<String, Value>>,
+    provider_options: Option<&SharedProviderOptions>,
 ) -> OpenAITranscriptionOptions {
     let mut opts = OpenAITranscriptionOptions::default();
     if let Some(po) = provider_options

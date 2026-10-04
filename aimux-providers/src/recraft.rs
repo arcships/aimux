@@ -20,7 +20,7 @@ use aimux_core::image_model::{
 };
 use aimux_core::provider::Provider;
 use aimux_core::retry;
-use aimux_core::shared::Warning;
+use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
 
 fn recraft_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -161,7 +161,7 @@ struct RecraftOptions {
 ///
 /// Unknown fields are ignored (safe degradation); values are passed through as
 /// raw JSON so that unrecognised-but-valid enum values do not cause errors.
-fn parse_recraft_options(provider_options: &HashMap<String, Value>) -> RecraftOptions {
+fn parse_recraft_options(provider_options: &SharedProviderOptions) -> RecraftOptions {
     let recraft = provider_options.get("recraft");
     RecraftOptions {
         style: recraft.and_then(|o| o.get("style")).cloned(),

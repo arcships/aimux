@@ -31,6 +31,7 @@ use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::Tool;
 use aimux_core::types::{
@@ -222,9 +223,10 @@ impl LanguageModel for HuggingFaceResponsesModel {
             finish_reason,
             usage,
             warnings: request.warnings,
-            provider_metadata: Some(json!({
-                "huggingface": { "responseId": response_id }
-            })),
+            provider_metadata: Some(provider_namespace(
+                "huggingface",
+                json!({ "responseId": response_id }),
+            )),
             response: ResponseMetadata {
                 id: response_id,
                 timestamp: format_timestamp(created_at),
@@ -341,9 +343,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                     .to_string();
                                                 yield Ok(StreamPart::TextStart {
                                                     id: id.clone(),
-                                                    provider_metadata: Some(json!({
-                                                        "huggingface": { "itemId": id }
-                                                    })),
+                                                    provider_metadata: Some(provider_namespace("huggingface", json!({ "itemId": id }))),
                                                 });
                                             }
                                         }
@@ -375,9 +375,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 .to_string();
                                             yield Ok(StreamPart::ReasoningStart {
                                                 id: id.clone(),
-                                                provider_metadata: Some(json!({
-                                                    "huggingface": { "itemId": id }
-                                                })),
+                                                provider_metadata: Some(provider_namespace("huggingface", json!({ "itemId": id }))),
                                             });
                                         }
                                         _ => {}
@@ -547,9 +545,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
             yield Ok(StreamPart::Finish {
                 finish_reason,
                 usage,
-                provider_metadata: Some(json!({
-                    "huggingface": { "responseId": response_id }
-                })),
+                provider_metadata: Some(provider_namespace("huggingface", json!({ "responseId": response_id }))),
             });
         };
 
@@ -1092,9 +1088,10 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Text {
                         text: text.to_string(),
-                        provider_metadata: Some(json!({
-                            "huggingface": { "itemId": item_id }
-                        })),
+                        provider_metadata: Some(provider_namespace(
+                            "huggingface",
+                            json!({ "itemId": item_id }),
+                        )),
                     });
 
                     // Process annotations → source parts.
@@ -1125,9 +1122,10 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Reasoning(ReasoningOutput {
                         text: text.to_string(),
-                        provider_metadata: Some(json!({
-                            "huggingface": { "itemId": item_id }
-                        })),
+                        provider_metadata: Some(provider_namespace(
+                            "huggingface",
+                            json!({ "itemId": item_id }),
+                        )),
                     }));
                 }
             }

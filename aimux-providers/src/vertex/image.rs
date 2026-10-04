@@ -19,7 +19,7 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult, ImageUsage,
 };
-use aimux_core::shared::Warning;
+use aimux_core::shared::{Warning, provider_namespace};
 
 use aimux_provider_utils::HttpRequest;
 
@@ -121,7 +121,7 @@ impl VertexImageModel {
 
         // Build other options (excluding "edit")
         let mut other_options = Map::new();
-        if let Some(obj) = gv_opts.and_then(|v| v.as_object()) {
+        if let Some(obj) = gv_opts {
             for (k, v) in obj {
                 if k != "edit" {
                     other_options.insert(k.clone(), v.clone());
@@ -235,9 +235,8 @@ impl VertexImageModel {
             .unwrap_or_default();
 
         let payload = json!({ "images": image_metas });
-        let mut metadata = HashMap::new();
-        metadata.insert("googleVertex".into(), payload.clone());
-        metadata.insert("vertex".into(), payload);
+        let mut metadata = provider_namespace("googleVertex", payload.clone());
+        metadata.extend(provider_namespace("vertex", payload));
 
         Ok(ImageResult {
             images: ImageOutputs::Base64(images),
@@ -318,7 +317,7 @@ impl VertexImageModel {
             .provider_options
             .get("googleVertex")
             .or_else(|| options.provider_options.get("vertex"));
-        if let Some(obj) = gv_opts.and_then(|v| v.as_object()) {
+        if let Some(obj) = gv_opts {
             for (k, v) in obj {
                 if matches!(k.as_str(), "responseModalities" | "imageConfig") {
                     continue;
@@ -382,9 +381,8 @@ impl VertexImageModel {
         });
 
         let payload = json!({ "images": images.iter().map(|_| json!({})).collect::<Vec<_>>() });
-        let mut metadata = HashMap::new();
-        metadata.insert("googleVertex".into(), payload.clone());
-        metadata.insert("vertex".into(), payload);
+        let mut metadata = provider_namespace("googleVertex", payload.clone());
+        metadata.extend(provider_namespace("vertex", payload));
 
         Ok(ImageResult {
             images: ImageOutputs::Base64(images),

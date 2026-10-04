@@ -16,8 +16,11 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use aimux_core::types::{
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
+};
 
 use serde_json::json;
 
@@ -593,11 +596,10 @@ impl LanguageModel for BedrockModel {
             let provider_metadata = if finish_meta.is_empty() {
                 None
             } else {
-                let payload = serde_json::Value::Object(finish_meta);
-                Some(json!({
-                    "amazonBedrock": payload,
-                    "bedrock": payload,
-                }))
+                Some(HashMap::from([
+                    ("amazonBedrock".to_string(), finish_meta.clone()),
+                    ("bedrock".to_string(), finish_meta),
+                ]))
             };
 
             yield Ok(StreamPart::Finish {
@@ -621,12 +623,11 @@ impl LanguageModel for BedrockModel {
 /// Wrap the accumulated reasoning signature as provider_metadata in the same
 /// dual-key shape the non-streaming path emits (`amazonBedrock` + `bedrock`),
 /// so consumers reading either key see it.
-fn reasoning_signature_meta(sig: Option<String>) -> Option<serde_json::Value> {
+fn reasoning_signature_meta(sig: Option<String>) -> Option<ProviderMetadata> {
     sig.map(|s| {
-        json!({
-            "amazonBedrock": { "signature": &s },
-            "bedrock": { "signature": s }
-        })
+        let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": &s }));
+        metadata.extend(provider_namespace("bedrock", json!({ "signature": s })));
+        metadata
     })
 }
 
@@ -666,10 +667,9 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
                 .unwrap_or("")
                 .to_string();
             let provider_metadata = rt.get("signature").and_then(|v| v.as_str()).map(|sig| {
-                json!({
-                    "amazonBedrock": { "signature": sig },
-                    "bedrock": { "signature": sig }
-                })
+                let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": sig }));
+                metadata.extend(provider_namespace("bedrock", json!({ "signature": sig })));
+                metadata
             });
             content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text,
@@ -681,10 +681,13 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let provider_metadata = Some(json!({
-                "amazonBedrock": { "redactedData": data },
-                "bedrock": { "redactedData": data }
-            }));
+            let mut metadata =
+                provider_namespace("amazonBedrock", json!({ "redactedData": &data }));
+            metadata.extend(provider_namespace(
+                "bedrock",
+                json!({ "redactedData": data }),
+            ));
+            let provider_metadata = Some(metadata);
             content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text: String::new(),
                 provider_metadata,

@@ -5,13 +5,12 @@
 //! `supports-reasoning-effort.ts`, `map-xai-finish-reason.ts`, and
 //! `remove-additional-properties.ts`.
 
-use std::collections::HashMap;
-
 use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
 
@@ -206,7 +205,7 @@ pub fn remove_additional_properties_false(value: &Value) -> Value {
 
 // ── Provider options helpers ─────────────────────────────────────────────────
 
-fn xai_option(options: &Option<HashMap<String, Value>>, key: &str) -> Option<Value> {
+fn xai_option(options: &Option<SharedProviderOptions>, key: &str) -> Option<Value> {
     options
         .as_ref()
         .and_then(|m| m.get("xai"))
@@ -214,7 +213,7 @@ fn xai_option(options: &Option<HashMap<String, Value>>, key: &str) -> Option<Val
         .cloned()
 }
 
-fn get_image_detail(provider_options: &Option<Value>) -> Option<Value> {
+fn get_image_detail(provider_options: &Option<SharedProviderOptions>) -> Option<Value> {
     provider_options
         .as_ref()
         .and_then(|po| po.get("xai"))
@@ -420,7 +419,7 @@ fn convert_image_part(
     media_type: &str,
     b64_data: Option<&str>,
     url: Option<&str>,
-    provider_options: &Option<Value>,
+    provider_options: &Option<SharedProviderOptions>,
 ) -> Result<Value, AiMuxError> {
     let top_level = get_top_level_media_type(media_type);
     if top_level != "image" {

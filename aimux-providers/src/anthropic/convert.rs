@@ -18,13 +18,14 @@
 //!   conversion with `send_reasoning = false`, discarding the betas and
 //!   warnings.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 
 use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, Tool};
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
 use serde_json::{Map, Value, json};
 
@@ -149,7 +150,7 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
                         // for the last text part (system content is a string in
                         // the TS model, so message-level is the primary path).
                         let cache_control = match validator.get_cache_control(
-                            provider_options.as_ref(),
+                            provider_options.as_ref().and_then(|o| o.get("anthropic")),
                             "system message part",
                             true,
                         ) {
@@ -157,7 +158,9 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
                             None => {
                                 if is_last {
                                     validator.get_cache_control(
-                                        msg.provider_options.as_ref(),
+                                        msg.provider_options
+                                            .as_ref()
+                                            .and_then(|o| o.get("anthropic")),
                                         "system message",
                                         true,
                                     )
@@ -357,20 +360,23 @@ fn convert_part_to_anthropic(
     warnings: &mut Vec<Warning>,
     validator: &mut CacheControlValidator,
     is_last_part: bool,
-    message_provider_options: Option<&Value>,
+    message_provider_options: Option<&SharedProviderOptions>,
     part_context_type: &str,
     message_context_type: &str,
 ) -> Result<Option<Value>, AiMuxError> {
     // Resolve cache_control = part-level ?? (is_last_part ? message-level).
-    let resolve_cc =
-        |validator: &mut CacheControlValidator, part_opts: Option<&Value>| match validator
-            .get_cache_control(part_opts, part_context_type, true)
-        {
+    let resolve_cc = |validator: &mut CacheControlValidator,
+                      part_opts: Option<&SharedProviderOptions>| {
+        match validator.get_cache_control(
+            part_opts.and_then(|o| o.get("anthropic")),
+            part_context_type,
+            true,
+        ) {
             Some(v) => Some(v),
             None => {
                 if is_last_part {
                     validator.get_cache_control(
-                        message_provider_options,
+                        message_provider_options.and_then(|o| o.get("anthropic")),
                         message_context_type,
                         true,
                     )
@@ -378,7 +384,8 @@ fn convert_part_to_anthropic(
                     None
                 }
             }
-        };
+        }
+    };
 
     let apply_cc = |block: Value, cc: Option<Value>| -> Value {
         match cc {
@@ -645,19 +652,21 @@ fn convert_part_to_anthropic(
             }
             // cache_control: part ?? output ?? (is_last_part ? message).
             let cc = match validator.get_cache_control(
-                provider_options.as_ref(),
+                provider_options.as_ref().and_then(|o| o.get("anthropic")),
                 part_context_type,
                 true,
             ) {
                 Some(v) => Some(v),
                 None => match extract_tool_result_output_provider_options(result) {
-                    Some(out_opts) => {
-                        validator.get_cache_control(Some(out_opts), "tool result output", true)
-                    }
+                    Some(out_opts) => validator.get_cache_control(
+                        out_opts.get("anthropic").and_then(Value::as_object),
+                        "tool result output",
+                        true,
+                    ),
                     None => {
                         if is_last_part {
                             validator.get_cache_control(
-                                message_provider_options,
+                                message_provider_options.and_then(|o| o.get("anthropic")),
                                 message_context_type,
                                 true,
                             )
@@ -742,7 +751,7 @@ fn convert_assistant_tool_result(
     warnings: &mut Vec<Warning>,
     validator: &mut CacheControlValidator,
     is_last_part: bool,
-    message_provider_options: Option<&Value>,
+    message_provider_options: Option<&SharedProviderOptions>,
 ) -> Option<Value> {
     let ContentPart::ToolResult {
         tool_call_id,
@@ -759,18 +768,24 @@ fn convert_assistant_tool_result(
     // cache_control: part ?? output ?? (is_last_part ? message) — the same
     // resolution order the bare `tool_result` path uses.
     let cache_control = match validator.get_cache_control(
-        provider_options.as_ref(),
+        provider_options.as_ref().and_then(|o| o.get("anthropic")),
         "assistant message part",
         true,
     ) {
         Some(v) => Some(v),
         None => match extract_tool_result_output_provider_options(result) {
-            Some(out_opts) => {
-                validator.get_cache_control(Some(out_opts), "tool result output", true)
-            }
+            Some(out_opts) => validator.get_cache_control(
+                out_opts.get("anthropic").and_then(Value::as_object),
+                "tool result output",
+                true,
+            ),
             None => {
                 if is_last_part {
-                    validator.get_cache_control(message_provider_options, "assistant message", true)
+                    validator.get_cache_control(
+                        message_provider_options.and_then(|o| o.get("anthropic")),
+                        "assistant message",
+                        true,
+                    )
                 } else {
                     None
                 }
@@ -1225,7 +1240,7 @@ fn resolve_full_media_type(media_type: &str, bytes: &[u8]) -> Result<String, AiM
 fn convert_reasoning_part(
     text: &str,
     signature: Option<&str>,
-    provider_options: Option<&Value>,
+    provider_options: Option<&SharedProviderOptions>,
     send_reasoning: bool,
     warnings: &mut Vec<Warning>,
     validator: &mut CacheControlValidator,
@@ -1257,7 +1272,11 @@ fn convert_reasoning_part(
         // Thinking blocks cannot carry cache_control directly — they are cached
         // implicitly when in previous assistant turns. Validate to emit a
         // helpful warning if a value was set.
-        validator.get_cache_control(provider_options, "thinking block", false);
+        validator.get_cache_control(
+            provider_options.and_then(|o| o.get("anthropic")),
+            "thinking block",
+            false,
+        );
         Some(json!({
             "type": "thinking",
             "thinking": text,
@@ -1265,7 +1284,11 @@ fn convert_reasoning_part(
         }))
     } else if let Some(data) = redacted_data {
         // Redacted thinking blocks likewise cannot carry cache_control.
-        validator.get_cache_control(provider_options, "redacted thinking block", false);
+        validator.get_cache_control(
+            provider_options.and_then(|o| o.get("anthropic")),
+            "redacted thinking block",
+            false,
+        );
         Some(json!({
             "type": "redacted_thinking",
             "data": data,
@@ -1567,7 +1590,7 @@ pub struct RequestBodyResult {
 }
 
 /// Read a value from `provider_options["anthropic"][key]`.
-fn anthropic_option(options: &Option<HashMap<String, Value>>, key: &str) -> Option<Value> {
+fn anthropic_option(options: &Option<SharedProviderOptions>, key: &str) -> Option<Value> {
     options
         .as_ref()
         .and_then(|m| m.get("anthropic"))
@@ -2226,8 +2249,7 @@ mod tests {
     use super::*;
 
     fn opts_with_anthropic_thinking(thinking: serde_json::Value) -> CallOptions {
-        let mut provider = std::collections::HashMap::new();
-        provider.insert("anthropic".to_string(), thinking);
+        let provider = aimux_core::shared::provider_namespace("anthropic", thinking);
         CallOptions {
             provider_options: Some(provider),
             ..CallOptions::new(LanguageModelPrompt::default())
