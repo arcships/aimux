@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
+use crate::shared::SharedProviderOptions;
+
 /// A part of a multi-part message.
 ///
 /// Shared between `ModelMessage` (user-facing) and `LanguageModelPrompt` (provider-facing).
@@ -16,7 +18,7 @@ pub enum ContentPart {
         text: String,
         /// Provider-specific options for this part (e.g. `openai.promptCacheBreakpoint`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// An image (raw bytes + MIME type).
@@ -24,7 +26,7 @@ pub enum ContentPart {
         image: Vec<u8>,
         media_type: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// A file (raw bytes + MIME type).
@@ -34,7 +36,7 @@ pub enum ContentPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// A file whose inline data is an already-base64-encoded string.
@@ -49,7 +51,7 @@ pub enum ContentPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// A file referenced by URL.
@@ -59,7 +61,7 @@ pub enum ContentPart {
         url: String,
         media_type: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// A file referenced by a provider-specific reference (e.g. an OpenAI file ID).
@@ -73,7 +75,7 @@ pub enum ContentPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// A reasoning / thinking segment produced by the model.
@@ -90,7 +92,7 @@ pub enum ContentPart {
         /// `anthropic.signature`, `anthropic.redactedData`,
         /// `anthropic.cacheControl`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// A tool call requested by the model.
@@ -112,7 +114,7 @@ pub enum ContentPart {
         /// Provider-specific options for this part (e.g.
         /// `anthropic.cacheControl`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// The result of executing a tool call.
@@ -143,7 +145,7 @@ pub enum ContentPart {
         /// Provider-specific options for this part (e.g.
         /// `anthropic.cacheControl`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 }
 

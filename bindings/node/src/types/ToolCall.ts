@@ -37,7 +37,7 @@ thought_signature?: string | null,
 /**
  * Additional provider-specific metadata associated with this call.
  */
-provider_metadata?: JsonValue | null, 
+provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, 
 /**
  * Set when lookup, JSON parsing, or schema validation still failed after
  * the optional repair attempt.

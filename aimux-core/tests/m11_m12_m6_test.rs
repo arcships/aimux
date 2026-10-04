@@ -6,6 +6,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::message::MessageContent;
 use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, Source, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
 
@@ -276,12 +277,13 @@ impl LanguageModel for MetadataOnlyReasoningModel {
         unimplemented!()
     }
     async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let meta = serde_json::json!({
-            "openai": {
+        let meta = provider_namespace(
+            "openai",
+            serde_json::json!({
                 "itemId": "rs_1",
                 "reasoningEncryptedContent": "enc-blob-123",
-            }
-        });
+            }),
+        );
         let parts: Vec<Result<StreamPart, AiMuxError>> = vec![
             Ok(StreamPart::StreamStart { warnings: vec![] }),
             Ok(StreamPart::ReasoningStart {

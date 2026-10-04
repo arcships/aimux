@@ -29,7 +29,7 @@ warnings: Array<Warning>,
 /**
  * Provider-specific metadata.
  */
-provider_metadata: JsonValue | null, 
+provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
 /**
  * Response metadata (id, timestamp, model_id).
  */

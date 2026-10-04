@@ -8,4 +8,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * (`providerMetadata.anthropic.signature`). The payload of
  * `GenerateContent::Reasoning` and the element of the text results' `reasoning`.
  */
-export type ReasoningOutput = { text: string, provider_metadata: JsonValue | null, };
+export type ReasoningOutput = { text: string, provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, };

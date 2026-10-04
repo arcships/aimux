@@ -11,7 +11,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{
     GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
 };
-use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::shared::{FileBytes, FileData, provider_namespace};
 use aimux_core::tool::RawToolCall;
 use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
 
@@ -33,9 +33,10 @@ impl LanguageModel for RichModel {
             content: vec![
                 GenerateContent::Reasoning(ReasoningOutput {
                     text: "Let me think...".into(),
-                    provider_metadata: Some(serde_json::json!({
-                        "anthropic": { "signature": "sig-abc123" }
-                    })),
+                    provider_metadata: Some(provider_namespace(
+                        "anthropic",
+                        serde_json::json!({ "signature": "sig-abc123" }),
+                    )),
                 }),
                 GenerateContent::Text {
                     text: "Hello!".into(),
@@ -285,10 +286,18 @@ impl LanguageModel for BedrockModel {
                     text: "Thinking...".into(),
                     // Bedrock stores signature under BOTH "bedrock" and
                     // "amazonBedrock" keys (see bedrock/model.rs:535-540).
-                    provider_metadata: Some(serde_json::json!({
-                        "amazonBedrock": { "signature": "bedrock-sig-xyz" },
-                        "bedrock": { "signature": "bedrock-sig-xyz" }
-                    })),
+                    provider_metadata: Some(
+                        ["amazonBedrock", "bedrock"]
+                            .map(|ns| {
+                                provider_namespace(
+                                    ns,
+                                    serde_json::json!({ "signature": "bedrock-sig-xyz" }),
+                                )
+                            })
+                            .into_iter()
+                            .flatten()
+                            .collect(),
+                    ),
                 }),
             ],
             finish_reason: FinishReason {

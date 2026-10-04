@@ -32,7 +32,7 @@ timeout: TimeoutConfiguration | null,
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: JsonValue } | null, 
+provider_options: { [key in string]: { [key in string]: JsonValue } } | null, 
 /**
  * Additional HTTP headers to send with the request.
  */

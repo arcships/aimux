@@ -9,4 +9,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * A content item in the generation result.
  */
-export type GenerateContent = { "Text": { text: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": RawToolCall } | { "Source": Source } | { "Reasoning": ReasoningOutput } | { "File": GeneratedFile } | { "ToolResult": ToolResult };
+export type GenerateContent = { "Text": { text: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolCall": RawToolCall } | { "Source": Source } | { "Reasoning": ReasoningOutput } | { "File": GeneratedFile } | { "ToolResult": ToolResult };

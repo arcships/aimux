@@ -69,7 +69,7 @@ raw_finish_reason: string | null,
  * Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
  * `raw.provider_metadata` for top-level convenience.
  */
-provider_metadata: JsonValue | null, 
+provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
 /**
  * Response metadata (id, timestamp, model_id). Mirrored from
  * `raw.response` for top-level convenience.

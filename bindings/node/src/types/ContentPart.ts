@@ -10,13 +10,13 @@ export type ContentPart = { "type": "text", text: string,
 /**
  * Provider-specific options for this part (e.g. `openai.promptCacheBreakpoint`).
  */
-provider_options?: JsonValue | null, } | { "type": "image", image: Array<number>, media_type: string, provider_options?: JsonValue | null, } | { "type": "file", data: Array<number>, media_type: string, filename?: string | null, provider_options?: JsonValue | null, } | { "type": "file_base64", data: string, media_type: string, filename?: string | null, provider_options?: JsonValue | null, } | { "type": "file_url", url: string, media_type: string, provider_options?: JsonValue | null, } | { "type": "file_reference", media_type: string, reference: JsonValue, filename?: string | null, provider_options?: JsonValue | null, } | { "type": "reasoning", text: string, signature: string | null, 
+provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "image", image: Array<number>, media_type: string, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "file", data: Array<number>, media_type: string, filename?: string | null, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "file_base64", data: string, media_type: string, filename?: string | null, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "file_url", url: string, media_type: string, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "file_reference", media_type: string, reference: JsonValue, filename?: string | null, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "reasoning", text: string, signature: string | null, 
 /**
  * Provider-specific options for this part (e.g.
  * `anthropic.signature`, `anthropic.redactedData`,
  * `anthropic.cacheControl`).
  */
-provider_options?: JsonValue | null, } | { "type": "tool_call", tool_call_id: string, tool_name: string, 
+provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "tool_call", tool_call_id: string, tool_name: string, 
 /**
  * Arguments as a JSON value (usually an object).
  */
@@ -37,7 +37,7 @@ thought_signature?: string | null,
  * Provider-specific options for this part (e.g.
  * `anthropic.cacheControl`).
  */
-provider_options?: JsonValue | null, } | { "type": "tool_result", tool_call_id: string, 
+provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "tool_result", tool_call_id: string, 
 /**
  * The tool's output (usually a JSON value or plain text).
  *
@@ -69,4 +69,4 @@ dynamic?: boolean | null,
  * Provider-specific options for this part (e.g.
  * `anthropic.cacheControl`).
  */
-provider_options?: JsonValue | null, };
+provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };

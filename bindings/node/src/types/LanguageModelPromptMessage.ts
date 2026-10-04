@@ -16,4 +16,4 @@ export type LanguageModelPromptMessage = { role: Role, content: Array<ContentPar
  * converting to a provider prompt. Mirrors the Vercel AI SDK
  * `LanguageModelV4Message.providerOptions`.
  */
-provider_options: JsonValue | null, };
+provider_options: { [key in string]: { [key in string]: JsonValue } } | null, };

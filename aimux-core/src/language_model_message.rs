@@ -6,8 +6,8 @@
 
 use crate::content::ContentPart;
 use crate::message::Role;
+use crate::shared::SharedProviderOptions;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use ts_rs::TS;
 
 /// A single provider-facing message.
@@ -23,7 +23,7 @@ pub struct LanguageModelPromptMessage {
     /// `anthropic.cacheControl`), applied to the last part of the message when
     /// converting to a provider prompt. Mirrors the Vercel AI SDK
     /// `LanguageModelV4Message.providerOptions`.
-    pub provider_options: Option<Value>,
+    pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// The standardized prompt passed to `LanguageModel::do_generate` / `do_stream`.

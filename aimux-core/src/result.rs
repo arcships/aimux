@@ -117,7 +117,7 @@ pub struct StreamTextResultAggregated {
     pub warnings: Vec<crate::types::Warning>,
     /// Provider-specific metadata from the Finish chunk.
     #[serde(default)]
-    pub provider_metadata: Option<serde_json::Value>,
+    pub provider_metadata: Option<ProviderMetadata>,
     /// Response metadata (id, timestamp, model_id) if emitted by the stream.
     #[serde(default)]
     pub response: Option<crate::types::ResponseMetadata>,

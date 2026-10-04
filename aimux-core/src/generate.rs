@@ -26,9 +26,10 @@ use crate::result::{
     GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
     StreamTextResultAggregated,
 };
+use crate::shared::SharedProviderOptions;
 use crate::stream_part::{StreamPart, TextStreamPart};
 use crate::tool::Tool;
-use crate::types::{FinishReason, ReasoningEffort, Usage, Warning};
+use crate::types::{FinishReason, ProviderMetadata, ReasoningEffort, Usage, Warning};
 use crate::{AbortSignal, retry, timeout};
 
 /// Matches the AI SDK's `isOutputChunk`: only chunks containing model output
@@ -67,7 +68,7 @@ pub struct GenerateTextOptions {
     pub tools: Option<Vec<Tool>>,
     pub tool_choice: Option<ToolChoice>,
     pub headers: Option<HashMap<String, String>>,
-    pub provider_options: Option<HashMap<String, Value>>,
+    pub provider_options: Option<SharedProviderOptions>,
     /// Top-level reasoning effort.
     pub reasoning: Option<ReasoningEffort>,
     /// System instructions prepended to the prompt.
@@ -179,7 +180,7 @@ pub struct GenerateTextResult {
     /// Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
     /// `raw.provider_metadata` for top-level convenience.
     #[serde(default)]
-    pub provider_metadata: Option<Value>,
+    pub provider_metadata: Option<ProviderMetadata>,
     /// Response metadata (id, timestamp, model_id). Mirrored from
     /// `raw.response` for top-level convenience.
     #[serde(default)]
@@ -211,7 +212,7 @@ pub struct GenerateObjectResult {
     pub reasoning: Option<String>,
     /// Provider-specific metadata (e.g. Anthropic cache info).
     #[serde(default)]
-    pub provider_metadata: Option<Value>,
+    pub provider_metadata: Option<ProviderMetadata>,
     /// Response metadata (id, timestamp, model_id).
     #[serde(default)]
     pub response: crate::types::ResponseMetadata,
@@ -321,7 +322,7 @@ impl StreamTextResult {
         };
         let mut raw_finish_reason: Option<String> = None;
         let mut usage = Usage::default();
-        let mut finish_provider_metadata: Option<Value> = None;
+        let mut finish_provider_metadata: Option<ProviderMetadata> = None;
         let mut response: Option<crate::types::ResponseMetadata> = None;
         let mut rm = crate::response_messages::ResponseMessageBuilder::new();
 

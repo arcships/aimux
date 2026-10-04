@@ -70,7 +70,7 @@ headers: { [key in string]: string } | null,
 /**
  * Provider-specific options (keyed by provider name).
  */
-provider_options: { [key in string]: JsonValue } | null, 
+provider_options: { [key in string]: { [key in string]: JsonValue } } | null, 
 /**
  * Top-level reasoning effort. Maps to OpenAI `reasoning_effort` and
  * Anthropic `thinking` config.
