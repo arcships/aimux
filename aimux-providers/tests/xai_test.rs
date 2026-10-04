@@ -27,7 +27,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelPromptMessage;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, ReasoningOutput, Source};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
@@ -1826,9 +1826,9 @@ mod do_generate {
             .content
             .iter()
             .filter_map(|c| match c {
-                GenerateContent::Source {
+                GenerateContent::Source(Source {
                     url, source_type, ..
-                } => Some((url.clone(), source_type.clone())),
+                }) => Some((url.clone(), source_type.clone())),
                 _ => None,
             })
             .collect();
@@ -1880,7 +1880,7 @@ mod do_generate {
         let has_reasoning = result
             .content
             .iter()
-            .any(|c| matches!(c, GenerateContent::Reasoning { .. }));
+            .any(|c| matches!(c, GenerateContent::Reasoning(_)));
         assert!(has_reasoning, "should have reasoning content");
     }
 
@@ -2131,7 +2131,7 @@ mod do_stream {
         let sources: Vec<_> = parts
             .iter()
             .filter_map(|p| match p {
-                StreamPart::Source { url, .. } => url.clone(),
+                StreamPart::Source(Source { url, .. }) => url.clone(),
                 _ => None,
             })
             .collect();
@@ -2381,7 +2381,7 @@ mod reasoning {
         assert!(has_text, "should have text 'Hello'");
 
         let reasoning = result.content.iter().find_map(|c| match c {
-            GenerateContent::Reasoning { text, .. } => Some(text.clone()),
+            GenerateContent::Reasoning(ReasoningOutput { text, .. }) => Some(text.clone()),
             _ => None,
         });
         assert!(reasoning.is_some(), "should have reasoning content");

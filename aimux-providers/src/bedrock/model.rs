@@ -15,7 +15,7 @@ use futures::{StreamExt, stream::BoxStream};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -310,11 +310,11 @@ impl LanguageModel for BedrockModel {
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: vec![] });
 
-            yield Ok(StreamPart::ResponseMetadata {
+            yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                 id: request_id,
                 timestamp: response_timestamp,
                 model_id: Some(model_id.clone()),
-            });
+            }));
 
             let messages = super::event_stream::decode_messages(&response_bytes);
 
@@ -671,10 +671,10 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
                     "bedrock": { "signature": sig }
                 })
             });
-            content.push(GenerateContent::Reasoning {
+            content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata,
-            });
+            }));
         } else if let Some(rr) = rc.get("redactedReasoning") {
             let data = rr
                 .get("data")
@@ -685,10 +685,10 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
                 "amazonBedrock": { "redactedData": data },
                 "bedrock": { "redactedData": data }
             }));
-            content.push(GenerateContent::Reasoning {
+            content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text: String::new(),
                 provider_metadata,
-            });
+            }));
         }
     }
 }

@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
-use aimux_core::result::{GenerateContent, GenerateResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
 
@@ -154,7 +154,7 @@ pub fn build_responses_generate_result(
                             for (i, ann) in annotations.iter().enumerate() {
                                 if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation")
                                 {
-                                    content.push(GenerateContent::Source {
+                                    content.push(GenerateContent::Source(Source {
                                         id: format!("annotation-{i}"),
                                         source_type: "url".to_string(),
                                         url: ann
@@ -166,7 +166,7 @@ pub fn build_responses_generate_result(
                                             .and_then(|v| v.as_str())
                                             .map(std::string::ToString::to_string),
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                             }
                         }
@@ -244,10 +244,10 @@ pub fn build_responses_generate_result(
                     }
                 }));
                 if parts.is_empty() {
-                    content.push(GenerateContent::Reasoning {
+                    content.push(GenerateContent::Reasoning(ReasoningOutput {
                         text: String::new(),
                         provider_metadata: reasoning_metadata.clone(),
-                    });
+                    }));
                 } else {
                     for sp in parts {
                         let text = sp
@@ -255,10 +255,10 @@ pub fn build_responses_generate_result(
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        content.push(GenerateContent::Reasoning {
+                        content.push(GenerateContent::Reasoning(ReasoningOutput {
                             text,
                             provider_metadata: reasoning_metadata.clone(),
-                        });
+                        }));
                     }
                 }
             }
@@ -498,11 +498,11 @@ where
                                         chrono::DateTime::from_timestamp(secs as i64, 0)
                                     })
                                     .map(|dt| dt.to_rfc3339());
-                                yield Ok(StreamPart::ResponseMetadata {
+                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                     id: response_id.clone(),
                                     timestamp,
                                     model_id,
-                                });
+                                }));
                             }
                         }
 
@@ -885,7 +885,7 @@ where
                                 && ann.get("type").and_then(|v| v.as_str())
                                     == Some("url_citation")
                             {
-                                yield Ok(StreamPart::Source {
+                                yield Ok(StreamPart::Source(Source {
                                     id: generate_source_id(),
                                     source_type: "url".to_string(),
                                     url: ann
@@ -897,7 +897,7 @@ where
                                         .and_then(|v| v.as_str())
                                         .map(std::string::ToString::to_string),
                                     provider_metadata: None,
-                                });
+                                }));
                             }
                         }
 

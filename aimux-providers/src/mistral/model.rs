@@ -20,7 +20,7 @@ use serde_json::Value;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -256,10 +256,10 @@ impl LanguageModel for MistralModel {
         if let Some(r) = extract_reasoning_content(&choice.message.content)
             && !r.is_empty()
         {
-            content.push(GenerateContent::Reasoning {
+            content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text: r,
                 provider_metadata: None,
-            });
+            }));
         }
 
         // Content can be a string (legacy) or an array of typed parts.
@@ -409,7 +409,7 @@ impl LanguageModel for MistralModel {
                             && (chunk.id.is_some() || chunk.model.is_some())
                         {
                             response_metadata_emitted = true;
-                            yield Ok(StreamPart::ResponseMetadata {
+                            yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                 id: chunk.id.clone(),
                                 timestamp: chunk
                                     .created
@@ -418,7 +418,7 @@ impl LanguageModel for MistralModel {
                                     })
                                     .map(|dt| dt.to_rfc3339()),
                                 model_id: chunk.model.clone(),
-                            });
+                            }));
                         }
 
                         // Update usage.

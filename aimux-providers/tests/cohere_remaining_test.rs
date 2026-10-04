@@ -18,7 +18,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, Tool, ToolChoice};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, ReasoningOutput};
 use aimux_core::tool::{FunctionTool, ProviderTool};
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
@@ -588,7 +588,7 @@ async fn should_extract_reasoning_from_response() {
     // reasoning + text.
     assert_eq!(result.content.len(), 2);
     match &result.content[0] {
-        GenerateContent::Reasoning { text, .. } => {
+        GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
             assert_eq!(
                 text,
                 "Okay, so I need to figure out what 2 + 2 is. Let me start by recalling what addition means."

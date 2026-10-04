@@ -18,7 +18,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, Tool, ToolChoice};
-use aimux_core::result::{GenerateContent, StreamResult};
+use aimux_core::result::{GenerateContent, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
@@ -1141,13 +1141,13 @@ async fn should_extract_citations_from_response() {
     }
     for (i, c) in result.content[1..].iter().enumerate() {
         match c {
-            GenerateContent::Source {
+            GenerateContent::Source(Source {
                 id,
                 source_type,
                 url,
                 title,
                 ..
-            } => {
+            }) => {
                 assert_eq!(id, &format!("citation-{i}"));
                 assert_eq!(source_type, "document");
                 assert_eq!(url, &None);

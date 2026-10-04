@@ -295,11 +295,11 @@ impl LanguageModel for VertexAnthropicModel {
                                         crate::anthropic::usage::usage_from_anthropic(usage);
                                 }
                                 if !response_meta_emitted {
-                                    yield Ok(StreamPart::ResponseMetadata {
+                                    yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                         id: Some(message.id.clone()),
                                         timestamp: None,
                                         model_id: Some(message.model.clone()),
-                                    });
+                                    }));
                                     response_meta_emitted = true;
                                 }
                             }

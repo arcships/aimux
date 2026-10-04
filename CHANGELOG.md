@@ -23,6 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GenerateContent::ToolCall` with a non-string `input` no longer
   deserializes; the standalone `tool::ToolResult` gains a required
   `tool_name` and optional `dynamic` / `provider_metadata`.
+- Source, generated-file and reasoning types are unified, one per concept
+  (`aimux-core`). `result::Source`, `result::GeneratedFile` and
+  `result::ReasoningOutput` are the payloads of `GenerateContent::{Source,
+  File, Reasoning}` and `StreamPart::{Source, File}` (newtype variants now) and
+  the elements of `sources`, `files` and `reasoning` on `GenerateTextResult`
+  and `StreamTextResultAggregated`; `StreamPart::ResponseMetadata` wraps
+  `types::ResponseMetadata`. `SourcePart`, `FilePart` and `ReasoningPart` are
+  removed (TypeScript: `Source`, `GeneratedFile`, `ReasoningOutput`). Wire
+  format: enum variants keep their JSON shape; the top-level `sources` /
+  `files` / `reasoning` arrays gain `provider_metadata` (so the reasoning
+  signature is no longer dropped), and a source's `url` / `title` serialize as
+  `null` when absent instead of being omitted.
 
 ## [Unreleased]
 

@@ -37,7 +37,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, StreamResult};
+use aimux_core::result::{GenerateContent, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
 
@@ -153,10 +153,10 @@ fn as_text(item: &GenerateContent) -> &str {
 
 fn as_reasoning(item: &GenerateContent) -> (&str, &Option<Value>) {
     match item {
-        GenerateContent::Reasoning {
+        GenerateContent::Reasoning(ReasoningOutput {
             text,
             provider_metadata,
-        } => (text.as_str(), provider_metadata),
+        }) => (text.as_str(), provider_metadata),
         _ => panic!("expected Reasoning content, got {item:?}"),
     }
 }

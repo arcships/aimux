@@ -22,7 +22,7 @@ use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ToolChoice};
 use aimux_core::provider::Provider;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::Tool;
 use aimux_core::types::{
@@ -359,10 +359,10 @@ impl LanguageModel for OpenResponsesModel {
                         {
                             for cp in content_parts {
                                 if let Some(text) = cp.get("text").and_then(|t| t.as_str()) {
-                                    content.push(GenerateContent::Reasoning {
+                                    content.push(GenerateContent::Reasoning(ReasoningOutput {
                                         text: text.to_string(),
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                             }
                         }

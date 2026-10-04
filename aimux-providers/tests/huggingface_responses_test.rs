@@ -31,10 +31,10 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, ReasoningOutput, Source};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
-use aimux_core::types::FinishReasonUnified;
+use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_providers::huggingface::responses::convert_to_huggingface_responses_messages;
 use aimux_providers::{HuggingFaceConfig, HuggingFaceProvider};
@@ -453,7 +453,7 @@ async fn should_generate_text_and_sources_from_annotations() {
         other => panic!("expected Text at [0], got {other:?}"),
     }
     match &result.content[1] {
-        GenerateContent::Source { id, url, title, .. } => {
+        GenerateContent::Source(Source { id, url, title, .. }) => {
             assert_eq!(id, "id-0");
             assert_eq!(url.as_deref(), Some("https://example.com/article1"));
             assert_eq!(title.as_deref(), Some("AI Developments Article"));
@@ -461,7 +461,7 @@ async fn should_generate_text_and_sources_from_annotations() {
         other => panic!("expected Source at [1], got {other:?}"),
     }
     match &result.content[2] {
-        GenerateContent::Source { id, url, title, .. } => {
+        GenerateContent::Source(Source { id, url, title, .. }) => {
             assert_eq!(id, "id-1");
             assert_eq!(url.as_deref(), Some("https://test.com/article2"));
             assert_eq!(title.as_deref(), Some("Industry Trends Report"));
@@ -565,11 +565,11 @@ async fn should_handle_mcp_tools_with_annotations() {
         other => panic!("expected Text at [2], got {other:?}"),
     }
     match &result.content[3] {
-        GenerateContent::Source { id, .. } => assert_eq!(id, "id-0"),
+        GenerateContent::Source(Source { id, .. }) => assert_eq!(id, "id-0"),
         other => panic!("expected Source at [3], got {other:?}"),
     }
     match &result.content[4] {
-        GenerateContent::Source { id, .. } => assert_eq!(id, "id-1"),
+        GenerateContent::Source(Source { id, .. }) => assert_eq!(id, "id-1"),
         other => panic!("expected Source at [4], got {other:?}"),
     }
 
@@ -634,7 +634,7 @@ async fn should_stream_text_deltas() {
     assert!(matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty()));
 
     match &parts[1] {
-        StreamPart::ResponseMetadata { id, model_id, .. } => {
+        StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. }) => {
             assert_eq!(id.as_deref(), Some("resp_test"));
             assert_eq!(model_id.as_deref(), Some("deepseek-ai/DeepSeek-V3-0324"));
         }
@@ -1171,7 +1171,7 @@ async fn should_stream_tool_calls() {
     assert!(matches!(&parts[0], StreamPart::StreamStart { .. }));
 
     match &parts[1] {
-        StreamPart::ResponseMetadata { id, model_id, .. } => {
+        StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. }) => {
             assert_eq!(id.as_deref(), Some("resp_tool_stream"));
             assert_eq!(model_id.as_deref(), Some("deepseek-ai/DeepSeek-V3-0324"));
         }
@@ -1420,10 +1420,10 @@ async fn should_handle_reasoning_content_in_responses() {
 
     assert_eq!(result.content.len(), 2);
     match &result.content[0] {
-        GenerateContent::Reasoning {
+        GenerateContent::Reasoning(ReasoningOutput {
             text,
             provider_metadata,
-        } => {
+        }) => {
             assert_eq!(text, "Let me think about this problem step by step...");
             assert_eq!(
                 provider_metadata.as_ref(),
@@ -1497,7 +1497,7 @@ async fn should_stream_reasoning_content() {
     assert!(matches!(&parts[0], StreamPart::StreamStart { .. }));
 
     match &parts[1] {
-        StreamPart::ResponseMetadata { id, model_id, .. } => {
+        StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. }) => {
             assert_eq!(id.as_deref(), Some("resp_reasoning_stream"));
             assert_eq!(model_id.as_deref(), Some("deepseek-ai/DeepSeek-R1"));
         }

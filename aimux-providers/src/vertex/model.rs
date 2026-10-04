@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -311,11 +311,11 @@ impl LanguageModel for VertexModel {
                         if !response_metadata_emitted
                             && let Some(id) = &chunk.response_id {
                                 response_metadata_emitted = true;
-                                yield Ok(StreamPart::ResponseMetadata {
+                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                     id: Some(id.clone()),
                                     timestamp: response_timestamp.clone(),
                                     model_id: chunk.model_version.clone(),
-                                });
+                                }));
                             }
 
                         if let Some(usage) = &chunk.usage_metadata {
@@ -346,21 +346,21 @@ impl LanguageModel for VertexModel {
                         let chunk_sources =
                             extract_sources(candidate.grounding_metadata.as_ref(), &mut source_id);
                         for src in chunk_sources {
-                            if let GenerateContent::Source {
+                            if let GenerateContent::Source(Source {
                                 url: Some(url),
                                 source_type,
                                 id,
                                 title,
                                 provider_metadata: None,
-                            } = src
+                            }) = src
                                 && emitted_source_urls.insert(url.clone()) {
-                                    yield Ok(StreamPart::Source {
+                                    yield Ok(StreamPart::Source(Source {
                                         id,
                                         source_type,
                                         url: Some(url),
                                         title,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                         }
 

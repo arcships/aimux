@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -312,10 +312,10 @@ pub async fn execute_generate(
     if let Some(reasoning) = reasoning_text
         && !reasoning.is_empty()
     {
-        content.push(GenerateContent::Reasoning {
+        content.push(GenerateContent::Reasoning(ReasoningOutput {
             text: reasoning,
             provider_metadata: None,
-        });
+        }));
     }
     if let Some(tool_calls) = choice.message.tool_calls {
         for tc in tool_calls {
@@ -337,7 +337,7 @@ pub async fn execute_generate(
             if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation")
                 && let Some(uc) = ann.get("url_citation")
             {
-                content.push(GenerateContent::Source {
+                content.push(GenerateContent::Source(Source {
                     id: format!("annotation-{i}"),
                     source_type: "url".to_string(),
                     url: uc
@@ -349,7 +349,7 @@ pub async fn execute_generate(
                         .and_then(|v| v.as_str())
                         .map(std::string::ToString::to_string),
                     provider_metadata: None,
-                });
+                }));
             }
         }
     }
@@ -555,14 +555,14 @@ pub async fn execute_stream(
                         && (chunk.id.is_some() || chunk.model.is_some())
                     {
                         response_metadata_emitted = true;
-                        yield Ok(StreamPart::ResponseMetadata {
+                        yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                             id: chunk.id.clone(),
                             timestamp: chunk
                                 .created
                                 .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
                                 .map(|dt| dt.to_rfc3339()),
                             model_id: chunk.model.clone(),
-                        });
+                        }));
                     }
 
                     // Update usage based on profile.stream_usage_key.
@@ -671,7 +671,7 @@ pub async fn execute_stream(
                                     == Some("url_citation")
                                     && let Some(uc) = ann.get("url_citation")
                                 {
-                                    yield Ok(StreamPart::Source {
+                                    yield Ok(StreamPart::Source(Source {
                                         id: format!("annotation-{i}"),
                                         source_type: "url".to_string(),
                                         url: uc
@@ -683,7 +683,7 @@ pub async fn execute_stream(
                                             .and_then(|v| v.as_str())
                                             .map(std::string::ToString::to_string),
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                             }
                         }

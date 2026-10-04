@@ -23,7 +23,7 @@ use aimux_core::language_model_message::{
 };
 use aimux_core::message::{ModelMessage, Role};
 use aimux_core::options::{CallOptions, ProviderTool, Tool};
-use aimux_core::result::{GenerateContent, StreamResult};
+use aimux_core::result::{GenerateContent, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
 
@@ -897,13 +897,13 @@ fn stream_sources(parts: &[StreamPart]) -> Vec<(String, String, Option<String>, 
     parts
         .iter()
         .filter_map(|p| match p {
-            StreamPart::Source {
+            StreamPart::Source(Source {
                 id,
                 source_type,
                 url,
                 title,
                 ..
-            } => Some((id.clone(), source_type.clone(), url.clone(), title.clone())),
+            }) => Some((id.clone(), source_type.clone(), url.clone(), title.clone())),
             _ => None,
         })
         .collect()

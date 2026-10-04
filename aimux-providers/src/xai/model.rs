@@ -17,7 +17,7 @@ use serde_json::Value;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -162,10 +162,10 @@ impl LanguageModel for XaiModel {
         if let Some(reasoning) = choice.message.reasoning_content
             && !reasoning.is_empty()
         {
-            content.push(GenerateContent::Reasoning {
+            content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text: reasoning,
                 provider_metadata: None,
-            });
+            }));
         }
 
         // Extract tool calls
@@ -187,13 +187,13 @@ impl LanguageModel for XaiModel {
         // Extract citations
         if let Some(citations) = &data.citations {
             for url in citations {
-                content.push(GenerateContent::Source {
+                content.push(GenerateContent::Source(Source {
                     id: generate_source_id(),
                     source_type: "url".to_string(),
                     url: Some(url.clone()),
                     title: None,
                     provider_metadata: None,
-                });
+                }));
             }
         }
 
@@ -340,23 +340,23 @@ impl LanguageModel for XaiModel {
                                 chrono::DateTime::from_timestamp(c as i64, 0)
                                     .map(|dt| dt.to_rfc3339())
                             });
-                            yield Ok(StreamPart::ResponseMetadata {
+                            yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                 id: chunk.id.clone(),
                                 timestamp,
                                 model_id: chunk.model.clone(),
-                            });
+                            }));
                         }
 
                         // Emit citations as sources.
                         if let Some(citations) = &chunk.citations {
                             for url in citations {
-                                yield Ok(StreamPart::Source {
+                                yield Ok(StreamPart::Source(Source {
                                     id: generate_source_id(),
                                     source_type: "url".to_string(),
                                     url: Some(url.clone()),
                                     title: None,
                                     provider_metadata: None,
-                                });
+                                }));
                             }
                         }
 

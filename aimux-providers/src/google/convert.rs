@@ -22,7 +22,7 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, Source};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
 use base64::Engine;
@@ -1211,7 +1211,7 @@ pub fn extract_sources(
 
     for chunk in chunks {
         if let Some(web) = chunk.get("web") {
-            sources.push(GenerateContent::Source {
+            sources.push(GenerateContent::Source(Source {
                 id: next_id(id_counter),
                 source_type: "url".to_string(),
                 url: web
@@ -1223,9 +1223,9 @@ pub fn extract_sources(
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string),
                 provider_metadata: None,
-            });
+            }));
         } else if let Some(image) = chunk.get("image") {
-            sources.push(GenerateContent::Source {
+            sources.push(GenerateContent::Source(Source {
                 id: next_id(id_counter),
                 source_type: "url".to_string(),
                 url: image
@@ -1237,45 +1237,45 @@ pub fn extract_sources(
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string),
                 provider_metadata: None,
-            });
+            }));
         } else if let Some(rc) = chunk.get("retrievedContext") {
             let uri = rc.get("uri").and_then(|v| v.as_str());
             let file_search_store = rc.get("fileSearchStore").and_then(|v| v.as_str());
             let title = rc.get("title").and_then(|v| v.as_str());
             if let Some(uri) = uri {
                 if uri.starts_with("http://") || uri.starts_with("https://") {
-                    sources.push(GenerateContent::Source {
+                    sources.push(GenerateContent::Source(Source {
                         id: next_id(id_counter),
                         source_type: "url".to_string(),
                         url: Some(uri.to_string()),
                         title: title.map(std::string::ToString::to_string),
                         provider_metadata: None,
-                    });
+                    }));
                 } else {
                     // Document with a file path (gs://, etc.).
-                    sources.push(GenerateContent::Source {
+                    sources.push(GenerateContent::Source(Source {
                         id: next_id(id_counter),
                         source_type: "document".to_string(),
                         url: None,
                         title: Some(title.unwrap_or("Unknown Document").to_string()),
                         provider_metadata: None,
-                    });
+                    }));
                 }
             } else if file_search_store.is_some() {
                 // New File Search format (no uri, has fileSearchStore).
-                sources.push(GenerateContent::Source {
+                sources.push(GenerateContent::Source(Source {
                     id: next_id(id_counter),
                     source_type: "document".to_string(),
                     url: None,
                     title: Some(title.unwrap_or("Unknown Document").to_string()),
                     provider_metadata: None,
-                });
+                }));
             }
             // else: no uri and no fileSearchStore → no source.
         } else if let Some(maps) = chunk.get("maps")
             && let Some(uri) = maps.get("uri").and_then(|v| v.as_str())
         {
-            sources.push(GenerateContent::Source {
+            sources.push(GenerateContent::Source(Source {
                 id: next_id(id_counter),
                 source_type: "url".to_string(),
                 url: Some(uri.to_string()),
@@ -1284,7 +1284,7 @@ pub fn extract_sources(
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string),
                 provider_metadata: None,
-            });
+            }));
         }
     }
 

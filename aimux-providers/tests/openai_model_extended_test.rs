@@ -13,7 +13,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ToolChoice};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, Source};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
@@ -167,12 +167,12 @@ mod do_generate_extended {
             other => panic!("expected Text, got {other:?}"),
         }
         match &result.content[1] {
-            GenerateContent::Source {
+            GenerateContent::Source(Source {
                 source_type,
                 url,
                 title,
                 ..
-            } => {
+            }) => {
                 assert_eq!(source_type, "url");
                 assert_eq!(url.as_deref(), Some("https://example.com/doc1.pdf"));
                 assert_eq!(title.as_deref(), Some("Document 1"));

@@ -24,7 +24,7 @@ use futures::StreamExt;
 
 use aimux_core::AbortSignal;
 use aimux_core::error::AiMuxError;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::Warning;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage};
@@ -442,16 +442,18 @@ pub(crate) fn stream_parts_for_result_block(
                 ),
                 tool_use_id,
             )];
-            parts.extend(results.iter().map(|result| StreamPart::Source {
-                id: generate_source_id(),
-                source_type: "url".to_string(),
-                url: str_field(result, "url"),
-                title: str_field(result, "title"),
-                provider_metadata: Some(json!({
-                    "anthropic": {
-                        "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
-                    }
-                })),
+            parts.extend(results.iter().map(|result| {
+                StreamPart::Source(Source {
+                    id: generate_source_id(),
+                    source_type: "url".to_string(),
+                    url: str_field(result, "url"),
+                    title: str_field(result, "title"),
+                    provider_metadata: Some(json!({
+                        "anthropic": {
+                            "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
+                        }
+                    })),
+                })
             }));
             parts
         }
@@ -591,12 +593,12 @@ pub(crate) fn parse_anthropic_content(
                 thinking,
                 signature,
             } => {
-                content.push(GenerateContent::Reasoning {
+                content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: thinking.clone(),
                     provider_metadata: Some(json!({
                         "anthropic": { "signature": signature }
                     })),
-                });
+                }));
             }
             // Provider-executed (server-side) tool calls are surfaced as tool
             // calls so they round-trip on follow-up turns.
@@ -635,12 +637,12 @@ pub(crate) fn parse_anthropic_content(
             }
             // Redacted thinking — upstream emits as reasoning with redactedData
             ContentBlock::RedactedThinking { data } => {
-                content.push(GenerateContent::Reasoning {
+                content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: String::new(),
                     provider_metadata: Some(json!({
                         "anthropic": { "redactedData": data }
                     })),
-                });
+                }));
             }
             // ── Server-tool result blocks → GenerateContent::ToolResult ──
             // Payload shapes mirror the TS `doGenerate` switch one-for-one
@@ -669,7 +671,7 @@ pub(crate) fn parse_anthropic_content(
                         // Each result also becomes a `Source` — that is how the
                         // URLs and titles reach `result.sources`.
                         for result in results {
-                            content.push(GenerateContent::Source {
+                            content.push(GenerateContent::Source(Source {
                                 id: generate_source_id(),
                                 source_type: "url".to_string(),
                                 url: str_field(result, "url"),
@@ -680,7 +682,7 @@ pub(crate) fn parse_anthropic_content(
                                             .unwrap_or(Value::Null),
                                     }
                                 })),
-                            });
+                            }));
                         }
                     }
                     None => content.push(GenerateContent::ToolResult(ToolResult {
@@ -991,11 +993,11 @@ pub(crate) async fn anthropic_stream_core(
                                 final_usage = super::usage::usage_from_anthropic(usage);
                             }
                             if !response_meta_emitted {
-                                yield Ok(StreamPart::ResponseMetadata {
+                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                     id: Some(message.id.clone()),
                                     timestamp: None,
                                     model_id: Some(message.model.clone()),
-                                });
+                                }));
                                 response_meta_emitted = true;
                             }
                         }

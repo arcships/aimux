@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -160,10 +160,10 @@ impl LanguageModel for CohereModel {
                         // Mirrors TS: a `thinking` content item becomes a
                         // `reasoning` content item. Empty thinking is dropped.
                         if !thinking.is_empty() {
-                            content.push(GenerateContent::Reasoning {
+                            content.push(GenerateContent::Reasoning(ReasoningOutput {
                                 text: thinking.clone(),
                                 provider_metadata: None,
-                            });
+                            }));
                         }
                     }
                 }
@@ -207,13 +207,13 @@ impl LanguageModel for CohereModel {
                 {
                     cohere_meta.insert("citationType".to_string(), Value::String(t.to_string()));
                 }
-                content.push(GenerateContent::Source {
+                content.push(GenerateContent::Source(Source {
                     id: format!("citation-{i}"),
                     source_type: "document".to_string(),
                     url: None,
                     title: Some(title),
                     provider_metadata: Some(json!({ "cohere": cohere_meta })),
-                });
+                }));
             }
         }
 
@@ -322,11 +322,11 @@ impl LanguageModel for CohereModel {
                     Ok(parsed) => {
                         match parsed.event_type.as_str() {
                             "message-start" => {
-                                yield Ok(StreamPart::ResponseMetadata {
+                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                     id: parsed.id.clone(),
                                     timestamp: None,
                                     model_id: None,
-                                });
+                                }));
                             }
 
                             "content-start" => {

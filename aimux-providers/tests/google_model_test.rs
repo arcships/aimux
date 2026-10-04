@@ -23,7 +23,7 @@ use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
-use aimux_core::types::FinishReasonUnified;
+use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_providers::google::convert::{
     build_request_body, convert_to_google_messages, prepare_tools,
@@ -1103,7 +1103,7 @@ mod do_stream {
 
         // response-metadata
         match &parts[1] {
-            StreamPart::ResponseMetadata { id, .. } => {
+            StreamPart::ResponseMetadata(ResponseMetadata { id, .. }) => {
                 assert_eq!(id.as_deref(), Some("resp-1"));
             }
             other => panic!("expected ResponseMetadata, got {other:?}"),
@@ -1446,9 +1446,9 @@ mod do_stream {
 
         let rm = parts
             .iter()
-            .find(|p| matches!(p, StreamPart::ResponseMetadata { .. }));
+            .find(|p| matches!(p, StreamPart::ResponseMetadata(_)));
         match rm {
-            Some(StreamPart::ResponseMetadata { id, model_id, .. }) => {
+            Some(StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. })) => {
                 assert_eq!(id.as_deref(), Some("resp-xyz"));
                 assert_eq!(model_id.as_deref(), Some("gemini-2.0-flash-001"));
             }

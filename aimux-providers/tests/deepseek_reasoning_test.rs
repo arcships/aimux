@@ -57,7 +57,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, ReasoningOutput};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{ReasoningEffort, Warning};
 
@@ -252,7 +252,7 @@ async fn should_prefer_reasoning_content_over_reasoning_field_when_both_provided
         other => panic!("expected Text, got {other:?}"),
     }
     match &result.content[1] {
-        GenerateContent::Reasoning { text, .. } => {
+        GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
             assert_eq!(text, "This is from reasoning_content")
         }
         other => panic!("expected Reasoning from reasoning_content, got {other:?}"),
@@ -375,7 +375,7 @@ async fn should_extract_reasoning_content_and_text_from_deepseek_reasoning_fixtu
         other => panic!("expected Text, got {other:?}"),
     }
     match &result.content[1] {
-        GenerateContent::Reasoning { text, .. } => assert!(
+        GenerateContent::Reasoning(ReasoningOutput { text, .. }) => assert!(
             text.contains("How many"),
             "expected the fixture reasoning_content, got: {text}"
         ),

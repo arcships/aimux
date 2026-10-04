@@ -24,7 +24,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelPromptMessage;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, ReasoningOutput, Source};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
 use aimux_core::types::ReasoningEffort;
@@ -356,10 +356,10 @@ mod reasoning {
 
         assert_eq!(result.content.len(), 2);
         match &result.content[0] {
-            GenerateContent::Reasoning {
+            GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata,
-            } => {
+            }) => {
                 assert_eq!(text, "First, analyze the question carefully.");
                 assert_eq!(
                     provider_metadata,
@@ -415,10 +415,10 @@ mod reasoning {
             .unwrap();
 
         match &result.content[0] {
-            GenerateContent::Reasoning {
+            GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata,
-            } => {
+            }) => {
                 assert_eq!(text, "Thinking through the problem.");
                 assert_eq!(
                     provider_metadata,
@@ -469,7 +469,7 @@ mod reasoning {
             .unwrap();
 
         match &result.content[0] {
-            GenerateContent::Reasoning { text, .. } => {
+            GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
                 assert_eq!(text, "Let me think step by step.");
             }
             other => panic!("expected Reasoning, got {other:?}"),
@@ -516,10 +516,10 @@ mod reasoning {
             .unwrap();
 
         match &result.content[0] {
-            GenerateContent::Reasoning {
+            GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata,
-            } => {
+            }) => {
                 assert_eq!(text, "");
                 assert_eq!(
                     provider_metadata,
@@ -1711,7 +1711,7 @@ mod citations {
         }
         // Source 1
         match &result.content[1] {
-            GenerateContent::Source { url, title, .. } => {
+            GenerateContent::Source(Source { url, title, .. }) => {
                 assert_eq!(url.as_deref(), Some("https://example.com"));
                 assert_eq!(title.as_deref(), Some("example title"));
             }
@@ -1719,7 +1719,7 @@ mod citations {
         }
         // Source 2 (title falls back to url)
         match &result.content[2] {
-            GenerateContent::Source { url, title, .. } => {
+            GenerateContent::Source(Source { url, title, .. }) => {
                 assert_eq!(url.as_deref(), Some("https://test.com"));
                 assert_eq!(title.as_deref(), Some("https://test.com"));
             }
@@ -2211,11 +2211,9 @@ mod do_stream {
             .unwrap();
         let parts = collect_stream(result).await;
 
-        let source = parts
-            .iter()
-            .find(|p| matches!(p, StreamPart::Source { .. }));
+        let source = parts.iter().find(|p| matches!(p, StreamPart::Source(_)));
         assert!(source.is_some());
-        if let Some(StreamPart::Source { url, title, .. }) = source {
+        if let Some(StreamPart::Source(Source { url, title, .. })) = source {
             assert_eq!(url.as_deref(), Some("https://example.com"));
             assert_eq!(title.as_deref(), Some("example"));
         }

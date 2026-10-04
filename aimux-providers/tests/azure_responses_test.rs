@@ -41,7 +41,7 @@ use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::FinishReasonUnified;
+use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_providers::{AzureConfig, AzureProvider, TokenProvider};
 
@@ -866,7 +866,7 @@ async fn should_stream_text_content() {
     // ResponseMetadata
     assert!(matches!(
         &parts[1],
-        StreamPart::ResponseMetadata { id, .. } if id.as_deref() == Some("resp_123")
+        StreamPart::ResponseMetadata(ResponseMetadata { id, .. }) if id.as_deref() == Some("resp_123")
     ));
 
     // TextStart

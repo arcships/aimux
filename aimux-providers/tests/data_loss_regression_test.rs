@@ -37,7 +37,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, StreamResult};
+use aimux_core::result::{GenerateContent, GeneratedFile, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{ProviderTool, Tool};
@@ -157,12 +157,12 @@ async fn collect(result: StreamResult) -> Vec<StreamPart> {
 /// The base64 payload of a `GenerateContent::File`, or panic.
 fn file_base64(c: &GenerateContent) -> &str {
     match c {
-        GenerateContent::File {
+        GenerateContent::File(GeneratedFile {
             data: FileData::Data {
                 data: FileBytes::Base64(s),
             },
             ..
-        } => s,
+        }) => s,
         other => panic!("expected File with base64 data, got {other:?}"),
     }
 }
@@ -170,7 +170,7 @@ fn file_base64(c: &GenerateContent) -> &str {
 fn files(content: &[GenerateContent]) -> Vec<&GenerateContent> {
     content
         .iter()
-        .filter(|c| matches!(c, GenerateContent::File { .. }))
+        .filter(|c| matches!(c, GenerateContent::File(_)))
         .collect()
 }
 
@@ -188,10 +188,10 @@ fn reasonings(content: &[GenerateContent]) -> Vec<(&str, Option<&Value>)> {
     content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::Reasoning {
+            GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata,
-            } => Some((text.as_str(), provider_metadata.as_ref())),
+            }) => Some((text.as_str(), provider_metadata.as_ref())),
             _ => None,
         })
         .collect()
@@ -289,13 +289,13 @@ fn sources(content: &[GenerateContent]) -> Vec<SourceView<'_>> {
     content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::Source {
+            GenerateContent::Source(Source {
                 id,
                 source_type,
                 url,
                 title,
                 provider_metadata,
-            } => Some((
+            }) => Some((
                 id.as_str(),
                 source_type.as_str(),
                 url.as_deref(),
@@ -341,7 +341,7 @@ async fn finding_1_gemini_inline_data_surfaces_as_file() {
     let f = files(&result.content);
     assert_eq!(f.len(), 1, "exactly one inlineData part → one File");
     match f[0] {
-        GenerateContent::File { media_type, .. } => {
+        GenerateContent::File(GeneratedFile { media_type, .. }) => {
             assert_eq!(media_type, "image/png");
         }
         other => panic!("expected File, got {other:?}"),
@@ -379,7 +379,7 @@ async fn finding_1_gemini_image_and_text_output_both_survive() {
         "text part comes first"
     );
     assert!(
-        matches!(result.content[1], GenerateContent::File { .. }),
+        matches!(result.content[1], GenerateContent::File(_)),
         "inlineData part comes second"
     );
 
@@ -394,7 +394,9 @@ async fn finding_1_gemini_image_and_text_output_both_survive() {
     let f = files(&result.content);
     assert_eq!(f.len(), 1);
     match f[0] {
-        GenerateContent::File { media_type, .. } => assert_eq!(media_type, "image/png"),
+        GenerateContent::File(GeneratedFile { media_type, .. }) => {
+            assert_eq!(media_type, "image/png")
+        }
         other => panic!("expected File, got {other:?}"),
     }
     let b64 = file_base64(f[0]);
@@ -439,14 +441,14 @@ async fn finding_1_gemini_inline_data_streams_as_file_part() {
     let file_parts: Vec<_> = parts
         .iter()
         .filter_map(|p| match p {
-            StreamPart::File {
+            StreamPart::File(GeneratedFile {
                 data:
                     FileData::Data {
                         data: FileBytes::Base64(b64),
                     },
                 media_type,
                 ..
-            } => Some((b64.as_str(), media_type.as_str())),
+            }) => Some((b64.as_str(), media_type.as_str())),
             _ => None,
         })
         .collect();
@@ -1190,10 +1192,7 @@ async fn finding_13_mistral_thinking_parts_become_reasoning_in_generate() {
     assert_eq!(texts(&result.content), vec!["4"]);
 
     // Ordering: reasoning precedes text (upstream contract).
-    assert!(matches!(
-        result.content[0],
-        GenerateContent::Reasoning { .. }
-    ));
+    assert!(matches!(result.content[0], GenerateContent::Reasoning(_)));
     assert!(matches!(result.content[1], GenerateContent::Text { .. }));
 }
 

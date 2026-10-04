@@ -29,10 +29,10 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, Tool, ToolChoice};
-use aimux_core::result::{GenerateContent, StreamResult};
+use aimux_core::result::{GenerateContent, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
-use aimux_core::types::FinishReasonUnified;
+use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_providers::{OpenAIConfig, OpenAIProvider};
 
@@ -931,7 +931,9 @@ mod do_generate_response {
 
         assert_eq!(result.content.len(), 2);
         match &result.content[0] {
-            GenerateContent::Reasoning { text, .. } => assert_eq!(text, "thinking..."),
+            GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
+                assert_eq!(text, "thinking...")
+            }
             other => panic!("expected Reasoning, got {other:?}"),
         }
         match &result.content[1] {
@@ -1003,7 +1005,7 @@ mod do_stream {
         ));
 
         match &parts[1] {
-            StreamPart::ResponseMetadata { id, model_id, .. } => {
+            StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. }) => {
                 assert_eq!(id.as_deref(), Some("resp_1"));
                 assert_eq!(model_id.as_deref(), Some("gpt-4o-2024-07-18"));
             }

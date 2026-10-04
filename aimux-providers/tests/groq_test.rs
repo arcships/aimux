@@ -29,7 +29,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, ReasoningOutput};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
@@ -1109,7 +1109,7 @@ mod do_generate {
             .unwrap();
 
         let reasoning = result.content.iter().find_map(|c| match c {
-            GenerateContent::Reasoning { text, .. } => Some(text.clone()),
+            GenerateContent::Reasoning(ReasoningOutput { text, .. }) => Some(text.clone()),
             _ => None,
         });
         assert!(reasoning.is_some());
