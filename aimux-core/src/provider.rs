@@ -112,6 +112,13 @@ pub trait Provider: Send + Sync {
         let _ = id;
         None
     }
+
+    /// aimux extension: this provider's model-discovery side, when it has one
+    /// (see [`ProviderDiscovery`]). `None` for vendors without a `/models`
+    /// endpoint.
+    fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
+        None
+    }
 }
 
 /// Runtime model discovery, implemented by providers that expose a
@@ -128,4 +135,42 @@ pub trait ProviderDiscovery: Send + Sync {
     /// with model specs (context length, capabilities, reasoning portrait),
     /// call `get_model_specs` separately and merge in the host (RFC-0027).
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>>;
+}
+
+/// A reference to a provider is a provider, so a `&'static` default instance
+/// (`openai()`, `anthropic()`, ...) can be registered as it is.
+impl<P: Provider + ?Sized> Provider for &P {
+    fn language_model(&self, id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        (**self).language_model(id)
+    }
+    fn embedding_model(&self, id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+        (**self).embedding_model(id)
+    }
+    fn image_model(&self, id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+        (**self).image_model(id)
+    }
+    fn transcription_model(
+        &self,
+        id: &str,
+    ) -> Option<Result<Arc<dyn TranscriptionModel>, AiMuxError>> {
+        (**self).transcription_model(id)
+    }
+    fn speech_model(&self, id: &str) -> Option<Result<Arc<dyn SpeechModel>, AiMuxError>> {
+        (**self).speech_model(id)
+    }
+    fn reranking_model(&self, id: &str) -> Option<Result<Arc<dyn RerankingModel>, AiMuxError>> {
+        (**self).reranking_model(id)
+    }
+    fn files(&self) -> Option<Arc<dyn Files>> {
+        (**self).files()
+    }
+    fn video_model(&self, id: &str) -> Option<Result<Arc<dyn VideoModel>, AiMuxError>> {
+        (**self).video_model(id)
+    }
+    fn search_model(&self, id: &str) -> Option<Result<Arc<dyn SearchModel>, AiMuxError>> {
+        (**self).search_model(id)
+    }
+    fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
+        (**self).discovery()
+    }
 }

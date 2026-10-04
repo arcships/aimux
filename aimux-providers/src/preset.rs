@@ -328,6 +328,24 @@ fn load_registry() -> Vec<PresetEntry> {
     entries
 }
 
+/// Create the provider of the registry row `name`: the row's base URL, key
+/// variable and dialect, with `settings` overriding individual fields. The
+/// result is an ordinary [`OpenAICompatibleProvider`].
+///
+/// # Errors
+///
+/// [`AiMuxError::NoSuchProvider`] for a name that is not in the registry;
+/// otherwise as [`PresetProvider::create`].
+pub fn create(
+    name: &str,
+    settings: PresetSettings,
+) -> Result<OpenAICompatibleProvider, AiMuxError> {
+    let entry = lookup(name).ok_or_else(|| AiMuxError::NoSuchProvider {
+        provider_id: name.to_string(),
+    })?;
+    PresetProvider::create(entry.descriptor, settings).map(PresetProvider::into_inner)
+}
+
 /// Every preset, in name order. Invalid registry data panics on first use.
 pub fn entries() -> impl Iterator<Item = &'static PresetEntry> {
     static TABLE: OnceLock<Vec<PresetEntry>> = OnceLock::new();
@@ -432,6 +450,12 @@ impl PresetProvider {
                 profile,
             })?,
         })
+    }
+
+    /// The OpenAI-compatible provider this preset assembled.
+    #[must_use]
+    pub fn into_inner(self) -> OpenAICompatibleProvider {
+        self.inner
     }
 
     /// The descriptor this preset was created from.

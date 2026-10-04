@@ -206,3 +206,31 @@ async fn a_template_parameter_must_be_a_plain_host_segment() {
     );
     assert!(mock.seen().is_empty());
 }
+
+/// The built-in table holds the vendor packages and every registry row, and a
+/// registry over it resolves both the same way.
+#[test]
+fn default_providers_serve_packages_and_registry_rows_through_one_registry() {
+    let providers = aimux_providers::default_providers();
+    assert!(
+        providers.len() > 283,
+        "packages and rows: {}",
+        providers.len()
+    );
+    let registry = aimux_core::create_provider_registry(providers, Default::default());
+
+    let model = registry.language_model("anthropic:claude-x").unwrap();
+    assert_eq!(model.provider(), "anthropic.messages");
+    let model = registry.language_model("abacus:some/model:v1").unwrap();
+    assert_eq!(model.provider(), "abacus.chat");
+    assert_eq!(model.model_id(), "some/model:v1");
+    // A vendor package wins over the registry row of the same name.
+    let model = registry.language_model("groq:m").unwrap();
+    assert_eq!(model.provider(), "groq.chat");
+
+    let error = registry.language_model("nope:m").err().unwrap();
+    assert!(
+        matches!(error, AiMuxError::NoSuchProvider { .. }),
+        "{error:?}"
+    );
+}

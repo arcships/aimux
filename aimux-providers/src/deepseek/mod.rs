@@ -170,6 +170,10 @@ impl DeepSeekProvider {
 }
 
 impl Provider for DeepSeekProvider {
+    fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
+        Some(self)
+    }
+
     fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
         Ok(self.call(model_id))
     }
