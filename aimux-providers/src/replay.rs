@@ -5,11 +5,12 @@
 //! 是 provider 无关的输入重建 + 重发;本模块负责"按录制身份重建 model"。
 //!
 //! 录制只记身份(`provider_id` / `provider` / `model_id`),不记配置
-//! (RFC-0036 §3.3)。重建只按 `provider_id` + `model_id` 走
-//! [`provider`](crate::provider::provider):base URL 与 profile 来自 registry,
-//! 凭证来自调用方显式传入的 key,否则读 registry 条目的环境变量。
-//! 原生协议包(anthropic / google / bedrock …)接入 registry 之前,它们的
-//! `provider_id` 返回 `NoSuchProvider`:调用方需传 model 实例给
+//! (RFC-0036 §3.3)。重建按 `provider_id` 走
+//! [`create_provider`](crate::create_provider),厂商包与 registry 行同一入口:
+//! base URL 来自厂商包或 registry,凭证来自调用方显式传入的 key,否则在请求时
+//! 读该厂商的环境变量。重建出的 model 若与录制时的 `provider` 不是同一个
+//! (例如录制用的是 `openai.responses`,默认语言模型是 `openai.chat`),拒绝
+//! 重建:调用方需传 model 实例给
 //! [`replay_with_model`](aimux_core::replay::replay_with_model)。
 
 use std::sync::Arc;
@@ -20,14 +21,14 @@ use aimux_core::recording::ProviderRecord;
 
 /// 按 `ProviderRecord` 的 `provider_id` + `model_id` 重建 model。
 ///
-/// `api_key` 为 `None` 时由 registry 条目的环境变量取 key。
+/// `api_key` 为 `None` 时在请求时读该厂商的环境变量。
 ///
 /// # Errors
 ///
-/// Returns `InvalidArgument` for an empty `provider_id` or `model_id`,
-/// [`AiMuxError::NoSuchProvider`] when `provider_id` is not a registered
-/// provider (including native-protocol providers, which have no registry
-/// entry yet), and key-resolution errors.
+/// `InvalidArgument` for an empty `provider_id` or `model_id`, or when the
+/// provider's default language model is not the one the recording was made
+/// with; [`AiMuxError::NoSuchProvider`] when `provider_id` is not a built-in
+/// provider.
 pub fn rebuild_provider(
     p: &ProviderRecord,
     api_key: Option<&str>,
@@ -42,12 +43,24 @@ pub fn rebuild_provider(
             "mock replay: provider record has empty model_id".into(),
         ));
     }
-    crate::provider::provider(
+    let model = crate::create_provider(
         &p.provider_id,
-        api_key.map(str::to_string),
-        &p.model_id,
-        None,
-    )
+        crate::PresetSettings {
+            api_key: api_key.map(|key| key.to_string().into()),
+            ..Default::default()
+        },
+    )?
+    .language_model(&p.model_id)?;
+    if model.provider() != p.provider {
+        return Err(AiMuxError::InvalidArgument(format!(
+            "mock replay: the recording was made with `{}` but provider '{}' rebuilds `{}`; \
+             pass the model to replay_with_model",
+            p.provider,
+            p.provider_id,
+            model.provider()
+        )));
+    }
+    Ok(model)
 }
 
 #[cfg(test)]
@@ -55,94 +68,37 @@ mod tests {
     use super::*;
     use aimux_core::recording::Recorder;
 
-    fn record(provider_id: &str, model_id: &str) -> ProviderRecord {
-        ProviderRecord::new(provider_id, provider_id, model_id)
-    }
-
-    fn register_overlay(name: &str, env_var: Option<&str>) {
-        crate::provider::register_provider(crate::provider::ExternalProviderEntry {
-            name: name.into(),
-            display: None,
-            base_url: "https://relay.test.example/v1".into(),
-            env_var: env_var.map(Into::into),
-            api_key: None,
-            protocol: "openai_compat".into(),
-            profile: crate::provider::ProviderProfile::default(),
-            headers: None,
-            organization: None,
-            project: None,
-            comment: None,
-        })
-        .unwrap();
-    }
-
     #[test]
-    fn rebuilds_registry_provider_by_id_and_model() {
-        let model = rebuild_provider(&record("groq", "llama-3.3-70b"), Some("sk-test")).unwrap();
-        assert_eq!(model.provider(), "groq.chat");
-        assert_eq!(model.model_id(), "llama-3.3-70b");
-    }
-
-    #[test]
-    fn rebuild_ignores_recorded_provider_string() {
-        // Only `provider_id` selects the provider; `provider` is informational.
-        let p = ProviderRecord::new("deepseek", "something.else", "deepseek-chat");
+    fn rebuilds_a_registry_row_and_a_vendor_package_by_id() {
+        let p = ProviderRecord::new("abacus", "abacus.chat", "some-model");
         let model = rebuild_provider(&p, Some("sk-test")).unwrap();
-        assert_eq!(model.provider(), "deepseek.chat");
-        assert_eq!(model.model_id(), "deepseek-chat");
+        assert_eq!(model.provider(), "abacus.chat");
+        assert_eq!(model.model_id(), "some-model");
+
+        let p = ProviderRecord::new("anthropic", "anthropic.messages", "claude-x");
+        let model = rebuild_provider(&p, Some("sk-test")).unwrap();
+        assert_eq!(model.provider(), "anthropic.messages");
     }
 
     #[test]
-    fn missing_env_key_names_the_variable() {
-        let name = "test-replay-missing-env";
-        register_overlay(name, Some("AIMUX_REPLAY_TEST_MISSING"));
-        unsafe { std::env::remove_var("AIMUX_REPLAY_TEST_MISSING") };
-        let err = rebuild_provider(&record(name, "m"), None).err().unwrap();
-        crate::provider::clear_overlay(name);
-        assert!(
-            matches!(&err, AiMuxError::LoadApiKey { env_var, .. } if env_var == "AIMUX_REPLAY_TEST_MISSING"),
-            "{err}"
-        );
+    fn a_recording_made_with_another_method_is_refused() {
+        // The default OpenAI language model is chat; a Responses recording
+        // must not be replayed against it.
+        let p = ProviderRecord::new("openai", "openai.responses", "gpt-x");
+        let err = rebuild_provider(&p, Some("sk-test")).err().unwrap();
+        assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
     }
 
     #[test]
-    fn env_key_is_read_from_registry_variable() {
-        let name = "test-replay-env";
-        register_overlay(name, Some("AIMUX_REPLAY_TEST_KEY"));
-        unsafe { std::env::set_var("AIMUX_REPLAY_TEST_KEY", "sk-env") };
-        let result = rebuild_provider(&record(name, "m"), None);
-        unsafe { std::env::remove_var("AIMUX_REPLAY_TEST_KEY") };
-        crate::provider::clear_overlay(name);
-        assert_eq!(result.unwrap().model_id(), "m");
-    }
-
-    #[test]
-    fn native_protocol_provider_is_no_such_provider() {
-        // Native packages have no registry entry until they get their own
-        // factories; callers pass a model to `replay_with_model` instead.
-        let err = rebuild_provider(&record("anthropic", "claude-3-5-sonnet"), Some("sk"))
-            .err()
-            .unwrap();
-        assert!(
-            matches!(&err, AiMuxError::NoSuchProvider { provider_id } if provider_id == "anthropic"),
-            "{err}"
-        );
-    }
-
-    #[test]
-    fn external_overlay_provider_is_replayable() {
-        // RFC-0020 overlay: a provider registered at runtime is found by id.
-        let name = "test-replay-overlay";
-        register_overlay(name, None);
-        let result = rebuild_provider(&record(name, "m"), Some("dummy"));
-        crate::provider::clear_overlay(name);
-        let model = result.expect("rebuild_provider should accept an overlay provider id");
-        assert_eq!(model.provider(), format!("{name}.chat"));
+    fn an_unknown_provider_id_is_no_such_provider() {
+        let p = ProviderRecord::new("nope", "nope.chat", "m");
+        let err = rebuild_provider(&p, Some("sk")).err().unwrap();
+        assert!(matches!(err, AiMuxError::NoSuchProvider { .. }), "{err}");
     }
 
     #[test]
     fn empty_model_id_errors() {
-        let err = rebuild_provider(&record("groq", ""), Some("sk"))
+        let err = rebuild_provider(&ProviderRecord::new("groq", "groq.chat", ""), Some("sk"))
             .err()
             .unwrap();
         assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
@@ -150,7 +106,7 @@ mod tests {
 
     #[test]
     fn empty_provider_id_errors() {
-        let err = rebuild_provider(&record("", "m"), Some("sk"))
+        let err = rebuild_provider(&ProviderRecord::new("", "", "m"), Some("sk"))
             .err()
             .unwrap();
         assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
