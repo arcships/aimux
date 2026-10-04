@@ -11,12 +11,14 @@ pub(crate) struct ChatResponse {
     pub id: Option<String>,
     pub created: Option<f64>,
     pub model: Option<String>,
+    pub object: Option<String>,
     pub system_fingerprint: Option<String>,
     pub choices: Vec<ResponseChoice>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ResponseChoice {
+    pub index: Option<u32>,
     pub message: ResponseMessage,
     pub logprobs: Option<Value>,
     pub finish_reason: Option<String>,
@@ -24,15 +26,16 @@ pub(crate) struct ResponseChoice {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ResponseMessage {
+    pub role: Option<String>,
     pub content: Option<String>,
     pub reasoning_content: Option<String>,
-    pub reasoning: Option<String>,
     pub tool_calls: Option<Vec<ResponseToolCall>>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ResponseToolCall {
     pub id: Option<String>,
+    pub r#type: Option<String>,
     pub function: ResponseToolCallFunction,
 }
 
@@ -47,6 +50,7 @@ pub(crate) struct ChatChunk {
     pub id: Option<String>,
     pub created: Option<f64>,
     pub model: Option<String>,
+    pub object: Option<String>,
     pub system_fingerprint: Option<String>,
     pub choices: Vec<ChunkChoice>,
     pub usage: Option<Value>,
@@ -54,6 +58,7 @@ pub(crate) struct ChatChunk {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ChunkChoice {
+    pub index: Option<u32>,
     pub delta: Option<ChunkDelta>,
     pub logprobs: Option<Value>,
     pub finish_reason: Option<String>,
@@ -61,9 +66,9 @@ pub(crate) struct ChunkChoice {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ChunkDelta {
+    pub role: Option<String>,
     pub content: Option<String>,
     pub reasoning_content: Option<String>,
-    pub reasoning: Option<String>,
     pub tool_calls: Option<Vec<ChunkToolCall>>,
 }
 
@@ -71,6 +76,7 @@ pub(crate) struct ChunkDelta {
 pub(crate) struct ChunkToolCall {
     pub index: usize,
     pub id: Option<String>,
+    pub r#type: Option<String>,
     pub function: ChunkToolCallFunction,
 }
 

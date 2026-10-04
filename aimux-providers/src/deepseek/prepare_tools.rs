@@ -2,6 +2,7 @@
 
 use serde_json::{Map, Value, json};
 
+use aimux_core::error::AiMuxError;
 use aimux_core::options::ToolChoice;
 use aimux_core::tool::Tool;
 use aimux_core::types::Warning;
@@ -16,15 +17,46 @@ pub(crate) struct PreparedTools {
 
 /// Function tools go to the body; a provider-defined tool is unsupported and
 /// warned about. With no tools there is no tool choice.
-pub(crate) fn prepare_tools(tools: Option<&Vec<Tool>>, tool_choice: &ToolChoice) -> PreparedTools {
+///
+/// # Errors
+///
+/// `UnsupportedFunctionality` when a tool is `strict` and the base URL is not
+/// the beta one, or when strict and non-strict function tools are mixed.
+pub(crate) fn prepare_tools(
+    tools: Option<&Vec<Tool>>,
+    tool_choice: &ToolChoice,
+    supports_strict_tool_calls: bool,
+) -> Result<PreparedTools, AiMuxError> {
     let mut tool_warnings = Vec::new();
     let Some(tools) = tools.filter(|tools| !tools.is_empty()) else {
-        return PreparedTools {
+        return Ok(PreparedTools {
             tools: None,
             tool_choice: None,
             tool_warnings,
-        };
+        });
     };
+
+    let function_tools = || {
+        tools.iter().filter_map(|tool| match tool {
+            Tool::Function(tool) => Some(tool),
+            Tool::Provider(_) => None,
+        })
+    };
+    let has_strict_tool = function_tools().any(|tool| tool.strict == Some(true));
+    if has_strict_tool && !supports_strict_tool_calls {
+        return Err(AiMuxError::UnsupportedFunctionality(
+            "DeepSeek strict tool calls require a beta base URL ending in `/beta`.".to_string(),
+        ));
+    }
+    if has_strict_tool
+        && supports_strict_tool_calls
+        && function_tools().any(|tool| tool.strict != Some(true))
+    {
+        return Err(AiMuxError::UnsupportedFunctionality(
+            "DeepSeek strict mode requires every function tool in the request to set `strict: true`."
+                .to_string(),
+        ));
+    }
 
     let mut deepseek_tools = Vec::new();
     for tool in tools {
@@ -56,9 +88,9 @@ pub(crate) fn prepare_tools(tools: Option<&Vec<Tool>>, tool_choice: &ToolChoice)
             json!({ "type": "function", "function": { "name": tool_name } })
         }
     };
-    PreparedTools {
+    Ok(PreparedTools {
         tools: Some(deepseek_tools),
         tool_choice: Some(tool_choice),
         tool_warnings,
-    }
+    })
 }

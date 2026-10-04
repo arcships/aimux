@@ -7,6 +7,7 @@ use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
+use aimux_core::options::ResponseFormat;
 use aimux_core::types::Warning;
 
 use super::is_v4_model::is_deepseek_v4_model;
@@ -204,6 +205,7 @@ fn join_text(content: &[ContentPart]) -> String {
 /// message or needs a beta base URL, an unsupported image).
 pub(crate) fn convert_to_deepseek_chat_messages(
     prompt: &LanguageModelPrompt,
+    response_format: Option<&ResponseFormat>,
     model_id: &str,
     provider_options_name: &str,
     supports_assistant_prefix_completion: bool,
@@ -211,6 +213,28 @@ pub(crate) fn convert_to_deepseek_chat_messages(
     let is_deepseek_v4 = is_deepseek_v4_model(model_id);
     let mut messages = Vec::new();
     let mut warnings = Vec::new();
+
+    // Inject a system message if the response format is JSON. The DeepSeek
+    // package never supports structured outputs, so a schema is injected too.
+    if let Some(ResponseFormat::Json { schema, .. }) = response_format {
+        match schema {
+            None => messages.push(json!({ "role": "system", "content": "Return JSON." })),
+            Some(schema) => {
+                messages.push(json!({
+                    "role": "system",
+                    "content": format!(
+                        "Return JSON that conforms to the following schema: {schema}"
+                    ),
+                }));
+                warnings.push(Warning::Compatibility {
+                    feature: "responseFormat JSON schema".to_string(),
+                    details: Some(
+                        "JSON response schema is injected into the system message.".to_string(),
+                    ),
+                });
+            }
+        }
+    }
     let last_user_message_index = prompt
         .iter()
         .rposition(|message| message.role == Role::User);
@@ -322,14 +346,7 @@ pub(crate) fn convert_to_deepseek_chat_messages(
 
                 let mut wire = Map::new();
                 wire.insert("role".into(), json!("assistant"));
-                wire.insert(
-                    "content".into(),
-                    if tool_calls.is_empty() || !text.is_empty() {
-                        json!(text)
-                    } else {
-                        Value::Null
-                    },
-                );
+                wire.insert("content".into(), json!(text));
                 name(&mut wire);
                 if options.prefix == Some(true) {
                     wire.insert("prefix".into(), json!(true));

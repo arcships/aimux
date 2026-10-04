@@ -1,6 +1,6 @@
 //! The DeepSeek chat language model (`deepseek-chat-language-model.ts`).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
@@ -12,7 +12,9 @@ use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Warning};
+use aimux_core::types::{
+    FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning,
+};
 use aimux_provider_utils::{
     StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker,
 };
@@ -20,7 +22,7 @@ use aimux_provider_utils::{
 use super::convert::convert_to_deepseek_chat_messages;
 use super::finish_reason::map_deepseek_finish_reason;
 use super::is_v4_model::is_deepseek_v4_model;
-use super::options::parse_chat_options;
+use super::options::{ProviderReasoningEffort, ThinkingType, parse_chat_options};
 use super::prepare_tools::prepare_tools;
 use super::types::{ChatChunk, ChatResponse};
 use super::usage::convert_deepseek_usage;
@@ -33,6 +35,8 @@ pub(crate) struct DeepSeekChatConfig {
     /// Whether the base URL is the beta one, which accepts assistant prefix
     /// completion.
     pub(crate) supports_assistant_prefix_completion: bool,
+    /// Whether the base URL is the beta one, which accepts strict tool calls.
+    pub(crate) supports_strict_tool_calls: bool,
 }
 
 /// A DeepSeek chat model.
@@ -42,12 +46,11 @@ pub struct DeepSeekChatLanguageModel {
 }
 
 /// A request body and the warnings raised while building it.
-#[derive(Debug, Clone)]
-pub struct RequestBodyResult {
+struct RequestBodyResult {
     /// The JSON body, before the provider's `transform_request_body`.
-    pub body: Value,
+    body: Value,
     /// Warnings raised while building it.
-    pub warnings: Vec<Warning>,
+    warnings: Vec<Warning>,
 }
 
 /// A fallback id for a tool call the server sent without one.
@@ -101,11 +104,12 @@ fn status_of_error_kind(kind: &str) -> Option<u16> {
 
 /// The error of an error event inside a stream (`createDeepSeekStreamError`).
 fn deepseek_stream_error(
-    error: &Value,
+    event: &Value,
     url: &str,
     request_body_values: Value,
     response_headers: HashMap<String, String>,
 ) -> AiMuxError {
+    let error = &event["error"];
     let code = error.get("code").filter(|code| !code.is_null());
     let kind = error.get("type").and_then(Value::as_str);
     let names = [code.and_then(Value::as_str), kind];
@@ -132,7 +136,7 @@ fn deepseek_stream_error(
         message,
         provider_code,
         status_code,
-        error,
+        event,
         url,
         request_body_values,
         response_headers,
@@ -161,14 +165,8 @@ impl DeepSeekChatLanguageModel {
 
     /// The JSON body a call would send, before the provider's
     /// `transform_request_body`, with the warnings raised while building it
-    /// (`getArgs`, plus the stream fields). Nothing is read from the
-    /// environment and nothing is sent: a key is not resolved here.
-    ///
-    /// # Errors
-    ///
-    /// `InvalidArgument` for a malformed provider option, `InvalidPrompt` or
-    /// `UnsupportedFunctionality` for a prompt DeepSeek cannot take.
-    pub fn request_body(
+    /// (`getArgs`, plus the stream fields).
+    fn request_body(
         &self,
         options: &CallOptions,
         stream: bool,
@@ -179,12 +177,25 @@ impl DeepSeekChatLanguageModel {
 
         let converted = convert_to_deepseek_chat_messages(
             &options.prompt,
+            options.response_format.as_ref(),
             &self.model_id,
             provider_options_name,
             self.config.supports_assistant_prefix_completion,
         )?;
         let mut warnings = converted.warnings;
 
+        if options.top_k.is_some() {
+            warnings.push(Warning::Unsupported {
+                feature: "topK".to_string(),
+                details: None,
+            });
+        }
+        if options.seed.is_some() {
+            warnings.push(Warning::Unsupported {
+                feature: "seed".to_string(),
+                details: None,
+            });
+        }
         for (value, setting) in [
             (options.frequency_penalty, "frequencyPenalty"),
             (options.presence_penalty, "presencePenalty"),
@@ -198,25 +209,41 @@ impl DeepSeekChatLanguageModel {
                 });
             }
         }
-        if options.seed.is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "seed".to_string(),
-                details: None,
+
+        let prepared = prepare_tools(
+            options.tools.as_ref(),
+            &options.tool_choice,
+            self.config.supports_strict_tool_calls,
+        )?;
+
+        let thinking_type = deepseek_options
+            .thinking
+            .as_ref()
+            .and_then(|thinking| thinking.kind);
+        if thinking_type == Some(ThinkingType::Adaptive) {
+            warnings.push(Warning::Compatibility {
+                feature: "thinking.type".to_string(),
+                details: Some(
+                    "thinking.type \"adaptive\" is not a canonical DeepSeek value. mapped to \"enabled\"."
+                        .to_string(),
+                ),
             });
         }
 
-        let prepared = prepare_tools(options.tools.as_ref(), &options.tool_choice);
+        let reasoning = options.reasoning.filter(|effort| effort.is_custom());
+        let thinking = match (thinking_type, reasoning) {
+            (Some(ThinkingType::Disabled), _) => Some("disabled"),
+            (Some(_), _) => Some("enabled"),
+            (None, Some(ReasoningEffort::None)) => Some("disabled"),
+            (None, Some(_)) => Some("enabled"),
+            (None, None) => None,
+        };
 
-        let is_thinking_disabled = deepseek_options
-            .thinking
-            .as_ref()
-            .and_then(|thinking| thinking.get("type"))
-            .and_then(Value::as_str)
-            == Some("disabled");
-        let is_thinking_enabled = !is_thinking_disabled
-            && (deepseek_options.thinking.is_some()
+        let is_thinking_enabled = thinking != Some("disabled")
+            && (thinking.is_some()
                 || self.model_id == "deepseek-reasoner"
                 || is_deepseek_v4_model(&self.model_id));
+
         for (value, feature) in [
             (options.temperature, "temperature"),
             (options.top_p, "topP"),
@@ -231,14 +258,52 @@ impl DeepSeekChatLanguageModel {
             }
         }
 
-        let reasoning_effort = deepseek_options.reasoning_effort.clone().or_else(|| {
-            options
-                .reasoning
-                .filter(|effort| effort.is_custom())
-                .map(|effort| effort.to_string())
-        });
+        let reasoning_effort = match (deepseek_options.reasoning_effort, reasoning) {
+            (Some(effort), _) => {
+                let mapped = match effort {
+                    ProviderReasoningEffort::Medium => "high",
+                    ProviderReasoningEffort::Xhigh => "max",
+                    ProviderReasoningEffort::Low => "low",
+                    ProviderReasoningEffort::High => "high",
+                    ProviderReasoningEffort::Max => "max",
+                };
+                let given = match effort {
+                    ProviderReasoningEffort::Low => "low",
+                    ProviderReasoningEffort::Medium => "medium",
+                    ProviderReasoningEffort::High => "high",
+                    ProviderReasoningEffort::Xhigh => "xhigh",
+                    ProviderReasoningEffort::Max => "max",
+                };
+                if mapped != given {
+                    warnings.push(Warning::Compatibility {
+                        feature: "reasoningEffort".to_string(),
+                        details: Some(format!(
+                            "reasoningEffort \"{given}\" is not a canonical DeepSeek value. mapped to \"{mapped}\"."
+                        )),
+                    });
+                }
+                Some(mapped)
+            }
+            (None, Some(ReasoningEffort::None) | None) => None,
+            (None, Some(reasoning)) => {
+                let mapped = match reasoning {
+                    ReasoningEffort::Minimal | ReasoningEffort::Low => "low",
+                    ReasoningEffort::Medium | ReasoningEffort::High => "high",
+                    _ => "max",
+                };
+                if mapped != reasoning.to_string() {
+                    warnings.push(Warning::Compatibility {
+                        feature: "reasoning".to_string(),
+                        details: Some(format!(
+                            "reasoning \"{reasoning}\" is not directly supported by this model. mapped to effort \"{mapped}\"."
+                        )),
+                    });
+                }
+                Some(mapped)
+            }
+        };
 
-        let mut body = deepseek_options.extra;
+        let mut body = Map::new();
         body.insert("model".into(), json!(self.model_id));
         if deepseek_options.logprobs == Some(true) || deepseek_options.top_logprobs.is_some() {
             body.insert("logprobs".into(), json!(true));
@@ -259,35 +324,8 @@ impl DeepSeekChatLanguageModel {
                 }
             }
         }
-        if let Some(top_k) = options.top_k {
-            body.insert("top_k".into(), json!(top_k));
-        }
-        if let Some(ResponseFormat::Json {
-            schema,
-            name,
-            description,
-        }) = &options.response_format
-        {
-            body.insert(
-                "response_format".into(),
-                match schema {
-                    Some(schema) => {
-                        let mut json_schema = Map::new();
-                        json_schema.insert("schema".into(), schema.clone());
-                        json_schema.insert(
-                            "strict".into(),
-                            json!(deepseek_options.strict_json_schema.unwrap_or(true)),
-                        );
-                        json_schema
-                            .insert("name".into(), json!(name.as_deref().unwrap_or("response")));
-                        if let Some(description) = description {
-                            json_schema.insert("description".into(), json!(description));
-                        }
-                        json!({ "type": "json_schema", "json_schema": json_schema })
-                    }
-                    None => json!({ "type": "json_object" }),
-                },
-            );
+        if matches!(options.response_format, Some(ResponseFormat::Json { .. })) {
+            body.insert("response_format".into(), json!({ "type": "json_object" }));
         }
         if let Some(stop) = &options.stop_sequences {
             body.insert("stop".into(), json!(stop));
@@ -299,14 +337,14 @@ impl DeepSeekChatLanguageModel {
         if let Some(tool_choice) = prepared.tool_choice {
             body.insert("tool_choice".into(), tool_choice);
         }
-        if let Some(thinking) = deepseek_options.thinking {
-            body.insert("thinking".into(), thinking);
+        if let Some(thinking) = thinking {
+            body.insert("thinking".into(), json!({ "type": thinking }));
         }
         if let Some(user_id) = deepseek_options.user_id {
             body.insert("user_id".into(), json!(user_id));
         }
         if let Some(reasoning_effort) = reasoning_effort
-            && !is_thinking_disabled
+            && thinking != Some("disabled")
         {
             body.insert("reasoning_effort".into(), json!(reasoning_effort));
         }
@@ -321,22 +359,6 @@ impl DeepSeekChatLanguageModel {
             warnings,
         })
     }
-}
-
-/// `{ "<provider>": { systemFingerprint?, logprobs? } }`.
-fn provider_metadata(
-    provider_options_name: &str,
-    system_fingerprint: Option<&str>,
-    logprobs: Option<Value>,
-) -> Value {
-    let mut metadata = Map::new();
-    if let Some(logprobs) = logprobs {
-        metadata.insert("logprobs".into(), logprobs);
-    }
-    if let Some(system_fingerprint) = system_fingerprint {
-        metadata.insert("systemFingerprint".into(), json!(system_fingerprint));
-    }
-    json!({ provider_options_name: metadata })
 }
 
 #[async_trait]
@@ -378,13 +400,45 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             AiMuxError::InvalidResponseData("Response did not contain any choices.".to_string())
         })?;
 
+        let mut metadata = Map::new();
+        let usage_value = raw.get("usage").filter(|usage| !usage.is_null());
+        for (key, name) in [
+            ("prompt_cache_hit_tokens", "promptCacheHitTokens"),
+            ("prompt_cache_miss_tokens", "promptCacheMissTokens"),
+        ] {
+            if let Some(value) = usage_value.and_then(|usage| usage.get(key)) {
+                metadata.insert(name.into(), value.clone());
+            }
+        }
+        if let Some(object) = &data.object {
+            metadata.insert("responseObject".into(), json!(object));
+        }
+        if let Some(index) = choice.index {
+            metadata.insert("choiceIndex".into(), json!(index));
+        }
+        if let Some(role) = &choice.message.role {
+            metadata.insert("messageRole".into(), json!(role));
+        }
+        if let Some(tool_calls) = &choice.message.tool_calls {
+            let types: Vec<&String> = tool_calls
+                .iter()
+                .filter_map(|call| call.r#type.as_ref())
+                .collect();
+            metadata.insert("toolCallTypes".into(), json!(types));
+        }
+        if let Some(logprobs) = choice.logprobs.filter(|logprobs| !logprobs.is_null()) {
+            metadata.insert("logprobs".into(), logprobs);
+        }
+        if let Some(system_fingerprint) = &data.system_fingerprint {
+            metadata.insert("systemFingerprint".into(), json!(system_fingerprint));
+        }
+
         let mut content = Vec::new();
 
         // reasoning content (before text):
         if let Some(text) = choice
             .message
             .reasoning_content
-            .or(choice.message.reasoning)
             .filter(|text| !text.is_empty())
         {
             content.push(GenerateContent::Reasoning {
@@ -425,11 +479,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             },
             usage: convert_deepseek_usage(raw.get("usage")),
             warnings: built.warnings,
-            provider_metadata: Some(provider_metadata(
-                self.provider_options_name(),
-                data.system_fingerprint.as_deref(),
-                choice.logprobs.filter(|logprobs| !logprobs.is_null()),
-            )),
+            provider_metadata: Some(json!({ self.provider_options_name(): metadata })),
             response: ResponseMetadata {
                 id: data.id,
                 timestamp: timestamp(data.created),
@@ -468,10 +518,10 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             first => first,
         };
         if let Some(Ok(event)) = &first_event
-            && let Some(error) = event.get("error")
+            && event.get("error").is_some()
         {
             return Err(deepseek_stream_error(
-                error,
+                event,
                 &endpoint,
                 body.clone(),
                 response_headers.clone(),
@@ -493,6 +543,10 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             let mut is_first_chunk = true;
             let mut is_active_reasoning = false;
             let mut is_active_text = false;
+            let mut response_object: Option<String> = None;
+            let mut choice_index: Option<u32> = None;
+            let mut message_role: Option<String> = None;
+            let mut tool_call_types: BTreeMap<usize, String> = BTreeMap::new();
             let mut content_logprobs: Vec<Value> = Vec::new();
             let mut reasoning_logprobs: Vec<Value> = Vec::new();
 
@@ -516,11 +570,11 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                 }
 
                 // handle error chunks:
-                if let Some(error) = parsed.get("error") {
+                if parsed.get("error").is_some() {
                     finish_reason = FinishReason { unified: FinishReasonUnified::Error, raw: None };
                     yield Ok(StreamPart::Error {
                         error: deepseek_stream_error(
-                            error,
+                            &parsed,
                             &endpoint,
                             stream_error_body.clone(),
                             stream_response_headers.clone(),
@@ -552,6 +606,10 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                     usage = Some(chunk_usage);
                 }
 
+                if chunk.object.is_some() {
+                    response_object = chunk.object;
+                }
+
                 // The fingerprint is repeated on stream chunks; keep the
                 // latest non-null value in case it changes during the response.
                 if chunk.system_fingerprint.is_some() {
@@ -561,6 +619,10 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                 let Some(choice) = chunk.choices.into_iter().next() else {
                     continue;
                 };
+
+                if choice.index.is_some() {
+                    choice_index = choice.index;
+                }
 
                 if let Some(reason) = choice.finish_reason {
                     finish_reason = FinishReason {
@@ -584,10 +646,13 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                     continue;
                 };
 
+                if delta.role.is_some() {
+                    message_role = delta.role;
+                }
+
                 // enqueue reasoning before text deltas:
                 if let Some(reasoning) = delta
                     .reasoning_content
-                    .or(delta.reasoning)
                     .filter(|reasoning| !reasoning.is_empty())
                 {
                     if !is_active_reasoning {
@@ -640,10 +705,13 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                     }
 
                     for tool_call in deltas {
+                        if let Some(kind) = &tool_call.r#type {
+                            tool_call_types.insert(tool_call.index, kind.clone());
+                        }
                         let delta = StreamingToolCallDelta {
                             index: Some(tool_call.index),
                             id: tool_call.id,
-                            r#type: None,
+                            r#type: tool_call.r#type,
                             function: Some(StreamingToolCallFunction {
                                 name: tool_call.function.name,
                                 arguments: tool_call.function.arguments,
@@ -681,6 +749,34 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                 yield Ok(part);
             }
 
+            let mut metadata = Map::new();
+            for (key, name) in [
+                ("prompt_cache_hit_tokens", "promptCacheHitTokens"),
+                ("prompt_cache_miss_tokens", "promptCacheMissTokens"),
+            ] {
+                if let Some(value) = usage
+                    .as_ref()
+                    .and_then(|usage| usage.get(key))
+                    .filter(|value| !value.is_null())
+                {
+                    metadata.insert(name.into(), value.clone());
+                }
+            }
+            if let Some(object) = response_object {
+                metadata.insert("responseObject".into(), json!(object));
+            }
+            if let Some(index) = choice_index {
+                metadata.insert("choiceIndex".into(), json!(index));
+            }
+            if let Some(role) = message_role {
+                metadata.insert("messageRole".into(), json!(role));
+            }
+            if !tool_call_types.is_empty() {
+                metadata.insert(
+                    "toolCallTypes".into(),
+                    json!(tool_call_types.into_values().collect::<Vec<_>>()),
+                );
+            }
             let mut logprobs = Map::new();
             if !content_logprobs.is_empty() {
                 logprobs.insert("content".into(), Value::Array(content_logprobs));
@@ -688,14 +784,16 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             if !reasoning_logprobs.is_empty() {
                 logprobs.insert("reasoning_content".into(), Value::Array(reasoning_logprobs));
             }
+            if !logprobs.is_empty() {
+                metadata.insert("logprobs".into(), Value::Object(logprobs));
+            }
+            if let Some(system_fingerprint) = system_fingerprint {
+                metadata.insert("systemFingerprint".into(), json!(system_fingerprint));
+            }
             yield Ok(StreamPart::Finish {
                 finish_reason,
                 usage: convert_deepseek_usage(usage.as_ref()),
-                provider_metadata: Some(provider_metadata(
-                    &provider_options_name,
-                    system_fingerprint.as_deref(),
-                    (!logprobs.is_empty()).then_some(Value::Object(logprobs)),
-                )),
+                provider_metadata: Some(json!({ provider_options_name: metadata })),
             });
         };
 

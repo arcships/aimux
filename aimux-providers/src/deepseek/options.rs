@@ -6,11 +6,40 @@
 use std::collections::HashMap;
 
 use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
 
-/// `providerOptions.<provider>` of a call.
+/// `thinking` of the call options. `adaptive` is accepted for backwards
+/// compatibility and mapped to `enabled`.
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct DeepSeekThinkingOptions {
+    #[serde(rename = "type")]
+    pub kind: Option<ThinkingType>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum ThinkingType {
+    Adaptive,
+    Enabled,
+    Disabled,
+}
+
+/// `reasoningEffort` of the call options. `medium` and `xhigh` are accepted for
+/// backwards compatibility and mapped to canonical DeepSeek values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum ProviderReasoningEffort {
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
+}
+
+/// `providerOptions.<provider>` of a call (`deepseekLanguageModelChatOptions`).
+/// Fields the schema does not know are dropped.
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DeepSeekChatOptions {
@@ -22,16 +51,10 @@ pub(crate) struct DeepSeekChatOptions {
     /// An opaque identifier for the end user: ASCII letters, numbers,
     /// underscores and hyphens, at most 512 characters.
     pub user_id: Option<String>,
-    /// The thinking configuration, sent as given.
-    pub thinking: Option<Value>,
-    /// The thinking strength, sent as given.
-    pub reasoning_effort: Option<String>,
-    /// Whether JSON-schema response formats are strict. Defaults to `true`.
-    pub strict_json_schema: Option<bool>,
-    /// Fields of the namespace the schema does not know go to the body as
-    /// given.
-    #[serde(flatten)]
-    pub extra: Map<String, Value>,
+    /// The thinking configuration.
+    pub thinking: Option<DeepSeekThinkingOptions>,
+    /// The thinking strength.
+    pub reasoning_effort: Option<ProviderReasoningEffort>,
 }
 
 /// The `providerOptions` of a message (`name`, and for an assistant message
@@ -89,17 +112,17 @@ pub(crate) fn parse_chat_options(
     if options.top_logprobs.is_some_and(|n| n > 20) {
         return Err(invalid(name, "topLogprobs must be at most 20"));
     }
-    if let Some(user_id) = &options.user_id
-        && (user_id.is_empty()
-            || user_id.len() > 512
+    if let Some(user_id) = &options.user_id {
+        if user_id.is_empty()
             || !user_id
                 .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
-    {
-        return Err(invalid(
-            name,
-            "userId must match /^[a-zA-Z0-9_-]+$/ and be at most 512 characters long",
-        ));
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        {
+            return Err(invalid(name, "userId must match /^[a-zA-Z0-9_-]+$/"));
+        }
+        if user_id.len() > 512 {
+            return Err(invalid(name, "userId must be at most 512 characters long"));
+        }
     }
     Ok(options)
 }

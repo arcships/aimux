@@ -19,7 +19,7 @@ mod prepare_tools;
 mod types;
 mod usage;
 
-pub use model::{DeepSeekChatLanguageModel, RequestBodyResult};
+pub use model::DeepSeekChatLanguageModel;
 
 use std::sync::{Arc, OnceLock};
 
@@ -41,7 +41,7 @@ use crate::openai_compatible::config::ChatDialect;
 use crate::shared::{Credential, EndpointConfig, TransformRequestBody, provider_headers};
 use model::DeepSeekChatConfig;
 
-const DEFAULT_BASE_URL: &str = "https://api.deepseek.com/v1";
+const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
 const API_KEY_ENV_VAR: &str = "DEEPSEEK_API_KEY";
 
 /// DeepSeek's chat behavior as data for the shared compatible chat model. The
@@ -86,7 +86,7 @@ fn chat_supported_urls() -> SupportedUrls {
 /// Settings of [`create_deepseek`] (the AI SDK's `DeepSeekProviderSettings`).
 #[derive(Clone, Default)]
 pub struct DeepSeekProviderSettings {
-    /// Base URL for the API calls. Default `https://api.deepseek.com/v1`; a
+    /// Base URL for the API calls. Default `https://api.deepseek.com`; a
     /// trailing slash is removed.
     pub base_url: Option<String>,
     /// The API key. `None` loads `DEEPSEEK_API_KEY` when a request is made and
@@ -190,6 +190,7 @@ impl DeepSeekProvider {
                     .endpoint_config("chat")
                     .with_supported_urls(Arc::new(|_| chat_supported_urls())),
                 supports_assistant_prefix_completion: self.base_url.ends_with("/beta"),
+                supports_strict_tool_calls: self.base_url.ends_with("/beta"),
             },
         )
     }
