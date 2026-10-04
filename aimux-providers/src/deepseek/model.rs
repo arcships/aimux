@@ -1,7 +1,6 @@
 //! The DeepSeek chat language model (`deepseek-chat-language-model.ts`).
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -16,7 +15,7 @@ use aimux_core::types::{
     FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning,
 };
 use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker,
+    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, generate_id,
 };
 
 use super::convert::convert_to_deepseek_chat_messages;
@@ -51,19 +50,6 @@ struct RequestBodyResult {
     body: Value,
     /// Warnings raised while building it.
     warnings: Vec<Warning>,
-}
-
-/// A fallback id for a tool call the server sent without one.
-fn generate_id() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or_default();
-    format!(
-        "call_{nanos:x}{:x}",
-        COUNTER.fetch_add(1, Ordering::Relaxed)
-    )
 }
 
 fn timestamp(created: Option<f64>) -> Option<String> {

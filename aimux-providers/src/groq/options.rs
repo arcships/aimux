@@ -47,18 +47,33 @@ pub(crate) enum ServiceTier {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct GroqLanguageModelChatOptions {
+    #[serde(default, deserialize_with = "deserialize_optional")]
     pub reasoning_format: Option<ReasoningFormat>,
+    #[serde(default, deserialize_with = "deserialize_optional")]
     pub reasoning_effort: Option<ReasoningEffort>,
     /// Whether to enable parallel function calling during tool use. Default to true.
+    #[serde(default, deserialize_with = "deserialize_optional")]
     pub parallel_tool_calls: Option<bool>,
     /// A unique identifier representing the end-user.
+    #[serde(default, deserialize_with = "deserialize_optional")]
     pub user: Option<String>,
     /// Whether to use structured outputs. Default true.
+    #[serde(default, deserialize_with = "deserialize_optional")]
     pub structured_outputs: Option<bool>,
     /// Whether to use strict JSON schema validation. Only used when structured
     /// outputs are enabled and a schema is provided. Default true.
+    #[serde(default, deserialize_with = "deserialize_optional")]
     pub strict_json_schema: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_optional")]
     pub service_tier: Option<ServiceTier>,
+}
+
+fn deserialize_optional<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
 
 /// Parse the Groq options of a call (`parseProviderOptions` with provider

@@ -116,9 +116,24 @@ pub(crate) struct GroqChunkToolCall {
     pub index: usize,
     #[serde(default)]
     pub id: Option<String>,
-    #[serde(default, rename = "type")]
+    #[serde(
+        default,
+        rename = "type",
+        deserialize_with = "deserialize_tool_call_type"
+    )]
     pub r#type: Option<String>,
     pub function: GroqChunkToolCallFunction,
+}
+
+fn deserialize_tool_call_type<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    if value != "function" {
+        return Err(serde::de::Error::custom("expected tool call type function"));
+    }
+    Ok(Some(value))
 }
 
 #[derive(Debug, Deserialize)]

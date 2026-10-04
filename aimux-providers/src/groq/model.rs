@@ -5,7 +5,6 @@
 //! [`StreamingToolCallTracker`].
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -21,6 +20,7 @@ use aimux_core::types::{
 };
 use aimux_provider_utils::{
     StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, TypeValidation,
+    generate_id,
 };
 
 use crate::shared::EndpointConfig;
@@ -37,19 +37,6 @@ use super::usage::convert_groq_usage;
 pub struct GroqChatLanguageModel {
     model_id: String,
     config: EndpointConfig,
-}
-
-/// A fallback id for a tool call the server sent without one.
-fn generate_id() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or_default();
-    format!(
-        "call_{nanos:x}{:x}",
-        COUNTER.fetch_add(1, Ordering::Relaxed)
-    )
 }
 
 /// `getResponseMetadata`.
@@ -426,6 +413,9 @@ impl LanguageModel for GroqChatLanguageModel {
                         if !error.is_recoverable_stream_error() {
                             yield Err(error);
                             return;
+                        }
+                        if emit_raw_chunks {
+                            yield Ok(StreamPart::Raw { raw_value: Value::Null });
                         }
                         finish_reason = FinishReason {
                             unified: FinishReasonUnified::Error,

@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
@@ -14,7 +14,7 @@ use aimux_core::error::AiMuxError;
 /// compatibility and mapped to `enabled`.
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct DeepSeekThinkingOptions {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default, deserialize_with = "deserialize_optional")]
     pub kind: Option<ThinkingType>,
 }
 
@@ -44,17 +44,28 @@ pub(crate) enum ProviderReasoningEffort {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DeepSeekChatOptions {
     /// Whether to return log probabilities for generated tokens.
+    #[serde(default, deserialize_with = "deserialize_optional")]
     pub logprobs: Option<bool>,
     /// Number of most likely tokens to return at each token position (0 to
     /// 20); setting it enables `logprobs`.
+    #[serde(default, deserialize_with = "deserialize_optional")]
     pub top_logprobs: Option<u8>,
     /// An opaque identifier for the end user: ASCII letters, numbers,
     /// underscores and hyphens, at most 512 characters.
+    #[serde(default, deserialize_with = "deserialize_optional")]
     pub user_id: Option<String>,
     /// The thinking configuration.
+    #[serde(default, deserialize_with = "deserialize_optional")]
     pub thinking: Option<DeepSeekThinkingOptions>,
     /// The thinking strength.
+    #[serde(default, deserialize_with = "deserialize_optional")]
     pub reasoning_effort: Option<ProviderReasoningEffort>,
+    #[serde(
+        rename = "strictJsonSchema",
+        default,
+        deserialize_with = "deserialize_optional"
+    )]
+    pub _strict_json_schema: Option<bool>,
 }
 
 /// The `providerOptions` of a message (`name`, and for an assistant message
@@ -78,6 +89,15 @@ pub(crate) struct DeepSeekFilePartOptions {
     pub file_data: Option<bool>,
 }
 
+// An optional schema field may be absent, but an explicit null is invalid.
+fn deserialize_optional<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
+
 /// The options of `namespace` in a providerOptions value; no namespace is the
 /// defaults.
 fn parse_namespace<T: Default + for<'de> Deserialize<'de>>(
@@ -86,6 +106,7 @@ fn parse_namespace<T: Default + for<'de> Deserialize<'de>>(
 ) -> Result<T, AiMuxError> {
     match namespace.filter(|options| !options.is_null()) {
         None => Ok(T::default()),
+        Some(options) if !options.is_object() => Err(invalid(name, "expected an object")),
         Some(options) => serde_json::from_value(options.clone()).map_err(|error| {
             AiMuxError::InvalidArgument(format!("invalid provider options for \"{name}\": {error}"))
         }),
@@ -107,8 +128,14 @@ pub(crate) fn parse_chat_options(
     provider_options: Option<&HashMap<String, Value>>,
     name: &str,
 ) -> Result<DeepSeekChatOptions, AiMuxError> {
-    let options: DeepSeekChatOptions =
-        parse_namespace(provider_options.and_then(|all| all.get(name)), name)?;
+    let namespace = provider_options.and_then(|all| all.get(name));
+    if namespace
+        .and_then(|options| options.get("thinking"))
+        .is_some_and(|thinking| !thinking.is_object())
+    {
+        return Err(invalid(name, "thinking must be an object"));
+    }
+    let options: DeepSeekChatOptions = parse_namespace(namespace, name)?;
     if options.top_logprobs.is_some_and(|n| n > 20) {
         return Err(invalid(name, "topLogprobs must be at most 20"));
     }

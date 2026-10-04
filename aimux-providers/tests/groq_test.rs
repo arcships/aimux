@@ -1965,15 +1965,17 @@ mod do_stream {
         .await;
         let model = make_provider(&server);
 
-        let result = model
-            .do_stream(&default_options(test_prompt()))
-            .await
-            .unwrap();
+        let options = CallOptions {
+            include_raw_chunks: Some(true),
+            ..default_options(test_prompt())
+        };
+        let result = model.do_stream(&options).await.unwrap();
         let parts = collect_stream(result).await;
 
         assert!(matches!(parts[0], StreamPart::StreamStart { .. }));
-        assert!(matches!(parts[1], StreamPart::Error { .. }), "{parts:?}");
-        match &parts[2] {
+        assert!(matches!(&parts[1], StreamPart::Raw { raw_value } if raw_value.is_null()));
+        assert!(matches!(parts[2], StreamPart::Error { .. }), "{parts:?}");
+        match &parts[3] {
             StreamPart::Finish {
                 finish_reason,
                 usage,
@@ -1985,7 +1987,7 @@ mod do_stream {
             }
             other => panic!("expected Finish, got {other:?}"),
         }
-        assert_eq!(parts.len(), 3);
+        assert_eq!(parts.len(), 4);
     }
 
     /// upstream: "should stream raw chunks when includeRawChunks is true"
