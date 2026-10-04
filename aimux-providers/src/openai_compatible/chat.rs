@@ -20,7 +20,7 @@ use aimux_provider_utils::{
     StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, generate_id,
 };
 
-use super::config::{ChatDialect, CompatModelConfig};
+use super::config::CompatModelConfig;
 use super::convert::{ChatBodySpec, RequestBodyResult, build_request_body, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
 
@@ -115,15 +115,11 @@ pub(crate) fn convert_usage(usage: &UsageResponse, raw: Option<&Value>) -> Usage
     }
 }
 
-/// Usage from a raw `usage` value, through the dialect's converter when it
-/// has one.
-pub(crate) fn usage_from_raw(dialect: &ChatDialect, raw: Option<&Value>) -> Usage {
+/// Usage from a raw `usage` value.
+pub(crate) fn usage_from_raw(raw: Option<&Value>) -> Usage {
     let Some(raw) = raw.filter(|value| !value.is_null()) else {
         return Usage::default();
     };
-    if let Some(convert) = &dialect.convert_usage {
-        return convert(raw);
-    }
     match serde_json::from_value::<UsageResponse>(raw.clone()) {
         Ok(parsed) => convert_usage(&parsed, Some(raw)),
         Err(_) => Usage {
@@ -297,7 +293,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
             });
 
         let dialect = &self.config.chat.dialect;
-        let usage = usage_from_raw(dialect, raw.get("usage"));
+        let usage = usage_from_raw(raw.get("usage"));
 
         let mut namespace = Map::new();
         prediction_tokens(data.usage.as_ref(), &mut namespace);
@@ -471,7 +467,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                         }
 
                         if let Some(raw_usage) = &chunk_usage_raw {
-                            final_usage = usage_from_raw(&dialect, Some(raw_usage));
+                            final_usage = usage_from_raw(Some(raw_usage));
                             final_usage_parsed = serde_json::from_value(raw_usage.clone()).ok();
                         }
 
@@ -779,7 +775,6 @@ mod tests {
     use aimux_core::message::Role;
     use aimux_core::options::CallOptions;
     use aimux_core::stream_part::StreamPart;
-    use aimux_core::types::{TokenUsage, Usage};
     use aimux_provider_utils::ProviderErrorParts;
 
     use crate::openai_compatible::config::{
@@ -902,39 +897,6 @@ mod tests {
             })
             .unwrap();
         assert_eq!(metadata, json!({"acme": {}, "extra": {"chunks": 2}}));
-    }
-
-    #[tokio::test]
-    async fn a_usage_converter_replaces_the_default_accounting() {
-        let server = MockServer::start().await;
-        serve(
-            &server,
-            ResponseTemplate::new(200).set_body_json(json!({
-                "id": "c", "model": "m",
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
-                "usage": {"in": 5, "out": 2}
-            })),
-        )
-        .await;
-        let mut dialect = ChatDialect::baseline();
-        dialect.convert_usage = Some(Arc::new(|raw: &Value| Usage {
-            input_tokens: TokenUsage {
-                total: raw["in"].as_u64().map(|v| v as u32),
-                ..Default::default()
-            },
-            output_tokens: TokenUsage {
-                total: raw["out"].as_u64().map(|v| v as u32),
-                ..Default::default()
-            },
-            raw: Some(raw.clone()),
-        }));
-        let result = provider(BaseUrl::Fixed(server.uri()), dialect)
-            .chat("m")
-            .do_generate(&hello())
-            .await
-            .unwrap();
-        assert_eq!(result.usage.input_tokens.total, Some(5));
-        assert_eq!(result.usage.output_tokens.total, Some(2));
     }
 
     #[tokio::test]

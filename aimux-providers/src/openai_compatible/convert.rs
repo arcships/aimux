@@ -5,8 +5,7 @@
 //! `user`, sampling settings, `response_format`, `stop`, `seed`, the
 //! pass-through fields of the provider's own options namespace, then
 //! `reasoning_effort`, `verbosity`, `messages`, `tools`, `tool_choice`).
-//! Vendor differences are not decided here: they arrive as a [`ChatDialect`]
-//! (data) and its [`ChatHooks`](super::config::ChatHooks).
+//! Compatible endpoint capabilities arrive as [`ChatDialect`] data.
 
 use base64::Engine;
 use serde_json::{Map, Value, json};
@@ -19,7 +18,7 @@ use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
 
-use super::config::{ChatDialect, ChatHooks};
+use super::config::ChatDialect;
 
 /// Option keys of the generic compatible schema
 /// (`openaiCompatibleLanguageModelChatOptions`): consumed by the model, never
@@ -252,42 +251,37 @@ pub(crate) fn build_request_body(
             schema,
             name: format_name,
             description,
-        }) if dialect.supports_response_format => {
-            let structured = dialect
-                .hooks
-                .structured_outputs(&merged, spec.supports_structured_outputs);
-            match schema {
-                Some(schema) if structured => {
-                    let mut json_schema = Map::new();
-                    json_schema.insert("schema".into(), schema.clone());
-                    json_schema.insert("strict".into(), json!(strict_json_schema));
-                    json_schema.insert(
-                        "name".into(),
-                        json!(format_name.clone().unwrap_or_else(|| "response".into())),
-                    );
-                    if let Some(description) = description {
-                        json_schema.insert("description".into(), json!(description));
-                    }
-                    body.insert(
-                        "response_format".into(),
-                        json!({ "type": "json_schema", "json_schema": json_schema }),
-                    );
+        }) if dialect.supports_response_format => match schema {
+            Some(schema) if spec.supports_structured_outputs => {
+                let mut json_schema = Map::new();
+                json_schema.insert("schema".into(), schema.clone());
+                json_schema.insert("strict".into(), json!(strict_json_schema));
+                json_schema.insert(
+                    "name".into(),
+                    json!(format_name.clone().unwrap_or_else(|| "response".into())),
+                );
+                if let Some(description) = description {
+                    json_schema.insert("description".into(), json!(description));
                 }
-                Some(_) => {
-                    warnings.push(Warning::Unsupported {
-                        feature: "responseFormat".to_string(),
-                        details: Some(
-                            "JSON response format schema is only supported with structuredOutputs"
-                                .to_string(),
-                        ),
-                    });
-                    body.insert("response_format".into(), json!({ "type": "json_object" }));
-                }
-                None => {
-                    body.insert("response_format".into(), json!({ "type": "json_object" }));
-                }
+                body.insert(
+                    "response_format".into(),
+                    json!({ "type": "json_schema", "json_schema": json_schema }),
+                );
             }
-        }
+            Some(_) => {
+                warnings.push(Warning::Unsupported {
+                    feature: "responseFormat".to_string(),
+                    details: Some(
+                        "JSON response format schema is only supported with structuredOutputs"
+                            .to_string(),
+                    ),
+                });
+                body.insert("response_format".into(), json!({ "type": "json_object" }));
+            }
+            None => {
+                body.insert("response_format".into(), json!({ "type": "json_object" }));
+            }
+        },
         Some(ResponseFormat::Json { .. }) => warnings.push(Warning::Unsupported {
             feature: "responseFormat".to_string(),
             details: Some("response_format is not supported by this provider".to_string()),
@@ -305,17 +299,15 @@ pub(crate) fn build_request_body(
     // Fields of the provider's own namespace that the schema does not know go
     // to the body as given (the generic `openaiCompatible` namespace is
     // schema-only: unknown fields there are dropped).
-    let consumed = dialect.hooks.consumed_option_keys();
     for key in [name, camel.as_str()] {
         if let Some(object) = namespace(options, key) {
             for (field, value) in object {
-                if !SCHEMA_KEYS.contains(&field.as_str()) && !consumed.contains(&field.as_str()) {
+                if !SCHEMA_KEYS.contains(&field.as_str()) {
                     body.insert(field.clone(), value.clone());
                 }
             }
         }
     }
-    dialect.hooks.extend_body(&mut body, &merged, &mut warnings);
 
     if let Some(effort) = reasoning_effort {
         body.insert("reasoning_effort".into(), json!(effort));
@@ -329,13 +321,12 @@ pub(crate) fn build_request_body(
         &MessageSpec {
             metadata_key: &metadata_key,
             supports_multi_part_tool_content: spec.supports_multi_part_tool_content,
-            dialect,
         },
     )?;
     body.insert("messages".into(), Value::Array(messages));
 
     if dialect.supports_tools {
-        let prepared = dialect.hooks.prepare_tools(options, model_id);
+        let prepared = prepare_function_tools(options);
         warnings.extend(prepared.warnings);
         if let Some(tools) = prepared.tools {
             body.insert("tools".into(), Value::Array(tools));
@@ -373,7 +364,6 @@ pub(crate) fn build_request_body(
 pub(crate) struct MessageSpec<'a> {
     pub metadata_key: &'a str,
     pub supports_multi_part_tool_content: bool,
-    pub dialect: &'a ChatDialect,
 }
 
 /// The provider options of a message or part that belong on the wire object
@@ -535,7 +525,7 @@ fn convert_user_message(
     }
     let mut parts = Vec::new();
     for (index, part) in message.content.iter().enumerate() {
-        let wire = convert_user_part(part, index, key, spec.dialect.hooks.as_ref())?;
+        let wire = convert_user_part(part, index, key)?;
         if !wire.is_null() {
             parts.push(wire);
         }
@@ -546,28 +536,8 @@ fn convert_user_message(
     ))
 }
 
-fn convert_user_part(
-    part: &ContentPart,
-    index: usize,
-    key: &str,
-    hooks: &dyn ChatHooks,
-) -> Result<Value, AiMuxError> {
+fn convert_user_part(part: &ContentPart, index: usize, key: &str) -> Result<Value, AiMuxError> {
     let metadata = wire_metadata(part_options(part), key);
-    let file = match part {
-        ContentPart::Image { media_type, .. }
-        | ContentPart::File { media_type, .. }
-        | ContentPart::FileBase64 { media_type, .. }
-        | ContentPart::FileUrl { media_type, .. } => Some((media_type.as_str(), false)),
-        ContentPart::FileReference { media_type, .. } => Some((media_type.as_str(), true)),
-        _ => None,
-    };
-    if let Some((media_type, reference)) = file
-        && let Some(reason) = hooks.unsupported_file_part(media_type, reference)
-    {
-        return Err(AiMuxError::InvalidArgument(format!(
-            "functionality not supported: {reason}"
-        )));
-    }
     let wire = match part {
         ContentPart::Text { text, .. } => json!({ "type": "text", "text": text }),
         ContentPart::Image {
@@ -743,9 +713,6 @@ fn convert_assistant_message(
     spec: &MessageSpec<'_>,
     message_metadata: Map<String, Value>,
 ) -> Value {
-    if let Some(wire) = spec.dialect.hooks.assistant_message(&message.content) {
-        return with_metadata(wire, message_metadata);
-    }
     let key = spec.metadata_key;
     let mut text = String::new();
     let mut reasoning = String::new();

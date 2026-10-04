@@ -1,12 +1,10 @@
-//! The private per-model configuration of the OpenAI-compatible package, and
-//! the dialect hooks vendor packages (Groq, DeepSeek, presets) inject.
+//! The private per-model configuration of the OpenAI-compatible package.
 //!
 //! Like the native OpenAI config this is the Rust shape of the object
 //! `createOpenAICompatible` hands each model class (`{ provider, url, headers,
 //! fetch, ... }`). It has no getters for the credential or the settings that
-//! produced it. Vendor behavior is data (flags, a usage-key name, a usage
-//! converter) or an injected hook ([`ChatHooks`]); the shared model never
-//! compares a provider name.
+//! produced it. Compatible endpoint behavior is data (flags and a usage-key
+//! name); the shared model never compares a provider name.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,16 +12,12 @@ use std::sync::Arc;
 use serde_json::{Map, Value};
 
 use aimux_core::AiMuxError;
-use aimux_core::content::ContentPart;
 use aimux_core::language_model::SupportedUrls;
-use aimux_core::options::CallOptions;
-use aimux_core::types::{Usage, Warning};
 use aimux_provider_utils::{
     ExchangeContext, FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, ProviderErrorParts,
     combine_headers, normalize_headers,
 };
 
-use super::convert::PreparedTools;
 pub use crate::shared::TransformRequestBody;
 
 /// Where the base URL comes from.
@@ -51,10 +45,6 @@ impl BaseUrl {
 /// Maps a provider error payload to the message and code of the API error.
 pub(crate) type ErrorStructure = Arc<dyn Fn(&Value) -> ProviderErrorParts + Send + Sync>;
 
-/// Converts the raw `usage` object of a response into core usage (the AI SDK's
-/// `convertUsage`).
-pub(crate) type UsageConverter = Arc<dyn Fn(&Value) -> Usage + Send + Sync>;
-
 /// Captures vendor-specific metadata from responses (the AI SDK's
 /// `MetadataExtractor`). The returned map is merged into `provider_metadata`
 /// next to the namespace entry.
@@ -75,57 +65,6 @@ pub trait StreamMetadataExtractor: Send {
     fn build_metadata(&self) -> Option<Map<String, Value>>;
 }
 
-/// Vendor behavior the shared chat model asks for instead of branching on a
-/// provider name. Every method has the generic compatible behavior as its
-/// default; a vendor package overrides what differs.
-pub(crate) trait ChatHooks: Send + Sync {
-    /// The wire message for an assistant turn, or `None` for the generic
-    /// conversion.
-    fn assistant_message(&self, _content: &[ContentPart]) -> Option<Value> {
-        None
-    }
-
-    /// Tools and tool choice for the request body.
-    fn prepare_tools(&self, options: &CallOptions, _model_id: &str) -> PreparedTools {
-        super::convert::prepare_function_tools(options)
-    }
-
-    /// A reason this dialect cannot send a file part of `media_type` (given by
-    /// a provider `reference` or inline), or `None` when it can. The part is
-    /// then rejected with `InvalidArgument` naming the reason.
-    fn unsupported_file_part(&self, _media_type: &str, _reference: bool) -> Option<&'static str> {
-        None
-    }
-
-    /// Whether a JSON schema is sent as `json_schema` (structured outputs)
-    /// rather than degraded to `json_object`. `configured` is the provider
-    /// setting; `merged` the call's resolved provider options.
-    fn structured_outputs(&self, _merged: &Map<String, Value>, configured: bool) -> bool {
-        configured
-    }
-
-    /// Provider-option keys this dialect consumes itself; they are never
-    /// passed through to the body as-is.
-    fn consumed_option_keys(&self) -> &'static [&'static str] {
-        &[]
-    }
-
-    /// Body fields derived from the call's provider options, written after the
-    /// pass-through fields.
-    fn extend_body(
-        &self,
-        _body: &mut Map<String, Value>,
-        _merged: &Map<String, Value>,
-        _warnings: &mut Vec<Warning>,
-    ) {
-    }
-}
-
-/// The generic compatible behavior.
-pub(crate) struct DefaultHooks;
-
-impl ChatHooks for DefaultHooks {}
-
 /// Everything that distinguishes one compatible vendor's chat endpoint from
 /// the baseline, other than the public provider settings.
 #[derive(Clone)]
@@ -141,10 +80,8 @@ pub(crate) struct ChatDialect {
     pub max_tokens_key: Option<&'static str>,
     /// Streaming usage rides in `chunk[key].usage` instead of `chunk.usage`.
     pub stream_usage_key: Option<String>,
-    pub convert_usage: Option<UsageConverter>,
     pub metadata_extractor: Option<Arc<dyn MetadataExtractor>>,
     pub error_structure: ErrorStructure,
-    pub hooks: Arc<dyn ChatHooks>,
 }
 
 impl ChatDialect {
@@ -156,10 +93,8 @@ impl ChatDialect {
             supports_response_format: true,
             max_tokens_key: None,
             stream_usage_key: None,
-            convert_usage: None,
             metadata_extractor: None,
             error_structure: Arc::new(default_error_structure),
-            hooks: Arc::new(DefaultHooks),
         }
     }
 }
