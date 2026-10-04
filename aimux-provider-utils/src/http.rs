@@ -20,8 +20,7 @@ use aimux_core::recording::{
 use aimux_core::{AiMuxError, ApiCallError};
 
 use crate::fetch::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, RedirectPolicy,
-    default_fetch,
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, default_fetch,
 };
 use crate::handle_fetch_error::fetch_error_to_ai_mux_error;
 use crate::logging::{body_logging_enabled, redact_body};
@@ -336,15 +335,7 @@ pub(crate) async fn send_request_once(
         );
     }
 
-    let sent = if request.validation.is_some() {
-        // D26: the download transport is never provider-injected.
-        send_validated_redirects(request).await
-    } else {
-        // Resolved per request, so a late change of the process default is
-        // honored by providers created before it.
-        let fetch = request.fetch.clone().unwrap_or_else(default_fetch);
-        send_one_request(fetch.as_ref(), request, RedirectPolicy::Follow).await
-    };
+    let sent = send_following_redirects(request).await;
     let response = match sent {
         Ok(response) => response,
         Err(error) => {
@@ -373,9 +364,8 @@ pub(crate) async fn send_request_once(
 async fn send_one_request(
     fetch: &dyn Fetch,
     request: &PreparedRequest,
-    redirect: RedirectPolicy,
 ) -> Result<FetchResponse, AiMuxError> {
-    let mut fetch_request = build_fetch_request(request, redirect)?;
+    let mut fetch_request = build_fetch_request(request)?;
     fetch_request.signal = request.abort_signal.clone();
     let sent = match &request.abort_signal {
         Some(signal) => {
@@ -421,30 +411,50 @@ fn redirect_error(
     }))
 }
 
-/// Send one validated-download exchange, following redirects manually so
-/// every hop is re-validated and its connection pinned to the DNS answers
-/// that passed the guard (see `download_guard`). The whole chain is one
-/// exchange to the caller, matching how an auto-following client behaves.
-async fn send_validated_redirects(request: &PreparedRequest) -> Result<FetchResponse, AiMuxError> {
-    let validation = request
-        .validation
-        .clone()
-        .expect("send_validated_redirects requires a validation config");
-    let trusted_origin = validation.trusted_origin.as_deref();
-    let credentialed_origin = validation.credentialed_origin.as_deref();
+/// Send one exchange, following redirects hop by hop in this layer (a
+/// transport never follows one itself). The whole chain is one exchange to
+/// the caller, matching how an auto-following client behaves.
+///
+/// - An ordinary API call follows a redirect only while it stays on the origin
+///   of the hop that issued it. A cross-origin `3xx` is returned as it is, so
+///   neither the request headers nor anything a transport decorator adds (a
+///   signature, a bearer token) reaches another origin. Every followed hop
+///   goes through the request's transport again, so a signing transport signs
+///   the URL it actually sends.
+/// - A validated download (`validation` set) re-validates every hop and pins
+///   its connection to the DNS answers that passed the guard (see
+///   `download_guard`); it follows cross-origin hops with the caller headers
+///   stripped. D26: its transport is never provider-injected.
+async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResponse, AiMuxError> {
+    let validation = request.validation.as_ref();
+    let trusted_origin = validation.and_then(|v| v.trusted_origin.as_deref());
     let mut current = request.clone();
-    // First-request credential gating already ran in `prepare`; this strips
-    // hop-by-hop, forwarding, and metadata-service headers for every hop.
-    crate::download_guard::sanitize_download_headers(&mut current.headers);
     // Headers never travel past this origin on a redirect; stripping is
     // one-way, so a hop back onto it cannot restore them.
-    let credential_anchor = credentialed_origin.unwrap_or(&request.url);
-    let mut pinned =
-        crate::download_guard::validate_download_target(&current.url, trusted_origin).await?;
+    let credential_anchor = validation
+        .and_then(|v| v.credentialed_origin.as_deref())
+        .unwrap_or(&request.url);
+    let mut pinned = match validation {
+        Some(_) => {
+            // First-request credential gating already ran in `prepare`; this
+            // strips hop-by-hop, forwarding, and metadata-service headers.
+            crate::download_guard::sanitize_download_headers(&mut current.headers);
+            Some(
+                crate::download_guard::validate_download_target(&current.url, trusted_origin)
+                    .await?,
+            )
+        }
+        None => None,
+    };
+    // Resolved per request, so a late change of the process default is
+    // honored by providers created before it.
+    let api_fetch = request.fetch.clone().unwrap_or_else(default_fetch);
     for redirect_count in 0..=MAX_REDIRECTS {
-        // Empty pins mean the hop is on the trusted origin.
-        let hop = PinnedFetch::new(pinned.clone());
-        let response = send_one_request(&hop, &current, RedirectPolicy::Manual).await?;
+        let response = match &pinned {
+            // Empty pins mean the hop is on the trusted origin.
+            Some(pins) => send_one_request(&PinnedFetch::new(pins.clone()), &current).await?,
+            None => send_one_request(api_fetch.as_ref(), &current).await?,
+        };
         let status = response.status;
         if !is_redirect_status(status) {
             return Ok(response);
@@ -452,16 +462,10 @@ async fn send_validated_redirects(request: &PreparedRequest) -> Result<FetchResp
         let Some(location) = response.headers.get(http::header::LOCATION) else {
             return Ok(response);
         };
-        if redirect_count == MAX_REDIRECTS {
-            return Err(redirect_error(request, "too many redirects", status));
-        }
         let location = location
             .to_str()
             .map(str::to_owned)
             .map_err(|_| redirect_error(request, "redirect location is not valid UTF-8", status))?;
-        // Dropping the unconsumed 3xx body releases its connection before a
-        // potentially slow DNS check for the next hop.
-        drop(response);
         let base = url::Url::parse(&current.url)
             .map_err(|e| AiMuxError::InvalidArgument(format!("invalid request URL: {e}")))?;
         let next = base
@@ -478,12 +482,25 @@ async fn send_validated_redirects(request: &PreparedRequest) -> Result<FetchResp
             ));
         }
         let next = next.to_string();
-        let hop_trusted = crate::download_guard::hop_trusted_origin(trusted_origin, &current.url);
-        pinned = crate::download_guard::validate_download_target(&next, hop_trusted).await?;
-        // Credentials are scoped to the credential anchor, not the previous
-        // hop: once a redirect leaves it, headers cannot come back.
-        if !crate::download_guard::same_origin(&next, credential_anchor) {
-            crate::download_guard::retain_user_agent(&mut current.headers);
+        if pinned.is_none() && !crate::download_guard::same_origin(&next, &current.url) {
+            return Ok(response);
+        }
+        if redirect_count == MAX_REDIRECTS {
+            return Err(redirect_error(request, "too many redirects", status));
+        }
+        // Dropping the unconsumed 3xx body releases its connection before a
+        // potentially slow DNS check for the next hop.
+        drop(response);
+        if pinned.is_some() {
+            let hop_trusted =
+                crate::download_guard::hop_trusted_origin(trusted_origin, &current.url);
+            pinned =
+                Some(crate::download_guard::validate_download_target(&next, hop_trusted).await?);
+            // Credentials are scoped to the credential anchor, not the
+            // previous hop: once a redirect leaves it, headers cannot come back.
+            if !crate::download_guard::same_origin(&next, credential_anchor) {
+                crate::download_guard::retain_user_agent(&mut current.headers);
+            }
         }
         if status == http::StatusCode::SEE_OTHER
             || (matches!(
@@ -503,10 +520,7 @@ async fn send_validated_redirects(request: &PreparedRequest) -> Result<FetchResp
 /// bytes and an ordered-by-name header map. Headers are *inserted*, so a
 /// later entry for the same (case-insensitive) name replaces an earlier one —
 /// a request never goes out with duplicate `Authorization` headers.
-fn build_fetch_request(
-    request: &PreparedRequest,
-    redirect: RedirectPolicy,
-) -> Result<FetchRequest, AiMuxError> {
+fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxError> {
     let url = url::Url::parse(&request.url)
         .map_err(|error| AiMuxError::InvalidArgument(format!("invalid request URL: {error}")))?;
     let mut headers = http::HeaderMap::new();
@@ -547,7 +561,6 @@ fn build_fetch_request(
         url,
         headers,
         body,
-        redirect,
         signal: None,
         timeout: None,
     })

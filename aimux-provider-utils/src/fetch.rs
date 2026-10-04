@@ -31,17 +31,6 @@ use aimux_core::AbortSignal;
 
 use crate::http::{ProxyConfig, global_proxy};
 
-/// How a transport treats `3xx` responses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum RedirectPolicy {
-    /// Follow redirects inside the transport (the ordinary API-call path).
-    #[default]
-    Follow,
-    /// Return the `3xx` response as-is. The caller follows redirects itself
-    /// and re-validates every hop (the SSRF download guard).
-    Manual,
-}
-
 /// One outbound HTTP request, fully materialised: body bytes are final
 /// (multipart already encoded), so a decorator can sign or inspect exactly
 /// what goes on the wire.
@@ -51,7 +40,6 @@ pub struct FetchRequest {
     pub url: Url,
     pub headers: HeaderMap,
     pub body: Bytes,
-    pub redirect: RedirectPolicy,
     /// Caller cancellation. The helper layer already drops the in-flight
     /// future when this fires; transports may additionally use it to cancel
     /// work they spawned.
@@ -63,7 +51,7 @@ pub struct FetchRequest {
 }
 
 impl FetchRequest {
-    /// A request with no headers, no body, redirects followed and no bounds.
+    /// A request with no headers, no body and no bounds.
     #[must_use]
     pub fn new(method: Method, url: Url) -> Self {
         Self {
@@ -71,7 +59,6 @@ impl FetchRequest {
             url,
             headers: HeaderMap::new(),
             body: Bytes::new(),
-            redirect: RedirectPolicy::Follow,
             signal: None,
             timeout: None,
         }
@@ -82,7 +69,7 @@ impl FetchRequest {
 pub struct FetchResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
-    /// The final URL (after any redirects the transport followed).
+    /// The URL this response came from.
     pub url: Url,
     pub body: BoxStream<'static, Result<Bytes, FetchError>>,
 }
@@ -171,7 +158,9 @@ impl FetchError {
     }
 }
 
-/// The transport contract: one request in, one response out.
+/// The transport contract: one request in, one response out. A transport does
+/// not follow redirects: a `3xx` is returned as it is and the helper layer
+/// (`http.rs`) decides, hop by hop, whether and with which headers to follow.
 #[async_trait]
 pub trait Fetch: Send + Sync + 'static {
     /// Perform one HTTP exchange.
@@ -212,11 +201,6 @@ pub struct ReqwestFetch;
 #[async_trait]
 impl Fetch for ReqwestFetch {
     async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
-        if request.redirect == RedirectPolicy::Manual {
-            // The pooled client follows redirects; a manual hop needs a
-            // non-redirecting client.
-            return PinnedFetch::unpinned().fetch(request).await;
-        }
         let client = shared_client()?;
         send(&client, request).await
     }
@@ -224,9 +208,8 @@ impl Fetch for ReqwestFetch {
 
 /// One non-redirecting hop of a validated download. The connection is pinned
 /// to exactly the DNS answers that passed the SSRF guard (resolve overrides),
-/// defeating TTL-0 rebinding; [`PinnedFetch::unpinned`] is the hop on the
-/// trusted origin, which connects normally but still never follows a
-/// redirect. The proxy configuration is applied so reqwest makes the per-URL
+/// defeating TTL-0 rebinding; an empty pin list is the hop on the trusted
+/// origin, which connects normally. The proxy configuration is applied so reqwest makes the per-URL
 /// routing decision itself: when a proxy carries the request the proxy
 /// resolves the target (a trusted transport, the override is unused), and any
 /// request the proxy rules send DIRECT still connects only through the
@@ -234,7 +217,7 @@ impl Fetch for ReqwestFetch {
 ///
 /// A client is built per hop: downloads are rare and each hop is one
 /// request, so there is no pool to share — and no stale-runtime pool to
-/// reuse. Always behaves as [`RedirectPolicy::Manual`].
+/// reuse.
 #[derive(Debug, Clone, Default)]
 pub struct PinnedFetch {
     addresses: Vec<IpAddr>,
@@ -245,12 +228,6 @@ impl PinnedFetch {
     #[must_use]
     pub fn new(addresses: Vec<IpAddr>) -> Self {
         Self { addresses }
-    }
-
-    /// No pinning: the hop targets the trusted origin.
-    #[must_use]
-    pub fn unpinned() -> Self {
-        Self::default()
     }
 
     fn client(&self, url: &Url) -> Result<Client, FetchError> {
@@ -370,6 +347,7 @@ fn shared_client() -> Result<Client, FetchError> {
 
 fn build_client(proxy: ProxyConfig) -> Result<Client, String> {
     let builder = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_millis(10_000))
         .pool_max_idle_per_host(10)
         .pool_idle_timeout(Some(Duration::from_secs(30)))

@@ -80,6 +80,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Rust (provider factory, RFC-0036)**
 
+- Redirects are handled in the request helper layer, not in the transport.
+  An ordinary API call follows a redirect only while it stays on the same
+  origin; a cross-origin `3xx` is returned as a non-2xx response, so no
+  credential header (`x-api-key`, `x-goog-api-key`, `api-key`,
+  `x-amz-security-token`, ...) and nothing a transport decorator adds reaches
+  another origin. Every followed hop goes through the request's transport
+  again, so SigV4 signs the URL it sends. A `Fetch` never follows a redirect
+  itself: `RedirectPolicy`, `FetchRequest.redirect` and
+  `PinnedFetch::unpinned` are removed. Validated downloads keep their
+  hop-by-hop guard.
 - `Provider` follows the AI SDK's `ProviderV4`: `language_model`,
   `embedding_model` and `image_model` are required and return
   `NoSuchModel { model_id, model_type }` when a vendor has no such modality;

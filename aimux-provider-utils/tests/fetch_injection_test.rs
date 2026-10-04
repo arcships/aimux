@@ -9,14 +9,14 @@ use bytes::Bytes;
 use http::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{header, header_exists, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::{AbortSignal, AiMuxError};
 use aimux_provider_utils::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HttpRequest, ProviderErrorParts,
-    create_json_error_response_handler, create_json_response_handler, get_from_api,
-    post_json_to_api,
+    AwsCredentials, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HttpRequest,
+    ProviderErrorParts, SigV4Fetch, create_json_error_response_handler,
+    create_json_response_handler, default_fetch, get_from_api, post_json_to_api,
 };
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -87,6 +87,94 @@ fn request(url: &str, fetch: &Arc<MockFetch>) -> HttpRequest {
 }
 
 #[tokio::test]
+async fn ordinary_api_does_not_follow_cross_origin_redirects() {
+    let source = MockServer::start().await;
+    let target = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/start"))
+        .and(header("x-api-key", "secret"))
+        .respond_with(
+            ResponseTemplate::new(307)
+                .insert_header("Location", format!("{}/target", target.uri()))
+                .set_body_json(json!({"error": "redirect blocked"})),
+        )
+        .expect(1)
+        .mount(&source)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"answer": 1})))
+        .expect(0)
+        .mount(&target)
+        .await;
+
+    let error = get_from_api(
+        HttpRequest {
+            url: format!("{}/start", source.uri()),
+            headers: vec![("x-api-key".into(), "secret".into())],
+            ..Default::default()
+        },
+        create_json_response_handler::<Reply>(),
+        failed(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(error, AiMuxError::ApiCall(ref detail)
+        if detail.status_code == Some(307) && detail.message == "redirect blocked"));
+    assert!(target.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_same_origin_redirect_is_followed_and_signed_again() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/start"))
+        .and(header_exists("authorization"))
+        .respond_with(ResponseTemplate::new(307).insert_header("Location", "/target"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/target"))
+        .and(header_exists("authorization"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"answer": 1})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let fetch = SigV4Fetch::new(
+        default_fetch(),
+        AwsCredentials {
+            access_key_id: "test-key".into(),
+            secret_access_key: "test-secret".into(),
+            session_token: Some("test-token".into()),
+            region: "us-east-1".into(),
+        }
+        .into(),
+        "bedrock",
+    );
+    get_from_api(
+        HttpRequest {
+            url: format!("{}/start", server.uri()),
+            fetch: Some(Arc::new(fetch)),
+            ..Default::default()
+        },
+        create_json_response_handler::<Reply>(),
+        failed(),
+    )
+    .await
+    .unwrap();
+
+    // Each hop went through the signing transport: the signature covers the
+    // path, so the two requests carry different ones.
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_ne!(
+        requests[0].headers["authorization"],
+        requests[1].headers["authorization"]
+    );
+}
+
+#[tokio::test]
 async fn post_json_to_api_goes_through_the_injected_fetch() {
     let mock = MockFetch::json(200, json!({"answer": 42}));
 
@@ -114,7 +202,6 @@ async fn post_json_to_api_goes_through_the_injected_fetch() {
         serde_json::from_slice::<serde_json::Value>(&sent.body).unwrap(),
         json!({"hello": "world"})
     );
-    assert_eq!(sent.redirect, aimux_provider_utils::RedirectPolicy::Follow);
 }
 
 #[tokio::test]

@@ -35,8 +35,8 @@ pub mod ws;
 pub use api_key::{load_api_key, load_optional_setting, load_setting};
 pub use download_guard::same_origin;
 pub use fetch::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, RedirectPolicy,
-    ReqwestFetch, default_fetch,
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, ReqwestFetch,
+    default_fetch,
 };
 pub use get_from_api::get_from_api;
 pub use headers::{
