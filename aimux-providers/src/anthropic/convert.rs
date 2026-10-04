@@ -18,13 +18,14 @@
 //!   conversion with `send_reasoning = false`, discarding the betas and
 //!   warnings.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 
 use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, Tool};
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
 use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Map, Value, json};
@@ -373,16 +374,15 @@ fn convert_part_to_anthropic(
     warnings: &mut Vec<Warning>,
     validator: &mut CacheControlValidator,
     is_last_part: bool,
-    message_provider_options: Option<&Value>,
+    message_provider_options: Option<&SharedProviderOptions>,
     part_context_type: &str,
     message_context_type: &str,
     options_name: &str,
 ) -> Result<Option<Value>, AiMuxError> {
     // Resolve cache_control = part-level ?? (is_last_part ? message-level).
-    let resolve_cc =
-        |validator: &mut CacheControlValidator, part_opts: Option<&Value>| match validator
-            .get_cache_control(part_opts, part_context_type, true)
-        {
+    let resolve_cc = |validator: &mut CacheControlValidator,
+                      part_opts: Option<&SharedProviderOptions>| {
+        match validator.get_cache_control(part_opts, part_context_type, true) {
             Some(v) => Some(v),
             None => {
                 if is_last_part {
@@ -395,7 +395,8 @@ fn convert_part_to_anthropic(
                     None
                 }
             }
-        };
+        }
+    };
 
     let apply_cc = |block: Value, cc: Option<Value>| -> Value {
         match cc {
@@ -670,7 +671,7 @@ fn convert_part_to_anthropic(
                 Some(v) => Some(v),
                 None => match extract_tool_result_output_provider_options(result) {
                     Some(out_opts) => {
-                        validator.get_cache_control(Some(out_opts), "tool result output", true)
+                        validator.get_cache_control(Some(&out_opts), "tool result output", true)
                     }
                     None => {
                         if is_last_part {
@@ -763,7 +764,7 @@ fn convert_assistant_tool_result(
     warnings: &mut Vec<Warning>,
     validator: &mut CacheControlValidator,
     is_last_part: bool,
-    message_provider_options: Option<&Value>,
+    message_provider_options: Option<&SharedProviderOptions>,
 ) -> Option<Value> {
     let ContentPart::ToolResult {
         tool_call_id,
@@ -787,7 +788,7 @@ fn convert_assistant_tool_result(
         Some(v) => Some(v),
         None => match extract_tool_result_output_provider_options(result) {
             Some(out_opts) => {
-                validator.get_cache_control(Some(out_opts), "tool result output", true)
+                validator.get_cache_control(Some(&out_opts), "tool result output", true)
             }
             None => {
                 if is_last_part {
@@ -1037,9 +1038,9 @@ fn assistant_advisor_content(value: &Value, payload_type: Option<&str>) -> Value
 ///   returned (e.g. `{ type: 'text', value, providerOptions }`).
 /// - When the output is a `content` output whose `value` is an array of content
 ///   parts, the `providerOptions` of the first part that has one is returned.
-fn extract_tool_result_output_provider_options(output: &Value) -> Option<&Value> {
+fn extract_tool_result_output_provider_options(output: &Value) -> Option<SharedProviderOptions> {
     if let Some(opts) = output.get("providerOptions") {
-        return Some(opts);
+        return serde_json::from_value(opts.clone()).ok();
     }
     let output_type = output.get("type").and_then(|t| t.as_str());
     if output_type == Some("content")
@@ -1047,7 +1048,7 @@ fn extract_tool_result_output_provider_options(output: &Value) -> Option<&Value>
     {
         for part in value {
             if let Some(opts) = part.get("providerOptions") {
-                return Some(opts);
+                return serde_json::from_value(opts.clone()).ok();
             }
         }
     }
@@ -1180,7 +1181,7 @@ fn route_file_url(
 fn convert_reasoning_part(
     text: &str,
     signature: Option<&str>,
-    provider_options: Option<&Value>,
+    provider_options: Option<&SharedProviderOptions>,
     send_reasoning: bool,
     warnings: &mut Vec<Warning>,
     validator: &mut CacheControlValidator,
@@ -1552,7 +1553,7 @@ impl Default for RequestProfile {
 /// Read a value from the Anthropic options of a call (`anthropic` merged with
 /// the profile's custom key).
 fn anthropic_option(
-    options: &Option<HashMap<String, Value>>,
+    options: &Option<SharedProviderOptions>,
     profile: &RequestProfile,
     key: &str,
 ) -> Option<Value> {
@@ -2244,10 +2245,8 @@ mod tests {
     use super::*;
 
     fn opts_with_anthropic_thinking(thinking: serde_json::Value) -> CallOptions {
-        let mut provider = std::collections::HashMap::new();
-        provider.insert(CANONICAL.to_string(), thinking);
         CallOptions {
-            provider_options: Some(provider),
+            provider_options: Some(aimux_core::shared::provider_namespace(CANONICAL, thinking)),
             ..CallOptions::new(LanguageModelPrompt::default())
         }
     }

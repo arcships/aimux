@@ -10,7 +10,6 @@
 //! `#[tokio::test]` runs do not collide.
 
 use aimux_core::tool::RawToolCall;
-use std::collections::HashMap;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -22,7 +21,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, ReasoningOutput};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
@@ -1078,10 +1077,10 @@ mod do_generate_tests {
         assert_eq!(result.content.len(), 2);
         assert_eq!(
             result.content[0],
-            GenerateContent::Reasoning {
+            GenerateContent::Reasoning(ReasoningOutput {
                 text: "reasoning content".to_string(),
                 provider_metadata: None,
-            }
+            })
         );
         assert_eq!(
             result.content[1],
@@ -1333,10 +1332,8 @@ mod do_generate_tests {
 
     // -- ProviderOptions reasoning tests --
 
-    fn lmstudio_opts(value: Value) -> Option<HashMap<String, Value>> {
-        let mut m = HashMap::new();
-        m.insert("lmstudio".to_string(), value);
-        Some(m)
+    fn lmstudio_opts(value: Value) -> Option<aimux_core::shared::SharedProviderOptions> {
+        Some(aimux_core::shared::provider_namespace("lmstudio", value))
     }
 
     #[tokio::test]

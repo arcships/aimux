@@ -45,7 +45,7 @@ mask: ImageFile | null,
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: JsonValue }, 
+provider_options: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Per-call retry override. `None` uses the model default.
  */

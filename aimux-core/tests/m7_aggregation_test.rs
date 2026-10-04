@@ -8,8 +8,10 @@ use aimux_core::generate::{GenerateTextOptions, generate_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::{MessageContent, ModelPrompt, Role};
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
-use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::result::{
+    GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
+};
+use aimux_core::shared::{FileBytes, FileData, provider_namespace};
 use aimux_core::tool::RawToolCall;
 use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
 
@@ -29,12 +31,13 @@ impl LanguageModel for RichModel {
     async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         Ok(GenerateResult {
             content: vec![
-                GenerateContent::Reasoning {
+                GenerateContent::Reasoning(ReasoningOutput {
                     text: "Let me think...".into(),
-                    provider_metadata: Some(serde_json::json!({
-                        "anthropic": { "signature": "sig-abc123" }
-                    })),
-                },
+                    provider_metadata: Some(provider_namespace(
+                        "anthropic",
+                        serde_json::json!({ "signature": "sig-abc123" }),
+                    )),
+                }),
                 GenerateContent::Text {
                     text: "Hello!".into(),
                     provider_metadata: None,
@@ -48,20 +51,20 @@ impl LanguageModel for RichModel {
                     thought_signature: None,
                     provider_metadata: None,
                 }),
-                GenerateContent::Source {
+                GenerateContent::Source(Source {
                     id: "src-1".into(),
                     source_type: "url".into(),
                     url: Some("https://example.com".into()),
                     title: Some("Example".into()),
                     provider_metadata: None,
-                },
-                GenerateContent::File {
+                }),
+                GenerateContent::File(GeneratedFile {
                     data: FileData::Data {
                         data: FileBytes::Base64("iVBOR".into()),
                     },
                     media_type: "image/png".into(),
                     provider_metadata: None,
-                },
+                }),
             ],
             finish_reason: FinishReason {
                 unified: FinishReasonUnified::Stop,
@@ -279,15 +282,23 @@ impl LanguageModel for BedrockModel {
                     text: "Hello from Bedrock!".into(),
                     provider_metadata: None,
                 },
-                GenerateContent::Reasoning {
+                GenerateContent::Reasoning(ReasoningOutput {
                     text: "Thinking...".into(),
                     // Bedrock stores signature under BOTH "bedrock" and
                     // "amazonBedrock" keys (see bedrock/model.rs:535-540).
-                    provider_metadata: Some(serde_json::json!({
-                        "amazonBedrock": { "signature": "bedrock-sig-xyz" },
-                        "bedrock": { "signature": "bedrock-sig-xyz" }
-                    })),
-                },
+                    provider_metadata: Some(
+                        ["amazonBedrock", "bedrock"]
+                            .map(|ns| {
+                                provider_namespace(
+                                    ns,
+                                    serde_json::json!({ "signature": "bedrock-sig-xyz" }),
+                                )
+                            })
+                            .into_iter()
+                            .flatten()
+                            .collect(),
+                    ),
+                }),
             ],
             finish_reason: FinishReason {
                 unified: FinishReasonUnified::Stop,

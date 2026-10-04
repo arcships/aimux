@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
-use aimux_core::shared::FileBytes;
+use aimux_core::shared::{FileBytes, SharedProviderOptions};
 use aimux_core::types::Warning;
 
 use aimux_provider_utils::{HttpBody, HttpRequest, sleep_or_abort};
@@ -41,7 +41,7 @@ struct GoogleFilesUploadOptions {
 
 /// Parse provider options for the Google files provider.
 fn parse_google_files_options(
-    provider_options: Option<&HashMap<String, Value>>,
+    provider_options: Option<&SharedProviderOptions>,
 ) -> GoogleFilesUploadOptions {
     let mut opts = GoogleFilesUploadOptions::default();
     if let Some(po) = provider_options
@@ -351,9 +351,7 @@ impl Files for GoogleFiles {
             provider_reference: provider_ref,
             media_type: result_media_type,
             filename: None,
-            provider_metadata: Some(
-                std::iter::once((GOOGLE.to_string(), Value::Object(metadata))).collect(),
-            ),
+            provider_metadata: Some(HashMap::from([(GOOGLE.to_string(), metadata)])),
             warnings,
         })
     }

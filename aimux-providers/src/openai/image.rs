@@ -18,7 +18,7 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult, ImageUsage,
 };
-use aimux_core::shared::{SharedProviderMetadata, Warning};
+use aimux_core::shared::{SharedProviderMetadata, SharedProviderOptions, Warning};
 
 use aimux_provider_utils::HttpBody;
 
@@ -187,7 +187,7 @@ struct GenerationOptions {
 
 /// Parse generation provider options from the `"openai"` key.
 fn parse_generation_provider_options(
-    provider_options: &HashMap<String, Value>,
+    provider_options: &SharedProviderOptions,
 ) -> GenerationOptions {
     let openai = provider_options.get("openai");
     GenerationOptions {
@@ -212,7 +212,7 @@ struct EditOptions {
 }
 
 /// Parse edit provider options from the `"openai"` key.
-fn parse_edit_provider_options(provider_options: &HashMap<String, Value>) -> EditOptions {
+fn parse_edit_provider_options(provider_options: &SharedProviderOptions) -> EditOptions {
     let openai = provider_options.get("openai");
     EditOptions {
         quality: openai.and_then(|o| o.get("quality")).cloned(),
@@ -556,6 +556,6 @@ fn extract_provider_metadata(response: &Value) -> SharedProviderMetadata {
 
     let mut openai_meta = Map::new();
     openai_meta.insert("images".to_string(), json!(images));
-    metadata.insert("openai".to_string(), Value::Object(openai_meta));
+    metadata.insert("openai".to_string(), openai_meta);
     metadata
 }

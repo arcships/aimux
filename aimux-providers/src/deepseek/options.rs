@@ -3,12 +3,11 @@
 //!
 //! They are read from the namespace named by the provider (`deepseek`).
 
-use std::collections::HashMap;
-
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
+use aimux_core::shared::{JsonObject, SharedProviderOptions};
 
 /// `thinking` of the call options. `adaptive` is accepted for backwards
 /// compatibility and mapped to `enabled`.
@@ -101,13 +100,12 @@ where
 /// The options of `namespace` in a providerOptions value; no namespace is the
 /// defaults.
 fn parse_namespace<T: Default + for<'de> Deserialize<'de>>(
-    namespace: Option<&Value>,
+    namespace: Option<&JsonObject>,
     name: &str,
 ) -> Result<T, AiMuxError> {
-    match namespace.filter(|options| !options.is_null()) {
+    match namespace {
         None => Ok(T::default()),
-        Some(options) if !options.is_object() => Err(invalid(name, "expected an object")),
-        Some(options) => serde_json::from_value(options.clone()).map_err(|error| {
+        Some(options) => serde_json::from_value(Value::Object(options.clone())).map_err(|error| {
             AiMuxError::InvalidArgument(format!("invalid provider options for \"{name}\": {error}"))
         }),
     }
@@ -125,7 +123,7 @@ fn invalid(name: &str, message: &str) -> AiMuxError {
 ///
 /// `InvalidArgument` when an option has the wrong type or is out of range.
 pub(crate) fn parse_chat_options(
-    provider_options: Option<&HashMap<String, Value>>,
+    provider_options: Option<&SharedProviderOptions>,
     name: &str,
 ) -> Result<DeepSeekChatOptions, AiMuxError> {
     let namespace = provider_options.and_then(|all| all.get(name));
@@ -160,7 +158,7 @@ pub(crate) fn parse_chat_options(
 ///
 /// `InvalidArgument` when `name` is not a string or `prefix` is not `true`.
 pub(crate) fn parse_message_options(
-    provider_options: Option<&Value>,
+    provider_options: Option<&SharedProviderOptions>,
     name: &str,
 ) -> Result<DeepSeekMessageOptions, AiMuxError> {
     let options: DeepSeekMessageOptions =
@@ -178,7 +176,7 @@ pub(crate) fn parse_message_options(
 /// `InvalidArgument` when `imageDetail` is not a known value or `fileData` is
 /// not `true`.
 pub(crate) fn parse_file_part_options(
-    provider_options: Option<&Value>,
+    provider_options: Option<&SharedProviderOptions>,
     name: &str,
 ) -> Result<DeepSeekFilePartOptions, AiMuxError> {
     let options: DeepSeekFilePartOptions =

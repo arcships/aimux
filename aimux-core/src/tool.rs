@@ -1,12 +1,11 @@
 //! Tool / function-calling types.
 
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
+use crate::shared::SharedProviderOptions;
 use crate::types::ProviderMetadata;
 
 /// A tool definition passed to the model in `CallOptions.tools`.
@@ -27,7 +26,7 @@ pub struct FunctionTool {
     /// (e.g. `{"anthropic": {"eagerInputStreaming": true}}`). Aligned with the
     /// V4 `providerOptions` field on function tools.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_options: Option<HashMap<String, Value>>,
+    pub provider_options: Option<SharedProviderOptions>,
     /// Example inputs for the tool (V4 `inputExamples`), used by some providers
     /// to emit `input_examples` in the request body.
     #[serde(default, skip_serializing_if = "Option::is_none")]

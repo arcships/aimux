@@ -5,8 +5,6 @@
 //!
 //! Uses the Bedrock Agent Runtime `/rerank` endpoint.
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -16,6 +14,7 @@ use aimux_core::reranking_model::{
     RerankingCallOptions, RerankingDocuments, RerankingModel, RerankingRank, RerankingResponse,
     RerankingResult,
 };
+use aimux_core::shared::SharedProviderOptions;
 
 use aimux_provider_utils::HttpBody;
 
@@ -31,7 +30,7 @@ struct BedrockRerankingOptions {
 }
 
 fn parse_bedrock_reranking_options(
-    provider_options: Option<&HashMap<String, Value>>,
+    provider_options: Option<&SharedProviderOptions>,
 ) -> BedrockRerankingOptions {
     let mut opts = BedrockRerankingOptions::default();
     if let Some(po) = provider_options {

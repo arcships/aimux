@@ -15,7 +15,6 @@
 //! there: it is loaded for every request, from the setting or from `DEEPGRAM_API_KEY`.
 //! [`deepgram()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use async_trait::async_trait;
@@ -23,7 +22,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::Warning;
+use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
@@ -205,7 +204,7 @@ struct DeepgramOptions {
     diarize: Option<bool>,
 }
 
-fn parse_deepgram_options(provider_options: Option<&HashMap<String, Value>>) -> DeepgramOptions {
+fn parse_deepgram_options(provider_options: Option<&SharedProviderOptions>) -> DeepgramOptions {
     let mut opts = DeepgramOptions::default();
     if let Some(dg) = options::deepgram_options(provider_options) {
         opts.detect_entities = dg

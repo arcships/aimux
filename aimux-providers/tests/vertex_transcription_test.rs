@@ -216,9 +216,8 @@ async fn should_use_provider_options_for_region_and_language() {
     let model = provider.transcription("chirp_2");
 
     let mut opts = options(mock_audio(), "audio/wav");
-    let mut po = HashMap::new();
-    po.insert(
-        "googleVertex".to_string(),
+    let po = aimux_core::shared::provider_namespace(
+        "googleVertex",
         json!({"region": "us", "languageCodes": ["en", "es"]}),
     );
     opts.provider_options = Some(po);

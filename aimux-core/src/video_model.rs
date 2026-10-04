@@ -507,22 +507,14 @@ async fn start_and_poll_one_batch(
 /// the other phase set once both phases report the *same* provider key — e.g.
 /// a start call's `job_id` disappearing once the completion call also reports
 /// metadata under `x_provider`. Objects under a shared key are unioned
-/// instead, with `b` (the later phase) winning a field collision. Anything
-/// that is not a pair of objects has nothing to union, so `b` replaces `a`.
+/// instead, with `b` (the later phase) winning a field collision.
 fn merge_provider_metadata(
     a: Option<SharedProviderMetadata>,
     b: Option<SharedProviderMetadata>,
 ) -> Option<SharedProviderMetadata> {
     let Some(mut merged) = a else { return b };
-    for (provider, b_value) in b.into_iter().flatten() {
-        let value = match (merged.remove(&provider), b_value) {
-            (Some(serde_json::Value::Object(mut a_obj)), serde_json::Value::Object(b_obj)) => {
-                a_obj.extend(b_obj);
-                serde_json::Value::Object(a_obj)
-            }
-            (_, b_value) => b_value,
-        };
-        merged.insert(provider, value);
+    for (provider, b_obj) in b.into_iter().flatten() {
+        merged.entry(provider).or_default().extend(b_obj);
     }
     Some(merged)
 }
@@ -534,6 +526,7 @@ mod tests {
 
     use super::*;
     use crate::error::ApiCallError;
+    use crate::shared::provider_namespace;
 
     /// `do_status` behavior per call index, cycled through in order.
     enum StatusStep {
@@ -776,7 +769,7 @@ mod tests {
 
     #[test]
     fn merge_provider_metadata_unions_same_provider_key_across_phases() {
-        let phase = |value| Some(SharedProviderMetadata::from([("fal".to_string(), value)]));
+        let phase = |value| Some(provider_namespace("fal", value));
         let merged = merge_provider_metadata(
             phase(serde_json::json!({ "job_id": "job-1", "region": "us-east" })),
             phase(serde_json::json!({ "region": "eu-west", "seed": 42 })),
@@ -786,7 +779,7 @@ mod tests {
         // `job_id` is start-only and must survive instead of being dropped by
         // an `entry().or_insert()` collision on the shared provider key.
         assert_eq!(
-            merged["fal"],
+            serde_json::Value::Object(merged["fal"].clone()),
             serde_json::json!({ "job_id": "job-1", "region": "eu-west", "seed": 42 })
         );
     }

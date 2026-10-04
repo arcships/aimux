@@ -14,7 +14,6 @@
 //! there: it is loaded for every request, from the setting or from `RECRAFT_API_TOKEN`.
 //! [`recraft()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -194,7 +193,9 @@ struct RecraftOptions {
 ///
 /// Unknown fields are ignored (safe degradation); values are passed through as
 /// raw JSON so that unrecognised-but-valid enum values do not cause errors.
-fn parse_recraft_options(provider_options: &HashMap<String, Value>) -> RecraftOptions {
+fn parse_recraft_options(
+    provider_options: &aimux_core::shared::SharedProviderOptions,
+) -> RecraftOptions {
     let recraft = options::recraft_options(Some(provider_options));
     RecraftOptions {
         style: recraft.and_then(|o| o.get("style")).cloned(),

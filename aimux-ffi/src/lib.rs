@@ -2625,7 +2625,7 @@ pub extern "C" fn aimux_transcription_generate(
 #[derive(serde::Deserialize, Default)]
 struct TranscriptionSessionFfiOptions {
     input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
-    provider_options: Option<HashMap<String, serde_json::Value>>,
+    provider_options: Option<aimux_core::shared::SharedProviderOptions>,
     headers: Option<HashMap<String, String>>,
     include_raw_chunks: Option<bool>,
     timeout: Option<aimux_core::options::TimeoutConfiguration>,

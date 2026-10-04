@@ -158,7 +158,10 @@ async fn should_use_custom_wait_time() {
     let mut opts = options(PROMPT);
     opts.n = 1;
     opts.provider_options
-        .insert("replicate".into(), json!({ "maxWaitTimeInSeconds": 30 }));
+        .extend(aimux_core::shared::provider_namespace(
+            "replicate",
+            json!({ "maxWaitTimeInSeconds": 30 }),
+        ));
     model.do_generate(&opts).await.unwrap();
     let reqs = server.received_requests().await.unwrap();
     assert_eq!(

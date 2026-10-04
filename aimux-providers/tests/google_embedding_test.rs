@@ -11,6 +11,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
+use aimux_core::shared::provider_namespace;
 use aimux_provider_utils::Resolvable;
 use aimux_providers::{GoogleProvider, GoogleProviderSettings, create_google};
 
@@ -157,8 +158,7 @@ async fn should_pass_output_dimensionality() {
     let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.embedding("gemini-embedding-001");
 
-    let mut provider_options = HashMap::new();
-    provider_options.insert("google".to_string(), json!({"outputDimensionality": 64}));
+    let provider_options = provider_namespace("google", json!({"outputDimensionality": 64}));
     let options = EmbeddingCallOptions {
         values: test_values(),
         abort_signal: None,
@@ -188,11 +188,7 @@ async fn should_pass_task_type() {
     let provider = test_google("test-api-key", Some((server.uri()).to_string()));
     let model = provider.embedding("gemini-embedding-001");
 
-    let mut provider_options = HashMap::new();
-    provider_options.insert(
-        "google".to_string(),
-        json!({"taskType": "SEMANTIC_SIMILARITY"}),
-    );
+    let provider_options = provider_namespace("google", json!({"taskType": "SEMANTIC_SIMILARITY"}));
     let options = EmbeddingCallOptions {
         values: test_values(),
         abort_signal: None,

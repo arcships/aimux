@@ -9,7 +9,9 @@ use serde_json::{Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{
+    GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
+};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
@@ -212,11 +214,11 @@ impl LanguageModel for GoogleModel {
                         if !response_metadata_emitted
                             && let Some(id) = &chunk.response_id {
                                 response_metadata_emitted = true;
-                                yield Ok(StreamPart::ResponseMetadata {
+                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                     id: Some(id.clone()),
                                     timestamp: None,
                                     model_id: chunk.model_version.clone(),
-                                });
+                                }));
                             }
 
                         if let Some(usage) = &chunk.usage_metadata {
@@ -248,21 +250,21 @@ impl LanguageModel for GoogleModel {
                         let chunk_sources =
                             extract_sources(candidate.grounding_metadata.as_ref(), &mut source_id);
                         for src in chunk_sources {
-                            if let GenerateContent::Source {
+                            if let GenerateContent::Source(Source {
                                 url: Some(url),
                                 source_type,
                                 id,
                                 title,
                                 provider_metadata: None,
-                            } = src
+                            }) = src
                                 && emitted_source_urls.insert(url.clone()) {
-                                    yield Ok(StreamPart::Source {
+                                    yield Ok(StreamPart::Source(Source {
                                         id,
                                         source_type,
                                         url: Some(url),
                                         title,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                         }
 
@@ -271,7 +273,7 @@ impl LanguageModel for GoogleModel {
                         {
                             for part in parts {
                                 // thoughtSignature → provider_metadata (upstream :778-782)
-                                let thought_sig_meta: Option<Value> = part
+                                let thought_sig_meta: Option<ProviderMetadata> = part
                                     .get("thoughtSignature")
                                     .and_then(|v| v.as_str())
                                     .map(|s| google_metadata(json!({ "thoughtSignature": s })));
@@ -516,11 +518,11 @@ impl LanguageModel for GoogleModel {
                                     ) {
                                         // part.thought === true → upstream emits 'reasoning-file';
                                         // emit plain File (reasoning-file is a separate PR).
-                                        yield Ok(StreamPart::File {
+                                        yield Ok(StreamPart::File(GeneratedFile {
                                             data: FileData::Data { data: FileBytes::Base64(data.to_string()) },
                                             media_type: mime.to_string(),
                                             provider_metadata: thought_sig_meta.clone(),
-                                        });
+                                        }));
                                     }
                                 }
                             }
@@ -616,7 +618,7 @@ fn server_tool_metadata(
     tool_call_id: &str,
     server_tool_type: &str,
     thought_signature: Option<&str>,
-) -> Value {
+) -> ProviderMetadata {
     let mut payload = json!({
         "serverToolCallId": tool_call_id,
         "serverToolType": server_tool_type,
@@ -655,7 +657,7 @@ fn extract_content_from_candidate(
     if let Some(parts) = parts {
         for part in parts {
             // thoughtSignature → provider_metadata (upstream :448-451)
-            let thought_sig_meta: Option<Value> = part
+            let thought_sig_meta: Option<ProviderMetadata> = part
                 .get("thoughtSignature")
                 .and_then(|v| v.as_str())
                 .map(|s| google_metadata(json!({ "thoughtSignature": s })));
@@ -718,10 +720,10 @@ fn extract_content_from_candidate(
                         .and_then(serde_json::Value::as_bool)
                         .unwrap_or(false);
                     if is_thought {
-                        content.push(GenerateContent::Reasoning {
+                        content.push(GenerateContent::Reasoning(ReasoningOutput {
                             text: text.to_string(),
                             provider_metadata: thought_sig_meta.clone(),
-                        });
+                        }));
                     } else {
                         content.push(GenerateContent::Text {
                             text: text.to_string(),
@@ -763,13 +765,13 @@ fn extract_content_from_candidate(
                 ) {
                     // part.thought === true → upstream emits 'reasoning-file';
                     // emit plain File (reasoning-file is a separate PR).
-                    content.push(GenerateContent::File {
+                    content.push(GenerateContent::File(GeneratedFile {
                         data: FileData::Data {
                             data: FileBytes::Base64(data.to_string()),
                         },
                         media_type: mime.to_string(),
                         provider_metadata: thought_sig_meta.clone(),
-                    });
+                    }));
                 }
             } else if let Some(tc) = part.get("toolCall") {
                 // Server-side tool call (provider-executed, Gemini 3).
@@ -845,18 +847,18 @@ fn set_provider_metadata(item: &mut GenerateContent, meta: ProviderMetadata) {
         GenerateContent::Text {
             provider_metadata, ..
         }
-        | GenerateContent::Reasoning {
+        | GenerateContent::Reasoning(ReasoningOutput {
             provider_metadata, ..
-        }
+        })
         | GenerateContent::ToolCall(RawToolCall {
             provider_metadata, ..
         })
-        | GenerateContent::File {
+        | GenerateContent::File(GeneratedFile {
             provider_metadata, ..
-        }
-        | GenerateContent::Source {
+        })
+        | GenerateContent::Source(Source {
             provider_metadata, ..
-        }
+        })
         | GenerateContent::ToolResult(ToolResult {
             provider_metadata, ..
         }) => {

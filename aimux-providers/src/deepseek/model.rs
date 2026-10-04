@@ -10,7 +10,8 @@ use serde_json::{Map, Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::{CallOptions, ResponseFormat};
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning,
@@ -428,10 +429,10 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             .reasoning_content
             .filter(|text| !text.is_empty())
         {
-            content.push(GenerateContent::Reasoning {
+            content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata: None,
-            });
+            }));
         }
 
         // tool calls:
@@ -466,7 +467,10 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             },
             usage: convert_deepseek_usage(raw.get("usage")),
             warnings: built.warnings,
-            provider_metadata: Some(json!({ self.provider_options_name(): metadata })),
+            provider_metadata: Some(provider_namespace(
+                self.provider_options_name(),
+                Value::Object(metadata),
+            )),
             response: ResponseMetadata {
                 id: data.id,
                 timestamp: timestamp(data.created),
@@ -582,11 +586,11 @@ impl LanguageModel for DeepSeekChatLanguageModel {
 
                 if is_first_chunk {
                     is_first_chunk = false;
-                    yield Ok(StreamPart::ResponseMetadata {
+                    yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                         id: chunk.id.clone(),
                         timestamp: timestamp(chunk.created),
                         model_id: chunk.model.clone(),
-                    });
+                    }));
                 }
 
                 if let Some(chunk_usage) = chunk.usage.filter(|usage| !usage.is_null()) {
@@ -780,7 +784,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             yield Ok(StreamPart::Finish {
                 finish_reason,
                 usage: convert_deepseek_usage(usage.as_ref()),
-                provider_metadata: Some(json!({ provider_options_name: metadata })),
+                provider_metadata: Some(provider_namespace(&provider_options_name, Value::Object(metadata))),
             });
         };
 

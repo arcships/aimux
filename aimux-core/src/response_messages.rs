@@ -11,7 +11,8 @@ use serde_json::Value;
 
 use crate::content::ContentPart;
 use crate::message::{MessageContent, ModelMessage, Role};
-use crate::result::ReasoningPart;
+use crate::result::ReasoningOutput;
+use crate::shared::{SharedProviderMetadata, SharedProviderOptions};
 
 /// Match the AI SDK's response-message safety rule for invalid tool calls:
 /// malformed primitive input must not be replayed as a prompt tool-call input.
@@ -28,10 +29,12 @@ pub(crate) fn response_tool_call_input(input: &Value, invalid: Option<bool>) -> 
 /// Reasoning signature echoed back on the next turn (Anthropic:
 /// `provider_metadata.anthropic.signature`; Bedrock: `.bedrock.signature` /
 /// `.amazonBedrock.signature`).
-pub(crate) fn extract_reasoning_signature(provider_metadata: Option<&Value>) -> Option<String> {
+pub(crate) fn extract_reasoning_signature(
+    provider_metadata: Option<&SharedProviderMetadata>,
+) -> Option<String> {
     let metadata = provider_metadata?;
     ["anthropic", "bedrock", "amazonBedrock"]
-        .iter()
+        .into_iter()
         .find_map(|ns| metadata.get(ns)?.get("signature")?.as_str())
         .map(str::to_owned)
 }
@@ -45,17 +48,17 @@ pub(crate) fn extract_reasoning_signature(provider_metadata: Option<&Value>) -> 
 pub(crate) struct ResponseMessageBuilder {
     parts: Vec<ContentPart>,
     text_buf: String,
-    text_provider_options: Option<Value>,
+    text_provider_options: Option<SharedProviderOptions>,
     reasoning_buf: String,
-    reasoning_provider_options: Option<Value>,
-    reasoning: Vec<ReasoningPart>,
+    reasoning_provider_options: Option<SharedProviderOptions>,
+    reasoning: Vec<ReasoningOutput>,
 }
 
 /// What the builder produced: the replayable assistant message plus the
 /// reasoning aggregate surfaced on the result.
 pub(crate) struct ResponseMessages {
     pub messages: Vec<ModelMessage>,
-    pub reasoning: Vec<ReasoningPart>,
+    pub reasoning: Vec<ReasoningOutput>,
 }
 
 impl ResponseMessageBuilder {
@@ -65,7 +68,7 @@ impl ResponseMessageBuilder {
 
     // ── Streaming events ────────────────────────────────────────────────
 
-    pub fn text_start(&mut self, provider_metadata: Option<Value>) {
+    pub fn text_start(&mut self, provider_metadata: Option<SharedProviderMetadata>) {
         self.flush_reasoning();
         // A new text segment establishes its position immediately; flush a
         // preceding implicit segment before starting it.
@@ -73,7 +76,7 @@ impl ResponseMessageBuilder {
         self.text_provider_options = provider_metadata;
     }
 
-    pub fn text_delta(&mut self, delta: &str, provider_metadata: Option<Value>) {
+    pub fn text_delta(&mut self, delta: &str, provider_metadata: Option<SharedProviderMetadata>) {
         self.flush_reasoning();
         self.text_buf.push_str(delta);
         if provider_metadata.is_some() {
@@ -81,20 +84,24 @@ impl ResponseMessageBuilder {
         }
     }
 
-    pub fn text_end(&mut self, provider_metadata: Option<Value>) {
+    pub fn text_end(&mut self, provider_metadata: Option<SharedProviderMetadata>) {
         if provider_metadata.is_some() {
             self.text_provider_options = provider_metadata;
         }
         self.flush_text();
     }
 
-    pub fn reasoning_start(&mut self, provider_metadata: Option<Value>) {
+    pub fn reasoning_start(&mut self, provider_metadata: Option<SharedProviderMetadata>) {
         self.flush_text();
         self.flush_reasoning();
         self.reasoning_provider_options = provider_metadata;
     }
 
-    pub fn reasoning_delta(&mut self, delta: &str, provider_metadata: Option<Value>) {
+    pub fn reasoning_delta(
+        &mut self,
+        delta: &str,
+        provider_metadata: Option<SharedProviderMetadata>,
+    ) {
         self.flush_text();
         self.reasoning_buf.push_str(delta);
         if provider_metadata.is_some() {
@@ -102,7 +109,7 @@ impl ResponseMessageBuilder {
         }
     }
 
-    pub fn reasoning_end(&mut self, provider_metadata: Option<Value>) {
+    pub fn reasoning_end(&mut self, provider_metadata: Option<SharedProviderMetadata>) {
         self.flush_text();
         if provider_metadata.is_some() {
             self.reasoning_provider_options = provider_metadata;
@@ -112,7 +119,7 @@ impl ResponseMessageBuilder {
 
     // ── Whole segments (non-streaming) ──────────────────────────────────
 
-    pub fn text(&mut self, text: &str, provider_metadata: Option<&Value>) {
+    pub fn text(&mut self, text: &str, provider_metadata: Option<&SharedProviderMetadata>) {
         if !text.is_empty() {
             self.parts.push(ContentPart::Text {
                 text: text.to_owned(),
@@ -121,17 +128,15 @@ impl ResponseMessageBuilder {
         }
     }
 
-    pub fn reasoning(&mut self, text: &str, provider_metadata: Option<&Value>) {
+    pub fn reasoning(&mut self, reasoning: &ReasoningOutput) {
         // Pushed unconditionally: redacted thinking has empty text but its
         // provider metadata must still be replayed.
-        self.reasoning.push(ReasoningPart {
-            text: text.to_owned(),
-        });
-        let signature = extract_reasoning_signature(provider_metadata);
+        self.reasoning.push(reasoning.clone());
+        let signature = extract_reasoning_signature(reasoning.provider_metadata.as_ref());
         self.parts.push(ContentPart::Reasoning {
-            text: text.to_owned(),
+            text: reasoning.text.clone(),
             signature,
-            provider_options: provider_metadata.cloned(),
+            provider_options: reasoning.provider_metadata.clone(),
         });
     }
 
@@ -205,10 +210,13 @@ impl ResponseMessageBuilder {
             return;
         }
         let text = std::mem::take(&mut self.reasoning_buf);
-        if !text.is_empty() {
-            self.reasoning.push(ReasoningPart { text: text.clone() });
-        }
         let provider_options = self.reasoning_provider_options.take();
+        if !text.is_empty() {
+            self.reasoning.push(ReasoningOutput {
+                text: text.clone(),
+                provider_metadata: provider_options.clone(),
+            });
+        }
         let signature = extract_reasoning_signature(provider_options.as_ref());
         self.parts.push(ContentPart::Reasoning {
             text,

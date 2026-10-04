@@ -6,8 +6,6 @@
 //!
 //! Tests do not hit the public network and do not read real credentials.
 
-use std::collections::HashMap;
-
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -15,6 +13,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
+use aimux_core::shared::provider_namespace;
 use aimux_provider_utils::Resolvable;
 use aimux_providers::{GooglePseProvider, GooglePseProviderSettings, create_google_pse};
 
@@ -180,9 +179,10 @@ async fn cx_resolved_from_provider_options_when_config_has_none() {
     let model = provider.search_model();
 
     let mut options = opts("rust language");
-    let mut po = HashMap::new();
-    po.insert("google_pse".to_string(), json!({ "cx": "options-cx" }));
-    options.provider_options = Some(po);
+    options.provider_options = Some(provider_namespace(
+        "google_pse",
+        json!({ "cx": "options-cx" }),
+    ));
     model.do_search(&options).await.unwrap();
 
     let requests = server.received_requests().await.unwrap();

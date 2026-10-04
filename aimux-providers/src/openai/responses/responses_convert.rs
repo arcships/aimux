@@ -22,9 +22,12 @@ use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
-use aimux_core::result::{GenerateContent, GenerateResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
+use aimux_core::types::{
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage, Warning,
+};
 
 use super::convert::{convert_responses_usage, map_responses_finish_reason, parse_usage};
 use super::types::ResponsesUsage;
@@ -140,11 +143,12 @@ pub fn build_responses_generate_result(
                             if !text.is_empty() {
                                 content.push(GenerateContent::Text {
                                     text,
-                                    provider_metadata: Some(json!({
-                                        (provider_key.clone()): {
+                                    provider_metadata: Some(provider_namespace(
+                                        &provider_key,
+                                        json!({
                                             "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                                        }
-                                    })),
+                                        }),
+                                    )),
                                 });
                             }
                         }
@@ -154,7 +158,7 @@ pub fn build_responses_generate_result(
                             for (i, ann) in annotations.iter().enumerate() {
                                 if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation")
                                 {
-                                    content.push(GenerateContent::Source {
+                                    content.push(GenerateContent::Source(Source {
                                         id: format!("annotation-{i}"),
                                         source_type: "url".to_string(),
                                         url: ann
@@ -166,7 +170,7 @@ pub fn build_responses_generate_result(
                                             .and_then(|v| v.as_str())
                                             .map(std::string::ToString::to_string),
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                             }
                         }
@@ -198,11 +202,12 @@ pub fn build_responses_generate_result(
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
-                    provider_metadata: Some(json!({
-                        (provider_key.clone()): {
+                    provider_metadata: Some(provider_namespace(
+                        &provider_key,
+                        json!({
                             "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                        }
-                    })),
+                        }),
+                    )),
                 }));
             }
             Some("custom_tool_call") => {
@@ -227,27 +232,29 @@ pub fn build_responses_generate_result(
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
-                    provider_metadata: Some(json!({
-                        (provider_key.clone()): {
+                    provider_metadata: Some(provider_namespace(
+                        &provider_key,
+                        json!({
                             "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                        }
-                    })),
+                        }),
+                    )),
                 }));
             }
             Some("reasoning") => {
                 let summary = part.get("summary").and_then(|v| v.as_array());
                 let parts: Vec<&Value> = summary.map(|s| s.iter().collect()).unwrap_or_default();
-                let reasoning_metadata = Some(json!({
-                    (provider_key.clone()): {
+                let reasoning_metadata = Some(provider_namespace(
+                    &provider_key,
+                    json!({
                         "itemId": part.get("id").cloned().unwrap_or(Value::Null),
                         "reasoningEncryptedContent": part.get("encrypted_content").cloned().unwrap_or(Value::Null),
-                    }
-                }));
+                    }),
+                ));
                 if parts.is_empty() {
-                    content.push(GenerateContent::Reasoning {
+                    content.push(GenerateContent::Reasoning(ReasoningOutput {
                         text: String::new(),
                         provider_metadata: reasoning_metadata.clone(),
-                    });
+                    }));
                 } else {
                     for sp in parts {
                         let text = sp
@@ -255,10 +262,10 @@ pub fn build_responses_generate_result(
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        content.push(GenerateContent::Reasoning {
+                        content.push(GenerateContent::Reasoning(ReasoningOutput {
                             text,
                             provider_metadata: reasoning_metadata.clone(),
-                        });
+                        }));
                     }
                 }
             }
@@ -288,7 +295,7 @@ pub fn build_responses_generate_result(
     if let Some(st) = data.get("service_tier").and_then(|v| v.as_str()) {
         pm["serviceTier"] = json!(st);
     }
-    let provider_metadata = Some(json!({ provider_key: pm }));
+    let provider_metadata = Some(provider_namespace(&provider_key, pm));
 
     let response_id = data
         .get("id")
@@ -350,12 +357,12 @@ fn reasoning_stream_metadata(
     provider_key: &str,
     item_id: &str,
     encrypted_content: Option<&str>,
-) -> Value {
+) -> ProviderMetadata {
     let mut inner = json!({ "itemId": item_id });
     if let Some(enc) = encrypted_content {
         inner["reasoningEncryptedContent"] = json!(enc);
     }
-    json!({ (provider_key): inner })
+    provider_namespace(provider_key, inner)
 }
 
 /// Generate a unique source ID for streaming annotation sources.
@@ -498,11 +505,11 @@ where
                                         chrono::DateTime::from_timestamp(secs as i64, 0)
                                     })
                                     .map(|dt| dt.to_rfc3339());
-                                yield Ok(StreamPart::ResponseMetadata {
+                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                     id: response_id.clone(),
                                     timestamp,
                                     model_id,
-                                });
+                                }));
                             }
                         }
 
@@ -885,7 +892,7 @@ where
                                 && ann.get("type").and_then(|v| v.as_str())
                                     == Some("url_citation")
                             {
-                                yield Ok(StreamPart::Source {
+                                yield Ok(StreamPart::Source(Source {
                                     id: generate_source_id(),
                                     source_type: "url".to_string(),
                                     url: ann
@@ -897,7 +904,7 @@ where
                                         .and_then(|v| v.as_str())
                                         .map(std::string::ToString::to_string),
                                     provider_metadata: None,
-                                });
+                                }));
                             }
                         }
 
@@ -1052,7 +1059,7 @@ where
         if let Some(ctx) = final_reasoning_context {
             pm["reasoningContext"] = ctx;
         }
-        let provider_metadata = Some(json!({ provider_key: pm }));
+        let provider_metadata = Some(provider_namespace(&provider_key, pm));
 
         yield Ok(StreamPart::Finish {
             finish_reason: if stream_errored {

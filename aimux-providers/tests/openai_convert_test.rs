@@ -532,9 +532,8 @@ mod build_request_body_tests {
     /// provider_options whitelist (the only "quietly no-op" option).
     #[test]
     fn passes_logprobs_and_top_logprobs() {
-        let mut provider_options = std::collections::HashMap::new();
-        provider_options.insert(
-            "openai".to_string(),
+        let provider_options = aimux_core::shared::provider_namespace(
+            "openai",
             json!({ "logprobs": true, "topLogprobs": 3 }),
         );
         let options = CallOptions {

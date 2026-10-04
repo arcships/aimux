@@ -41,9 +41,9 @@ use aimux_core::language_model_message::{
 };
 use aimux_core::message::{ModelMessage, Role};
 use aimux_core::options::{CallOptions, ProviderTool, Tool};
-use aimux_core::result::{GenerateContent, StreamResult};
+use aimux_core::result::{GenerateContent, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::Warning;
+use aimux_core::types::{ProviderMetadata, Warning};
 
 use aimux_provider_utils::Resolvable;
 use aimux_providers::google::convert::build_request_body;
@@ -197,13 +197,13 @@ fn stream_sources(parts: &[StreamPart]) -> Vec<(String, String, Option<String>, 
     parts
         .iter()
         .filter_map(|p| match p {
-            StreamPart::Source {
+            StreamPart::Source(Source {
                 id,
                 source_type,
                 url,
                 title,
                 ..
-            } => Some((id.clone(), source_type.clone(), url.clone(), title.clone())),
+            }) => Some((id.clone(), source_type.clone(), url.clone(), title.clone())),
             _ => None,
         })
         .collect()
@@ -243,7 +243,7 @@ fn gen_tool_results(content: &[GenerateContent]) -> Vec<(String, String, Value)>
 
 /// The `provider_metadata` of the `GenerateContent::ToolCall` / `ToolResult`
 /// whose `tool_name` is `name`.
-fn gen_server_metadata(content: &[GenerateContent], name: &str) -> Vec<Value> {
+fn gen_server_metadata(content: &[GenerateContent], name: &str) -> Vec<ProviderMetadata> {
     content
         .iter()
         .filter_map(|c| match c {
@@ -272,13 +272,13 @@ fn gen_sources(
     content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::Source {
+            GenerateContent::Source(Source {
                 id,
                 source_type,
                 url,
                 title,
                 ..
-            } => Some((id.clone(), source_type.clone(), url.clone(), title.clone())),
+            }) => Some((id.clone(), source_type.clone(), url.clone(), title.clone())),
             _ => None,
         })
         .collect()
@@ -1203,7 +1203,10 @@ mod do_generate {
         assert_eq!(call.invalid, None);
         assert_eq!(call.input["code"], "print(2)");
         assert_eq!(
-            call.provider_metadata.as_ref().expect("call metadata")["google"],
+            serde_json::to_value(
+                &call.provider_metadata.as_ref().expect("call metadata")["google"]
+            )
+            .unwrap(),
             json!({
                 "serverToolCallId": call.tool_call_id,
                 "serverToolType": "code_execution",
@@ -1612,7 +1615,7 @@ mod do_generate {
         let meta = gen_server_metadata(&result.content, "server:GOOGLE_SEARCH_WEB");
         assert_eq!(meta.len(), 2, "both the call and the result carry metadata");
         assert_eq!(
-            meta[0]["google"],
+            serde_json::to_value(&meta[0]["google"]).unwrap(),
             json!({
                 "serverToolCallId": "server-call-1",
                 "serverToolType": "GOOGLE_SEARCH_WEB",
@@ -1620,7 +1623,7 @@ mod do_generate {
             })
         );
         assert_eq!(
-            meta[1]["google"],
+            serde_json::to_value(&meta[1]["google"]).unwrap(),
             json!({
                 "serverToolCallId": "server-call-1",
                 "serverToolType": "GOOGLE_SEARCH_WEB",
@@ -1717,7 +1720,7 @@ mod do_stream {
     }
 
     /// Extract the `Finish` part's provider metadata from a collected stream.
-    fn finish_provider_metadata(parts: &[StreamPart]) -> Option<Value> {
+    fn finish_provider_metadata(parts: &[StreamPart]) -> Option<ProviderMetadata> {
         parts.iter().find_map(|p| match p {
             StreamPart::Finish {
                 provider_metadata, ..
@@ -1970,7 +1973,7 @@ mod do_stream {
                 provider_metadata: Some(metadata),
                 ..
             }) if tool_name == "runCode"
-                && metadata["google"] == json!({
+                && serde_json::to_value(&metadata["google"]).unwrap() == json!({
                     "serverToolCallId": tool_call_id,
                     "serverToolType": "code_execution",
                 })
@@ -1983,7 +1986,7 @@ mod do_stream {
                 provider_metadata: Some(metadata),
                 ..
             }) if tool_name == "runCode"
-                && metadata["google"] == json!({
+                && serde_json::to_value(&metadata["google"]).unwrap() == json!({
                     "serverToolCallId": tool_call_id,
                     "serverToolType": "code_execution",
                 })
@@ -2223,7 +2226,7 @@ mod do_stream {
 
         // Per-part providerMetadata (ids/types + the thoughtSignature that must
         // be echoed back on the follow-up turn).
-        let meta: Vec<Value> = parts
+        let meta: Vec<ProviderMetadata> = parts
             .iter()
             .filter_map(|p| match p {
                 StreamPart::ToolCall(RawToolCall {
@@ -2241,7 +2244,7 @@ mod do_stream {
             .collect();
         assert_eq!(meta.len(), 2, "both the call and the result carry metadata");
         assert_eq!(
-            meta[0]["google"],
+            serde_json::to_value(&meta[0]["google"]).unwrap(),
             json!({
                 "serverToolCallId": "server-call-1",
                 "serverToolType": "GOOGLE_SEARCH_WEB",
@@ -2249,7 +2252,7 @@ mod do_stream {
             })
         );
         assert_eq!(
-            meta[1]["google"],
+            serde_json::to_value(&meta[1]["google"]).unwrap(),
             json!({
                 "serverToolCallId": "server-call-1",
                 "serverToolType": "GOOGLE_SEARCH_WEB",

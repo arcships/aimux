@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
@@ -149,11 +149,7 @@ impl Files for AnthropicFiles {
             media_type: Some(result_media_type),
             filename: result_filename,
             provider_metadata: Some(
-                std::iter::once((
-                    self.config.provider_options_name.clone(),
-                    Value::Object(metadata),
-                ))
-                .collect(),
+                std::iter::once((self.config.provider_options_name.clone(), metadata)).collect(),
             ),
             warnings: Vec::new(),
         })

@@ -14,7 +14,7 @@ use serde_json::{Map, Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::{CallOptions, ResponseFormat};
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning,
@@ -309,10 +309,10 @@ impl LanguageModel for GroqChatLanguageModel {
 
         // reasoning:
         if let Some(text) = choice.message.reasoning.filter(|text| !text.is_empty()) {
-            content.push(GenerateContent::Reasoning {
+            content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata: None,
-            });
+            }));
         }
 
         // tool calls:
@@ -465,11 +465,7 @@ impl LanguageModel for GroqChatLanguageModel {
                 if is_first_chunk {
                     is_first_chunk = false;
                     let metadata = response_metadata(value.id, value.created, value.model);
-                    yield Ok(StreamPart::ResponseMetadata {
-                        id: metadata.id,
-                        timestamp: metadata.timestamp,
-                        model_id: metadata.model_id,
-                    });
+                    yield Ok(StreamPart::ResponseMetadata(metadata));
                 }
 
                 if let Some(chunk_usage) = value.x_groq.and_then(|x_groq| x_groq.usage) {

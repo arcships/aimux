@@ -37,7 +37,7 @@ use aimux_core::options::{CallOptions, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
-use aimux_core::types::FinishReasonUnified;
+use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_provider_utils::Resolvable;
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
@@ -835,7 +835,7 @@ mod do_stream {
 
         // response-metadata with id and modelId
         match &parts[1] {
-            StreamPart::ResponseMetadata { id, model_id, .. } => {
+            StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. }) => {
                 assert_eq!(
                     id.as_deref(),
                     Some("chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP")
@@ -944,7 +944,7 @@ mod do_stream {
         assert!(matches!(parts[0], StreamPart::StreamStart { .. }));
 
         // Verify response-metadata
-        assert!(matches!(parts[1], StreamPart::ResponseMetadata { .. }));
+        assert!(matches!(parts[1], StreamPart::ResponseMetadata(_)));
 
         // Verify tool-input-start
         let tool_start = parts.iter().find(|p| {
@@ -1714,7 +1714,7 @@ mod do_stream {
 
         // Verify response-metadata with modelId "o4-mini"
         match &parts[1] {
-            StreamPart::ResponseMetadata { model_id, .. } => {
+            StreamPart::ResponseMetadata(ResponseMetadata { model_id, .. }) => {
                 assert_eq!(model_id.as_deref(), Some("o4-mini"));
             }
             other => panic!("expected ResponseMetadata, got {other:?}"),

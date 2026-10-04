@@ -96,7 +96,7 @@ impl VertexImageModel {
 
         // Build other options (excluding "edit")
         let mut other_options = Map::new();
-        if let Some(obj) = gv_opts.and_then(|v| v.as_object()) {
+        if let Some(obj) = gv_opts {
             for (k, v) in obj {
                 if k != "edit" {
                     other_options.insert(k.clone(), v.clone());
@@ -288,7 +288,7 @@ impl VertexImageModel {
 
         // Passthrough provider options
         let gv_opts = vertex_options(Some(&options.provider_options));
-        if let Some(obj) = gv_opts.and_then(|v| v.as_object()) {
+        if let Some(obj) = gv_opts {
             for (k, v) in obj {
                 if matches!(k.as_str(), "responseModalities" | "imageConfig") {
                     continue;

@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
+use aimux_core::shared::JsonObject;
 use aimux_core::{AbortSignal, AiMuxError};
 use aimux_provider_utils::sleep_or_abort;
 
@@ -56,7 +57,7 @@ pub(crate) fn is_poll_control_key(key: &str) -> bool {
 
 /// The poll interval a package's providerOptions namespace sets under `key`,
 /// or `default_ms`.
-pub(crate) fn poll_interval_ms(namespace: Option<&Value>, key: &str, default_ms: u64) -> u64 {
+pub(crate) fn poll_interval_ms(namespace: Option<&JsonObject>, key: &str, default_ms: u64) -> u64 {
     namespace
         .and_then(|options| options.get(key))
         .and_then(Value::as_u64)
@@ -195,23 +196,23 @@ mod tests {
     fn interval_override_reads_the_namespace_only() {
         let options = serde_json::json!({ "pollIntervalMs": 7, "maxPollAttempts": 1 });
         assert_eq!(
-            poll_interval_ms(Some(&options), POLL_INTERVAL_MS_KEY, 500),
+            poll_interval_ms(options.as_object(), POLL_INTERVAL_MS_KEY, 500),
             7
         );
         // Only the key asked for is read.
         assert_eq!(
-            poll_interval_ms(Some(&options), POLL_INTERVAL_MILLIS_KEY, 500),
+            poll_interval_ms(options.as_object(), POLL_INTERVAL_MILLIS_KEY, 500),
             500
         );
         assert_eq!(
-            poll_interval_ms(Some(&serde_json::json!({})), POLL_INTERVAL_MS_KEY, 500),
+            poll_interval_ms(serde_json::json!({}).as_object(), POLL_INTERVAL_MS_KEY, 500),
             500
         );
         assert_eq!(poll_interval_ms(None, POLL_INTERVAL_MS_KEY, 500), 500);
         // A string is not a number: the default stays.
         assert_eq!(
             poll_interval_ms(
-                Some(&serde_json::json!({ "pollIntervalMs": "7" })),
+                serde_json::json!({ "pollIntervalMs": "7" }).as_object(),
                 POLL_INTERVAL_MS_KEY,
                 500
             ),

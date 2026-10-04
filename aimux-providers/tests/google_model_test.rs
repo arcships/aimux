@@ -21,9 +21,10 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
-use aimux_core::types::FinishReasonUnified;
+use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_provider_utils::Resolvable;
 use aimux_providers::google::convert::{
@@ -1089,7 +1090,7 @@ mod do_stream {
 
         // response-metadata
         match &parts[1] {
-            StreamPart::ResponseMetadata { id, .. } => {
+            StreamPart::ResponseMetadata(ResponseMetadata { id, .. }) => {
                 assert_eq!(id.as_deref(), Some("resp-1"));
             }
             other => panic!("expected ResponseMetadata, got {other:?}"),
@@ -1425,9 +1426,9 @@ mod do_stream {
 
         let rm = parts
             .iter()
-            .find(|p| matches!(p, StreamPart::ResponseMetadata { .. }));
+            .find(|p| matches!(p, StreamPart::ResponseMetadata(_)));
         match rm {
-            Some(StreamPart::ResponseMetadata { id, model_id, .. }) => {
+            Some(StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. })) => {
                 assert_eq!(id.as_deref(), Some("resp-xyz"));
                 assert_eq!(model_id.as_deref(), Some("gemini-2.0-flash-001"));
             }
@@ -1896,13 +1897,14 @@ mod request_body {
                         input: json!(r#"{"query":"Singapore weather"}"#),
                         provider_executed: Some(true),
                         thought_signature: None,
-                        provider_options: Some(json!({
-                            "google": {
+                        provider_options: Some(provider_namespace(
+                            "google",
+                            json!({
                                 "serverToolCallId": "server-call-1",
                                 "serverToolType": "GOOGLE_SEARCH_WEB",
                                 "thoughtSignature": "call-signature"
-                            }
-                        })),
+                            }),
+                        )),
                     },
                     ContentPart::ToolResult {
                         tool_call_id: "logical-call-id".to_string(),
@@ -1911,13 +1913,14 @@ mod request_body {
                         is_error: None,
                         preliminary: None,
                         dynamic: None,
-                        provider_options: Some(json!({
-                            "google": {
+                        provider_options: Some(provider_namespace(
+                            "google",
+                            json!({
                                 "serverToolCallId": "server-call-1",
                                 "serverToolType": "GOOGLE_SEARCH_WEB",
                                 "thoughtSignature": "result-signature"
-                            }
-                        })),
+                            }),
+                        )),
                     },
                 ],
                 ..Default::default()
@@ -2192,22 +2195,18 @@ mod request_body {
     #[test]
     fn provider_options_map_onto_generation_config_and_the_body() {
         let mut opts = default_options(test_prompt());
-        opts.provider_options = Some(
-            [(
-                "google".to_string(),
-                json!({
-                    "thinkingConfig": { "includeThoughts": true, "thinkingBudget": 1024 },
-                    "responseModalities": ["TEXT", "IMAGE"],
-                    "safetySettings": [{ "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH" }],
-                    "cachedContent": "cachedContents/abc",
-                    "labels": { "team": "blue" },
-                    "serviceTier": "priority",
-                    "retrievalConfig": { "latLng": { "latitude": 1.0, "longitude": 2.0 } },
-                }),
-            )]
-            .into_iter()
-            .collect(),
-        );
+        opts.provider_options = Some(provider_namespace(
+            "google",
+            json!({
+                "thinkingConfig": { "includeThoughts": true, "thinkingBudget": 1024 },
+                "responseModalities": ["TEXT", "IMAGE"],
+                "safetySettings": [{ "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH" }],
+                "cachedContent": "cachedContents/abc",
+                "labels": { "team": "blue" },
+                "serviceTier": "priority",
+                "retrievalConfig": { "latLng": { "latitude": 1.0, "longitude": 2.0 } },
+            }),
+        ));
         let body = build_request_body("gemini-2.0-flash", &opts);
         assert_eq!(
             body["generationConfig"]["thinkingConfig"]["thinkingBudget"],
@@ -2227,14 +2226,10 @@ mod request_body {
         );
         // Options for other providers are not read.
         let mut other = default_options(test_prompt());
-        other.provider_options = Some(
-            [(
-                "openai".to_string(),
-                json!({ "thinkingConfig": { "x": 1 } }),
-            )]
-            .into_iter()
-            .collect(),
-        );
+        other.provider_options = Some(provider_namespace(
+            "openai",
+            json!({ "thinkingConfig": { "x": 1 } }),
+        ));
         assert_eq!(
             build_request_body("gemini-2.0-flash", &other)["generationConfig"],
             json!({})

@@ -36,7 +36,7 @@ use aimux_core::options::{CallOptions, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, ProviderTool};
-use aimux_core::types::FinishReasonUnified;
+use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_providers::anthropic::AnthropicMessagesModel;
 use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
@@ -903,7 +903,7 @@ mod do_stream {
             StreamPart::StreamStart { warnings } if warnings.is_empty()
         ));
         match &parts[1] {
-            StreamPart::ResponseMetadata { id, model_id, .. } => {
+            StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. }) => {
                 assert_eq!(id.as_deref(), Some("msg_1"));
                 assert_eq!(model_id.as_deref(), Some("claude-3-haiku-20240307"));
             }
@@ -956,13 +956,13 @@ mod do_stream {
 
         let meta_count = parts
             .iter()
-            .filter(|p| matches!(p, StreamPart::ResponseMetadata { .. }))
+            .filter(|p| matches!(p, StreamPart::ResponseMetadata(_)))
             .count();
         assert_eq!(meta_count, 1);
 
         // The metadata part must come right after StreamStart.
         assert!(matches!(parts[0], StreamPart::StreamStart { .. }));
-        assert!(matches!(parts[1], StreamPart::ResponseMetadata { .. }));
+        assert!(matches!(parts[1], StreamPart::ResponseMetadata(_)));
     }
 
     /// Usage: input_tokens from message_start, output_tokens from message_delta.

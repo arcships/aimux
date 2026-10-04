@@ -206,8 +206,8 @@ async fn should_pass_negative_text() {
     let model = provider.image("amazon.titan-image-generator-v1");
     let mut opts = options(PROMPT);
     opts.n = 1;
-    opts.provider_options.insert(
-        "amazonBedrock".into(),
+    opts.provider_options = aimux_core::shared::provider_namespace(
+        "amazonBedrock",
         json!({ "negativeText": "ugly, blurry" }),
     );
     model.do_generate(&opts).await.unwrap();

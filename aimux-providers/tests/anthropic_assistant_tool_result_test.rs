@@ -92,14 +92,17 @@ fn assistant_tool_call_replays_programmatic_caller() {
         input: json!({ "sql": "SELECT 1" }),
         provider_executed: None,
         thought_signature: None,
-        provider_options: Some(json!({
-            "anthropic": {
-                "caller": {
-                    "type": "code_execution_20260120",
-                    "toolId": "srvtoolu_code",
+        provider_options: Some(
+            serde_json::from_value(json!({
+                "anthropic": {
+                    "caller": {
+                        "type": "code_execution_20260120",
+                        "toolId": "srvtoolu_code",
+                    }
                 }
-            }
-        })),
+            }))
+            .unwrap(),
+        ),
     };
 
     let (blocks, warnings) = convert(vec![msg(Role::Assistant, vec![call])], vec![]);
@@ -199,9 +202,12 @@ fn assistant_mcp_result_becomes_mcp_tool_result() {
         input: json!({ "text": "hi" }),
         provider_executed: Some(true),
         thought_signature: None,
-        provider_options: Some(json!({
-            "anthropic": { "type": "mcp-tool-use", "serverName": "my-server" }
-        })),
+        provider_options: Some(
+            serde_json::from_value(json!({
+                "anthropic": { "type": "mcp-tool-use", "serverName": "my-server" }
+            }))
+            .unwrap(),
+        ),
     };
 
     let (blocks, warnings) = convert(

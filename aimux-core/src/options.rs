@@ -10,6 +10,7 @@ use ts_rs::TS;
 
 use crate::AbortSignal;
 use crate::language_model_message::LanguageModelPrompt;
+use crate::shared::SharedProviderOptions;
 pub use crate::tool::{FunctionTool, ProviderTool, Tool, ToolChoice};
 use crate::types::ReasoningEffort;
 
@@ -108,7 +109,7 @@ pub struct CallOptions {
     pub headers: Option<HashMap<String, String>>,
 
     /// Provider-specific options (keyed by provider name).
-    pub provider_options: Option<HashMap<String, Value>>,
+    pub provider_options: Option<SharedProviderOptions>,
 
     /// Top-level reasoning effort. Maps to OpenAI `reasoning_effort` and
     /// Anthropic `thinking` config.

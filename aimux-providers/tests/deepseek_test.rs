@@ -64,14 +64,7 @@ async fn mock_json(server: &MockServer, body: Value) {
 
 fn options_with(provider_options: Value) -> CallOptions {
     let mut options = CallOptions::new(prompt());
-    options.provider_options = Some(
-        provider_options
-            .as_object()
-            .unwrap()
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect(),
-    );
+    options.provider_options = Some(serde_json::from_value(provider_options).unwrap());
     options
 }
 

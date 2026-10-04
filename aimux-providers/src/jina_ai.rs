@@ -12,7 +12,6 @@
 //! there: it is loaded for every request, from the setting or from `JINA_AI_API_KEY`.
 //! [`jina_ai()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use async_trait::async_trait;
@@ -24,6 +23,7 @@ use aimux_core::reranking_model::{
     RerankingCallOptions, RerankingDocuments, RerankingModel, RerankingRank, RerankingResponse,
     RerankingResult,
 };
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
@@ -170,7 +170,7 @@ struct JinaRerankingOptions {
 }
 
 fn parse_jina_reranking_options(
-    provider_options: Option<&HashMap<String, Value>>,
+    provider_options: Option<&SharedProviderOptions>,
 ) -> JinaRerankingOptions {
     let mut opts = JinaRerankingOptions::default();
     if let Some(jina) = options::jina_options(provider_options)

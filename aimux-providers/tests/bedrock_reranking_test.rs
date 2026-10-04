@@ -3,8 +3,6 @@
 //! Source: `reference/ai/packages/amazon-bedrock/src/reranking/amazon-bedrock-reranking-model.test.ts`
 //! (13 test cases across "json documents" and "text documents" groups).
 
-use std::collections::HashMap;
-
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -36,16 +34,14 @@ fn provider(server: &MockServer) -> AmazonBedrockProvider {
     .expect("valid settings")
 }
 
-fn bedrock_provider_options() -> HashMap<String, Value> {
-    let mut po = HashMap::new();
-    po.insert(
-        "amazonBedrock".to_string(),
+fn bedrock_provider_options() -> aimux_core::shared::SharedProviderOptions {
+    aimux_core::shared::provider_namespace(
+        "amazonBedrock",
         json!({
             "nextToken": "test-token",
             "additionalModelRequestFields": { "test": "test-value" }
         }),
-    );
-    po
+    )
 }
 
 fn text_docs_opts(query: &str, top_n: u32) -> RerankingCallOptions {

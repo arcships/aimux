@@ -4,19 +4,21 @@
 //! response metadata under `huggingface`, whatever the provider is named. This
 //! module is the one place that spells the key.
 
-use serde_json::{Value, json};
+use aimux_core::shared::{JsonObject, SharedProviderOptions, provider_namespace};
+use aimux_core::types::ProviderMetadata;
+use serde_json::Value;
 
 /// The providerOptions / providerMetadata key.
 pub(crate) const NAMESPACE: &str = "huggingface";
 
 /// The Hugging Face options in a providerOptions map.
-pub(crate) fn huggingface_options<M: crate::shared::ProviderOptionsMap + ?Sized>(
-    provider_options: Option<&M>,
-) -> Option<&Value> {
-    provider_options?.lookup(NAMESPACE)
+pub(crate) fn huggingface_options(
+    provider_options: Option<&SharedProviderOptions>,
+) -> Option<&JsonObject> {
+    provider_options?.get(NAMESPACE)
 }
 
 /// `{ "huggingface": payload }`.
-pub(crate) fn huggingface_metadata(payload: Value) -> Value {
-    json!({ NAMESPACE: payload })
+pub(crate) fn huggingface_metadata(payload: Value) -> ProviderMetadata {
+    provider_namespace(NAMESPACE, payload)
 }

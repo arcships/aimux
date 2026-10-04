@@ -41,7 +41,7 @@ impl OpenAICompatibleImageModel {
         let camel = to_camel_case(name);
         let mut out = Map::new();
         for key in ["openaiCompatible", name, camel.as_str()] {
-            if let Some(object) = options.provider_options.get(key).and_then(Value::as_object) {
+            if let Some(object) = options.provider_options.get(key) {
                 out.extend(object.iter().map(|(k, v)| (k.clone(), v.clone())));
             }
         }

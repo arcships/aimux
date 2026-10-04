@@ -302,9 +302,8 @@ async fn stream_language_and_timestamps() {
 
     let model = realtime_model(&base_url, "scribe_v2_realtime");
     let mut options = stream_options(vec![AudioChunk::Binary(vec![1])], None);
-    let mut provider_options = std::collections::HashMap::new();
-    provider_options.insert(
-        "elevenlabs".to_string(),
+    let provider_options = aimux_core::shared::provider_namespace(
+        "elevenlabs",
         serde_json::json!({ "languageCode": "fr", "includeTimestamps": true }),
     );
     options.provider_options = Some(provider_options);

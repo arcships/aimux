@@ -7,6 +7,7 @@
 //! set on a non-cacheable context such as a thinking block) are dropped with a
 //! `Warning::Unsupported`.
 
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
 use serde_json::Value;
 
@@ -21,7 +22,7 @@ const MAX_CACHE_BREAKPOINTS: u32 = 4;
 ///
 /// The value is passed through unchanged (the Anthropic API validates it).
 #[must_use]
-pub fn extract_cache_control(provider_options: Option<&Value>) -> Option<Value> {
+pub fn extract_cache_control(provider_options: Option<&SharedProviderOptions>) -> Option<Value> {
     extract_cache_control_for(provider_options, CANONICAL)
 }
 
@@ -30,7 +31,7 @@ pub fn extract_cache_control(provider_options: Option<&Value>) -> Option<Value> 
 /// `providerOptions[name]`, the custom key winning.
 #[must_use]
 pub(crate) fn extract_cache_control_for(
-    provider_options: Option<&Value>,
+    provider_options: Option<&SharedProviderOptions>,
     options_name: &str,
 ) -> Option<Value> {
     let anthropic = anthropic_options(provider_options, options_name)?;
@@ -89,7 +90,7 @@ impl CacheControlValidator {
     /// or `None` when there is none or it was rejected.
     pub fn get_cache_control(
         &mut self,
-        provider_options: Option<&Value>,
+        provider_options: Option<&SharedProviderOptions>,
         context_type: &str,
         can_cache: bool,
     ) -> Option<Value> {

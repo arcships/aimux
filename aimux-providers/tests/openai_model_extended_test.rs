@@ -13,7 +13,8 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ToolChoice};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, Source};
+use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
@@ -64,10 +65,8 @@ fn default_opts(p: LanguageModelPrompt) -> CallOptions {
         recording_context: None,
     }
 }
-fn po(map: Value) -> Option<std::collections::HashMap<String, Value>> {
-    let mut h = std::collections::HashMap::new();
-    h.insert("openai".to_string(), map);
-    Some(h)
+fn po(map: Value) -> Option<SharedProviderOptions> {
+    Some(provider_namespace("openai", map))
 }
 fn sse_event(json_str: &str) -> String {
     format!("data: {json_str}\n\n")
@@ -177,12 +176,12 @@ mod do_generate_extended {
             other => panic!("expected Text, got {other:?}"),
         }
         match &result.content[1] {
-            GenerateContent::Source {
+            GenerateContent::Source(Source {
                 source_type,
                 url,
                 title,
                 ..
-            } => {
+            }) => {
                 assert_eq!(source_type, "url");
                 assert_eq!(url.as_deref(), Some("https://example.com/doc1.pdf"));
                 assert_eq!(title.as_deref(), Some("Document 1"));

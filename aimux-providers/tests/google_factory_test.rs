@@ -190,8 +190,7 @@ fn call_options_from(input: &Value) -> CallOptions {
     };
     options.provider_options = input
         .get("providerOptions")
-        .and_then(Value::as_object)
-        .map(|o| o.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+        .map(|value| serde_json::from_value(value.clone()).unwrap());
     options
 }
 

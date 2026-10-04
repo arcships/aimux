@@ -34,29 +34,6 @@ pub(crate) fn is_valid_hostname_part(part: &str) -> bool {
         && bytes[bytes.len() - 1] != b'-'
 }
 
-/// A providerOptions container that can be asked for one namespace.
-pub(crate) trait ProviderOptionsMap {
-    fn lookup(&self, key: &str) -> Option<&Value>;
-}
-
-impl ProviderOptionsMap for std::collections::HashMap<String, Value> {
-    fn lookup(&self, key: &str) -> Option<&Value> {
-        self.get(key)
-    }
-}
-
-impl ProviderOptionsMap for Value {
-    fn lookup(&self, key: &str) -> Option<&Value> {
-        self.get(key)
-    }
-}
-
-impl ProviderOptionsMap for serde_json::Map<String, Value> {
-    fn lookup(&self, key: &str) -> Option<&Value> {
-        self.get(key)
-    }
-}
-
 /// A provider-level rewrite of every JSON request body, called once after the
 /// body is serialized and before it is sent.
 pub type TransformRequestBody = Arc<dyn Fn(Value) -> Value + Send + Sync>;

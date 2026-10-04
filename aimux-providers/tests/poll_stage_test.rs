@@ -37,8 +37,8 @@ fn unavailable() -> Canned {
 
 fn image_options(poll_interval_ms: u64) -> ImageCallOptions {
     let mut options = ImageCallOptions::new("a cat".to_string());
-    options.provider_options.insert(
-        "luma".to_string(),
+    options.provider_options = aimux_core::shared::provider_namespace(
+        "luma",
         json!({ "pollIntervalMillis": poll_interval_ms }),
     );
     options

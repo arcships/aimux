@@ -108,8 +108,8 @@ pub mod prelude {
         init_session_store, list_sessions, session_calls,
     };
     pub use crate::shared::{
-        AspectRatio, FileBytes, FileData, SharedHeaders, SharedProviderMetadata,
-        SharedProviderOptions, SharedProviderReference, Size,
+        AspectRatio, FileBytes, FileData, JsonObject, SharedHeaders, SharedProviderMetadata,
+        SharedProviderOptions, SharedProviderReference, Size, provider_namespace,
     };
     pub use crate::speech_model::{SpeechCallOptions, SpeechModel, SpeechResult, generate_speech};
     pub use crate::stream_part::{StreamPart, TextStreamPart};

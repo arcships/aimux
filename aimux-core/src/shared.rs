@@ -33,12 +33,32 @@ pub type SharedHeaders = HashMap<String, String>;
 /// ```json
 /// { "anthropic": { "cacheControl": { "type": "ephemeral" } } }
 /// ```
-pub type SharedProviderOptions = HashMap<String, Value>;
+pub type SharedProviderOptions = HashMap<String, JsonObject>;
 
 /// Additional provider-specific metadata (outputs), keyed by provider name.
 ///
 /// Aligned with V4 `SharedV4ProviderMetadata` (`Record<string, JSONObject>`).
-pub type SharedProviderMetadata = HashMap<String, Value>;
+pub type SharedProviderMetadata = HashMap<String, JsonObject>;
+
+/// A JSON object (`JSONObject` in the AI SDK).
+pub type JsonObject = serde_json::Map<String, Value>;
+
+/// Build a one-namespace [`SharedProviderMetadata`] / [`SharedProviderOptions`]
+/// (they are the same type) from a JSON object literal.
+///
+/// `provider_namespace("openai", json!({ "itemId": "x" }))` is
+/// `{ "openai": { "itemId": "x" } }`.
+///
+/// A value that is not a JSON object yields an empty namespace. Several
+/// namespaces: `extend` one map with another.
+#[must_use]
+pub fn provider_namespace(namespace: &str, object: Value) -> SharedProviderMetadata {
+    let object = match object {
+        Value::Object(object) => object,
+        _ => JsonObject::new(),
+    };
+    HashMap::from([(namespace.to_string(), object)])
+}
 
 /// A mapping of provider names to provider-specific file identifiers.
 ///

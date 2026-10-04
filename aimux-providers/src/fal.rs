@@ -566,7 +566,7 @@ impl ImageModel for FalImageModel {
             body.insert("mask_url".into(), json!(Self::file_to_data_uri(mask)?));
         }
 
-        if let Some(fal) = fal_opts.and_then(|v| v.as_object()) {
+        if let Some(fal) = fal_opts {
             let map: &[(&str, &str)] = &[
                 ("imageUrl", "image_url"),
                 ("maskUrl", "mask_url"),
@@ -688,7 +688,7 @@ impl ImageModel for FalImageModel {
                 }
             }
         }
-        metadata.insert(options::NAMESPACE.into(), Value::Object(fm));
+        metadata.insert(options::NAMESPACE.into(), fm);
 
         Ok(ImageResult {
             images: ImageOutputs::Binary(downloaded),

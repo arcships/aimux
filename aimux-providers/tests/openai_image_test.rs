@@ -20,6 +20,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs,
 };
+use aimux_core::shared::provider_namespace;
 use aimux_core::shared::{AspectRatio, Size};
 use aimux_provider_utils::Resolvable;
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
@@ -152,8 +153,7 @@ async fn should_pass_the_model_and_the_settings() {
     let mut opts = options(PROMPT);
     opts.n = 1;
     opts.size = Some(Size::new(1024, 1024));
-    opts.provider_options
-        .insert("openai".to_string(), json!({ "style": "vivid" }));
+    opts.provider_options = provider_namespace("openai", json!({ "style": "vivid" }));
 
     model.do_generate(&opts).await.unwrap();
 
@@ -180,8 +180,8 @@ async fn should_map_provider_options_to_snake_case_for_generations() {
     let mut opts = options(PROMPT);
     opts.n = 1;
     opts.size = Some(Size::new(1024, 1024));
-    opts.provider_options.insert(
-        "openai".to_string(),
+    opts.provider_options = provider_namespace(
+        "openai",
         json!({
             "quality": "high",
             "background": "transparent",
@@ -242,8 +242,7 @@ async fn should_pass_headers() {
     let mut opts = options(PROMPT);
     opts.n = 1;
     opts.size = Some(Size::new(1024, 1024));
-    opts.provider_options
-        .insert("openai".to_string(), json!({ "style": "vivid" }));
+    opts.provider_options = provider_namespace("openai", json!({ "style": "vivid" }));
     let mut req_headers = HashMap::new();
     req_headers.insert(
         "Custom-Request-Header".to_string(),
@@ -610,8 +609,7 @@ async fn should_return_image_meta_data() {
     let mut opts = options(PROMPT);
     opts.n = 1;
     opts.size = Some(Size::new(1024, 1024));
-    opts.provider_options
-        .insert("openai".to_string(), json!({ "style": "vivid" }));
+    opts.provider_options = provider_namespace("openai", json!({ "style": "vivid" }));
 
     let result = model.do_generate(&opts).await.unwrap();
 
@@ -874,8 +872,8 @@ async fn should_pass_provider_options_in_form_data() {
     opts.n = 1;
     opts.size = Some(Size::new(1024, 1024));
     opts.files = Some(vec![binary_file("image/png", &[137, 80, 78, 71])]);
-    opts.provider_options.insert(
-        "openai".to_string(),
+    opts.provider_options = provider_namespace(
+        "openai",
         json!({
             "quality": "high",
             "background": "transparent"
@@ -917,8 +915,8 @@ async fn should_map_provider_options_to_snake_case_for_edits() {
     opts.n = 1;
     opts.size = Some(Size::new(1024, 1024));
     opts.files = Some(vec![binary_file("image/png", &[137, 80, 78, 71])]);
-    opts.provider_options.insert(
-        "openai".to_string(),
+    opts.provider_options = provider_namespace(
+        "openai",
         json!({
             "inputFidelity": "high",
             "outputFormat": "webp",

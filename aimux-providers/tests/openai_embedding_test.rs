@@ -14,6 +14,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
+use aimux_core::shared::provider_namespace;
 use aimux_provider_utils::Resolvable;
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 
@@ -247,8 +248,7 @@ async fn should_pass_dimensions_setting() {
     let provider = provider_with("test-api-key", server.uri());
     let model = provider.embedding("text-embedding-3-large");
 
-    let mut provider_options = HashMap::new();
-    provider_options.insert("openai".to_string(), json!({"dimensions": 64}));
+    let provider_options = provider_namespace("openai", json!({"dimensions": 64}));
     let options = EmbeddingCallOptions {
         values: test_values(),
         abort_signal: None,

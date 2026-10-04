@@ -672,7 +672,7 @@ mod conformance {
     fn has_reasoning(content: &[GenerateContent]) -> bool {
         content
             .iter()
-            .any(|c| matches!(c, GenerateContent::Reasoning { .. }))
+            .any(|c| matches!(c, GenerateContent::Reasoning(_)))
     }
 
     fn has_finish(parts: &[StreamPart]) -> bool {

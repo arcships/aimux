@@ -53,6 +53,7 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult};
+use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
 
 use aimux_providers::anthropic::AnthropicMessagesModel;
@@ -159,10 +160,8 @@ async fn get_request_headers(server: &MockServer) -> Vec<(String, String)> {
 }
 
 /// Helper to build `provider_options` from a JSON value.
-fn anthropic_opts(value: Value) -> Option<HashMap<String, Value>> {
-    let mut map = HashMap::new();
-    map.insert("anthropic".to_string(), value);
-    Some(map)
+fn anthropic_opts(value: Value) -> Option<SharedProviderOptions> {
+    Some(provider_namespace("anthropic", value))
 }
 
 /// Build a provider-defined tool: `Tool::Provider(ProviderTool { id, name, args })`.
@@ -179,12 +178,7 @@ fn provider_tool(id: &str, name: &str, args: Value) -> Tool {
 /// mixes a client-side tool with a provider-defined tool).
 fn calculator_tool(description: &str, eager: bool) -> Tool {
     let provider_options = if eager {
-        let mut m = HashMap::new();
-        m.insert(
-            "anthropic".to_string(),
-            json!({ "eagerInputStreaming": true }),
-        );
-        Some(m)
+        anthropic_opts(json!({ "eagerInputStreaming": true }))
     } else {
         None
     };
@@ -928,8 +922,6 @@ mod tool_search_tool {
     /// Helper: a function tool with deferLoading provider option.
     #[allow(dead_code)]
     fn deferred_function_tool(name: &str, desc: &str) -> FunctionTool {
-        let mut po = HashMap::new();
-        po.insert("anthropic".to_string(), json!({ "deferLoading": true }));
         FunctionTool {
             name: name.to_string(),
             description: Some(desc.to_string()),
@@ -938,7 +930,7 @@ mod tool_search_tool {
                 "properties": { "location": { "type": "string" } },
             }),
             strict: None,
-            provider_options: Some(po),
+            provider_options: anthropic_opts(json!({ "deferLoading": true })),
             input_examples: None,
         }
     }

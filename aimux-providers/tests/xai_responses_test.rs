@@ -12,7 +12,6 @@
 
 use aimux_core::tool::RawToolCall;
 use aimux_core::tool::ToolResult;
-use std::collections::HashMap;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -25,7 +24,8 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelPromptMessage;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, ReasoningOutput, Source};
+use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
 use aimux_core::types::ReasoningEffort;
@@ -84,10 +84,8 @@ fn make_provider(server: &MockServer) -> XAIProvider {
     test_provider("test-api-key", server.uri())
 }
 
-fn xai_provider_options(opts: Value) -> Option<HashMap<String, Value>> {
-    let mut m = HashMap::new();
-    m.insert("xai".to_string(), opts);
-    Some(m)
+fn xai_provider_options(opts: Value) -> Option<SharedProviderOptions> {
+    Some(provider_namespace("xai", opts))
 }
 
 /// A standard Responses API JSON body returning a text message.
@@ -207,7 +205,10 @@ mod do_generate {
 
         assert_eq!(
             result.provider_metadata,
-            Some(json!({ "xai": { "costInUsdTicks": 113500 } }))
+            Some(provider_namespace(
+                "xai",
+                json!({ "costInUsdTicks": 113500 })
+            ))
         );
     }
 
@@ -365,16 +366,17 @@ mod reasoning {
 
         assert_eq!(result.content.len(), 2);
         match &result.content[0] {
-            GenerateContent::Reasoning {
+            GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata,
-            } => {
+            }) => {
                 assert_eq!(text, "First, analyze the question carefully.");
                 assert_eq!(
                     provider_metadata,
-                    &Some(
-                        json!({ "xai": { "itemId": "rs_456", "reasoningEncryptedContent": "abc123encryptedcontent" } })
-                    )
+                    &Some(provider_namespace(
+                        "xai",
+                        json!({ "itemId": "rs_456", "reasoningEncryptedContent": "abc123encryptedcontent" })
+                    ))
                 );
             }
             other => panic!("expected Reasoning, got {other:?}"),
@@ -424,14 +426,14 @@ mod reasoning {
             .unwrap();
 
         match &result.content[0] {
-            GenerateContent::Reasoning {
+            GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata,
-            } => {
+            }) => {
                 assert_eq!(text, "Thinking through the problem.");
                 assert_eq!(
                     provider_metadata,
-                    &Some(json!({ "xai": { "itemId": "rs_456" } }))
+                    &Some(provider_namespace("xai", json!({ "itemId": "rs_456" })))
                 );
             }
             other => panic!("expected Reasoning, got {other:?}"),
@@ -478,7 +480,7 @@ mod reasoning {
             .unwrap();
 
         match &result.content[0] {
-            GenerateContent::Reasoning { text, .. } => {
+            GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
                 assert_eq!(text, "Let me think step by step.");
             }
             other => panic!("expected Reasoning, got {other:?}"),
@@ -525,16 +527,17 @@ mod reasoning {
             .unwrap();
 
         match &result.content[0] {
-            GenerateContent::Reasoning {
+            GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata,
-            } => {
+            }) => {
                 assert_eq!(text, "");
                 assert_eq!(
                     provider_metadata,
-                    &Some(
-                        json!({ "xai": { "itemId": "rs_789", "reasoningEncryptedContent": "encrypted_zdr_content_xyz" } })
-                    )
+                    &Some(provider_namespace(
+                        "xai",
+                        json!({ "itemId": "rs_789", "reasoningEncryptedContent": "encrypted_zdr_content_xyz" })
+                    ))
                 );
             }
             other => panic!("expected Reasoning, got {other:?}"),
@@ -1720,7 +1723,7 @@ mod citations {
         }
         // Source 1
         match &result.content[1] {
-            GenerateContent::Source { url, title, .. } => {
+            GenerateContent::Source(Source { url, title, .. }) => {
                 assert_eq!(url.as_deref(), Some("https://example.com"));
                 assert_eq!(title.as_deref(), Some("example title"));
             }
@@ -1728,7 +1731,7 @@ mod citations {
         }
         // Source 2 (title falls back to url)
         match &result.content[2] {
-            GenerateContent::Source { url, title, .. } => {
+            GenerateContent::Source(Source { url, title, .. }) => {
                 assert_eq!(url.as_deref(), Some("https://test.com"));
                 assert_eq!(title.as_deref(), Some("https://test.com"));
             }
@@ -1975,9 +1978,10 @@ mod do_stream {
             assert_eq!(id, "reasoning-rs_456");
             assert_eq!(
                 provider_metadata,
-                &Some(
-                    json!({ "xai": { "itemId": "rs_456", "reasoningEncryptedContent": "encrypted_data_abc123" } })
-                )
+                &Some(provider_namespace(
+                    "xai",
+                    json!({ "itemId": "rs_456", "reasoningEncryptedContent": "encrypted_data_abc123" })
+                ))
             );
         }
     }
@@ -2183,7 +2187,10 @@ mod do_stream {
         {
             assert_eq!(
                 provider_metadata,
-                &Some(json!({ "xai": { "costInUsdTicks": 113500 } }))
+                &Some(provider_namespace(
+                    "xai",
+                    json!({ "costInUsdTicks": 113500 })
+                ))
             );
         } else {
             panic!("no finish part found");
@@ -2220,11 +2227,9 @@ mod do_stream {
             .unwrap();
         let parts = collect_stream(result).await;
 
-        let source = parts
-            .iter()
-            .find(|p| matches!(p, StreamPart::Source { .. }));
+        let source = parts.iter().find(|p| matches!(p, StreamPart::Source(_)));
         assert!(source.is_some());
-        if let Some(StreamPart::Source { url, title, .. }) = source {
+        if let Some(StreamPart::Source(Source { url, title, .. })) = source {
             assert_eq!(url.as_deref(), Some("https://example.com"));
             assert_eq!(title.as_deref(), Some("example"));
         }
@@ -2998,9 +3003,10 @@ mod convert_input {
                 input: json!({ "city": "Singapore" }),
                 provider_executed: Some(false),
                 thought_signature: None,
-                provider_options: Some(json!({
-                    "xai": { "providerExecuted": true }
-                })),
+                provider_options: Some(provider_namespace(
+                    "xai",
+                    json!({ "providerExecuted": true }),
+                )),
             }],
             ..Default::default()
         }];

@@ -13,7 +13,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs,
 };
-use aimux_core::shared::{AspectRatio, Size};
+use aimux_core::shared::{AspectRatio, Size, provider_namespace};
 use aimux_core::types::Warning;
 use aimux_provider_utils::Resolvable;
 use aimux_providers::{GoogleImageSettings, GoogleProvider, GoogleProviderSettings, create_google};
@@ -231,10 +231,10 @@ async fn should_combine_aspect_ratio_and_provider_options() {
     let mut opts = options("test prompt");
     opts.n = 1;
     opts.aspect_ratio = Some(AspectRatio::new(1, 1));
-    opts.provider_options.insert(
-        "google".to_string(),
+    opts.provider_options.extend(provider_namespace(
+        "google",
         json!({ "personGeneration": "dont_allow" }),
-    );
+    ));
 
     model.do_generate(&opts).await.unwrap();
 
@@ -364,15 +364,15 @@ async fn should_only_pass_valid_provider_options() {
     let mut opts = options(PROMPT);
     opts.n = 2;
     opts.aspect_ratio = Some(AspectRatio::new(16, 9));
-    opts.provider_options.insert(
-        "google".to_string(),
+    opts.provider_options.extend(provider_namespace(
+        "google",
         json!({
             "addWatermark": false,
             "personGeneration": "allow_all",
             "foo": "bar",
             "negativePrompt": "negative prompt"
         }),
-    );
+    ));
 
     model.do_generate(&opts).await.unwrap();
 
@@ -400,7 +400,7 @@ async fn should_emit_warning_for_google_search_on_imagen() {
     let mut opts = options(PROMPT);
     opts.n = 1;
     opts.provider_options
-        .insert("google".to_string(), json!({ "googleSearch": {} }));
+        .extend(provider_namespace("google", json!({ "googleSearch": {} })));
 
     let result = model.do_generate(&opts).await.unwrap();
 
@@ -684,10 +684,10 @@ async fn gemini_should_forward_google_search_as_tool() {
 
     let mut opts = options("A beautiful sunset");
     opts.n = 1;
-    opts.provider_options.insert(
-        "google".to_string(),
+    opts.provider_options.extend(provider_namespace(
+        "google",
         json!({ "googleSearch": { "searchTypes": { "imageSearch": {} } } }),
-    );
+    ));
 
     model.do_generate(&opts).await.unwrap();
 
@@ -711,7 +711,7 @@ async fn gemini_should_not_leak_google_search_into_passthrough() {
     let mut opts = options("A beautiful sunset");
     opts.n = 1;
     opts.provider_options
-        .insert("google".to_string(), json!({ "googleSearch": {} }));
+        .extend(provider_namespace("google", json!({ "googleSearch": {} })));
 
     model.do_generate(&opts).await.unwrap();
 
@@ -824,7 +824,7 @@ async fn gemini_should_forward_grounding_metadata() {
     let mut opts = options("A beautiful sunset");
     opts.n = 1;
     opts.provider_options
-        .insert("google".to_string(), json!({ "googleSearch": {} }));
+        .extend(provider_namespace("google", json!({ "googleSearch": {} })));
 
     let result = model.do_generate(&opts).await.unwrap();
 

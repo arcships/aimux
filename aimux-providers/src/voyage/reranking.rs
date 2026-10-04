@@ -3,8 +3,6 @@
 //! Aligned with Vercel AI SDK `VoyageRerankingModel`
 //! (`reference/ai/packages/voyage/src/reranking/voyage-reranking-model.ts`).
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -14,6 +12,7 @@ use aimux_core::reranking_model::{
     RerankingCallOptions, RerankingDocuments, RerankingModel, RerankingRank, RerankingResponse,
     RerankingResult,
 };
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
 
 use crate::shared::EndpointConfig;
@@ -28,7 +27,7 @@ struct VoyageRerankingOptions {
 }
 
 fn parse_voyage_reranking_options(
-    provider_options: Option<&HashMap<String, Value>>,
+    provider_options: Option<&SharedProviderOptions>,
 ) -> VoyageRerankingOptions {
     let mut opts = VoyageRerankingOptions::default();
     if let Some(voyage) = super::options::voyage_options(provider_options) {

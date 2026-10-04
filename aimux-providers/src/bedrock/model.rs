@@ -15,9 +15,11 @@ use futures::{StreamExt, stream::BoxStream};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use aimux_core::types::{
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
+};
 
 use serde_json::json;
 
@@ -221,11 +223,11 @@ impl LanguageModel for BedrockModel {
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: vec![] });
 
-            yield Ok(StreamPart::ResponseMetadata {
+            yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                 id: request_id,
                 timestamp: response_timestamp,
                 model_id: Some(model_id.clone()),
-            });
+            }));
 
             let messages = super::event_stream::decode_messages(&response_bytes);
 
@@ -528,7 +530,7 @@ impl LanguageModel for BedrockModel {
 
 /// Wrap the accumulated reasoning signature as provider_metadata in the same
 /// shape the non-streaming path emits (under `amazonBedrock`).
-fn reasoning_signature_meta(sig: Option<String>) -> Option<serde_json::Value> {
+fn reasoning_signature_meta(sig: Option<String>) -> Option<ProviderMetadata> {
     sig.map(|s| options::metadata(json!({ "signature": s })))
 }
 
@@ -571,10 +573,10 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
                 .get("signature")
                 .and_then(|v| v.as_str())
                 .map(|sig| options::metadata(json!({ "signature": sig })));
-            content.push(GenerateContent::Reasoning {
+            content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata,
-            });
+            }));
         } else if let Some(rr) = rc.get("redactedReasoning") {
             let data = rr
                 .get("data")
@@ -582,10 +584,10 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
                 .unwrap_or("")
                 .to_string();
             let provider_metadata = Some(options::metadata(json!({ "redactedData": data })));
-            content.push(GenerateContent::Reasoning {
+            content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text: String::new(),
                 provider_metadata,
-            });
+            }));
         }
     }
 }

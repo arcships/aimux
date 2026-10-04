@@ -16,10 +16,10 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, Tool, ToolChoice};
-use aimux_core::result::{GenerateContent, StreamResult};
+use aimux_core::result::{GenerateContent, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
-use aimux_core::types::FinishReasonUnified;
+use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_providers::{MistralProvider, MistralProviderSettings, create_mistral};
 
@@ -1032,7 +1032,7 @@ async fn should_extract_text_from_mixed_thinking_and_text() {
     // Reasoning first, then the joined text.
     assert_eq!(result.content.len(), 2);
     match &result.content[0] {
-        GenerateContent::Reasoning { text, .. } => {
+        GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
             assert_eq!(
                 text, "First thought.Second thought.",
                 "both thinking parts must survive, in order"
@@ -1502,7 +1502,9 @@ async fn should_stream_response_metadata() {
 
     let parts = collect_stream(result).await;
     let meta = parts.iter().find_map(|p| match p {
-        StreamPart::ResponseMetadata { id, model_id, .. } => Some((id.clone(), model_id.clone())),
+        StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. }) => {
+            Some((id.clone(), model_id.clone()))
+        }
         _ => None,
     });
     let (id, model_id) = meta.expect("should have ResponseMetadata");

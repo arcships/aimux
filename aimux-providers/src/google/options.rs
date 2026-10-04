@@ -7,7 +7,9 @@
 //! historical `vertex` alias is not read and not written. This module is the
 //! one place that knows the keys, so the models never spell them.
 
-use serde_json::{Map, Value};
+use aimux_core::shared::{JsonObject, SharedProviderOptions, provider_namespace};
+use aimux_core::types::ProviderMetadata;
+use serde_json::Value;
 
 /// The Gemini API namespace.
 pub(crate) const GOOGLE: &str = "google";
@@ -42,63 +44,53 @@ impl Namespace {
     }
 
     /// The first present options object among the read keys.
-    pub(crate) fn read(self, provider_options: Option<&Value>) -> Option<&Value> {
+    pub(crate) fn read(
+        self,
+        provider_options: Option<&SharedProviderOptions>,
+    ) -> Option<&JsonObject> {
         let provider_options = provider_options?;
         self.read_keys()
             .iter()
             .find_map(|key| provider_options.get(*key))
     }
 
-    /// [`read`](Self::read) for the map form (`CallOptions::provider_options`).
-    pub(crate) fn read_in<M>(self, provider_options: Option<&M>) -> Option<&Value>
-    where
-        M: ProviderOptionsMap,
-    {
-        let provider_options = provider_options?;
-        self.read_keys()
-            .iter()
-            .find_map(|key| provider_options.lookup(key))
+    /// [`read`](Self::read) for `CallOptions::provider_options`.
+    pub(crate) fn read_in(
+        self,
+        provider_options: Option<&SharedProviderOptions>,
+    ) -> Option<&JsonObject> {
+        self.read(provider_options)
     }
 
     /// Wrap `payload` as response metadata under every write key.
-    pub(crate) fn metadata(self, payload: Value) -> Value {
-        let mut map = Map::new();
-        for key in self.write_keys() {
-            map.insert((*key).to_string(), payload.clone());
-        }
-        Value::Object(map)
+    pub(crate) fn metadata(self, payload: Value) -> ProviderMetadata {
+        provider_namespace(self.write_keys()[0], payload)
     }
 }
-
-pub(crate) use crate::shared::ProviderOptionsMap;
 
 /// The options under the public Gemini key only (`providerOptions.google`),
 /// for the surfaces the AI SDK keys by `google` alone (embeddings, images,
 /// files).
-pub(crate) fn google_options<M: ProviderOptionsMap>(
-    provider_options: Option<&M>,
-) -> Option<&Value> {
-    provider_options?.lookup(GOOGLE)
+pub(crate) fn google_options(
+    provider_options: Option<&SharedProviderOptions>,
+) -> Option<&JsonObject> {
+    provider_options?.get(GOOGLE)
 }
 
 /// `{ "google": payload }`.
-pub(crate) fn google_metadata(payload: Value) -> Value {
+pub(crate) fn google_metadata(payload: Value) -> ProviderMetadata {
     Namespace::Google.metadata(payload)
 }
 
 /// The options under the Vertex key only (`googleVertex`), for the Vertex
 /// surfaces that never fall back to `google`.
-pub(crate) fn vertex_options<M: ProviderOptionsMap>(
-    provider_options: Option<&M>,
-) -> Option<&Value> {
-    provider_options?.lookup(GOOGLE_VERTEX)
+pub(crate) fn vertex_options(
+    provider_options: Option<&SharedProviderOptions>,
+) -> Option<&JsonObject> {
+    provider_options?.get(GOOGLE_VERTEX)
 }
 
 /// Response metadata under the Vertex key, as a metadata map.
-pub(crate) fn vertex_metadata_map(payload: &Value) -> std::collections::HashMap<String, Value> {
-    Namespace::Vertex
-        .write_keys()
-        .iter()
-        .map(|key| ((*key).to_string(), payload.clone()))
-        .collect()
+pub(crate) fn vertex_metadata_map(payload: &Value) -> ProviderMetadata {
+    Namespace::Vertex.metadata(payload.clone())
 }

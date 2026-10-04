@@ -20,10 +20,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use futures::StreamExt;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::Warning;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage};
+use aimux_core::types::{ProviderMetadata, Warning};
 use aimux_provider_utils::HttpRequest;
 use serde_json::{Value, json};
 
@@ -295,7 +296,7 @@ pub(crate) fn initial_tool_input(input: &Value) -> String {
 pub(crate) fn tool_call_caller_metadata(
     caller: Option<&ToolCallCaller>,
     options_name: &str,
-) -> Option<Value> {
+) -> Option<ProviderMetadata> {
     let caller = match caller? {
         ToolCallCaller::CodeExecution20250825 { tool_id } => json!({
             "type": "code_execution_20250825",
@@ -307,7 +308,10 @@ pub(crate) fn tool_call_caller_metadata(
         }),
         ToolCallCaller::Direct => json!({ "type": "direct" }),
     };
-    Some(json!({ options_name: { "caller": caller } }))
+    Some(provider_namespace(
+        options_name,
+        json!({ "caller": caller }),
+    ))
 }
 
 fn is_tool_search_provider_name(name: &str) -> bool {
@@ -391,16 +395,19 @@ pub(crate) fn stream_parts_for_result_block(
                 ),
                 tool_use_id,
             )];
-            parts.extend(results.iter().map(|result| StreamPart::Source {
-                id: generate_source_id(),
-                source_type: "url".to_string(),
-                url: str_field(result, "url"),
-                title: str_field(result, "title"),
-                provider_metadata: Some(json!({
-                    options_name: {
-                        "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
-                    }
-                })),
+            parts.extend(results.iter().map(|result| {
+                StreamPart::Source(Source {
+                    id: generate_source_id(),
+                    source_type: "url".to_string(),
+                    url: str_field(result, "url"),
+                    title: str_field(result, "title"),
+                    provider_metadata: Some(provider_namespace(
+                        options_name,
+                        json!({
+                            "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
+                        }),
+                    )),
+                })
             }));
             parts
         }
@@ -467,9 +474,10 @@ pub(crate) fn stream_parts_for_result_block(
                 preliminary: None,
                 dynamic: Some(true),
                 provider_metadata: call.map(|(_, server)| {
-                    json!({
-                        options_name: { "type": "mcp-tool-use", "serverName": server }
-                    })
+                    provider_namespace(
+                        options_name,
+                        json!({ "type": "mcp-tool-use", "serverName": server }),
+                    )
                 }),
             })]
         }
@@ -541,12 +549,13 @@ pub(crate) fn parse_anthropic_content(
                 thinking,
                 signature,
             } => {
-                content.push(GenerateContent::Reasoning {
+                content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: thinking.clone(),
-                    provider_metadata: Some(json!({
-                        options_name: { "signature": signature }
-                    })),
-                });
+                    provider_metadata: Some(provider_namespace(
+                        options_name,
+                        json!({ "signature": signature }),
+                    )),
+                }));
             }
             // Provider-executed (server-side) tool calls are surfaced as tool
             // calls so they round-trip on follow-up turns.
@@ -578,19 +587,21 @@ pub(crate) fn parse_anthropic_content(
                     provider_executed: Some(true),
                     dynamic: Some(true),
                     thought_signature: None,
-                    provider_metadata: Some(json!({
-                        options_name: { "type": "mcp-tool-use", "serverName": server_name }
-                    })),
+                    provider_metadata: Some(provider_namespace(
+                        options_name,
+                        json!({ "type": "mcp-tool-use", "serverName": server_name }),
+                    )),
                 }));
             }
             // Redacted thinking — upstream emits as reasoning with redactedData
             ContentBlock::RedactedThinking { data } => {
-                content.push(GenerateContent::Reasoning {
+                content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: String::new(),
-                    provider_metadata: Some(json!({
-                        options_name: { "redactedData": data }
-                    })),
-                });
+                    provider_metadata: Some(provider_namespace(
+                        options_name,
+                        json!({ "redactedData": data }),
+                    )),
+                }));
             }
             // ── Server-tool result blocks → GenerateContent::ToolResult ──
             // Payload shapes mirror the TS `doGenerate` switch one-for-one
@@ -619,18 +630,19 @@ pub(crate) fn parse_anthropic_content(
                         // Each result also becomes a `Source` — that is how the
                         // URLs and titles reach `result.sources`.
                         for result in results {
-                            content.push(GenerateContent::Source {
+                            content.push(GenerateContent::Source(Source {
                                 id: generate_source_id(),
                                 source_type: "url".to_string(),
                                 url: str_field(result, "url"),
                                 title: str_field(result, "title"),
-                                provider_metadata: Some(json!({
-                                    options_name: {
+                                provider_metadata: Some(provider_namespace(
+                                    options_name,
+                                    json!({
                                         "pageAge": result.get("page_age").cloned()
                                             .unwrap_or(Value::Null),
-                                    }
-                                })),
-                            });
+                                    }),
+                                )),
+                            }));
                         }
                     }
                     None => content.push(GenerateContent::ToolResult(ToolResult {
@@ -750,9 +762,10 @@ pub(crate) fn parse_anthropic_content(
                     preliminary: None,
                     dynamic: Some(true),
                     provider_metadata: call.map(|(_, server)| {
-                        json!({
-                            options_name: { "type": "mcp-tool-use", "serverName": server }
-                        })
+                        provider_namespace(
+                            options_name,
+                            json!({ "type": "mcp-tool-use", "serverName": server }),
+                        )
                     }),
                 }));
             }
@@ -845,7 +858,7 @@ enum BlockState {
         dynamic: Option<bool>,
         provider_tool_name: Option<String>,
         provider_tool_input_type: Option<String>,
-        provider_metadata: Option<Value>,
+        provider_metadata: Option<ProviderMetadata>,
         first_delta: bool,
     },
     Thinking {
@@ -933,11 +946,11 @@ pub(crate) async fn anthropic_stream_core(
                                 raw_usage = serde_json::to_value(usage).unwrap_or(raw_usage);
                             }
                             if !response_meta_emitted {
-                                yield Ok(StreamPart::ResponseMetadata {
+                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                     id: Some(message.id.clone()),
                                     timestamp: None,
                                     model_id: Some(message.model.clone()),
-                                });
+                                }));
                                 response_meta_emitted = true;
                             }
                         }
@@ -1039,12 +1052,10 @@ pub(crate) async fn anthropic_stream_core(
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
                                         thought_signature: None,
-                                        provider_metadata: Some(json!({
-                                            options_name.as_str(): {
+                                        provider_metadata: Some(provider_namespace(options_name.as_str(), json!({
                                                 "type": "mcp-tool-use",
                                                 "serverName": server_name,
-                                            }
-                                        })),
+                                            }))),
                                     }));
                                 }
                                 // Redacted thinking — emit as ReasoningStart.
@@ -1052,9 +1063,7 @@ pub(crate) async fn anthropic_stream_core(
                                     let id = index.to_string();
                                     yield Ok(StreamPart::ReasoningStart {
                                         id: id.clone(),
-                                        provider_metadata: Some(json!({
-                                            options_name.as_str(): { "redactedData": data }
-                                        })),
+                                        provider_metadata: Some(provider_namespace(options_name.as_str(), json!({ "redactedData": data }))),
                                     });
                                     blocks.insert(
                                         index,
@@ -1220,7 +1229,7 @@ pub(crate) async fn anthropic_stream_core(
                                         yield Ok(StreamPart::ReasoningEnd {
                                             id: index.to_string(),
                                             provider_metadata: signature.map(|s| {
-                                                json!({ options_name.as_str(): { "signature": s } })
+                                                provider_namespace(options_name.as_str(), json!({ "signature": s }))
                                             }),
                                         });
                                     }

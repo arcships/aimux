@@ -23,7 +23,7 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, Source};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
 use base64::Engine;
@@ -1201,7 +1201,7 @@ pub fn extract_sources(
 
     for chunk in chunks {
         if let Some(web) = chunk.get("web") {
-            sources.push(GenerateContent::Source {
+            sources.push(GenerateContent::Source(Source {
                 id: next_id(id_counter),
                 source_type: "url".to_string(),
                 url: web
@@ -1213,9 +1213,9 @@ pub fn extract_sources(
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string),
                 provider_metadata: None,
-            });
+            }));
         } else if let Some(image) = chunk.get("image") {
-            sources.push(GenerateContent::Source {
+            sources.push(GenerateContent::Source(Source {
                 id: next_id(id_counter),
                 source_type: "url".to_string(),
                 url: image
@@ -1227,45 +1227,45 @@ pub fn extract_sources(
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string),
                 provider_metadata: None,
-            });
+            }));
         } else if let Some(rc) = chunk.get("retrievedContext") {
             let uri = rc.get("uri").and_then(|v| v.as_str());
             let file_search_store = rc.get("fileSearchStore").and_then(|v| v.as_str());
             let title = rc.get("title").and_then(|v| v.as_str());
             if let Some(uri) = uri {
                 if uri.starts_with("http://") || uri.starts_with("https://") {
-                    sources.push(GenerateContent::Source {
+                    sources.push(GenerateContent::Source(Source {
                         id: next_id(id_counter),
                         source_type: "url".to_string(),
                         url: Some(uri.to_string()),
                         title: title.map(std::string::ToString::to_string),
                         provider_metadata: None,
-                    });
+                    }));
                 } else {
                     // Document with a file path (gs://, etc.).
-                    sources.push(GenerateContent::Source {
+                    sources.push(GenerateContent::Source(Source {
                         id: next_id(id_counter),
                         source_type: "document".to_string(),
                         url: None,
                         title: Some(title.unwrap_or("Unknown Document").to_string()),
                         provider_metadata: None,
-                    });
+                    }));
                 }
             } else if file_search_store.is_some() {
                 // New File Search format (no uri, has fileSearchStore).
-                sources.push(GenerateContent::Source {
+                sources.push(GenerateContent::Source(Source {
                     id: next_id(id_counter),
                     source_type: "document".to_string(),
                     url: None,
                     title: Some(title.unwrap_or("Unknown Document").to_string()),
                     provider_metadata: None,
-                });
+                }));
             }
             // else: no uri and no fileSearchStore → no source.
         } else if let Some(maps) = chunk.get("maps")
             && let Some(uri) = maps.get("uri").and_then(|v| v.as_str())
         {
-            sources.push(GenerateContent::Source {
+            sources.push(GenerateContent::Source(Source {
                 id: next_id(id_counter),
                 source_type: "url".to_string(),
                 url: Some(uri.to_string()),
@@ -1274,7 +1274,7 @@ pub fn extract_sources(
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string),
                 provider_metadata: None,
-            });
+            }));
         }
     }
 
@@ -1285,6 +1285,7 @@ pub fn extract_sources(
 mod tests {
     use super::*;
     use aimux_core::language_model_message::LanguageModelPromptMessage;
+    use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 
     fn assistant_prompt(content: Vec<ContentPart>) -> LanguageModelPrompt {
         vec![LanguageModelPromptMessage {
@@ -1294,13 +1295,14 @@ mod tests {
         }]
     }
 
-    fn code_metadata(namespace: &str, id: &str) -> Value {
-        json!({
-            (namespace): {
+    fn code_metadata(namespace: &str, id: &str) -> SharedProviderOptions {
+        provider_namespace(
+            namespace,
+            json!({
                 "serverToolCallId": id,
                 "serverToolType": "code_execution",
-            }
-        })
+            }),
+        )
     }
 
     #[test]
@@ -1354,10 +1356,13 @@ mod tests {
             input: json!({}),
             provider_executed: None,
             thought_signature: None,
-            provider_options: Some(json!({
-                "googleVertex": { "thoughtSignature": "google-vertex" },
-                "google": { "thoughtSignature": "google" },
-            })),
+            provider_options: Some(
+                serde_json::from_value(json!({
+                    "googleVertex": { "thoughtSignature": "google-vertex" },
+                    "google": { "thoughtSignature": "google" },
+                }))
+                .unwrap(),
+            ),
         };
         let prompt = assistant_prompt(vec![content]);
 
@@ -1373,7 +1378,7 @@ mod tests {
 
     #[test]
     fn legacy_and_foreign_keys_are_not_read() {
-        let content = |options: Value| ContentPart::ToolCall {
+        let content = |options: SharedProviderOptions| ContentPart::ToolCall {
             tool_call_id: "call-1".to_string(),
             tool_name: "weather".to_string(),
             input: json!({}),
@@ -1382,9 +1387,12 @@ mod tests {
             provider_options: Some(options),
         };
         // The historical `vertex` alias is read by neither namespace.
-        let legacy = assistant_prompt(vec![content(json!({
-            "vertex": { "thoughtSignature": "legacy" },
-        }))]);
+        let legacy = assistant_prompt(vec![content(provider_namespace(
+            "vertex",
+            json!({
+                "thoughtSignature": "legacy",
+            }),
+        ))]);
         for namespace in [Namespace::Vertex, Namespace::Google] {
             let converted = convert_to_google_messages_for_namespace(&legacy, namespace);
             assert!(
@@ -1395,9 +1403,12 @@ mod tests {
             );
         }
         // The Google package does not read the Vertex key.
-        let vertex_only = assistant_prompt(vec![content(json!({
-            "googleVertex": { "thoughtSignature": "vertex-only" },
-        }))]);
+        let vertex_only = assistant_prompt(vec![content(provider_namespace(
+            "googleVertex",
+            json!({
+                "thoughtSignature": "vertex-only",
+            }),
+        ))]);
         let converted = convert_to_google_messages_for_namespace(&vertex_only, Namespace::Google);
         assert!(
             converted.contents[0]["parts"][0]
@@ -1414,9 +1425,12 @@ mod tests {
             input: json!({}),
             provider_executed: None,
             thought_signature: None,
-            provider_options: Some(json!({
-                "google": { "thoughtSignature": "gateway-signature" },
-            })),
+            provider_options: Some(provider_namespace(
+                "google",
+                json!({
+                    "thoughtSignature": "gateway-signature",
+                }),
+            )),
         }]);
 
         let converted = convert_to_google_messages_for_namespace(&prompt, Namespace::Vertex);

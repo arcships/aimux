@@ -293,7 +293,7 @@ mod tests {
     use crate::content::ContentPart;
     use crate::language_model_message::LanguageModelPromptMessage;
     use crate::message::Role;
-    use crate::result::GenerateContent;
+    use crate::result::{GenerateContent, Source};
     use crate::stream_part::StreamPart;
     use crate::tool::RawToolCall;
     use crate::types::{FinishReason, FinishReasonUnified, TokenUsage};
@@ -901,13 +901,13 @@ mod tests {
                     thought_signature: None,
                     provider_metadata: None,
                 })),
-                Ok(StreamPart::Source {
+                Ok(StreamPart::Source(Source {
                     id: "s1".into(),
                     source_type: "url".into(),
                     url: Some("https://example.com".into()),
                     title: Some("Ex".into()),
                     provider_metadata: None,
-                }),
+                })),
                 Ok(StreamPart::Finish {
                     finish_reason: FinishReason {
                         unified: FinishReasonUnified::Stop,
@@ -942,7 +942,7 @@ mod tests {
                     saw_tool_call = true;
                     assert_eq!(tool_name, "search");
                 }
-                StreamPart::Source { id, .. } => {
+                StreamPart::Source(Source { id, .. }) => {
                     saw_source = true;
                     assert_eq!(id, "s1");
                 }

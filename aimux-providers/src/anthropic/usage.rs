@@ -7,7 +7,8 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use aimux_core::types::{TokenUsage, Usage};
+use aimux_core::shared::provider_namespace;
+use aimux_core::types::{ProviderMetadata, TokenUsage, Usage};
 
 use crate::anthropic::options::CANONICAL as CANONICAL_KEY;
 use crate::anthropic::types::AnthropicUsage;
@@ -150,7 +151,7 @@ pub(crate) fn result_provider_metadata(
     stop_sequence: Option<&str>,
     container: Option<&Value>,
     context_management: Option<&Value>,
-) -> Value {
+) -> ProviderMetadata {
     let field = |value: &Value, key: &str| value.get(key).cloned().unwrap_or(Value::Null);
     let iterations =
         usage
@@ -217,15 +218,11 @@ pub(crate) fn result_provider_metadata(
         "container": container,
         "contextManagement": context_management,
     });
-    let mut keys = vec![CANONICAL_KEY];
+    let mut result = provider_namespace(CANONICAL_KEY, metadata);
     if options_name != CANONICAL_KEY {
-        keys.push(options_name);
+        result.insert(options_name.to_string(), result[CANONICAL_KEY].clone());
     }
-    Value::Object(
-        keys.into_iter()
-            .map(|key| (key.to_string(), metadata.clone()))
-            .collect(),
-    )
+    result
 }
 
 /// `cleared_input_tokens` -> `clearedInputTokens`.
@@ -317,7 +314,7 @@ mod tests {
         });
         // The same object under the canonical key and the custom name.
         assert_eq!(
-            metadata,
+            serde_json::to_value(&metadata).unwrap(),
             json!({ CANONICAL_KEY: expected, "proxy": expected })
         );
     }
@@ -357,7 +354,7 @@ mod tests {
         let usage = json!({ "input_tokens": 1, "output_tokens": 2 });
         let metadata = result_provider_metadata(CANONICAL_KEY, &usage, None, None, None);
         assert_eq!(
-            metadata,
+            serde_json::to_value(&metadata).unwrap(),
             json!({ CANONICAL_KEY: {
                 "usage": usage,
                 "stopSequence": null,

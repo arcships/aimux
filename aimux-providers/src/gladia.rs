@@ -13,7 +13,6 @@
 //! there: it is loaded for every request, from the setting or from `GLADIA_API_KEY`.
 //! [`gladia()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -22,7 +21,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::{AiMuxError, ApiCallError};
-use aimux_core::shared::{SharedProviderMetadata, Warning};
+use aimux_core::shared::{SharedProviderMetadata, Warning, provider_namespace};
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
@@ -294,7 +293,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
 
         // Forward all provider options as-is (the API uses snake_case), except
         // the poll interval, which is read here.
-        if let Some(obj) = gladia_options.and_then(Value::as_object) {
+        if let Some(obj) = gladia_options {
             for (k, v) in obj {
                 if !is_poll_control_key(k) {
                     body.insert(k.clone(), v.clone());
@@ -382,11 +381,8 @@ impl TranscriptionModel for GladiaTranscriptionModel {
 
         let timestamp = chrono::Utc::now().to_rfc3339();
 
-        let provider_metadata: Option<SharedProviderMetadata> = {
-            let mut md = HashMap::new();
-            md.insert(options::NAMESPACE.to_string(), raw_body.clone());
-            Some(md)
-        };
+        let provider_metadata: Option<SharedProviderMetadata> =
+            Some(provider_namespace(options::NAMESPACE, raw_body.clone()));
         Ok(TranscriptionResult {
             text: result.transcription.full_transcript,
             segments,

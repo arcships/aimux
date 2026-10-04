@@ -27,6 +27,7 @@
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPromptMessage;
 use aimux_core::message::Role;
+use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::types::Warning;
 use aimux_providers::anthropic::convert::convert_prompt_to_anthropic_full;
 use serde_json::{Value, json};
@@ -45,7 +46,11 @@ fn msg(role: Role, parts: Vec<ContentPart>) -> LanguageModelPromptMessage {
 
 /// Build a message with message-level `provider_options` (for message-level
 /// cache_control).
-fn msg_with_opts(role: Role, parts: Vec<ContentPart>, opts: Value) -> LanguageModelPromptMessage {
+fn msg_with_opts(
+    role: Role,
+    parts: Vec<ContentPart>,
+    opts: SharedProviderOptions,
+) -> LanguageModelPromptMessage {
     LanguageModelPromptMessage {
         role,
         content: parts,
@@ -66,8 +71,8 @@ fn convert_full(
 
 /// The message-level / part-level `providerOptions` shape carrying
 /// `anthropic.cacheControl`.
-fn cache_control_opts(cache_control: Value) -> Value {
-    json!({ "anthropic": { "cacheControl": cache_control } })
+fn cache_control_opts(cache_control: Value) -> SharedProviderOptions {
+    provider_namespace("anthropic", json!({ "cacheControl": cache_control }))
 }
 
 /// Create a text part with `provider_options` set (for part-level cache_control).
@@ -504,12 +509,15 @@ mod cache_control_validation {
             vec![ContentPart::Reasoning {
                 text: "redacted".to_string(),
                 signature: None,
-                provider_options: Some(json!({
-                    "anthropic": {
-                        "redactedData": "abc123",
-                        "cacheControl": { "type": "ephemeral" },
-                    }
-                })),
+                provider_options: Some(
+                    serde_json::from_value(json!({
+                        "anthropic": {
+                            "redactedData": "abc123",
+                            "cacheControl": { "type": "ephemeral" },
+                        }
+                    }))
+                    .unwrap(),
+                ),
             }],
         )]);
         let result = convert_full(p, true);

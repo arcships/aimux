@@ -14,7 +14,8 @@ use serde_json::{Map, Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage};
 use aimux_provider_utils::{
@@ -242,10 +243,10 @@ impl LanguageModel for OpenAICompatibleChatModel {
             .or(choice.message.reasoning)
             .filter(|text| !text.is_empty());
         if let Some(text) = reasoning {
-            content.push(GenerateContent::Reasoning {
+            content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata: None,
-            });
+            }));
         }
         for call in choice.message.tool_calls.into_iter().flatten() {
             let signature = thought_signature(call.extra_content.as_ref());
@@ -258,9 +259,9 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 input: call.function.arguments.unwrap_or_default(),
                 provider_executed: None,
                 dynamic: None,
-                provider_metadata: signature.as_ref().map(
-                    |signature| json!({ metadata_key.as_str(): { "thoughtSignature": signature } }),
-                ),
+                provider_metadata: signature.as_ref().map(|signature| {
+                    provider_namespace(&metadata_key, json!({ "thoughtSignature": signature }))
+                }),
                 thought_signature: signature,
             }));
         }
@@ -268,7 +269,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
             if annotation.get("type").and_then(Value::as_str) == Some("url_citation")
                 && let Some(citation) = annotation.get("url_citation")
             {
-                content.push(GenerateContent::Source {
+                content.push(GenerateContent::Source(Source {
                     id: format!("annotation-{i}"),
                     source_type: "url".to_string(),
                     url: citation
@@ -280,7 +281,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                         .and_then(Value::as_str)
                         .map(str::to_string),
                     provider_metadata: None,
-                });
+                }));
             }
         }
 
@@ -298,8 +299,8 @@ impl LanguageModel for OpenAICompatibleChatModel {
 
         let mut namespace = Map::new();
         prediction_tokens(data.usage.as_ref(), &mut namespace);
-        let mut metadata = Map::new();
-        metadata.insert(metadata_key, Value::Object(namespace));
+        let mut metadata = HashMap::new();
+        metadata.insert(metadata_key, namespace);
         if let Some(extractor) = &dialect.metadata_extractor
             && let Some(extra) = extractor.extract_metadata(&raw)
         {
@@ -313,7 +314,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
             finish_reason,
             usage,
             warnings: built.warnings,
-            provider_metadata: Some(Value::Object(metadata)),
+            provider_metadata: Some(metadata),
             response: ResponseMetadata {
                 id: data.id,
                 timestamp: data
@@ -401,7 +402,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 .with_build_provider_metadata(move |signature| {
                     signature
                         .and_then(Value::as_str)
-                        .map(|signature| json!({ signature_key.as_str(): { "thoughtSignature": signature } }))
+                        .map(|signature| provider_namespace(&signature_key, json!({ "thoughtSignature": signature })))
                 });
 
             // Some compatible servers send the first delta of a call without
@@ -457,14 +458,14 @@ impl LanguageModel for OpenAICompatibleChatModel {
                             && (chunk.id.is_some() || chunk.model.is_some())
                         {
                             response_metadata_emitted = true;
-                            yield Ok(StreamPart::ResponseMetadata {
+                            yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                 id: chunk.id.clone(),
                                 timestamp: chunk
                                     .created
                                     .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
                                     .map(|dt| dt.to_rfc3339()),
                                 model_id: chunk.model.clone(),
-                            });
+                            }));
                         }
 
                         if let Some(raw_usage) = &chunk_usage_raw {
@@ -593,7 +594,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                                         == Some("url_citation")
                                         && let Some(citation) = annotation.get("url_citation")
                                     {
-                                        yield Ok(StreamPart::Source {
+                                        yield Ok(StreamPart::Source(Source {
                                             id: format!("annotation-{i}"),
                                             source_type: "url".to_string(),
                                             url: citation
@@ -605,7 +606,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                                                 .and_then(Value::as_str)
                                                 .map(str::to_string),
                                             provider_metadata: None,
-                                        });
+                                        }));
                                     }
                                 }
                             }
@@ -659,8 +660,8 @@ impl LanguageModel for OpenAICompatibleChatModel {
 
             let mut namespace = Map::new();
             prediction_tokens(final_usage_parsed.as_ref(), &mut namespace);
-            let mut metadata = Map::new();
-            metadata.insert(metadata_key.clone(), Value::Object(namespace));
+            let mut metadata = HashMap::new();
+            metadata.insert(metadata_key.clone(), namespace);
             if let Some(extractor) = &metadata_extractor
                 && let Some(extra) = extractor.build_metadata()
             {
@@ -679,7 +680,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                     })
                 },
                 usage: if stream_errored { Usage::default() } else { final_usage },
-                provider_metadata: Some(Value::Object(metadata)),
+                provider_metadata: Some(metadata),
             });
         };
 
@@ -762,10 +763,11 @@ pub(crate) async fn list_models_once(
 
 #[cfg(test)]
 mod tests {
+    use aimux_core::types::ProviderMetadata;
     use std::sync::Arc;
 
     use futures::StreamExt;
-    use serde_json::{Map, Value, json};
+    use serde_json::{Value, json};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -775,6 +777,7 @@ mod tests {
     use aimux_core::language_model_message::LanguageModelPromptMessage;
     use aimux_core::message::Role;
     use aimux_core::options::CallOptions;
+    use aimux_core::shared::provider_namespace;
     use aimux_core::stream_part::StreamPart;
     use aimux_provider_utils::ProviderErrorParts;
 
@@ -816,13 +819,11 @@ mod tests {
     struct Extractor;
 
     impl MetadataExtractor for Extractor {
-        fn extract_metadata(&self, parsed_body: &Value) -> Option<Map<String, Value>> {
-            let mut out = Map::new();
-            out.insert(
-                "extra".into(),
+        fn extract_metadata(&self, parsed_body: &Value) -> Option<ProviderMetadata> {
+            Some(provider_namespace(
+                "extra",
                 json!({"x_extra": parsed_body.get("x_extra").cloned()}),
-            );
-            Some(out)
+            ))
         }
 
         fn create_stream_extractor(&self) -> Box<dyn StreamMetadataExtractor> {
@@ -839,10 +840,8 @@ mod tests {
             self.chunks += 1;
         }
 
-        fn build_metadata(&self) -> Option<Map<String, Value>> {
-            let mut out = Map::new();
-            out.insert("extra".into(), json!({"chunks": self.chunks}));
-            Some(out)
+        fn build_metadata(&self) -> Option<ProviderMetadata> {
+            Some(provider_namespace("extra", json!({"chunks": self.chunks})))
         }
     }
 
@@ -871,7 +870,7 @@ mod tests {
 
         let result = model.do_generate(&hello()).await.unwrap();
         assert_eq!(
-            result.provider_metadata.unwrap(),
+            serde_json::to_value(result.provider_metadata.unwrap()).unwrap(),
             json!({"acme": {}, "extra": {"x_extra": 7}})
         );
 
@@ -897,7 +896,10 @@ mod tests {
                 _ => None,
             })
             .unwrap();
-        assert_eq!(metadata, json!({"acme": {}, "extra": {"chunks": 2}}));
+        assert_eq!(
+            serde_json::to_value(metadata).unwrap(),
+            json!({"acme": {}, "extra": {"chunks": 2}})
+        );
     }
 
     #[tokio::test]

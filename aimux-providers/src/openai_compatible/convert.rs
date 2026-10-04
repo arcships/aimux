@@ -7,6 +7,7 @@
 //! `reasoning_effort`, `verbosity`, `messages`, `tools`, `tool_choice`).
 //! Compatible endpoint capabilities arrive as [`ChatDialect`] data.
 
+use aimux_core::shared::SharedProviderOptions;
 use base64::Engine;
 use serde_json::{Map, Value, json};
 
@@ -134,7 +135,6 @@ fn namespace<'a>(options: &'a CallOptions, key: &str) -> Option<&'a Map<String, 
         .provider_options
         .as_ref()
         .and_then(|all| all.get(key))
-        .and_then(Value::as_object)
 }
 
 /// The key provider metadata is reported under (`resolveProviderOptionsKey`):
@@ -369,13 +369,13 @@ pub(crate) struct MessageSpec<'a> {
 
 /// The provider options of a message or part that belong on the wire object
 /// (`getOpenAIMetadata`): the generic namespace, then the provider's own.
-fn wire_metadata(provider_options: Option<&Value>, key: &str) -> Map<String, Value> {
+fn wire_metadata(
+    provider_options: Option<&SharedProviderOptions>,
+    key: &str,
+) -> Map<String, Value> {
     let mut out = Map::new();
     for ns in ["openaiCompatible", key] {
-        if let Some(object) = provider_options
-            .and_then(|options| options.get(ns))
-            .and_then(Value::as_object)
-        {
+        if let Some(object) = provider_options.and_then(|options| options.get(ns)) {
             out.extend(object.iter().map(|(k, v)| (k.clone(), v.clone())));
         }
     }
@@ -389,7 +389,7 @@ fn with_metadata(mut object: Value, metadata: Map<String, Value>) -> Value {
     object
 }
 
-fn part_options(part: &ContentPart) -> Option<&Value> {
+fn part_options(part: &ContentPart) -> Option<&SharedProviderOptions> {
     match part {
         ContentPart::Text {
             provider_options, ..

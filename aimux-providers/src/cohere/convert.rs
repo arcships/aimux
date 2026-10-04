@@ -7,6 +7,7 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
 use serde_json::{Value, json};
@@ -416,7 +417,7 @@ fn reasoning_budget_percentage(reasoning: ReasoningEffort) -> Option<f64> {
 #[must_use]
 pub fn resolve_cohere_thinking(
     reasoning: Option<ReasoningEffort>,
-    provider_options: &Option<std::collections::HashMap<String, Value>>,
+    provider_options: &Option<SharedProviderOptions>,
 ) -> Option<Value> {
     // Provider options take precedence.
     if let Some(cohere) = super::options::cohere_options(provider_options.as_ref())

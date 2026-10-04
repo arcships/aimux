@@ -537,8 +537,7 @@ struct PollySpeechProviderOptions {
 fn parse_polly_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Option<PollySpeechProviderOptions> {
-    let provider_opts = options::aws_polly_options(options)?;
-    let opts = provider_opts.as_object()?;
+    let opts = options::aws_polly_options(options)?;
 
     Some(PollySpeechProviderOptions {
         engine: opts

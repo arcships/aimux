@@ -3,8 +3,6 @@
 //! Aligned with Vercel AI SDK `CohereRerankingModel`
 //! (`reference/ai/packages/cohere/src/reranking/cohere-reranking-model.ts`).
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -14,6 +12,7 @@ use aimux_core::reranking_model::{
     RerankingCallOptions, RerankingDocuments, RerankingModel, RerankingRank, RerankingResponse,
     RerankingResult,
 };
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
 
 use crate::shared::EndpointConfig;
@@ -26,7 +25,7 @@ struct CohereRerankingOptions {
 }
 
 fn parse_cohere_reranking_options(
-    provider_options: Option<&HashMap<String, Value>>,
+    provider_options: Option<&SharedProviderOptions>,
 ) -> CohereRerankingOptions {
     let mut opts = CohereRerankingOptions::default();
     if let Some(cohere) = super::options::cohere_options(provider_options) {

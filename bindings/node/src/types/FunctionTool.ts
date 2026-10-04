@@ -26,7 +26,7 @@ strict: boolean | null,
  * (e.g. `{"anthropic": {"eagerInputStreaming": true}}`). Aligned with the
  * V4 `providerOptions` field on function tools.
  */
-provider_options?: { [key in string]: JsonValue } | null, 
+provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, 
 /**
  * Example inputs for the tool (V4 `inputExamples`), used by some providers
  * to emit `input_examples` in the request body.

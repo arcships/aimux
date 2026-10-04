@@ -21,6 +21,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::error::AiMuxError;
+use aimux_core::shared::provider_namespace;
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
 use aimux_provider_utils::Resolvable;
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
@@ -342,11 +343,7 @@ async fn should_pass_response_format_with_timestamp_granularities_word() {
     let model = provider.transcription("whisper-1");
 
     let mut options = transcription_options(mock_audio_data(), "audio/wav");
-    let mut po = HashMap::new();
-    po.insert(
-        "openai".to_string(),
-        json!({"timestampGranularities": ["word"]}),
-    );
+    let po = provider_namespace("openai", json!({"timestampGranularities": ["word"]}));
     options.provider_options = Some(po);
 
     model.do_generate(&options).await.unwrap();
@@ -370,11 +367,7 @@ async fn should_use_json_for_gpt4o_transcribe() {
     let model = provider.transcription("gpt-4o-transcribe");
 
     let mut options = transcription_options(mock_audio_data(), "audio/wav");
-    let mut po = HashMap::new();
-    po.insert(
-        "openai".to_string(),
-        json!({"timestampGranularities": ["word"]}),
-    );
+    let po = provider_namespace("openai", json!({"timestampGranularities": ["word"]}));
     options.provider_options = Some(po);
 
     model.do_generate(&options).await.unwrap();
@@ -398,11 +391,7 @@ async fn should_pass_timestamp_granularities_segment() {
     let model = provider.transcription("whisper-1");
 
     let mut options = transcription_options(mock_audio_data(), "audio/wav");
-    let mut po = HashMap::new();
-    po.insert(
-        "openai".to_string(),
-        json!({"timestampGranularities": ["segment"]}),
-    );
+    let po = provider_namespace("openai", json!({"timestampGranularities": ["segment"]}));
     options.provider_options = Some(po);
 
     model.do_generate(&options).await.unwrap();
@@ -483,11 +472,7 @@ async fn should_parse_segments() {
     let model = provider.transcription("whisper-1");
 
     let mut options = transcription_options(mock_audio_data(), "audio/wav");
-    let mut po = HashMap::new();
-    po.insert(
-        "openai".to_string(),
-        json!({"timestampGranularities": ["segment"]}),
-    );
+    let po = provider_namespace("openai", json!({"timestampGranularities": ["segment"]}));
     options.provider_options = Some(po);
 
     let result = model.do_generate(&options).await.unwrap();
@@ -528,11 +513,7 @@ async fn should_fallback_to_words() {
     let model = provider.transcription("whisper-1");
 
     let mut options = transcription_options(mock_audio_data(), "audio/wav");
-    let mut po = HashMap::new();
-    po.insert(
-        "openai".to_string(),
-        json!({"timestampGranularities": ["word"]}),
-    );
+    let po = provider_namespace("openai", json!({"timestampGranularities": ["word"]}));
     options.provider_options = Some(po);
 
     let result = model.do_generate(&options).await.unwrap();

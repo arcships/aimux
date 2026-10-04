@@ -30,7 +30,8 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
 use aimux_core::types::FinishReasonUnified;
@@ -283,8 +284,7 @@ fn call_options_from(input: &Value) -> CallOptions {
     };
     options.provider_options = input
         .get("providerOptions")
-        .and_then(Value::as_object)
-        .map(|o| o.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+        .map(|options| serde_json::from_value(options.clone()).unwrap());
     options
 }
 
@@ -352,8 +352,8 @@ fn assert_generate_result(fixture: &Fixture, result: &GenerateResult) {
     // iterations, container and context management, under the canonical key
     // and the provider's own.
     assert_eq!(
-        result.provider_metadata.as_ref(),
-        Some(&recorded["providerMetadata"]),
+        serde_json::to_value(&result.provider_metadata).unwrap(),
+        recorded["providerMetadata"],
         "{}: providerMetadata",
         fixture.name
     );
@@ -414,17 +414,20 @@ async fn messages_provider_options_use_the_canonical_namespace() {
         .content
         .iter()
         .find_map(|part| match part {
-            GenerateContent::Reasoning {
+            GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata,
-            } => Some((text.clone(), provider_metadata.clone())),
+            }) => Some((text.clone(), provider_metadata.clone())),
             _ => None,
         })
         .expect("a reasoning part");
     assert_eq!(reasoning.0, "17 * 23 = 391.");
     assert_eq!(
         reasoning.1,
-        Some(json!({ "anthropic": { "signature": "sig_fixture" } }))
+        Some(provider_namespace(
+            "anthropic",
+            json!({ "signature": "sig_fixture" })
+        ))
     );
 }
 
@@ -527,7 +530,10 @@ async fn messages_stream_basic() {
         .as_array()
         .and_then(|parts| parts.iter().find(|p| p["type"] == "finish-step"))
         .expect("a recorded finish-step");
-    assert_eq!(metadata.as_ref(), Some(&finish_step["providerMetadata"]));
+    assert_eq!(
+        serde_json::to_value(metadata).unwrap(),
+        finish_step["providerMetadata"]
+    );
     assert_eq!(usage.raw.as_ref(), Some(&finish_step["usage"]["raw"]));
     assert_eq!(reason.unified, FinishReasonUnified::Stop);
     assert_eq!(reason.raw.as_deref(), Some("end_turn"));

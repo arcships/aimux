@@ -3,7 +3,8 @@ use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::{MessageContent, Role};
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{RawToolCall, ToolResult};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
@@ -43,9 +44,10 @@ impl LanguageModel for ProviderTranscriptModel {
                     provider_executed: Some(true),
                     dynamic: Some(true),
                     thought_signature: None,
-                    provider_metadata: Some(json!({
-                        "mock": { "serverCallId": "wire-1" }
-                    })),
+                    provider_metadata: Some(provider_namespace(
+                        "mock",
+                        json!({ "serverCallId": "wire-1" }),
+                    )),
                 }),
                 GenerateContent::ToolResult(ToolResult {
                     tool_call_id: "srv-1".to_string(),
@@ -54,9 +56,10 @@ impl LanguageModel for ProviderTranscriptModel {
                     is_error: Some(false),
                     preliminary: Some(true),
                     dynamic: Some(true),
-                    provider_metadata: Some(json!({
-                        "mock": { "serverResultId": "wire-preliminary-1" }
-                    })),
+                    provider_metadata: Some(provider_namespace(
+                        "mock",
+                        json!({ "serverResultId": "wire-preliminary-1" }),
+                    )),
                 }),
                 GenerateContent::ToolResult(ToolResult {
                     tool_call_id: "srv-1".to_string(),
@@ -65,9 +68,10 @@ impl LanguageModel for ProviderTranscriptModel {
                     is_error: Some(false),
                     preliminary: Some(false),
                     dynamic: Some(true),
-                    provider_metadata: Some(json!({
-                        "mock": { "serverResultId": "wire-result-1" }
-                    })),
+                    provider_metadata: Some(provider_namespace(
+                        "mock",
+                        json!({ "serverResultId": "wire-result-1" }),
+                    )),
                 }),
                 GenerateContent::Text {
                     text: "after".to_string(),
@@ -99,9 +103,10 @@ impl LanguageModel for ProviderTranscriptModel {
                 provider_executed: Some(true),
                 dynamic: Some(true),
                 thought_signature: None,
-                provider_metadata: Some(json!({
-                    "mock": { "serverCallId": "wire-1" }
-                })),
+                provider_metadata: Some(provider_namespace(
+                    "mock",
+                    json!({ "serverCallId": "wire-1" }),
+                )),
             })),
             Ok(StreamPart::ToolResult(ToolResult {
                 tool_call_id: "srv-1".to_string(),
@@ -110,9 +115,10 @@ impl LanguageModel for ProviderTranscriptModel {
                 is_error: Some(false),
                 preliminary: Some(true),
                 dynamic: Some(true),
-                provider_metadata: Some(json!({
-                    "mock": { "serverResultId": "wire-preliminary-1" }
-                })),
+                provider_metadata: Some(provider_namespace(
+                    "mock",
+                    json!({ "serverResultId": "wire-preliminary-1" }),
+                )),
             })),
             Ok(StreamPart::ToolResult(ToolResult {
                 tool_call_id: "srv-1".to_string(),
@@ -121,9 +127,10 @@ impl LanguageModel for ProviderTranscriptModel {
                 is_error: Some(false),
                 preliminary: Some(false),
                 dynamic: Some(true),
-                provider_metadata: Some(json!({
-                    "mock": { "serverResultId": "wire-result-1" }
-                })),
+                provider_metadata: Some(provider_namespace(
+                    "mock",
+                    json!({ "serverResultId": "wire-result-1" }),
+                )),
             })),
             Ok(StreamPart::TextDelta {
                 id: "text-2".to_string(),
@@ -340,16 +347,18 @@ impl LanguageModel for ContentMetadataModel {
             content: vec![
                 GenerateContent::Text {
                     text: "answer".to_string(),
-                    provider_metadata: Some(json!({
-                        "google": { "thoughtSignature": "text-generate" }
-                    })),
+                    provider_metadata: Some(provider_namespace(
+                        "google",
+                        json!({ "thoughtSignature": "text-generate" }),
+                    )),
                 },
-                GenerateContent::Reasoning {
+                GenerateContent::Reasoning(ReasoningOutput {
                     text: "think".to_string(),
-                    provider_metadata: Some(json!({
-                        "anthropic": { "signature": "reason-generate" }
-                    })),
-                },
+                    provider_metadata: Some(provider_namespace(
+                        "anthropic",
+                        json!({ "signature": "reason-generate" }),
+                    )),
+                }),
             ],
             finish_reason: finish_reason(),
             usage: Usage::default(),
@@ -365,14 +374,15 @@ impl LanguageModel for ContentMetadataModel {
         let parts = vec![
             Ok(StreamPart::TextStart {
                 id: "text-1".to_string(),
-                provider_metadata: Some(json!({ "mock": { "phase": "start" } })),
+                provider_metadata: Some(provider_namespace("mock", json!({ "phase": "start" }))),
             }),
             Ok(StreamPart::TextDelta {
                 id: "text-1".to_string(),
                 delta: "answer".to_string(),
-                provider_metadata: Some(json!({
-                    "google": { "thoughtSignature": "text-delta" }
-                })),
+                provider_metadata: Some(provider_namespace(
+                    "google",
+                    json!({ "thoughtSignature": "text-delta" }),
+                )),
             }),
             Ok(StreamPart::TextEnd {
                 id: "text-1".to_string(),
@@ -380,9 +390,10 @@ impl LanguageModel for ContentMetadataModel {
             }),
             Ok(StreamPart::ReasoningStart {
                 id: "reason-1".to_string(),
-                provider_metadata: Some(json!({
-                    "anthropic": { "signature": "reason-start" }
-                })),
+                provider_metadata: Some(provider_namespace(
+                    "anthropic",
+                    json!({ "signature": "reason-start" }),
+                )),
             }),
             Ok(StreamPart::ReasoningDelta {
                 id: "reason-1".to_string(),
@@ -400,9 +411,10 @@ impl LanguageModel for ContentMetadataModel {
             Ok(StreamPart::ReasoningDelta {
                 id: "reason-2".to_string(),
                 delta: "again".to_string(),
-                provider_metadata: Some(json!({
-                    "anthropic": { "signature": "reason-delta" }
-                })),
+                provider_metadata: Some(provider_namespace(
+                    "anthropic",
+                    json!({ "signature": "reason-delta" }),
+                )),
             }),
             Ok(StreamPart::ReasoningEnd {
                 id: "reason-2".to_string(),

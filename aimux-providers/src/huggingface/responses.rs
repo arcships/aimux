@@ -30,7 +30,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::Tool;
 use aimux_core::types::{
@@ -277,11 +277,11 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                         .get("model")
                                         .and_then(|v| v.as_str())
                                         .map(std::string::ToString::to_string);
-                                    yield Ok(StreamPart::ResponseMetadata {
+                                    yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                         id: response_id.clone(),
                                         timestamp: format_timestamp(created_at),
                                         model_id: model,
-                                    });
+                                    }));
                                 }
                             }
 
@@ -936,13 +936,13 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                         for ann in annotations {
                             let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
                             let title = ann.get("title").and_then(|v| v.as_str());
-                            content.push(GenerateContent::Source {
+                            content.push(GenerateContent::Source(Source {
                                 id: format!("id-{source_id_counter}"),
                                 source_type: "url".to_string(),
                                 url: Some(url.to_string()),
                                 title: title.map(std::string::ToString::to_string),
                                 provider_metadata: None,
-                            });
+                            }));
                             source_id_counter += 1;
                         }
                     }
@@ -957,12 +957,12 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                 for cp in content_parts {
                     let text = cp.get("text").and_then(|v| v.as_str()).unwrap_or("");
                     let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                    content.push(GenerateContent::Reasoning {
+                    content.push(GenerateContent::Reasoning(ReasoningOutput {
                         text: text.to_string(),
                         provider_metadata: Some(super::options::huggingface_metadata(
                             json!({ "itemId": item_id }),
                         )),
-                    });
+                    }));
                 }
             }
 

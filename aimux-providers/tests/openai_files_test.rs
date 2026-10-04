@@ -14,7 +14,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
-use aimux_core::shared::{FileBytes, SharedProviderOptions};
+use aimux_core::shared::{FileBytes, SharedProviderOptions, provider_namespace};
 use aimux_provider_utils::Resolvable;
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 
@@ -78,8 +78,7 @@ async fn should_send_multipart_request_with_purpose() {
     let files = provider.files();
 
     let mut opts = upload_options(None);
-    let mut po = HashMap::new();
-    po.insert("openai".to_string(), json!({ "purpose": "assistants" }));
+    let po = provider_namespace("openai", json!({ "purpose": "assistants" }));
     opts.provider_options = Some(po);
 
     files.upload_file(&opts).await.unwrap();
@@ -111,8 +110,7 @@ async fn should_return_provider_reference_with_openai_key() {
     let provider = provider(&server);
     let files = provider.files();
 
-    let mut po = HashMap::new();
-    po.insert("openai".to_string(), json!({ "purpose": "assistants" }));
+    let po = provider_namespace("openai", json!({ "purpose": "assistants" }));
     let opts = upload_options(Some(po));
 
     let result = files.upload_file(&opts).await.unwrap();
@@ -135,8 +133,7 @@ async fn should_return_provider_metadata_from_response() {
     let provider = provider(&server);
     let files = provider.files();
 
-    let mut po = HashMap::new();
-    po.insert("openai".to_string(), json!({ "purpose": "assistants" }));
+    let po = provider_namespace("openai", json!({ "purpose": "assistants" }));
     let opts = upload_options(Some(po));
 
     let result = files.upload_file(&opts).await.unwrap();
@@ -186,9 +183,8 @@ async fn should_pass_expires_after_when_provided() {
     let provider = provider(&server);
     let files = provider.files();
 
-    let mut po = HashMap::new();
-    po.insert(
-        "openai".to_string(),
+    let po = provider_namespace(
+        "openai",
         json!({ "purpose": "assistants", "expiresAfter": 3600 }),
     );
     let opts = upload_options(Some(po));
@@ -231,8 +227,7 @@ async fn should_pass_auth_headers() {
     .unwrap();
     let files = provider.files();
 
-    let mut po = HashMap::new();
-    po.insert("openai".to_string(), json!({ "purpose": "assistants" }));
+    let po = provider_namespace("openai", json!({ "purpose": "assistants" }));
     let opts = upload_options(Some(po));
 
     files.upload_file(&opts).await.unwrap();

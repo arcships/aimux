@@ -40,7 +40,7 @@ use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::FinishReasonUnified;
+use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_provider_utils::{HeaderMapOpt, Resolvable};
 
@@ -587,7 +587,7 @@ async fn should_use_azure_provider_metadata_namespace() {
         .expect("should succeed");
 
     let pm = result.provider_metadata.expect("provider_metadata");
-    assert!(pm.get("azure").is_some(), "should have 'azure' key");
+    assert!(pm.contains_key("azure"), "should have 'azure' key");
     assert_eq!(
         pm["azure"]["responseId"],
         "resp_67c97c0203188190a025beb4a75242bc"
@@ -827,7 +827,7 @@ async fn should_stream_text_content() {
     // ResponseMetadata
     assert!(matches!(
         &parts[1],
-        StreamPart::ResponseMetadata { id, .. } if id.as_deref() == Some("resp_123")
+        StreamPart::ResponseMetadata(ResponseMetadata { id, .. }) if id.as_deref() == Some("resp_123")
     ));
 
     // TextStart

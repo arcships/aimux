@@ -31,10 +31,11 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, Tool};
-use aimux_core::result::{GenerateContent, GenerateResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
-use aimux_core::types::{FinishReasonUnified, ReasoningEffort, Warning};
+use aimux_core::types::{FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning};
 use aimux_provider_utils::Resolvable;
 use aimux_providers::deepseek::{
     DeepSeekChatLanguageModel, DeepSeekProviderSettings, create_deepseek,
@@ -56,7 +57,7 @@ fn with_options(
     mut message: LanguageModelPromptMessage,
     options: Value,
 ) -> LanguageModelPromptMessage {
-    message.provider_options = Some(options);
+    message.provider_options = Some(serde_json::from_value(options).unwrap());
     message
 }
 
@@ -305,7 +306,9 @@ fn finish_metadata(parts: &[StreamPart]) -> Value {
         .find_map(|part| match part {
             StreamPart::Finish {
                 provider_metadata, ..
-            } => provider_metadata.clone(),
+            } => provider_metadata
+                .as_ref()
+                .map(|metadata| serde_json::to_value(metadata).unwrap()),
             _ => None,
         })
         .expect("a finish part")
@@ -693,7 +696,7 @@ async fn text_should_report_the_provider_metadata() {
     // responseObject, choiceIndex, messageRole, systemFingerprint.
     let result = generate_result("deepseek-chat", &options()).await;
     assert_eq!(
-        result.provider_metadata.unwrap(),
+        serde_json::to_value(result.provider_metadata.unwrap()).unwrap(),
         json!({ "deepseek": {
             "promptCacheHitTokens": 0,
             "promptCacheMissTokens": 13,
@@ -786,7 +789,7 @@ async fn reasoning_should_extract_reasoning_before_text() {
         .unwrap();
     assert_eq!(result.content.len(), 2);
     assert!(
-        matches!(&result.content[0], GenerateContent::Reasoning { text, .. } if text == "Let me count the letters.")
+        matches!(&result.content[0], GenerateContent::Reasoning(ReasoningOutput { text, .. }) if text == "Let me count the letters.")
     );
     assert!(
         matches!(&result.content[1], GenerateContent::Text { text, .. } if text == "There are 3 r's in strawberry.")
@@ -1192,7 +1195,7 @@ async fn tool_call_should_extract_tool_call_content() {
         .await
         .unwrap();
     assert!(
-        matches!(&result.content[0], GenerateContent::Reasoning { text, .. } if text == "I should look up the weather.")
+        matches!(&result.content[0], GenerateContent::Reasoning(ReasoningOutput { text, .. }) if text == "I should look up the weather.")
     );
     assert!(matches!(
         &result.content[1],
@@ -1562,7 +1565,7 @@ async fn stream_text_should_stream_text() {
     assert!(matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty()));
     assert!(matches!(
         &parts[1],
-        StreamPart::ResponseMetadata { id, model_id, .. }
+        StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. })
             if id.as_deref() == Some("c1") && model_id.as_deref() == Some("deepseek-chat")
     ));
     let deltas: Vec<&str> = parts
@@ -1928,14 +1931,14 @@ fn file_with_options(part: ContentPart, options: Value) -> ContentPart {
             data,
             media_type,
             filename,
-            provider_options: Some(options),
+            provider_options: Some(serde_json::from_value(options).unwrap()),
         },
         ContentPart::FileUrl {
             url, media_type, ..
         } => ContentPart::FileUrl {
             url,
             media_type,
-            provider_options: Some(options),
+            provider_options: Some(serde_json::from_value(options).unwrap()),
         },
         other => other,
     }
@@ -2076,7 +2079,7 @@ async fn convert_should_convert_inline_image_data_to_file_data_and_preserve_its_
         data: "AAECAw==".to_string(),
         media_type: "image/jpg".to_string(),
         filename: Some("sample.jpg".to_string()),
-        provider_options: Some(json!({ "deepseek": { "fileData": true } })),
+        provider_options: Some(provider_namespace("deepseek", json!({ "fileData": true }))),
     };
     let messages = wire_messages(
         "deepseek-v4-flash-vision-exp",

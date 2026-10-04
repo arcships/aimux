@@ -158,5 +158,5 @@ pub struct ResponseMetadata {
     pub model_id: Option<String>,
 }
 
-/// Provider-specific metadata (opaque to core).
-pub type ProviderMetadata = Value;
+/// Provider-specific metadata: namespace -> JSON object.
+pub type ProviderMetadata = crate::shared::SharedProviderMetadata;

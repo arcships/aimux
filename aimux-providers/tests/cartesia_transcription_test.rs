@@ -246,11 +246,8 @@ async fn should_warn_about_streaming_options() {
     let model = provider.transcription("best");
 
     let mut opts = options(mock_audio(), "audio/wav");
-    let mut po = HashMap::new();
-    po.insert(
-        "cartesia".to_string(),
-        json!({"streaming": {"delay": "low"}}),
-    );
+    let po =
+        aimux_core::shared::provider_namespace("cartesia", json!({"streaming": {"delay": "low"}}));
     opts.provider_options = Some(po);
 
     let result = model.do_generate(&opts).await.unwrap();
@@ -278,9 +275,8 @@ async fn should_pass_language_and_timestamp_granularities() {
     let model = provider.transcription("best");
 
     let mut opts = options(mock_audio(), "audio/wav");
-    let mut po = HashMap::new();
-    po.insert(
-        "cartesia".to_string(),
+    let po = aimux_core::shared::provider_namespace(
+        "cartesia",
         json!({"language": "en", "timestampGranularities": ["word"]}),
     );
     opts.provider_options = Some(po);

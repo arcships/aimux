@@ -7,8 +7,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::RawToolCall;
+use aimux_core::types::ProviderMetadata;
 use aimux_provider_utils::{
     StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, TrackerError,
     TypeValidation,
@@ -39,7 +41,7 @@ enum Part {
         tool_name: String,
         /// The raw argument text.
         input: String,
-        provider_metadata: Option<Value>,
+        provider_metadata: Option<ProviderMetadata>,
     },
 }
 
@@ -1062,7 +1064,7 @@ mod metadata {
             .with_build_provider_metadata(|metadata| {
                 metadata
                     .and_then(|m| m.get("thoughtSignature"))
-                    .map(|sig| json!({ "google": { "thoughtSignature": sig } }))
+                    .map(|sig| provider_namespace("google", json!({ "thoughtSignature": sig })))
             })
     }
 
@@ -1084,7 +1086,10 @@ mod metadata {
                 tool_call_id: "call_1".into(),
                 tool_name: "fn".into(),
                 input: "{}".into(),
-                provider_metadata: Some(json!({ "google": { "thoughtSignature": "sig123" } })),
+                provider_metadata: Some(provider_namespace(
+                    "google",
+                    json!({ "thoughtSignature": "sig123" })
+                )),
             })
         );
     }
@@ -1095,7 +1100,7 @@ mod metadata {
             StreamingToolCallTracker::new()
                 .with_extract_metadata(|_| Some(json!({ "custom": { "key": "value" } })))
                 .with_build_provider_metadata(|metadata| {
-                    metadata.map(|m| json!({ "provider": m }))
+                    metadata.map(|m| provider_namespace("provider", m.clone()))
                 }),
         );
 
@@ -1110,7 +1115,10 @@ mod metadata {
                 tool_call_id: "call_1".into(),
                 tool_name: "fn".into(),
                 input: "{\"incomplete".into(),
-                provider_metadata: Some(json!({ "provider": { "custom": { "key": "value" } } })),
+                provider_metadata: Some(provider_namespace(
+                    "provider",
+                    json!({ "custom": { "key": "value" } })
+                )),
             })
         );
     }

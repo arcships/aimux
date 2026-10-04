@@ -17,7 +17,7 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult, ImageUsage,
 };
-use aimux_core::shared::{SharedProviderMetadata, Warning};
+use aimux_core::shared::{SharedProviderMetadata, SharedProviderOptions, Warning};
 
 use super::options::{GOOGLE, google_options as read_google_options};
 use crate::shared::EndpointConfig;
@@ -273,9 +273,7 @@ impl GoogleImageModel {
         }
 
         // Passthrough provider options (excluding googleSearch)
-        if let Some(google) =
-            read_google_options(Some(&options.provider_options)).and_then(|v| v.as_object())
-        {
+        if let Some(google) = read_google_options(Some(&options.provider_options)) {
             for (key, value) in google {
                 if key == "googleSearch" || key == "personGeneration" || key == "aspectRatio" {
                     continue;
@@ -357,7 +355,7 @@ struct GoogleImageOptions {
 }
 
 /// Parse Google image provider options from the `"google"` key.
-fn parse_google_image_options(provider_options: &HashMap<String, Value>) -> GoogleImageOptions {
+fn parse_google_image_options(provider_options: &SharedProviderOptions) -> GoogleImageOptions {
     let google = read_google_options(Some(provider_options));
     GoogleImageOptions {
         person_generation: google
@@ -398,7 +396,7 @@ fn extract_imagen_metadata(response: &Value) -> SharedProviderMetadata {
     let images: Vec<Value> = (0..predictions).map(|_| json!({})).collect();
     let mut google_meta = Map::new();
     google_meta.insert("images".to_string(), json!(images));
-    metadata.insert(GOOGLE.to_string(), Value::Object(google_meta));
+    metadata.insert(GOOGLE.to_string(), google_meta);
     metadata
 }
 
@@ -464,7 +462,7 @@ fn extract_gemini_result(
     if let Some(gm) = grounding_metadata {
         google_meta.insert("groundingMetadata".to_string(), gm);
     }
-    metadata.insert(GOOGLE.to_string(), Value::Object(google_meta));
+    metadata.insert(GOOGLE.to_string(), google_meta);
 
     (ImageOutputs::Base64(images), metadata, usage)
 }

@@ -140,8 +140,8 @@ async fn should_forward_recraft_extension_fields() {
 
     let model = make_model(&server);
     let mut opts = options(PROMPT);
-    opts.provider_options.insert(
-        "recraft".to_string(),
+    opts.provider_options = aimux_core::shared::provider_namespace(
+        "recraft",
         json!({
             "style": "digital_illustration",
             "styleId": "50c0b14e-3e4f-4a18-9d8e-2b1f0a1c2d3e",

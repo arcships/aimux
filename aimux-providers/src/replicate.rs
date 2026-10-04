@@ -354,7 +354,7 @@ impl ImageModel for ReplicateImageModel {
 
         // Forward replicate provider options (excluding maxWaitTimeInSeconds and
         // the pacing keys, which are read here, never sent)
-        if let Some(ro) = replicate_opts.and_then(|v| v.as_object()) {
+        if let Some(ro) = replicate_opts {
             for (k, v) in ro {
                 if k != "maxWaitTimeInSeconds" && !is_poll_control_key(k) {
                     input.insert(k.clone(), v.clone());

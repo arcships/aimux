@@ -20,7 +20,7 @@ answer: string | null,
 /**
  * Additional provider-specific metadata.
  */
-provider_metadata: { [key in string]: JsonValue } | null, 
+provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
 /**
  * Warnings for the call.
  */

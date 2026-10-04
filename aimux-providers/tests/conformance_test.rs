@@ -107,7 +107,7 @@ fn has_tool_call(content: &[GenerateContent]) -> bool {
 fn has_reasoning(content: &[GenerateContent]) -> bool {
     content
         .iter()
-        .any(|c| matches!(c, GenerateContent::Reasoning { .. }))
+        .any(|c| matches!(c, GenerateContent::Reasoning(_)))
 }
 
 #[allow(dead_code)]

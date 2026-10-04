@@ -374,8 +374,7 @@ fn call_options_from(input: &Value) -> CallOptions {
     };
     options.provider_options = input
         .get("providerOptions")
-        .and_then(Value::as_object)
-        .map(|o| o.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+        .map(|o| serde_json::from_value(o.clone()).unwrap());
     options.headers = input.get("headers").and_then(Value::as_object).map(|h| {
         h.iter()
             .map(|(k, v)| (k.clone(), v.as_str().unwrap().to_string()))
@@ -488,8 +487,8 @@ fn assert_metadata_key(fixture: &Fixture, result: &GenerateResult, key: &str) {
         fixture.name
     );
     assert_eq!(
-        result.provider_metadata.as_ref().unwrap(),
-        &json!({ key: {} }),
+        serde_json::to_value(result.provider_metadata.as_ref().unwrap()).unwrap(),
+        json!({ key: {} }),
         "{}: metadata key",
         fixture.name
     );
@@ -659,7 +658,10 @@ async fn chat_stream_basic() {
     assert_eq!(reason.unified, FinishReasonUnified::Stop);
     assert_eq!(usage.input_tokens.total, Some(12));
     assert_eq!(usage.output_tokens.total, Some(2));
-    assert_eq!(metadata.as_ref().unwrap(), &json!({"groq": {}}));
+    assert_eq!(
+        serde_json::to_value(metadata.as_ref().unwrap()).unwrap(),
+        json!({"groq": {}})
+    );
 }
 
 #[tokio::test]

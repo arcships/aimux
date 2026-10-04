@@ -13,7 +13,6 @@
 //! there: it is loaded for every request, from the setting or from `LINKUP_API_KEY`.
 //! [`linkup()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use async_trait::async_trait;
@@ -24,6 +23,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
+use aimux_core::shared::SharedProviderOptions;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
 use crate::shared::{Credential, EndpointConfig, provider_headers};
@@ -41,7 +41,7 @@ struct LinkupOptions {
     output_type: Option<String>,
 }
 
-fn parse_linkup_options(provider_options: Option<&HashMap<String, Value>>) -> LinkupOptions {
+fn parse_linkup_options(provider_options: Option<&SharedProviderOptions>) -> LinkupOptions {
     let mut opts = LinkupOptions::default();
     if let Some(linkup) = options::linkup_options(provider_options) {
         if let Some(v) = linkup.get("depth").and_then(|v| v.as_str()) {

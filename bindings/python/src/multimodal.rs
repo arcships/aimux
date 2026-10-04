@@ -612,7 +612,7 @@ pub fn start_transcription_session(
     #[derive(serde::Deserialize, Default)]
     struct SessionOpts {
         input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
-        provider_options: Option<std::collections::HashMap<String, serde_json::Value>>,
+        provider_options: Option<aimux_core::shared::SharedProviderOptions>,
         headers: Option<std::collections::HashMap<String, String>>,
         include_raw_chunks: Option<bool>,
         timeout: Option<aimux_core::options::TimeoutConfiguration>,

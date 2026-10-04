@@ -8,14 +8,12 @@
 //! 2. POST to the upload URL - returns `{ "file": { ... } }`.
 //! 3. GET `/{file.name}` (poll) - returns the file resource with updated state.
 
-use std::collections::HashMap;
-
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
-use aimux_core::shared::{FileBytes, SharedProviderOptions};
+use aimux_core::shared::{FileBytes, provider_namespace};
 use aimux_provider_utils::Resolvable;
 use aimux_providers::{GoogleProvider, GoogleProviderSettings, create_google};
 
@@ -160,11 +158,7 @@ async fn should_include_display_name_in_initiation_body_when_provided() {
     let provider = provider(&server);
     let files = provider.files();
 
-    let mut po = HashMap::new();
-    po.insert(
-        "google".to_string(),
-        json!({ "displayName": "my-document" }),
-    );
+    let po = provider_namespace("google", json!({ "displayName": "my-document" }));
     let opts = UploadFileCallOptions {
         data: UploadFileData::Data {
             data: FileBytes::Binary(vec![1]),
@@ -499,9 +493,8 @@ async fn should_accept_valid_provider_options() {
     let provider = provider(&server);
     let files = provider.files();
 
-    let mut po = HashMap::new();
-    po.insert(
-        "google".to_string(),
+    let po = provider_namespace(
+        "google",
         json!({ "displayName": "test", "pollIntervalMs": 5000, "pollTimeoutMs": 60000 }),
     );
     let opts = UploadFileCallOptions {
@@ -540,11 +533,7 @@ async fn should_pass_through_unknown_properties() {
     let provider = provider(&server);
     let files = provider.files();
 
-    let mut po: SharedProviderOptions = HashMap::new();
-    po.insert(
-        "google".to_string(),
-        json!({ "customField": "custom-value" }),
-    );
+    let po = provider_namespace("google", json!({ "customField": "custom-value" }));
     let opts = UploadFileCallOptions {
         data: UploadFileData::Data {
             data: FileBytes::Binary(vec![1]),
@@ -594,9 +583,15 @@ async fn should_omit_optional_fields_from_metadata_when_not_present() {
     let metadata = result.provider_metadata.expect("metadata");
     let google = metadata.get("google").expect("google metadata");
     assert_eq!(google["name"], "files/minimal");
-    assert_eq!(google["displayName"], Value::Null);
+    assert_eq!(
+        google.get("displayName").unwrap_or(&Value::Null),
+        &Value::Null
+    );
     assert_eq!(google["mimeType"], "text/plain");
-    assert_eq!(google["sizeBytes"], Value::Null);
+    assert_eq!(
+        google.get("sizeBytes").unwrap_or(&Value::Null),
+        &Value::Null
+    );
     assert_eq!(google["state"], "ACTIVE");
     assert_eq!(
         google["uri"],

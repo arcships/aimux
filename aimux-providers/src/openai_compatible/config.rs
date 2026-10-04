@@ -9,7 +9,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use serde_json::{Map, Value};
+use aimux_core::types::ProviderMetadata;
+use serde_json::Value;
 
 use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
@@ -50,7 +51,7 @@ pub(crate) type ErrorStructure = Arc<dyn Fn(&Value) -> ProviderErrorParts + Send
 /// next to the namespace entry.
 pub trait MetadataExtractor: Send + Sync {
     /// Metadata of a non-streaming response body.
-    fn extract_metadata(&self, parsed_body: &Value) -> Option<Map<String, Value>>;
+    fn extract_metadata(&self, parsed_body: &Value) -> Option<ProviderMetadata>;
 
     /// A fresh extractor for one streaming response.
     fn create_stream_extractor(&self) -> Box<dyn StreamMetadataExtractor>;
@@ -62,7 +63,7 @@ pub trait StreamMetadataExtractor: Send {
     fn process_chunk(&mut self, parsed_chunk: &Value);
 
     /// Metadata merged into the finish part's `provider_metadata`.
-    fn build_metadata(&self) -> Option<Map<String, Value>>;
+    fn build_metadata(&self) -> Option<ProviderMetadata>;
 }
 
 /// Everything that distinguishes one compatible vendor's chat endpoint from

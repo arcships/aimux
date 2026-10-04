@@ -8,9 +8,7 @@
 //! name the caller chose. This module is the one place that knows the
 //! canonical key and how the two are merged.
 
-use std::collections::HashMap;
-
-use serde_json::{Map, Value};
+use aimux_core::shared::{JsonObject, SharedProviderOptions};
 
 /// The canonical providerOptions key, read for every model of the protocol
 /// whatever its name.
@@ -29,22 +27,24 @@ pub(crate) fn options_name_of(provider: &str) -> String {
 
 /// Merge the canonical options with the custom-name options (custom wins,
 /// shallowly). `None` when neither is set.
-fn merge(canonical: Option<&Value>, custom: Option<&Value>) -> Option<Value> {
+fn merge(canonical: Option<&JsonObject>, custom: Option<&JsonObject>) -> Option<JsonObject> {
     match (canonical, custom) {
         (None, None) => None,
         (Some(only), None) | (None, Some(only)) => Some(only.clone()),
-        (Some(Value::Object(canonical)), Some(Value::Object(custom))) => {
-            let mut merged: Map<String, Value> = canonical.clone();
+        (Some(canonical), Some(custom)) => {
+            let mut merged = canonical.clone();
             merged.extend(custom.iter().map(|(k, v)| (k.clone(), v.clone())));
-            Some(Value::Object(merged))
+            Some(merged)
         }
-        (Some(_), Some(custom)) => Some(custom.clone()),
     }
 }
 
 /// The Anthropic options in a providerOptions object (a part's, a message's):
 /// `anthropic` merged with `name` when `name` is a different key.
-pub(crate) fn anthropic_options(provider_options: Option<&Value>, name: &str) -> Option<Value> {
+pub(crate) fn anthropic_options(
+    provider_options: Option<&SharedProviderOptions>,
+    name: &str,
+) -> Option<JsonObject> {
     let canonical = provider_options.and_then(|options| options.get(CANONICAL));
     let custom = (name != CANONICAL)
         .then(|| provider_options.and_then(|options| options.get(name)))
@@ -52,17 +52,12 @@ pub(crate) fn anthropic_options(provider_options: Option<&Value>, name: &str) ->
     merge(canonical, custom)
 }
 
-/// [`anthropic_options`] for the map form (`CallOptions::provider_options`, a
-/// tool's).
+/// [`anthropic_options`] for `CallOptions::provider_options` or a tool's options.
 pub(crate) fn anthropic_options_in(
-    provider_options: Option<&HashMap<String, Value>>,
+    provider_options: Option<&SharedProviderOptions>,
     name: &str,
-) -> Option<Value> {
-    let canonical = provider_options.and_then(|options| options.get(CANONICAL));
-    let custom = (name != CANONICAL)
-        .then(|| provider_options.and_then(|options| options.get(name)))
-        .flatten();
-    merge(canonical, custom)
+) -> Option<JsonObject> {
+    anthropic_options(provider_options, name)
 }
 
 #[cfg(test)]
@@ -80,43 +75,30 @@ mod tests {
 
     #[test]
     fn custom_options_override_the_canonical_ones() {
-        let options = json!({
+        let options = serde_json::from_value(json!({
             CANONICAL: { "a": 1, "b": 1 },
             "proxy": { "b": 2, "c": 2 },
-        });
+        }))
+        .unwrap();
         assert_eq!(
             anthropic_options(Some(&options), "proxy"),
-            Some(json!({ "a": 1, "b": 2, "c": 2 }))
+            Some(serde_json::from_value(json!({ "a": 1, "b": 2, "c": 2 })).unwrap())
         );
         // The canonical name reads only itself.
         assert_eq!(
             anthropic_options(Some(&options), CANONICAL),
-            Some(json!({ "a": 1, "b": 1 }))
+            Some(serde_json::from_value(json!({ "a": 1, "b": 1 })).unwrap())
         );
     }
 
     #[test]
     fn either_namespace_alone_is_read() {
-        let only_custom = json!({ "proxy": { "x": true } });
+        let only_custom = aimux_core::shared::provider_namespace("proxy", json!({ "x": true }));
         assert_eq!(
             anthropic_options(Some(&only_custom), "proxy"),
-            Some(json!({ "x": true }))
+            Some(serde_json::from_value(json!({ "x": true })).unwrap())
         );
         assert_eq!(anthropic_options(Some(&only_custom), CANONICAL), None);
         assert_eq!(anthropic_options(None, "proxy"), None);
-    }
-
-    #[test]
-    fn map_form_matches_value_form() {
-        let map: HashMap<String, Value> = [
-            (CANONICAL.to_string(), json!({ "a": 1 })),
-            ("proxy".to_string(), json!({ "a": 2 })),
-        ]
-        .into_iter()
-        .collect();
-        assert_eq!(
-            anthropic_options_in(Some(&map), "proxy"),
-            Some(json!({ "a": 2 }))
-        );
     }
 }

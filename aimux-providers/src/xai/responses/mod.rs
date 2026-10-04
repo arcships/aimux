@@ -27,7 +27,7 @@ use serde_json::{Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -195,13 +195,13 @@ impl LanguageModel for XaiResponsesModel {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or(url)
                                         .to_string();
-                                    content.push(GenerateContent::Source {
+                                    content.push(GenerateContent::Source(Source {
                                         id: generate_source_id(),
                                         source_type: "url".to_string(),
                                         url: Some(url.to_string()),
                                         title: Some(title),
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                             }
                         }
@@ -268,10 +268,10 @@ impl LanguageModel for XaiResponsesModel {
                         if let Some(id) = item_id {
                             meta["itemId"] = json!(id);
                         }
-                        content.push(GenerateContent::Reasoning {
+                        content.push(GenerateContent::Reasoning(ReasoningOutput {
                             text: reasoning_text,
                             provider_metadata: Some(crate::xai::options::xai_metadata(json!(meta))),
-                        });
+                        }));
                     }
                 }
                 _ => {}
@@ -398,7 +398,7 @@ impl LanguageModel for XaiResponsesModel {
                                 let timestamp = created_at.and_then(|c| {
                                     chrono::DateTime::from_timestamp(c as i64, 0).map(|dt| dt.to_rfc3339())
                                 });
-                                yield Ok(StreamPart::ResponseMetadata { id, timestamp, model_id: model });
+                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata { id, timestamp, model_id: model }));
                             }
                             continue;
                         }
@@ -484,13 +484,13 @@ impl LanguageModel for XaiResponsesModel {
                                     if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
                                         let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
                                         let title = ann.get("title").and_then(|v| v.as_str()).unwrap_or(url).to_string();
-                                        yield Ok(StreamPart::Source {
+                                        yield Ok(StreamPart::Source(Source {
                                             id: generate_source_id(),
                                             source_type: "url".to_string(),
                                             url: Some(url.to_string()),
                                             title: Some(title),
                                             provider_metadata: None,
-                                        });
+                                        }));
                                     }
                                 }
                             }
@@ -503,13 +503,13 @@ impl LanguageModel for XaiResponsesModel {
                             if annotation.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
                                 let url = annotation.get("url").and_then(|v| v.as_str()).unwrap_or("");
                                 let title = annotation.get("title").and_then(|v| v.as_str()).unwrap_or(url).to_string();
-                                yield Ok(StreamPart::Source {
+                                yield Ok(StreamPart::Source(Source {
                                     id: generate_source_id(),
                                     source_type: "url".to_string(),
                                     url: Some(url.to_string()),
                                     title: Some(title),
                                     provider_metadata: None,
-                                });
+                                }));
                             }
                             continue;
                         }
@@ -799,13 +799,13 @@ impl LanguageModel for XaiResponsesModel {
                                             if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
                                                 let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
                                                 let title = ann.get("title").and_then(|v| v.as_str()).unwrap_or(url).to_string();
-                                                yield Ok(StreamPart::Source {
+                                                yield Ok(StreamPart::Source(Source {
                                                     id: generate_source_id(),
                                                     source_type: "url".to_string(),
                                                     url: Some(url.to_string()),
                                                     title: Some(title),
                                                     provider_metadata: None,
-                                                });
+                                                }));
                                             }
                                         }
                                     }

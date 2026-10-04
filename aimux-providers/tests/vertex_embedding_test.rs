@@ -3,30 +3,27 @@
 //! Source: `reference/ai/packages/google-vertex/src/google-vertex-embedding-model.test.ts`
 //! (460 lines, 12 cases).
 
-use std::collections::HashMap;
-
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
+use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_provider_utils::Resolvable;
 use aimux_providers::{VertexProvider, VertexProviderSettings, create_google_vertex};
 
 const TEST_VALUES: &[&str] = &["test text one", "test text two"];
 
-fn mock_provider_options() -> HashMap<String, Value> {
-    let mut opts = HashMap::new();
-    opts.insert(
-        "google".to_string(),
+fn mock_provider_options() -> SharedProviderOptions {
+    provider_namespace(
+        "google",
         json!({
             "outputDimensionality": 768,
             "taskType": "SEMANTIC_SIMILARITY",
             "title": "test title",
             "autoTruncate": false
         }),
-    );
-    opts
+    )
 }
 
 /// The fixture response body from `__fixtures__/google-vertex-embedding.json`.
@@ -190,9 +187,8 @@ async fn should_accept_google_vertex_key() {
     let provider = test_provider(server.uri());
     let model = provider.embedding("textembedding-gecko@001");
 
-    let mut provider_options = HashMap::new();
-    provider_options.insert(
-        "googleVertex".to_string(),
+    let provider_options = provider_namespace(
+        "googleVertex",
         json!({
             "outputDimensionality": 768,
             "taskType": "SEMANTIC_SIMILARITY",
@@ -230,11 +226,7 @@ async fn should_pass_task_type_only() {
     let provider = test_provider(server.uri());
     let model = provider.embedding("textembedding-gecko@001");
 
-    let mut provider_options = HashMap::new();
-    provider_options.insert(
-        "google".to_string(),
-        json!({"taskType": "SEMANTIC_SIMILARITY"}),
-    );
+    let provider_options = provider_namespace("google", json!({"taskType": "SEMANTIC_SIMILARITY"}));
     let options = EmbeddingCallOptions {
         values: test_values(),
         abort_signal: None,

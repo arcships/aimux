@@ -4,7 +4,9 @@
 //! under `xai`, whatever the provider is named. This module is the one place
 //! that spells the key.
 
-use serde_json::{Value, json};
+use aimux_core::shared::{JsonObject, SharedProviderOptions, provider_namespace};
+use aimux_core::types::ProviderMetadata;
+use serde_json::Value;
 
 /// The providerOptions / providerMetadata key (and the provider-reference key
 /// of uploaded files).
@@ -12,13 +14,11 @@ pub(crate) const NAMESPACE: &str = "xai";
 
 /// The xAI options in a providerOptions container (a call's map, a part's
 /// object).
-pub(crate) fn xai_options<M: crate::shared::ProviderOptionsMap + ?Sized>(
-    provider_options: Option<&M>,
-) -> Option<&Value> {
-    provider_options?.lookup(NAMESPACE)
+pub(crate) fn xai_options(provider_options: Option<&SharedProviderOptions>) -> Option<&JsonObject> {
+    provider_options?.get(NAMESPACE)
 }
 
 /// `{ "xai": payload }`.
-pub(crate) fn xai_metadata(payload: Value) -> Value {
-    json!({ NAMESPACE: payload })
+pub(crate) fn xai_metadata(payload: Value) -> ProviderMetadata {
+    provider_namespace(NAMESPACE, payload)
 }

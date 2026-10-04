@@ -14,7 +14,6 @@
 //! there: it is loaded for every request, from the setting or from `GOOGLE_API_KEY`.
 //! [`google_pse()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use async_trait::async_trait;
@@ -25,6 +24,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
+use aimux_core::shared::SharedProviderOptions;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
 use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
@@ -184,7 +184,7 @@ crate::impl_single_modality_provider!(GooglePseProvider, search_model, |p, _id| 
 /// `provider_options["google_pse"]["cx"]`, then `GOOGLE_CSE_ID`.
 fn resolve_cx(
     setting_cx: Option<&str>,
-    provider_options: Option<&HashMap<String, Value>>,
+    provider_options: Option<&SharedProviderOptions>,
 ) -> Option<String> {
     if let Some(cx) = setting_cx {
         return Some(cx.to_string());

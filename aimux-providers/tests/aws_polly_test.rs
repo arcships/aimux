@@ -282,9 +282,8 @@ async fn provider_options_forward_polly_fields() {
     let model = provider.speech("aws_polly/standard");
 
     let mut options = speech_options("<speak>Hello</speak>");
-    let mut provider_options = std::collections::HashMap::new();
-    provider_options.insert(
-        "aws_polly".to_string(),
+    let provider_options = aimux_core::shared::provider_namespace(
+        "aws_polly",
         json!({
             "engine": "neural",
             "sampleRate": "22050",

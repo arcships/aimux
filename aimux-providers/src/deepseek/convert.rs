@@ -8,6 +8,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::ResponseFormat;
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
 use aimux_provider_utils::resolve_full_media_type;
 
@@ -27,7 +28,7 @@ struct ImagePart<'a> {
     source: ImageSource<'a>,
     original: &'a ContentPart,
     filename: Option<&'a str>,
-    provider_options: Option<&'a Value>,
+    provider_options: Option<&'a SharedProviderOptions>,
 }
 
 enum ImageSource<'a> {

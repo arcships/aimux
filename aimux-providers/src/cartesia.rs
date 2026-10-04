@@ -635,8 +635,7 @@ struct CartesiaSpeechProviderOptions {
 fn parse_cartesia_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Option<CartesiaSpeechProviderOptions> {
-    let provider_opts = options::cartesia_options(options)?;
-    let opts = provider_opts.as_object()?;
+    let opts = options::cartesia_options(options)?;
 
     Some(CartesiaSpeechProviderOptions {
         container: opts

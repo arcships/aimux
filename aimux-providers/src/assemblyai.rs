@@ -321,7 +321,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
 
         // Parse and forward provider options, except the poll interval, which
         // is read here.
-        if let Some(obj) = aai_options.and_then(Value::as_object) {
+        if let Some(obj) = aai_options {
             for (k, v) in obj {
                 if !is_poll_control_key(k) {
                     body.insert(k.clone(), v.clone());
@@ -471,7 +471,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
             );
         }
         if !aai_meta.is_empty() {
-            md.insert(options::NAMESPACE.to_string(), Value::Object(aai_meta));
+            md.insert(options::NAMESPACE.to_string(), aai_meta);
             provider_metadata = Some(md);
         }
 
