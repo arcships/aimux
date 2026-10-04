@@ -26,6 +26,7 @@
 //! function which does not exist at all in the Rust port are marked
 //! `#[ignore]` with an explanatory comment.
 
+use aimux_core::tool::{RawToolCall, ToolResult};
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path, query_param};
@@ -146,16 +147,16 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
 }
 
 /// Extract `(tool_call_id, tool_name, input)` from streamed `ToolCall` parts.
-fn stream_tool_calls(parts: &[StreamPart]) -> Vec<(String, String, Value)> {
+fn stream_tool_calls(parts: &[StreamPart]) -> Vec<(String, String, String)> {
     parts
         .iter()
         .filter_map(|p| match p {
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })
         .collect()
@@ -169,11 +170,11 @@ fn stream_tool_results(parts: &[StreamPart]) -> Vec<(String, Value)> {
     parts
         .iter()
         .filter_map(|p| match p {
-            StreamPart::ToolResult {
+            StreamPart::ToolResult(ToolResult {
                 tool_call_id,
                 result,
                 ..
-            } => Some((tool_call_id.clone(), result.clone())),
+            }) => Some((tool_call_id.clone(), result.clone())),
             _ => None,
         })
         .collect()
@@ -201,12 +202,12 @@ fn gen_tool_calls(content: &[GenerateContent]) -> Vec<(String, String, String)> 
     content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })
         .collect()
@@ -217,12 +218,12 @@ fn gen_tool_results(content: &[GenerateContent]) -> Vec<(String, String, Value)>
     content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::ToolResult {
+            GenerateContent::ToolResult(ToolResult {
                 tool_call_id,
                 tool_name,
                 result,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), result.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), result.clone())),
             _ => None,
         })
         .collect()
@@ -234,16 +235,16 @@ fn gen_server_metadata(content: &[GenerateContent], name: &str) -> Vec<Value> {
     content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_name,
                 provider_metadata,
                 ..
-            }
-            | GenerateContent::ToolResult {
+            })
+            | GenerateContent::ToolResult(ToolResult {
                 tool_name,
                 provider_metadata,
                 ..
-            } if tool_name == name => provider_metadata.clone(),
+            }) if tool_name == name => provider_metadata.clone(),
             _ => None,
         })
         .collect()
@@ -1138,8 +1139,7 @@ mod do_generate {
 
         let calls = gen_tool_calls(&result.content);
         let has_call = calls.iter().any(|(_, name, input)| {
-            name == "code_execution"
-                && *input == json!(r#"{"language":"PYTHON","code":"print(1+1)"}"#)
+            name == "code_execution" && *input == r#"{"language":"PYTHON","code":"print(1+1)"}"#
         });
         assert!(
             has_call,
@@ -1201,13 +1201,13 @@ mod do_generate {
             .content
             .iter()
             .filter_map(|content| match content {
-                GenerateContent::ToolResult {
+                GenerateContent::ToolResult(ToolResult {
                     tool_call_id,
                     tool_name,
                     result,
                     provider_metadata,
                     ..
-                } if tool_name == "runCode" => Some((
+                }) if tool_name == "runCode" => Some((
                     tool_call_id,
                     result,
                     provider_metadata.as_ref().expect("result metadata"),
@@ -1284,10 +1284,7 @@ mod do_generate {
         let calls = gen_tool_calls(&result.content);
         assert_eq!(calls.len(), 1, "one executableCode part → one tool-call");
         assert_eq!(calls[0].1, "code_execution");
-        assert_eq!(
-            calls[0].2,
-            json!(r#"{"language":"PYTHON","code":"print(1+1)"}"#)
-        );
+        assert_eq!(calls[0].2, r#"{"language":"PYTHON","code":"print(1+1)"}"#);
 
         let results = gen_tool_results(&result.content);
         assert_eq!(
@@ -1578,7 +1575,7 @@ mod do_generate {
         assert_eq!(calls.len(), 1, "one toolCall part → one tool-call");
         assert_eq!(calls[0].0, "server-call-1", "the server-assigned id");
         assert_eq!(calls[0].1, "server:GOOGLE_SEARCH_WEB");
-        assert_eq!(calls[0].2, json!(r#"{"query":"San Francisco weather"}"#));
+        assert_eq!(calls[0].2, r#"{"query":"San Francisco weather"}"#);
 
         // The matching toolResponse part.
         let results = gen_tool_results(&result.content);
@@ -1930,8 +1927,7 @@ mod do_stream {
 
         let calls = stream_tool_calls(&parts);
         let has_call = calls.iter().any(|(_, name, input)| {
-            name == "runCode"
-                && *input == json!(r#"{"language":"PYTHON","code":"print(\"hello\")"}"#)
+            name == "runCode" && *input == r#"{"language":"PYTHON","code":"print(\"hello\")"}"#
         });
         assert!(
             has_call,
@@ -1950,13 +1946,13 @@ mod do_stream {
         assert!(results.iter().all(|(id, _)| id == &calls[0].0));
         assert!(parts.iter().any(|part| matches!(
             part,
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 provider_executed: Some(true),
                 provider_metadata: Some(metadata),
                 ..
-            } if tool_name == "runCode"
+            }) if tool_name == "runCode"
                 && metadata["google"] == json!({
                     "serverToolCallId": tool_call_id,
                     "serverToolType": "code_execution",
@@ -1964,12 +1960,12 @@ mod do_stream {
         )));
         assert!(parts.iter().any(|part| matches!(
             part,
-            StreamPart::ToolResult {
+            StreamPart::ToolResult(ToolResult {
                 tool_call_id,
                 tool_name,
                 provider_metadata: Some(metadata),
                 ..
-            } if tool_name == "runCode"
+            }) if tool_name == "runCode"
                 && metadata["google"] == json!({
                     "serverToolCallId": tool_call_id,
                     "serverToolType": "code_execution",
@@ -2190,7 +2186,7 @@ mod do_stream {
         assert_eq!(calls.len(), 1, "one toolCall part → one streamed tool-call");
         assert_eq!(calls[0].0, "server-call-1");
         assert_eq!(calls[0].1, "server:GOOGLE_SEARCH_WEB");
-        assert_eq!(calls[0].2, json!(r#"{"query":"San Francisco weather"}"#));
+        assert_eq!(calls[0].2, r#"{"query":"San Francisco weather"}"#);
 
         let results = stream_tool_results(&parts);
         assert_eq!(
@@ -2213,16 +2209,16 @@ mod do_stream {
         let meta: Vec<Value> = parts
             .iter()
             .filter_map(|p| match p {
-                StreamPart::ToolCall {
+                StreamPart::ToolCall(RawToolCall {
                     tool_name,
                     provider_metadata,
                     ..
-                }
-                | StreamPart::ToolResult {
+                })
+                | StreamPart::ToolResult(ToolResult {
                     tool_name,
                     provider_metadata,
                     ..
-                } if tool_name == "server:GOOGLE_SEARCH_WEB" => provider_metadata.clone(),
+                }) if tool_name == "server:GOOGLE_SEARCH_WEB" => provider_metadata.clone(),
                 _ => None,
             })
             .collect();

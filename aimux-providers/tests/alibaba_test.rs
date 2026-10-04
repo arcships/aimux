@@ -24,6 +24,7 @@
 //! DashScope's OpenAI-compatible mode. Those TS-specific behaviours are
 //! therefore not asserted here.
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use serial_test::serial;
@@ -524,15 +525,15 @@ async fn do_generate_extracts_tool_call() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_abc");
             assert_eq!(tool_name, "get-weather");
-            assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
+            assert_eq!(input, r#"{"city":"SF"}"#);
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }

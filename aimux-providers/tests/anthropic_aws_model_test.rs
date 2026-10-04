@@ -7,6 +7,7 @@
 //! - API key authentication
 //! - Error handling
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
@@ -88,12 +89,12 @@ fn as_text(item: &GenerateContent) -> &str {
 
 fn as_tool_call(item: &GenerateContent) -> (&str, &str, &str) {
     match item {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => (tool_call_id, tool_name, input),
+        }) => (tool_call_id, tool_name, input),
         _ => panic!("expected ToolCall content, got {item:?}"),
     }
 }
@@ -189,7 +190,7 @@ async fn anthropic_aws_generate_tool_call() {
     let (id, name, input) = as_tool_call(&result.content[1]);
     assert_eq!(id, "toolu_01A");
     assert_eq!(name, "getWeather");
-    assert_eq!(input, &json!(r#"{"location":"Paris"}"#));
+    assert_eq!(input, r#"{"location":"Paris"}"#);
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }
 
@@ -374,22 +375,19 @@ async fn anthropic_aws_stream_tool_call() {
     let tool_calls: Vec<_> = parts
         .iter()
         .filter_map(|p| match p {
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })
         .collect();
     assert_eq!(tool_calls.len(), 1);
     assert_eq!(tool_calls[0].0, "toolu_01B");
     assert_eq!(tool_calls[0].1, "getWeather");
-    assert_eq!(
-        tool_calls[0].2,
-        Value::String(r#"{"location":"Berlin"}"#.into())
-    );
+    assert_eq!(tool_calls[0].2, r#"{"location":"Berlin"}"#);
 }
 
 /// Test: SigV4 authentication adds Authorization header.

@@ -10,6 +10,7 @@
 //! - Usage supports `num_cached_tokens` / `prompt_tokens_details.cached_tokens`.
 //! - Finish reasons include `model_length`.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -275,7 +276,7 @@ impl LanguageModel for MistralModel {
         if let Some(tool_calls) = choice.message.tool_calls {
             for tc in tool_calls {
                 let input = tc.function.arguments;
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: tc.id,
                     tool_name: tc.function.name,
                     input,
@@ -283,7 +284,7 @@ impl LanguageModel for MistralModel {
                     dynamic: None,
                     thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
             }
         }
 
@@ -520,18 +521,16 @@ impl LanguageModel for MistralModel {
                                         provider_metadata: None,
                                     });
 
-                                    let input = Value::String(args);
-                                    yield Ok(StreamPart::ToolCall {
+                                    let input = args;
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: tool_id,
                                         tool_name,
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
                                         thought_signature: None,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                             }
 

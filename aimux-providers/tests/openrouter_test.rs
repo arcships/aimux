@@ -1,4 +1,4 @@
-﻿//! Provider-specific tests for the OpenRouter provider.
+//! Provider-specific tests for the OpenRouter provider.
 //!
 //! OpenRouter is a thin OpenAI-compatible wrapper over [`OpenAIProvider`]. The
 //! behaviours verified here are the ones the wrapper is responsible for:
@@ -17,6 +17,7 @@
 //! `/api/v1/chat/completions` — matching the path the real OpenRouter API
 //! (base `https://openrouter.ai/api/v1`) records in the cassettes.
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use serial_test::serial;
@@ -399,15 +400,15 @@ async fn do_generate_extracts_tool_call() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_abc");
             assert_eq!(tool_name, "get-weather");
-            assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
+            assert_eq!(input, r#"{"city":"SF"}"#);
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -527,18 +528,18 @@ async fn do_stream_emits_tool_call() {
     let parts = collect_stream(result).await;
 
     let tool_call = parts.iter().find_map(|p| match p {
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+        }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
         _ => None,
     });
     let (id, name, input) = tool_call.expect("should have ToolCall");
     assert_eq!(id, "call_abc");
     assert_eq!(name, "get-weather");
-    assert_eq!(input, Value::String(r#"{"city":"SF"}"#.into()));
+    assert_eq!(input, r#"{"city":"SF"}"#);
 }
 
 /// A 401 response maps to `AiMuxError::ApiCall` (401 in `status_code`).
@@ -645,7 +646,7 @@ mod conformance {
     fn has_tool_call(content: &[GenerateContent]) -> bool {
         content
             .iter()
-            .any(|c| matches!(c, GenerateContent::ToolCall { .. }))
+            .any(|c| matches!(c, GenerateContent::ToolCall(_)))
     }
 
     fn has_reasoning(content: &[GenerateContent]) -> bool {

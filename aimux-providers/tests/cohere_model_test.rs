@@ -5,6 +5,7 @@
 //! - doGenerate: text extraction, MAX_TOKENS finish reason, tool calls, request body
 //! - doStream: text streaming, tool call streaming, reasoning streaming
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -261,23 +262,20 @@ async fn should_extract_tool_calls() {
 
     assert_eq!(result.content.len(), 2);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_name, input, ..
-        } => {
+        }) => {
             assert_eq!(tool_name, "weather");
-            assert_eq!(
-                input,
-                &Value::String(r#"{"location":"San Francisco"}"#.into())
-            );
+            assert_eq!(input, r#"{"location":"San Francisco"}"#);
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
     match &result.content[1] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_name, input, ..
-        } => {
+        }) => {
             assert_eq!(tool_name, "cityAttractions");
-            assert_eq!(input, &Value::String(r#"{"city":"San Francisco"}"#.into()));
+            assert_eq!(input, r#"{"city":"San Francisco"}"#);
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -323,9 +321,9 @@ async fn should_handle_null_tool_call_arguments() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::ToolCall { input, .. } => {
+        GenerateContent::ToolCall(RawToolCall { input, .. }) => {
             // "null" should be replaced with "{}".
-            assert_eq!(input, &Value::String("{}".into()));
+            assert_eq!(input, "{}");
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -541,12 +539,12 @@ async fn should_stream_tool_call_deltas() {
 
     // Should have ToolInputStart, ToolInputDelta(s), ToolInputEnd, ToolCall.
     let tool_call = parts.iter().find_map(|p| match p {
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => Some((tool_call_id, tool_name, input)),
+        }) => Some((tool_call_id, tool_name, input)),
         _ => None,
     });
     let (id, name, input) = tool_call.expect("should have ToolCall");
@@ -555,10 +553,7 @@ async fn should_stream_tool_call_deltas() {
     // Providers never parse tool input (Core owns that) — the flush forwards
     // the accumulated deltas verbatim (only trimmed), so interior whitespace
     // from the deltas survives.
-    assert_eq!(
-        input,
-        &Value::String(r#"{"location": "San Francisco"}"#.into())
-    );
+    assert_eq!(input, r#"{"location": "San Francisco"}"#);
 
     // Verify the accumulated deltas.
     let deltas: Vec<String> = parts
@@ -617,12 +612,12 @@ async fn malformed_streamed_tool_call_arguments_do_not_error_the_stream() {
         "provider must not parse tool input itself: {raw_parts:?}"
     );
     let raw_input = raw_parts.iter().find_map(|p| match p {
-        StreamPart::ToolCall { input, .. } => Some(input.clone()),
+        StreamPart::ToolCall(RawToolCall { input, .. }) => Some(input.clone()),
         _ => None,
     });
     assert_eq!(
         raw_input,
-        Some(Value::String(r#"{"value":"#.to_string())),
+        Some(r#"{"value":"#.to_string()),
         "provider must forward the malformed text verbatim"
     );
 
@@ -1550,18 +1545,18 @@ async fn should_stream_empty_tool_call_arguments() {
     let parts = collect_stream(result).await;
 
     let tool_call = parts.iter().find_map(|p| match p {
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+        }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
         _ => None,
     });
     let (id, name, input) = tool_call.expect("should have ToolCall");
     assert_eq!(id, "tc_empty");
     assert_eq!(name, "doThing");
-    assert_eq!(input, Value::String("{}".into()));
+    assert_eq!(input, "{}");
 
     let finish = parts.last().expect("should have finish");
     match finish {

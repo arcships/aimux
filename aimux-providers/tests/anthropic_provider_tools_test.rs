@@ -38,6 +38,7 @@
 //!    Rust doesn't use snapshot testing; inline-snapshot tests are translated
 //!    to explicit assertions where possible.
 
+use aimux_core::tool::{RawToolCall, ToolResult};
 use std::collections::HashMap;
 
 use serde_json::{Value, json};
@@ -567,7 +568,7 @@ mod web_search_tool {
         // The server_tool_use block is surfaced as a tool-call so the turn
         // round-trips; the result/source mapping is not yet asserted here.
         assert!(raw_result.content.iter().any(
-            |c| matches!(c, GenerateContent::ToolCall { tool_name, .. } if tool_name == "mySearch")
+            |c| matches!(c, GenerateContent::ToolCall(RawToolCall { tool_name, .. }) if tool_name == "mySearch")
         ));
 
         let result = generate_text(
@@ -726,9 +727,9 @@ mod web_search_tool {
             .content
             .iter()
             .find_map(|c| match c {
-                GenerateContent::ToolResult {
+                GenerateContent::ToolResult(ToolResult {
                     result, is_error, ..
-                } => Some((result, is_error)),
+                }) => Some((result, is_error)),
                 _ => None,
             })
             .expect("the error result block must be surfaced");
@@ -1168,11 +1169,11 @@ mod tool_search_tool {
             .content
             .iter()
             .filter_map(|part| match part {
-                GenerateContent::ToolResult {
+                GenerateContent::ToolResult(ToolResult {
                     tool_call_id,
                     tool_name,
                     ..
-                } => Some((tool_call_id.as_str(), tool_name.as_str())),
+                }) => Some((tool_call_id.as_str(), tool_name.as_str())),
                 _ => None,
             })
             .collect();

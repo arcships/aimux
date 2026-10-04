@@ -9,6 +9,7 @@
 //! Vertex AI uses the same request/response format as the public Google Gemini
 //! API, so the response fixtures mirror the Gemini API shape.
 
+use aimux_core::tool::{RawToolCall, ToolResult};
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path, query_param};
@@ -100,12 +101,12 @@ fn as_text(item: &GenerateContent) -> &str {
 
 fn as_tool_call(item: &GenerateContent) -> (&str, &str, &str) {
     match item {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => (tool_call_id, tool_name, input),
+        }) => (tool_call_id, tool_name, input),
         _ => panic!("expected ToolCall content, got {item:?}"),
     }
 }
@@ -205,7 +206,7 @@ async fn vertex_generate_tool_call() {
     let (id, name, input) = as_tool_call(&result.content[0]);
     assert_eq!(id, "call_1");
     assert_eq!(name, "getWeather");
-    assert_eq!(input, &json!(r#"{"location":"Tokyo"}"#));
+    assert_eq!(input, r#"{"location":"Tokyo"}"#);
     // STOP with tool calls → ToolCalls
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }
@@ -263,14 +264,16 @@ async fn vertex_renamed_code_execution_passes_core_generate_boundary() {
     assert!(call_metadata.get("google").is_none());
     assert!(result.raw.content.iter().any(|content| matches!(
         content,
-        GenerateContent::ToolResult { tool_name, .. } if tool_name == "runCode"
+        GenerateContent::ToolResult(ToolResult { tool_name, .. }) if tool_name == "runCode"
     )));
     let result_ids: Vec<&str> = result
         .raw
         .content
         .iter()
         .filter_map(|content| match content {
-            GenerateContent::ToolResult { tool_call_id, .. } => Some(tool_call_id.as_str()),
+            GenerateContent::ToolResult(ToolResult { tool_call_id, .. }) => {
+                Some(tool_call_id.as_str())
+            }
             _ => None,
         })
         .collect();
@@ -369,14 +372,14 @@ async fn vertex_server_tool_call_and_response_pass_core_generate_boundary() {
     );
     assert!(result.raw.content.iter().any(|content| matches!(
         content,
-        GenerateContent::ToolResult {
+        GenerateContent::ToolResult(ToolResult {
             tool_call_id,
             tool_name,
             result,
             dynamic: None,
             provider_metadata: Some(metadata),
             ..
-        } if tool_call_id == "server-call-1"
+        }) if tool_call_id == "server-call-1"
             && tool_name == "server:GOOGLE_SEARCH_WEB"
             && *result == json!({ "results": [{ "title": "Sunny" }] })
             && metadata["googleVertex"] == json!({
@@ -428,17 +431,17 @@ async fn vertex_generate_tool_call_with_thought_signature() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             thought_signature,
             provider_metadata,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_1");
             assert_eq!(tool_name, "getWeather");
-            assert_eq!(input, &json!(r#"{"location":"Tokyo"}"#));
+            assert_eq!(input, r#"{"location":"Tokyo"}"#);
             assert_eq!(
                 thought_signature.as_deref(),
                 Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
@@ -752,18 +755,18 @@ async fn vertex_stream_tool_call() {
 
     let parts = collect_stream(result).await;
     let tool_call = parts.iter().find_map(|p| match p {
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+        }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
         _ => None,
     });
     let (id, name, input) = tool_call.expect("should have ToolCall");
     assert_eq!(id, "call_1");
     assert_eq!(name, "getWeather");
-    assert_eq!(input, json!(r#"{"location":"Tokyo"}"#));
+    assert_eq!(input, r#"{"location":"Tokyo"}"#);
 }
 
 /// TS: response headers are exposed on the stream result.
@@ -859,16 +862,16 @@ fn finish_provider_metadata(parts: &[StreamPart]) -> Option<Value> {
 }
 
 /// Collect `(tool_call_id, tool_name, input)` from streamed `ToolCall` parts.
-fn stream_tool_calls(parts: &[StreamPart]) -> Vec<(String, String, Value)> {
+fn stream_tool_calls(parts: &[StreamPart]) -> Vec<(String, String, String)> {
     parts
         .iter()
         .filter_map(|p| match p {
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })
         .collect()
@@ -879,11 +882,11 @@ fn stream_tool_results(parts: &[StreamPart]) -> Vec<(String, Value)> {
     parts
         .iter()
         .filter_map(|p| match p {
-            StreamPart::ToolResult {
+            StreamPart::ToolResult(ToolResult {
                 tool_call_id,
                 result,
                 ..
-            } => Some((tool_call_id.clone(), result.clone())),
+            }) => Some((tool_call_id.clone(), result.clone())),
             _ => None,
         })
         .collect()
@@ -964,7 +967,7 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
 
     let calls = stream_tool_calls(&parts);
     let has_call = calls.iter().any(|(_, name, input)| {
-        name == "runCode" && *input == json!(r#"{"language":"PYTHON","code":"print(\"hello\")"}"#)
+        name == "runCode" && *input == r#"{"language":"PYTHON","code":"print(\"hello\")"}"#
     });
     assert!(
         has_call,
@@ -989,12 +992,12 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
     assert!(results.iter().all(|(id, _)| id == &call_id));
     assert!(parts.iter().any(|part| matches!(
         part,
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             provider_metadata: Some(metadata),
             ..
-        } if tool_name == "runCode"
+        }) if tool_name == "runCode"
             && metadata["googleVertex"] == json!({
                 "serverToolCallId": tool_call_id,
                 "serverToolType": "code_execution",
@@ -1004,12 +1007,12 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
     )));
     assert!(parts.iter().any(|part| matches!(
         part,
-        StreamPart::ToolResult {
+        StreamPart::ToolResult(ToolResult {
             tool_call_id,
             tool_name,
             provider_metadata: Some(metadata),
             ..
-        } if tool_name == "runCode"
+        }) if tool_name == "runCode"
             && metadata["googleVertex"] == json!({
                 "serverToolCallId": tool_call_id,
                 "serverToolType": "code_execution",
@@ -1207,7 +1210,7 @@ async fn vertex_stream_server_tool_call_and_response() {
 
     assert!(core_parts.iter().any(|part| matches!(
         part,
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(aimux_core::tool::ToolCall {
             tool_call_id,
             tool_name,
             input,
@@ -1216,7 +1219,7 @@ async fn vertex_stream_server_tool_call_and_response() {
             invalid: None,
             provider_metadata: Some(metadata),
             ..
-        } if tool_call_id == "server-call-1"
+        }) if tool_call_id == "server-call-1"
             && tool_name == "server:GOOGLE_SEARCH_WEB"
             && *input == json!({ "query": "San Francisco weather" })
             && metadata["googleVertex"]["serverToolCallId"] == "server-call-1"
@@ -1225,14 +1228,14 @@ async fn vertex_stream_server_tool_call_and_response() {
     )));
     assert!(core_parts.iter().any(|part| matches!(
         part,
-        StreamPart::ToolResult {
+        StreamPart::ToolResult(ToolResult {
             tool_call_id,
             tool_name,
             result,
             dynamic: None,
             provider_metadata: Some(metadata),
             ..
-        } if tool_call_id == "server-call-1"
+        }) if tool_call_id == "server-call-1"
             && tool_name == "server:GOOGLE_SEARCH_WEB"
             && *result == json!({ "results": [{ "title": "Weather in SF" }] })
             && metadata["googleVertex"]["serverToolType"] == "GOOGLE_SEARCH_WEB"

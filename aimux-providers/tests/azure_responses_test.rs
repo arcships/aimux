@@ -1,4 +1,4 @@
-﻿//! Wiremock tests for the Azure OpenAI Responses API provider.
+//! Wiremock tests for the Azure OpenAI Responses API provider.
 //!
 //! These cover the Azure-specific differences from the OpenAI Responses
 //! provider:
@@ -23,6 +23,7 @@
 //! (responses-specific cases). Not all 44 TS cases are translated — the focus
 //! is on Azure-specific capabilities.
 
+use aimux_core::tool::RawToolCall;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -525,22 +526,19 @@ async fn should_extract_tool_call_content() {
         .content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })
         .collect();
     assert_eq!(tool_calls.len(), 1);
     assert_eq!(tool_calls[0].0, "call_abc123");
     assert_eq!(tool_calls[0].1, "getWeather");
-    assert_eq!(
-        tool_calls[0].2,
-        Value::String(r#"{"location": "San Francisco"}"#.into())
-    );
+    assert_eq!(tool_calls[0].2, r#"{"location": "San Francisco"}"#);
 }
 
 /// Usage is extracted from the `usage` field.

@@ -1,4 +1,4 @@
-﻿//! Remaining (not-yet-covered) Amazon Bedrock TS test cases, translated to Rust.
+//! Remaining (not-yet-covered) Amazon Bedrock TS test cases, translated to Rust.
 //!
 //! Translation sources (under `reference/ai/packages/amazon-bedrock/src/`):
 //! - `normalize-tool-call-id.test.ts` — `isMistralModel` / `normalizeToolCallId`
@@ -19,6 +19,7 @@
 //! feature are marked `#[ignore = "TODO: implementation gap"]`. The test body
 //! documents the expected behaviour so it can be flipped on once the gap lands.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use futures::StreamExt;
@@ -99,12 +100,12 @@ fn as_text(item: &GenerateContent) -> &str {
 
 fn as_tool_call(item: &GenerateContent) -> (&str, &str, &str) {
     match item {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => (tool_call_id, tool_name, input),
+        }) => (tool_call_id, tool_name, input),
         _ => panic!("expected ToolCall content, got {item:?}"),
     }
 }
@@ -934,19 +935,19 @@ async fn stream_tool_call_empty_input() {
     let tool_calls: Vec<_> = parts
         .iter()
         .filter_map(|p| match p {
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })
         .collect();
     assert_eq!(tool_calls.len(), 1);
     assert_eq!(tool_calls[0].0, "tool_1");
     assert_eq!(tool_calls[0].1, "updateIssueList");
-    assert_eq!(tool_calls[0].2, Value::String("{}".into()));
+    assert_eq!(tool_calls[0].2, "{}");
 }
 
 // ── omit toolConfig ──────────────────────────────────────────────────────────

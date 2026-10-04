@@ -1,4 +1,4 @@
-﻿//! Rust translations of the AI SDK xAI provider chat-level tests.
+//! Rust translations of the AI SDK xAI provider chat-level tests.
 //!
 //! Sources (TS → Rust):
 //! - `packages/xai/src/supports-reasoning-effort.test.ts` → `supports_reasoning_effort` mod
@@ -13,6 +13,7 @@
 //! or SSE response, creates an `XaiModel` via `XAIProvider`, calls
 //! `do_generate` / `do_stream`, and asserts on the result.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use futures::StreamExt;
@@ -1401,21 +1402,18 @@ mod do_generate {
             .unwrap();
 
         let tool_call = result.content.iter().find_map(|c| match c {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         });
         let (id, name, input) = tool_call.expect("should have ToolCall");
         assert_eq!(id, "call_93562515");
         assert_eq!(name, "weather");
-        assert_eq!(
-            input,
-            Value::String(r#"{"location":"San Francisco"}"#.into())
-        );
+        assert_eq!(input, r#"{"location":"San Francisco"}"#);
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
     }
 
@@ -2000,21 +1998,18 @@ mod do_stream {
         let parts = collect_stream(result).await;
 
         let tool_call = parts.iter().find_map(|p| match p {
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         });
         let (id, name, input) = tool_call.expect("should have ToolCall");
         assert_eq!(id, "call_55117580");
         assert_eq!(name, "weather");
-        assert_eq!(
-            input,
-            Value::String(r#"{"location":"San Francisco"}"#.into())
-        );
+        assert_eq!(input, r#"{"location":"San Francisco"}"#);
     }
 
     /// TS: should pass the messages (stream request body)

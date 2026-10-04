@@ -1,4 +1,4 @@
-﻿//! Wiremock tests for the Azure OpenAI provider.
+//! Wiremock tests for the Azure OpenAI provider.
 //!
 //! These cover the Azure-specific differences from the OpenAI provider:
 //! - deployment-based URL construction with an `api-version` query parameter
@@ -13,6 +13,7 @@
 //! it via `base_url`, and asserts on the issued request and/or the parsed
 //! result.
 
+use aimux_core::tool::RawToolCall;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -666,15 +667,15 @@ async fn should_extract_tool_call() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_abc");
             assert_eq!(tool_name, "get-weather");
-            assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
+            assert_eq!(input, r#"{"city":"SF"}"#);
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -705,18 +706,18 @@ async fn should_stream_tool_call() {
 
     let parts = collect_stream(result).await;
     let tool_call = parts.iter().find_map(|p| match p {
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+        }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
         _ => None,
     });
     let (id, name, input) = tool_call.expect("should have ToolCall");
     assert_eq!(id, "call_abc");
     assert_eq!(name, "get-weather");
-    assert_eq!(input, Value::String(r#"{"city":"SF"}"#.into()));
+    assert_eq!(input, r#"{"city":"SF"}"#);
 }
 
 /// TS: "should send a json_schema response format for structured output"

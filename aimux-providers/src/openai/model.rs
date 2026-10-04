@@ -7,6 +7,7 @@
 //! speak the OpenAI chat-completions wire format (notably Azure OpenAI) reuse
 //! the conversion + streaming logic while supplying their own URL and auth.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -319,7 +320,7 @@ pub async fn execute_generate(
     if let Some(tool_calls) = choice.message.tool_calls {
         for tc in tool_calls {
             let input = tc.function.arguments;
-            content.push(GenerateContent::ToolCall {
+            content.push(GenerateContent::ToolCall(RawToolCall {
                 tool_call_id: tc.id,
                 tool_name: tc.function.name,
                 input,
@@ -327,7 +328,7 @@ pub async fn execute_generate(
                 dynamic: None,
                 thought_signature: None,
                 provider_metadata: None,
-            });
+            }));
         }
     }
     // Parse annotations (URL citations) → Source content items.

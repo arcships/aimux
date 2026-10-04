@@ -5,6 +5,7 @@
 //! across all Bedrock-backed models (Anthropic Claude, Meta Llama, Mistral,
 //! etc.).
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -480,22 +481,20 @@ impl LanguageModel for BedrockModel {
                             yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
                             // Empty input normalizes to "{}" per the upstream
                             // provider.
-                            let input = serde_json::Value::String(if acc.is_empty() {
+                            let input = if acc.is_empty() {
                                 "{}".to_string()
                             } else {
                                 acc
-                            });
-                            yield Ok(StreamPart::ToolCall {
+                            };
+                            yield Ok(StreamPart::ToolCall(RawToolCall {
                                 tool_call_id: id,
                                 tool_name: name,
                                 input,
                                 provider_executed: None,
                                 dynamic: None,
                                 thought_signature: None,
-                                invalid: None,
-                                error: None,
                                 provider_metadata: None,
-                            });
+                            }));
                         } else if reasoning_id.is_some() {
                             let id = idx.to_string();
                             if reasoning_id.as_deref() == Some(id.as_str()) {
@@ -649,7 +648,7 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
         });
     }
     if let Some(tool_use) = &block.tool_use {
-        content.push(GenerateContent::ToolCall {
+        content.push(GenerateContent::ToolCall(RawToolCall {
             tool_call_id: tool_use.tool_use_id.clone(),
             tool_name: tool_use.name.clone(),
             input: tool_use.input.to_string(),
@@ -657,7 +656,7 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
             dynamic: None,
             thought_signature: None,
             provider_metadata: None,
-        });
+        }));
     }
     if let Some(rc) = &block.reasoning_content {
         if let Some(rt) = rc.get("reasoningText") {

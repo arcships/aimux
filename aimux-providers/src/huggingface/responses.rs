@@ -14,6 +14,8 @@
 //! - `map-huggingface-responses-finish-reason.ts` — finish-reason mapping
 //! - `huggingface-responses-language-model-options.ts` — provider options
 
+use aimux_core::tool::RawToolCall;
+use aimux_core::tool::ToolResult;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -419,28 +421,26 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 .get("arguments")
                                                 .and_then(|v| v.as_str())
                                                 .unwrap_or("{}");
-                                            let input = Value::String(arguments.to_string());
+                                            let input = arguments.to_string();
 
                                             yield Ok(StreamPart::ToolInputEnd {
                                                 id: call_id.clone(),
                                                 provider_metadata: None,
                                             });
-                                            yield Ok(StreamPart::ToolCall {
+                                            yield Ok(StreamPart::ToolCall(RawToolCall {
                                                 tool_call_id: call_id.clone(),
                                                 tool_name: name.clone(),
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
                                                 thought_signature: None,
-                                                invalid: None,
-                                                error: None,
                                                 provider_metadata: None,
-                                            });
+                                            }));
 
                                             if let Some(output) =
                                                 item.get("output").and_then(|v| v.as_str())
                                             {
-                                                yield Ok(StreamPart::ToolResult {
+                                                yield Ok(StreamPart::ToolResult(ToolResult {
                                                     tool_call_id: call_id,
                                                     tool_name: name.clone(),
                                                     result: Value::String(output.to_string()),
@@ -448,7 +448,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                     preliminary: None,
                                                     dynamic: None,
                                                     provider_metadata: None,
-                                                });
+                                                }));
                                             }
                                         }
                                         _ => {}
@@ -1140,7 +1140,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     .and_then(|v| v.as_str())
                     .unwrap_or("{}");
                 let input = arguments.to_string();
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: call_id.to_string(),
                     tool_name: name.to_string(),
                     input,
@@ -1148,7 +1148,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     dynamic: None,
                     thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
             }
 
             "mcp_call" => {
@@ -1159,7 +1159,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     .and_then(|v| v.as_str())
                     .unwrap_or("{}");
                 let input = arguments.to_string();
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id.to_string(),
                     tool_name: name.to_string(),
                     input,
@@ -1167,10 +1167,10 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     dynamic: Some(true),
                     thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
 
                 if let Some(output) = part.get("output").filter(|v| !v.is_null()) {
-                    content.push(GenerateContent::ToolResult {
+                    content.push(GenerateContent::ToolResult(ToolResult {
                         tool_call_id: id.to_string(),
                         tool_name: name.to_string(),
                         result: output.clone(),
@@ -1178,14 +1178,14 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                         preliminary: None,
                         dynamic: Some(true),
                         provider_metadata: None,
-                    });
+                    }));
                 }
             }
 
             "mcp_list_tools" => {
                 let id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 let server_label = part.get("server_label").cloned().unwrap_or(Value::Null);
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id.to_string(),
                     tool_name: "list_tools".to_string(),
                     input: json!({ "server_label": server_label }).to_string(),
@@ -1193,10 +1193,10 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     dynamic: Some(true),
                     thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
 
                 if let Some(tools) = part.get("tools").filter(|v| !v.is_null()) {
-                    content.push(GenerateContent::ToolResult {
+                    content.push(GenerateContent::ToolResult(ToolResult {
                         tool_call_id: id.to_string(),
                         tool_name: "list_tools".to_string(),
                         result: json!({ "tools": tools }),
@@ -1204,7 +1204,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                         preliminary: None,
                         dynamic: Some(true),
                         provider_metadata: None,
-                    });
+                    }));
                 }
             }
 

@@ -8,6 +8,7 @@
 //! (`candidates[].content.parts[]`, `usageMetadata`, `finishReason`).
 //! Reference: `reference/ai/packages/google/src/__fixtures__/`.
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path, query_param};
@@ -418,15 +419,15 @@ mod do_generate {
 
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tool_call_id, "call-1");
                 assert_eq!(tool_name, "weather");
-                assert_eq!(input, &json!(r#"{"location":"San Francisco"}"#));
+                assert_eq!(input, r#"{"location":"San Francisco"}"#);
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
@@ -473,16 +474,16 @@ mod do_generate {
 
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 thought_signature,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tool_call_id, "call-1");
                 assert_eq!(tool_name, "weather");
-                assert_eq!(input, &json!(r#"{"location":"San Francisco"}"#));
+                assert_eq!(input, r#"{"location":"San Francisco"}"#);
                 assert_eq!(
                     thought_signature.as_deref(),
                     Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
@@ -870,15 +871,15 @@ mod do_generate {
 
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tool_call_id, "");
                 assert_eq!(tool_name, "weather");
-                assert_eq!(input, &json!(r#"{"location":"SF"}"#));
+                assert_eq!(input, r#"{"location":"SF"}"#);
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
@@ -919,26 +920,26 @@ mod do_generate {
 
         assert_eq!(result.content.len(), 2);
         match &result.content[0] {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tool_call_id, "call-1");
                 assert_eq!(tool_name, "weather");
             }
             other => panic!("expected first ToolCall, got {other:?}"),
         }
         match &result.content[1] {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tool_call_id, "call-2");
                 assert_eq!(tool_name, "calendar");
-                assert_eq!(input, &json!(r#"{"date":"2024-01-01"}"#));
+                assert_eq!(input, r#"{"date":"2024-01-01"}"#);
             }
             other => panic!("expected second ToolCall, got {other:?}"),
         }
@@ -982,7 +983,9 @@ mod do_generate {
             other => panic!("expected Text, got {other:?}"),
         }
         match &result.content[1] {
-            GenerateContent::ToolCall { tool_name, .. } => assert_eq!(tool_name, "weather"),
+            GenerateContent::ToolCall(RawToolCall { tool_name, .. }) => {
+                assert_eq!(tool_name, "weather")
+            }
             other => panic!("expected ToolCall, got {other:?}"),
         }
     }
@@ -1171,10 +1174,10 @@ mod do_stream {
 
         // Verify tool-call
         let tool_call = parts.iter().find(|p| {
-            matches!(p, StreamPart::ToolCall { tool_call_id, tool_name, input, .. }
+            matches!(p, StreamPart::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. })
                 if tool_call_id == "call-1"
                 && tool_name == "weather"
-                && input == &json!(r#"{"location":"San Francisco"}"#))
+                && input == r#"{"location":"San Francisco"}"#)
         });
         assert!(
             tool_call.is_some(),
@@ -1220,7 +1223,7 @@ mod do_stream {
 
         // The complete tool-call event carries the thought signature.
         let tool_call = parts.iter().find(|p| {
-            matches!(p, StreamPart::ToolCall { tool_call_id, thought_signature, .. }
+            matches!(p, StreamPart::ToolCall(RawToolCall { tool_call_id, thought_signature, .. })
                 if tool_call_id == "call-1"
                 && thought_signature.as_deref()
                     == Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH"))
@@ -1356,7 +1359,7 @@ mod do_stream {
 
         // Should have a tool call
         let tool_call = parts.iter().find(
-            |p| matches!(p, StreamPart::ToolCall { tool_name, .. } if tool_name == "test-tool"),
+            |p| matches!(p, StreamPart::ToolCall(RawToolCall { tool_name, .. }) if tool_name == "test-tool"),
         );
         assert!(tool_call.is_some(), "should have ToolCall");
 

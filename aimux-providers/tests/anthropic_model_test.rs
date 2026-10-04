@@ -20,6 +20,7 @@
 //! field, `providerMetadata` on the finish part) are intentionally omitted and
 //! documented in the task summary.
 
+use aimux_core::tool::{RawToolCall, ToolResult};
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -135,12 +136,12 @@ fn as_text(item: &GenerateContent) -> &str {
 /// Helper to destructure a `GenerateContent::ToolCall`.
 fn as_tool_call(item: &GenerateContent) -> (&str, &str, &str) {
     match item {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => (tool_call_id, tool_name, input),
+        }) => (tool_call_id, tool_name, input),
         _ => panic!("expected ToolCall content, got {item:?}"),
     }
 }
@@ -299,7 +300,7 @@ mod do_generate {
         let (id, name, input) = as_tool_call(&result.content[1]);
         assert_eq!(id, "toolu_1");
         assert_eq!(name, "test-tool");
-        assert_eq!(input, &json!(r#"{"value":"example value"}"#));
+        assert_eq!(input, r#"{"value":"example value"}"#);
 
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
         assert_eq!(result.finish_reason.raw.as_deref(), Some("tool_use"));
@@ -460,11 +461,11 @@ mod do_generate {
         let (id_a, name_a, input_a) = as_tool_call(&result.content[0]);
         assert_eq!(id_a, "toolu_a");
         assert_eq!(name_a, "tool-a");
-        assert_eq!(input_a, &json!(r#"{"x":1}"#));
+        assert_eq!(input_a, r#"{"x":1}"#);
         let (id_b, name_b, input_b) = as_tool_call(&result.content[1]);
         assert_eq!(id_b, "toolu_b");
         assert_eq!(name_b, "tool-b");
-        assert_eq!(input_b, &json!(r#"{"y":2}"#));
+        assert_eq!(input_b, r#"{"y":2}"#);
     }
 
     /// Tool input may be a nested object.
@@ -503,7 +504,7 @@ mod do_generate {
         let (_, _, input) = as_tool_call(&result.content[0]);
         assert_eq!(
             input,
-            &json!(r#"{"nested":{"arr":[1,2,3],"flag":true},"items":["a","b"]}"#)
+            r#"{"nested":{"arr":[1,2,3],"flag":true},"items":["a","b"]}"#
         );
     }
 
@@ -1177,21 +1178,18 @@ mod do_stream {
         let tool_call = parts
             .iter()
             .find_map(|p| match p {
-                StreamPart::ToolCall {
+                StreamPart::ToolCall(RawToolCall {
                     tool_call_id,
                     tool_name,
                     input,
                     ..
-                } => Some((tool_call_id, tool_name, input)),
+                }) => Some((tool_call_id, tool_name, input)),
                 _ => None,
             })
             .expect("a ToolCall part");
         assert_eq!(tool_call.0, "toolu_01DBsB4vvYLnBDzZ5rBSxSLs");
         assert_eq!(tool_call.1, "test-tool");
-        assert_eq!(
-            tool_call.2,
-            &Value::String(r#"{"value":"Sparkle Day"}"#.into())
-        );
+        assert_eq!(tool_call.2, r#"{"value":"Sparkle Day"}"#);
 
         // Finish reason reflects tool_use.
         let finish = parts
@@ -1267,7 +1265,7 @@ mod do_stream {
         )));
         assert!(raw_parts.iter().any(|part| matches!(
             part,
-            StreamPart::ToolCall { tool_name, .. } if tool_name == "myComputer"
+            StreamPart::ToolCall(RawToolCall { tool_name, .. }) if tool_name == "myComputer"
         )));
 
         let result = stream_text(
@@ -1351,23 +1349,17 @@ mod do_stream {
         let raw_call = raw_parts
             .iter()
             .find_map(|part| match part {
-                StreamPart::ToolCall {
+                StreamPart::ToolCall(RawToolCall {
                     tool_name,
                     input,
                     dynamic,
                     ..
-                } => Some((tool_name, input, dynamic)),
+                }) => Some((tool_name, input, dynamic)),
                 _ => None,
             })
             .expect("code execution tool call");
         assert_eq!(raw_call.0, "code_execution");
-        let raw_input: Value = serde_json::from_str(
-            raw_call
-                .1
-                .as_str()
-                .expect("provider input remains raw JSON"),
-        )
-        .expect("valid tool input JSON");
+        let raw_input: Value = serde_json::from_str(raw_call.1).expect("valid tool input JSON");
         assert_eq!(raw_input["type"], "programmatic-tool-call");
         assert_eq!(raw_input["code"], "print(2)");
         assert_eq!(raw_call.2, &Some(true));
@@ -1433,11 +1425,11 @@ mod do_stream {
         let tool_call = parts
             .iter()
             .find_map(|p| match p {
-                StreamPart::ToolCall { input, .. } => Some(input.clone()),
+                StreamPart::ToolCall(RawToolCall { input, .. }) => Some(input.clone()),
                 _ => None,
             })
             .expect("a ToolCall part");
-        assert_eq!(tool_call, Value::String("{}".into()));
+        assert_eq!(tool_call, "{}");
     }
 
     // ── misc SSE scenarios ──────────────────────────────────────────────────
@@ -1581,18 +1573,18 @@ mod do_stream {
         let tool_call = parts
             .iter()
             .find_map(|p| match p {
-                StreamPart::ToolCall {
+                StreamPart::ToolCall(RawToolCall {
                     tool_call_id,
                     tool_name,
                     input,
                     ..
-                } => Some((tool_call_id, tool_name, input)),
+                }) => Some((tool_call_id, tool_name, input)),
                 _ => None,
             })
             .unwrap();
         assert_eq!(tool_call.0, "toolu_1");
         assert_eq!(tool_call.1, "test-tool");
-        assert_eq!(tool_call.2, &Value::String(r#"{"value":"x"}"#.into()));
+        assert_eq!(tool_call.2, r#"{"value":"x"}"#);
     }
 
     /// Two parallel tool_use blocks (index 0 and index 1) each produce their
@@ -1628,22 +1620,22 @@ mod do_stream {
         };
         let parts = collect_stream(model.do_stream(&opts).await.unwrap()).await;
 
-        let tool_calls: Vec<(String, Value)> = parts
+        let tool_calls: Vec<(String, String)> = parts
             .iter()
             .filter_map(|p| match p {
-                StreamPart::ToolCall {
+                StreamPart::ToolCall(RawToolCall {
                     tool_call_id,
                     input,
                     ..
-                } => Some((tool_call_id.clone(), input.clone())),
+                }) => Some((tool_call_id.clone(), input.clone())),
                 _ => None,
             })
             .collect();
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[0].0, "toolu_a");
-        assert_eq!(tool_calls[0].1, Value::String(r#"{"a":1}"#.into()));
+        assert_eq!(tool_calls[0].1, r#"{"a":1}"#);
         assert_eq!(tool_calls[1].0, "toolu_b");
-        assert_eq!(tool_calls[1].1, Value::String(r#"{"b":2}"#.into()));
+        assert_eq!(tool_calls[1].1, r#"{"b":2}"#);
     }
 
     // ── pre-stream HTTP errors ──────────────────────────────────────────────
@@ -1894,11 +1886,11 @@ mod do_stream {
         let result_names: std::collections::HashMap<&str, &str> = parts
             .iter()
             .filter_map(|part| match part {
-                StreamPart::ToolResult {
+                StreamPart::ToolResult(ToolResult {
                     tool_call_id,
                     tool_name,
                     ..
-                } => Some((tool_call_id.as_str(), tool_name.as_str())),
+                }) => Some((tool_call_id.as_str(), tool_name.as_str())),
                 _ => None,
             })
             .collect();
@@ -1949,9 +1941,9 @@ mod do_stream {
 
         let parts = collect_stream(model.do_stream(&options).await.unwrap()).await;
         let metadata = parts.iter().find_map(|part| match part {
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 provider_metadata, ..
-            } => provider_metadata.as_ref(),
+            }) => provider_metadata.as_ref(),
             _ => None,
         });
         assert_eq!(

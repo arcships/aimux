@@ -14,6 +14,7 @@
 //!
 //! Reference: <https://docs.cloud.google.com/claude-on-vertex-ai>
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -386,22 +387,20 @@ impl LanguageModel for VertexAnthropicModel {
                                     ContentBlock::McpToolUse { id, name, input, server_name } => {
                                         mcp_tool_calls
                                             .insert(id.clone(), (name.clone(), server_name.clone()));
-                                        yield Ok(StreamPart::ToolCall {
+                                        yield Ok(StreamPart::ToolCall(RawToolCall {
                                             tool_call_id: id.clone(),
                                             tool_name: name.clone(),
-                                            input: Value::String(input.to_string()),
+                                            input: input.to_string(),
                                             provider_executed: Some(true),
                                             dynamic: Some(true),
                                             thought_signature: None,
-                                            invalid: None,
-                                            error: None,
                                             provider_metadata: Some(json!({
                                                 "anthropic": {
                                                     "type": "mcp-tool-use",
                                                     "serverName": server_name,
                                                 }
                                             })),
-                                        });
+                                        }));
                                     }
                                     ContentBlock::RedactedThinking { data } => {
                                         yield Ok(StreamPart::ReasoningStart {
@@ -535,23 +534,20 @@ impl LanguageModel for VertexAnthropicModel {
                                             ..
                                         } => {
                                             yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
-                                            let input =
-                                                Value::String(finalize_streamed_tool_input(
+                                            let input = finalize_streamed_tool_input(
                                                     accumulated_json,
                                                     provider_tool_name.as_deref(),
                                                     provider_tool_input_type.as_deref(),
-                                                ));
-                                            yield Ok(StreamPart::ToolCall {
+                                                );
+                                            yield Ok(StreamPart::ToolCall(RawToolCall {
                                                 tool_call_id: id,
                                                 tool_name: name,
                                                 input,
                                                 provider_executed,
                                                 dynamic,
                                                 thought_signature: None,
-                                                invalid: None,
-                                                error: None,
                                                 provider_metadata,
-                                            });
+                                            }));
                                         }
                                     }
                                 }

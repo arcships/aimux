@@ -22,6 +22,7 @@
 //!   against re-reads of the cassette (a re-read would pass even if both the
 //!   producer and the assertion regressed together).
 
+use aimux_core::tool::{RawToolCall, ToolResult};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
@@ -211,7 +212,7 @@ fn tool_calls(content: &[GenerateContent]) -> Vec<ToolCallView<'_>> {
     content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
@@ -219,7 +220,7 @@ fn tool_calls(content: &[GenerateContent]) -> Vec<ToolCallView<'_>> {
                 dynamic,
                 thought_signature,
                 provider_metadata,
-            } => {
+            }) => {
                 // Provider results intentionally carry the exact wire string;
                 // parse only in this assertion helper so nested data-loss
                 // checks remain readable without weakening that boundary.
@@ -254,7 +255,7 @@ fn tool_results(content: &[GenerateContent]) -> Vec<ToolResultView<'_>> {
     content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::ToolResult {
+            GenerateContent::ToolResult(ToolResult {
                 tool_call_id,
                 tool_name,
                 result,
@@ -262,7 +263,7 @@ fn tool_results(content: &[GenerateContent]) -> Vec<ToolResultView<'_>> {
                 dynamic,
                 provider_metadata,
                 ..
-            } => Some((
+            }) => Some((
                 tool_call_id.as_str(),
                 tool_name.as_str(),
                 result,

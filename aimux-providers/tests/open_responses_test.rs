@@ -9,6 +9,7 @@
 //! `createTestServer`. Each test starts its own `MockServer` so parallel
 //! `#[tokio::test]` runs do not collide.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use futures::StreamExt;
@@ -1439,18 +1440,15 @@ mod do_generate_tests {
 
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tool_call_id, "call_2866856768160095");
                 assert_eq!(tool_name, "weather");
-                assert_eq!(
-                    input,
-                    &Value::String(r#"{"location":"San Francisco"}"#.into())
-                );
+                assert_eq!(input, r#"{"location":"San Francisco"}"#);
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
@@ -2009,19 +2007,19 @@ mod do_stream_tests {
 
         // ToolCall
         let tool_call = parts.iter().find_map(|p| match p {
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id, tool_name, input)),
+            }) => Some((tool_call_id, tool_name, input)),
             _ => None,
         });
         assert!(tool_call.is_some(), "should have ToolCall");
         let (tc_id, tc_name, tc_input) = tool_call.unwrap();
         assert_eq!(tc_id, "call_1");
         assert_eq!(tc_name, "weather");
-        assert_eq!(tc_input, &Value::String(r#"{"location":"SF"}"#.into()));
+        assert_eq!(tc_input, r#"{"location":"SF"}"#);
 
         // Finish with tool-calls reason
         let finish = parts.iter().find_map(|p| match p {

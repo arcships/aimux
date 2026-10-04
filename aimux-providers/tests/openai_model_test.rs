@@ -17,6 +17,7 @@
 //! or SSE response, creates an `OpenAIModel` pointing at the mock, calls
 //! `do_generate` / `do_stream`, and asserts on the result.
 
+use aimux_core::tool::RawToolCall;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -242,7 +243,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
 }
 
 /// Extract text deltas from a list of stream parts.
-fn text_deltas(parts: &[StreamPart]) -> Vec<String> {
+fn text_deltas<C>(parts: &[StreamPart<C>]) -> Vec<String> {
     parts
         .iter()
         .filter_map(|p| match p {
@@ -734,15 +735,15 @@ mod do_generate {
 
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tool_call_id, "call_O17Uplv4lJvD6DVdIvFFeRMw");
                 assert_eq!(tool_name, "test-tool");
-                assert_eq!(input, &Value::String(r#"{"value":"Spark"}"#.into()));
+                assert_eq!(input, r#"{"value":"Spark"}"#);
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
@@ -988,10 +989,10 @@ mod do_stream {
 
         // Verify tool-call
         let tool_call = parts.iter().find(|p| {
-            matches!(p, StreamPart::ToolCall { tool_call_id, tool_name, input, .. }
+            matches!(p, StreamPart::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. })
                 if tool_call_id == "call_O17Uplv4lJvD6DVdIvFFeRMw"
                 && tool_name == "test-tool"
-                && input == &Value::String(r#"{"value":"Sparkle Day"}"#.into()))
+                && input == r#"{"value":"Sparkle Day"}"#)
         });
         assert!(
             tool_call.is_some(),
@@ -1069,9 +1070,9 @@ mod do_stream {
 
         // Verify tool-call with complete arguments
         let tool_call = parts.iter().find(|p| {
-            matches!(p, StreamPart::ToolCall { tool_call_id, input, .. }
+            matches!(p, StreamPart::ToolCall(RawToolCall { tool_call_id, input, .. })
                 if tool_call_id == "call_O17Uplv4lJvD6DVdIvFFeRMw"
-                && input == &Value::String(r#"{"value":"Sparkle Day"}"#.into()))
+                && input == r#"{"value":"Sparkle Day"}"#)
         });
         assert!(
             tool_call.is_some(),
@@ -1133,27 +1134,24 @@ mod do_stream {
         // Exactly one tool-call event
         let tool_calls: Vec<_> = parts
             .iter()
-            .filter(|p| matches!(p, StreamPart::ToolCall { .. }))
+            .filter(|p| matches!(p, StreamPart::ToolCall(_)))
             .collect();
         assert_eq!(tool_calls.len(), 1, "should have exactly one ToolCall");
 
         // The tool call should have the complete arguments
         match tool_calls[0] {
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => {
+            }) => {
                 assert_eq!(
                     tool_call_id,
                     "chatcmpl-tool-b3b307239370432d9910d4b79b4dbbaa"
                 );
                 assert_eq!(tool_name, "searchGoogle");
-                assert_eq!(
-                    input,
-                    &Value::String(r#"{"query": "latest news on ai"}"#.into())
-                );
+                assert_eq!(input, r#"{"query": "latest news on ai"}"#);
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
@@ -1198,30 +1196,18 @@ mod do_stream {
         // Exactly one tool-call event
         let tool_calls: Vec<_> = parts
             .iter()
-            .filter(|p| matches!(p, StreamPart::ToolCall { .. }))
+            .filter(|p| matches!(p, StreamPart::ToolCall(_)))
             .collect();
         assert_eq!(tool_calls.len(), 1, "should have exactly one ToolCall");
 
         // The tool call should contain the COMPLETE arguments, not just the
         // partial JSON that happened to be parsable mid-stream.
         match tool_calls[0] {
-            StreamPart::ToolCall { input, .. } => {
-                // The full accumulated string is: {"query": "test"}, "limit": 10}
-                // which is NOT valid JSON by itself. The implementation should
-                // fall back to storing the raw string as Value::String.
-                match input {
-                    Value::String(s) => {
-                        assert!(
-                            s.contains("query") && s.contains("limit"),
-                            "input string should contain both 'query' and 'limit': {s}"
-                        );
-                    }
-                    Value::Object(_) => {
-                        // If it somehow parsed, still check for both keys
-                        assert!(input.get("query").is_some(), "should have 'query'");
-                    }
-                    other => panic!("expected String or Object, got {other:?}"),
-                }
+            StreamPart::ToolCall(RawToolCall { input, .. }) => {
+                assert!(
+                    input.contains("query") && input.contains("limit"),
+                    "input string should contain both 'query' and 'limit': {input}"
+                );
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
@@ -1266,9 +1252,9 @@ mod do_stream {
 
         // Verify tool-call
         let tool_call = parts.iter().find(|p| {
-            matches!(p, StreamPart::ToolCall { tool_call_id, input, .. }
+            matches!(p, StreamPart::ToolCall(RawToolCall { tool_call_id, input, .. })
                 if tool_call_id == "call_abc123"
-                && input == &Value::String(r#"{"value":"hello"}"#.into()))
+                && input == r#"{"value":"hello"}"#)
         });
         assert!(
             tool_call.is_some(),
@@ -1323,9 +1309,9 @@ mod do_stream {
 
         // Verify tool-call
         assert!(parts.iter().any(|p| {
-            matches!(p, StreamPart::ToolCall { tool_call_id, input, .. }
+            matches!(p, StreamPart::ToolCall(RawToolCall { tool_call_id, input, .. })
                 if tool_call_id == "call_O17Uplv4lJvD6DVdIvFFeRMw"
-                && input == &Value::String(r#"{"value":"Sparkle Day"}"#.into()))
+                && input == r#"{"value":"Sparkle Day"}"#)
         }));
     }
 
@@ -1433,12 +1419,11 @@ mod do_stream {
         )
         .await
         .expect("the second stream attempt should succeed");
-        let parts = collect_stream(StreamResult {
-            stream: result.stream,
-            request_body: result.request_body,
-            response_headers: result.response_headers,
-        })
-        .await;
+        let parts: Vec<_> = result
+            .stream
+            .map(|part| part.expect("Core stream part should succeed"))
+            .collect()
+            .await;
 
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
         assert_eq!(text_deltas(&parts), vec!["hello"]);
@@ -1541,12 +1526,11 @@ mod do_stream {
             attempt_count, 2,
             "first body transport error was not retried"
         );
-        let parts = collect_stream(StreamResult {
-            stream: result.stream,
-            request_body: result.request_body,
-            response_headers: result.response_headers,
-        })
-        .await;
+        let parts: Vec<_> = result
+            .stream
+            .map(|part| part.expect("Core stream part should succeed"))
+            .collect()
+            .await;
         assert_eq!(text_deltas(&parts), vec!["retried"]);
     }
 
