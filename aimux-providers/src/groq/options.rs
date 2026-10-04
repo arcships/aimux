@@ -74,10 +74,16 @@ pub(crate) fn parse_groq_options(
         .provider_options
         .as_ref()
         .and_then(|all| all.get(NAMESPACE))
-        .and_then(Value::as_object)
+        .filter(|value| !value.is_null())
     else {
         return Ok(GroqLanguageModelChatOptions::default());
     };
+    let groq = groq.as_object().ok_or_else(|| {
+        AiMuxError::InvalidArgument(
+            "invalid argument for parameter providerOptions: invalid groq provider options"
+                .to_string(),
+        )
+    })?;
     serde_json::from_value(Value::Object(groq.clone())).map_err(|error| {
         AiMuxError::InvalidArgument(format!(
             "invalid argument for parameter providerOptions: {error}"

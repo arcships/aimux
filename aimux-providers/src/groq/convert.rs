@@ -104,7 +104,7 @@ fn convert_assistant_message(content: &[ContentPart]) -> Value {
                 "type": "function",
                 "function": {
                     "name": tool_name,
-                    "arguments": if input.is_null() { "{}".to_string() } else { input.to_string() },
+                    "arguments": input.to_string(),
                 },
             })),
             _ => {}

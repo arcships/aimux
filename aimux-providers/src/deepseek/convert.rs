@@ -337,7 +337,7 @@ pub(crate) fn convert_to_deepseek_chat_messages(
                             "type": "function",
                             "function": {
                                 "name": tool_name,
-                                "arguments": if input.is_null() { "{}".to_string() } else { input.to_string() },
+                                "arguments": input.to_string(),
                             },
                         })),
                         _ => {}
