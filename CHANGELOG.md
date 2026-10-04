@@ -24,10 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deserializes; the standalone `tool::ToolResult` gains a required
   `tool_name` and optional `dynamic` / `provider_metadata`.
 
-## [Unreleased]
-
-### Breaking
-
 - Removed the generated `ProviderName` type in every binding (Rust enum, TS
   const object, Go/Java/Kotlin consts, Swift enum, Dart consts, Python
   `Literal`) and `scripts/gen_provider_names.py`. Provider names are plain
