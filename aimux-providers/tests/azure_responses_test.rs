@@ -23,6 +23,7 @@
 //! (responses-specific cases). Not all 44 TS cases are translated — the focus
 //! is on Azure-specific capabilities.
 
+use aimux_core::tool::RawToolCall;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -513,12 +514,12 @@ async fn should_extract_tool_call_content() {
         .content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })
         .collect();

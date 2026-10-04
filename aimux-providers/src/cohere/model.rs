@@ -4,6 +4,7 @@
 //! format (not OpenAI-compatible) and streams named SSE events
 //! (`event: type\ndata: json`).
 
+use aimux_core::tool::RawToolCall;
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::Value;
@@ -181,7 +182,7 @@ impl LanguageModel for CohereModel {
                     tc.function.arguments.clone()
                 };
                 let input = args_str;
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: tc.id.clone(),
                     tool_name: tc.function.name.clone(),
                     input,
@@ -189,7 +190,7 @@ impl LanguageModel for CohereModel {
                     dynamic: None,
                     thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
             }
         }
 
@@ -445,18 +446,16 @@ impl LanguageModel for CohereModel {
                                     // instead of a terminal stream error.
                                     let trimmed = ptc.arguments.trim();
                                     let text = if trimmed.is_empty() { "{}" } else { trimmed };
-                                    let input = Value::String(text.to_string());
-                                    yield Ok(StreamPart::ToolCall {
+                                    let input = text.to_string();
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: ptc.id,
                                         tool_name: ptc.name,
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
                                         thought_signature: None,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                             }
 

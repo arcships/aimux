@@ -101,6 +101,26 @@ impl From<FunctionTool> for Tool {
     }
 }
 
+/// Provider-facing tool call before Core parses and validates its input.
+///
+/// The wire shape matches [`ToolCall`] field for field, except that `input`
+/// is the provider's raw argument *text* rather than a parsed value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct RawToolCall {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub input: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_executed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_metadata: Option<ProviderMetadata>,
+}
+
 /// A tool call requested by the model.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -136,12 +156,14 @@ pub struct ToolCall {
     pub error: Option<AiMuxError>,
 }
 
-/// The result of executing a tool call, to be sent back to the model.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+/// A tool result produced by a provider-executed tool (e.g. xAI `file_search`,
+/// web search), carried next to the [`RawToolCall`] it answers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ToolResult {
-    /// Must match the corresponding `ToolCall::tool_call_id`.
+    /// Must match the corresponding call's `tool_call_id`.
     pub tool_call_id: String,
+    pub tool_name: String,
     /// The tool's output (usually a JSON-serializable value or plain text).
     pub result: Value,
     /// Whether the result is an error or error message.
@@ -150,6 +172,12 @@ pub struct ToolResult {
     /// Whether the result is preliminary (replaces prior, e.g. image previews).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preliminary: Option<bool>,
+    /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic: Option<bool>,
+    /// Additional provider-specific metadata for the tool result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_metadata: Option<ProviderMetadata>,
 }
 
 /// How the model should choose tools.

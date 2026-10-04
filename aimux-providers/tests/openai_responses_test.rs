@@ -18,6 +18,7 @@
 //! or SSE response, creates an `OpenAIResponsesModel` pointing at the mock,
 //! calls `do_generate` / `do_stream`, and asserts on the result.
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -852,12 +853,12 @@ mod do_generate_response {
 
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tool_call_id, "call_abc");
                 assert_eq!(tool_name, "weather");
                 assert_eq!(
@@ -1127,12 +1128,12 @@ mod do_stream {
 
         // ToolCall uses the call_id and arguments from the done item.
         match &parts[6] {
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tool_call_id, "call_done");
                 assert_eq!(tool_name, "weather");
                 assert_eq!(input, &Value::String(r#"{"location":"Rome"}"#.into()));

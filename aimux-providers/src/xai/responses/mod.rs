@@ -15,6 +15,8 @@
 pub mod convert;
 pub mod types;
 
+use aimux_core::tool::RawToolCall;
+use aimux_core::tool::ToolResult;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -97,7 +99,7 @@ impl LanguageModel for XaiResponsesModel {
                 let tool_name = resolve_tool_name(part_type, None, &provider_tool_names);
                 let part_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: part_id.to_string(),
                     tool_name: tool_name.clone(),
                     input: String::new(),
@@ -105,7 +107,7 @@ impl LanguageModel for XaiResponsesModel {
                     dynamic: None,
                     thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
 
                 let queries = part
                     .get("queries")
@@ -125,7 +127,7 @@ impl LanguageModel for XaiResponsesModel {
                         })
                         .unwrap_or(Value::Null);
 
-                content.push(GenerateContent::ToolResult {
+                content.push(GenerateContent::ToolResult(ToolResult {
                     tool_call_id: part_id.to_string(),
                     tool_name,
                     result: json!({ "queries": queries, "results": results }),
@@ -133,7 +135,7 @@ impl LanguageModel for XaiResponsesModel {
                     preliminary: None,
                     dynamic: None,
                     provider_metadata: None,
-                });
+                }));
                 continue;
             }
 
@@ -154,7 +156,7 @@ impl LanguageModel for XaiResponsesModel {
                 let tool_input = get_tool_input(part_type, part);
                 let part_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: part_id.to_string(),
                     tool_name,
                     input: tool_input,
@@ -162,7 +164,7 @@ impl LanguageModel for XaiResponsesModel {
                     dynamic: None,
                     thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
                 continue;
             }
 
@@ -211,7 +213,7 @@ impl LanguageModel for XaiResponsesModel {
                     let name = part.get("name").and_then(|v| v.as_str()).unwrap_or("");
                     let arguments = part.get("arguments").and_then(|v| v.as_str()).unwrap_or("");
                     let input = arguments.to_string();
-                    content.push(GenerateContent::ToolCall {
+                    content.push(GenerateContent::ToolCall(RawToolCall {
                         tool_call_id: call_id.to_string(),
                         tool_name: name.to_string(),
                         input,
@@ -219,7 +221,7 @@ impl LanguageModel for XaiResponsesModel {
                         dynamic: None,
                         thought_signature: None,
                         provider_metadata: None,
-                    });
+                    }));
                 }
                 "reasoning" => {
                     let summary = part.get("summary").and_then(|v| v.as_array());
@@ -674,17 +676,15 @@ impl LanguageModel for XaiResponsesModel {
                                         id: part_id.to_string(),
                                         provider_metadata: None,
                                     });
-                                    yield Ok(StreamPart::ToolCall {
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
-                                        input: Value::String(String::new()),
+                                        input: String::new(),
                                         provider_executed: Some(true),
                                         dynamic: None,
                                         thought_signature: None,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
 
                                 if event_type == "response.output_item.done" {
@@ -697,7 +697,7 @@ impl LanguageModel for XaiResponsesModel {
                                             "text": r.get("text").cloned().unwrap_or(Value::Null),
                                         })).collect::<Vec<_>>())
                                     }).unwrap_or(Value::Null);
-                                    yield Ok(StreamPart::ToolResult {
+                                    yield Ok(StreamPart::ToolResult(ToolResult {
                                         tool_call_id: part_id.to_string(),
                                         tool_name,
                                         result: json!({ "queries": queries, "results": results }),
@@ -705,7 +705,7 @@ impl LanguageModel for XaiResponsesModel {
                                         preliminary: None,
                                         dynamic: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                                 continue;
                             }
@@ -747,21 +747,19 @@ impl LanguageModel for XaiResponsesModel {
                                         id: part_id.to_string(),
                                         provider_metadata: None,
                                     });
-                                    yield Ok(StreamPart::ToolCall {
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
-                                        input: Value::String(tool_input),
+                                        input: tool_input,
                                         provider_executed: Some(true),
                                         dynamic: None,
                                         thought_signature: None,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
 
                                 if event_type == "response.output_item.done" {
-                                    yield Ok(StreamPart::ToolResult {
+                                    yield Ok(StreamPart::ToolResult(ToolResult {
                                         tool_call_id: part_id.to_string(),
                                         tool_name,
                                         result: json!({}),
@@ -769,7 +767,7 @@ impl LanguageModel for XaiResponsesModel {
                                         preliminary: None,
                                         dynamic: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                                 continue;
                             }
@@ -839,18 +837,16 @@ impl LanguageModel for XaiResponsesModel {
                                         id: call_id.to_string(),
                                         provider_metadata: None,
                                     });
-                                    let input = Value::String(arguments.to_string());
-                                    yield Ok(StreamPart::ToolCall {
+                                    let input = arguments.to_string();
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: call_id.to_string(),
                                         tool_name: name.to_string(),
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
                                         thought_signature: None,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                                 continue;
                             }

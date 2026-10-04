@@ -10,6 +10,7 @@ use aimux_core::message::{MessageContent, ModelPrompt, Role};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::tool::RawToolCall;
 use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
 
 use async_trait::async_trait;
@@ -38,7 +39,7 @@ impl LanguageModel for RichModel {
                     text: "Hello!".into(),
                     provider_metadata: None,
                 },
-                GenerateContent::ToolCall {
+                GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: "tc-1".into(),
                     tool_name: "search".into(),
                     input: r#"{"q":"test"}"#.to_string(),
@@ -46,7 +47,7 @@ impl LanguageModel for RichModel {
                     dynamic: None,
                     thought_signature: None,
                     provider_metadata: None,
-                },
+                }),
                 GenerateContent::Source {
                     id: "src-1".into(),
                     source_type: "url".into(),

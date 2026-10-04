@@ -8,6 +8,7 @@
 //! channel headers (`Originator` / `ChatGPT-Account-Id`), 401 →//! `AiMuxError::TokenExpired` mapping, and the stateless `codex_refresh`
 //! OAuth helper.
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -297,12 +298,12 @@ async fn api_key_streams_tool_calls() {
     let parts = collect_stream(result).await;
 
     match &parts[6] {
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_done");
             assert_eq!(tool_name, "weather");
             assert_eq!(input, &Value::String(r#"{"location":"Rome"}"#.into()));

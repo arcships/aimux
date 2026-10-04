@@ -295,6 +295,7 @@ mod tests {
     use crate::message::Role;
     use crate::result::GenerateContent;
     use crate::stream_part::StreamPart;
+    use crate::tool::RawToolCall;
     use crate::types::{FinishReason, FinishReasonUnified, TokenUsage};
     use async_trait::async_trait;
     use futures::stream;
@@ -891,17 +892,15 @@ mod tests {
                     delta: "answer".into(),
                     provider_metadata: None,
                 }),
-                Ok(StreamPart::ToolCall {
+                Ok(StreamPart::ToolCall(RawToolCall {
                     tool_call_id: "tc1".into(),
                     tool_name: "search".into(),
-                    input: serde_json::json!({"q": "rust"}),
+                    input: r#"{"q":"rust"}"#.to_string(),
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
-                    invalid: None,
-                    error: None,
                     provider_metadata: None,
-                }),
+                })),
                 Ok(StreamPart::Source {
                     id: "s1".into(),
                     source_type: "url".into(),
@@ -939,7 +938,7 @@ mod tests {
         let mut saw_source = false;
         for part in parts {
             match part.unwrap() {
-                StreamPart::ToolCall { tool_name, .. } => {
+                StreamPart::ToolCall(RawToolCall { tool_name, .. }) => {
                     saw_tool_call = true;
                     assert_eq!(tool_name, "search");
                 }

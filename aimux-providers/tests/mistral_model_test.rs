@@ -5,6 +5,7 @@
 //! - doGenerate: text extraction, usage, tool calls, request body
 //! - doStream: text streaming, tool call streaming, request body
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -307,12 +308,12 @@ async fn should_extract_tool_call() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "gSIMJiOkT");
             assert_eq!(tool_name, "weather");
             assert_eq!(
@@ -599,12 +600,12 @@ async fn should_stream_tool_call() {
 
     // Find the ToolCall part.
     let tool_call = parts.iter().find_map(|p| match p {
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => Some((tool_call_id, tool_name, input)),
+        }) => Some((tool_call_id, tool_name, input)),
         _ => None,
     });
     let (id, name, input) = tool_call.expect("should have a ToolCall");
@@ -1203,12 +1204,12 @@ async fn should_extract_multiple_tool_calls() {
 
     assert_eq!(result.content.len(), 2);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call-1");
             assert_eq!(tool_name, "weather");
             assert_eq!(input, &Value::String(r#"{"city": "SF"}"#.into()));
@@ -1216,12 +1217,12 @@ async fn should_extract_multiple_tool_calls() {
         other => panic!("expected ToolCall, got {other:?}"),
     }
     match &result.content[1] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call-2");
             assert_eq!(tool_name, "time");
             assert_eq!(input, &Value::String(r#"{"zone": "PST"}"#.into()));

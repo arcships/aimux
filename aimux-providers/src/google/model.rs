@@ -1,5 +1,7 @@
 //! Google Gemini language model — implements `LanguageModel`.
 
+use aimux_core::tool::RawToolCall;
+use aimux_core::tool::ToolResult;
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -377,17 +379,15 @@ impl LanguageModel for GoogleModel {
                                         provider_metadata: None,
                                     });
                                     yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
-                                    yield Ok(StreamPart::ToolCall {
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: id,
                                         tool_name: name.to_string(),
-                                        input: Value::String(args.to_string()),
+                                        input: args.to_string(),
                                         provider_executed: None,
                                         dynamic: None,
                                         thought_signature,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: thought_sig_meta.clone(),
-                                    });
+                                    }));
                                     has_tool_calls = true;
                                 } else if let Some(ec) = part.get("executableCode") {
                                     // Provider-executed code execution.
@@ -400,21 +400,19 @@ impl LanguageModel for GoogleModel {
                                         let id = format!("call-{block_counter}");
                                         block_counter += 1;
                                         last_code_execution_tool_call_id = Some(id.clone());
-                                        yield Ok(StreamPart::ToolCall {
+                                        yield Ok(StreamPart::ToolCall(RawToolCall {
                                             tool_call_id: id.clone(),
                                             tool_name: code_execution_tool_name.clone(),
-                                            input: Value::String(ec.to_string()),
+                                            input: ec.to_string(),
                                             provider_executed: Some(true),
                                             dynamic: None,
                                             thought_signature: None,
-                                            invalid: None,
-                                            error: None,
                                             provider_metadata: Some(server_tool_metadata(
                                                 &id,
                                                 "code_execution",
                                                 None,
                                             )),
-                                        });
+                                        }));
                                         // provider-executed → does NOT set has_tool_calls
                                     }
                                 } else if let Some(cer) = part.get("codeExecutionResult") {
@@ -432,7 +430,7 @@ impl LanguageModel for GoogleModel {
                                             .and_then(|v| v.as_str())
                                             .map(std::string::ToString::to_string)
                                             .unwrap_or_default();
-                                        yield Ok(StreamPart::ToolResult {
+                                        yield Ok(StreamPart::ToolResult(ToolResult {
                                             tool_call_id: call_id.clone(),
                                             tool_name: code_execution_tool_name.clone(),
                                             result: json!({ "outcome": outcome, "output": output }),
@@ -444,7 +442,7 @@ impl LanguageModel for GoogleModel {
                                                 "code_execution",
                                                 None,
                                             )),
-                                        });
+                                        }));
                                     }
                                 } else if let Some(tc) = part.get("toolCall") {
                                     // Server-side tool call (provider-executed).
@@ -465,17 +463,15 @@ impl LanguageModel for GoogleModel {
                                         tool_type,
                                         part.get("thoughtSignature").and_then(|v| v.as_str()),
                                     );
-                                    yield Ok(StreamPart::ToolCall {
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: id,
                                         tool_name: format!("server:{tool_type}"),
-                                        input: Value::String(args.to_string()),
+                                        input: args.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
                                         thought_signature: None,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: Some(server_meta),
-                                    });
+                                    }));
                                     // provider-executed → does NOT set has_tool_calls
                                 } else if let Some(tr) = part.get("toolResponse") {
                                     // Server-side tool response.
@@ -496,7 +492,7 @@ impl LanguageModel for GoogleModel {
                                         tool_type,
                                         part.get("thoughtSignature").and_then(|v| v.as_str()),
                                     );
-                                    yield Ok(StreamPart::ToolResult {
+                                    yield Ok(StreamPart::ToolResult(ToolResult {
                                         tool_call_id: id,
                                         tool_name: format!("server:{tool_type}"),
                                         result: response,
@@ -504,7 +500,7 @@ impl LanguageModel for GoogleModel {
                                         preliminary: None,
                                         dynamic: None,
                                         provider_metadata: Some(server_meta),
-                                    });
+                                    }));
                                 } else if let Some(inline) = part.get("inlineData") {
                                     // File output — upstream :847-877.
                                     // Close any open text/reasoning block before file.
@@ -676,7 +672,7 @@ fn extract_content_from_candidate(
                 if has_code {
                     let id = format!("call-{}", content.len());
                     last_code_execution_tool_call_id = Some(id.clone());
-                    content.push(GenerateContent::ToolCall {
+                    content.push(GenerateContent::ToolCall(RawToolCall {
                         tool_call_id: id.clone(),
                         tool_name: code_execution_tool_name.to_string(),
                         input: ec.to_string(),
@@ -684,7 +680,7 @@ fn extract_content_from_candidate(
                         dynamic: None,
                         thought_signature: None,
                         provider_metadata: Some(server_tool_metadata(&id, "code_execution", None)),
-                    });
+                    }));
                 }
             } else if let Some(cer) = part.get("codeExecutionResult") {
                 // One executableCode may be followed by multiple results.
@@ -695,7 +691,7 @@ fn extract_content_from_candidate(
                         .and_then(|v| v.as_str())
                         .map(std::string::ToString::to_string)
                         .unwrap_or_default();
-                    content.push(GenerateContent::ToolResult {
+                    content.push(GenerateContent::ToolResult(ToolResult {
                         tool_call_id: call_id.clone(),
                         tool_name: code_execution_tool_name.to_string(),
                         result: json!({ "outcome": outcome, "output": output }),
@@ -707,7 +703,7 @@ fn extract_content_from_candidate(
                             "code_execution",
                             None,
                         )),
-                    });
+                    }));
                 }
             } else if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
                 if text.is_empty() {
@@ -749,7 +745,7 @@ fn extract_content_from_candidate(
                     .get("thoughtSignature")
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string);
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id,
                     tool_name: name,
                     input: input.to_string(),
@@ -757,7 +753,7 @@ fn extract_content_from_candidate(
                     dynamic: None,
                     thought_signature,
                     provider_metadata: thought_sig_meta.clone(),
-                });
+                }));
                 has_tool_calls = true;
             } else if let Some(inline) = part.get("inlineData") {
                 // File output (e.g. gemini-2.5-flash-image) — upstream :478-490.
@@ -794,7 +790,7 @@ fn extract_content_from_candidate(
                     tool_type,
                     part.get("thoughtSignature").and_then(|v| v.as_str()),
                 );
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id,
                     tool_name: format!("server:{tool_type}"),
                     input: input.to_string(),
@@ -802,7 +798,7 @@ fn extract_content_from_candidate(
                     dynamic: Some(true),
                     thought_signature,
                     provider_metadata: Some(server_meta),
-                });
+                }));
                 // provider-executed → does NOT set has_tool_calls
             } else if let Some(tr) = part.get("toolResponse") {
                 // Server-side tool response (upstream :512-533).
@@ -821,7 +817,7 @@ fn extract_content_from_candidate(
                     tool_type,
                     part.get("thoughtSignature").and_then(|v| v.as_str()),
                 );
-                content.push(GenerateContent::ToolResult {
+                content.push(GenerateContent::ToolResult(ToolResult {
                     tool_call_id: id,
                     tool_name: format!("server:{tool_type}"),
                     result: response,
@@ -829,7 +825,7 @@ fn extract_content_from_candidate(
                     preliminary: None,
                     dynamic: None,
                     provider_metadata: Some(server_meta),
-                });
+                }));
                 last_server_tool_call_id = None;
             }
         }
@@ -852,18 +848,18 @@ fn set_provider_metadata(item: &mut GenerateContent, meta: ProviderMetadata) {
         | GenerateContent::Reasoning {
             provider_metadata, ..
         }
-        | GenerateContent::ToolCall {
+        | GenerateContent::ToolCall(RawToolCall {
             provider_metadata, ..
-        }
+        })
         | GenerateContent::File {
             provider_metadata, ..
         }
         | GenerateContent::Source {
             provider_metadata, ..
         }
-        | GenerateContent::ToolResult {
+        | GenerateContent::ToolResult(ToolResult {
             provider_metadata, ..
-        } => {
+        }) => {
             *provider_metadata = Some(meta);
         }
     }

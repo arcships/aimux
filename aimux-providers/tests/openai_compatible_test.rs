@@ -15,6 +15,7 @@
 //! Because the wrappers are structurally identical, a single macro generates
 //! the four tests per provider — DRY without hiding what is asserted.
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -569,7 +570,7 @@ macro_rules! openai_compatible_tool_tests {
 
                 assert_eq!(result.content.len(), 1);
                 match &result.content[0] {
-                    GenerateContent::ToolCall { tool_call_id, tool_name, input, .. } => {
+                    GenerateContent::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. }) => {
                         assert_eq!(tool_call_id, "call_abc");
                         assert_eq!(tool_name, "get-weather");
                         assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
@@ -607,7 +608,7 @@ macro_rules! openai_compatible_tool_tests {
                 let parts = collect_stream(result).await;
 
                 let tool_call = parts.iter().find_map(|p| match p {
-                    StreamPart::ToolCall { tool_call_id, tool_name, input, .. } => {
+                    StreamPart::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. }) => {
                         Some((tool_call_id.clone(), tool_name.clone(), input.clone()))
                     }
                     _ => None,
@@ -657,7 +658,7 @@ macro_rules! openai_compatible_tool_tests {
 
                 assert_eq!(result.content.len(), 1);
                 match &result.content[0] {
-                    GenerateContent::ToolCall { tool_call_id, tool_name, input, .. } => {
+                    GenerateContent::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. }) => {
                         assert_eq!(tool_call_id, "call_abc");
                         assert_eq!(tool_name, "get-weather");
                         assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
@@ -695,7 +696,7 @@ macro_rules! openai_compatible_tool_tests {
                 let parts = collect_stream(result).await;
 
                 let tool_call = parts.iter().find_map(|p| match p {
-                    StreamPart::ToolCall { tool_call_id, tool_name, input, .. } => {
+                    StreamPart::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. }) => {
                         Some((tool_call_id.clone(), tool_name.clone(), input.clone()))
                     }
                     _ => None,

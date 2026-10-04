@@ -13,6 +13,7 @@
 //! it via `base_url`, and asserts on the issued request and/or the parsed
 //! result.
 
+use aimux_core::tool::RawToolCall;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -679,12 +680,12 @@ async fn should_extract_tool_call() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_abc");
             assert_eq!(tool_name, "get-weather");
             assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
@@ -715,12 +716,12 @@ async fn should_stream_tool_call() {
 
     let parts = collect_stream(result).await;
     let tool_call = parts.iter().find_map(|p| match p {
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+        }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
         _ => None,
     });
     let (id, name, input) = tool_call.expect("should have ToolCall");

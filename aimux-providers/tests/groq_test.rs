@@ -17,6 +17,7 @@
 
 mod common;
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -1086,11 +1087,11 @@ mod do_generate {
             .unwrap();
 
         let tool_call = result.content.iter().find_map(|c| match c {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone())),
             _ => None,
         });
         let (id, name) = tool_call.expect("should have tool call");
@@ -1756,12 +1757,12 @@ mod do_stream {
 
         // Should have a ToolCall part
         let tool_call = parts.iter().find_map(|p| match p {
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         });
         let (id, name, input) = tool_call.expect("should have tool call");
@@ -1866,7 +1867,7 @@ mod do_stream {
         let parts = collect_stream(result).await;
 
         let tool_call = parts.iter().find_map(|p| match p {
-            StreamPart::ToolCall { input, .. } => Some(input.clone()),
+            StreamPart::ToolCall(RawToolCall { input, .. }) => Some(input.clone()),
             _ => None,
         });
         assert_eq!(

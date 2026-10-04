@@ -8,6 +8,8 @@
 //! tests mock the Vertex AI endpoints and never touch the public network or
 //! real credentials.
 
+use aimux_core::tool::RawToolCall;
+use aimux_core::tool::ToolResult;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
@@ -182,9 +184,9 @@ async fn vertex_anthropic_generate_keeps_direct_caller_metadata() {
         .await
         .unwrap();
     let metadata = result.content.iter().find_map(|part| match part {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             provider_metadata, ..
-        } => provider_metadata.as_ref(),
+        }) => provider_metadata.as_ref(),
         _ => None,
     });
     assert_eq!(
@@ -436,11 +438,11 @@ async fn vertex_anthropic_streamed_tool_search_results_follow_their_call_ids() {
     let result_names: std::collections::HashMap<&str, &str> = parts
         .iter()
         .filter_map(|part| match part {
-            StreamPart::ToolResult {
+            StreamPart::ToolResult(ToolResult {
                 tool_call_id,
                 tool_name,
                 ..
-            } => Some((tool_call_id.as_str(), tool_name.as_str())),
+            }) => Some((tool_call_id.as_str(), tool_name.as_str())),
             _ => None,
         })
         .collect();
@@ -493,9 +495,9 @@ async fn vertex_anthropic_stream_keeps_programmatic_caller_metadata() {
     )
     .await;
     let metadata = parts.iter().find_map(|part| match part {
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             provider_metadata, ..
-        } => provider_metadata.as_ref(),
+        }) => provider_metadata.as_ref(),
         _ => None,
     });
     assert_eq!(

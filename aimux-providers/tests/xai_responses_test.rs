@@ -10,6 +10,8 @@
 //! or SSE response, creates an `XaiResponsesModel` via `XAIProvider`, calls
 //! `do_generate` / `do_stream`, and asserts on the result.
 
+use aimux_core::tool::RawToolCall;
+use aimux_core::tool::ToolResult;
 use std::collections::HashMap;
 
 use futures::StreamExt;
@@ -1202,12 +1204,12 @@ mod tools {
 
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tool_call_id, "ws_123");
                 assert_eq!(tool_name, "web_search");
                 assert_eq!(input, "{\"query\":\"test\"}");
@@ -1251,7 +1253,9 @@ mod tools {
         let result = model.do_generate(&options).await.unwrap();
 
         match &result.content[0] {
-            GenerateContent::ToolCall { tool_name, .. } => assert_eq!(tool_name, "web_search"),
+            GenerateContent::ToolCall(RawToolCall { tool_name, .. }) => {
+                assert_eq!(tool_name, "web_search")
+            }
             other => panic!("expected ToolCall, got {other:?}"),
         }
     }
@@ -1291,7 +1295,9 @@ mod tools {
         let result = model.do_generate(&options).await.unwrap();
 
         match &result.content[0] {
-            GenerateContent::ToolCall { tool_name, .. } => assert_eq!(tool_name, "x_search"),
+            GenerateContent::ToolCall(RawToolCall { tool_name, .. }) => {
+                assert_eq!(tool_name, "x_search")
+            }
             other => panic!("expected ToolCall, got {other:?}"),
         }
     }
@@ -1331,7 +1337,9 @@ mod tools {
         let result = model.do_generate(&options).await.unwrap();
 
         match &result.content[0] {
-            GenerateContent::ToolCall { tool_name, .. } => assert_eq!(tool_name, "code_execution"),
+            GenerateContent::ToolCall(RawToolCall { tool_name, .. }) => {
+                assert_eq!(tool_name, "code_execution")
+            }
             other => panic!("expected ToolCall, got {other:?}"),
         }
     }
@@ -1371,7 +1379,9 @@ mod tools {
         let result = model.do_generate(&options).await.unwrap();
 
         match &result.content[0] {
-            GenerateContent::ToolCall { tool_name, .. } => assert_eq!(tool_name, "code_execution"),
+            GenerateContent::ToolCall(RawToolCall { tool_name, .. }) => {
+                assert_eq!(tool_name, "code_execution")
+            }
             other => panic!("expected ToolCall, got {other:?}"),
         }
     }
@@ -1411,7 +1421,7 @@ mod tools {
         let result = model.do_generate(&options).await.unwrap();
 
         match &result.content[0] {
-            GenerateContent::ToolCall { tool_name, .. } => {
+            GenerateContent::ToolCall(RawToolCall { tool_name, .. }) => {
                 assert_eq!(tool_name, "my_custom_search")
             }
             other => panic!("expected ToolCall, got {other:?}"),
@@ -1466,12 +1476,12 @@ mod tools {
         assert_eq!(result.content.len(), 3);
         // Tool call
         match &result.content[0] {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tool_call_id, "fs_123");
                 assert_eq!(tool_name, "file_search");
                 assert_eq!(input, "");
@@ -1480,12 +1490,12 @@ mod tools {
         }
         // Tool result
         match &result.content[1] {
-            GenerateContent::ToolResult {
+            GenerateContent::ToolResult(ToolResult {
                 tool_call_id,
                 tool_name,
                 result,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tool_call_id, "fs_123");
                 assert_eq!(tool_name, "file_search");
                 assert_eq!(result["queries"], json!(["AI safety research"]));
@@ -1544,7 +1554,7 @@ mod tools {
         let result = model.do_generate(&options).await.unwrap();
 
         match &result.content[1] {
-            GenerateContent::ToolResult { result, .. } => {
+            GenerateContent::ToolResult(ToolResult { result, .. }) => {
                 assert_eq!(result["queries"], json!(["nonexistent topic"]));
                 assert_eq!(result["results"], Value::Null);
             }
@@ -1591,12 +1601,12 @@ mod tools {
         let result = model.do_generate(&options).await.unwrap();
 
         match &result.content[0] {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tool_call_id, "call_123");
                 assert_eq!(tool_name, "weather");
                 assert_eq!(input, &Value::String(r#"{"location":"sf"}"#.into()));
@@ -2003,16 +2013,14 @@ mod do_stream {
         let result = model.do_stream(&options).await.unwrap();
         let parts = collect_stream(result).await;
 
-        let tool_call = parts
-            .iter()
-            .find(|p| matches!(p, StreamPart::ToolCall { .. }));
+        let tool_call = parts.iter().find(|p| matches!(p, StreamPart::ToolCall(_)));
         assert!(tool_call.is_some());
-        if let Some(StreamPart::ToolCall {
+        if let Some(StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        }) = tool_call
+        })) = tool_call
         {
             assert_eq!(tool_call_id, "ws_123");
             assert_eq!(tool_name, "mySearch");
@@ -2107,16 +2115,14 @@ mod do_stream {
             .any(|p| matches!(p, StreamPart::ToolInputEnd { id, .. } if id == "call_123"));
         assert!(has_end);
 
-        let tool_call = parts
-            .iter()
-            .find(|p| matches!(p, StreamPart::ToolCall { .. }));
+        let tool_call = parts.iter().find(|p| matches!(p, StreamPart::ToolCall(_)));
         assert!(tool_call.is_some());
-        if let Some(StreamPart::ToolCall {
+        if let Some(StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        }) = tool_call
+        })) = tool_call
         {
             assert_eq!(tool_call_id, "call_123");
             assert_eq!(tool_name, "weather");

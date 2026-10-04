@@ -4,6 +4,7 @@
 //! lives in [`super::convert`]; vendor differences arrive through the
 //! [`ChatDialect`](super::config::ChatDialect) of the model's config.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
@@ -248,7 +249,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
         }
         for call in choice.message.tool_calls.into_iter().flatten() {
             let signature = thought_signature(call.extra_content.as_ref());
-            content.push(GenerateContent::ToolCall {
+            content.push(GenerateContent::ToolCall(RawToolCall {
                 tool_call_id: call
                     .id
                     .filter(|id| !id.is_empty())
@@ -261,7 +262,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                     |signature| json!({ metadata_key.as_str(): { "thoughtSignature": signature } }),
                 ),
                 thought_signature: signature,
-            });
+            }));
         }
         for (i, annotation) in choice.message.annotations.iter().flatten().enumerate() {
             if annotation.get("type").and_then(Value::as_str) == Some("url_citation")

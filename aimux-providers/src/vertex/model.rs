@@ -4,6 +4,8 @@
 //! [`crate::google::types`] response types. Only the endpoint construction and
 //! authentication differ from the public Gemini API provider.
 
+use aimux_core::tool::RawToolCall;
+use aimux_core::tool::ToolResult;
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -360,17 +362,15 @@ impl LanguageModel for VertexModel {
                                         id: id.clone(),
                                         provider_metadata: tool_metadata.clone(),
                                     });
-                                    yield Ok(StreamPart::ToolCall {
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: id,
                                         tool_name: name.to_string(),
-                                        input: Value::String(args.to_string()),
+                                        input: args.to_string(),
                                         provider_executed: None,
                                         dynamic: None,
                                         thought_signature,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: tool_metadata,
-                                    });
+                                    }));
                                     has_tool_calls = true;
                                 } else if let Some(ec) = part.get("executableCode") {
                                     // Provider-executed code execution.
@@ -383,21 +383,19 @@ impl LanguageModel for VertexModel {
                                         let id = format!("call-{block_counter}");
                                         block_counter += 1;
                                         last_code_execution_tool_call_id = Some(id.clone());
-                                        yield Ok(StreamPart::ToolCall {
+                                        yield Ok(StreamPart::ToolCall(RawToolCall {
                                             tool_call_id: id.clone(),
                                             tool_name: code_execution_tool_name.clone(),
-                                            input: Value::String(ec.to_string()),
+                                            input: ec.to_string(),
                                             provider_executed: Some(true),
                                             dynamic: None,
                                             thought_signature: None,
-                                            invalid: None,
-                                            error: None,
                                             provider_metadata: Some(vertex_server_tool_metadata(
                                                 &id,
                                                 "code_execution",
                                                 None,
                                             )),
-                                        });
+                                        }));
                                         // provider-executed → does NOT set has_tool_calls
                                     }
                                 } else if let Some(cer) = part.get("codeExecutionResult") {
@@ -415,7 +413,7 @@ impl LanguageModel for VertexModel {
                                             .and_then(|v| v.as_str())
                                             .map(std::string::ToString::to_string)
                                             .unwrap_or_default();
-                                        yield Ok(StreamPart::ToolResult {
+                                        yield Ok(StreamPart::ToolResult(ToolResult {
                                             tool_call_id: call_id.clone(),
                                             tool_name: code_execution_tool_name.clone(),
                                             result: json!({ "outcome": outcome, "output": output }),
@@ -427,7 +425,7 @@ impl LanguageModel for VertexModel {
                                                 "code_execution",
                                                 None,
                                             )),
-                                        });
+                                        }));
                                     }
                                 } else if let Some(tc) = part.get("toolCall") {
                                     // Server-side tool call (provider-executed).
@@ -452,17 +450,15 @@ impl LanguageModel for VertexModel {
                                         tool_type,
                                         thought_signature.as_deref(),
                                     );
-                                    yield Ok(StreamPart::ToolCall {
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: id,
                                         tool_name: format!("server:{tool_type}"),
-                                        input: Value::String(args.to_string()),
+                                        input: args.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
                                         thought_signature,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: Some(server_meta),
-                                    });
+                                    }));
                                     // provider-executed → does NOT set has_tool_calls
                                 } else if let Some(tr) = part.get("toolResponse") {
                                     // Server-side tool response.
@@ -486,7 +482,7 @@ impl LanguageModel for VertexModel {
                                         tool_type,
                                         part.get("thoughtSignature").and_then(|v| v.as_str()),
                                     );
-                                    yield Ok(StreamPart::ToolResult {
+                                    yield Ok(StreamPart::ToolResult(ToolResult {
                                         tool_call_id: id,
                                         tool_name: format!("server:{tool_type}"),
                                         result: response,
@@ -494,7 +490,7 @@ impl LanguageModel for VertexModel {
                                         preliminary: None,
                                         dynamic: None,
                                         provider_metadata: Some(server_meta),
-                                    });
+                                    }));
                                 }
                             }
                         }
@@ -619,7 +615,7 @@ fn extract_content_from_candidate(
                 if has_code {
                     let id = format!("call-{}", content.len());
                     last_code_execution_tool_call_id = Some(id.clone());
-                    content.push(GenerateContent::ToolCall {
+                    content.push(GenerateContent::ToolCall(RawToolCall {
                         tool_call_id: id.clone(),
                         tool_name: code_execution_tool_name.to_string(),
                         input: ec.to_string(),
@@ -631,7 +627,7 @@ fn extract_content_from_candidate(
                             "code_execution",
                             None,
                         )),
-                    });
+                    }));
                 }
             } else if let Some(cer) = part.get("codeExecutionResult") {
                 // One executableCode may be followed by multiple results.
@@ -641,7 +637,7 @@ fn extract_content_from_candidate(
                         .get("output")
                         .and_then(|v| v.as_str())
                         .unwrap_or_default();
-                    content.push(GenerateContent::ToolResult {
+                    content.push(GenerateContent::ToolResult(ToolResult {
                         tool_call_id: call_id.clone(),
                         tool_name: code_execution_tool_name.to_string(),
                         result: json!({ "outcome": outcome, "output": output }),
@@ -653,7 +649,7 @@ fn extract_content_from_candidate(
                             "code_execution",
                             None,
                         )),
-                    });
+                    }));
                 }
             } else if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
                 if !text.is_empty() {
@@ -687,7 +683,7 @@ fn extract_content_from_candidate(
                 let provider_metadata = thought_signature.as_deref().map(|signature| {
                     vertex_provider_metadata(json!({ "thoughtSignature": signature }))
                 });
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id,
                     tool_name: name,
                     input: input.to_string(),
@@ -695,7 +691,7 @@ fn extract_content_from_candidate(
                     dynamic: None,
                     thought_signature,
                     provider_metadata,
-                });
+                }));
                 has_tool_calls = true;
             } else if let Some(tc) = part.get("toolCall") {
                 let tool_type = tc.get("toolType").and_then(|v| v.as_str()).unwrap_or("");
@@ -712,7 +708,7 @@ fn extract_content_from_candidate(
                     .map(std::string::ToString::to_string);
                 let server_meta =
                     vertex_server_tool_metadata(&id, tool_type, thought_signature.as_deref());
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id,
                     tool_name: format!("server:{tool_type}"),
                     input: input.to_string(),
@@ -720,7 +716,7 @@ fn extract_content_from_candidate(
                     dynamic: Some(true),
                     thought_signature,
                     provider_metadata: Some(server_meta),
-                });
+                }));
             } else if let Some(tr) = part.get("toolResponse") {
                 let tool_type = tr.get("toolType").and_then(|v| v.as_str()).unwrap_or("");
                 let id = last_server_tool_call_id
@@ -737,7 +733,7 @@ fn extract_content_from_candidate(
                     tool_type,
                     part.get("thoughtSignature").and_then(|v| v.as_str()),
                 );
-                content.push(GenerateContent::ToolResult {
+                content.push(GenerateContent::ToolResult(ToolResult {
                     tool_call_id: id,
                     tool_name: format!("server:{tool_type}"),
                     result: response,
@@ -745,7 +741,7 @@ fn extract_content_from_candidate(
                     preliminary: None,
                     dynamic: None,
                     provider_metadata: Some(server_meta),
-                });
+                }));
             }
         }
     }

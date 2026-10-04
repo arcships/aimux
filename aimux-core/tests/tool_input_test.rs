@@ -8,10 +8,10 @@ use aimux_core::generate::{
 use aimux_core::language_model::LanguageModel;
 use aimux_core::openai_output::OpenAiStreamOptions;
 use aimux_core::options::CallOptions;
-use aimux_core::parse_tool_call::{RawToolCall, ToolCallRepair, parse_tool_call};
+use aimux_core::parse_tool_call::{ToolCallRepair, parse_tool_call};
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::{FunctionTool, Tool};
+use aimux_core::tool::{FunctionTool, RawToolCall, Tool, ToolCall};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -345,7 +345,7 @@ impl LanguageModel for RawToolModel {
 
     async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         Ok(GenerateResult {
-            content: vec![GenerateContent::ToolCall {
+            content: vec![GenerateContent::ToolCall(RawToolCall {
                 tool_call_id: "call-1".into(),
                 tool_name: self.tool_name.into(),
                 input: self.input.to_string(),
@@ -353,7 +353,7 @@ impl LanguageModel for RawToolModel {
                 dynamic: None,
                 thought_signature: None,
                 provider_metadata: None,
-            }],
+            })],
             finish_reason: FinishReason {
                 unified: FinishReasonUnified::ToolCalls,
                 raw: Some("tool_calls".into()),
@@ -398,17 +398,15 @@ impl LanguageModel for RawToolModel {
             ]);
         }
         parts.extend([
-            Ok(StreamPart::ToolCall {
+            Ok(StreamPart::ToolCall(RawToolCall {
                 tool_call_id: "call-1".into(),
                 tool_name: self.tool_name.into(),
-                input: json!(self.input),
+                input: self.input.to_string(),
                 provider_executed: None,
                 dynamic: None,
                 thought_signature: None,
-                invalid: None,
-                error: None,
                 provider_metadata: None,
-            }),
+            })),
             Ok(StreamPart::Finish {
                 finish_reason: FinishReason {
                     unified: FinishReasonUnified::ToolCalls,
@@ -444,8 +442,8 @@ async fn generate_text_parses_provider_raw_input_at_the_core_boundary() {
     assert_eq!(result.tool_calls[0].invalid, None);
     assert!(matches!(
         &result.raw.content[0],
-        GenerateContent::ToolCall { input, .. }
-            if input == &json!(r#"{"city":"Singapore"}"#)
+        GenerateContent::ToolCall(RawToolCall { input, .. })
+            if input == r#"{"city":"Singapore"}"#
     ));
 }
 
@@ -464,7 +462,7 @@ async fn stream_text_parses_provider_raw_input_at_the_core_boundary() {
     .unwrap();
 
     while let Some(part) = result.stream.next().await {
-        if let StreamPart::ToolCall { input, invalid, .. } = part.unwrap() {
+        if let StreamPart::ToolCall(ToolCall { input, invalid, .. }) = part.unwrap() {
             assert_eq!(input, json!({ "city": "Singapore" }));
             assert_eq!(invalid, None);
             return;

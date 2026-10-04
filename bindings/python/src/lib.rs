@@ -248,7 +248,7 @@ impl Model {
                                 // deliver it as a StreamPart::Error data item and keep
                                 // pumping.
                                 match serde_json::to_string(
-                                    &aimux_core::stream_part::StreamPart::Error { error: e },
+                                    &aimux_core::stream_part::TextStreamPart::Error { error: e },
                                 ) {
                                     Ok(json) => {
                                         if tx.send(Ok(json)).await.is_err() {

@@ -13,6 +13,7 @@
 //! the recorded `x-api-key` is redacted, so the key the case used is
 //! substituted back.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -435,12 +436,12 @@ async fn messages_system_and_tools() {
         .content
         .iter()
         .find_map(|part| match part {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })
         .expect("a tool call");

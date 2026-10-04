@@ -12,6 +12,7 @@
 //! Mirrors the assistant `case 'tool-result'` branch of
 //! `reference/vercel-ai/anthropic/src/convert-to-anthropic-prompt.ts` (:871-1285).
 
+use aimux_core::tool::ToolResult;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -622,12 +623,12 @@ async fn web_search_result_round_trips_through_a_generate_call() {
         .content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::ToolResult {
+            GenerateContent::ToolResult(ToolResult {
                 tool_call_id,
                 tool_name,
                 result,
                 ..
-            } => Some(tool_result(tool_call_id, tool_name, result.clone())),
+            }) => Some(tool_result(tool_call_id, tool_name, result.clone())),
             _ => None,
         })
         .collect();

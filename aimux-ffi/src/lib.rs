@@ -2263,7 +2263,9 @@ fn stream_text_with_signal(
             let cstr = match item {
                 Ok(part) => stream_part_cstring(&part)?,
                 Err(e) if e.is_recoverable_stream_error() => {
-                    stream_part_cstring(&aimux_core::stream_part::StreamPart::Error { error: e })?
+                    stream_part_cstring(&aimux_core::stream_part::TextStreamPart::Error {
+                        error: e,
+                    })?
                 }
                 Err(e) => return Err(e.into()),
             };

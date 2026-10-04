@@ -16,6 +16,8 @@
 //! overridden with the mock server's root URI (no `/v1` suffix), so the
 //! resulting request path is `/responses`.
 
+use aimux_core::tool::RawToolCall;
+use aimux_core::tool::ToolResult;
 use std::collections::HashMap;
 
 use futures::StreamExt;
@@ -540,12 +542,12 @@ async fn should_handle_mcp_tools_with_annotations() {
     // emits it as a separate content item too).
     assert_eq!(result.content.len(), 5);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "mcp_search_test");
             assert_eq!(tool_name, "search");
             assert_eq!(
@@ -556,11 +558,11 @@ async fn should_handle_mcp_tools_with_annotations() {
         other => panic!("expected ToolCall at [0], got {other:?}"),
     }
     match &result.content[1] {
-        GenerateContent::ToolResult {
+        GenerateContent::ToolResult(ToolResult {
             tool_call_id,
             tool_name,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "mcp_search_test");
             assert_eq!(tool_name, "search");
         }
@@ -1114,12 +1116,12 @@ async fn should_handle_function_call_tool_responses() {
     // output, so there is no paired ToolResult.
     assert_eq!(result.content.len(), 2);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_123");
             assert_eq!(tool_name, "getWeather");
             assert_eq!(input, &Value::String(r#"{"location": "New York"}"#.into()));
@@ -1196,12 +1198,12 @@ async fn should_stream_tool_calls() {
         other => panic!("expected ToolInputEnd, got {other:?}"),
     }
     match &parts[4] {
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_456");
             assert_eq!(tool_name, "calculator");
             assert_eq!(
@@ -1212,11 +1214,11 @@ async fn should_stream_tool_calls() {
         other => panic!("expected ToolCall, got {other:?}"),
     }
     match &parts[5] {
-        StreamPart::ToolResult {
+        StreamPart::ToolResult(ToolResult {
             tool_call_id,
             result,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_456");
             assert_eq!(result, &json!("8"));
         }

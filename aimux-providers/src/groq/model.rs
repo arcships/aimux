@@ -4,6 +4,7 @@
 //! chat completions endpoint. Streamed tool calls go through the shared
 //! [`StreamingToolCallTracker`].
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -316,7 +317,7 @@ impl LanguageModel for GroqChatLanguageModel {
 
         // tool calls:
         for tool_call in choice.message.tool_calls.into_iter().flatten() {
-            content.push(GenerateContent::ToolCall {
+            content.push(GenerateContent::ToolCall(RawToolCall {
                 tool_call_id: tool_call
                     .id
                     .filter(|id| !id.is_empty())
@@ -327,7 +328,7 @@ impl LanguageModel for GroqChatLanguageModel {
                 dynamic: None,
                 thought_signature: None,
                 provider_metadata: None,
-            });
+            }));
         }
 
         Ok(GenerateResult {

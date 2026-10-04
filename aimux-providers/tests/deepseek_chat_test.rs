@@ -19,6 +19,7 @@
 //! HTTP is a local `wiremock` server; every model is built with
 //! `create_deepseek(..).chat(..)`.
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path_regex};
@@ -1195,7 +1196,7 @@ async fn tool_call_should_extract_tool_call_content() {
     );
     assert!(matches!(
         &result.content[1],
-        GenerateContent::ToolCall { tool_call_id, tool_name, input, .. }
+        GenerateContent::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. })
             if tool_call_id == "call_00_abc" && tool_name == "weather"
                 && input == "{\"location\":\"San Francisco\"}"
     ));
@@ -1218,7 +1219,7 @@ async fn tool_call_should_generate_an_id_when_the_server_sends_none() {
         .unwrap();
     assert!(matches!(
         &result.content[1],
-        GenerateContent::ToolCall { tool_call_id, .. } if !tool_call_id.is_empty()
+        GenerateContent::ToolCall(RawToolCall { tool_call_id, .. }) if !tool_call_id.is_empty()
     ));
 }
 
@@ -1866,7 +1867,7 @@ async fn stream_tool_call_should_stream_tool_call() {
     assert_eq!(input, "{\"location\":\"San Francisco\"}");
     assert!(parts.iter().any(|p| matches!(
         p,
-        StreamPart::ToolCall { tool_call_id, tool_name, input, .. }
+        StreamPart::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. })
             if tool_call_id == "call_00_abc" && tool_name == "weather"
                 && input == "{\"location\":\"San Francisco\"}"
     )));

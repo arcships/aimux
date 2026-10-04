@@ -5,6 +5,7 @@ use aimux_core::message::{MessageContent, Role};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
+use aimux_core::tool::{RawToolCall, ToolResult};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
 use async_trait::async_trait;
 use serde_json::json;
@@ -35,7 +36,7 @@ impl LanguageModel for ProviderTranscriptModel {
                     text: "before".to_string(),
                     provider_metadata: None,
                 },
-                GenerateContent::ToolCall {
+                GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: "srv-1".to_string(),
                     tool_name: "server_search".to_string(),
                     input: r#"{"query":"Rust"}"#.to_string(),
@@ -45,8 +46,8 @@ impl LanguageModel for ProviderTranscriptModel {
                     provider_metadata: Some(json!({
                         "mock": { "serverCallId": "wire-1" }
                     })),
-                },
-                GenerateContent::ToolResult {
+                }),
+                GenerateContent::ToolResult(ToolResult {
                     tool_call_id: "srv-1".to_string(),
                     tool_name: "server_search".to_string(),
                     result: json!({ "answer": "still running" }),
@@ -56,8 +57,8 @@ impl LanguageModel for ProviderTranscriptModel {
                     provider_metadata: Some(json!({
                         "mock": { "serverResultId": "wire-preliminary-1" }
                     })),
-                },
-                GenerateContent::ToolResult {
+                }),
+                GenerateContent::ToolResult(ToolResult {
                     tool_call_id: "srv-1".to_string(),
                     tool_name: "server_search".to_string(),
                     result: json!({ "answer": 42 }),
@@ -67,7 +68,7 @@ impl LanguageModel for ProviderTranscriptModel {
                     provider_metadata: Some(json!({
                         "mock": { "serverResultId": "wire-result-1" }
                     })),
-                },
+                }),
                 GenerateContent::Text {
                     text: "after".to_string(),
                     provider_metadata: None,
@@ -91,20 +92,18 @@ impl LanguageModel for ProviderTranscriptModel {
                 delta: "before".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::ToolCall {
+            Ok(StreamPart::ToolCall(RawToolCall {
                 tool_call_id: "srv-1".to_string(),
                 tool_name: "server_search".to_string(),
-                input: json!(r#"{"query":"Rust"}"#),
+                input: r#"{"query":"Rust"}"#.to_string(),
                 provider_executed: Some(true),
                 dynamic: Some(true),
                 thought_signature: None,
-                invalid: None,
-                error: None,
                 provider_metadata: Some(json!({
                     "mock": { "serverCallId": "wire-1" }
                 })),
-            }),
-            Ok(StreamPart::ToolResult {
+            })),
+            Ok(StreamPart::ToolResult(ToolResult {
                 tool_call_id: "srv-1".to_string(),
                 tool_name: "server_search".to_string(),
                 result: json!({ "answer": "still running" }),
@@ -114,8 +113,8 @@ impl LanguageModel for ProviderTranscriptModel {
                 provider_metadata: Some(json!({
                     "mock": { "serverResultId": "wire-preliminary-1" }
                 })),
-            }),
-            Ok(StreamPart::ToolResult {
+            })),
+            Ok(StreamPart::ToolResult(ToolResult {
                 tool_call_id: "srv-1".to_string(),
                 tool_name: "server_search".to_string(),
                 result: json!({ "answer": 42 }),
@@ -125,7 +124,7 @@ impl LanguageModel for ProviderTranscriptModel {
                 provider_metadata: Some(json!({
                     "mock": { "serverResultId": "wire-result-1" }
                 })),
-            }),
+            })),
             Ok(StreamPart::TextDelta {
                 id: "text-2".to_string(),
                 delta: "after".to_string(),
@@ -238,7 +237,7 @@ impl LanguageModel for InvalidToolInputModel {
 
     async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         Ok(GenerateResult {
-            content: vec![GenerateContent::ToolCall {
+            content: vec![GenerateContent::ToolCall(RawToolCall {
                 tool_call_id: "bad-1".to_string(),
                 tool_name: "server_search".to_string(),
                 input: "{".to_string(),
@@ -246,7 +245,7 @@ impl LanguageModel for InvalidToolInputModel {
                 dynamic: Some(true),
                 thought_signature: None,
                 provider_metadata: None,
-            }],
+            })],
             finish_reason: finish_reason(),
             usage: Usage::default(),
             warnings: vec![],

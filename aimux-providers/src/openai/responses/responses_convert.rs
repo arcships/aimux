@@ -13,6 +13,7 @@
 //! genuinely different streaming loops are **not** force-merged into one
 //! function — only the shared framework is extracted.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 use std::pin::Pin;
 
@@ -190,7 +191,7 @@ pub fn build_responses_generate_result(
                     .unwrap_or("{}")
                     .to_string();
                 let input = arguments;
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: call_id,
                     tool_name: name,
                     input,
@@ -202,7 +203,7 @@ pub fn build_responses_generate_result(
                             "itemId": part.get("id").cloned().unwrap_or(Value::Null),
                         }
                     })),
-                });
+                }));
             }
             Some("custom_tool_call") => {
                 has_function_call = true;
@@ -219,7 +220,7 @@ pub fn build_responses_generate_result(
                 let input_str = part.get("input").and_then(|v| v.as_str()).unwrap_or("{}");
                 let input = serde_json::to_string(input_str)
                     .expect("serializing a custom-tool input string cannot fail");
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: call_id,
                     tool_name: name,
                     input,
@@ -231,7 +232,7 @@ pub fn build_responses_generate_result(
                             "itemId": part.get("id").cloned().unwrap_or(Value::Null),
                         }
                     })),
-                });
+                }));
             }
             Some("reasoning") => {
                 let summary = part.get("summary").and_then(|v| v.as_array());
@@ -793,18 +794,16 @@ where
                                             id: call_id.clone(),
                                             provider_metadata: None,
                                         });
-                                        let input = Value::String(arguments);
-                                        yield Ok(StreamPart::ToolCall {
+                                        let input = arguments;
+                                        yield Ok(StreamPart::ToolCall(RawToolCall {
                                             tool_call_id: call_id,
                                             tool_name: name,
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
                                             thought_signature: None,
-                                            invalid: None,
-                                            error: None,
                                             provider_metadata: None,
-                                        });
+                                        }));
                                     }
                                     "custom_tool_call" => {
                                         has_function_call = true;
@@ -827,22 +826,19 @@ where
                                             id: call_id.clone(),
                                             provider_metadata: None,
                                         });
-                                        let input = Value::String(
+                                        let input =
                                             serde_json::to_string(input_str).expect(
                                                 "serializing a custom-tool input string cannot fail",
-                                            ),
-                                        );
-                                        yield Ok(StreamPart::ToolCall {
+                                            );
+                                        yield Ok(StreamPart::ToolCall(RawToolCall {
                                             tool_call_id: call_id,
                                             tool_name: name,
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
                                             thought_signature: None,
-                                            invalid: None,
-                                            error: None,
                                             provider_metadata: None,
-                                        });
+                                        }));
                                     }
                                     "reasoning" => {
                                         let id = item

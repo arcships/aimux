@@ -366,7 +366,7 @@ impl Model {
                                         // frame; deliver it as a StreamPart::Error data item
                                         // and keep pumping.
                                         match serde_json::to_string(
-                                            &aimux_core::stream_part::StreamPart::Error {
+                                            &aimux_core::stream_part::TextStreamPart::Error {
                                                 error: e,
                                             },
                                         ) {

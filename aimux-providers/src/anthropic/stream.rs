@@ -12,6 +12,8 @@
 //! - `parse_anthropic_content` — shared content-block → `GenerateContent`
 //!   mapping used by the non-streaming path.
 
+use aimux_core::tool::RawToolCall;
+use aimux_core::tool::ToolResult;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -348,7 +350,7 @@ pub(crate) fn stream_parts_for_result_block(
 ) -> Vec<StreamPart> {
     let tool_result =
         |tool_name: String, (result, is_error): (Value, Option<bool>), tool_use_id: &str| {
-            StreamPart::ToolResult {
+            StreamPart::ToolResult(ToolResult {
                 tool_call_id: tool_use_id.to_string(),
                 tool_name,
                 result,
@@ -356,7 +358,7 @@ pub(crate) fn stream_parts_for_result_block(
                 preliminary: None,
                 dynamic: None,
                 provider_metadata: None,
-            }
+            })
         };
 
     match block {
@@ -366,7 +368,7 @@ pub(crate) fn stream_parts_for_result_block(
         } => {
             let name = names.to_custom_tool_name("web_search").to_string();
             let Some(results) = content.as_array() else {
-                return vec![StreamPart::ToolResult {
+                return vec![StreamPart::ToolResult(ToolResult {
                     tool_call_id: tool_use_id.clone(),
                     tool_name: name,
                     result: json!({
@@ -377,7 +379,7 @@ pub(crate) fn stream_parts_for_result_block(
                     preliminary: None,
                     dynamic: None,
                     provider_metadata: None,
-                }];
+                })];
             };
             // The tool result, then one Source per hit — the same pair the
             // non-streaming path emits.
@@ -457,7 +459,7 @@ pub(crate) fn stream_parts_for_result_block(
             is_error,
         } => {
             let call = mcp_tool_calls.get(tool_use_id);
-            vec![StreamPart::ToolResult {
+            vec![StreamPart::ToolResult(ToolResult {
                 tool_call_id: tool_use_id.clone(),
                 tool_name: call.map(|(name, _)| name.clone()).unwrap_or_default(),
                 result: content.clone(),
@@ -469,7 +471,7 @@ pub(crate) fn stream_parts_for_result_block(
                         options_name: { "type": "mcp-tool-use", "serverName": server }
                     })
                 }),
-            }]
+            })]
         }
         _ => Vec::new(),
     }
@@ -525,7 +527,7 @@ pub(crate) fn parse_anthropic_content(
                 input,
                 caller,
             } => {
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id.clone(),
                     tool_name: names.to_custom_tool_name(name).to_string(),
                     input: input.to_string(),
@@ -533,7 +535,7 @@ pub(crate) fn parse_anthropic_content(
                     dynamic: None,
                     thought_signature: None,
                     provider_metadata: tool_call_caller_metadata(caller.as_ref(), options_name),
-                });
+                }));
             }
             ContentBlock::Thinking {
                 thinking,
@@ -550,7 +552,7 @@ pub(crate) fn parse_anthropic_content(
             // calls so they round-trip on follow-up turns.
             ContentBlock::ServerToolUse { id, name, input } => {
                 let provider_name = server_tool_provider_name(name);
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id.clone(),
                     tool_name: names.to_custom_tool_name(provider_name).to_string(),
                     input: normalized_server_tool_input(name, input).to_string(),
@@ -560,7 +562,7 @@ pub(crate) fn parse_anthropic_content(
                     .then_some(true),
                     thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
             }
             // MCP tool use — provider-executed + dynamic (upstream :1166-1182).
             ContentBlock::McpToolUse {
@@ -569,7 +571,7 @@ pub(crate) fn parse_anthropic_content(
                 input,
                 server_name,
             } => {
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id.clone(),
                     tool_name: name.clone(),
                     input: input.to_string(),
@@ -579,7 +581,7 @@ pub(crate) fn parse_anthropic_content(
                     provider_metadata: Some(json!({
                         options_name: { "type": "mcp-tool-use", "serverName": server_name }
                     })),
-                });
+                }));
             }
             // Redacted thinking — upstream emits as reasoning with redactedData
             ContentBlock::RedactedThinking { data } => {
@@ -603,7 +605,7 @@ pub(crate) fn parse_anthropic_content(
                 // object (upstream branches on `Array.isArray`).
                 match payload.as_array() {
                     Some(results) => {
-                        content.push(GenerateContent::ToolResult {
+                        content.push(GenerateContent::ToolResult(ToolResult {
                             tool_call_id: tool_use_id.clone(),
                             tool_name: names.to_custom_tool_name("web_search").to_string(),
                             result: Value::Array(
@@ -613,7 +615,7 @@ pub(crate) fn parse_anthropic_content(
                             preliminary: None,
                             dynamic: None,
                             provider_metadata: None,
-                        });
+                        }));
                         // Each result also becomes a `Source` — that is how the
                         // URLs and titles reach `result.sources`.
                         for result in results {
@@ -631,7 +633,7 @@ pub(crate) fn parse_anthropic_content(
                             });
                         }
                     }
-                    None => content.push(GenerateContent::ToolResult {
+                    None => content.push(GenerateContent::ToolResult(ToolResult {
                         tool_call_id: tool_use_id.clone(),
                         tool_name: names.to_custom_tool_name("web_search").to_string(),
                         result: json!({
@@ -643,7 +645,7 @@ pub(crate) fn parse_anthropic_content(
                         preliminary: None,
                         dynamic: None,
                         provider_metadata: None,
-                    }),
+                    })),
                 }
             }
             ContentBlock::WebFetchToolResult {
@@ -651,7 +653,7 @@ pub(crate) fn parse_anthropic_content(
                 content: payload,
             } => {
                 let (result, is_error) = map_web_fetch_result(payload);
-                content.push(GenerateContent::ToolResult {
+                content.push(GenerateContent::ToolResult(ToolResult {
                     tool_call_id: tool_use_id.clone(),
                     tool_name: names.to_custom_tool_name("web_fetch").to_string(),
                     result,
@@ -659,14 +661,14 @@ pub(crate) fn parse_anthropic_content(
                     preliminary: None,
                     dynamic: None,
                     provider_metadata: None,
-                });
+                }));
             }
             ContentBlock::CodeExecutionToolResult {
                 tool_use_id,
                 content: payload,
             } => {
                 let (result, is_error) = map_code_execution_result(payload);
-                content.push(GenerateContent::ToolResult {
+                content.push(GenerateContent::ToolResult(ToolResult {
                     tool_call_id: tool_use_id.clone(),
                     tool_name: names.to_custom_tool_name("code_execution").to_string(),
                     result,
@@ -674,7 +676,7 @@ pub(crate) fn parse_anthropic_content(
                     preliminary: None,
                     dynamic: None,
                     provider_metadata: None,
-                });
+                }));
             }
             // Upstream shares one arm for these two and passes `content`
             // through unmapped (anthropic-language-model.ts:1323-1334).
@@ -686,7 +688,7 @@ pub(crate) fn parse_anthropic_content(
                 tool_use_id,
                 content: payload,
             } => {
-                content.push(GenerateContent::ToolResult {
+                content.push(GenerateContent::ToolResult(ToolResult {
                     tool_call_id: tool_use_id.clone(),
                     tool_name: names.to_custom_tool_name("code_execution").to_string(),
                     result: payload.clone(),
@@ -694,7 +696,7 @@ pub(crate) fn parse_anthropic_content(
                     preliminary: None,
                     dynamic: None,
                     provider_metadata: None,
-                });
+                }));
             }
             ContentBlock::ToolSearchToolResult {
                 tool_use_id,
@@ -705,7 +707,7 @@ pub(crate) fn parse_anthropic_content(
                     names,
                     server_tool_calls.get(tool_use_id.as_str()).copied(),
                 );
-                content.push(GenerateContent::ToolResult {
+                content.push(GenerateContent::ToolResult(ToolResult {
                     tool_call_id: tool_use_id.clone(),
                     tool_name: names.to_custom_tool_name(provider_name).to_string(),
                     result,
@@ -713,14 +715,14 @@ pub(crate) fn parse_anthropic_content(
                     preliminary: None,
                     dynamic: None,
                     provider_metadata: None,
-                });
+                }));
             }
             ContentBlock::AdvisorToolResult {
                 tool_use_id,
                 content: payload,
             } => {
                 let (result, is_error) = map_advisor_result(payload);
-                content.push(GenerateContent::ToolResult {
+                content.push(GenerateContent::ToolResult(ToolResult {
                     tool_call_id: tool_use_id.clone(),
                     tool_name: names.to_custom_tool_name("advisor").to_string(),
                     result,
@@ -728,7 +730,7 @@ pub(crate) fn parse_anthropic_content(
                     preliminary: None,
                     dynamic: None,
                     provider_metadata: None,
-                });
+                }));
             }
             // MCP tool result — dynamic, and it inherits the name and metadata
             // of the `mcp_tool_use` block it answers (upstream :1184-1194).
@@ -738,7 +740,7 @@ pub(crate) fn parse_anthropic_content(
                 is_error,
             } => {
                 let call = mcp_tool_calls.get(tool_use_id.as_str());
-                content.push(GenerateContent::ToolResult {
+                content.push(GenerateContent::ToolResult(ToolResult {
                     tool_call_id: tool_use_id.clone(),
                     tool_name: call
                         .map(|(name, _)| (*name).to_string())
@@ -752,7 +754,7 @@ pub(crate) fn parse_anthropic_content(
                             options_name: { "type": "mcp-tool-use", "serverName": server }
                         })
                     }),
-                });
+                }));
             }
             _ => {}
         }
@@ -1030,22 +1032,20 @@ pub(crate) async fn anthropic_stream_core(
                                 ContentBlock::McpToolUse { id, name, input, server_name } => {
                                     mcp_tool_calls
                                         .insert(id.clone(), (name.clone(), server_name.clone()));
-                                    yield Ok(StreamPart::ToolCall {
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: id.clone(),
                                         tool_name: name.clone(),
-                                        input: Value::String(input.to_string()),
+                                        input: input.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
                                         thought_signature: None,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: Some(json!({
                                             options_name.as_str(): {
                                                 "type": "mcp-tool-use",
                                                 "serverName": server_name,
                                             }
                                         })),
-                                    });
+                                    }));
                                 }
                                 // Redacted thinking — emit as ReasoningStart.
                                 ContentBlock::RedactedThinking { data } => {
@@ -1243,22 +1243,20 @@ pub(crate) async fn anthropic_stream_core(
                                             provider_metadata: None,
                                         });
                                         let input =
-                                            Value::String(finalize_streamed_tool_input(
+                                            finalize_streamed_tool_input(
                                                 accumulated_json,
                                                 provider_tool_name.as_deref(),
                                                 provider_tool_input_type.as_deref(),
-                                            ));
-                                        yield Ok(StreamPart::ToolCall {
+                                            );
+                                        yield Ok(StreamPart::ToolCall(RawToolCall {
                                             tool_call_id: id,
                                             tool_name: name,
                                             input,
                                             provider_executed,
                                             dynamic,
                                             thought_signature: None,
-                                            invalid: None,
-                                            error: None,
                                             provider_metadata,
-                                        });
+                                        }));
                                     }
                                 }
                             }

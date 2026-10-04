@@ -15,6 +15,7 @@
 #[path = "common/mock_fetch.rs"]
 mod mock_fetch;
 
+use aimux_core::tool::RawToolCall;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -337,9 +338,9 @@ async fn generate_tools() {
         .content
         .iter()
         .find_map(|part| match part {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_name, input, ..
-            } => Some((tool_name.clone(), input.clone())),
+            }) => Some((tool_name.clone(), input.clone())),
             _ => None,
         })
         .expect("a tool call");

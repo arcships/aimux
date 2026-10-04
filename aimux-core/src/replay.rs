@@ -24,6 +24,7 @@ use crate::options::{CallOptions, ToolChoice};
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
 use crate::stream_part::StreamPart;
+use crate::tool::RawToolCall;
 use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 // ── 匹配策略 ────────────────────────────────────────────────────────────────
@@ -599,7 +600,7 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
                 .and_then(|x| x.as_str())
                 .unwrap_or("");
             let input = args_str.to_string();
-            content.push(GenerateContent::ToolCall {
+            content.push(GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
@@ -607,7 +608,7 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
                 dynamic: None,
                 thought_signature: None,
                 provider_metadata: None,
-            });
+            }));
         }
     }
 
@@ -630,13 +631,6 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
         request_body: None,
         response_headers: None,
     })
-}
-
-/// 流式 tool_call 累加器(按 OpenAI `index` 稳定累积)。
-struct ToolCallAccumulator {
-    id: String,
-    name: String,
-    arguments: String,
 }
 
 /// 重建流式结果:OpenAI SSE body → `StreamPart`(镜像 openai provider 状态机)。
@@ -669,7 +663,7 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
     let mut final_usage = Usage::default();
     let mut final_finish: Option<FinishReason> = None;
     // tool_call 按 OpenAI `index` 稳定累积;`tool_order` 保插入顺序(确定性 emit)。
-    let mut tool_calls: std::collections::HashMap<usize, ToolCallAccumulator> =
+    let mut tool_calls: std::collections::HashMap<usize, RawToolCall> =
         std::collections::HashMap::new();
     let mut tool_order: Vec<usize> = Vec::new();
     let mut saw_openai = false;
@@ -789,10 +783,14 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                                 .to_string();
                             tool_calls.insert(
                                 idx,
-                                ToolCallAccumulator {
-                                    id: id.clone(),
-                                    name: name.clone(),
-                                    arguments: String::new(),
+                                RawToolCall {
+                                    tool_call_id: id.clone(),
+                                    tool_name: name.clone(),
+                                    input: String::new(),
+                                    provider_executed: None,
+                                    dynamic: None,
+                                    thought_signature: None,
+                                    provider_metadata: None,
                                 },
                             );
                             tool_order.push(idx);
@@ -811,9 +809,9 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                             && (!is_new || !args.is_empty())
                             && let Some(acc) = tool_calls.get_mut(&idx)
                         {
-                            acc.arguments.push_str(args);
+                            acc.input.push_str(args);
                             parts.push(Ok(StreamPart::ToolInputDelta {
-                                id: acc.id.clone(),
+                                id: acc.tool_call_id.clone(),
                                 delta: args.to_string(),
                                 provider_metadata: None,
                             }));
@@ -859,22 +857,12 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
         }));
     }
     for &i in &tool_order {
-        if let Some(acc) = tool_calls.get(&i) {
+        if let Some(acc) = tool_calls.remove(&i) {
             parts.push(Ok(StreamPart::ToolInputEnd {
-                id: acc.id.clone(),
+                id: acc.tool_call_id.clone(),
                 provider_metadata: None,
             }));
-            parts.push(Ok(StreamPart::ToolCall {
-                tool_call_id: acc.id.clone(),
-                tool_name: acc.name.clone(),
-                input: serde_json::Value::String(acc.arguments.clone()),
-                provider_executed: None,
-                dynamic: None,
-                thought_signature: None,
-                invalid: None,
-                error: None,
-                provider_metadata: None,
-            }));
+            parts.push(Ok(StreamPart::ToolCall(acc)));
         }
     }
 
@@ -1609,18 +1597,18 @@ mod tests {
                 .unwrap()
         });
         assert_eq!(result.content.len(), 1);
-        let Some(GenerateContent::ToolCall {
+        let Some(GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        }) = result.content.first()
+        })) = result.content.first()
         else {
             panic!("expected ToolCall, got {:?}", result.content);
         };
         assert_eq!(tool_call_id, "call_abc");
         assert_eq!(tool_name, "get_weather");
-        assert_eq!(input, &serde_json::json!(r#"{"city":"SF"}"#));
+        assert_eq!(input, r#"{"city":"SF"}"#);
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
     }
 
@@ -1654,10 +1642,11 @@ mod tests {
                 .await
                 .unwrap()
         });
-        let Some(GenerateContent::ToolCall { input, .. }) = result.content.first() else {
+        let Some(GenerateContent::ToolCall(RawToolCall { input, .. })) = result.content.first()
+        else {
             panic!("expected ToolCall");
         };
-        assert_eq!(input, &serde_json::json!("not-json{"));
+        assert_eq!(input, "not-json{");
     }
 
     #[test]
@@ -1722,19 +1711,19 @@ mod tests {
         let calls: Vec<_> = parts
             .iter()
             .filter_map(|p| match p {
-                StreamPart::ToolCall {
+                StreamPart::ToolCall(RawToolCall {
                     tool_call_id,
                     tool_name,
                     input,
                     ..
-                } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+                }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
                 _ => None,
             })
             .collect();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "call_1");
         assert_eq!(calls[0].1, "get_weather");
-        assert_eq!(calls[0].2, serde_json::json!(r#"{"city":"SF"}"#));
+        assert_eq!(calls[0].2, r#"{"city":"SF"}"#);
         // finish_reason tool_calls。
         assert!(parts.iter().any(|p| matches!(
             p,
