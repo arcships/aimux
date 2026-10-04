@@ -76,6 +76,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Rust (provider factory, RFC-0036)**
 
+- `OpenAIProvider::language_model(id)` (and so `create_provider("openai", ..)`
+  and the registry id `openai:<model>`) returns the **Responses** model, as
+  `@ai-sdk/openai` does. It returned the Chat Completions model. Call
+  `.chat(id)` for Chat Completions, for example against an endpoint that has
+  no `/responses` route.
+
 - Removed crate-root exports `provider()`, `provider_handle`,
   `provider_from_env`, `provider_discovery`, `provider_registry_entry`,
   `ProviderOptions`, `ProviderProfile`, `register_provider` and

@@ -79,12 +79,15 @@ mod tests {
     }
 
     #[test]
-    fn a_recording_made_with_another_method_is_refused() {
+    fn rebuilds_responses_and_refuses_a_recording_made_with_another_method() {
         let registry =
             aimux_core::create_provider_registry(crate::default_providers(), Default::default());
-        // The default OpenAI language model is chat; a Responses recording
-        // must not be replayed against it.
         let p = ProviderRecord::new("openai", "openai.responses", "some-model");
+        let model = rebuild_provider(&p, &registry).unwrap();
+        assert_eq!(model.provider(), "openai.responses");
+        assert_eq!(model.model_id(), "some-model");
+
+        let p = ProviderRecord::new("openai", "openai.chat", "some-model");
         let err = rebuild_provider(&p, &registry).err().unwrap();
         assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
     }

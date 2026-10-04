@@ -284,7 +284,7 @@ pub async fn run(args: &ProviderArgs) -> anyhow::Result<Option<serde_json::Value
 mod tests {
     use super::*;
 
-    /// 本地 mock OpenAI chat completion 服务器:第一次请求报 0 命中,
+    /// 本地 mock OpenAI Responses 服务器:第一次请求报 0 命中,
     /// 之后请求报前缀命中(模拟真实缓存行为)。
     fn start_mock_server() -> (
         std::net::SocketAddr,
@@ -312,14 +312,13 @@ mod tests {
                 let cached = if n == 0 { 0 } else { 512 };
                 let body = format!(
                     r#"{{
-                        "id": "chatcmpl-mock",
-                        "model": "gpt-4o",
-                        "choices": [{{"message": {{"role": "assistant", "content": "ok"}}, "finish_reason": "stop"}}],
+                        "id": "resp-mock",
+                        "output": [{{"type": "message", "content": [{{"type": "output_text", "text": "ok"}}]}}],
                         "usage": {{
-                            "prompt_tokens": 2048,
-                            "completion_tokens": 5,
+                            "input_tokens": 2048,
+                            "output_tokens": 5,
                             "total_tokens": 2053,
-                            "prompt_tokens_details": {{"cached_tokens": {cached}}}
+                            "input_tokens_details": {{"cached_tokens": {cached}}}
                         }}
                     }}"#
                 );

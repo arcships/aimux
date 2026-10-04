@@ -282,11 +282,12 @@ impl OpenAIProvider {
     }
 
     /// The provider as a function: the default language model for an id. The
-    /// AI SDK's callable provider; it returns the chat model for now, the same
-    /// model as [`language_model`](Provider::language_model).
+    /// AI SDK's callable provider; it returns the Responses model, the same
+    /// model as [`responses`](Self::responses) and
+    /// [`language_model`](Provider::language_model).
     #[must_use]
     pub fn call(&self, model_id: &str) -> Arc<dyn LanguageModel> {
-        Arc::new(self.chat(model_id))
+        Arc::new(self.responses(model_id))
     }
 }
 

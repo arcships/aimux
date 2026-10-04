@@ -4,7 +4,7 @@
 //! - `packages/openai/src/openai-provider.test.ts` — baseURL config, chat routing
 //! - `packages/openai/src/openai-forward-compatible-defaults.test.ts` — reasoning-safe defaults
 //!
-//! Responses API / embedding / image parts are excluded (covered by B1/C1/C2).
+//! Responses default routing is covered; embedding / image parts are excluded.
 
 use serde_json::{Value, json};
 use serial_test::serial;
@@ -241,13 +241,21 @@ mod provider_config {
         );
     }
 
-    /// TS: `languageModel` via Provider trait creates a working model.
+    /// TS: `languageModel` via Provider trait creates a Responses model.
     #[tokio::test]
     async fn language_model_via_trait() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "resp-test",
+                "object": "response",
+                "created_at": 1711115037,
+                "status": "completed",
+                "model": "test-model",
+                "output": [],
+                "usage": { "input_tokens": 1, "output_tokens": 1 }
+            })))
             .mount(&server)
             .await;
 
@@ -255,6 +263,7 @@ mod provider_config {
         let model = provider
             .language_model("gpt-4o")
             .expect("language_model should succeed");
+        assert_eq!(model.provider(), "openai.responses");
 
         model
             .do_generate(&default_options(test_prompt()))
