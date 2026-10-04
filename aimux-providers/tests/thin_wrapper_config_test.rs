@@ -30,8 +30,8 @@ use aimux_core::options::CallOptions;
 use aimux_core::provider::Provider;
 
 use aimux_providers::{
-    HuggingFaceProvider, HuggingFaceProviderSettings, ProviderOptions, create_huggingface,
-    provider, provider_from_env,
+    HuggingFaceProvider, HuggingFaceProviderSettings, PresetSettings, create_huggingface,
+    create_provider,
 };
 
 // ── shared helpers ───────────────────────────────────────────────────────────
@@ -49,6 +49,23 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 }
 
 /// A minimal Responses API body returning one text message.
+/// A registry preset as a language model.
+fn preset_model(
+    name: &str,
+    api_key: Option<&str>,
+    model_id: &str,
+    settings: PresetSettings,
+) -> Result<std::sync::Arc<dyn LanguageModel>, AiMuxError> {
+    create_provider(
+        name,
+        PresetSettings {
+            api_key: api_key.map(|key| key.to_string().into()),
+            ..settings
+        },
+    )?
+    .language_model(model_id)
+}
+
 fn responses_body() -> Value {
     json!({
         "id": "resp_test",
@@ -222,12 +239,12 @@ mod togetherai_config {
     #[test]
     fn provider_name_is_togetherai() {
         // Phase 4: the shell TogetherAIConfig/TogetherAIProvider pair is
-        // retired — registry-backed provider() replaces it.
-        let model = provider(
+        // retired — registry-backed create_provider() replaces it.
+        let model = preset_model(
             "togetherai",
-            Some("test-key".to_string()),
+            Some("test-key"),
             "meta-llama/Llama-3-70b-chat-hf",
-            None,
+            PresetSettings::default(),
         )
         .expect("togetherai should construct from registry");
         assert_eq!(model.model_id(), "meta-llama/Llama-3-70b-chat-hf");
@@ -245,14 +262,14 @@ mod togetherai_config {
             .mount(&server)
             .await;
 
-        let model = provider(
+        let model = preset_model(
             "togetherai",
-            Some("my-custom-key".to_string()),
+            Some("my-custom-key"),
             "meta-llama/Llama-3-70b-chat-hf",
-            Some(ProviderOptions {
+            PresetSettings {
                 base_url: Some(server.uri()),
                 ..Default::default()
-            }),
+            },
         )
         .expect("togetherai should construct from registry");
 
@@ -273,19 +290,22 @@ mod togetherai_config {
             .mount(&server)
             .await;
 
-        let model = provider(
+        let model = preset_model(
             "togetherai",
-            Some("test-key".to_string()),
+            Some("test-key"),
             "meta-llama/Llama-3-70b-chat-hf",
-            Some(ProviderOptions {
+            PresetSettings {
                 base_url: Some(server.uri()),
                 headers: Some(
-                    vec![("x-custom-header".to_string(), "test-value".to_string())]
-                        .into_iter()
-                        .collect(),
+                    vec![(
+                        "x-custom-header".to_string(),
+                        Some("test-value".to_string()),
+                    )]
+                    .into_iter()
+                    .collect(),
                 ),
                 ..Default::default()
-            }),
+            },
         )
         .expect("togetherai should construct from registry");
 
@@ -301,36 +321,21 @@ mod togetherai_config {
         let saved = std::env::var("TOGETHER_API_KEY").ok();
         unsafe { std::env::set_var("TOGETHER_API_KEY", "env-test-key") };
 
-        let result = provider_from_env("togetherai", "meta-llama/Llama-3-70b-chat-hf", None);
+        let result = preset_model(
+            "togetherai",
+            None,
+            "meta-llama/Llama-3-70b-chat-hf",
+            PresetSettings::default(),
+        );
         assert!(
             result.is_ok(),
-            "provider_from_env should succeed with env var set"
+            "the registry preset should succeed with env var set"
         );
 
         unsafe {
             match saved {
                 Some(v) => std::env::set_var("TOGETHER_API_KEY", v),
                 None => std::env::remove_var("TOGETHER_API_KEY"),
-            }
-        }
-    }
-
-    /// TS: `from_env` should fail without the env var.
-    #[test]
-    #[ignore = "flaky: parallel test env var race"]
-    fn from_env_fails_without_env_var() {
-        let saved = std::env::var("TOGETHER_API_KEY").ok();
-        unsafe { std::env::remove_var("TOGETHER_API_KEY") };
-
-        let result = provider_from_env("togetherai", "meta-llama/Llama-3-70b-chat-hf", None);
-        assert!(
-            result.is_err(),
-            "provider_from_env should fail without env var"
-        );
-
-        unsafe {
-            if let Some(v) = saved {
-                std::env::set_var("TOGETHER_API_KEY", v);
             }
         }
     }
@@ -348,9 +353,14 @@ mod vercel_config {
     #[test]
     fn provider_name_is_vercel() {
         // Phase 4: the shell VercelConfig/VercelProvider pair is retired —
-        // registry-backed provider() replaces it.
-        let model = provider("vercel", Some("test-key".to_string()), "v0-1.5-md", None)
-            .expect("vercel should construct from registry");
+        // registry-backed create_provider() replaces it.
+        let model = preset_model(
+            "vercel",
+            Some("test-key"),
+            "v0-1.5-md",
+            PresetSettings::default(),
+        )
+        .expect("vercel should construct from registry");
         assert_eq!(model.model_id(), "v0-1.5-md");
     }
 
@@ -366,14 +376,14 @@ mod vercel_config {
             .mount(&server)
             .await;
 
-        let model = provider(
+        let model = preset_model(
             "vercel",
-            Some("my-custom-key".to_string()),
+            Some("my-custom-key"),
             "v0-1.5-md",
-            Some(ProviderOptions {
+            PresetSettings {
                 base_url: Some(server.uri()),
                 ..Default::default()
-            }),
+            },
         )
         .expect("vercel should construct from registry");
 
@@ -389,36 +399,16 @@ mod vercel_config {
         let saved = std::env::var("VERCEL_API_KEY").ok();
         unsafe { std::env::set_var("VERCEL_API_KEY", "env-test-key") };
 
-        let result = provider_from_env("vercel", "v0-1.5-md", None);
+        let result = preset_model("vercel", None, "v0-1.5-md", PresetSettings::default());
         assert!(
             result.is_ok(),
-            "provider_from_env should succeed with env var set"
+            "the registry preset should succeed with env var set"
         );
 
         unsafe {
             match saved {
                 Some(v) => std::env::set_var("VERCEL_API_KEY", v),
                 None => std::env::remove_var("VERCEL_API_KEY"),
-            }
-        }
-    }
-
-    /// TS: `from_env` should fail without the env var.
-    #[test]
-    #[ignore = "flaky: parallel test env var race"]
-    fn from_env_fails_without_env_var() {
-        let saved = std::env::var("VERCEL_API_KEY").ok();
-        unsafe { std::env::remove_var("VERCEL_API_KEY") };
-
-        let result = provider_from_env("vercel", "v0-1.5-md", None);
-        assert!(
-            result.is_err(),
-            "provider_from_env should fail without env var"
-        );
-
-        unsafe {
-            if let Some(v) = saved {
-                std::env::set_var("VERCEL_API_KEY", v);
             }
         }
     }

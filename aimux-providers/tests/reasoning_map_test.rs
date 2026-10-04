@@ -9,7 +9,7 @@
 //!   （声明式 `body_overrides` 与调用级覆盖均已删除）
 //! - **max_tokens_key 矩阵**：8 家接线（stepfun/siliconflow/sarvam/reka_ai/publicai/
 //!   perplexity → `"max_tokens"`；groq/heroku → `"max_completion_tokens"`）×
-//!   推理/非推理两分支。profile 取自注册表 `provider_registry_entry(name)`
+//!   推理/非推理两分支。profile 取自注册表 `preset::lookup(name)`
 //!   （锁注册表接线，防死代码）。
 //! - **无 warning 断言**：直传语义下 reasoning 不再产生"未翻译"warning（防未来误加）。
 //! - **reasoning_effort 直传**：7 档无归一化（none/minimal/low/medium/high/xhigh 原样
@@ -22,13 +22,12 @@ use aimux_core::options::CallOptions;
 use aimux_core::types::{ReasoningEffort, Warning};
 use aimux_providers::deepseek::{DeepSeekProviderSettings, create_deepseek, deepseek};
 use aimux_providers::openai_compatible::OpenAICompatibleChatModel;
-use aimux_providers::{PresetFamily, PresetSettings, provider_registry_entry};
+use aimux_providers::{PresetFamily, PresetSettings};
 use serde_json::json;
 
 /// The chat model of a registry preset, built the way the registry builds it.
 fn preset_chat(name: &str, model_id: &str) -> OpenAICompatibleChatModel {
-    let entry = aimux_providers::preset::lookup(name).unwrap();
-    aimux_providers::preset::PresetProvider::create(entry.descriptor, PresetSettings::default())
+    aimux_providers::preset::create(name, PresetSettings::default())
         .unwrap()
         .chat(model_id)
 }
@@ -161,7 +160,7 @@ async fn i5_transform_injects_thinking_enabled() {
 // ════════════════════════════════════════════════════════════════════════════
 // max_tokens_key 矩阵：8 家接线 × 推理/非推理两分支
 //
-// profile 从注册表 `provider_registry_entry(name)` 实际构造取出——直接锁注册表接线
+// profile 从注册表 `preset::lookup(name)` 实际构造取出——直接锁注册表接线
 // （若注册表行被改回 full()，此处 profile.max_tokens_key 断言即失败，防死代码）。
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -210,7 +209,9 @@ fn assert_vendor_key(provider: &str, expected_key: &str, model_id: &str, branch:
 #[test]
 fn max_tokens_key_wiring_registry() {
     for (provider, expected) in wired_vendors() {
-        let descriptor = provider_registry_entry(provider).unwrap();
+        let descriptor = aimux_providers::preset::lookup(provider)
+            .unwrap()
+            .descriptor;
         if descriptor.family == PresetFamily::Groq {
             assert_eq!(
                 descriptor.max_tokens_key, None,

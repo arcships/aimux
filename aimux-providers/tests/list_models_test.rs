@@ -18,7 +18,7 @@ use aimux_core::provider::ProviderDiscovery;
 use aimux_provider_utils::Resolvable;
 use aimux_providers::catalogue;
 use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
-use aimux_providers::{ProviderOptions, provider_discovery, provider_handle};
+use aimux_providers::{PresetSettings, create_provider};
 
 async fn mount_cassette_file(server: &MockServer, cassette_path: &Path) -> String {
     let text = std::fs::read_to_string(cassette_path)
@@ -81,11 +81,16 @@ async fn deepseek_provider_list_models_via_discovery_handle() {
     let cassette = Path::new("tests/cassettes/deepseek/list_models_smoke.json");
     let recorded_path = mount_cassette_file(&server, cassette).await;
     let base_url = base_url_for(&server.uri(), &recorded_path);
-    let opts = ProviderOptions {
-        base_url: Some(base_url),
-        ..Default::default()
-    };
-    let handle = provider_discovery("deepseek", Some("test-key".into()), Some(opts)).unwrap();
+    let provider = create_provider(
+        "deepseek",
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
+            base_url: Some(base_url),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let handle = provider.discovery().expect("deepseek lists its models");
     let models = handle.list_models().await.unwrap();
     assert_eq!(models.len(), 2);
     assert!(models.iter().any(|m| m.id == "deepseek-v4-flash"));
@@ -94,18 +99,21 @@ async fn deepseek_provider_list_models_via_discovery_handle() {
 
 #[tokio::test]
 #[serial]
-async fn provider_handle_then_language_model() {
+async fn discovery_then_language_model() {
     let server = MockServer::start().await;
     let cassette = Path::new("tests/cassettes/deepseek/list_models_smoke.json");
     let recorded_path = mount_cassette_file(&server, cassette).await;
     let base_url = base_url_for(&server.uri(), &recorded_path);
-    let opts = ProviderOptions {
-        base_url: Some(base_url),
-        ..Default::default()
-    };
-    let discovery =
-        provider_discovery("deepseek", Some("test-key".into()), Some(opts.clone())).unwrap();
-    let handle = provider_handle("deepseek", Some("test-key".into()), Some(opts)).unwrap();
+    let handle = create_provider(
+        "deepseek",
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
+            base_url: Some(base_url),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let discovery = handle.discovery().expect("deepseek lists its models");
     let models = discovery.list_models().await.unwrap();
     let first_id = models[0].id.clone();
     let _model = handle.language_model(&first_id).unwrap();
@@ -169,10 +177,8 @@ async fn ollama_preset_lists_models_without_authorization() {
         )
         .mount(&server)
         .await;
-    let provider = aimux_providers::preset::PresetProvider::create(
-        aimux_providers::preset::lookup("ollama")
-            .unwrap()
-            .descriptor,
+    let provider = aimux_providers::preset::create(
+        "ollama",
         aimux_providers::PresetSettings {
             base_url: Some(format!("{}/v1", server.uri())),
             ..Default::default()
@@ -255,25 +261,6 @@ async fn list_models_http_error() {
     .unwrap();
     let err = provider.list_models().await.unwrap_err();
     assert!(!err.to_string().is_empty());
-}
-
-#[test]
-fn provider_handle_unknown_name() {
-    match aimux_providers::provider_handle("no-such-provider", Some("k".into()), None) {
-        Err(e) => assert!(matches!(e, aimux_core::AiMuxError::NoSuchProvider { .. })),
-        Ok(_) => panic!("unknown provider should fail"),
-    }
-}
-
-#[test]
-fn discovery_for_unknown_provider_is_no_such_provider() {
-    // `Arc<dyn ProviderDiscovery>` is not `Debug`, so match instead of `unwrap_err`.
-    match provider_discovery("no-such-provider", Some("k".into()), None) {
-        Err(aimux_core::AiMuxError::NoSuchProvider { provider_id }) => {
-            assert_eq!(provider_id, "no-such-provider");
-        }
-        _ => panic!("expected NoSuchProvider"),
-    }
 }
 
 #[test]

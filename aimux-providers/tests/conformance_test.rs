@@ -17,6 +17,7 @@ use std::sync::Arc;
 use wiremock::MockServer;
 
 use aimux_core::content::ContentPart;
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -33,9 +34,27 @@ use aimux_providers::openai_compatible::{
 use aimux_providers::{
     AmazonBedrockProvider, AmazonBedrockProviderSettings, CohereProvider, CohereProviderSettings,
     GoogleProvider, GoogleProviderSettings, MistralProvider, MistralProviderSettings,
-    ProviderOptions, XAIProvider, XAIProviderSettings, create_amazon_bedrock, create_cohere,
-    create_google, create_mistral, create_xai, provider,
+    PresetSettings, XAIProvider, XAIProviderSettings, create_amazon_bedrock, create_cohere,
+    create_google, create_mistral, create_provider, create_xai,
 };
+
+/// A registry preset pointed at `base_url`, as a language model.
+fn registry_model(
+    name: &str,
+    api_key: String,
+    model_id: &str,
+    base_url: String,
+) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+    create_provider(
+        name,
+        PresetSettings {
+            api_key: Some(api_key.into()),
+            base_url: Some(base_url),
+            ..Default::default()
+        },
+    )?
+    .language_model(model_id)
+}
 
 /// The native OpenAI package pointed at the mock server.
 fn native_openai(base_url: String) -> OpenAIProvider {
@@ -292,14 +311,11 @@ mod deepseek_conformance {
     use super::*;
 
     fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
-        provider(
+        registry_model(
             "deepseek",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             "deepseek-chat",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
+            server.uri(),
         )
         .expect("deepseek should construct from registry")
     }
@@ -389,14 +405,11 @@ mod groq_conformance {
     fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
         // Cassettes record paths under /openai/v1/chat/completions, matching
         // Groq's default base URL https://api.groq.com/openai/v1.
-        provider(
+        registry_model(
             "groq",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             "llama-3.3-70b-versatile",
-            Some(ProviderOptions {
-                base_url: Some(format!("{}/openai/v1", server.uri())),
-                ..Default::default()
-            }),
+            format!("{}/openai/v1", server.uri()),
         )
         .expect("groq should construct from registry")
     }
@@ -484,16 +497,8 @@ mod perplexity_conformance {
     use super::*;
 
     fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
-        provider(
-            "perplexity",
-            Some("test-key".to_string()),
-            "sonar",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
-        )
-        .expect("perplexity should construct from registry")
+        registry_model("perplexity", "test-key".to_string(), "sonar", server.uri())
+            .expect("perplexity should construct from registry")
     }
 
     #[tokio::test]
@@ -606,14 +611,11 @@ mod openrouter_conformance {
     fn make_provider(server: &MockServer, model_id: &str) -> Arc<dyn LanguageModel> {
         // Cassettes record paths under /api/v1/chat/completions, matching
         // OpenRouter's default base URL https://openrouter.ai/api/v1.
-        provider(
+        registry_model(
             "openrouter",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             model_id,
-            Some(ProviderOptions {
-                base_url: Some(format!("{}/api/v1", server.uri())),
-                ..Default::default()
-            }),
+            format!("{}/api/v1", server.uri()),
         )
         .expect("registry provider should construct")
     }
@@ -657,16 +659,8 @@ mod copilot_conformance {
         // Copilot's base URL has no `/v1` prefix; the compatible chat model appends
         // `/chat/completions` directly, matching the cassette path
         // `/chat/completions`.
-        provider(
-            "copilot",
-            Some("test-key".to_string()),
-            "gpt-4o",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
-        )
-        .expect("copilot should construct from registry")
+        registry_model("copilot", "test-key".to_string(), "gpt-4o", server.uri())
+            .expect("copilot should construct from registry")
     }
 
     #[tokio::test]
@@ -708,14 +702,11 @@ mod doubleword_conformance {
         // Doubleword's base URL includes `/v1`; the compatible chat model appends
         // `/chat/completions`, so we point at `<server>/v1` to match the
         // cassette path `/v1/chat/completions`.
-        provider(
+        registry_model(
             "doubleword",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             "Qwen/Qwen3.5-9B",
-            Some(ProviderOptions {
-                base_url: Some(format!("{}/v1", server.uri())),
-                ..Default::default()
-            }),
+            format!("{}/v1", server.uri()),
         )
         .expect("doubleword should construct from registry")
     }
@@ -759,14 +750,11 @@ mod llamafile_conformance {
         // llamafile's base URL includes `/v1`; the compatible chat model appends
         // `/chat/completions`, so we point at `<server>/v1` to match the
         // cassette path `/v1/chat/completions`.
-        provider(
+        registry_model(
             "llamafile",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             model_id,
-            Some(ProviderOptions {
-                base_url: Some(format!("{}/v1", server.uri())),
-                ..Default::default()
-            }),
+            format!("{}/v1", server.uri()),
         )
         .expect("registry provider should construct")
     }
@@ -810,14 +798,11 @@ mod mistralrs_conformance {
         // mistral.rs's base URL includes `/v1`; the compatible chat model appends
         // `/chat/completions`, so we point at `<server>/v1` to match the
         // cassette path `/v1/chat/completions`.
-        provider(
+        registry_model(
             "mistralrs",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             model_id,
-            Some(ProviderOptions {
-                base_url: Some(format!("{}/v1", server.uri())),
-                ..Default::default()
-            }),
+            format!("{}/v1", server.uri()),
         )
         .expect("registry provider should construct")
     }
@@ -936,14 +921,11 @@ mod cerebras_conformance {
     fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
         // Cassettes record paths under /v1/chat/completions, matching Cerebras's
         // default base URL https://api.cerebras.ai/v1.
-        provider(
+        registry_model(
             "cerebras",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             "llama-3.3-70b",
-            Some(ProviderOptions {
-                base_url: Some(format!("{}/v1", server.uri())),
-                ..Default::default()
-            }),
+            format!("{}/v1", server.uri()),
         )
         .expect("cerebras should construct from registry")
     }
@@ -1084,14 +1066,11 @@ mod zai_conformance {
     fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
         // Cassettes record paths under /api/paas/v4/chat/completions, matching
         // Zai's base URL https://api.z.ai/api/paas/v4.
-        provider(
+        registry_model(
             "zai",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             "glm-4.7",
-            Some(ProviderOptions {
-                base_url: Some(format!("{}/api/paas/v4", server.uri())),
-                ..Default::default()
-            }),
+            format!("{}/api/paas/v4", server.uri()),
         )
         .expect("zai should construct from registry")
     }
@@ -1163,14 +1142,11 @@ mod ollama_conformance {
         // matching Ollama's OpenAI-compatible endpoint.
         // (rig cassettes use the native /api/chat NDJSON endpoint and won't
         //  be hit by this OpenAI-compatible provider — that's expected.)
-        provider(
+        registry_model(
             "ollama",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             model_id,
-            Some(ProviderOptions {
-                base_url: Some(format!("{}/v1", server.uri())),
-                ..Default::default()
-            }),
+            format!("{}/v1", server.uri()),
         )
         .expect("registry provider should construct")
     }
@@ -1292,7 +1268,7 @@ mod chatgpt_conformance {
 /// Generates a conformance module for an OpenAI-compatible thin-wrapper provider.
 /// Each gets a generate + stream test.
 ///
-/// Every provider is built through the registry-backed `provider(name, ...)`
+/// Every provider is built through the registry-backed `create_provider(name, ...)`
 /// entry point (a preset of `provider_registry.json`).
 macro_rules! thin_wrapper_conformance {
     ($mod_name:ident, $name:literal, $cassette_dir:expr, $base_url_prefix:expr, $model_id:expr) => {
@@ -1300,14 +1276,11 @@ macro_rules! thin_wrapper_conformance {
             use super::*;
 
             fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
-                provider(
+                registry_model(
                     $name,
-                    Some("test-key".to_string()),
+                    "test-key".to_string(),
                     $model_id,
-                    Some(ProviderOptions {
-                        base_url: Some(format!("{}{}", server.uri(), $base_url_prefix)),
-                        ..Default::default()
-                    }),
+                    format!("{}{}", server.uri(), $base_url_prefix),
                 )
                 .expect("registry provider should construct")
             }

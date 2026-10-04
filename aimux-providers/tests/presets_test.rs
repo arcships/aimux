@@ -17,8 +17,8 @@ use aimux_core::language_model_message::LanguageModelPromptMessage;
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_provider_utils::{Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse};
-use aimux_providers::preset::{self, PresetProvider};
-use aimux_providers::{PresetSettings, provider};
+use aimux_providers::preset;
+use aimux_providers::{PresetSettings, create_provider};
 
 // ── injected transport ───────────────────────────────────────────────────────
 
@@ -157,7 +157,7 @@ fn every_registry_row_loads_and_creates_without_environment() {
         .map(|var| EnvVar::set(var, None))
         .collect();
     for entry in entries {
-        PresetProvider::create(entry.descriptor, PresetSettings::default())
+        preset::create(entry.descriptor.name, PresetSettings::default())
             .unwrap_or_else(|error| panic!("{}: {error}", entry.descriptor.name));
     }
 }
@@ -165,8 +165,8 @@ fn every_registry_row_loads_and_creates_without_environment() {
 #[tokio::test]
 async fn a_keyless_row_sends_no_authorization() {
     let mock = MockFetch::new(vec![chat_ok()]);
-    let preset = PresetProvider::create(
-        preset::lookup("ollama").unwrap().descriptor,
+    let preset = preset::create(
+        "ollama",
         PresetSettings {
             base_url: Some("http://127.0.0.1:9/v1".into()),
             fetch: Some(mock.transport()),
@@ -185,7 +185,7 @@ async fn a_keyless_row_sends_no_authorization() {
 fn an_unknown_name_has_no_fallback() {
     assert!(preset::lookup("no-such-preset").is_none());
     assert!(
-        matches!(provider("no-such-preset", Some("k".into()), "m", None),
+        matches!(create_provider("no-such-preset", PresetSettings::default()),
         Err(AiMuxError::NoSuchProvider { provider_id }) if provider_id == "no-such-preset")
     );
 }
@@ -193,8 +193,8 @@ fn an_unknown_name_has_no_fallback() {
 #[tokio::test]
 async fn a_template_parameter_must_be_a_plain_host_segment() {
     let mock = MockFetch::new(vec![chat_ok()]);
-    let result = PresetProvider::create(
-        preset::lookup("neon").unwrap().descriptor,
+    let result = preset::create(
+        "neon",
         PresetSettings {
             params: [("branch_host".into(), "user@host/path".into())].into(),
             fetch: Some(mock.transport()),

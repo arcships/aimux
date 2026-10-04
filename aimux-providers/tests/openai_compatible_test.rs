@@ -31,7 +31,25 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
-use aimux_providers::{ProviderOptions, provider};
+use aimux_providers::{PresetSettings, create_provider};
+
+/// A registry preset pointed at `base_url`, as a language model.
+fn registry_model(
+    name: &str,
+    api_key: String,
+    model_id: &str,
+    base_url: String,
+) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+    create_provider(
+        name,
+        PresetSettings {
+            api_key: Some(api_key.into()),
+            base_url: Some(base_url),
+            ..Default::default()
+        },
+    )?
+    .language_model(model_id)
+}
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -292,15 +310,7 @@ macro_rules! openai_compatible_tests {
             use super::*;
 
             fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
-                provider(
-                    $provider_name,
-                    Some("test-api-key".to_string()),
-                    $model_id,
-                    Some(ProviderOptions {
-                        base_url: Some(server.uri()),
-                        ..Default::default()
-                    }),
-                )
+                registry_model($provider_name, "test-api-key".to_string(), $model_id, server.uri())
                 .expect("provider construction")
             }
         mod $mod_name {
@@ -619,15 +629,7 @@ macro_rules! openai_compatible_tool_tests {
             use super::*;
 
             fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
-                provider(
-                    $provider_name,
-                    Some("test-api-key".to_string()),
-                    $model_id,
-                    Some(ProviderOptions {
-                        base_url: Some(server.uri()),
-                        ..Default::default()
-                    }),
-                )
+                registry_model($provider_name, "test-api-key".to_string(), $model_id, server.uri())
                 .expect("provider construction")
             }
         mod $mod_name {
@@ -755,17 +757,14 @@ mod default_base_urls {
     /// a smoke test that the wrapper wires `with_base_url` through correctly.
     #[test]
     fn base_url_override_is_applied() {
-        // provider() options must override the registry default. Spot-check
+        // the base URL setting must override the registry default. Spot-check
         // groq here; the per-provider request tests above cover the remaining
         // providers end-to-end against a mock server.
-        let model = provider(
+        let model = registry_model(
             "groq",
-            Some("k".to_string()),
+            "k".to_string(),
             "llama-3.3-70b",
-            Some(ProviderOptions {
-                base_url: Some("https://example.test/v1".to_string()),
-                ..Default::default()
-            }),
+            "https://example.test/v1".to_string(),
         )
         .expect("provider construction should succeed");
         let _ = model;
@@ -788,14 +787,11 @@ mod default_base_urls {
         // important assertion is that WITHOUT the override the wrapper would
         // target api.groq.com (we can't mock that here), so this test merely
         // confirms the override mechanism the other tests depend on.
-        let model = provider(
+        let model = registry_model(
             "groq",
-            Some("test-api-key".to_string()),
+            "test-api-key".to_string(),
             "llama-3.3-70b-versatile",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
+            server.uri(),
         )
         .expect("provider construction");
         let _ = model
@@ -820,14 +816,11 @@ async fn deepseek_maps_reasoning_to_reasoning_effort() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = registry_model(
         "deepseek",
-        Some("test-api-key".to_string()),
+        "test-api-key".to_string(),
         "deepseek-reasoner",
-        Some(ProviderOptions {
-            base_url: Some(server.uri()),
-            ..Default::default()
-        }),
+        server.uri(),
     )
     .expect("provider construction");
 
@@ -860,14 +853,11 @@ async fn groq_extracts_usage() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = registry_model(
         "groq",
-        Some("test-api-key".to_string()),
+        "test-api-key".to_string(),
         "llama-3.3-70b-versatile",
-        Some(ProviderOptions {
-            base_url: Some(server.uri()),
-            ..Default::default()
-        }),
+        server.uri(),
     )
     .expect("provider construction");
 
@@ -892,14 +882,11 @@ async fn deepseek_rate_limit_maps_to_rate_limited() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = registry_model(
         "deepseek",
-        Some("test-api-key".to_string()),
+        "test-api-key".to_string(),
         "deepseek-chat",
-        Some(ProviderOptions {
-            base_url: Some(server.uri()),
-            ..Default::default()
-        }),
+        server.uri(),
     )
     .expect("provider construction");
 
@@ -924,14 +911,11 @@ async fn groq_exposes_response_headers() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = registry_model(
         "groq",
-        Some("test-api-key".to_string()),
+        "test-api-key".to_string(),
         "llama-3.3-70b-versatile",
-        Some(ProviderOptions {
-            base_url: Some(server.uri()),
-            ..Default::default()
-        }),
+        server.uri(),
     )
     .expect("provider construction");
 

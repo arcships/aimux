@@ -35,8 +35,8 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::preset::PresetProvider;
-use aimux_providers::{PresetSettings, preset, provider};
+use aimux_providers::openai_compatible::OpenAICompatibleProvider;
+use aimux_providers::{PresetSettings, create_provider, preset};
 
 // Shared cassette-replay infrastructure (same `mod common` used by
 // `conformance_test.rs`).
@@ -120,9 +120,9 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
 }
 
 /// The OpenRouter preset at `base_url` with an explicit key.
-fn openrouter_at(base_url: String, key: &str) -> PresetProvider {
-    PresetProvider::create(
-        preset::lookup("openrouter").unwrap().descriptor,
+fn openrouter_at(base_url: String, key: &str) -> OpenAICompatibleProvider {
+    preset::create(
+        "openrouter",
         PresetSettings {
             api_key: Some(aimux_provider_utils::Resolvable::Value(key.to_string())),
             base_url: Some(base_url),
@@ -132,7 +132,7 @@ fn openrouter_at(base_url: String, key: &str) -> PresetProvider {
     .unwrap()
 }
 
-fn make_provider(server: &MockServer) -> PresetProvider {
+fn make_provider(server: &MockServer) -> OpenAICompatibleProvider {
     openrouter_at(server.uri(), "test-api-key")
 }
 
@@ -145,13 +145,10 @@ fn make_provider(server: &MockServer) -> PresetProvider {
 #[test]
 fn model_provider_is_openrouter() {
     assert_eq!(
-        PresetProvider::create(
-            preset::lookup("openrouter").unwrap().descriptor,
-            PresetSettings::default()
-        )
-        .unwrap()
-        .chat("openai/gpt-4o-mini")
-        .provider(),
+        preset::create("openrouter", PresetSettings::default())
+            .unwrap()
+            .chat("openai/gpt-4o-mini")
+            .provider(),
         "openrouter.chat"
     );
 }
@@ -234,7 +231,8 @@ fn from_env_loads_openrouter_api_key() {
         std::env::set_var("OPENROUTER_API_KEY", "env-test-key");
     }
 
-    let model = provider("openrouter", None, "openai/gpt-4o-mini", None);
+    let model = create_provider("openrouter", PresetSettings::default())
+        .and_then(|p| p.language_model("openai/gpt-4o-mini"));
     assert!(model.is_ok(), "the by-name entry point reads the variable");
 
     unsafe {
@@ -247,15 +245,21 @@ fn from_env_loads_openrouter_api_key() {
 
 /// Without the env var, `createOpenRouter()` fails.
 #[serial]
-#[test]
-fn from_env_fails_without_env_var() {
+#[tokio::test]
+async fn from_env_fails_without_env_var() {
     let saved = std::env::var("OPENROUTER_API_KEY").ok();
     unsafe {
         std::env::remove_var("OPENROUTER_API_KEY");
     }
 
-    let model = provider("openrouter", None, "openai/gpt-4o-mini", None);
-    assert!(model.is_err(), "no key variable, no provider");
+    let model = create_provider("openrouter", PresetSettings::default())
+        .and_then(|p| p.language_model("openai/gpt-4o-mini"))
+        .unwrap();
+    let err = model
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect_err("no key variable, no key");
+    assert!(matches!(err, AiMuxError::LoadApiKey { .. }), "{err:?}");
 
     unsafe {
         if let Some(v) = saved {
@@ -648,7 +652,7 @@ mod conformance {
 
     /// Build a provider whose requests land at `<server>/api/v1/chat/completions`,
     /// matching the path recorded in the OpenRouter cassettes.
-    fn make_cassette_provider(server: &MockServer) -> PresetProvider {
+    fn make_cassette_provider(server: &MockServer) -> OpenAICompatibleProvider {
         openrouter_at(format!("{}/api/v1", server.uri()), "test-key")
     }
 
