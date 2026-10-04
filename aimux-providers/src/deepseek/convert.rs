@@ -9,10 +9,10 @@ use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::ResponseFormat;
 use aimux_core::types::Warning;
+use aimux_provider_utils::resolve_full_media_type;
 
 use super::is_v4_model::is_deepseek_v4_model;
 use super::options::{parse_file_part_options, parse_message_options};
-use crate::xai::convert::resolve_full_media_type;
 
 const SUPPORTED_IMAGE_MEDIA_TYPES: [&str; 5] = [
     "image/gif",
@@ -25,7 +25,7 @@ const SUPPORTED_IMAGE_MEDIA_TYPES: [&str; 5] = [
 /// An image file part: where its data is, and what goes with it.
 struct ImagePart<'a> {
     source: ImageSource<'a>,
-    media_type: &'a str,
+    original: &'a ContentPart,
     filename: Option<&'a str>,
     provider_options: Option<&'a Value>,
 }
@@ -90,7 +90,7 @@ fn image_part(part: &ContentPart) -> Option<ImagePart<'_>> {
     };
     (media_type.split('/').next() == Some("image")).then_some(ImagePart {
         source,
-        media_type,
+        original: part,
         filename,
         provider_options: provider_options.as_ref(),
     })
@@ -106,8 +106,8 @@ fn part_type(part: &ContentPart) -> &'static str {
     }
 }
 
-fn resolve_deepseek_image_media_type(media_type: &str, data: &str) -> Result<String, AiMuxError> {
-    let resolved = resolve_full_media_type(media_type, data);
+fn resolve_deepseek_image_media_type(part: &ContentPart) -> Result<String, AiMuxError> {
+    let resolved = resolve_full_media_type(part)?;
     if !SUPPORTED_IMAGE_MEDIA_TYPES.contains(&resolved.as_str()) {
         return Err(AiMuxError::UnsupportedFunctionality(format!(
             "DeepSeek image media type {resolved}: DeepSeek supports JPEG, PNG, GIF, and WebP image inputs."
@@ -142,7 +142,7 @@ fn convert_image_part(
             Ok(json!({ "type": "file", "file_id": file_id }))
         }
         ImageSource::Url(url) => {
-            resolve_deepseek_image_media_type(part.media_type, "")?;
+            resolve_deepseek_image_media_type(part.original)?;
             if url.len() > 8192 {
                 return Err(AiMuxError::InvalidPrompt(
                     "DeepSeek image URLs must not exceed 8192 characters.".to_string(),
@@ -156,7 +156,7 @@ fn convert_image_part(
             Ok(image_url(url))
         }
         ImageSource::Data(data) => {
-            let media_type = resolve_deepseek_image_media_type(part.media_type, data)?;
+            let media_type = resolve_deepseek_image_media_type(part.original)?;
             let media_type = if media_type == "image/jpg" {
                 "image/jpeg"
             } else {

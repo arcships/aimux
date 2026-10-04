@@ -26,6 +26,7 @@ use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
+use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Map, Value, json};
 
 use crate::anthropic::cache_control::CacheControlValidator;
@@ -353,11 +354,6 @@ pub fn convert_prompt_to_anthropic(
     }
 }
 
-/// Return the top-level media type (the segment before the first `/`).
-fn top_level_media_type(media_type: &str) -> &str {
-    media_type.split('/').next().unwrap_or("")
-}
-
 /// Convert a single content part into an Anthropic content block.
 ///
 /// Returns `None` when the part should be omitted entirely (e.g. a reasoning
@@ -422,34 +418,29 @@ fn convert_part_to_anthropic(
         }
 
         ContentPart::Image {
-            image,
+            image: data,
             media_type,
             provider_options,
-        } => {
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-            let cc = resolve_cc(validator, provider_options.as_ref());
-            apply_cc(
-                json!({
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": media_type,
-                        "data": b64,
-                    }
-                }),
-                cc,
-            )
         }
-
-        ContentPart::File {
+        | ContentPart::File {
             data,
             media_type,
-            filename,
             provider_options,
+            ..
         } => {
-            let full = resolve_full_media_type(media_type, data)?;
-            let block = route_file_bytes(&full, data, filename.as_deref(), betas)?;
+            let filename = match part {
+                ContentPart::File { filename, .. } => filename.as_deref(),
+                _ => None,
+            };
+            let full = if matches!(
+                get_top_level_media_type(media_type),
+                "image" | "application"
+            ) {
+                resolve_full_media_type(part)?
+            } else {
+                media_type.clone()
+            };
+            let block = route_file_bytes(&full, data, filename, betas)?;
             let cc = resolve_cc(validator, provider_options.as_ref());
             apply_cc(block, cc)
         }
@@ -464,7 +455,14 @@ fn convert_part_to_anthropic(
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(data)
                 .unwrap_or_default();
-            let full = resolve_full_media_type(media_type, &bytes)?;
+            let full = if matches!(
+                get_top_level_media_type(media_type),
+                "image" | "application"
+            ) {
+                resolve_full_media_type(part)?
+            } else {
+                media_type.clone()
+            };
             let block = route_file_base64(&full, data, &bytes, filename.as_deref(), betas)?;
             let cc = resolve_cc(validator, provider_options.as_ref());
             apply_cc(block, cc)
@@ -495,7 +493,7 @@ fn convert_part_to_anthropic(
                 .unwrap_or(false);
             let block = if container_upload {
                 json!({ "type": "container_upload", "file_id": file_id })
-            } else if top_level_media_type(media_type) == "image" {
+            } else if get_top_level_media_type(media_type) == "image" {
                 json!({ "type": "image", "source": { "type": "file", "file_id": file_id } })
             } else {
                 json!({ "type": "document", "source": { "type": "file", "file_id": file_id } })
@@ -1067,7 +1065,7 @@ fn route_file_bytes(
     betas: &mut BTreeSet<String>,
 ) -> Result<Value, AiMuxError> {
     use base64::Engine;
-    match top_level_media_type(full_media_type) {
+    match get_top_level_media_type(full_media_type) {
         "image" => {
             let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
             Ok(json!({
@@ -1115,7 +1113,7 @@ fn route_file_base64(
     title: Option<&str>,
     betas: &mut BTreeSet<String>,
 ) -> Result<Value, AiMuxError> {
-    match top_level_media_type(full_media_type) {
+    match get_top_level_media_type(full_media_type) {
         "image" => Ok(json!({
             "type": "image",
             "source": { "type": "base64", "media_type": full_media_type, "data": b64 }
@@ -1157,7 +1155,7 @@ fn route_file_url(
     url: &str,
     betas: &mut BTreeSet<String>,
 ) -> Result<Value, AiMuxError> {
-    match top_level_media_type(media_type) {
+    match get_top_level_media_type(media_type) {
         "image" => Ok(json!({ "type": "image", "source": { "type": "url", "url": url } })),
         "application" if media_type == "application/pdf" => {
             betas.insert(BETA_PDFS.to_string());
@@ -1168,72 +1166,6 @@ fn route_file_url(
         }
         _ => Err(AiMuxError::UnsupportedFunctionality(format!(
             "media type: {media_type}"
-        ))),
-    }
-}
-
-/// Returns `true` only when the media type has a non-empty, non-wildcard
-/// subtype (i.e. `type/subtype` where `subtype` is not `*`).
-fn is_full_media_type(media_type: &str) -> bool {
-    match media_type.find('/') {
-        Some(i) => {
-            let subtype = &media_type[i + 1..];
-            !subtype.is_empty() && subtype != "*"
-        }
-        None => false,
-    }
-}
-
-/// Sniff the concrete media type from inline bytes for the given top-level
-/// segment, mirroring the TS `detectMediaType` signature tables.
-fn detect_media_type(bytes: &[u8], top_level: &str) -> Option<&'static str> {
-    match top_level {
-        "image" => detect_image_media_type(bytes),
-        "application" => detect_document_media_type(bytes),
-        _ => None,
-    }
-}
-
-fn detect_image_media_type(bytes: &[u8]) -> Option<&'static str> {
-    const SIGS: &[(&[u8], &str)] = &[
-        (&[0x47, 0x49, 0x46], "image/gif"),
-        (&[0x89, 0x50, 0x4e, 0x47], "image/png"),
-        (&[0xff, 0xd8], "image/jpeg"),
-        (&[0x42, 0x4d], "image/bmp"),
-        (&[0x49, 0x49, 0x2a, 0x00], "image/tiff"),
-        (&[0x4d, 0x4d, 0x00, 0x2a], "image/tiff"),
-    ];
-    for (prefix, mt) in SIGS {
-        if bytes.starts_with(prefix) {
-            return Some(mt);
-        }
-    }
-    // WEBP: "RIFF" .... "WEBP"
-    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        return Some("image/webp");
-    }
-    None
-}
-
-fn detect_document_media_type(bytes: &[u8]) -> Option<&'static str> {
-    if bytes.starts_with(&[0x25, 0x50, 0x44, 0x46]) {
-        return Some("application/pdf");
-    }
-    None
-}
-
-/// Resolve a file part's media type to a full `type/subtype` form, mirroring
-/// the TS `resolveFullMediaType`. When the media type is already a full type it
-/// is returned as-is; otherwise the subtype is sniffed from the inline bytes.
-fn resolve_full_media_type(media_type: &str, bytes: &[u8]) -> Result<String, AiMuxError> {
-    if is_full_media_type(media_type) {
-        return Ok(media_type.to_string());
-    }
-    let top = top_level_media_type(media_type);
-    match detect_media_type(bytes, top) {
-        Some(detected) => Ok(detected.to_string()),
-        None => Err(AiMuxError::UnsupportedFunctionality(format!(
-            "file of media type \"{media_type}\" must specify subtype since it could not be auto-detected"
         ))),
     }
 }

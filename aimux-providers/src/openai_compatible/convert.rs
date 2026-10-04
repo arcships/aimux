@@ -17,6 +17,7 @@ use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
+use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 
 use super::config::ChatDialect;
 
@@ -524,8 +525,8 @@ fn convert_user_message(
         ));
     }
     let mut parts = Vec::new();
-    for (index, part) in message.content.iter().enumerate() {
-        let wire = convert_user_part(part, index, key)?;
+    for part in &message.content {
+        let wire = convert_user_part(part, key)?;
         if !wire.is_null() {
             parts.push(wire);
         }
@@ -536,17 +537,17 @@ fn convert_user_message(
     ))
 }
 
-fn convert_user_part(part: &ContentPart, index: usize, key: &str) -> Result<Value, AiMuxError> {
+fn convert_user_part(part: &ContentPart, key: &str) -> Result<Value, AiMuxError> {
     let metadata = wire_metadata(part_options(part), key);
     let wire = match part {
         ContentPart::Text { text, .. } => json!({ "type": "text", "text": text }),
         ContentPart::Image {
             image, media_type, ..
         } => file_part(
+            part,
             media_type,
             FileSource::Base64(&base64::engine::general_purpose::STANDARD.encode(image)),
             None,
-            index,
         )?,
         ContentPart::File {
             data,
@@ -554,10 +555,10 @@ fn convert_user_part(part: &ContentPart, index: usize, key: &str) -> Result<Valu
             filename,
             ..
         } => file_part(
+            part,
             media_type,
             FileSource::Base64(&base64::engine::general_purpose::STANDARD.encode(data)),
             filename.as_deref(),
-            index,
         )?,
         ContentPart::FileBase64 {
             data,
@@ -565,24 +566,24 @@ fn convert_user_part(part: &ContentPart, index: usize, key: &str) -> Result<Valu
             filename,
             ..
         } => file_part(
+            part,
             media_type,
             FileSource::Base64(data),
             filename.as_deref(),
-            index,
         )?,
         ContentPart::FileUrl {
             url, media_type, ..
-        } => file_part(media_type, FileSource::Url(url), None, index)?,
+        } => file_part(part, media_type, FileSource::Url(url), None)?,
         ContentPart::FileReference {
             media_type,
             reference,
             filename,
             ..
         } => file_part(
+            part,
             media_type,
             FileSource::Reference(reference, key),
             filename.as_deref(),
-            index,
         )?,
         // Reasoning and tool traffic have no user-content form.
         ContentPart::Reasoning { .. }
@@ -599,34 +600,11 @@ enum FileSource<'a> {
     Reference(&'a Value, &'a str),
 }
 
-fn top_level_media_type(media_type: &str) -> &str {
-    media_type.split('/').next().unwrap_or("")
-}
-
-/// Detect the image type of base64 data for a bare or wildcard `image` type.
-fn resolve_image_media_type(media_type: &str, b64: &str) -> String {
-    if media_type != "image" && !media_type.ends_with("/*") {
-        return media_type.to_string();
-    }
-    if b64.starts_with("iVBORw0KGgo") {
-        "image/png"
-    } else if b64.starts_with("/9j/") {
-        "image/jpeg"
-    } else if b64.starts_with("R0lGOD") {
-        "image/gif"
-    } else if b64.starts_with("UklGR") {
-        "image/webp"
-    } else {
-        "image/png"
-    }
-    .to_string()
-}
-
 fn file_part(
+    part: &ContentPart,
     media_type: &str,
     source: FileSource<'_>,
     filename: Option<&str>,
-    index: usize,
 ) -> Result<Value, AiMuxError> {
     let unsupported = |what: String| AiMuxError::InvalidArgument(what);
     if let FileSource::Reference(reference, key) = source {
@@ -650,24 +628,24 @@ fn file_part(
         return Ok(json!({ "type": "file", "file": { "file_id": file_id } }));
     }
 
-    match top_level_media_type(media_type) {
-        "image" => {
+    match get_top_level_media_type(media_type) {
+        kind @ ("image" | "video") => {
             let url = match source {
                 FileSource::Url(url) => url.to_string(),
-                FileSource::Base64(b64) => format!(
-                    "data:{};base64,{}",
-                    resolve_image_media_type(media_type, b64),
-                    b64
-                ),
+                FileSource::Base64(b64) => {
+                    format!("data:{};base64,{}", resolve_full_media_type(part)?, b64)
+                }
                 FileSource::Reference(..) => unreachable!("handled above"),
             };
-            Ok(json!({ "type": "image_url", "image_url": { "url": url } }))
+            let kind = format!("{kind}_url");
+            Ok(json!({ "type": kind, kind: { "url": url } }))
         }
         "audio" => {
             let FileSource::Base64(b64) = source else {
                 return Err(unsupported("audio file parts with URLs".to_string()));
             };
-            let format = match media_type {
+            let full_media_type = resolve_full_media_type(part)?;
+            let format = match full_media_type.as_str() {
                 "audio/wav" => "wav",
                 "audio/mp3" | "audio/mpeg" => "mp3",
                 other => {
@@ -678,13 +656,17 @@ fn file_part(
             };
             Ok(json!({ "type": "input_audio", "input_audio": { "data": b64, "format": format } }))
         }
-        _ if media_type == "application/pdf" => {
+        "application" => {
             let FileSource::Base64(b64) = source else {
                 return Err(unsupported("PDF file parts with URLs".to_string()));
             };
-            let filename = filename
-                .map(str::to_string)
-                .unwrap_or_else(|| format!("part-{index}.pdf"));
+            let full_media_type = resolve_full_media_type(part)?;
+            if full_media_type != "application/pdf" {
+                return Err(unsupported(format!(
+                    "file part media type {full_media_type}"
+                )));
+            }
+            let filename = filename.unwrap_or("document.pdf");
             Ok(json!({
                 "type": "file",
                 "file": {
@@ -693,7 +675,7 @@ fn file_part(
                 }
             }))
         }
-        _ if top_level_media_type(media_type) == "text" => {
+        "text" => {
             let FileSource::Base64(b64) = source else {
                 return Err(unsupported("text file parts with URLs".to_string()));
             };

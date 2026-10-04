@@ -7,6 +7,7 @@ use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
+use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -178,38 +179,6 @@ fn get_image_detail(provider_options: &Option<Value>) -> Option<Value> {
         .cloned()
 }
 
-/// Get the top-level media type (e.g. "image" from "image/png").
-fn get_top_level_media_type(media_type: &str) -> &str {
-    media_type.split('/').next().unwrap_or("")
-}
-
-/// Resolve a full media type from a top-level-only or wildcard media type.
-/// For "image" or "image/*", detects "image/png" from the base64 data.
-/// For "application", it stays as-is (cannot be resolved without full data).
-fn resolve_full_media_type(media_type: &str, b64_data: &str) -> String {
-    let top_level = get_top_level_media_type(media_type);
-    if top_level == "image" && media_type != "image" && !media_type.ends_with("/*") {
-        return media_type.to_string();
-    }
-    if top_level == "image" {
-        // Detect from base64 data
-        if b64_data.starts_with("iVBORw0KGgo") {
-            return "image/png".to_string();
-        }
-        if b64_data.starts_with("/9j/") {
-            return "image/jpeg".to_string();
-        }
-        if b64_data.starts_with("R0lGOD") {
-            return "image/gif".to_string();
-        }
-        if b64_data.starts_with("UklGR") {
-            return "image/webp".to_string();
-        }
-        return "image/png".to_string(); // default
-    }
-    media_type.to_string()
-}
-
 /// Resolve a provider reference, throwing if the provider is not found.
 fn resolve_provider_reference(reference: &Value, provider: &str) -> Result<String, String> {
     if let Some(val) = reference.get(provider) {
@@ -231,19 +200,28 @@ fn resolve_provider_reference(reference: &Value, provider: &str) -> Result<Strin
 
 /// Convert a file part to the OpenAI format, handling images, audio, and PDF.
 fn convert_file_part_to_openai(
-    media_type: &str,
+    content_part: &ContentPart,
     data_b64: Option<&str>,
     url: Option<&str>,
     reference: Option<&Value>,
     filename: Option<&str>,
     provider_options: &Option<Value>,
     part_index: usize,
-) -> Result<Value, String> {
+) -> Result<Value, AiMuxError> {
+    let media_type = match content_part {
+        ContentPart::Image { media_type, .. }
+        | ContentPart::File { media_type, .. }
+        | ContentPart::FileBase64 { media_type, .. }
+        | ContentPart::FileUrl { media_type, .. }
+        | ContentPart::FileReference { media_type, .. } => media_type,
+        _ => unreachable!("file conversion requires a file part"),
+    };
     let prompt_cache_breakpoint = get_prompt_cache_breakpoint(provider_options);
 
     // Reference type
     if let Some(ref_val) = reference {
-        let file_id = resolve_provider_reference(ref_val, "openai")?;
+        let file_id =
+            resolve_provider_reference(ref_val, "openai").map_err(AiMuxError::InvalidArgument)?;
         let mut part = json!({
             "type": "file",
             "file": { "file_id": file_id }
@@ -261,10 +239,12 @@ fn convert_file_part_to_openai(
         let image_url = if let Some(url_str) = url {
             json!({ "url": url_str })
         } else if let Some(b64) = data_b64 {
-            let full_mt = resolve_full_media_type(media_type, b64);
+            let full_mt = resolve_full_media_type(content_part)?;
             json!({ "url": format!("data:{};base64,{}", full_mt, b64) })
         } else {
-            return Err("image part has no data or url".to_string());
+            return Err(AiMuxError::InvalidArgument(
+                "image part has no data or url".into(),
+            ));
         };
 
         let mut image_url_obj = image_url;
@@ -285,14 +265,21 @@ fn convert_file_part_to_openai(
     // Audio
     if top_level == "audio" {
         if url.is_some() {
-            return Err("audio file parts with URLs".to_string());
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "audio file parts with URLs".into(),
+            ));
         }
-        let b64 = data_b64.ok_or("audio part has no data")?;
-        let full_mt = resolve_full_media_type(media_type, b64);
+        let b64 =
+            data_b64.ok_or_else(|| AiMuxError::InvalidArgument("audio part has no data".into()))?;
+        let full_mt = resolve_full_media_type(content_part)?;
         let format = match full_mt.as_str() {
             "audio/wav" => "wav",
             "audio/mp3" | "audio/mpeg" => "mp3",
-            _ => return Err(format!("audio content parts with media type {full_mt}")),
+            _ => {
+                return Err(AiMuxError::UnsupportedFunctionality(format!(
+                    "audio content parts with media type {full_mt}"
+                )));
+            }
         };
         let mut part = json!({
             "type": "input_audio",
@@ -305,21 +292,21 @@ fn convert_file_part_to_openai(
     }
 
     // PDF / application
-    let full_mt = if media_type == "application" {
-        return Err("media type \"application\".*is not passed as inline bytes.*".to_string());
-    } else {
-        media_type.to_string()
-    };
+    let full_mt = resolve_full_media_type(content_part)?;
 
     if full_mt != "application/pdf" {
-        return Err(format!("file part media type {full_mt}"));
+        return Err(AiMuxError::UnsupportedFunctionality(format!(
+            "file part media type {full_mt}"
+        )));
     }
 
     if url.is_some() {
-        return Err("PDF file parts with URLs".to_string());
+        return Err(AiMuxError::UnsupportedFunctionality(
+            "PDF file parts with URLs".into(),
+        ));
     }
 
-    let b64 = data_b64.ok_or("PDF part has no data")?;
+    let b64 = data_b64.ok_or_else(|| AiMuxError::InvalidArgument("PDF part has no data".into()))?;
     let fname = filename
         .map(std::string::ToString::to_string)
         .unwrap_or_else(|| format!("part-{part_index}.pdf"));
@@ -597,32 +584,23 @@ fn convert_part_to_openai(part: &ContentPart, index: usize) -> Result<Value, AiM
         }
         ContentPart::Image {
             image,
-            media_type,
             provider_options,
+            ..
         } => {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-            convert_file_part_to_openai(
-                media_type,
-                Some(&b64),
-                None,
-                None,
-                None,
-                provider_options,
-                index,
-            )
-            .map_err(AiMuxError::InvalidArgument)
+            convert_file_part_to_openai(part, Some(&b64), None, None, None, provider_options, index)
         }
         ContentPart::File {
             data,
-            media_type,
             filename,
             provider_options,
+            ..
         } => {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(data);
             convert_file_part_to_openai(
-                media_type,
+                part,
                 Some(&b64),
                 None,
                 None,
@@ -630,52 +608,42 @@ fn convert_part_to_openai(part: &ContentPart, index: usize) -> Result<Value, AiM
                 provider_options,
                 index,
             )
-            .map_err(AiMuxError::InvalidArgument)
         }
         ContentPart::FileBase64 {
             data,
-            media_type,
             filename,
             provider_options,
+            ..
         } => convert_file_part_to_openai(
-            media_type,
+            part,
             Some(data),
             None,
             None,
             filename.as_deref(),
             provider_options,
             index,
-        )
-        .map_err(AiMuxError::InvalidArgument),
+        ),
         ContentPart::FileUrl {
             url,
-            media_type,
             provider_options,
-        } => convert_file_part_to_openai(
-            media_type,
-            None,
-            Some(url),
-            None,
-            None,
-            provider_options,
-            index,
-        )
-        .map_err(AiMuxError::InvalidArgument),
+            ..
+        } => {
+            convert_file_part_to_openai(part, None, Some(url), None, None, provider_options, index)
+        }
         ContentPart::FileReference {
-            media_type,
             reference,
             filename,
             provider_options,
+            ..
         } => convert_file_part_to_openai(
-            media_type,
+            part,
             None,
             None,
             Some(reference),
             filename.as_deref(),
             provider_options,
             index,
-        )
-        .map_err(AiMuxError::InvalidArgument),
+        ),
         ContentPart::Reasoning { .. } => Ok(Value::Null),
         // These variants are handled by `convert_message_to_openai` for
         // assistant/tool roles; kept here as a defensive fallback.

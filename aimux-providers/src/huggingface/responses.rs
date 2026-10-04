@@ -37,6 +37,10 @@ use aimux_core::types::{
     FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage, Warning,
 };
 
+use aimux_provider_utils::{
+    MediaTypeData, detect_media_type, get_top_level_media_type, is_full_media_type,
+};
+
 use crate::shared::EndpointConfig;
 
 fn huggingface_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -818,28 +822,6 @@ fn convert_file_part_url(media_type: &str, url: &str) -> Result<Value, AiMuxErro
 // Media type detection (top-level-only media type resolution)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Returns the top-level segment of a media type (the portion before `/`).
-///
-/// `"image/png"` → `"image"`, `"image/*"` → `"image"`, `"image"` → `"image"`.
-fn get_top_level_media_type(media_type: &str) -> &str {
-    match media_type.find('/') {
-        Some(idx) => &media_type[..idx],
-        None => media_type,
-    }
-}
-
-/// Returns `true` only when the media type has a non-empty, non-wildcard
-/// subtype (i.e. matches `type/subtype` where `subtype` is not `*`).
-fn is_full_media_type(media_type: &str) -> bool {
-    match media_type.find('/') {
-        Some(idx) => {
-            let subtype = &media_type[idx + 1..];
-            !subtype.is_empty() && subtype != "*"
-        }
-        None => false,
-    }
-}
-
 /// Resolve a media type to its full `type/subtype` form.
 ///
 /// - If already a full media type, return as-is.
@@ -850,115 +832,13 @@ fn resolve_full_media_type_base64(media_type: &str, data: &str) -> Result<String
     }
 
     let top_level = get_top_level_media_type(media_type);
-    if let Some(detected) = detect_media_type_from_base64(data, top_level) {
-        return Ok(detected);
+    if let Some(detected) = detect_media_type(MediaTypeData::Base64(data), Some(top_level))? {
+        return Ok(detected.to_string());
     }
 
     Err(AiMuxError::UnsupportedFunctionality(format!(
         "file of media type \"{media_type}\" must specify subtype since it could not be auto-detected"
     )))
-}
-
-/// Image media type signatures (magic-byte prefixes).
-///
-/// `None` in the prefix means "any byte" (wildcard), matching the TS signature
-/// table.
-const IMAGE_SIGNATURES: &[(&str, &[Option<u8>])] = &[
-    ("image/gif", &[Some(0x47), Some(0x49), Some(0x46)]),
-    (
-        "image/png",
-        &[Some(0x89), Some(0x50), Some(0x4E), Some(0x47)],
-    ),
-    ("image/jpeg", &[Some(0xFF), Some(0xD8)]),
-    (
-        "image/webp",
-        &[
-            Some(0x52),
-            Some(0x49),
-            Some(0x46),
-            Some(0x46), // RIFF
-            None,
-            None,
-            None,
-            None, // file size (variable)
-            Some(0x57),
-            Some(0x45),
-            Some(0x42),
-            Some(0x50), // WEBP
-        ],
-    ),
-    ("image/bmp", &[Some(0x42), Some(0x4D)]),
-    (
-        "image/tiff",
-        &[Some(0x49), Some(0x49), Some(0x2A), Some(0x00)],
-    ),
-    (
-        "image/tiff",
-        &[Some(0x4D), Some(0x4D), Some(0x00), Some(0x2A)],
-    ),
-    (
-        "image/avif",
-        &[
-            Some(0x00),
-            Some(0x00),
-            Some(0x00),
-            Some(0x20),
-            Some(0x66),
-            Some(0x74),
-            Some(0x79),
-            Some(0x70),
-            Some(0x61),
-            Some(0x76),
-            Some(0x69),
-            Some(0x66),
-        ],
-    ),
-    (
-        "image/heic",
-        &[
-            Some(0x00),
-            Some(0x00),
-            Some(0x00),
-            Some(0x20),
-            Some(0x66),
-            Some(0x74),
-            Some(0x79),
-            Some(0x70),
-            Some(0x68),
-            Some(0x65),
-            Some(0x69),
-            Some(0x63),
-        ],
-    ),
-];
-
-/// Detect the full media type from base64-encoded data, considering only
-/// signatures for the given top-level type.
-fn detect_media_type_from_base64(data: &str, top_level: &str) -> Option<String> {
-    let signatures = match top_level {
-        "image" => IMAGE_SIGNATURES,
-        _ => return None,
-    };
-
-    // Decode enough bytes to cover the longest signature (12 bytes).
-    // 4 base64 chars → 3 bytes; ceil(12 / 3) * 4 = 16 chars.
-    let max_chars = 16.min(data.len());
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(&data[..max_chars])
-        .ok()?;
-
-    for (media_type, prefix) in signatures {
-        if bytes.len() >= prefix.len()
-            && prefix
-                .iter()
-                .enumerate()
-                .all(|(i, &b)| b.is_none() || bytes[i] == b.unwrap())
-        {
-            return Some(media_type.to_string());
-        }
-    }
-
-    None
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

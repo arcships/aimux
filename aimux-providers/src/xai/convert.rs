@@ -53,36 +53,6 @@ pub fn remove_additional_properties_false(value: &Value) -> Value {
     }
 }
 
-// ── Media type helpers ───────────────────────────────────────────────────────
-
-fn get_top_level_media_type(media_type: &str) -> &str {
-    media_type.split('/').next().unwrap_or("")
-}
-
-#[must_use]
-pub fn resolve_full_media_type(media_type: &str, b64_data: &str) -> String {
-    let top_level = get_top_level_media_type(media_type);
-    if top_level == "image" && media_type != "image" && !media_type.ends_with("/*") {
-        return media_type.to_string();
-    }
-    if top_level == "image" {
-        if b64_data.starts_with("iVBORw0KGgo") {
-            return "image/png".to_string();
-        }
-        if b64_data.starts_with("/9j/") {
-            return "image/jpeg".to_string();
-        }
-        if b64_data.starts_with("R0lGOD") {
-            return "image/gif".to_string();
-        }
-        if b64_data.starts_with("UklGR") {
-            return "image/webp".to_string();
-        }
-        return "image/png".to_string();
-    }
-    media_type.to_string()
-}
-
 /// Resolve the provider-specific reference string from a file part's
 /// `provider` map.
 ///

@@ -14,12 +14,12 @@ use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort, Warning};
 
+use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Value, json};
 
 use super::types::XaiResponsesUsage;
 use crate::xai::convert::{
-    remove_additional_properties_false, resolve_full_media_type, resolve_provider_reference,
-    supports_reasoning_effort,
+    remove_additional_properties_false, resolve_provider_reference, supports_reasoning_effort,
 };
 
 // ── Finish reason ────────────────────────────────────────────────────────────
@@ -318,20 +318,11 @@ pub fn convert_to_xai_responses_input(
                             content_parts.push(json!({ "type": "input_text", "text": text }));
                         }
                         ContentPart::Image {
-                            image,
+                            image: data,
                             media_type,
                             provider_options,
-                        } => {
-                            use base64::Engine;
-                            let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-                            content_parts.push(convert_image_part(
-                                media_type,
-                                Some(&b64),
-                                None,
-                                provider_options,
-                            ));
                         }
-                        ContentPart::File {
+                        | ContentPart::File {
                             data,
                             media_type,
                             provider_options,
@@ -340,11 +331,12 @@ pub fn convert_to_xai_responses_input(
                             use base64::Engine;
                             let b64 = base64::engine::general_purpose::STANDARD.encode(data);
                             content_parts.push(convert_image_part(
+                                part,
                                 media_type,
                                 Some(&b64),
                                 None,
                                 provider_options,
-                            ));
+                            )?);
                         }
                         ContentPart::FileBase64 {
                             data,
@@ -353,25 +345,27 @@ pub fn convert_to_xai_responses_input(
                             ..
                         } => {
                             content_parts.push(convert_image_part(
+                                part,
                                 media_type,
                                 Some(data),
                                 None,
                                 provider_options,
-                            ));
+                            )?);
                         }
                         ContentPart::FileUrl {
                             url,
                             media_type,
                             provider_options,
                         } => {
-                            let top_level = media_type.split('/').next().unwrap_or("");
+                            let top_level = get_top_level_media_type(media_type);
                             if top_level == "image" {
                                 content_parts.push(convert_image_part(
+                                    part,
                                     media_type,
                                     None,
                                     Some(url),
                                     provider_options,
-                                ));
+                                )?);
                             } else {
                                 content_parts
                                     .push(json!({ "type": "input_file", "file_url": url }));
@@ -538,15 +532,21 @@ pub fn convert_to_xai_responses_input(
 }
 
 fn convert_image_part(
+    file_part: &ContentPart,
     media_type: &str,
     b64_data: Option<&str>,
     url: Option<&str>,
     provider_options: &Option<Value>,
-) -> Value {
+) -> Result<Value, AiMuxError> {
+    if get_top_level_media_type(media_type) != "image" {
+        return Err(AiMuxError::UnsupportedFunctionality(format!(
+            "file part media type {media_type} as inline data (xAI Responses requires a URL or a Files API reference for non-image files)"
+        )));
+    }
     let image_url = if let Some(url_str) = url {
         url_str.to_string()
     } else if let Some(b64) = b64_data {
-        let full_mt = resolve_full_media_type(media_type, b64);
+        let full_mt = resolve_full_media_type(file_part)?;
         format!("data:{full_mt};base64,{b64}")
     } else {
         String::new()
@@ -566,7 +566,7 @@ fn convert_image_part(
         part["detail"] = detail.clone();
     }
 
-    part
+    Ok(part)
 }
 
 // ── Request body builder ─────────────────────────────────────────────────────
