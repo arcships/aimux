@@ -197,12 +197,15 @@ The wire shape changed with it:
 |---|---|---|
 | Wire JSON | `"input": {"city":"Paris"}` | `"input": "{\"city\":\"Paris\"}"` |
 
-Serialization always writes the JSON string; nothing writes the old shape any
-more. Deserialization accepts both — a JSON string loads unchanged, and any
-other JSON value (object, array, number, bool, null) is re-serialized to its
-compact JSON text (`deserialize_tool_call_input` in
-`aimux-core/src/result.rs`). A `GenerateResult` persisted or recorded before
-the refactor therefore keeps loading, with no migration step.
+Serialization always writes the JSON string, and deserialization accepts only
+the JSON string. The pre-refactor shape (an object, array, number, bool or
+null in `input`) no longer loads: the compatibility deserializer was removed
+when the tool-call types were unified, and a `GenerateResult` persisted before
+PR #165 must be re-recorded.
+
+The same rule holds for a provider's stream: `StreamPart::ToolCall` carries a
+`RawToolCall` whose `input` is the raw text. After `stream_text` the part is a
+`TextStreamPart`, whose `ToolCall` carries the parsed `tool::ToolCall`.
 
 The parsed arguments still reach callers as a `Value`, on
 `GenerateTextResult.tool_calls[].input` — that field is unchanged.

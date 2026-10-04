@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Tool-call and tool-result types are unified, one per protocol layer
+  (`aimux-core`). A provider emits `tool::RawToolCall` (`input` is the raw
+  argument text) in `GenerateContent::ToolCall(..)` and
+  `StreamPart::ToolCall(..)`, and `tool::ToolResult` in the `ToolResult`
+  variants; these variants are newtype variants now. `StreamPart` is generic
+  over the tool-call type: a provider's `do_stream` yields `StreamPart`
+  (= `StreamPart<RawToolCall>`), `stream_text` and everything after it yield
+  `TextStreamPart` (= `StreamPart<ToolCall>`, parsed input with `invalid` /
+  `error`). `RawToolCall` moved from `parse_tool_call` to `tool`. Wire format:
+  enum variants keep their JSON shape; a provider-layer `StreamPart::ToolCall`
+  has a string `input` and no `invalid` / `error`; a
+  `GenerateContent::ToolCall` with a non-string `input` no longer
+  deserializes; the standalone `tool::ToolResult` gains a required
+  `tool_name` and optional `dynamic` / `provider_metadata`.
+
+## [Unreleased]
+
+### Breaking
+
 - Removed the generated `ProviderName` type in every binding (Rust enum, TS
   const object, Go/Java/Kotlin consts, Swift enum, Dart consts, Python
   `Literal`) and `scripts/gen_provider_names.py`. Provider names are plain
