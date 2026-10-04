@@ -392,7 +392,12 @@ fn raw_from_invalid(tool_call: &ToolCall) -> Result<(RawToolCall, AiMuxError), A
         RawToolCall {
             tool_call_id: tool_call.tool_call_id.clone(),
             tool_name: tool_call.tool_name.clone(),
-            input: raw_tool_call_text(&error).unwrap_or_else(|| tool_call.input.to_string()),
+            // An invalid call keeps unparsable argument text as a JSON string
+            // (see `invalid_tool_call`); that text is the raw input.
+            input: raw_tool_call_text(&error).unwrap_or_else(|| match &tool_call.input {
+                Value::String(text) => text.clone(),
+                input => input.to_string(),
+            }),
             provider_executed: tool_call.provider_executed,
             dynamic: tool_call.dynamic,
             thought_signature: tool_call.thought_signature.clone(),
