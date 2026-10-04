@@ -1,108 +1,29 @@
-//! Provider construction for the console (RFC-0029 §8.2): native single-key
-//! providers and the registry-backed OpenAI-compatible family.
-//!
-//! Adapted from `aimux-cli` `probe::provider::build_model` so the console and
-//! the CLI share the same provider construction semantics.
+//! Provider construction for the console (RFC-0029 §8.2).
 
 use std::sync::Arc;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
-use aimux_providers::provider::ProviderOptions;
+use aimux_providers::PresetSettings;
 
 /// Build a model from a provider name + model id + optional key / base URL.
 ///
-/// - Native providers (openai/anthropic/google/mistral/xai/cohere) need a key:
-///   explicit `api_key` or the provider's standard env var.
-/// - Everything else goes through the registry (`provider(name, …)`), where a
-///   `None` key reads the provider's registered env var.
+/// The name is any built-in provider (a vendor package or a registry row); a
+/// `None` key is read from that provider's environment variable when the
+/// request is made.
 pub fn build_model(
     provider: &str,
     api_key: Option<String>,
     model_id: &str,
     base_url: Option<&str>,
 ) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
-    macro_rules! native {
-        ($provider_mod:ident, $settings:ident, $create:ident, $env:literal) => {{
-            let key = native_key(provider, $env, api_key.clone())?;
-            let p = aimux_providers::$provider_mod::$create(
-                aimux_providers::$provider_mod::$settings {
-                    api_key: Some(key.into()),
-                    base_url: base_url.map(str::to_string),
-                    ..Default::default()
-                },
-            )?;
-            aimux_core::provider::Provider::language_model(&p, model_id)
-        }};
-    }
-
-    match provider {
-        "openai" => {
-            let key = native_key(provider, "OPENAI_API_KEY", api_key.clone())?;
-            let provider = aimux_providers::openai::create_openai(
-                aimux_providers::openai::OpenAIProviderSettings {
-                    api_key: Some(key.into()),
-                    base_url: base_url.map(str::to_string),
-                    ..Default::default()
-                },
-            )?;
-            Ok(Arc::new(provider.chat(model_id)))
-        }
-        "anthropic" => {
-            let key = native_key(provider, "ANTHROPIC_API_KEY", api_key.clone())?;
-            let provider = aimux_providers::anthropic::create_anthropic(
-                aimux_providers::anthropic::AnthropicProviderSettings {
-                    api_key: Some(key.into()),
-                    base_url: base_url.map(str::to_string),
-                    ..Default::default()
-                },
-            )?;
-            Ok(Arc::new(provider.messages(model_id)))
-        }
-        "google" => {
-            let key = native_key(provider, "GOOGLE_GENERATIVE_AI_API_KEY", api_key.clone())?;
-            let provider = aimux_providers::google::create_google(
-                aimux_providers::google::GoogleProviderSettings {
-                    api_key: Some(key.into()),
-                    base_url: base_url.map(str::to_string),
-                    ..Default::default()
-                },
-            )?;
-            Ok(Arc::new(provider.chat(model_id)))
-        }
-        "mistral" => native!(
-            mistral,
-            MistralProviderSettings,
-            create_mistral,
-            "MISTRAL_API_KEY"
-        ),
-        "xai" => native!(xai, XAIProviderSettings, create_xai, "XAI_API_KEY"),
-        "cohere" => native!(
-            cohere,
-            CohereProviderSettings,
-            create_cohere,
-            "COHERE_API_KEY"
-        ),
-        _ => {
-            let mut options = ProviderOptions::default();
-            if let Some(url) = base_url {
-                options.base_url = Some(url.to_string());
-            }
-            let model = aimux_providers::provider(provider, api_key, model_id, Some(options))
-                .map_err(|e| AiMuxError::InvalidArgument(format!("provider '{provider}': {e}")))?;
-            Ok(model)
-        }
-    }
-}
-
-/// Resolve the key for a native provider: explicit key, else the standard env var.
-fn native_key(provider: &str, env: &str, api_key: Option<String>) -> Result<String, AiMuxError> {
-    match api_key {
-        Some(k) => Ok(k),
-        None => std::env::var(env).map_err(|_| {
-            AiMuxError::InvalidArgument(format!(
-                "provider '{provider}' needs an API key — set `{env}` or pass api_key=\"env:{env}\""
-            ))
-        }),
-    }
+    aimux_providers::create_provider(
+        provider,
+        PresetSettings {
+            api_key: api_key.map(Into::into),
+            base_url: base_url.map(str::to_string),
+            ..Default::default()
+        },
+    )?
+    .language_model(model_id)
 }

@@ -7,7 +7,6 @@
 use std::sync::Arc;
 
 use aimux_core::trace::{RingTraceStore, TraceFilter, TraceLayer, VerdictKind};
-use aimux_providers::ProviderOptions;
 
 use crate::report;
 use crate::{Format, ProviderArgs};
@@ -81,73 +80,22 @@ condition under which provider-side prompt caching should activate; observe the
 usage fields to confirm the cache read tokens; compare with the client LCP bound;
 report any discrepancy as a suspect overclaim; the test sequence is complete."#;
 
-/// 构造 provider 模型:原生单 key provider(openai/anthropic/mistral/xai/cohere/
-/// google)直接构造;其余走注册表(compat,如 deepseek/groq/moonshotai 等)。
-/// azure/bedrock/vertex 需额外参数(资源名/region/凭证),CLI 第一版不直接
-/// 支持,可用其 OpenAI-compat 注册表镜像或后续扩展。
+/// 构造 provider 模型:名字可以是任一内置厂商(厂商包或注册表行)。
 fn build_model(
     provider: &str,
     api_key: String,
     model_id: &str,
     base_url: Option<&str>,
 ) -> anyhow::Result<Arc<dyn aimux_core::language_model::LanguageModel>> {
-    macro_rules! native {
-        ($provider_mod:ident, $settings:ident, $create:ident) => {{
-            let p = aimux_providers::$provider_mod::$create(
-                aimux_providers::$provider_mod::$settings {
-                    api_key: Some(api_key.clone().into()),
-                    base_url: base_url.map(str::to_string),
-                    ..Default::default()
-                },
-            )?;
-            aimux_core::provider::Provider::language_model(&p, model_id)?
-        }};
-    }
-
-    match provider {
-        "openai" => {
-            let provider = aimux_providers::openai::create_openai(
-                aimux_providers::openai::OpenAIProviderSettings {
-                    api_key: Some(api_key.clone().into()),
-                    base_url: base_url.map(str::to_string),
-                    ..Default::default()
-                },
-            )?;
-            Ok(Arc::new(provider.chat(model_id)))
-        }
-        "anthropic" => {
-            let provider = aimux_providers::anthropic::create_anthropic(
-                aimux_providers::anthropic::AnthropicProviderSettings {
-                    api_key: Some(api_key.clone().into()),
-                    base_url: base_url.map(str::to_string),
-                    ..Default::default()
-                },
-            )?;
-            Ok(Arc::new(provider.messages(model_id)))
-        }
-        "mistral" => Ok(native!(mistral, MistralProviderSettings, create_mistral)),
-        "xai" => Ok(native!(xai, XAIProviderSettings, create_xai)),
-        "cohere" => Ok(native!(cohere, CohereProviderSettings, create_cohere)),
-        "google" => {
-            let provider = aimux_providers::google::create_google(
-                aimux_providers::google::GoogleProviderSettings {
-                    api_key: Some(api_key.clone().into()),
-                    base_url: base_url.map(str::to_string),
-                    ..Default::default()
-                },
-            )?;
-            Ok(Arc::new(provider.chat(model_id)))
-        }
-        _ => {
-            let mut options = ProviderOptions::default();
-            if let Some(url) = base_url {
-                options.base_url = Some(url.to_string());
-            }
-            let model = aimux_providers::provider(provider, Some(api_key), model_id, Some(options))
-                .map_err(|e| anyhow::anyhow!("provider '{provider}': {e}"))?;
-            Ok(model)
-        }
-    }
+    let provider = aimux_providers::create_provider(
+        provider,
+        aimux_providers::PresetSettings {
+            api_key: Some(api_key.into()),
+            base_url: base_url.map(str::to_string),
+            ..Default::default()
+        },
+    )?;
+    Ok(provider.language_model(model_id)?)
 }
 
 /// 解析 `api_key` 参数:`env:VAR` 引用环境变量,否则按字面 key 使用。
