@@ -15,6 +15,7 @@
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPromptMessage;
 use aimux_core::message::Role;
+use aimux_core::shared::provider_namespace;
 use aimux_core::types::Warning;
 use aimux_providers::anthropic::convert::convert_prompt_to_anthropic_full;
 use serde_json::{Value, json};
@@ -325,14 +326,10 @@ fn thinking_enabled_echoes_reasoning_parts_as_thinking_blocks() {
             text_part("Here is the answer."),
         ],
     )]);
-    options.provider_options = Some(
-        [(
-            "anthropic".to_string(),
-            json!({ "thinking": { "type": "enabled", "budgetTokens": 1024 } }),
-        )]
-        .into_iter()
-        .collect(),
-    );
+    options.provider_options = Some(provider_namespace(
+        "anthropic",
+        json!({ "thinking": { "type": "enabled", "budgetTokens": 1024 } }),
+    ));
     let result =
         build_request_body_with_warnings("claude-sonnet-4-20250514", &options, false).unwrap();
     let blocks = result.body["messages"][0]["content"].as_array().unwrap();
@@ -364,14 +361,10 @@ fn thinking_disabled_omits_reasoning_parts() {
             text_part("Here is the answer."),
         ],
     )]);
-    options.provider_options = Some(
-        [(
-            "anthropic".to_string(),
-            json!({ "thinking": { "type": "disabled" } }),
-        )]
-        .into_iter()
-        .collect(),
-    );
+    options.provider_options = Some(provider_namespace(
+        "anthropic",
+        json!({ "thinking": { "type": "disabled" } }),
+    ));
     let result =
         build_request_body_with_warnings("claude-sonnet-4-20250514", &options, false).unwrap();
     let blocks = result.body["messages"][0]["content"].as_array().unwrap();
@@ -743,7 +736,9 @@ fn should_convert_provider_referenced_file_parts_to_container_uploads_when_reque
         media_type: "text/csv".to_string(),
         reference: json!({ "anthropic": "file-csv-12345" }),
         filename: None,
-        provider_options: Some(json!({ "anthropic": { "containerUpload": true } })),
+        provider_options: Some(
+            serde_json::from_value(json!({ "anthropic": { "containerUpload": true } })).unwrap(),
+        ),
     };
     let p = prompt(vec![msg(
         Role::User,

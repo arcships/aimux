@@ -6,8 +6,6 @@
 //!
 //! Tests do not hit the public network and do not read real credentials.
 
-use std::collections::HashMap;
-
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -91,13 +89,8 @@ fn json_docs_opts(query: &str, top_n: u32) -> RerankingCallOptions {
     }
 }
 
-fn jina_provider_options(return_documents: bool) -> HashMap<String, Value> {
-    let mut po = HashMap::new();
-    po.insert(
-        "jina".to_string(),
-        json!({ "returnDocuments": return_documents }),
-    );
-    po
+fn jina_provider_options(return_documents: bool) -> aimux_core::shared::SharedProviderOptions {
+    aimux_core::shared::provider_namespace("jina", json!({ "returnDocuments": return_documents }))
 }
 
 async fn mount_rerank_mock(server: &MockServer) {

@@ -45,7 +45,7 @@
 //! resulting request path is `/chat/completions` — matching the convention in
 //! `openai_compatible_test.rs`.
 
-use std::collections::HashMap;
+use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -99,10 +99,8 @@ fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
 ///
 /// The TS tests pass `providerOptions: { deepseek: { ... } }`. The Rust
 /// `CallOptions.provider_options` is keyed by provider name.
-fn deepseek_opts(value: Value) -> Option<HashMap<String, Value>> {
-    let mut m = HashMap::new();
-    m.insert("deepseek".to_string(), value);
-    Some(m)
+fn deepseek_opts(value: Value) -> Option<SharedProviderOptions> {
+    Some(provider_namespace("deepseek", value))
 }
 
 /// Mount a JSON chat-completion response on `/chat/completions`.

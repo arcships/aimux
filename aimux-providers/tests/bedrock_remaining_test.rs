@@ -20,8 +20,6 @@
 //! documents the expected behaviour so it can be flipped on once the gap lands.
 
 use aimux_core::tool::RawToolCall;
-use std::collections::HashMap;
-
 use futures::StreamExt;
 use serde_json::{Value, json};
 use serial_test::serial;
@@ -782,9 +780,8 @@ async fn guardrail_config_in_request_body() {
 
     let model = make_model(&server);
     let mut opts = default_options(test_prompt());
-    let mut po = HashMap::new();
-    po.insert(
-        "bedrock".to_string(),
+    let po = aimux_core::shared::provider_namespace(
+        "bedrock",
         json!({
             "guardrailConfig": {
                 "guardrailIdentifier": "-1",

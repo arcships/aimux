@@ -25,7 +25,7 @@ use aimux_core::message::{ModelMessage, Role};
 use aimux_core::options::{CallOptions, ProviderTool, Tool};
 use aimux_core::result::{GenerateContent, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::FinishReasonUnified;
+use aimux_core::types::{FinishReasonUnified, ProviderMetadata};
 
 use aimux_providers::vertex::{VertexAuth, VertexConfig, VertexModel, VertexProviderConfig};
 
@@ -254,7 +254,7 @@ async fn vertex_renamed_code_execution_passes_core_generate_boundary() {
     assert_eq!(call.invalid, None);
     let call_metadata = call.provider_metadata.as_ref().expect("call metadata");
     assert_eq!(
-        call_metadata["googleVertex"],
+        serde_json::to_value(&call_metadata["googleVertex"]).unwrap(),
         json!({
             "serverToolCallId": call.tool_call_id,
             "serverToolType": "code_execution",
@@ -352,7 +352,10 @@ async fn vertex_server_tool_call_and_response_pass_core_generate_boundary() {
     assert_eq!(call.dynamic, Some(true));
     assert_eq!(call.invalid, None);
     assert_eq!(
-        call.provider_metadata.as_ref().expect("call metadata")["googleVertex"],
+        serde_json::to_value(
+            &call.provider_metadata.as_ref().expect("call metadata")["googleVertex"]
+        )
+        .unwrap(),
         json!({
             "serverToolCallId": "server-call-1",
             "serverToolType": "GOOGLE_SEARCH_WEB",
@@ -382,7 +385,7 @@ async fn vertex_server_tool_call_and_response_pass_core_generate_boundary() {
         }) if tool_call_id == "server-call-1"
             && tool_name == "server:GOOGLE_SEARCH_WEB"
             && *result == json!({ "results": [{ "title": "Sunny" }] })
-            && metadata["googleVertex"] == json!({
+            && serde_json::to_value(&metadata["googleVertex"]).unwrap() == json!({
                 "serverToolCallId": "server-call-1",
                 "serverToolType": "GOOGLE_SEARCH_WEB",
                 "thoughtSignature": "result-signature"
@@ -852,7 +855,7 @@ fn stream_chunk(
 }
 
 /// Extract the `Finish` part's provider metadata from a collected stream.
-fn finish_provider_metadata(parts: &[StreamPart]) -> Option<Value> {
+fn finish_provider_metadata(parts: &[StreamPart]) -> Option<ProviderMetadata> {
     parts.iter().find_map(|p| match p {
         StreamPart::Finish {
             provider_metadata, ..
@@ -998,7 +1001,7 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
             provider_metadata: Some(metadata),
             ..
         }) if tool_name == "runCode"
-            && metadata["googleVertex"] == json!({
+            && serde_json::to_value(&metadata["googleVertex"]).unwrap() == json!({
                 "serverToolCallId": tool_call_id,
                 "serverToolType": "code_execution",
             })
@@ -1013,7 +1016,7 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
             provider_metadata: Some(metadata),
             ..
         }) if tool_name == "runCode"
-            && metadata["googleVertex"] == json!({
+            && serde_json::to_value(&metadata["googleVertex"]).unwrap() == json!({
                 "serverToolCallId": tool_call_id,
                 "serverToolType": "code_execution",
             })
@@ -1365,10 +1368,10 @@ async fn vertex_stream_finish_provider_metadata() {
     let pm = finish_provider_metadata(&parts).expect("finish part");
     let vertex = &pm["googleVertex"];
     assert_eq!(&pm["vertex"], vertex);
-    assert!(pm.get("google").is_none());
+    assert!(!pm.contains_key("google"));
     assert!(
-        !vertex.is_null() && vertex.as_object().map(|o| !o.is_empty()).unwrap_or(false),
-        "googleVertex provider metadata should be non-empty, got {pm}"
+        !vertex.is_empty(),
+        "googleVertex provider metadata should be non-empty, got {pm:?}"
     );
     assert_eq!(
         vertex["groundingMetadata"],
@@ -1404,7 +1407,7 @@ async fn vertex_stream_finish_provider_metadata() {
     ] {
         assert!(
             vertex.get(key).is_some(),
-            "expected key `{key}` in googleVertex metadata, got {pm}"
+            "expected key `{key}` in googleVertex metadata, got {pm:?}"
         );
     }
     // …and the three snapshot fields carry their captured values, not just

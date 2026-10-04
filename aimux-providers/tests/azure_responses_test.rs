@@ -605,7 +605,7 @@ async fn should_use_azure_provider_metadata_namespace() {
         .expect("should succeed");
 
     let pm = result.provider_metadata.expect("provider_metadata");
-    assert!(pm.get("azure").is_some(), "should have 'azure' key");
+    assert!(pm.contains_key("azure"), "should have 'azure' key");
     assert_eq!(
         pm["azure"]["responseId"],
         "resp_67c97c0203188190a025beb4a75242bc"

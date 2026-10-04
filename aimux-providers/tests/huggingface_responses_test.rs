@@ -1427,7 +1427,10 @@ async fn should_handle_reasoning_content_in_responses() {
             assert_eq!(text, "Let me think about this problem step by step...");
             assert_eq!(
                 provider_metadata.as_ref(),
-                Some(&json!({ "huggingface": { "itemId": "reasoning_1" } }))
+                Some(&aimux_core::shared::provider_namespace(
+                    "huggingface",
+                    json!({ "itemId": "reasoning_1" })
+                ))
             );
         }
         other => panic!("expected Reasoning at [0], got {other:?}"),
@@ -1512,7 +1515,10 @@ async fn should_stream_reasoning_content() {
             assert_eq!(id, "reasoning_stream");
             assert_eq!(
                 provider_metadata.as_ref(),
-                Some(&json!({ "huggingface": { "itemId": "reasoning_stream" } }))
+                Some(&aimux_core::shared::provider_namespace(
+                    "huggingface",
+                    json!({ "itemId": "reasoning_stream" })
+                ))
             );
         }
         other => panic!("expected ReasoningStart, got {other:?}"),
@@ -1610,11 +1616,12 @@ async fn should_send_provider_specific_options() {
     let mut po = HashMap::new();
     po.insert(
         "huggingface".to_string(),
-        json!({
+        serde_json::from_value(json!({
             "metadata": { "key": "value" },
             "instructions": "Be concise",
             "strictJsonSchema": true
-        }),
+        }))
+        .unwrap(),
     );
     options.provider_options = Some(po);
     options.response_format = Some(ResponseFormat::Json {

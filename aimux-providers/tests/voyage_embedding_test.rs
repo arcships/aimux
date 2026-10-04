@@ -187,8 +187,8 @@ async fn should_pass_input_type_setting() {
     let provider = VoyageProvider::new(config);
     let model = provider.embedding_model("voyage-3.5");
 
-    let mut provider_options = HashMap::new();
-    provider_options.insert("voyage".to_string(), json!({"inputType": "document"}));
+    let provider_options =
+        aimux_core::shared::provider_namespace("voyage", json!({"inputType": "document"}));
     let options = EmbeddingCallOptions {
         values: test_values(),
         abort_signal: None,
@@ -219,8 +219,8 @@ async fn should_pass_output_dimension_setting() {
     let provider = VoyageProvider::new(config);
     let model = provider.embedding_model("voyage-3.5");
 
-    let mut provider_options = HashMap::new();
-    provider_options.insert("voyage".to_string(), json!({"outputDimension": 256}));
+    let provider_options =
+        aimux_core::shared::provider_namespace("voyage", json!({"outputDimension": 256}));
     let options = EmbeddingCallOptions {
         values: test_values(),
         abort_signal: None,

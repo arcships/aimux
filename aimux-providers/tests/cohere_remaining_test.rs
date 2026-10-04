@@ -312,7 +312,10 @@ fn convert_image_file_with_detail_provider_option() {
             data: vec![0, 1, 2, 3],
             media_type: "image/png".to_string(),
             filename: None,
-            provider_options: Some(json!({ "cohere": { "detail": "high" } })),
+            provider_options: Some(aimux_core::shared::provider_namespace(
+                "cohere",
+                json!({ "detail": "high" }),
+            )),
         }],
         ..Default::default()
     }];
@@ -667,7 +670,7 @@ async fn should_prefer_provider_options_over_reasoning() {
     let mut po = std::collections::HashMap::new();
     po.insert(
         "cohere".to_string(),
-        json!({ "thinking": { "type": "enabled" } }),
+        serde_json::from_value(json!({ "thinking": { "type": "enabled" } })).unwrap(),
     );
     let options = CallOptions {
         reasoning: Some(ReasoningEffort::None),
@@ -738,7 +741,8 @@ fn resolve_thinking_provider_options_override() {
     let mut po = std::collections::HashMap::new();
     po.insert(
         "cohere".to_string(),
-        json!({ "thinking": { "type": "enabled", "tokenBudget": 5000 } }),
+        serde_json::from_value(json!({ "thinking": { "type": "enabled", "tokenBudget": 5000 } }))
+            .unwrap(),
     );
     let result = resolve_cohere_thinking(Some(ReasoningEffort::None), &Some(po));
     assert_eq!(
@@ -752,7 +756,7 @@ fn resolve_thinking_provider_options_default_type() {
     let mut po = std::collections::HashMap::new();
     po.insert(
         "cohere".to_string(),
-        json!({ "thinking": { "tokenBudget": 1000 } }),
+        serde_json::from_value(json!({ "thinking": { "tokenBudget": 1000 } })).unwrap(),
     );
     let result = resolve_cohere_thinking(None, &Some(po));
     // type defaults to "enabled" when not specified.

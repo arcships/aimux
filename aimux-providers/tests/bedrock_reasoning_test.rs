@@ -25,8 +25,6 @@
 //!   is provider-agnostic; the converter cannot distinguish an `anthropic`
 //!   signature (which must be dropped) from a `bedrock` one (which is kept).
 
-use std::collections::HashMap;
-
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -38,8 +36,9 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, ReasoningOutput, StreamResult};
+use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::FinishReasonUnified;
+use aimux_core::types::{FinishReasonUnified, ProviderMetadata};
 
 use aimux_providers::bedrock::convert::convert_prompt_to_bedrock;
 use aimux_providers::bedrock::event_stream;
@@ -91,10 +90,8 @@ fn make_model(server: &MockServer) -> BedrockModel {
 }
 
 /// Wrap a `bedrock`-keyed provider-options value for `CallOptions.provider_options`.
-fn bedrock_provider_options(value: Value) -> Option<HashMap<String, Value>> {
-    let mut map = HashMap::new();
-    map.insert("bedrock".to_string(), value);
-    Some(map)
+fn bedrock_provider_options(value: Value) -> Option<SharedProviderOptions> {
+    Some(provider_namespace("bedrock", value))
 }
 
 /// Mock the non-streaming `/converse` endpoint with a JSON body (HTTP 200).
@@ -151,7 +148,7 @@ fn as_text(item: &GenerateContent) -> &str {
     }
 }
 
-fn as_reasoning(item: &GenerateContent) -> (&str, &Option<Value>) {
+fn as_reasoning(item: &GenerateContent) -> (&str, &Option<ProviderMetadata>) {
     match item {
         GenerateContent::Reasoning(ReasoningOutput {
             text,
@@ -1010,9 +1007,10 @@ fn convert_reasoning_redacted_content_type() {
         assistant(vec![ContentPart::Reasoning {
             text: String::new(),
             signature: None,
-            provider_options: Some(
-                json!({ "bedrock": { "redactedData": "Redacted reasoning information" } }),
-            ),
+            provider_options: Some(provider_namespace(
+                "bedrock",
+                json!({ "redactedData": "Redacted reasoning information" }),
+            )),
         }]),
     ];
     let (system, messages) = convert_prompt_to_bedrock(&prompt);

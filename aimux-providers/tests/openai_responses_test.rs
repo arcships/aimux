@@ -30,6 +30,7 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, ReasoningOutput, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
@@ -202,11 +203,7 @@ mod do_generate_request {
         let options = CallOptions {
             temperature: Some(0.5),
             top_p: Some(0.3),
-            provider_options: Some({
-                let mut m = std::collections::HashMap::new();
-                m.insert("openai".to_string(), json!({ "maxToolCalls": 10 }));
-                m
-            }),
+            provider_options: Some(provider_namespace("openai", json!({ "maxToolCalls": 10 }))),
             ..CallOptions::new(prompt)
         };
 
@@ -347,11 +344,7 @@ mod do_generate_request {
         let model = OpenAIProvider::new(config).responses_model("gpt-5-mini");
 
         let options = CallOptions {
-            provider_options: Some({
-                let mut m = std::collections::HashMap::new();
-                m.insert("openai".to_string(), json!({ "store": false }));
-                m
-            }),
+            provider_options: Some(provider_namespace("openai", json!({ "store": false }))),
             ..CallOptions::new(test_prompt())
         };
 
@@ -377,11 +370,7 @@ mod do_generate_request {
         let model = OpenAIProvider::new(config).responses_model("gpt-4o");
 
         let options = CallOptions {
-            provider_options: Some({
-                let mut m = std::collections::HashMap::new();
-                m.insert("openai".to_string(), json!({ "store": false }));
-                m
-            }),
+            provider_options: Some(provider_namespace("openai", json!({ "store": false }))),
             ..CallOptions::new(test_prompt())
         };
 
@@ -406,11 +395,7 @@ mod do_generate_request {
         let model = OpenAIProvider::new(config).responses_model("gpt-4o");
 
         let options = CallOptions {
-            provider_options: Some({
-                let mut m = std::collections::HashMap::new();
-                m.insert("openai".to_string(), json!({ "store": true }));
-                m
-            }),
+            provider_options: Some(provider_namespace("openai", json!({ "store": true }))),
             ..CallOptions::new(test_prompt())
         };
 
@@ -434,14 +419,10 @@ mod do_generate_request {
         let model = OpenAIProvider::new(config).responses_model("gpt-4o");
 
         let options = CallOptions {
-            provider_options: Some({
-                let mut m = std::collections::HashMap::new();
-                m.insert(
-                    "openai".to_string(),
-                    json!({ "previousResponseId": "resp_123" }),
-                );
-                m
-            }),
+            provider_options: Some(provider_namespace(
+                "openai",
+                json!({ "previousResponseId": "resp_123" }),
+            )),
             ..CallOptions::new(test_prompt())
         };
 
@@ -465,14 +446,10 @@ mod do_generate_request {
         let model = OpenAIProvider::new(config).responses_model("gpt-4o");
 
         let options = CallOptions {
-            provider_options: Some({
-                let mut m = std::collections::HashMap::new();
-                m.insert(
-                    "openai".to_string(),
-                    json!({ "conversation": "conv_123", "previousResponseId": "resp_123" }),
-                );
-                m
-            }),
+            provider_options: Some(provider_namespace(
+                "openai",
+                json!({ "conversation": "conv_123", "previousResponseId": "resp_123" }),
+            )),
             ..CallOptions::new(test_prompt())
         };
 
@@ -503,14 +480,10 @@ mod do_generate_request {
         let model = OpenAIProvider::new(config).responses_model("o3-mini");
 
         let options = CallOptions {
-            provider_options: Some({
-                let mut m = std::collections::HashMap::new();
-                m.insert(
-                    "openai".to_string(),
-                    json!({ "reasoningEffort": "low", "reasoningSummary": "auto" }),
-                );
-                m
-            }),
+            provider_options: Some(provider_namespace(
+                "openai",
+                json!({ "reasoningEffort": "low", "reasoningSummary": "auto" }),
+            )),
             ..CallOptions::new(test_prompt())
         };
 
@@ -536,11 +509,10 @@ mod do_generate_request {
         let model = OpenAIProvider::new(config).responses_model("gpt-5.1-codex-max");
 
         let options = CallOptions {
-            provider_options: Some({
-                let mut m = std::collections::HashMap::new();
-                m.insert("openai".to_string(), json!({ "reasoningEffort": "xhigh" }));
-                m
-            }),
+            provider_options: Some(provider_namespace(
+                "openai",
+                json!({ "reasoningEffort": "xhigh" }),
+            )),
             ..CallOptions::new(test_prompt())
         };
 
@@ -564,11 +536,10 @@ mod do_generate_request {
         let model = OpenAIProvider::new(config).responses_model("gpt-4o");
 
         let options = CallOptions {
-            provider_options: Some({
-                let mut m = std::collections::HashMap::new();
-                m.insert("openai".to_string(), json!({ "parallelToolCalls": false }));
-                m
-            }),
+            provider_options: Some(provider_namespace(
+                "openai",
+                json!({ "parallelToolCalls": false }),
+            )),
             ..CallOptions::new(test_prompt())
         };
 
@@ -591,11 +562,7 @@ mod do_generate_request {
         let model = OpenAIProvider::new(config).responses_model("gpt-4o");
 
         let options = CallOptions {
-            provider_options: Some({
-                let mut m = std::collections::HashMap::new();
-                m.insert("openai".to_string(), json!({ "user": "user_123" }));
-                m
-            }),
+            provider_options: Some(provider_namespace("openai", json!({ "user": "user_123" }))),
             ..CallOptions::new(test_prompt())
         };
 
@@ -618,11 +585,10 @@ mod do_generate_request {
         let model = OpenAIProvider::new(config).responses_model("gpt-4o");
 
         let options = CallOptions {
-            provider_options: Some({
-                let mut m = std::collections::HashMap::new();
-                m.insert("openai".to_string(), json!({ "conversation": "conv_123" }));
-                m
-            }),
+            provider_options: Some(provider_namespace(
+                "openai",
+                json!({ "conversation": "conv_123" }),
+            )),
             ..CallOptions::new(test_prompt())
         };
 
@@ -1453,11 +1419,7 @@ mod do_stream {
         let model = OpenAIProvider::new(config).responses_model("o3-mini");
 
         let options = CallOptions {
-            provider_options: Some({
-                let mut m = std::collections::HashMap::new();
-                m.insert("openai".to_string(), json!({ "store": true }));
-                m
-            }),
+            provider_options: Some(provider_namespace("openai", json!({ "store": true }))),
             ..CallOptions::new(test_prompt())
         };
 

@@ -11,6 +11,7 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ToolChoice};
+use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::types::ReasoningEffort;
 use aimux_providers::openai::OpenAICompatProfile;
 use aimux_providers::openai::convert::{
@@ -70,10 +71,8 @@ fn default_opts(p: LanguageModelPrompt) -> CallOptions {
         recording_context: None,
     }
 }
-fn po(map: Value) -> Option<std::collections::HashMap<String, Value>> {
-    let mut h = std::collections::HashMap::new();
-    h.insert("openai".to_string(), map);
-    Some(h)
+fn po(map: Value) -> Option<SharedProviderOptions> {
+    Some(provider_namespace("openai", map))
 }
 
 // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
@@ -106,9 +105,7 @@ mod convert_extended {
             role: Role::System,
             content: vec![ContentPart::Text {
                 text: "You are a helpful assistant.".into(),
-                provider_options: Some(
-                    json!({ "openai": { "promptCacheBreakpoint": { "mode": "explicit" } } }),
-                ),
+                provider_options: po(json!({ "promptCacheBreakpoint": { "mode": "explicit" } })),
             }],
             ..Default::default()
         }];
@@ -122,7 +119,7 @@ mod convert_extended {
     #[test]
     fn adds_bpt_to_user_content() {
         let bpt = json!({ "mode": "explicit" });
-        let o = Some(json!({ "openai": { "promptCacheBreakpoint": bpt } }));
+        let o = po(json!({ "promptCacheBreakpoint": bpt }));
         let p: LanguageModelPrompt = vec![up(vec![
             ContentPart::Text {
                 text: "Hello".into(),
@@ -164,7 +161,7 @@ mod convert_extended {
             data: "AAECAw==".into(),
             media_type: "image/png".into(),
             filename: None,
-            provider_options: Some(json!({ "openai": { "imageDetail": "low" } })),
+            provider_options: po(json!({ "imageDetail": "low" })),
         }])];
         let r = convert_prompt_to_openai_messages(&p);
         assert_eq!(
@@ -346,9 +343,7 @@ mod convert_extended {
             role: Role::Assistant,
             content: vec![ContentPart::Text {
                 text: "Cached assistant content".into(),
-                provider_options: Some(
-                    json!({ "openai": { "promptCacheBreakpoint": { "mode": "explicit" } } }),
-                ),
+                provider_options: po(json!({ "promptCacheBreakpoint": { "mode": "explicit" } })),
             }],
             ..Default::default()
         }];

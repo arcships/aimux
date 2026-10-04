@@ -6,8 +6,6 @@
 //!
 //! Tests do not hit the public network and do not read real credentials.
 
-use std::collections::HashMap;
-
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -62,13 +60,14 @@ fn opts(query: &str) -> SearchCallOptions {
     SearchCallOptions::new(query)
 }
 
-fn linkup_provider_options(depth: &str, output_type: &str) -> HashMap<String, Value> {
-    let mut po = HashMap::new();
-    po.insert(
-        "linkup".to_string(),
+fn linkup_provider_options(
+    depth: &str,
+    output_type: &str,
+) -> aimux_core::shared::SharedProviderOptions {
+    aimux_core::shared::provider_namespace(
+        "linkup",
         json!({ "depth": depth, "outputType": output_type }),
-    );
-    po
+    )
 }
 
 async fn mount_search_mock(server: &MockServer) {

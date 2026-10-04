@@ -26,8 +26,8 @@
 //! overridden with the mock server's root URI (no `/v1` suffix), so the
 //! resulting request path is `/chat/completions`.
 
+use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::tool::RawToolCall;
-use std::collections::HashMap;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -81,10 +81,8 @@ fn make_provider(server: &MockServer, model_id: &str) -> Box<dyn LanguageModel> 
 }
 
 /// Wrap a value as `providerOptions.deepseek.<value>`.
-fn deepseek_opts(value: Value) -> Option<HashMap<String, Value>> {
-    let mut m = HashMap::new();
-    m.insert("deepseek".to_string(), value);
-    Some(m)
+fn deepseek_opts(value: Value) -> Option<SharedProviderOptions> {
+    Some(provider_namespace("deepseek", value))
 }
 
 /// Mount a JSON chat-completion response on `/chat/completions`.

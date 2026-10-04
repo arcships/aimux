@@ -183,11 +183,8 @@ async fn should_pass_input_type_setting() {
     let provider = CohereProvider::new(config);
     let model = provider.embedding_model("embed-english-v3.0");
 
-    let mut provider_options = HashMap::new();
-    provider_options.insert(
-        "cohere".to_string(),
-        json!({"inputType": "search_document"}),
-    );
+    let provider_options =
+        aimux_core::shared::provider_namespace("cohere", json!({"inputType": "search_document"}));
     let options = EmbeddingCallOptions {
         values: test_values(),
         abort_signal: None,
@@ -218,8 +215,8 @@ async fn should_pass_output_dimension_setting() {
     let provider = CohereProvider::new(config);
     let model = provider.embedding_model("embed-v4.0");
 
-    let mut provider_options = HashMap::new();
-    provider_options.insert("cohere".to_string(), json!({"outputDimension": 256}));
+    let provider_options =
+        aimux_core::shared::provider_namespace("cohere", json!({"outputDimension": 256}));
     let options = EmbeddingCallOptions {
         values: test_values(),
         abort_signal: None,

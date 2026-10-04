@@ -41,6 +41,7 @@ use aimux_core::result::{GenerateContent, GeneratedFile, ReasoningOutput, Source
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{ProviderTool, Tool};
+use aimux_core::types::ProviderMetadata;
 
 use aimux_providers::anthropic::AnthropicConfig;
 use aimux_providers::anthropic::model::AnthropicModel;
@@ -184,7 +185,7 @@ fn texts(content: &[GenerateContent]) -> Vec<&str> {
         .collect()
 }
 
-fn reasonings(content: &[GenerateContent]) -> Vec<(&str, Option<&Value>)> {
+fn reasonings(content: &[GenerateContent]) -> Vec<(&str, Option<&ProviderMetadata>)> {
     content
         .iter()
         .filter_map(|c| match c {
@@ -205,7 +206,7 @@ type ToolCallView<'a> = (
     Option<bool>,
     Option<bool>,
     Option<&'a str>,
-    Option<&'a Value>,
+    Option<&'a ProviderMetadata>,
 );
 
 fn tool_calls(content: &[GenerateContent]) -> Vec<ToolCallView<'_>> {
@@ -248,7 +249,7 @@ type ToolResultView<'a> = (
     &'a Value,
     Option<bool>,
     Option<bool>,
-    Option<&'a Value>,
+    Option<&'a ProviderMetadata>,
 );
 
 fn tool_results(content: &[GenerateContent]) -> Vec<ToolResultView<'_>> {
@@ -282,7 +283,7 @@ type SourceView<'a> = (
     &'a str,
     Option<&'a str>,
     Option<&'a str>,
-    Option<&'a Value>,
+    Option<&'a ProviderMetadata>,
 );
 
 fn sources(content: &[GenerateContent]) -> Vec<SourceView<'_>> {
@@ -784,7 +785,7 @@ async fn finding_2_anthropic_web_search_result_mapped_and_sources_emitted() {
     // assertion agree with whatever the code produced, including a renamed key.
     // (`get("pageAge").is_some()` is no good either — a missing key and a
     // recorded `null` both read back as `Some(Value::Null)`.)
-    let by_url: BTreeMap<&str, &Value> = s
+    let by_url: BTreeMap<&str, &ProviderMetadata> = s
         .iter()
         .filter_map(|(_, _, url, _, m)| Some(((*url)?, (*m)?)))
         .collect();
@@ -800,7 +801,10 @@ async fn finding_2_anthropic_web_search_result_mapped_and_sources_emitted() {
     ] {
         assert_eq!(
             by_url.get(url).copied(),
-            Some(&json!({ "anthropic": { "pageAge": expected_page_age } })),
+            Some(&aimux_core::shared::provider_namespace(
+                "anthropic",
+                json!({ "pageAge": expected_page_age })
+            )),
             "source {url}: providerMetadata must hold exactly anthropic.pageAge"
         );
     }
@@ -1043,7 +1047,7 @@ async fn finding_2_anthropic_mcp_tool_use_and_result_are_dynamic_and_named() {
     assert_eq!(provider_executed, Some(true));
     assert_eq!(dynamic, Some(true));
     assert_eq!(
-        meta.expect("mcp_tool_use metadata")["anthropic"],
+        serde_json::to_value(&meta.expect("mcp_tool_use metadata")["anthropic"]).unwrap(),
         json!({ "type": "mcp-tool-use", "serverName": "deepwiki" })
     );
 
@@ -1059,7 +1063,7 @@ async fn finding_2_anthropic_mcp_tool_use_and_result_are_dynamic_and_named() {
     assert_eq!(is_error, Some(false), "`is_error: false` must be preserved");
     assert_eq!(rdynamic, Some(true));
     assert_eq!(
-        rmeta.expect("mcp_tool_result metadata")["anthropic"],
+        serde_json::to_value(&rmeta.expect("mcp_tool_result metadata")["anthropic"]).unwrap(),
         json!({ "type": "mcp-tool-use", "serverName": "deepwiki" })
     );
     assert!(

@@ -13,6 +13,7 @@
 //! or SSE response, creates an `XaiModel` via `XAIProvider`, calls
 //! `do_generate` / `do_stream`, and asserts on the result.
 
+use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
@@ -162,17 +163,13 @@ fn make_provider(server: &MockServer) -> XAIProvider {
 }
 
 /// Provider options with a single xai key.
-fn xai_options(key: &str, value: Value) -> Option<HashMap<String, Value>> {
-    let mut m = HashMap::new();
-    m.insert("xai".to_string(), json!({ key: value }));
-    Some(m)
+fn xai_options(key: &str, value: Value) -> Option<SharedProviderOptions> {
+    Some(provider_namespace("xai", json!({ key: value })))
 }
 
 /// Build provider options from a JSON object.
-fn xai_provider_options(opts: Value) -> Option<HashMap<String, Value>> {
-    let mut m = HashMap::new();
-    m.insert("xai".to_string(), opts);
-    Some(m)
+fn xai_provider_options(opts: Value) -> Option<SharedProviderOptions> {
+    Some(provider_namespace("xai", opts))
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1269,7 +1266,10 @@ mod convert_messages {
                     data: vec![0, 1, 2, 3],
                     media_type: "image/png".to_string(),
                     filename: None,
-                    provider_options: Some(json!({"xai": {"imageDetail": "low"}})),
+                    provider_options: Some(provider_namespace(
+                        "xai",
+                        json!({"imageDetail": "low"}),
+                    )),
                 },
             ],
             ..Default::default()

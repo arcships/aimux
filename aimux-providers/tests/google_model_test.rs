@@ -21,6 +21,7 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
@@ -1927,13 +1928,14 @@ mod request_body {
                         input: json!(r#"{"query":"Singapore weather"}"#),
                         provider_executed: Some(true),
                         thought_signature: None,
-                        provider_options: Some(json!({
-                            "google": {
+                        provider_options: Some(provider_namespace(
+                            "google",
+                            json!({
                                 "serverToolCallId": "server-call-1",
                                 "serverToolType": "GOOGLE_SEARCH_WEB",
                                 "thoughtSignature": "call-signature"
-                            }
-                        })),
+                            }),
+                        )),
                     },
                     ContentPart::ToolResult {
                         tool_call_id: "logical-call-id".to_string(),
@@ -1942,13 +1944,14 @@ mod request_body {
                         is_error: None,
                         preliminary: None,
                         dynamic: None,
-                        provider_options: Some(json!({
-                            "google": {
+                        provider_options: Some(provider_namespace(
+                            "google",
+                            json!({
                                 "serverToolCallId": "server-call-1",
                                 "serverToolType": "GOOGLE_SEARCH_WEB",
                                 "thoughtSignature": "result-signature"
-                            }
-                        })),
+                            }),
+                        )),
                     },
                 ],
                 ..Default::default()

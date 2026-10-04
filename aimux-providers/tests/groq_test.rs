@@ -30,6 +30,7 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, ReasoningOutput};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
@@ -1196,8 +1197,7 @@ mod do_generate {
 
         let model = make_provider(&server);
 
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"reasoningEffort": "high"}));
+        let provider_opts = provider_namespace("groq", json!({"reasoningEffort": "high"}));
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::Medium),
             provider_options: Some(provider_opts),
@@ -1355,9 +1355,8 @@ mod do_generate {
 
         let model = make_provider(&server);
 
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert(
-            "groq".to_string(),
+        let provider_opts = provider_namespace(
+            "groq",
             json!({
                 "reasoningFormat": "hidden",
                 "user": "test-user-id",
@@ -1384,8 +1383,7 @@ mod do_generate {
 
         let model = make_provider(&server);
 
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"serviceTier": "flex"}));
+        let provider_opts = provider_namespace("groq", json!({"serviceTier": "flex"}));
         let options = CallOptions {
             provider_options: Some(provider_opts),
             ..default_options(test_prompt())
@@ -1404,8 +1402,7 @@ mod do_generate {
 
         let model = make_provider(&server);
 
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"serviceTier": "performance"}));
+        let provider_opts = provider_namespace("groq", json!({"serviceTier": "performance"}));
         let options = CallOptions {
             provider_options: Some(provider_opts),
             ..default_options(test_prompt())
@@ -1489,8 +1486,7 @@ mod do_generate {
 
         let model = make_provider(&server);
 
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"structuredOutputs": false}));
+        let provider_opts = provider_namespace("groq", json!({"structuredOutputs": false}));
         let options = CallOptions {
             provider_options: Some(provider_opts),
             response_format: Some(ResponseFormat::Json {
@@ -1525,8 +1521,7 @@ mod do_generate {
 
         let model = make_provider(&server);
 
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"strictJsonSchema": false}));
+        let provider_opts = provider_namespace("groq", json!({"strictJsonSchema": false}));
         let options = CallOptions {
             provider_options: Some(provider_opts),
             response_format: Some(ResponseFormat::Json {

@@ -6,8 +6,6 @@
 //! Uses Bearer token auth to avoid SigV4 signing complexity in tests (the TS
 //! tests use a `fakeFetchWithAuth` that injects auth headers).
 
-use std::collections::HashMap;
-
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -272,8 +270,8 @@ async fn should_pass_output_dimension_cohere_v4() {
     let provider = test_provider(server.uri());
     let model = provider.embedding_model("cohere.embed-v4:0");
 
-    let mut provider_options = HashMap::new();
-    provider_options.insert("bedrock".to_string(), json!({"outputDimension": 256}));
+    let provider_options =
+        aimux_core::shared::provider_namespace("bedrock", json!({"outputDimension": 256}));
     let options = EmbeddingCallOptions {
         values: vec![TEST_VALUES[0].to_string()],
         abort_signal: None,
@@ -355,8 +353,8 @@ async fn should_pass_nova_embedding_dimension() {
     let provider = test_provider(server.uri());
     let model = provider.embedding_model("amazon.nova-2-multimodal-embeddings-v1:0");
 
-    let mut provider_options = HashMap::new();
-    provider_options.insert("bedrock".to_string(), json!({"embeddingDimension": 256}));
+    let provider_options =
+        aimux_core::shared::provider_namespace("bedrock", json!({"embeddingDimension": 256}));
     let options = EmbeddingCallOptions {
         values: vec![TEST_VALUES[0].to_string()],
         abort_signal: None,

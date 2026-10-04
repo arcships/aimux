@@ -14,6 +14,7 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ToolChoice};
 use aimux_core::result::{GenerateContent, Source};
+use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
@@ -53,10 +54,8 @@ fn default_opts(p: LanguageModelPrompt) -> CallOptions {
         recording_context: None,
     }
 }
-fn po(map: Value) -> Option<std::collections::HashMap<String, Value>> {
-    let mut h = std::collections::HashMap::new();
-    h.insert("openai".to_string(), map);
-    Some(h)
+fn po(map: Value) -> Option<SharedProviderOptions> {
+    Some(provider_namespace("openai", map))
 }
 fn sse_event(json_str: &str) -> String {
     format!("data: {json_str}\n\n")

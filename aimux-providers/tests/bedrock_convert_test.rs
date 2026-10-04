@@ -33,6 +33,7 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPromptMessage;
 use aimux_core::message::Role;
 use aimux_core::options::ToolChoice;
+use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::tool::FunctionTool;
 
 use aimux_providers::bedrock::convert::{
@@ -72,7 +73,7 @@ fn file_base64(
     data: &str,
     media_type: &str,
     filename: Option<&str>,
-    provider_options: Option<Value>,
+    provider_options: Option<SharedProviderOptions>,
 ) -> ContentPart {
     ContentPart::FileBase64 {
         data: data.to_string(),
@@ -90,7 +91,10 @@ fn text_with_cache(text: &str, cache_type: &str, ttl: Option<&str>) -> ContentPa
     }
     ContentPart::Text {
         text: text.to_string(),
-        provider_options: Some(json!({ "bedrock": { "cachePoint": Value::Object(cp) } })),
+        provider_options: Some(provider_namespace(
+            "bedrock",
+            json!({ "cachePoint": Value::Object(cp) }),
+        )),
     }
 }
 
@@ -747,7 +751,10 @@ fn citations_enabled_for_pdf() {
         "AAECAw==",
         "application/pdf",
         None,
-        Some(json!({ "bedrock": { "citations": { "enabled": true } } })),
+        Some(provider_namespace(
+            "bedrock",
+            json!({ "citations": { "enabled": true } }),
+        )),
     )])]);
     assert_eq!(
         messages[0]["content"][0],
@@ -769,7 +776,10 @@ fn citations_disabled_for_pdf() {
         "AAECAw==",
         "application/pdf",
         None,
-        Some(json!({ "bedrock": { "citations": { "enabled": false } } })),
+        Some(provider_namespace(
+            "bedrock",
+            json!({ "citations": { "enabled": false } }),
+        )),
     )])]);
     assert_eq!(
         messages[0]["content"][0],
@@ -814,13 +824,19 @@ fn citations_multiple_pdfs() {
             "AAECAw==",
             "application/pdf",
             None,
-            Some(json!({ "bedrock": { "citations": { "enabled": true } } })),
+            Some(provider_namespace(
+                "bedrock",
+                json!({ "citations": { "enabled": true } }),
+            )),
         ),
         file_base64(
             "BAUGBw==",
             "application/pdf",
             None,
-            Some(json!({ "bedrock": { "citations": { "enabled": false } } })),
+            Some(provider_namespace(
+                "bedrock",
+                json!({ "citations": { "enabled": false } }),
+            )),
         ),
     ])]);
     assert_eq!(

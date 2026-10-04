@@ -3,8 +3,6 @@
 //! Source: `reference/ai/packages/cohere/src/reranking/cohere-reranking-model.test.ts`
 //! (12 test cases across "json documents" and "text documents" groups).
 
-use std::collections::HashMap;
-
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -33,13 +31,11 @@ fn provider(server: &MockServer) -> CohereProvider {
     CohereProvider::new(config)
 }
 
-fn cohere_provider_options() -> HashMap<String, Value> {
-    let mut po = HashMap::new();
-    po.insert(
-        "cohere".to_string(),
+fn cohere_provider_options() -> aimux_core::shared::SharedProviderOptions {
+    aimux_core::shared::provider_namespace(
+        "cohere",
         json!({ "maxTokensPerDoc": 1000, "priority": 1 }),
-    );
-    po
+    )
 }
 
 fn text_docs_opts(query: &str, top_n: u32) -> RerankingCallOptions {

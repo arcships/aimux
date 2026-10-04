@@ -14,11 +14,10 @@
 //! mid-conversation system messages, citations, ...) are intentionally omitted
 //! and documented in the task summary rather than translated here.
 
-use std::collections::HashMap;
-
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPromptMessage;
 use aimux_core::message::Role;
+use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::tool::{FunctionTool, ToolChoice};
 use aimux_core::types::Warning;
 use aimux_providers::anthropic::convert::convert_prompt_to_anthropic;
@@ -55,10 +54,8 @@ fn ftool(name: &str, desc: &str, schema: Value) -> FunctionTool {
     FunctionTool::new(name.to_string(), schema).with_description(desc.to_string())
 }
 
-fn anthropic_opts(value: Value) -> Option<HashMap<String, Value>> {
-    let mut map = HashMap::new();
-    map.insert("anthropic".to_string(), value);
-    Some(map)
+fn anthropic_opts(value: Value) -> Option<SharedProviderOptions> {
+    Some(provider_namespace("anthropic", value))
 }
 
 /// Decode a base64 string into raw bytes (mirrors the TS `data: { type: 'data',

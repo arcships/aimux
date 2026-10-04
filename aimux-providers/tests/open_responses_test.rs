@@ -1333,10 +1333,8 @@ mod do_generate_tests {
 
     // -- ProviderOptions reasoning tests --
 
-    fn lmstudio_opts(value: Value) -> Option<HashMap<String, Value>> {
-        let mut m = HashMap::new();
-        m.insert("lmstudio".to_string(), value);
-        Some(m)
+    fn lmstudio_opts(value: Value) -> Option<aimux_core::shared::SharedProviderOptions> {
+        Some(aimux_core::shared::provider_namespace("lmstudio", value))
     }
 
     #[tokio::test]

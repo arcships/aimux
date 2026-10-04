@@ -134,9 +134,8 @@ fn openai_chat_golden() {
 
 #[test]
 fn responses_golden() {
-    let mut provider = std::collections::HashMap::new();
-    provider.insert(
-        "openai".to_string(),
+    let provider = aimux_core::shared::provider_namespace(
+        "openai",
         json!({
             "reasoningEffort": "high",
             "textVerbosity": "low",
@@ -197,9 +196,8 @@ fn responses_golden() {
 
 #[test]
 fn anthropic_golden() {
-    let mut provider = std::collections::HashMap::new();
-    provider.insert(
-        "anthropic".to_string(),
+    let provider = aimux_core::shared::provider_namespace(
+        "anthropic",
         json!({
             "thinking": { "type": "enabled", "budgetTokens": 4096 }
         }),
