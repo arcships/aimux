@@ -20,23 +20,52 @@ use aimux_core::provider::Provider;
 use crate::preset::{self, PresetSettings};
 
 /// The vendor packages, by the name of their default instance.
-const PACKAGES: [&str; 16] = [
+const PACKAGES: [&str; 45] = [
     "amazon_bedrock",
     "anthropic",
     "anthropic_aws",
+    "assemblyai",
+    "aws_polly",
     "azure",
+    "black_forest_labs",
+    "cartesia",
     "codex",
     "cohere",
+    "dataforseo",
+    "deepgram",
     "deepseek",
     "elevenlabs",
+    "exa_ai",
+    "fal",
+    "firecrawl",
+    "gladia",
     "google",
+    "google_pse",
     "google_vertex",
     "groq",
     "huggingface",
+    "hume",
+    "jina_ai",
+    "klingai",
+    "linkup",
+    "lmnt",
+    "luma",
     "mistral",
     "openai",
+    "parallel_ai",
+    "prodia",
+    "recraft",
+    "replicate",
+    "revai",
+    "runwayml",
+    "searxng",
+    "serper",
+    "stability",
+    "tavily",
+    "tinyfish",
     "voyage",
     "xai",
+    "you_com",
 ];
 
 /// The names [`create_provider`] accepts: the vendor packages and every
@@ -81,10 +110,7 @@ pub fn create_provider(
     if !params.is_empty() {
         return unsupported("params");
     }
-    if transform_request_body.is_some() {
-        return unsupported("transform_request_body");
-    }
-    // The packages whose settings carry the same four fields.
+    // The packages whose settings also support a body transform.
     macro_rules! package {
         ($module:ident, $create:ident, $settings:ident) => {
             Ok(Arc::new(crate::$module::$create(
@@ -93,10 +119,27 @@ pub fn create_provider(
                     base_url,
                     headers,
                     fetch,
+                    transform_request_body,
                     ..Default::default()
                 },
             )?))
         };
+    }
+    macro_rules! package_without_transform {
+        ($module:ident, $create:ident, $settings:ident $(, $api_key:ident)?) => {{
+            if transform_request_body.is_some() {
+                return unsupported("transform_request_body");
+            }
+            Ok(Arc::new(crate::$module::$create(
+                crate::$module::$settings {
+                    $($api_key,)?
+                    base_url,
+                    headers,
+                    fetch,
+                    ..Default::default()
+                },
+            )?))
+        }};
     }
     match name {
         "amazon_bedrock" => package!(
@@ -116,19 +159,120 @@ pub fn create_provider(
         "openai" => package!(openai, create_openai, OpenAIProviderSettings),
         "voyage" => package!(voyage, create_voyage, VoyageProviderSettings),
         "xai" => package!(xai, create_xai, XAIProviderSettings),
-        "google_vertex" => {
-            if headers.is_some() {
-                return unsupported("headers");
-            }
-            Ok(Arc::new(crate::vertex::create_google_vertex(
-                crate::vertex::VertexProviderSettings {
-                    api_key,
-                    base_url,
-                    fetch,
-                    ..Default::default()
-                },
-            )?))
+        "assemblyai" => package_without_transform!(
+            assemblyai,
+            create_assemblyai,
+            AssemblyAIProviderSettings,
+            api_key
+        ),
+        "black_forest_labs" => package_without_transform!(
+            black_forest_labs,
+            create_black_forest_labs,
+            BlackForestLabsProviderSettings,
+            api_key
+        ),
+        "cartesia" => {
+            package_without_transform!(cartesia, create_cartesia, CartesiaProviderSettings, api_key)
         }
+        "deepgram" => {
+            package_without_transform!(deepgram, create_deepgram, DeepgramProviderSettings, api_key)
+        }
+        "exa_ai" => {
+            package_without_transform!(exa_ai, create_exa_ai, ExaAiProviderSettings, api_key)
+        }
+        "fal" => package_without_transform!(fal, create_fal, FalProviderSettings, api_key),
+        "firecrawl" => package_without_transform!(
+            firecrawl,
+            create_firecrawl,
+            FirecrawlProviderSettings,
+            api_key
+        ),
+        "gladia" => {
+            package_without_transform!(gladia, create_gladia, GladiaProviderSettings, api_key)
+        }
+        "google_pse" => package_without_transform!(
+            google_pse,
+            create_google_pse,
+            GooglePseProviderSettings,
+            api_key
+        ),
+        "hume" => package_without_transform!(hume, create_hume, HumeProviderSettings, api_key),
+        "jina_ai" => {
+            package_without_transform!(jina_ai, create_jina_ai, JinaAiProviderSettings, api_key)
+        }
+        "klingai" => {
+            package_without_transform!(klingai, create_klingai, KlingAIProviderSettings, api_key)
+        }
+        "linkup" => {
+            package_without_transform!(linkup, create_linkup, LinkupProviderSettings, api_key)
+        }
+        "lmnt" => package_without_transform!(lmnt, create_lmnt, LMNTProviderSettings, api_key),
+        "luma" => package_without_transform!(luma, create_luma, LumaProviderSettings, api_key),
+        "parallel_ai" => package_without_transform!(
+            parallel_ai,
+            create_parallel_ai,
+            ParallelAiProviderSettings,
+            api_key
+        ),
+        "prodia" => {
+            package_without_transform!(prodia, create_prodia, ProdiaProviderSettings, api_key)
+        }
+        "recraft" => {
+            package_without_transform!(recraft, create_recraft, RecraftProviderSettings, api_key)
+        }
+        "replicate" => package_without_transform!(
+            replicate,
+            create_replicate,
+            ReplicateProviderSettings,
+            api_key
+        ),
+        "revai" => package_without_transform!(revai, create_revai, RevaiProviderSettings, api_key),
+        "runwayml" => {
+            package_without_transform!(runwayml, create_runwayml, RunwaymlProviderSettings, api_key)
+        }
+        "searxng" => {
+            package_without_transform!(searxng, create_searxng, SearxngProviderSettings, api_key)
+        }
+        "serper" => {
+            package_without_transform!(serper, create_serper, SerperProviderSettings, api_key)
+        }
+        "stability" => package_without_transform!(
+            stability,
+            create_stability,
+            StabilityProviderSettings,
+            api_key
+        ),
+        "tavily" => {
+            package_without_transform!(tavily, create_tavily, TavilyProviderSettings, api_key)
+        }
+        "tinyfish" => {
+            package_without_transform!(tinyfish, create_tinyfish, TinyfishProviderSettings, api_key)
+        }
+        "you_com" => {
+            package_without_transform!(you_com, create_you_com, YouComProviderSettings, api_key)
+        }
+        "aws_polly" => {
+            if api_key.is_some() {
+                return unsupported("api_key");
+            }
+            package_without_transform!(aws_polly, create_aws_polly, AwsPollyProviderSettings)
+        }
+        "dataforseo" => {
+            if api_key.is_some() {
+                return unsupported("api_key");
+            }
+            package_without_transform!(dataforseo, create_dataforseo, DataforseoProviderSettings)
+        }
+        "google_vertex" => Ok(Arc::new(crate::vertex::create_google_vertex(
+            crate::vertex::VertexProviderSettings {
+                api_key,
+                base_url,
+                headers: headers.map(Into::into),
+                fetch,
+                transform_request_body,
+                ..Default::default()
+            },
+        )?)),
         "anthropic_aws" | "codex" => {
             if api_key.is_some() {
                 return unsupported("api_key");
@@ -139,6 +283,7 @@ pub fn create_provider(
                         base_url,
                         headers,
                         fetch,
+                        transform_request_body,
                         ..Default::default()
                     },
                 )?))
@@ -148,6 +293,7 @@ pub fn create_provider(
                         base_url,
                         headers,
                         fetch,
+                        transform_request_body,
                         ..Default::default()
                     },
                 )?))
