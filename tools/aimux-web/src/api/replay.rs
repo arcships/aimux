@@ -70,7 +70,21 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
         state.loopback,
     )?;
 
-    let model = aimux_providers::rebuild_provider(&recording.provider, key.as_deref())?;
+    let mut providers = aimux_providers::default_providers();
+    if let Some(key) = key {
+        providers.insert(
+            recording.provider.provider_id.clone(),
+            aimux_providers::create_provider(
+                &recording.provider.provider_id,
+                aimux_providers::PresetSettings {
+                    api_key: Some(key.into()),
+                    ..Default::default()
+                },
+            )?,
+        );
+    }
+    let registry = aimux_core::create_provider_registry(providers, Default::default());
+    let model = aimux_providers::rebuild_provider(&recording.provider, &registry)?;
 
     let mut overrides = ReplayOverrides {
         prompt: None,

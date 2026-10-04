@@ -123,7 +123,21 @@ fn prompt_text(
 
 /// 真实回放:重建 provider → replay_with_model → 打印结果。
 fn run_replay(rec: &Recording, api_key: Option<&str>, prompt: Option<&str>) -> Result<()> {
-    let model = rebuild_provider(&rec.provider, api_key)
+    let mut providers = aimux_providers::default_providers();
+    if let Some(key) = api_key {
+        providers.insert(
+            rec.provider.provider_id.clone(),
+            aimux_providers::create_provider(
+                &rec.provider.provider_id,
+                aimux_providers::PresetSettings {
+                    api_key: Some(key.to_string().into()),
+                    ..Default::default()
+                },
+            )?,
+        );
+    }
+    let registry = aimux_core::create_provider_registry(providers, Default::default());
+    let model = rebuild_provider(&rec.provider, &registry)
         .with_context(|| format!("rebuild provider for '{}'", rec.provider.provider_id))?;
 
     let overrides = prompt.map(|text| ReplayOverrides {

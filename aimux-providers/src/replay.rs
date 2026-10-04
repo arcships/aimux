@@ -5,10 +5,9 @@
 //! 是 provider 无关的输入重建 + 重发;本模块负责"按录制身份重建 model"。
 //!
 //! 录制只记身份(`provider_id` / `provider` / `model_id`),不记配置
-//! (RFC-0036 §3.3)。重建按 `provider_id` 走
-//! [`create_provider`](crate::create_provider),厂商包与 registry 行同一入口:
-//! base URL 来自厂商包或 registry,凭证来自调用方显式传入的 key,否则在请求时
-//! 读该厂商的环境变量。重建出的 model 若与录制时的 `provider` 不是同一个
+//! (RFC-0036 §3.3)。重建按 `provider_id` 从调用方的 registry 取 provider,
+//! 保留其配置,再按 `model_id` 取语言模型。重建出的 model 若与录制时的
+//! `provider` 不是同一个
 //! (例如录制用的是 `openai.responses`,默认语言模型是 `openai.chat`),拒绝
 //! 重建:调用方需传 model 实例给
 //! [`replay_with_model`](aimux_core::replay::replay_with_model)。
@@ -17,21 +16,21 @@ use std::sync::Arc;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
+use aimux_core::provider_registry::ProviderRegistry;
 use aimux_core::recording::ProviderRecord;
 
 /// 按 `ProviderRecord` 的 `provider_id` + `model_id` 重建 model。
 ///
-/// `api_key` 为 `None` 时在请求时读该厂商的环境变量。
+/// 使用调用方 registry 中的 provider 配置。
 ///
 /// # Errors
 ///
 /// `InvalidArgument` for an empty `provider_id` or `model_id`, or when the
 /// provider's default language model is not the one the recording was made
-/// with; [`AiMuxError::NoSuchProvider`] when `provider_id` is not a built-in
-/// provider.
+/// with; [`AiMuxError::NoSuchProvider`] when `provider_id` is not registered.
 pub fn rebuild_provider(
     p: &ProviderRecord,
-    api_key: Option<&str>,
+    registry: &ProviderRegistry,
 ) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
     if p.provider_id.is_empty() {
         return Err(AiMuxError::InvalidArgument(
@@ -43,14 +42,9 @@ pub fn rebuild_provider(
             "mock replay: provider record has empty model_id".into(),
         ));
     }
-    let model = crate::create_provider(
-        &p.provider_id,
-        crate::PresetSettings {
-            api_key: api_key.map(|key| key.to_string().into()),
-            ..Default::default()
-        },
-    )?
-    .language_model(&p.model_id)?;
+    let model = registry
+        .provider(&p.provider_id)?
+        .language_model(&p.model_id)?;
     if model.provider() != p.provider {
         return Err(AiMuxError::InvalidArgument(format!(
             "mock replay: the recording was made with `{}` but provider '{}' rebuilds `{}`; \
@@ -69,36 +63,46 @@ mod tests {
     use aimux_core::recording::Recorder;
 
     #[test]
-    fn rebuilds_a_registry_row_and_a_vendor_package_by_id() {
-        let p = ProviderRecord::new("abacus", "abacus.chat", "some-model");
-        let model = rebuild_provider(&p, Some("sk-test")).unwrap();
+    fn rebuilds_a_registered_alias_and_a_vendor_package_by_id() {
+        let mut providers = crate::default_providers();
+        let provider = providers.remove("abacus").unwrap();
+        providers.insert("custom".into(), provider);
+        let registry = aimux_core::create_provider_registry(providers, Default::default());
+        let p = ProviderRecord::new("custom", "abacus.chat", "some-model");
+        let model = rebuild_provider(&p, &registry).unwrap();
         assert_eq!(model.provider(), "abacus.chat");
         assert_eq!(model.model_id(), "some-model");
 
-        let p = ProviderRecord::new("anthropic", "anthropic.messages", "claude-x");
-        let model = rebuild_provider(&p, Some("sk-test")).unwrap();
+        let p = ProviderRecord::new("anthropic", "anthropic.messages", "some-model");
+        let model = rebuild_provider(&p, &registry).unwrap();
         assert_eq!(model.provider(), "anthropic.messages");
     }
 
     #[test]
     fn a_recording_made_with_another_method_is_refused() {
+        let registry =
+            aimux_core::create_provider_registry(crate::default_providers(), Default::default());
         // The default OpenAI language model is chat; a Responses recording
         // must not be replayed against it.
-        let p = ProviderRecord::new("openai", "openai.responses", "gpt-x");
-        let err = rebuild_provider(&p, Some("sk-test")).err().unwrap();
+        let p = ProviderRecord::new("openai", "openai.responses", "some-model");
+        let err = rebuild_provider(&p, &registry).err().unwrap();
         assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
     }
 
     #[test]
     fn an_unknown_provider_id_is_no_such_provider() {
+        let registry =
+            aimux_core::create_provider_registry(crate::default_providers(), Default::default());
         let p = ProviderRecord::new("nope", "nope.chat", "m");
-        let err = rebuild_provider(&p, Some("sk")).err().unwrap();
+        let err = rebuild_provider(&p, &registry).err().unwrap();
         assert!(matches!(err, AiMuxError::NoSuchProvider { .. }), "{err}");
     }
 
     #[test]
     fn empty_model_id_errors() {
-        let err = rebuild_provider(&ProviderRecord::new("groq", "groq.chat", ""), Some("sk"))
+        let registry =
+            aimux_core::create_provider_registry(crate::default_providers(), Default::default());
+        let err = rebuild_provider(&ProviderRecord::new("groq", "groq.chat", ""), &registry)
             .err()
             .unwrap();
         assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
@@ -106,7 +110,9 @@ mod tests {
 
     #[test]
     fn empty_provider_id_errors() {
-        let err = rebuild_provider(&ProviderRecord::new("", "", "m"), Some("sk"))
+        let registry =
+            aimux_core::create_provider_registry(crate::default_providers(), Default::default());
+        let err = rebuild_provider(&ProviderRecord::new("", "", "m"), &registry)
             .err()
             .unwrap();
         assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
@@ -127,8 +133,11 @@ mod tests {
                 provider_options: None,
             },
         ]);
-        ring.record_input("c1", &options, "openai.chat", "gpt-4o");
-        ring.record_provider("c1", &ProviderRecord::from_model("openai.chat", "gpt-4o"));
+        ring.record_input("c1", &options, "openai.chat", "some-model");
+        ring.record_provider(
+            "c1",
+            &ProviderRecord::from_model("openai.chat", "some-model"),
+        );
         ring.record_outcome(
             "c1",
             &aimux_core::recording::OutcomeRecord {
@@ -150,7 +159,7 @@ mod tests {
             serde_json::json!({
                 "provider_id": "openai",
                 "provider": "openai.chat",
-                "model_id": "gpt-4o",
+                "model_id": "some-model",
             })
         );
     }
