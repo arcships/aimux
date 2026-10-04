@@ -148,11 +148,6 @@ macro_rules! __optional_model {
 pub mod provider;
 pub mod replay;
 pub use preset::{AuthMode, PresetDescriptor, PresetEntry, PresetFamily, PresetSettings};
-pub use provider::{
-    ExternalProviderEntry, ProviderOptions, ProviderProfile, is_external_provider,
-    load_providers_from_json, provider, provider_discovery, provider_from_env, provider_handle,
-    provider_names, provider_registry_entry, register_provider, reject_removed_provider_options,
-};
 pub use replay::rebuild_provider;
 
 pub mod catalogue;
@@ -170,7 +165,7 @@ pub mod groq;
 pub mod mistral;
 pub mod openai;
 pub mod openai_compatible;
-pub use default_providers::{create_provider, default_providers};
+pub use default_providers::{create_provider, default_providers, provider_names};
 pub mod preset;
 pub(crate) mod shared;
 pub mod vertex;

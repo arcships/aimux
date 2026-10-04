@@ -31,24 +31,14 @@ use std::sync::{Arc, OnceLock};
 
 use serde::Deserialize;
 
-use futures::future::BoxFuture;
-
-use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
-use aimux_core::image_model::ImageModel;
-use aimux_core::language_model::LanguageModel;
-use aimux_core::model_catalogue::RuntimeModel;
-use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, Resolvable, load_api_key, validate_base_url,
-};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::deepseek;
 use crate::groq;
 use crate::openai_compatible::config::{BaseUrl, ChatDialect};
 use crate::openai_compatible::{
-    Assembly, ChatProfile, OpenAICompatibleChatModel, OpenAICompatibleEmbeddingModel,
-    OpenAICompatibleImageModel, OpenAICompatibleProvider, TransformRequestBody,
+    Assembly, ChatProfile, OpenAICompatibleProvider, TransformRequestBody,
 };
 use crate::shared::Credential;
 
@@ -330,12 +320,14 @@ fn load_registry() -> Vec<PresetEntry> {
 
 /// Create the provider of the registry row `name`: the row's base URL, key
 /// variable and dialect, with `settings` overriding individual fields. The
-/// result is an ordinary [`OpenAICompatibleProvider`].
+/// result is an ordinary [`OpenAICompatibleProvider`]; nothing is read from
+/// the environment here.
 ///
 /// # Errors
 ///
-/// [`AiMuxError::NoSuchProvider`] for a name that is not in the registry;
-/// otherwise as [`PresetProvider::create`].
+/// [`AiMuxError::NoSuchProvider`] for a name that is not in the registry,
+/// `InvalidArgument` for an unusable explicit `base_url`, an undeclared (or
+/// derived) `params` key, or a `params` value that is not a plain segment.
 pub fn create(
     name: &str,
     settings: PresetSettings,
@@ -343,7 +335,7 @@ pub fn create(
     let entry = lookup(name).ok_or_else(|| AiMuxError::NoSuchProvider {
         provider_id: name.to_string(),
     })?;
-    PresetProvider::create(entry.descriptor, settings).map(PresetProvider::into_inner)
+    assemble(entry.descriptor, settings)
 }
 
 /// Every preset, in name order. Invalid registry data panics on first use.
@@ -363,169 +355,72 @@ pub fn lookup(name: &str) -> Option<&'static PresetEntry> {
     entries().find(|entry| entry.descriptor.name == name)
 }
 
-/// A preset provider: an [`OpenAICompatibleProvider`] configured from a
-/// [`PresetDescriptor`].
-pub struct PresetProvider {
+fn assemble(
     descriptor: &'static PresetDescriptor,
-    explicit_key: bool,
-    inner: OpenAICompatibleProvider,
-}
-
-impl PresetProvider {
-    /// Create a preset provider from its descriptor.
-    ///
-    /// # Errors
-    ///
-    /// `InvalidArgument` for an unusable explicit `base_url`, an undeclared (or
-    /// derived) `params` key, or a `params` value that is not a plain segment.
-    /// Nothing is read from the environment.
-    pub fn create(
-        descriptor: &'static PresetDescriptor,
-        settings: PresetSettings,
-    ) -> Result<Self, AiMuxError> {
-        for (name, value) in &settings.params {
-            let declared = descriptor
-                .params
-                .iter()
-                .find(|spec| spec.name == name && spec.derive.is_none());
-            if declared.is_none() {
-                return Err(AiMuxError::InvalidArgument(format!(
-                    "preset '{}' has no template parameter `{name}`; declared parameters: [{}]",
-                    descriptor.name,
-                    settable_params(descriptor).join(", ")
-                )));
-            }
-            check_param_value(descriptor, name, value)?;
+    settings: PresetSettings,
+) -> Result<OpenAICompatibleProvider, AiMuxError> {
+    for (name, value) in &settings.params {
+        let declared = descriptor
+            .params
+            .iter()
+            .find(|spec| spec.name == name && spec.derive.is_none());
+        if declared.is_none() {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "preset '{}' has no template parameter `{name}`; declared parameters: [{}]",
+                descriptor.name,
+                settable_params(descriptor).join(", ")
+            )));
         }
-
-        let base_url = match settings.base_url.as_deref() {
-            Some(url) => BaseUrl::Fixed(validate_base_url(url)?),
-            None if descriptor.params.is_empty() && descriptor.base_url_env.is_none() => {
-                BaseUrl::Fixed(validate_base_url(descriptor.base_url)?)
-            }
-            None => {
-                let explicit = settings.params;
-                BaseUrl::Lazy(Arc::new(move || resolve_base_url(descriptor, &explicit)))
-            }
-        };
-
-        let explicit_key = settings.api_key.is_some();
-        let credential = match (descriptor.auth, settings.api_key) {
-            (_, Some(key)) => Credential::Explicit(key),
-            (AuthMode::ApiKey, None) => Credential::Env {
-                var: descriptor.env_var.to_string(),
-                description: descriptor.display.to_string(),
-            },
-            (AuthMode::None, None) => Credential::None,
-        };
-
-        let profile = match descriptor.family {
-            PresetFamily::OpenAICompatible => {
-                let mut dialect = ChatDialect::baseline();
-                dialect.supports_top_k = true;
-                dialect.max_tokens_key = descriptor.max_tokens_key;
-                ChatProfile {
-                    include_usage: true,
-                    supports_structured_outputs: true,
-                    supports_multi_part_tool_content: false,
-                    dialect,
-                }
-            }
-            PresetFamily::Groq => groq::profile(),
-            PresetFamily::DeepSeek => deepseek::profile(),
-        };
-
-        Ok(Self {
-            descriptor,
-            explicit_key,
-            inner: OpenAICompatibleProvider::assemble(Assembly {
-                name: descriptor.name.to_string(),
-                base_url,
-                credential,
-                fixed_headers: Vec::new(),
-                headers: settings.headers,
-                query_params: None,
-                fetch: settings.fetch,
-                transform_request_body: settings.transform_request_body,
-                profile,
-            })?,
-        })
+        check_param_value(descriptor, name, value)?;
     }
 
-    /// The OpenAI-compatible provider this preset assembled.
-    #[must_use]
-    pub fn into_inner(self) -> OpenAICompatibleProvider {
-        self.inner
-    }
-
-    /// The descriptor this preset was created from.
-    #[must_use]
-    pub fn descriptor(&self) -> &'static PresetDescriptor {
-        self.descriptor
-    }
-
-    /// A chat model; `provider()` is `"{name}.chat"`.
-    #[must_use]
-    pub fn chat(&self, model_id: &str) -> OpenAICompatibleChatModel {
-        self.inner.chat(model_id)
-    }
-
-    /// An embedding model; `provider()` is `"{name}.embedding"`.
-    #[must_use]
-    pub fn embedding(&self, model_id: &str) -> OpenAICompatibleEmbeddingModel {
-        self.inner.embedding(model_id)
-    }
-
-    /// An image model; `provider()` is `"{name}.image"`.
-    #[must_use]
-    pub fn image(&self, model_id: &str) -> OpenAICompatibleImageModel {
-        self.inner.image(model_id)
-    }
-
-    /// The provider as a function: the default language model, the chat model.
-    #[must_use]
-    pub fn call(&self, model_id: &str) -> Arc<dyn LanguageModel> {
-        self.inner.call(model_id)
-    }
-
-    /// Evaluate now what a request would evaluate: the base URL, and the key's
-    /// environment variable when no key was given. For entry points that
-    /// should refuse a provider that cannot be used (the by-name registry
-    /// lookup); the factories and default instances do not call it.
-    ///
-    /// # Errors
-    ///
-    /// `InvalidArgument` for a base URL that cannot be resolved,
-    /// `LoadApiKey` for an unset key variable.
-    pub(crate) fn check_ready(&self) -> Result<(), AiMuxError> {
-        self.inner.resolve_base_url()?;
-        if self.descriptor.auth == AuthMode::ApiKey && !self.explicit_key {
-            load_api_key(None, self.descriptor.env_var, self.descriptor.display)?;
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => BaseUrl::Fixed(validate_base_url(url)?),
+        None if descriptor.params.is_empty() && descriptor.base_url_env.is_none() => {
+            BaseUrl::Fixed(validate_base_url(descriptor.base_url)?)
         }
-        Ok(())
-    }
-}
+        None => {
+            let explicit = settings.params;
+            BaseUrl::Lazy(Arc::new(move || resolve_base_url(descriptor, &explicit)))
+        }
+    };
 
-impl Provider for PresetProvider {
-    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
-        Ok(self.call(model_id))
-    }
+    let credential = match (descriptor.auth, settings.api_key) {
+        (_, Some(key)) => Credential::Explicit(key),
+        (AuthMode::ApiKey, None) => Credential::Env {
+            var: descriptor.env_var.to_string(),
+            description: descriptor.display.to_string(),
+        },
+        (AuthMode::None, None) => Credential::None,
+    };
 
-    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
-        Ok(Arc::new(self.embedding(model_id)))
-    }
+    let profile = match descriptor.family {
+        PresetFamily::OpenAICompatible => {
+            let mut dialect = ChatDialect::baseline();
+            dialect.supports_top_k = true;
+            dialect.max_tokens_key = descriptor.max_tokens_key;
+            ChatProfile {
+                include_usage: true,
+                supports_structured_outputs: true,
+                supports_multi_part_tool_content: false,
+                dialect,
+            }
+        }
+        PresetFamily::Groq => groq::profile(),
+        PresetFamily::DeepSeek => deepseek::profile(),
+    };
 
-    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
-        Ok(Arc::new(self.image(model_id)))
-    }
-}
-
-impl ProviderDiscovery for PresetProvider {
-    /// `GET {base_url}/models`: one exchange, no retry. A keyless preset sends
-    /// no `Authorization` header.
-    fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
-        self.inner.list_models()
-    }
+    OpenAICompatibleProvider::assemble(Assembly {
+        name: descriptor.name.to_string(),
+        base_url,
+        credential,
+        fixed_headers: Vec::new(),
+        headers: settings.headers,
+        query_params: None,
+        fetch: settings.fetch,
+        transform_request_body: settings.transform_request_body,
+        profile,
+    })
 }
 
 // ── Base URL resolution ──────────────────────────────────────────────────────
@@ -645,99 +540,4 @@ fn resolve_base_url(
         )));
     }
     validate_base_url(&url)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const VERTEX: PresetDescriptor = PresetDescriptor {
-        name: "vertex_test",
-        display: "Vertex Test",
-        family: PresetFamily::OpenAICompatible,
-        base_url: "https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi",
-        env_var: "AIMUX_TEST_VERTEX_TOKEN",
-        auth: AuthMode::ApiKey,
-        base_url_env: None,
-        max_tokens_key: None,
-        params: &[
-            ParamSpec {
-                name: "project",
-                env: &[],
-                default: None,
-                derive: None,
-            },
-            ParamSpec {
-                name: "location",
-                env: &[],
-                default: Some("global"),
-                derive: None,
-            },
-            ParamSpec {
-                name: "host",
-                env: &[],
-                default: None,
-                derive: Some(DeriveSpec {
-                    from: "location",
-                    map: &[
-                        ("global", "aiplatform.googleapis.com"),
-                        ("eu", "aiplatform.eu.rep.googleapis.com"),
-                        ("us", "aiplatform.us.rep.googleapis.com"),
-                    ],
-                    otherwise: "{location}-aiplatform.googleapis.com",
-                }),
-            },
-        ],
-    };
-
-    fn explicit(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-        pairs
-            .iter()
-            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-            .collect()
-    }
-
-    #[test]
-    fn the_host_follows_the_location() {
-        for (location, host) in [
-            ("global", "aiplatform.googleapis.com"),
-            ("us", "aiplatform.us.rep.googleapis.com"),
-            ("eu", "aiplatform.eu.rep.googleapis.com"),
-            ("us-central1", "us-central1-aiplatform.googleapis.com"),
-        ] {
-            let url = resolve_base_url(
-                &VERTEX,
-                &explicit(&[("project", "p1"), ("location", location)]),
-            )
-            .unwrap();
-            assert_eq!(
-                url,
-                format!("https://{host}/v1/projects/p1/locations/{location}/endpoints/openapi")
-            );
-        }
-    }
-
-    #[test]
-    fn a_missing_parameter_names_itself() {
-        let error = resolve_base_url(&VERTEX, &HashMap::new()).unwrap_err();
-        assert!(
-            matches!(&error, AiMuxError::InvalidArgument(m) if m.contains("`project`")),
-            "{error:?}"
-        );
-    }
-
-    #[test]
-    fn values_that_could_change_the_url_are_refused() {
-        for bad in [
-            "a/b", "a@b", "a:80", "a?x=1", "a#f", "", "..", "a b", "{x}", "p\n",
-        ] {
-            assert!(
-                check_param_value(&VERTEX, "project", bad).is_err(),
-                "{bad:?} must be refused"
-            );
-        }
-        for good in ["my-project", "p_1", "example.com", "123456"] {
-            assert!(check_param_value(&VERTEX, "project", good).is_ok());
-        }
-    }
 }

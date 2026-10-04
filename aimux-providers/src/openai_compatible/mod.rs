@@ -234,13 +234,6 @@ impl OpenAICompatibleProvider {
         })
     }
 
-    /// Resolve the base URL now. For a plain provider this is the validated
-    /// URL; for a preset whose URL comes from the environment or template
-    /// parameters it evaluates them (and fails like a request would).
-    pub(crate) fn resolve_base_url(&self) -> Result<String, AiMuxError> {
-        self.base_url.resolve()
-    }
-
     fn model_config(&self, method: &str) -> CompatModelConfig {
         CompatModelConfig {
             provider: format!("{}.{method}", self.name),
