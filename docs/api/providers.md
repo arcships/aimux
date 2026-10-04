@@ -9,7 +9,7 @@
 
 | category | count |
 |----------|-------|
-| Registry-backed OpenAI-compatible (`provider(name, ...)`) | 283 |
+| Registry-backed OpenAI-compatible (`provider(name, ...)`) | 281 |
 | Non-registry: Native protocol providers | 13 |
 | Non-registry: Speech-only providers (TTS) | 4 |
 | Non-registry: Transcription-only providers (STT) | 5 |
@@ -22,11 +22,11 @@
 | Non-registry: Stability image provider (image modality only) | 1 |
 | Non-registry: Video-only provider (runwayml) | 1 |
 | Non-registry: Search-only providers (web search modality) | 11 |
-| **Total providers** | **327** |
+| **Total providers** | **325** |
 
-**283 registry-backed OpenAI-compatible providers** (create presets by name via `provider(name, ...)`) + **44 non-registry providers** (construct via the typed factories listed below).
+**281 registry-backed OpenAI-compatible providers** (create presets by name via `provider(name, ...)`) + **44 non-registry providers** (construct via the typed factories listed below).
 
-## Registry-backed (OpenAI-compatible) — 283
+## Registry-backed (OpenAI-compatible) — 281
 
 | name | display | auth | env var | base_url |
 |------|---------|------|---------|----------|
@@ -100,7 +100,6 @@
 | `datarobot` | DataRobot | api_key | `DATAROBOT_API_TOKEN` | `https://app.datarobot.com/api/v2` |
 | `deepbricks` | DeepBricks | api_key | `DEEPBRICKS_API_KEY` | `https://api.deepbricks.ai/v1` |
 | `deepinfra` | DeepInfra | api_key | `DEEPINFRA_API_KEY` | `https://api.deepinfra.com/v1/openai` |
-| `deepseek` | DeepSeek | api_key | `DEEPSEEK_API_KEY` | `https://api.deepseek.com/v1` (dialect: `deepseek`) |
 | `digitalocean` | DigitalOcean | api_key | `DIGITALOCEAN_ACCESS_TOKEN` | `https://inference.do-ai.run` |
 | `dinference` | DInference | api_key | `DINFERENCE_API_KEY` | `https://api.dinference.com/v1` |
 | `docker_model_runner` | Docker Model Runner | none | — | `http://model-runner.docker.internal/engines/llama.cpp/v1` (URL from `DOCKER_MODEL_RUNNER_BASE_URL`) |
@@ -129,7 +128,6 @@
 | `gmicloud` | GMI Cloud | api_key | `GMI_API_KEY` | `https://api.gmi-serving.com/v1` |
 | `gonka24` | Gonka24 | api_key | `GONKA24_API_KEY` | `https://api.gonka24.com/v1` |
 | `gradient_ai` | Gradient AI | api_key | `GRADIENT_API_KEY` | `https://inference.do-ai.run/v1` |
-| `groq` | Groq | api_key | `GROQ_API_KEY` | `https://api.groq.com/openai/v1` (dialect: `groq`) |
 | `helicone` | Helicone | api_key | `HELICONE_API_KEY` | `https://api.helicone.ai/v1` |
 | `heroku` | Heroku AI | api_key | `HEROKU_API_KEY` | `https://api.heroku.com/inference/v1` |
 | `hetzner` | Hetzner | api_key | `HETZNER_VLLM_API_KEY` | `https://inference.hetzner.com/api/v1` |

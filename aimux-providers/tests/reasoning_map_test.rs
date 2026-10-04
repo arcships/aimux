@@ -18,9 +18,9 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::types::ReasoningEffort;
+use aimux_providers::PresetSettings;
 use aimux_providers::deepseek::{DeepSeekProviderSettings, create_deepseek};
 use aimux_providers::openai_compatible::OpenAICompatibleChatModel;
-use aimux_providers::{PresetFamily, PresetSettings};
 use serde_json::json;
 
 /// The chat model of a registry preset, built the way the registry builds it.
@@ -117,7 +117,7 @@ async fn i5_transform_injects_thinking_enabled() {
 // （若注册表行被改回 full()，此处 profile.max_tokens_key 断言即失败，防死代码）。
 // ════════════════════════════════════════════════════════════════════════════
 
-/// 8 家接线清单：(provider 名, 期望 max_tokens_key)。
+/// 7 家接线清单：(provider 名, 期望 max_tokens_key)。
 fn wired_vendors() -> Vec<(&'static str, &'static str)> {
     vec![
         ("stepfun", "max_tokens"),
@@ -126,7 +126,6 @@ fn wired_vendors() -> Vec<(&'static str, &'static str)> {
         ("reka_ai", "max_tokens"),
         ("publicai", "max_tokens"),
         ("perplexity", "max_tokens"),
-        ("groq", "max_completion_tokens"),
         ("heroku", "max_completion_tokens"),
     ]
 }
@@ -157,26 +156,18 @@ fn assert_vendor_key(provider: &str, expected_key: &str, model_id: &str, branch:
     );
 }
 
-/// 接线本身：注册表行的 max_tokens_key 与清单一致（防注册表行被改回）。groq 行指向
-/// groq 包（family），它的 `max_completion_tokens` 由包内方言定义，由下面的矩阵锁住。
+/// 接线本身：注册表行的 max_tokens_key 与清单一致（防注册表行被改回）。
 #[test]
 fn max_tokens_key_wiring_registry() {
     for (provider, expected) in wired_vendors() {
         let descriptor = aimux_providers::preset::lookup(provider)
             .unwrap()
             .descriptor;
-        if descriptor.family == PresetFamily::Groq {
-            assert_eq!(
-                descriptor.max_tokens_key, None,
-                "[{provider}] 由 groq 包定义"
-            );
-        } else {
-            assert_eq!(
-                descriptor.max_tokens_key,
-                Some(expected),
-                "[{provider}] 注册表接线错误"
-            );
-        }
+        assert_eq!(
+            descriptor.max_tokens_key,
+            Some(expected),
+            "[{provider}] 注册表接线错误"
+        );
     }
 }
 

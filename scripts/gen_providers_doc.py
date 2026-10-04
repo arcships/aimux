@@ -4,7 +4,7 @@
 Single source of truth:
 - aimux-providers/src/provider_registry.json  (registry of OpenAI-compatible presets:
                                                name, display, base_url, env_var, auth,
-                                               base_url_env, params, family, profile)
+                                               base_url_env, params, profile)
 - aimux-providers/src/lib.rs                   (non-registry modules + categories)
 
 A `pub mod` in lib.rs counts as a provider module iff its `pub use` re-exports
@@ -211,8 +211,6 @@ def build_page():
         params = [p["name"] for p in e.get("params", []) if "derive" not in p]
         if params:
             notes.append("params: " + ", ".join(f"`{p}`" for p in params))
-        if e.get("family", "openai-compatible") != "openai-compatible":
-            notes.append(f"dialect: `{e['family']}`")
         if notes:
             base += " (" + "; ".join(notes) + ")"
         w(f"| `{e['name']}` | {e.get('display', '')} | {auth} | {env_var} | {base} |")

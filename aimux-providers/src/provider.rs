@@ -279,12 +279,6 @@ fn overlays() -> &'static RwLock<HashMap<String, ExternalProviderEntry>> {
     OVERLAYS.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-/// Test-only helper: remove a name from the overlay so tests are hermetic.
-#[cfg(test)]
-pub(crate) fn clear_overlay(name: &str) {
-    overlays().write().unwrap().remove(name);
-}
-
 /// Register (or replace) an external provider entry.
 ///
 /// Validation failures (empty name, non-`http(s)://` base_url, templated

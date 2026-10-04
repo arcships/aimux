@@ -3,10 +3,9 @@
 //! A preset is an OpenAI-compatible vendor described by data: a name, a
 //! default base URL, the environment variable of its key (or no key at all),
 //! an optional environment variable for the base URL and optional template
-//! parameters. [`lookup`] finds a descriptor by name; [`PresetProvider::create`]
-//! assembles an
-//! [`OpenAICompatibleProvider`]; the vendor families that have their own
-//! package ([`crate::groq`], [`crate::deepseek`]) contribute their dialect.
+//! parameters. [`lookup`] finds a descriptor by name; [`create`] assembles an
+//! [`OpenAICompatibleProvider`] from it. A vendor that has its own package is
+//! not a preset: [`crate::create_provider`] builds it through that package.
 //!
 //! What is evaluated when, following the AI SDK's `loadApiKey` /
 //! `loadSetting` timing:
@@ -34,8 +33,6 @@ use serde::Deserialize;
 use aimux_core::error::AiMuxError;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::deepseek;
-use crate::groq;
 use crate::openai_compatible::config::{BaseUrl, ChatDialect};
 use crate::openai_compatible::{
     Assembly, ChatProfile, OpenAICompatibleProvider, TransformRequestBody,
@@ -51,17 +48,6 @@ pub enum AuthMode {
     /// No credential (a local server): no key is resolved and no
     /// `Authorization` header is sent.
     None,
-}
-
-/// Which chat behavior a preset uses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PresetFamily {
-    /// The generic OpenAI-compatible chat model with the preset defaults.
-    OpenAICompatible,
-    /// The Groq package's dialect.
-    Groq,
-    /// The DeepSeek package's dialect.
-    DeepSeek,
 }
 
 /// A template parameter whose value is derived from another parameter: looked
@@ -89,7 +75,6 @@ pub struct ParamSpec {
 pub struct PresetDescriptor {
     pub name: &'static str,
     pub display: &'static str,
-    pub family: PresetFamily,
     /// Default base URL; a template when `params` is not empty.
     pub base_url: &'static str,
     /// Environment variable of the API key; empty for [`AuthMode::None`].
@@ -162,8 +147,6 @@ struct RegistryRow {
     env_var: Option<&'static str>,
     #[serde(default, deserialize_with = "registry_optional")]
     auth: Option<&'static str>,
-    #[serde(default, deserialize_with = "registry_optional")]
-    family: Option<&'static str>,
     #[serde(default, deserialize_with = "registry_optional")]
     base_url_env: Option<&'static str>,
     #[serde(default)]
@@ -244,12 +227,6 @@ fn load_registry() -> Vec<PresetEntry> {
             },
             "env_var must be nonempty for api_key and absent for none",
         );
-        let family = match row.family.unwrap_or("openai-compatible") {
-            "openai-compatible" => PresetFamily::OpenAICompatible,
-            "groq" => PresetFamily::Groq,
-            "deepseek" => PresetFamily::DeepSeek,
-            value => panic!("registry row '{}': unknown family {value:?}", row.name),
-        };
         check(
             row.base_url_env.is_none_or(|var| env_name.is_match(var)),
             "invalid base_url_env name",
@@ -305,7 +282,6 @@ fn load_registry() -> Vec<PresetEntry> {
             descriptor: Box::leak(Box::new(PresetDescriptor {
                 name: row.name,
                 display: row.display,
-                family,
                 base_url: row.base_url,
                 env_var: row.env_var.unwrap_or_default(),
                 auth,
@@ -394,20 +370,14 @@ fn assemble(
         (AuthMode::None, None) => Credential::None,
     };
 
-    let profile = match descriptor.family {
-        PresetFamily::OpenAICompatible => {
-            let mut dialect = ChatDialect::baseline();
-            dialect.supports_top_k = true;
-            dialect.max_tokens_key = descriptor.max_tokens_key;
-            ChatProfile {
-                include_usage: true,
-                supports_structured_outputs: true,
-                supports_multi_part_tool_content: false,
-                dialect,
-            }
-        }
-        PresetFamily::Groq => groq::profile(),
-        PresetFamily::DeepSeek => deepseek::profile(),
+    let mut dialect = ChatDialect::baseline();
+    dialect.supports_top_k = true;
+    dialect.max_tokens_key = descriptor.max_tokens_key;
+    let profile = ChatProfile {
+        include_usage: true,
+        supports_structured_outputs: true,
+        supports_multi_part_tool_content: false,
+        dialect,
     };
 
     OpenAICompatibleProvider::assemble(Assembly {

@@ -517,14 +517,6 @@
     "profile": {}
   },
   {
-    "name": "deepseek",
-    "display": "DeepSeek",
-    "family": "deepseek",
-    "base_url": "https://api.deepseek.com/v1",
-    "env_var": "DEEPSEEK_API_KEY",
-    "profile": {}
-  },
-  {
     "name": "digitalocean",
     "display": "DigitalOcean",
     "base_url": "https://inference.do-ai.run",
@@ -720,14 +712,6 @@
     "display": "Gradient AI",
     "base_url": "https://inference.do-ai.run/v1",
     "env_var": "GRADIENT_API_KEY",
-    "profile": {}
-  },
-  {
-    "name": "groq",
-    "display": "Groq",
-    "family": "groq",
-    "base_url": "https://api.groq.com/openai/v1",
-    "env_var": "GROQ_API_KEY",
     "profile": {}
   },
   {

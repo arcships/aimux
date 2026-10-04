@@ -24,7 +24,6 @@ pub use model::DeepSeekChatLanguageModel;
 use std::sync::{Arc, OnceLock};
 
 use futures::future::BoxFuture;
-use serde_json::Value;
 
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
@@ -32,49 +31,13 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_core::types::Usage;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
-use crate::openai_compatible::ChatProfile;
-use crate::openai_compatible::chat::baseline_usage;
-use crate::openai_compatible::config::ChatDialect;
 use crate::shared::{Credential, EndpointConfig, TransformRequestBody, provider_headers};
 use model::DeepSeekChatConfig;
 
 const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
 const API_KEY_ENV_VAR: &str = "DEEPSEEK_API_KEY";
-
-/// DeepSeek's chat behavior as data for the shared compatible chat model. The
-/// DeepSeek package no longer uses it; only the registry presets of the
-/// `deepseek` family do.
-pub(crate) fn profile() -> ChatProfile {
-    let mut dialect = ChatDialect::baseline();
-    dialect.supports_top_k = true;
-    dialect.max_tokens_key = Some("max_tokens");
-    dialect.convert_usage = Some(Arc::new(convert_usage));
-    ChatProfile {
-        include_usage: true,
-        supports_structured_outputs: true,
-        supports_multi_part_tool_content: false,
-        dialect,
-    }
-}
-
-/// OpenAI-shaped usage, with DeepSeek's prompt-cache fields as the cache split.
-fn convert_usage(raw: &Value) -> Usage {
-    let mut usage = baseline_usage(raw);
-    if let Some(hit) = raw.get("prompt_cache_hit_tokens").and_then(Value::as_u64) {
-        let hit = hit as u32;
-        let prompt = usage.input_tokens.total.unwrap_or(0);
-        let miss = raw
-            .get("prompt_cache_miss_tokens")
-            .and_then(Value::as_u64)
-            .map_or_else(|| prompt.saturating_sub(hit), |miss| miss as u32);
-        usage.input_tokens.cache_read = Some(hit);
-        usage.input_tokens.no_cache = Some(miss);
-    }
-    usage
-}
 
 /// The URL patterns the chat model fetches itself (`supportedUrls` of the AI
 /// SDK's `DeepSeekChatLanguageModel`): `http(s)` images.

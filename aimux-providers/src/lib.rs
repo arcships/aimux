@@ -147,7 +147,7 @@ macro_rules! __optional_model {
 // is parsed once into `preset` descriptors and used by the by-name entry points.
 pub mod provider;
 pub mod replay;
-pub use preset::{AuthMode, PresetDescriptor, PresetEntry, PresetFamily, PresetSettings};
+pub use preset::{AuthMode, PresetDescriptor, PresetEntry, PresetSettings};
 pub use replay::rebuild_provider;
 
 pub mod catalogue;

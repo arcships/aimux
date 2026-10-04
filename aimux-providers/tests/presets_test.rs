@@ -138,7 +138,7 @@ fn hello() -> CallOptions {
 #[test]
 fn every_registry_row_loads_and_creates_without_environment() {
     let entries: Vec<_> = preset::entries().collect();
-    assert_eq!(entries.len(), 283);
+    assert_eq!(entries.len(), 281);
     assert!(
         preset::names()
             .collect::<Vec<_>>()
@@ -213,7 +213,7 @@ async fn a_template_parameter_must_be_a_plain_host_segment() {
 fn default_providers_serve_packages_and_registry_rows_through_one_registry() {
     let providers = aimux_providers::default_providers();
     assert!(
-        providers.len() > 283,
+        providers.len() > 281,
         "packages and rows: {}",
         providers.len()
     );

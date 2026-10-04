@@ -134,12 +134,6 @@ pub(crate) fn usage_from_raw(dialect: &ChatDialect, raw: Option<&Value>) -> Usag
     }
 }
 
-/// The baseline conversion of a raw usage object (for dialects that adjust
-/// it).
-pub(crate) fn baseline_usage(raw: &Value) -> Usage {
-    usage_from_raw(&ChatDialect::baseline(), Some(raw))
-}
-
 fn prediction_tokens(usage: Option<&UsageResponse>, metadata: &mut Map<String, Value>) {
     if let Some(details) = usage.and_then(|u| u.completion_tokens_details.as_ref()) {
         if let Some(accepted) = details.accepted_prediction_tokens {

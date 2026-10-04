@@ -17,7 +17,6 @@
 
 mod browser_search_models;
 mod convert;
-mod dialect;
 mod error;
 mod finish_reason;
 mod model;
@@ -42,8 +41,6 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
 use crate::shared::{Credential, EndpointConfig, provider_headers};
-
-pub(crate) use dialect::profile;
 
 const DEFAULT_BASE_URL: &str = "https://api.groq.com/openai/v1";
 const API_KEY_ENV_VAR: &str = "GROQ_API_KEY";
