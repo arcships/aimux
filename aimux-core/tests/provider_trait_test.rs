@@ -149,3 +149,86 @@ fn supported_urls_can_be_overridden_per_media_type() {
     assert!(urls.0["image/*"][0].is_match("https://cdn.example.com/a.png"));
     assert!(!urls.0["image/*"][0].is_match("https://other.example.com/a.png"));
 }
+
+// ── Provider registry ────────────────────────────────────────────────────────
+// Ports of `packages/ai/src/registry/provider-registry.test.ts` (ai@7.0.127),
+// the `languageModel` and `transcriptionModel` groups.
+
+mod registry {
+    use std::collections::BTreeMap;
+
+    use aimux_core::{ProviderRegistryOptions, create_provider_registry};
+
+    use super::*;
+
+    fn providers() -> BTreeMap<String, Arc<dyn Provider>> {
+        BTreeMap::from([(
+            "provider".to_string(),
+            Arc::new(OnlyLanguageProvider) as Arc<dyn Provider>,
+        )])
+    }
+
+    /// TS: should return language model from provider
+    #[test]
+    fn returns_the_language_model_from_the_provider() {
+        let registry = create_provider_registry(providers(), ProviderRegistryOptions::default());
+        let model = registry.language_model("provider:model").unwrap();
+        assert_eq!(model.model_id(), "model");
+    }
+
+    /// TS: should return language model with additional colon from provider
+    #[test]
+    fn splits_at_the_first_separator_only() {
+        let registry = create_provider_registry(providers(), ProviderRegistryOptions::default());
+        let model = registry.language_model("provider:model:part2").unwrap();
+        assert_eq!(model.model_id(), "model:part2");
+    }
+
+    /// TS: should throw NoSuchProviderError if provider does not exist
+    #[test]
+    fn an_unknown_provider_is_no_such_provider() {
+        let registry =
+            create_provider_registry(BTreeMap::new(), ProviderRegistryOptions::default());
+        let error = registry.language_model("provider:model").err().unwrap();
+        assert!(
+            matches!(error, AiMuxError::NoSuchProvider { ref provider_id } if provider_id == "provider")
+        );
+    }
+
+    /// TS: should throw NoSuchModelError if model id doesn't contain a colon
+    #[test]
+    fn an_id_without_the_separator_is_no_such_model() {
+        let registry = create_provider_registry(providers(), ProviderRegistryOptions::default());
+        let error = registry.language_model("model").err().unwrap();
+        assert!(
+            matches!(error, AiMuxError::NoSuchModel { ref model_type, .. } if model_type == "languageModel")
+        );
+    }
+
+    /// TS: should support custom separator (with multiple characters)
+    #[test]
+    fn a_custom_separator_is_used() {
+        let registry = create_provider_registry(
+            providers(),
+            ProviderRegistryOptions {
+                separator: " > ".to_string(),
+            },
+        );
+        let model = registry.language_model("provider > model").unwrap();
+        assert_eq!(model.model_id(), "model");
+    }
+
+    /// TS (transcriptionModel): should throw NoSuchModelError if provider
+    /// does not return a model
+    #[test]
+    fn a_modality_the_provider_does_not_offer_is_no_such_model() {
+        let registry = create_provider_registry(providers(), ProviderRegistryOptions::default());
+        let error = registry
+            .transcription_model("provider:model")
+            .err()
+            .unwrap();
+        assert!(
+            matches!(error, AiMuxError::NoSuchModel { ref model_type, .. } if model_type == "transcriptionModel")
+        );
+    }
+}
