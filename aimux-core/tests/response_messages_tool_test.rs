@@ -3,7 +3,7 @@ use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::{MessageContent, Role};
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{RawToolCall, ToolResult};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
@@ -344,12 +344,12 @@ impl LanguageModel for ContentMetadataModel {
                         "google": { "thoughtSignature": "text-generate" }
                     })),
                 },
-                GenerateContent::Reasoning {
+                GenerateContent::Reasoning(ReasoningOutput {
                     text: "think".to_string(),
                     provider_metadata: Some(json!({
                         "anthropic": { "signature": "reason-generate" }
                     })),
-                },
+                }),
             ],
             finish_reason: finish_reason(),
             usage: Usage::default(),

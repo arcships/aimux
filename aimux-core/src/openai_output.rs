@@ -35,12 +35,11 @@ use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::parse_tool_call::raw_tool_call_text;
-use crate::result::GenerateContent;
-use crate::result::GenerateResult;
+use crate::result::{GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source};
 use crate::shared::FileData;
 use crate::stream_part::{StreamPart, TextStreamPart};
 use crate::tool::{ToolCall, ToolResult};
-use crate::types::{FinishReason, FinishReasonUnified, Usage};
+use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Non-streaming response types
@@ -238,7 +237,7 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
             GenerateContent::Text { text, .. } => {
                 content_text.push_str(text);
             }
-            GenerateContent::Reasoning { text, .. } => {
+            GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
                 reasoning_text.push_str(text);
             }
             GenerateContent::ToolCall(call) => {
@@ -259,7 +258,7 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                     },
                 });
             }
-            GenerateContent::Source { url, title, .. } => {
+            GenerateContent::Source(Source { url, title, .. }) => {
                 // Map to OpenAI url_citation annotation.
                 let mut ann = serde_json::json!({
                     "type": "url_citation",
@@ -279,9 +278,9 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                     content_text.push_str(u);
                 }
             }
-            GenerateContent::File {
+            GenerateContent::File(GeneratedFile {
                 data, media_type, ..
-            } => {
+            }) => {
                 if !content_text.is_empty() {
                     content_text.push('\n');
                 }
@@ -551,7 +550,7 @@ impl StreamState {
                 }
             }
 
-            StreamPart::ResponseMetadata { id, model_id, .. } => {
+            StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. }) => {
                 if let Some(id) = id {
                     self.id = id.clone();
                 }
@@ -808,9 +807,9 @@ impl StreamState {
                 chunks.push(chunk);
             }
 
-            StreamPart::File {
+            StreamPart::File(GeneratedFile {
                 data, media_type, ..
-            } => {
+            }) => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
@@ -828,7 +827,7 @@ impl StreamState {
                 chunks.push(chunk);
             }
 
-            StreamPart::Source { url, .. } => {
+            StreamPart::Source(Source { url, .. }) => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
@@ -1320,10 +1319,10 @@ mod tests {
     #[test]
     fn test_reasoning_non_streaming() {
         let result = make_result(vec![
-            GenerateContent::Reasoning {
+            GenerateContent::Reasoning(ReasoningOutput {
                 text: "Thinking...".to_string(),
                 provider_metadata: None,
-            },
+            }),
             GenerateContent::Text {
                 text: "Answer".to_string(),
                 provider_metadata: None,

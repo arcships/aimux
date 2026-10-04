@@ -5,7 +5,7 @@ use aimux_core::generate::{GenerateTextOptions, generate_object};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::MessageContent;
 use aimux_core::options::{CallOptions, ResponseFormat};
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
 
@@ -122,13 +122,13 @@ impl LanguageModel for StreamModel {
                 delta: "world!".into(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::Source {
+            Ok(StreamPart::Source(Source {
                 id: "s1".into(),
                 source_type: "url".into(),
                 url: Some("https://example.com".into()),
                 title: Some("Example".into()),
                 provider_metadata: None,
-            }),
+            })),
             Ok(StreamPart::Finish {
                 finish_reason: FinishReason {
                     unified: FinishReasonUnified::Stop,

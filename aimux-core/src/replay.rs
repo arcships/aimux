@@ -682,11 +682,11 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                 || v.get("model").and_then(|x| x.as_str()).is_some())
         {
             response_meta_emitted = true;
-            parts.push(Ok(StreamPart::ResponseMetadata {
+            parts.push(Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                 id: v["id"].as_str().map(std::string::ToString::to_string),
                 timestamp: None,
                 model_id: v["model"].as_str().map(std::string::ToString::to_string),
-            }));
+            })));
         }
 
         // usage(含 usage-only 末帧 choices:[]+usage)→ 累积到 Finish.usage。
@@ -1686,7 +1686,7 @@ mod tests {
         // 首帧 id/model → ResponseMetadata。
         assert!(parts.iter().any(|p| matches!(
             p,
-            StreamPart::ResponseMetadata { id, model_id, .. }
+            StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. })
                 if id.as_deref() == Some("chatcmpl-1") && model_id.as_deref() == Some("gpt-4o")
         )));
         // ToolInputStart。
@@ -1765,7 +1765,7 @@ mod tests {
         });
         assert!(parts.iter().any(|p| matches!(
             p,
-            StreamPart::ResponseMetadata { id, model_id, .. }
+            StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. })
                 if id.as_deref() == Some("chatcmpl-2") && model_id.as_deref() == Some("gpt-4o")
         )));
         let deltas: Vec<String> = parts

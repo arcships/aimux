@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use crate::content::ContentPart;
 use crate::message::{MessageContent, ModelMessage, Role};
-use crate::result::ReasoningPart;
+use crate::result::ReasoningOutput;
 
 /// Match the AI SDK's response-message safety rule for invalid tool calls:
 /// malformed primitive input must not be replayed as a prompt tool-call input.
@@ -48,14 +48,14 @@ pub(crate) struct ResponseMessageBuilder {
     text_provider_options: Option<Value>,
     reasoning_buf: String,
     reasoning_provider_options: Option<Value>,
-    reasoning: Vec<ReasoningPart>,
+    reasoning: Vec<ReasoningOutput>,
 }
 
 /// What the builder produced: the replayable assistant message plus the
 /// reasoning aggregate surfaced on the result.
 pub(crate) struct ResponseMessages {
     pub messages: Vec<ModelMessage>,
-    pub reasoning: Vec<ReasoningPart>,
+    pub reasoning: Vec<ReasoningOutput>,
 }
 
 impl ResponseMessageBuilder {
@@ -121,17 +121,15 @@ impl ResponseMessageBuilder {
         }
     }
 
-    pub fn reasoning(&mut self, text: &str, provider_metadata: Option<&Value>) {
+    pub fn reasoning(&mut self, reasoning: &ReasoningOutput) {
         // Pushed unconditionally: redacted thinking has empty text but its
         // provider metadata must still be replayed.
-        self.reasoning.push(ReasoningPart {
-            text: text.to_owned(),
-        });
-        let signature = extract_reasoning_signature(provider_metadata);
+        self.reasoning.push(reasoning.clone());
+        let signature = extract_reasoning_signature(reasoning.provider_metadata.as_ref());
         self.parts.push(ContentPart::Reasoning {
-            text: text.to_owned(),
+            text: reasoning.text.clone(),
             signature,
-            provider_options: provider_metadata.cloned(),
+            provider_options: reasoning.provider_metadata.clone(),
         });
     }
 
@@ -205,10 +203,13 @@ impl ResponseMessageBuilder {
             return;
         }
         let text = std::mem::take(&mut self.reasoning_buf);
-        if !text.is_empty() {
-            self.reasoning.push(ReasoningPart { text: text.clone() });
-        }
         let provider_options = self.reasoning_provider_options.take();
+        if !text.is_empty() {
+            self.reasoning.push(ReasoningOutput {
+                text: text.clone(),
+                provider_metadata: provider_options.clone(),
+            });
+        }
         let signature = extract_reasoning_signature(provider_options.as_ref());
         self.parts.push(ContentPart::Reasoning {
             text,
