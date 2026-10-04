@@ -1,0 +1,150 @@
+//! The providerOptions of the DeepSeek chat model
+//! (`deepseek-chat-language-model-options.ts`, `deepseek-file-part-options.ts`).
+//!
+//! They are read from the namespace named by the provider (`deepseek`).
+
+use std::collections::HashMap;
+
+use serde::Deserialize;
+use serde_json::{Map, Value};
+
+use aimux_core::error::AiMuxError;
+
+/// `providerOptions.<provider>` of a call.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeepSeekChatOptions {
+    /// Whether to return log probabilities for generated tokens.
+    pub logprobs: Option<bool>,
+    /// Number of most likely tokens to return at each token position (0 to
+    /// 20); setting it enables `logprobs`.
+    pub top_logprobs: Option<u8>,
+    /// An opaque identifier for the end user: ASCII letters, numbers,
+    /// underscores and hyphens, at most 512 characters.
+    pub user_id: Option<String>,
+    /// The thinking configuration, sent as given.
+    pub thinking: Option<Value>,
+    /// The thinking strength, sent as given.
+    pub reasoning_effort: Option<String>,
+    /// Whether JSON-schema response formats are strict. Defaults to `true`.
+    pub strict_json_schema: Option<bool>,
+    /// Fields of the namespace the schema does not know go to the body as
+    /// given.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+/// The `providerOptions` of a message (`name`, and for an assistant message
+/// `prefix`).
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct DeepSeekMessageOptions {
+    /// The name of the participant represented by the message.
+    pub name: Option<String>,
+    /// Whether the assistant message is a prefix DeepSeek should continue.
+    pub prefix: Option<bool>,
+}
+
+/// The `providerOptions` of a file part.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeepSeekFilePartOptions {
+    /// How DeepSeek processes an image sent as an `image_url` part
+    /// (`low`, `high`, `original`, `auto`).
+    pub image_detail: Option<String>,
+    /// Send inline image data as a `file` part instead of an `image_url`.
+    pub file_data: Option<bool>,
+}
+
+/// The options of `namespace` in a providerOptions value; no namespace is the
+/// defaults.
+fn parse_namespace<T: Default + for<'de> Deserialize<'de>>(
+    namespace: Option<&Value>,
+    name: &str,
+) -> Result<T, AiMuxError> {
+    match namespace.filter(|options| !options.is_null()) {
+        None => Ok(T::default()),
+        Some(options) => serde_json::from_value(options.clone()).map_err(|error| {
+            AiMuxError::InvalidArgument(format!("invalid provider options for \"{name}\": {error}"))
+        }),
+    }
+}
+
+fn invalid(name: &str, message: &str) -> AiMuxError {
+    AiMuxError::InvalidArgument(format!(
+        "invalid provider options for \"{name}\": {message}"
+    ))
+}
+
+/// The chat options of a call.
+///
+/// # Errors
+///
+/// `InvalidArgument` when an option has the wrong type or is out of range.
+pub(crate) fn parse_chat_options(
+    provider_options: Option<&HashMap<String, Value>>,
+    name: &str,
+) -> Result<DeepSeekChatOptions, AiMuxError> {
+    let options: DeepSeekChatOptions =
+        parse_namespace(provider_options.and_then(|all| all.get(name)), name)?;
+    if options.top_logprobs.is_some_and(|n| n > 20) {
+        return Err(invalid(name, "topLogprobs must be at most 20"));
+    }
+    if let Some(user_id) = &options.user_id
+        && (user_id.is_empty()
+            || user_id.len() > 512
+            || !user_id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
+    {
+        return Err(invalid(
+            name,
+            "userId must match /^[a-zA-Z0-9_-]+$/ and be at most 512 characters long",
+        ));
+    }
+    Ok(options)
+}
+
+/// The options of a message.
+///
+/// # Errors
+///
+/// `InvalidArgument` when `name` is not a string or `prefix` is not `true`.
+pub(crate) fn parse_message_options(
+    provider_options: Option<&Value>,
+    name: &str,
+) -> Result<DeepSeekMessageOptions, AiMuxError> {
+    let options: DeepSeekMessageOptions =
+        parse_namespace(provider_options.and_then(|all| all.get(name)), name)?;
+    if options.prefix == Some(false) {
+        return Err(invalid(name, "prefix must be true"));
+    }
+    Ok(options)
+}
+
+/// The options of a file part.
+///
+/// # Errors
+///
+/// `InvalidArgument` when `imageDetail` is not a known value or `fileData` is
+/// not `true`.
+pub(crate) fn parse_file_part_options(
+    provider_options: Option<&Value>,
+    name: &str,
+) -> Result<DeepSeekFilePartOptions, AiMuxError> {
+    let options: DeepSeekFilePartOptions =
+        parse_namespace(provider_options.and_then(|all| all.get(name)), name)?;
+    if options.file_data == Some(false) {
+        return Err(invalid(name, "fileData must be true"));
+    }
+    if options
+        .image_detail
+        .as_deref()
+        .is_some_and(|detail| !["low", "high", "original", "auto"].contains(&detail))
+    {
+        return Err(invalid(
+            name,
+            "imageDetail must be low, high, original or auto",
+        ));
+    }
+    Ok(options)
+}

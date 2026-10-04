@@ -1,20 +1,25 @@
 //! DeepSeek provider.
 //!
-//! [`create_deepseek`] is the Rust form of the AI SDK's `createDeepSeek`: an
-//! OpenAI-compatible chat provider named `deepseek` whose models report
-//! `"deepseek.chat"`, read providerOptions from the `deepseek` key (and the
-//! generic `openaiCompatible` one; fields of the `deepseek` key the generic
-//! schema does not know, `thinking` among them, go to the body as given) and
-//! report provider metadata under `deepseek`.
-//!
-//! DeepSeek's one usage difference: prompt-cache accounting arrives as
-//! `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`, which become the
-//! cache-read and no-cache input tokens. It asks streaming responses for usage
-//! and accepts JSON-schema response formats.
+//! [`create_deepseek`] is the Rust form of the AI SDK's `createDeepSeek`: a
+//! provider of [`DeepSeekChatLanguageModel`], the package's own chat model
+//! (`@ai-sdk/deepseek` does not build on the OpenAI-compatible package). Its
+//! models report `"deepseek.chat"` and read providerOptions and report provider
+//! metadata under `deepseek`.
 //!
 //! As in the other packages the API key is not read when the provider is
 //! created: `DEEPSEEK_API_KEY` is loaded on every request unless `api_key` is
 //! given. [`deepseek()`] is the default instance.
+
+mod convert;
+mod finish_reason;
+mod is_v4_model;
+mod model;
+mod options;
+mod prepare_tools;
+mod types;
+mod usage;
+
+pub use model::{DeepSeekChatLanguageModel, RequestBodyResult};
 
 use std::sync::{Arc, OnceLock};
 
@@ -24,24 +29,24 @@ use serde_json::Value;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
-use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::types::Usage;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
+use crate::openai_compatible::ChatProfile;
 use crate::openai_compatible::chat::baseline_usage;
-use crate::openai_compatible::config::{BaseUrl, ChatDialect};
-use crate::openai_compatible::{
-    Assembly, ChatProfile, OpenAICompatibleChatModel, OpenAICompatibleProvider,
-    TransformRequestBody,
-};
-use crate::shared::Credential;
+use crate::openai_compatible::config::ChatDialect;
+use crate::shared::{Credential, EndpointConfig, TransformRequestBody, provider_headers};
+use model::DeepSeekChatConfig;
 
 const DEFAULT_BASE_URL: &str = "https://api.deepseek.com/v1";
 const API_KEY_ENV_VAR: &str = "DEEPSEEK_API_KEY";
 
-/// DeepSeek's chat behavior as data for the shared compatible chat model.
+/// DeepSeek's chat behavior as data for the shared compatible chat model. The
+/// DeepSeek package no longer uses it; only the registry presets of the
+/// `deepseek` family do.
 pub(crate) fn profile() -> ChatProfile {
     let mut dialect = ChatDialect::baseline();
     dialect.supports_top_k = true;
@@ -69,6 +74,13 @@ fn convert_usage(raw: &Value) -> Usage {
         usage.input_tokens.no_cache = Some(miss);
     }
     usage
+}
+
+/// The URL patterns the chat model fetches itself (`supportedUrls` of the AI
+/// SDK's `DeepSeekChatLanguageModel`): `http(s)` images.
+fn chat_supported_urls() -> SupportedUrls {
+    let http = regex::Regex::new(r"^https?://.*$").expect("static pattern");
+    SupportedUrls(std::iter::once(("image/*".to_string(), vec![http])).collect())
 }
 
 /// Settings of [`create_deepseek`] (the AI SDK's `DeepSeekProviderSettings`).
@@ -125,17 +137,15 @@ pub fn create_deepseek(settings: DeepSeekProviderSettings) -> Result<DeepSeekPro
         None => DEFAULT_BASE_URL.to_string(),
     };
     Ok(DeepSeekProvider {
-        inner: OpenAICompatibleProvider::assemble(Assembly {
-            name: settings.name.unwrap_or_else(|| "deepseek".to_string()),
-            base_url: BaseUrl::Fixed(base_url),
-            credential: Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "DeepSeek"),
-            fixed_headers: Vec::new(),
-            headers: settings.headers,
-            query_params: None,
-            fetch: settings.fetch,
-            transform_request_body: settings.transform_request_body,
-            profile: profile(),
-        })?,
+        name: settings.name.unwrap_or_else(|| "deepseek".to_string()),
+        base_url,
+        headers: provider_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "DeepSeek"),
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -152,20 +162,42 @@ pub fn deepseek() -> &'static DeepSeekProvider {
 /// A DeepSeek provider (the AI SDK's `DeepSeekProvider`). Language models
 /// only: embedding and image models are `NoSuchModel`.
 pub struct DeepSeekProvider {
-    inner: OpenAICompatibleProvider,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
+    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl DeepSeekProvider {
+    fn endpoint_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            self.transform_request_body.clone(),
+        )
+    }
+
     /// A chat model; `provider()` is `"{name}.chat"` (`"deepseek.chat"`).
     #[must_use]
-    pub fn chat(&self, model_id: &str) -> OpenAICompatibleChatModel {
-        self.inner.chat(model_id)
+    pub fn chat(&self, model_id: &str) -> DeepSeekChatLanguageModel {
+        DeepSeekChatLanguageModel::from_config(
+            model_id.to_string(),
+            DeepSeekChatConfig {
+                endpoint: self
+                    .endpoint_config("chat")
+                    .with_supported_urls(Arc::new(|_| chat_supported_urls())),
+                supports_assistant_prefix_completion: self.base_url.ends_with("/beta"),
+            },
+        )
     }
 
     /// The provider as a function: the default language model, the chat model.
     #[must_use]
     pub fn call(&self, model_id: &str) -> Arc<dyn LanguageModel> {
-        self.inner.call(model_id)
+        Arc::new(self.chat(model_id))
     }
 }
 
@@ -190,6 +222,13 @@ impl Provider for DeepSeekProvider {
 impl ProviderDiscovery for DeepSeekProvider {
     /// `GET {base_url}/models`: one exchange, no retry.
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
-        self.inner.list_models()
+        let config = self.endpoint_config("models");
+        Box::pin(async move {
+            crate::shared::list_data_models(
+                &config,
+                aimux_provider_utils::create_standard_json_error_response_handler(),
+            )
+            .await
+        })
     }
 }
