@@ -1,6 +1,6 @@
 # aimux · Node.js API
 
-> Unified LLM service access layer — one API to access 325 AI providers
+> Unified LLM service access layer — one API to access AI providers
 
 Shared reference — parameter tables, result shapes, factory functions, and the
 feature coverage matrix — lives in the [API overview](../API.md).
@@ -21,9 +21,8 @@ console.log(result.text)
 
 ## Providers
 
-All 283 built-in OpenAI-compatible providers are registry-backed. Look them up
-by string name; the current list is generated from `provider_registry.json` in
-[providers.md](providers.md):
+The vendor packages and 281 registry-backed OpenAI-compatible providers are
+reachable by string name; see [providers.md](providers.md) for the provider list:
 
 ```typescript
 import { provider, generateText } from '@arcships/aimux'
@@ -35,9 +34,8 @@ const relay = await provider('groq', 'sk-...', 'llama-3.3-70b', {
 const result = await generateText(model, 'Hello')
 ```
 
-`openai` / `anthropic` / `deepseek` factories remain (deepseek is now
-registry-backed). For custom providers not in the registry, build from the
-base classes with `createProvider`-style config via the base-URL override.
+`openai` / `anthropic` / `deepseek` factories remain; DeepSeek uses its own vendor
+chat model. Custom endpoints use a base-URL override with a compatible provider.
 
 The 3rd argument of every constructor is a base URL string or a
 `ProviderConfig` (`baseUrl`, `headers` as a JSON string, `organization`,
@@ -47,9 +45,8 @@ parameters, e.g. `{ account_id: '…' }` for `cloudflare_workers_ai`).
 throws `InvalidArgumentError`; retry is a per-call option
 (`max_retries` in the call options).
 
-> **Scope:** `provider(name)` covers only the 283 registry OpenAI-compatible
-> providers; Anthropic/Google/multimodal/local → typed factories
-> (`anthropic(apiKey, model)`); custom endpoints → `baseUrl` override.
+> **Scope:** `provider(name)` reaches vendor packages and the 281 preset rows;
+> typed factories remain available. Custom endpoints use the `baseUrl` override.
 > Full list: [providers.md](providers.md).
 
 ## Desktop and Electron compatibility

@@ -136,7 +136,7 @@ JS / Python / Go 等绑定没有闭包入口，provider 级的固定字段请在
 ## 7. Model List API 与模型配置补充（RFC-0027）
 
 aimux 提供两个**独立原语**,host 各自调用并按需合并(aimux 是库、不持有状态):
-- `Provider::list_models()` — 运行时从 provider `/models` 发现可用模型,返回 `RuntimeModel[]`(provider 官方数据,通常只有 id)。
+- Rust: `Provider::discovery()` → `ProviderDiscovery::list_models()` — 运行时从 provider `/models` 发现可用模型,返回 `RuntimeModel[]`(provider 官方数据,通常只有 id)。
 - `get_model_specs()` — 独立拉取 `models.anya2a.com` 社区聚合数据,返回 `ModelSpec` 配置/能力。
 
 aimux **不自动合并**二者:`list_models` 不带 anya2a 配置,`get_model_specs` 不带可用性。host 自行按 modelId 把 spec 合并进 `list_models` 的结果。
@@ -176,7 +176,7 @@ anya2a 只补 provider 列表里出现的 modelId,不作可用性依据。缺字
 
 ### 7.4 覆盖范围
 
-292/325 家真 LLM provider 已覆盖(89.8%):251 registry + 23 standalone + 10 vertex MaaS + 8 native。33 家 modality-only(speech/image/embed/search)返回 `Unsupported`。
+Rust 通过 `Provider::discovery()` 检查厂商是否提供模型发现,返回 `None` 表示未提供。预设表有 281 行;Groq 和 DeepSeek 由各自厂商包提供发现。绑定的 provider 句柄保留 `listModels()` / `list_models()` API。
 
 ### 7.5 无内置缓存(不存在缓存/离线环境变量)
 

@@ -325,8 +325,8 @@ high-level range. Any fallible call can additionally return 200..206.
 | `aimux_vertex_new(access_token, project, location, model_id, out_handle)` / `_with_base(…, base_url, out_handle)` | Vertex AI |
 | `aimux_anthropic_aws_new(api_key, region, model_id, out_handle)` / `_with_base(…, base_url, out_handle)` | Anthropic on AWS |
 | `aimux_azure_new(api_key, resource_name, deployment, api_version, out_handle)` / `_with_base(api_key, base_url, deployment, api_version, out_handle)` | Azure OpenAI (`_with_base` requires `base_url`) |
-| `aimux_provider_new(name, api_key, model_id, config_json, uint64_t *out_handle)` | [AiMuxError] Registry provider (`api_key` NULL → env) |
-| `aimux_provider_from_env(name, model_id, uint64_t *out_handle)` | [AiMuxError] Registry + env API key |
+| `aimux_provider_new(name, api_key, model_id, config_json, uint64_t *out_handle)` | [AiMuxError] Vendor package or preset (`api_key` NULL → env at request time) |
+| `aimux_provider_from_env(name, model_id, uint64_t *out_handle)` | [AiMuxError] By-name provider + env API key at request time |
 | `aimux_provider_handle_new(name, api_key, config_json, uint64_t *out_handle)` | [AiMuxError] RFC-0027 provider handle |
 | `aimux_provider_list_models(handle, char **out_models_json)` | [AiMuxError] JSON `RuntimeModel[]` |
 | `aimux_provider_model(handle, model_id, uint64_t *out_handle)` | [AiMuxError] Model from a provider handle |

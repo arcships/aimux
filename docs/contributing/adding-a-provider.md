@@ -19,9 +19,8 @@ simplify some steps below — noted per step).
 
 If the vendor is OpenAI-compatible **and** needs quirks beyond what a row can
 say (a different auth header, a non-standard error body, message conversion of
-its own, ...), it is case 2 - or, when it shares the compatible chat model and
-only differs in a few hooks, its own package next to `groq/` and `deepseek/`
-(`family` in the row points at it).
+its own, ...), it is case 2: add its own package next to `groq/` and
+`deepseek/`, which have their own chat models. The registry has no `family` field.
 
 ## Case 1 — OpenAI-compatible vendor (registry row)
 
@@ -38,7 +37,6 @@ only differs in a few hooks, its own package next to `groq/` and `deepseek/`
    variable holding the base URL); `params` for a templated `base_url`
    (`{param}` placeholders, each declared with an optional `env` list and
    `default`; a derived parameter takes `derive: {from, map, otherwise}`);
-   `family` (`"groq"` / `"deepseek"`: the dialect of an own package);
    `profile.max_tokens_key` (`"max_tokens"` or `"max_completion_tokens"`: the
    only max-token key the vendor accepts). Anything beyond that rides in a
    `transform_request_body` closure on the factory; if the quirk changes auth
@@ -51,9 +49,9 @@ only differs in a few hooks, its own package next to `groq/` and `deepseek/`
    ```
 
    The registry is embedded and parsed once into a runtime descriptor table.
-   Create presets by name through `provider(name, ...)`; there are no per-name
-   Rust functions. The table test validates all rows and creates each with
-   default settings. CI checks the generated documentation with `--check`
+   Create presets with `create_provider(name, PresetSettings)`; there are no
+   per-name Rust functions or generated presets source. The table test validates
+   all rows and creates each with default settings. CI checks the generated documentation with `--check`
    in the `contract-tests` job.
 
 3. Derive replay cassettes: add a tuple to `PROVIDERS` in
@@ -63,8 +61,9 @@ only differs in a few hooks, its own package next to `groq/` and `deepseek/`
    (rewriting request path and model id - not fake data), because a
    registry-backed provider's requests are byte-for-byte OpenAI shape.
 
-4. Nothing else: `provider("example", ...)` now works in every binding, and
-   env-var key loading follows `env_var` automatically.
+4. `create_provider("example", PresetSettings::default())` now works in Rust;
+   bindings retain `provider("example", ...)`. Keys are loaded from `env_var`
+   when a request is made. `provider_names()` lists accepted names.
 
 > Roadmap note: #166 B2 makes `conformance_test.rs` iterate the registry; the
 > cassette-derivation step above is then replaced by that suite.
@@ -115,13 +114,14 @@ only differs in a few hooks, its own package next to `groq/` and `deepseek/`
    `do_stream_returns_parts` against those cassettes, mirroring the existing
    20 modules.
 
-4. Note: protocol providers are **not** name-addressable today — callers use
-   the typed factories (`create_cohere(CohereProviderSettings {..})` or the
-   default instance `cohere()`), and `provider("cohere", ...)` fails with
-   `NoSuchProvider`. A registry row with
-   a `protocol` field arrives with #166 B1 (the `Protocol` enum +
-   `from_resolved`); until then, do not add protocol providers to the
-   registry JSON.
+4. Add the package name and factory dispatch to `src/default_providers.rs`.
+   Rust callers can then use `create_provider("cohere", PresetSettings::default())`
+   or the typed factory `create_cohere(CohereProviderSettings {..})` / default
+   instance `cohere()`. `default_providers()` supplies the map for
+   `aimux_core::provider_registry::create_provider_registry(providers, options)`;
+   model ids use `provider:model` by default. Vendor packages do not need rows
+   in the compatible preset JSON. Model listing is exposed through
+   `Provider::discovery()`.
 
 ## Case 3 — single-modality vendor
 

@@ -1,6 +1,6 @@
 # aimux · Go API
 
-> Unified LLM service access layer — one API to access 325 AI providers
+> Unified LLM service access layer — one API to access AI providers
 
 The Go binding goes through the `aimux-ffi` C ABI: cgo statically links
 `libaimux_ffi.a`, so the Rust core is compiled into the executable and the
@@ -157,11 +157,10 @@ The producer closes `Parts()` after the blocking native call returns.
 
 ## Providers
 
-All 283 registry-backed OpenAI-compatible providers are reachable by string name:
+The vendor packages and 281 registry-backed OpenAI-compatible providers are reachable by string name:
 
-> **Scope:** `provider(name)` covers only the 283 registry OpenAI-compatible
-> providers; Anthropic/Google/multimodal/local → typed constructors
-> (`NewAnthropic(apiKey, model)`); custom endpoints → `WithBase` variant.
+> **Scope:** `provider(name)` reaches vendor packages and the 281 preset rows;
+> typed factories remain available. Custom endpoints use the `WithBase` variant.
 > Full list: [providers.md](providers.md).
 
 ```go
@@ -191,7 +190,7 @@ defer model4.Close()
 // names the environment variable that was consulted.
 ```
 
-`NewDeepSeek` / `DeepSeek` remain as shortcuts (registry-backed). Unknown
+`NewDeepSeek` / `DeepSeek` remain as by-name shortcuts to the vendor package. Unknown
 names return an error.
 
 ## Text Generation

@@ -1,6 +1,6 @@
 # aimux · Java API
 
-> Unified LLM service access layer — one API to access 325 AI providers
+> Unified LLM service access layer — one API to access AI providers
 
 The Java binding goes through the `aimux-ffi` C ABI via JNA — no native
 toolchain is needed at build time. Artifact: `ai.arcships:aimux-java:0.3.0`,
@@ -33,11 +33,10 @@ try (Model model = Model.openaiWithBase("sk-...", "gpt-4o", "http://localhost:30
 
 ## Providers
 
-All 283 registry-backed OpenAI-compatible providers are reachable by string name:
+The vendor packages and 281 registry-backed OpenAI-compatible providers are reachable by string name:
 
-> **Scope:** `provider(name)` covers only the 283 registry OpenAI-compatible
-> providers; Anthropic/Google/multimodal/local → typed factories
-> (`Model.anthropic(apiKey, modelId)`); custom endpoints → base-URL variant.
+> **Scope:** `provider(name)` reaches vendor packages and the 281 preset rows;
+> typed factories remain available. Custom endpoints use the base-URL variant.
 > Full list: [providers.md](providers.md).
 
 ```java
@@ -53,7 +52,7 @@ try (Model model = Model.provider("groq", "sk-...", "llama-3.3-70b", null)) {
 }
 ```
 
-`deepseek(apiKey, modelId)` remains as a shortcut (registry-backed).
+`deepseek(apiKey, modelId)` remains as a by-name shortcut to the vendor package.
 Unknown names throw `NoSuchProviderError` naming the requested provider.
 
 ## Errors

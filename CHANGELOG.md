@@ -9,15 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
-## [Unreleased]
-
-### Breaking
-
 - Removed the generated `ProviderName` type in every binding (Rust enum, TS
   const object, Go/Java/Kotlin consts, Swift enum, Dart consts, Python
   `Literal`) and `scripts/gen_provider_names.py`. Provider names are plain
-  strings: `provider("groq", ...)`. Built-in and overlay-registered names now
-  share one string path. The provider list lives in
+  strings: Rust uses `create_provider("groq", PresetSettings)`; bindings retain
+  `provider("groq", ...)`, including overlay-registered names. The provider list lives in
   [docs/api/providers.md](docs/api/providers.md); Rust also gains
   `provider_names()`.
 
@@ -80,6 +76,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Rust (provider factory, RFC-0036)**
 
+- Removed crate-root exports `provider()`, `provider_handle`,
+  `provider_from_env`, `provider_discovery`, `provider_registry_entry`,
+  `ProviderOptions`, `ProviderProfile`, `register_provider` and
+  `load_providers_from_json`. Binding compatibility lives in
+  `aimux_providers::provider`; binding APIs are unchanged. Rust by-name
+  creation is `create_provider(name, PresetSettings)`; `provider_names()`
+  lists names, and `default_providers()` supplies the map for
+  `aimux_core::provider_registry::create_provider_registry(providers, options)`
+  with `provider:model` ids by default.
+
 - Redirects are handled in the request helper layer, not in the transport.
   An ordinary API call follows a redirect only while it stays on the same
   origin; a cross-origin `3xx` is returned as a non-2xx response, so no
@@ -98,8 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Every constructor returns an `Arc<dyn …>`. Removed: `Provider::name()`,
   `specification_version()` (from `Provider` and the nine model traits),
   `LanguageModel::config_snapshot()` and `list_models` on `Provider`.
-  Discovery is the separate `ProviderDiscovery` trait (`provider_discovery(name,
-  …)` resolves one); `supported_urls()` is added to `LanguageModel`.
+  Discovery is the separate `ProviderDiscovery` trait, accessed through
+  `Provider::discovery()`; `supported_urls()` is added to `LanguageModel`.
 - Every `XxxConfig`, config builder, `from_env()`, `with_*` method and
   `XxxProvider::new(...)` is gone, in every provider package. Each package
   has `XxxProviderSettings` (all fields optional), `create_xxx(settings)`
@@ -135,10 +141,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recording: `RECORDING_SCHEMA = 3`. `ProviderRecord` holds identity only
   (`provider_id`, `provider`, `model_id`); base URL, key source, profile,
   options and retry settings are no longer recorded and schema-2 files are
-  rejected on read. `rebuild_provider` resolves `provider_id` through the
-  registry and overlay tables (native-protocol packages are not in the
-  registry and return `NoSuchProvider`; replay them with `replay_with_model`).
-  Recorded provider strings change with the next item.
+  rejected on read. `rebuild_provider(record, registry)` resolves
+  `provider_id` through the caller-supplied registry, retaining its settings.
+  If the default model method differs from the recorded one, pass the model
+  to `replay_with_model`. Recorded provider strings change with the next item.
 - `model.provider()` is `"{name}.{method}"`, where `name` is
   `settings.name` (default: the package name). Defaults: `openai.chat` /
   `openai.responses` / `openai.embedding` / `openai.image` / `openai.speech` /
@@ -164,12 +170,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   custom `name` (custom wins) and writes metadata under the custom key;
   compat providers no longer read the `openai` key; `providerOptions.deepseek`
   is honoured (`reasoningEffort`, `thinking`).
-- Presets: `provider_registry.json` has 283 rows (251 + the 32 former thin
-  wrapper vendors, whose types are deleted — `OllamaConfig`, `VllmProvider`,
-  the `vertex_ai_*_models` family, …). The JSON is embedded and parsed once
-  into a runtime descriptor table in `preset.rs`; there are no per-name
-  Rust functions. Presets are created by name via `provider(name, ...)` or
-  `PresetProvider::create(preset::lookup(name).unwrap().descriptor, settings)`.
+- Presets: `provider_registry.json` has 281 rows; Groq and DeepSeek are
+  vendor packages instead of preset rows. Former thin wrapper types are
+  deleted. The JSON is embedded and parsed once into a runtime descriptor
+  table in `preset.rs`; there is no `family` field, generated presets source
+  or per-name Rust function. Create presets or vendor packages by name via
+  `create_provider(name, PresetSettings)`.
   Rows carry `auth: api_key | none` (`none` sends no
   `Authorization`; `PLACEHOLDER_API_KEY` is gone), `base_url_env` and
   template `params` (env, default, derived host maps). Only declared
@@ -180,7 +186,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs in the table test, and
   `scripts/check_provider_boundaries.sh` runs in CI.
 - Groq and DeepSeek are standalone packages (`create_groq`, `create_deepseek`)
-  built on the compat internals; the native OpenAI package no longer knows any
+  with their own chat models; the native OpenAI package no longer knows any
   other vendor. Compat providers expose chat, embedding and image only (the
   upstream set); the native OpenAI package warns on and drops `top_k`;
   `OpenAICompatProfile` and `with_profile` are deleted in favour of dialect
@@ -247,7 +253,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   symbol. `aimux_error_model_type` carries `NoSuchModel.model_type`. These two
   failures used to surface as `AIMUX_E_INVALID_ARGUMENT`.
 - `aimux_provider_new`, `aimux_provider_handle_new` and `config_json` resolve
-  names through the preset and overlay tables; `config_json` accepts
+  names through the binding compatibility module (overlays, vendor packages
+  and presets); `config_json` accepts
   `base_url`, `headers`, `organization`, `project` and `params`, and rejects
   `max_retries` and `body_overrides` with `AIMUX_E_INVALID_ARGUMENT`. A
   provider handle is provider + discovery. `aimux_register_providers`

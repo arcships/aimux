@@ -66,10 +66,17 @@ too — full list: [reference.md](api/reference.md).
 
 ### OpenAI-compatible (registry-backed)
 
-One function in every binding:
+Rust uses `aimux_providers::create_provider(name, PresetSettings)` for vendor
+packages and all 281 presets, then `Provider::language_model(model_id)`.
+`default_providers()` supplies a map for
+`aimux_core::provider_registry::create_provider_registry(providers, options)`,
+whose model ids default to `provider:model`. `provider_names()` lists accepted
+names; `Provider::discovery()` exposes runtime model listing.
+
+The language bindings retain:
 
 ```text
-provider(name, api_key?, model_id, config?)   // all languages
+provider(name, api_key?, model_id, config?)   // language bindings
   name     — registry provider name as a string
   api_key  — optional; omitted/None reads the provider's env var
   config   — optional overrides (base_url / headers / organization / project / params)
@@ -102,7 +109,7 @@ Examples: [Node.js](api/node.md#text-generation) · [Python](api/python.md#text-
 | `tool_choice` | `ToolChoice?` | Tool selection strategy |
 | `instructions` | `string?` | System instructions |
 | `reasoning` | `ReasoningEffort?` | Reasoning effort |
-| `max_retries` | `number?` | Per-call retry override; `0` disables retries (`None` = provider default, 2) |
+| `max_retries` | `number?` | Per-call retry override; `0` disables retries (`None` = 2) |
 | `timeout` | `TimeoutConfiguration?` | Per-call timeouts (total / step / first-chunk / chunk idle) — see [Timeouts](#timeouts) |
 | `provider_options` | `object?` | Per-provider options keyed by namespace; for OpenAI-compatible providers, unknown fields of the provider's own namespace go to the request body as given |
 | `headers` | `object?` | Extra HTTP headers |

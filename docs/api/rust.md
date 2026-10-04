@@ -1,6 +1,6 @@
 # aimux · Rust API
 
-> Unified LLM service access layer — one API to access 325 AI providers
+> Unified LLM service access layer — one API to access AI providers
 
 This is the core implementation language. Shared reference — parameter tables,
 result shapes, factory functions, and the feature coverage matrix — lives in
@@ -56,35 +56,44 @@ provider-level rewrite of the request body is `transform_request_body`.
 Retry is not a provider setting: `max_retries` on the call options (default
 2, 2000 ms initial delay, factor 2).
 
-The 283 OpenAI-compatible registry providers use a runtime table parsed once
-from the embedded JSON. There are no per-name Rust functions; create presets
-by string name:
+The 281 OpenAI-compatible presets use a runtime table parsed once from
+`provider_registry.json`; there is no `family` field or generated presets source.
+Groq and DeepSeek are vendor packages with their own chat models. xAI and
+Hugging Face use the Responses API for language models, with no chat-completions
+accessor.
 
-> **Scope:** `provider(name)` covers the registry OpenAI-compatible providers
-> (and runtime overlays); Anthropic/Google/Bedrock/multimodal/local use their
-> own `create_xxx` factories; custom endpoints → `ProviderOptions.base_url` /
-> `XxxProviderSettings::base_url`. Full list: [providers.md](providers.md).
+By-name creation covers both vendor packages and preset rows:
 
 ```rust
-use aimux_providers::{provider, provider_from_env, ProviderOptions};
+use aimux_providers::{create_provider, default_providers, provider_names, PresetSettings};
+use aimux_core::provider_registry::create_provider_registry;
 
-// Key from the provider's env var (GROQ_API_KEY etc.), base URL from the registry.
-let model = provider_from_env("groq", "llama-3.3-70b", None)?;
+// The vendor's environment key is read when a request is made.
+let provider = create_provider("groq", PresetSettings::default())?;
+let model = provider.language_model("model-id")?;
 
-// Explicit key + overrides. `ProviderOptions` carries base_url / headers /
-// organization / project / params (preset template parameters such as
-// `account_id`); a `max_retries` or `body_overrides` key is `InvalidArgument`.
-let model = provider(
-    "groq",
-    Some("sk-...".to_string()),
-    "llama-3.3-70b",
-    Some(ProviderOptions { base_url: Some("https://relay.example/v1".into()), ..Default::default() }),
-)?;
+// Explicit key and base URL override.
+let provider = create_provider("groq", PresetSettings {
+    api_key: Some("sk-...".to_string().into()),
+    base_url: Some("https://relay.example/v1".into()),
+    ..Default::default()
+})?;
+
+// Combined ids use "provider:model" (":" is the default separator).
+let registry = create_provider_registry(default_providers(), Default::default());
+let model = registry.language_model("groq:model-id")?;
+let names = provider_names();
+
+// Model listing is optional: providers without discovery return None.
+if let Some(discovery) = provider.discovery() {
+    let models = discovery.list_models().await?;
+}
 ```
 
-Names come from `provider_registry.json`; the current list is in
-[providers.md](providers.md). Unknown names fail with
-`AiMuxError::NoSuchProvider { provider_id }`.
+Unknown names fail with `AiMuxError::NoSuchProvider { provider_id }`.
+Custom endpoints use `PresetSettings::base_url` or the vendor's settings.
+The bindings retain their compatibility API in `aimux_providers::provider`;
+its helpers and option types are not re-exported from the Rust crate root.
 
 ## Text Generation
 
@@ -206,7 +215,7 @@ Converts text into a vector representation.
 ```rust
 use aimux_core::embedding_model::{EmbeddingCallOptions, embed};
 
-let model = provider.embedding_model("text-embedding-3-small");
+let model = provider.embedding("text-embedding-3-small");
 let opts = EmbeddingCallOptions::new("hello");
 let result = embed(&model, opts).await?;
 // result.embeddings[0] is Vec<f32>
@@ -272,7 +281,7 @@ Reorders a document list by relevance.
 ```rust
 use aimux_core::reranking_model::{RerankingCallOptions, RerankingDocuments, rerank};
 
-let model = provider.reranking_model("rerank-v3.0");
+let model = provider.reranking("rerank-v3.0");
 let opts = RerankingCallOptions::new("What is Rust?", docs);
 let result = rerank(&model, opts).await?;
 // result.ranking sorted by score
@@ -285,7 +294,7 @@ Calls a search provider to obtain results.
 ```rust
 use aimux_core::search_model::{SearchCallOptions, search};
 
-let model = provider.search_model("tavily-search");
+let model = aimux_providers::tavily().search_model();
 let opts = SearchCallOptions::new("What is Rust?");
 let result = search(&model, opts).await?;
 // result.results is Vec<SearchResultItem>
@@ -310,11 +319,12 @@ let result = files.upload_file(opts).await?;
 
 ## Core Traits
 
-The Rust core provides 10 traits/interfaces, implemented by each provider as needed:
+The Rust core provides these traits/interfaces, implemented by each provider as needed:
 
 | Trait | Method | Semantics |
 |-------|------|------|
-| `Provider` | `name`, `language_model` | Provider factory — holds API config, creates `LanguageModel` instances by model name |
+| `Provider` | `language_model`, `embedding_model`, `image_model`, `discovery` | Provider factory — holds API config, creates `LanguageModel` instances by model name |
+| `ProviderDiscovery` | `list_models` | Optional model listing through `Provider::discovery()` |
 | `LanguageModel` | `do_generate`, `do_stream` | Text generation |
 | `EmbeddingModel` | `do_embed` | Vector embedding |
 | `SpeechModel` | `do_generate` | Speech synthesis |
@@ -327,14 +337,11 @@ The Rust core provides 10 traits/interfaces, implemented by each provider as nee
 
 The user-facing API consists of the `generate_text()` / `stream_text()` free functions, which internally call the trait methods.
 
-> The multimodal accessors in the examples (`provider.embedding_model(...)`,
-> `provider.speech(...)`, `provider.image(...)`, `provider.transcription(...)`,
-> `provider.files()`, `provider.reranking_model(...)`,
-> `provider.search_model(...)`, `provider.video(...)`) are **inherent methods
-> on each provider struct**, not trait methods — they exist only on providers
-> that support the feature (e.g. `OpenAIProvider` has `embedding` /
-> `speech` / `image` / `transcription` / `files`; `CohereProvider` has
-> `embedding_model` / `reranking_model`; `BedrockProvider` has `image`).
+Concrete provider accessors such as `embedding`, `speech`, `image`,
+`transcription`, `reranking` and `video` are inherent methods on the vendors
+that offer them. Through `Provider`, required model methods return `Result`;
+optional model methods return `Option<Result<…>>`, and `files()` returns
+`Option<Arc<dyn Files>>`.
 
 ## Types
 

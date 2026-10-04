@@ -1,6 +1,6 @@
 # aimux · Python API
 
-> Unified LLM service access layer — one API to access 325 AI providers
+> Unified LLM service access layer — one API to access AI providers
 
 Shared reference — parameter tables, result shapes, factory functions, and the
 feature coverage matrix — lives in the [API overview](../API.md).
@@ -37,18 +37,17 @@ model = provider("cloudflare_workers_ai", "sk-...", "@cf/meta/llama-3.1-8b-instr
 result = generate_text(model, "Hello")
 ```
 
-`provider(name, api_key, model_id, base_url=None, config=None)` covers all
-283 built-in OpenAI-compatible providers. `config` takes the full
+`provider(name, api_key, model_id, base_url=None, config=None)` covers the vendor packages and
+281 registry-backed OpenAI-compatible providers. `config` takes the full
 `ProviderOptions` shape (`base_url` / `headers` / `organization` / `project` /
 `params`); the `base_url` parameter wins over `config["base_url"]`.
 `max_retries` (a per-call option) and `body_overrides` (removed) in `config`
 raise `InvalidArgumentError`. A missing key or setting raises `LoadAPIKeyError`
 (`env_var`, `description`) / `LoadSettingError` (`env_var`, `setting_name`). `openai` / `anthropic` / `deepseek` factories
-remain (deepseek is now registry-backed).
+remain; DeepSeek now uses its own vendor chat model.
 
-> **Scope:** `provider(name)` covers only the 283 registry OpenAI-compatible
-> providers; Anthropic/Google/multimodal/local → typed factories
-> (`anthropic(api_key, model)`); custom endpoints → `base_url` param.
+> **Scope:** `provider(name)` reaches vendor packages and the 281 preset rows;
+> typed factories remain available. Custom endpoints use the `base_url` param.
 > Full list: [providers.md](providers.md).
 
 ## Text Generation
