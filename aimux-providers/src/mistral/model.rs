@@ -5,10 +5,11 @@
 //! - `content` in responses can be a string or an array of typed parts
 //!   (text, thinking, image_url). Thinking parts are extracted as reasoning
 //!   in streaming mode.
-//! - Streaming tool calls arrive complete in a single chunk (no index-based
-//!   incremental accumulation).
+//! - Streamed tool calls are assembled by the shared `StreamingToolCallTracker`.
 //! - Usage supports `num_cached_tokens` / `prompt_tokens_details.cached_tokens`.
 //! - Finish reasons include `model_length`.
+
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -21,10 +22,25 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
+use aimux_provider_utils::{
+    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker,
+};
+
 use crate::shared::EndpointConfig;
 
 use super::convert::{build_request_body, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
+
+/// Id for a streamed tool call the server sent without one (upstream passes
+/// its `generateId` to the tracker).
+fn generate_id() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    format!("{nanos:x}{:x}", COUNTER.fetch_add(1, Ordering::Relaxed))
+}
 
 /// A Mistral language model.
 pub struct MistralModel {
@@ -315,6 +331,7 @@ impl LanguageModel for MistralModel {
             let text_id = 0usize;
             let mut text_started = false;
             let mut reasoning_started = false;
+            let mut tool_calls = StreamingToolCallTracker::new().with_generate_id(generate_id);
             let mut reasoning_id: Option<String> = None;
             let mut final_usage = Usage::default();
             let mut final_finish_reason: Option<FinishReason> = None;
@@ -442,47 +459,33 @@ impl LanguageModel for MistralModel {
                                     });
                                 }
 
-                            // Tool calls (complete in a single chunk).
+                            // Tool calls: assembled by the shared tracker.
                             if let Some(tool_call_deltas) = choice.delta.tool_calls {
                                 for dtc in tool_call_deltas {
-                                    let tool_id = dtc.id;
-                                    let tool_name = dtc.function.name;
-                                    let args = dtc.function.arguments;
-
-                                    yield Ok(StreamPart::ToolInputStart {
-                                        id: tool_id.clone(),
-                                        tool_name: tool_name.clone(),
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        title: None,
-                                        provider_metadata: None,
-                                    });
-
-                                    if !args.is_empty() {
-                                        yield Ok(StreamPart::ToolInputDelta {
-                                            id: tool_id.clone(),
-                                            delta: args.clone(),
-                                            provider_metadata: None,
-                                        });
+                                    let delta = StreamingToolCallDelta {
+                                        index: dtc.index,
+                                        id: dtc.id,
+                                        r#type: None,
+                                        function: Some(StreamingToolCallFunction {
+                                            name: dtc.function.name,
+                                            arguments: dtc.function.arguments,
+                                        }),
+                                        extra: Value::Null,
+                                    };
+                                    match tool_calls.process_delta(&delta) {
+                                        Ok(parts) => {
+                                            for part in parts {
+                                                yield Ok(part);
+                                            }
+                                        }
+                                        // A new call without a function name
+                                        // is invalid response data, as in the
+                                        // AI SDK; the stream ends.
+                                        Err(error) => {
+                                            yield Err(error.into());
+                                            return;
+                                        }
                                     }
-
-                                    yield Ok(StreamPart::ToolInputEnd {
-                                        id: tool_id.clone(),
-                                        provider_metadata: None,
-                                    });
-
-                                    let input = Value::String(args);
-                                    yield Ok(StreamPart::ToolCall {
-                                        tool_call_id: tool_id,
-                                        tool_name,
-                                        input,
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        thought_signature: None,
-                                        invalid: None,
-                                        error: None,
-                                        provider_metadata: None,
-                                    });
                                 }
                             }
 
@@ -533,6 +536,10 @@ impl LanguageModel for MistralModel {
                 provider_metadata: None,
             });
                 }
+
+            for part in tool_calls.flush() {
+                yield Ok(part);
+            }
 
             yield Ok(StreamPart::Finish {
                 finish_reason: if stream_errored {
