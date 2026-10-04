@@ -1,19 +1,33 @@
 //! Groq provider.
 //!
-//! [`create_groq`] is the Rust form of the AI SDK's `createGroq`: an
-//! OpenAI-compatible chat provider named `groq` whose models report
-//! `"groq.chat"`, read providerOptions from the `groq` key (and the generic
-//! `openaiCompatible` one) and report provider metadata under `groq`. Groq's
-//! differences (streaming usage in `x_groq`, no `top_k`, `max_completion_tokens`,
-//! structured-output rules, the `browser_search` tool, the `reasoning`
-//! message field) live in the package's dialect module and are injected into the shared
-//! compatible chat model.
+//! [`create_groq`] is the Rust form of the AI SDK's `createGroq`: it takes
+//! [`GroqProviderSettings`], validates the base URL, fixes the provider name
+//! and returns a [`GroqProvider`] whose chat models are Groq's own
+//! [`GroqChatLanguageModel`] (`"groq.chat"`). The API key is not read there;
+//! it is loaded in the request headers of every call, from the setting or
+//! from `GROQ_API_KEY`. [`groq()`] is the default instance.
 //!
-//! As in the other packages the API key is not read when the provider is
-//! created: `GROQ_API_KEY` is loaded on every request unless `api_key` is
-//! given. [`groq()`] is the default instance.
+//! The files mirror the package's: `model.rs` is
+//! `groq-chat-language-model.ts`, `convert.rs` is
+//! `convert-to-groq-chat-messages.ts`, `prepare_tools.rs` is
+//! `groq-prepare-tools.ts`, `usage.rs` is `convert-groq-usage.ts`,
+//! `finish_reason.rs` is `map-groq-finish-reason.ts`, `options.rs` is
+//! `groq-chat-language-model-options.ts`, `error.rs` is `groq-error.ts` and
+//! `browser_search_models.rs` is `groq-browser-search-models.ts`.
 
+mod browser_search_models;
+mod convert;
 mod dialect;
+mod error;
+mod finish_reason;
+mod model;
+mod options;
+mod prepare_tools;
+mod types;
+mod usage;
+
+pub use crate::shared::TransformRequestBody;
+pub use model::GroqChatLanguageModel;
 
 use std::sync::{Arc, OnceLock};
 
@@ -25,18 +39,15 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
-use crate::openai_compatible::config::BaseUrl;
-use crate::openai_compatible::{
-    Assembly, OpenAICompatibleChatModel, OpenAICompatibleProvider, TransformRequestBody,
-};
-use crate::shared::Credential;
+use crate::shared::{Credential, EndpointConfig, provider_headers};
 
 pub(crate) use dialect::profile;
 
 const DEFAULT_BASE_URL: &str = "https://api.groq.com/openai/v1";
 const API_KEY_ENV_VAR: &str = "GROQ_API_KEY";
+const DEFAULT_NAME: &str = "groq";
 
 /// Settings of [`create_groq`] (the AI SDK's `GroqProviderSettings`).
 #[derive(Clone, Default)]
@@ -50,8 +61,8 @@ pub struct GroqProviderSettings {
     pub api_key: Option<Resolvable<String>>,
     /// Extra headers on every request; a `None` value removes the header.
     pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of every model's `provider()` string and
-    /// the providerOptions namespace. Default `"groq"`.
+    /// The provider name, the prefix of every model's `provider()` string
+    /// (`"{name}.chat"`). Default `"groq"`. The providerOptions key stays `groq`.
     pub name: Option<String>,
     /// The transport. `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
@@ -92,17 +103,15 @@ pub fn create_groq(settings: GroqProviderSettings) -> Result<GroqProvider, AiMux
         None => DEFAULT_BASE_URL.to_string(),
     };
     Ok(GroqProvider {
-        inner: OpenAICompatibleProvider::assemble(Assembly {
-            name: settings.name.unwrap_or_else(|| "groq".to_string()),
-            base_url: BaseUrl::Fixed(base_url),
-            credential: Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Groq"),
-            fixed_headers: Vec::new(),
-            headers: settings.headers,
-            query_params: None,
-            fetch: settings.fetch,
-            transform_request_body: settings.transform_request_body,
-            profile: profile(),
-        })?,
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: provider_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Groq"),
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -119,20 +128,34 @@ pub fn groq() -> &'static GroqProvider {
 /// A Groq provider (the AI SDK's `GroqProvider`). Groq serves language models
 /// only here: embedding and image models are `NoSuchModel`.
 pub struct GroqProvider {
-    inner: OpenAICompatibleProvider,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
+    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl GroqProvider {
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            self.transform_request_body.clone(),
+        )
+    }
+
     /// A chat model; `provider()` is `"{name}.chat"` (`"groq.chat"`).
     #[must_use]
-    pub fn chat(&self, model_id: &str) -> OpenAICompatibleChatModel {
-        self.inner.chat(model_id)
+    pub fn chat(&self, model_id: &str) -> GroqChatLanguageModel {
+        GroqChatLanguageModel::from_config(model_id.to_string(), self.model_config("chat"))
     }
 
     /// The provider as a function: the default language model, the chat model.
     #[must_use]
     pub fn call(&self, model_id: &str) -> Arc<dyn LanguageModel> {
-        self.inner.call(model_id)
+        Arc::new(self.chat(model_id))
     }
 }
 
@@ -157,6 +180,9 @@ impl Provider for GroqProvider {
 impl ProviderDiscovery for GroqProvider {
     /// `GET {base_url}/models`: one exchange, no retry.
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
-        self.inner.list_models()
+        let config = self.model_config("models");
+        Box::pin(async move {
+            crate::shared::list_data_models(&config, error::groq_failed_response_handler()).await
+        })
     }
 }
