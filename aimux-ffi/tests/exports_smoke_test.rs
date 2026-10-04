@@ -604,23 +604,17 @@ fn constructor_exports_build_and_release_handles() {
     }
 }
 
-/// `provider_from_env` reads the provider's env var, which the harness cannot
-/// control: a live handle or a clean missing-key error are both correct.
+/// `provider_from_env` defers reading the key until request time.
 #[test]
-fn provider_from_env_handle_or_clean_failure() {
+fn provider_from_env_handle() {
     let mut h = 0;
     let e = aimux_provider_from_env(
         c("groq").as_ptr(),
         c("llama-3.3-70b-versatile").as_ptr(),
         &mut h,
     );
-    if e.is_null() {
-        assert_ne!(h, 0);
-        aimux_drop_handle(h);
-    } else {
-        assert_eq!(h, 0);
-        expect_aimux_error(e, "provider_from_env");
-    }
+    expect_handle(e, h, "provider_from_env");
+    aimux_drop_handle(h);
 }
 
 // ── session class: text generation (4 exports) ──────────────────────────────

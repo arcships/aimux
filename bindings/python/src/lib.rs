@@ -483,12 +483,13 @@ fn anthropic(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn deepseek(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
-    let options = base_url.map(|url| aimux_providers::ProviderOptions {
+    let options = base_url.map(|url| aimux_providers::provider::ProviderOptions {
         base_url: Some(url.to_string()),
         ..Default::default()
     });
-    let model = aimux_providers::provider("deepseek", Some(api_key.to_string()), model_id, options)
-        .map_err(|e| to_py_err(&e))?;
+    let model =
+        aimux_providers::provider::provider("deepseek", Some(api_key.to_string()), model_id, options)
+            .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -739,15 +740,15 @@ fn provider(
     base_url: Option<&str>,
     config_json: Option<&str>,
 ) -> PyResult<Model> {
-    let mut options: Option<aimux_providers::ProviderOptions> = match config_json {
+    let mut options: Option<aimux_providers::provider::ProviderOptions> = match config_json {
         Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(wire_json("config_json", s)?),
         _ => None,
     };
     if let Some(url) = base_url {
         options.get_or_insert_with(Default::default).base_url = Some(url.to_string());
     }
-    let model =
-        aimux_providers::provider(name, api_key, model_id, options).map_err(|e| to_py_err(&e))?;
+    let model = aimux_providers::provider::provider(name, api_key, model_id, options)
+        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -763,7 +764,6 @@ fn provider(
 #[pyclass]
 struct ProviderHandle {
     inner: Arc<dyn aimux_core::provider::Provider>,
-    discovery: Arc<dyn aimux_core::provider::ProviderDiscovery>,
 }
 
 #[pymethods]
@@ -771,9 +771,14 @@ impl ProviderHandle {
     /// List models available on this provider (runtime discovery + anya2a spec).
     /// Returns a JSON array of RuntimeModel.
     fn list_models(&self) -> PyResult<String> {
+        let discovery = self.inner.discovery().ok_or_else(|| {
+            to_py_err(&AiMuxError::UnsupportedFunctionality(
+                "provider does not support model listing".into(),
+            ))
+        })?;
         let rt = runtime();
         let models = rt
-            .block_on(async { self.discovery.list_models().await })
+            .block_on(discovery.list_models())
             .map_err(|e| to_py_err(&e))?;
         serialize_result(&models)
     }
@@ -803,18 +808,16 @@ fn create_provider(
     base_url: Option<&str>,
     config_json: Option<&str>,
 ) -> PyResult<ProviderHandle> {
-    let mut options: Option<aimux_providers::ProviderOptions> = match config_json {
+    let mut options: Option<aimux_providers::provider::ProviderOptions> = match config_json {
         Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(wire_json("config_json", s)?),
         _ => None,
     };
     if let Some(url) = base_url {
         options.get_or_insert_with(Default::default).base_url = Some(url.to_string());
     }
-    let inner = aimux_providers::provider_handle(name, api_key.clone(), options.clone())
+    let inner = aimux_providers::provider::provider_handle(name, api_key, options)
         .map_err(|e| to_py_err(&e))?;
-    let discovery =
-        aimux_providers::provider_discovery(name, api_key, options).map_err(|e| to_py_err(&e))?;
-    Ok(ProviderHandle { inner, discovery })
+    Ok(ProviderHandle { inner })
 }
 
 /// Fetch the community model catalogue (RFC-0027) and return it as a JSON
@@ -857,7 +860,7 @@ fn init_logging(level: &str) {
 #[pyfunction]
 fn register_providers(config_json: &str) -> PyResult<()> {
     let _: serde_json::Value = wire_json("config_json", config_json)?;
-    aimux_providers::load_providers_from_json(config_json).map_err(|e| match e {
+    aimux_providers::provider::load_providers_from_json(config_json).map_err(|e| match e {
         AiMuxError::JsonParse(m) => {
             to_py_err(&AiMuxError::InvalidArgument(format!("config_json: {m}")))
         }

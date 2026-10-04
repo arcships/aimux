@@ -81,10 +81,10 @@ use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
 use aimux_providers::google::{GoogleProviderSettings, create_google};
 use aimux_providers::mistral::{MistralProviderSettings, create_mistral};
 use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
+use aimux_providers::provider::{ProviderOptions, provider, provider_handle};
 use aimux_providers::tavily::{TavilyProvider, TavilyProviderSettings, create_tavily};
 use aimux_providers::vertex::{VertexProviderSettings, create_google_vertex};
 use aimux_providers::xai::{XAIProviderSettings, create_xai};
-use aimux_providers::{ProviderOptions, provider, provider_discovery, provider_handle};
 
 use futures::StreamExt;
 use tokio::runtime::Runtime;
@@ -114,12 +114,10 @@ enum HandleEntry {
 
 /// A provider handle: the model factory plus its runtime-discovery side.
 ///
-/// `Provider` has no `list_models` (AI SDK `ProviderV4` has none); discovery
-/// is the separate `ProviderDiscovery` trait, so the handle keeps both.
+/// Discovery is accessed through `Provider::discovery()`.
 #[derive(Clone)]
 struct ProviderEntry {
     provider: Arc<dyn aimux_core::provider::Provider>,
-    discovery: Arc<dyn aimux_core::provider::ProviderDiscovery>,
 }
 
 type Registry = HashMap<u64, HandleEntry>;
@@ -1587,8 +1585,7 @@ pub extern "C" fn aimux_xai_new_with_base(
 ///   NULL / empty / "null" for defaults. `max_retries` (call-level) and
 ///   `body_overrides` (removed) are rejected as invalid arguments.
 ///
-/// AiMuxError: unknown provider, bad config shape, missing env key, or
-/// invalid model id.
+/// AiMuxError: unknown provider, bad config shape, or invalid model id.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_provider_new(
     name: *const c_char,
@@ -1609,7 +1606,7 @@ pub extern "C" fn aimux_provider_new(
 }
 
 /// Convenience: create a language model by provider name, reading the API key
-/// from the provider's env var.
+/// from the provider's env var at request time.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_provider_from_env(
     name: *const c_char,
@@ -1619,7 +1616,7 @@ pub extern "C" fn aimux_provider_from_env(
     with_out_handle(out_handle, || {
         let name = str_arg(name, "name")?;
         let model_id = str_arg(model_id, "model_id")?;
-        let m = provider(&name, None, &model_id, None)?;
+        let m = provider_handle(&name, None, None)?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1648,11 +1645,9 @@ pub extern "C" fn aimux_provider_handle_new(
         let name = str_arg(name, "name")?;
         let key = opt_str_arg(api_key, "api_key")?;
         let opts = parse_provider_options(config_json)?;
-        let provider = provider_handle(&name, key.clone(), opts.clone())?;
-        let discovery = provider_discovery(&name, key, opts)?;
+        let provider = provider_handle(&name, key, opts)?;
         Ok(intern_handle(HandleEntry::Provider(ProviderEntry {
             provider,
-            discovery,
         })))
     })
 }
@@ -1675,7 +1670,10 @@ pub extern "C" fn aimux_provider_list_models(
             }
             .into());
         };
-        run_json(p.discovery.list_models())
+        let discovery = p.provider.discovery().ok_or_else(|| {
+            AiMuxError::InvalidArgument("provider does not support model discovery".into())
+        })?;
+        run_json(discovery.list_models())
     })
 }
 
@@ -3367,7 +3365,7 @@ pub extern "C" fn aimux_register_providers(config_json: *const c_char) -> *mut a
         // Malformed JSON text is this layer's finding; a well-formed document
         // that the registry rejects (bad schema, unknown protocol) is an AiMuxError.
         serde_json::from_str::<serde_json::Value>(&json).map_err(|e| wire_err("config_json", e))?;
-        aimux_providers::load_providers_from_json(&json).map_err(|e| match e {
+        aimux_providers::provider::load_providers_from_json(&json).map_err(|e| match e {
             // The registry reports a schema mismatch as `JsonParse`; the text
             // already parsed above, so what it rejected is the shape —
             // `AiMuxError::InvalidArgument`, not a provider-response parse failure.

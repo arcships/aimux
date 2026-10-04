@@ -32,6 +32,7 @@ use aimux_core::message::ModelPrompt;
 use aimux_core::openai_output::OpenAiStreamOptions;
 use aimux_core::parse_tool_call::{ToolCallRepairReply, tool_call_repair_inputs};
 use aimux_core::tool::ToolCall;
+use aimux_providers::provider as providers;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
@@ -639,7 +640,7 @@ pub struct ProviderConfig {
 impl ProviderConfig {
     /// Fail on the two removed keys instead of dropping them silently.
     fn reject_removed_keys(&self) -> MResult<()> {
-        aimux_providers::reject_removed_provider_options(
+        providers::reject_removed_provider_options(
             self.max_retries.is_some(),
             self.body_overrides.is_some(),
         )
@@ -747,7 +748,7 @@ pub fn register_providers(config_json: String) -> error::AimuxResult<()> {
         // schema mismatch as `JsonParse`, which is core's InvalidArgument
         // here (the text already parsed) — JsonParse is for provider responses.
         let _: serde_json::Value = parse_wire_json("config_json", &config_json)?;
-        aimux_providers::load_providers_from_json(&config_json).map_err(|e| match e {
+        providers::load_providers_from_json(&config_json).map_err(|e| match e {
             AiMuxError::JsonParse(m) => crate::error::AiMuxBindingError::from(
                 &AiMuxError::InvalidArgument(format!("config_json: {m}")),
             ),
@@ -1062,7 +1063,7 @@ pub async fn deepseek(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             let options = provider_options_from_config(config)?;
-            let model = aimux_providers::provider("deepseek", Some(api_key), &model_id, options)
+            let model = providers::provider("deepseek", Some(api_key), &model_id, options)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: model,
@@ -1395,7 +1396,7 @@ pub async fn provider(
                 Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
                 None => None,
             };
-            let model = aimux_providers::provider(&name, api_key, &model_id, options)
+            let model = providers::provider(&name, api_key, &model_id, options)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: model,
@@ -1423,7 +1424,6 @@ pub async fn provider(
 #[napi]
 pub struct ProviderHandle {
     inner: Arc<dyn aimux_core::provider::Provider>,
-    discovery: Arc<dyn aimux_core::provider::ProviderDiscovery>,
 }
 
 #[napi]
@@ -1438,7 +1438,13 @@ impl ProviderHandle {
         AimuxResult({
             let __r: crate::error::MResult<String> = async {
                 let models = self
-                    .discovery
+                    .inner
+                    .discovery()
+                    .ok_or_else(|| {
+                        AiMuxBindingError::from(AiMuxError::UnsupportedFunctionality(
+                            "provider does not support listing models".into(),
+                        ))
+                    })?
                     .list_models()
                     .await
                     .map_err(|e| AiMuxBindingError::from(&e))?;
@@ -1491,11 +1497,9 @@ pub async fn create_provider(
                 Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
                 None => None,
             };
-            let inner = aimux_providers::provider_handle(&name, api_key.clone(), options.clone())
+            let inner = providers::provider_handle(&name, api_key, options)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
-            let discovery = aimux_providers::provider_discovery(&name, api_key, options)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(ProviderHandle { inner, discovery })
+            Ok(ProviderHandle { inner })
         }
         .await;
         __r
@@ -1522,16 +1526,16 @@ pub async fn get_model_specs(source_url: Option<String>) -> AimuxResult<String> 
 /// Build `ProviderOptions` from a Node `ProviderConfig` (3rd factory arg).
 fn provider_options_from_config(
     config: Option<Either<String, ProviderConfig>>,
-) -> MResult<Option<aimux_providers::ProviderOptions>> {
+) -> MResult<Option<providers::ProviderOptions>> {
     let opts = match config {
         None => None,
-        Some(Either::A(url)) => Some(aimux_providers::ProviderOptions {
+        Some(Either::A(url)) => Some(providers::ProviderOptions {
             base_url: Some(url),
             ..Default::default()
         }),
         Some(Either::B(cfg)) => {
             cfg.reject_removed_keys()?;
-            let mut o = aimux_providers::ProviderOptions::default();
+            let mut o = providers::ProviderOptions::default();
             if let Some(url) = cfg.base_url {
                 o.base_url = Some(url);
             }

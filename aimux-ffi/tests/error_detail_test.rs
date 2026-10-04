@@ -12,16 +12,15 @@ use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use aimux_ffi::{
-    AIMUX_E_INVALID_ARGUMENT, AIMUX_E_LOAD_API_KEY, AIMUX_E_NO_SUCH_PROVIDER,
-    aimux_abort_signal_abort, aimux_abort_signal_drop, aimux_abort_signal_new, aimux_azure_new,
-    aimux_cohere_reranking_new, aimux_consume_stream_text, aimux_drop_handle, aimux_error_code,
-    aimux_error_free, aimux_error_provider_code, aimux_error_provider_message, aimux_error_t,
-    aimux_generate_object, aimux_generate_text, aimux_google_image_new, aimux_google_video_new,
-    aimux_init_proxy, aimux_openai_embedding_new, aimux_openai_files_new, aimux_openai_image_new,
-    aimux_openai_new, aimux_openai_speech_new, aimux_openai_transcription_new, aimux_provider_new,
+    AIMUX_E_INVALID_ARGUMENT, AIMUX_E_NO_SUCH_PROVIDER, aimux_abort_signal_abort,
+    aimux_abort_signal_drop, aimux_abort_signal_new, aimux_azure_new, aimux_cohere_reranking_new,
+    aimux_consume_stream_text, aimux_drop_handle, aimux_error_t, aimux_generate_object,
+    aimux_generate_text, aimux_google_image_new, aimux_google_video_new, aimux_init_proxy,
+    aimux_openai_embedding_new, aimux_openai_files_new, aimux_openai_image_new, aimux_openai_new,
+    aimux_openai_speech_new, aimux_openai_transcription_new, aimux_provider_new,
     aimux_register_providers, aimux_stream_text, aimux_tavily_search_new,
 };
-use common::{c, expect_aimux_error, expect_ffi_error, ok, take};
+use common::{c, expect_aimux_error, expect_ffi_error, ok};
 
 fn valid_handle() -> u64 {
     let mut h = 0;
@@ -144,31 +143,6 @@ fn unknown_provider_fills_unknown_provider_code() {
         expect_aimux_error(e, "provider_new").0,
         AIMUX_E_NO_SUCH_PROVIDER
     );
-}
-
-/// A registry provider whose key was never passed and is not in the
-/// environment fails with the dedicated `AIMUX_E_LOAD_API_KEY` code; the
-/// consulted environment variable and the key's description travel on the
-/// provider-code / provider-message getters.
-#[test]
-fn missing_api_key_reports_load_api_key_code_with_env_var() {
-    if std::env::var_os("GROQ_API_KEY").is_some() {
-        return; // the host environment supplies a key; nothing to observe
-    }
-    let mut h = 0;
-    let e = aimux_provider_new(
-        c("groq").as_ptr(),
-        ptr::null(),
-        c("llama-3.3-70b-versatile").as_ptr(),
-        ptr::null(),
-        &mut h,
-    );
-    assert_eq!(h, 0);
-    assert!(!e.is_null());
-    assert_eq!(aimux_error_code(e), AIMUX_E_LOAD_API_KEY);
-    assert_eq!(take(aimux_error_provider_code(e)), "GROQ_API_KEY");
-    assert_eq!(take(aimux_error_provider_message(e)), "Groq");
-    aimux_error_free(e);
 }
 
 #[test]
