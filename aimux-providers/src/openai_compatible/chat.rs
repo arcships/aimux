@@ -5,7 +5,6 @@
 //! [`ChatDialect`](super::config::ChatDialect) of the model's config.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -18,7 +17,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage};
 use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker,
+    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, generate_id,
 };
 
 use super::config::{ChatDialect, CompatModelConfig};
@@ -145,21 +144,6 @@ fn prediction_tokens(usage: Option<&UsageResponse>, metadata: &mut Map<String, V
     }
 }
 
-// ── Ids ──────────────────────────────────────────────────────────────────────
-
-/// A fallback id for a tool call the server sent without one.
-fn generate_tool_call_id() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or_default();
-    format!(
-        "call_{nanos:x}{:x}",
-        COUNTER.fetch_add(1, Ordering::Relaxed)
-    )
-}
-
 fn thought_signature(extra_content: Option<&Value>) -> Option<String> {
     extra_content
         .and_then(|extra| extra.pointer("/google/thought_signature"))
@@ -272,7 +256,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 tool_call_id: call
                     .id
                     .filter(|id| !id.is_empty())
-                    .unwrap_or_else(generate_tool_call_id),
+                    .unwrap_or_else(generate_id),
                 tool_name: call.function.name,
                 input: call.function.arguments.unwrap_or_default(),
                 provider_executed: None,
@@ -413,7 +397,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
 
             let signature_key = metadata_key.clone();
             let mut tool_calls = StreamingToolCallTracker::new()
-                .with_generate_id(generate_tool_call_id)
+                .with_generate_id(generate_id)
                 .with_extract_metadata(|delta| {
                     thought_signature(Some(&delta.extra)).map(Value::String)
                 })

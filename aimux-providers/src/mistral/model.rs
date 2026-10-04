@@ -9,8 +9,6 @@
 //! - Usage supports `num_cached_tokens` / `prompt_tokens_details.cached_tokens`.
 //! - Finish reasons include `model_length`.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::Value;
@@ -23,24 +21,13 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker,
+    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, generate_id,
 };
 
 use crate::shared::EndpointConfig;
 
 use super::convert::{build_request_body, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
-
-/// Id for a streamed tool call the server sent without one (upstream passes
-/// its `generateId` to the tracker).
-fn generate_id() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or_default();
-    format!("{nanos:x}{:x}", COUNTER.fetch_add(1, Ordering::Relaxed))
-}
 
 /// A Mistral language model.
 pub struct MistralModel {
@@ -393,8 +380,8 @@ impl LanguageModel for MistralModel {
                             final_usage = convert_usage(usage);
                         }
 
-                        // Process choices.
-                        for choice in chunk.choices {
+                        // Upstream processes only the first choice.
+                        if let Some(choice) = chunk.choices.into_iter().next() {
                             // Reasoning content (from thinking parts in array content).
                             if let Some(reasoning_delta) =
                                 extract_reasoning_content(&choice.delta.content)

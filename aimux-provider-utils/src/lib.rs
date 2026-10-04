@@ -13,6 +13,7 @@ pub mod api_key;
 mod download_guard;
 pub mod extract_response_headers;
 pub mod fetch;
+pub mod generate_id;
 pub mod get_from_api;
 pub mod handle_fetch_error;
 pub mod headers;
@@ -38,6 +39,7 @@ pub use fetch::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, ReqwestFetch,
     default_fetch,
 };
+pub use generate_id::generate_id;
 pub use get_from_api::get_from_api;
 pub use headers::{
     HeaderMapOpt, HeadersFn, combine_headers, normalize_headers, with_user_agent_suffix,
