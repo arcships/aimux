@@ -132,7 +132,7 @@ fn provider_handle_new_params() {
 
     let mut h = 7;
     let e = aimux_provider_handle_new(
-        c("deepseek").as_ptr(),
+        c("abacus").as_ptr(),
         c("sk-test-fake").as_ptr(),
         c(r#"{"params":{"account_id":"acct123"}}"#).as_ptr(),
         &mut h,
