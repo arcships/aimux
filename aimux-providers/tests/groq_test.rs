@@ -12,19 +12,13 @@
 //! - `packages/groq/src/groq-chat-language-model-options.test.ts` → Zod schema
 //!   validation (TypeScript-specific; not directly translatable)
 //!
-//! Groq is its own package (`aimux_providers::groq`) on the OpenAI-compatible
-//! chat model: `groq.chat` identity, the `groq` providerOptions namespace,
-//! `x_groq` streaming usage, `max_completion_tokens`, the browser_search tool
-//! and Groq's structured-output rules are injected through the package's
-//! dialect, not decided by a provider-name check in the shared converter. The
-//! `provider("groq", ...)` registry entry point builds the same dialect.
-//! Reasoning effort is a direct passthrough - no vendor normalization.
+//! Every test builds the model through the Groq package
+//! (`create_groq(..).chat(model)`), so it exercises `GroqChatLanguageModel`.
 
 mod common;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
-use std::sync::Arc;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -39,8 +33,7 @@ use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
 use aimux_provider_utils::Resolvable;
-use aimux_providers::groq::{GroqProviderSettings, create_groq, groq};
-use aimux_providers::{ProviderOptions, provider};
+use aimux_providers::groq::{GroqChatLanguageModel, GroqProviderSettings, create_groq, groq};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -58,18 +51,20 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
     CallOptions::new(prompt)
 }
 
-/// Build a provider pointed at the mock server.
-fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
-    provider(
-        "groq",
-        Some("test-api-key".to_string()),
-        "gemma2-9b-it",
-        Some(ProviderOptions {
-            base_url: Some(server.uri()),
-            ..Default::default()
-        }),
-    )
+/// A Groq chat model pointed at the mock server.
+fn model_at(server: &MockServer, model_id: &str) -> GroqChatLanguageModel {
+    create_groq(GroqProviderSettings {
+        base_url: Some(server.uri()),
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        ..Default::default()
+    })
     .expect("groq provider should build")
+    .chat(model_id)
+}
+
+/// Build the default test model pointed at the mock server.
+fn make_provider(server: &MockServer) -> GroqChatLanguageModel {
+    model_at(server, "gemma2-9b-it")
 }
 
 /// A standard non-streaming chat-completion JSON body returning "Hello, World!".
@@ -398,12 +393,15 @@ mod convert_messages {
             )],
             ..Default::default()
         }];
-        // The Groq dialect takes images only: a provider reference is an
-        // InvalidArgument error naming the unsupported functionality.
+        // upstream convert-to-groq-chat-messages.ts: a provider reference
+        // throws UnsupportedFunctionalityError.
         let result = model.do_generate(&default_options(prompt)).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, aimux_core::AiMuxError::InvalidArgument(_)));
+        assert!(matches!(
+            err,
+            aimux_core::AiMuxError::UnsupportedFunctionality(_)
+        ));
         assert!(
             err.to_string()
                 .contains("file parts with provider references"),
@@ -420,8 +418,6 @@ mod convert_usage {
     use super::*;
 
     /// TS: "should convert basic usage without token details"
-    /// Note: Rust OpenAI converter returns Some(0) for missing cache_read and
-    /// reasoning (matching TS OpenAI), while TS Groq returns undefined.
     #[tokio::test]
     async fn basic_usage() {
         let server = MockServer::start().await;
@@ -828,9 +824,8 @@ mod prepare_tools {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        // tool_choice is only sent when not Auto (default)
-        // Actually, the OpenAI converter sends tool_choice for Auto too
-        assert!(body.get("tool_choice").is_some() || body.get("tool_choice").is_none());
+        // upstream groq-prepare-tools.ts: `case 'auto': tool_choice: 'auto'`
+        assert_eq!(body["tool_choice"], "auto");
     }
 
     /// TS: "should handle tool choice 'required'"
@@ -902,16 +897,7 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let model = provider(
-            "groq",
-            Some("test-api-key".to_string()),
-            "openai/gpt-oss-120b",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
-        )
-        .expect("groq provider should build");
+        let model = model_at(&server, "openai/gpt-oss-120b");
 
         let tool = Tool::Provider(aimux_core::tool::ProviderTool {
             id: "groq.browser_search".to_string(),
@@ -964,16 +950,7 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let model = provider(
-            "groq",
-            Some("test-api-key".to_string()),
-            "openai/gpt-oss-20b",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
-        )
-        .expect("groq provider should build");
+        let model = model_at(&server, "openai/gpt-oss-20b");
 
         let func_tool = FunctionTool::new("test-tool", json!({"type":"object","properties":{}}))
             .with_description("A test tool");
@@ -1001,16 +978,7 @@ mod prepare_tools {
             let server = MockServer::start().await;
             mock_json(&server, text_completion_body()).await;
 
-            let model = provider(
-                "groq",
-                Some("test-api-key".to_string()),
-                model_id,
-                Some(ProviderOptions {
-                    base_url: Some(server.uri()),
-                    ..Default::default()
-                }),
-            )
-            .expect("groq provider should build");
+            let model = model_at(&server, model_id);
 
             let tool = Tool::Provider(aimux_core::tool::ProviderTool {
                 id: "groq.browser_search".to_string(),
@@ -1035,6 +1003,34 @@ mod prepare_tools {
 
 mod do_generate {
     use super::*;
+
+    /// upstream: "should reject a response without choices"
+    #[tokio::test]
+    async fn rejects_a_response_without_choices() {
+        let server = MockServer::start().await;
+        mock_json(
+            &server,
+            json!({
+                "id": "chatcmpl-empty",
+                "object": "chat.completion",
+                "created": 1711115037,
+                "model": "gemma2-9b-it",
+                "choices": [],
+                "usage": {"prompt_tokens": 4, "total_tokens": 4, "completion_tokens": 0}
+            }),
+        )
+        .await;
+        let model = make_provider(&server);
+
+        let error = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, aimux_core::AiMuxError::InvalidResponseData(m) if m == "Response did not contain any choices."),
+            "{error:?}"
+        );
+    }
 
     /// TS: "should extract text content"
     #[tokio::test]
@@ -1142,9 +1138,9 @@ mod do_generate {
         assert_eq!(body["reasoning_effort"], "high");
     }
 
-    /// v3: minimal 直传(不再归一到 low)
+    /// upstream: "should coerce top-level reasoning minimal to low"
     #[tokio::test]
-    async fn reasoning_effort_minimal_passthrough() {
+    async fn reasoning_effort_minimal_coerced_to_low() {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
@@ -1157,12 +1153,12 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning_effort"], "minimal");
+        assert_eq!(body["reasoning_effort"], "low");
     }
 
-    /// v3: xhigh 直传(不再归一到 high)
+    /// upstream: "should coerce top-level reasoning xhigh to high"
     #[tokio::test]
-    async fn reasoning_effort_xhigh_passthrough() {
+    async fn reasoning_effort_xhigh_coerced_to_high() {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
@@ -1175,25 +1171,51 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning_effort"], "xhigh");
+        assert_eq!(body["reasoning_effort"], "high");
     }
 
-    /// v3: none 直传为 "none"(不再跳过)
+    /// upstream: "should map top-level reasoning none to reasoning_effort for Qwen 3.6"
     #[tokio::test]
-    async fn reasoning_none_passthrough() {
+    async fn reasoning_none_maps_for_qwen() {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let model = make_provider(&server);
+        let model = model_at(&server, "qwen/qwen3.6-27b");
 
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::None),
             ..default_options(test_prompt())
         };
-        model.do_generate(&options).await.unwrap();
+        let result = model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
         assert_eq!(body["reasoning_effort"], "none");
+        assert!(result.warnings.is_empty());
+    }
+
+    /// upstream: "should omit unsupported top-level reasoning none and warn"
+    #[tokio::test]
+    async fn reasoning_none_omitted_and_warns_for_other_models() {
+        let server = MockServer::start().await;
+        mock_json(&server, groq_text_body()).await;
+
+        let model = model_at(&server, "openai/gpt-oss-120b");
+
+        let options = CallOptions {
+            reasoning: Some(ReasoningEffort::None),
+            ..default_options(test_prompt())
+        };
+        let result = model.do_generate(&options).await.unwrap();
+
+        let body = first_request_body(&server).await;
+        assert!(body.get("reasoning_effort").is_none());
+        assert!(result.warnings.iter().any(|w| matches!(
+            w,
+            aimux_core::types::Warning::Unsupported { feature, details }
+                if feature == "reasoning"
+                    && details.as_deref()
+                        == Some("reasoning \"none\" is not supported by this model.")
+        )));
     }
 
     /// TS: "should prefer providerOptions reasoningEffort over top-level reasoning"
@@ -1767,8 +1789,53 @@ mod do_stream {
         let model = make_provider(&server);
 
         let result = model.do_stream(&default_options(test_prompt())).await;
-        // Groq error in first chunk should reject the promise
+        // upstream emits an error part and finishes; this crate's convention
+        // (as in the Mistral, Cohere and OpenAI-compatible models) is to reject
+        // when the very first event is an error, inside Core's retry boundary.
         assert!(result.is_err());
+    }
+
+    /// upstream: "should handle error stream parts" (an error chunk after the
+    /// first event, which stays in the stream)
+    #[tokio::test]
+    async fn error_chunk_is_an_error_part_with_status() {
+        let server = MockServer::start().await;
+        let body = sse_body(&[
+            &sse_event(
+                r#"{"id":"c","model":"m","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#,
+            ),
+            &sse_event(r#"{"error":{"message":"Rate limit reached","type":"rate_limit_error"}}"#),
+        ]);
+        mock_sse(&server, body).await;
+        let model = make_provider(&server);
+
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let parts = collect_stream(result).await;
+
+        let error = parts
+            .iter()
+            .find_map(|p| match p {
+                StreamPart::Error { error } => Some(error),
+                _ => None,
+            })
+            .expect("an error part");
+        match error {
+            aimux_core::AiMuxError::ApiCall(call) => {
+                assert_eq!(call.message, "Rate limit reached");
+                assert_eq!(call.status_code, Some(429));
+                assert!(error.is_retryable());
+            }
+            other => panic!("expected ApiCall, got {other:?}"),
+        }
+        match parts.last().unwrap() {
+            StreamPart::Finish { finish_reason, .. } => {
+                assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
+            }
+            other => panic!("expected Finish, got {other:?}"),
+        }
     }
 
     /// TS: "should stream tool call that is sent in one chunk"
@@ -1842,6 +1909,125 @@ mod do_stream {
         let raw = usage.raw.as_ref().expect("usage.raw must be populated");
         assert_eq!(raw["prompt_tokens"], json!(10));
         assert_eq!(raw["total_tokens"], json!(15));
+    }
+
+    /// upstream: "should keep reasoning active when deltas include empty tool calls"
+    #[tokio::test]
+    async fn keeps_reasoning_active_with_empty_tool_calls() {
+        let server = MockServer::start().await;
+        let body = sse_body(&[
+            &sse_event(
+                r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":"","reasoning":"Think ","tool_calls":[]},"finish_reason":null}]}"#,
+            ),
+            &sse_event(
+                r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"content":"","reasoning":"more...","tool_calls":[]},"finish_reason":null}]}"#,
+            ),
+            &sse_event(
+                r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"content":"Hello","reasoning":"","tool_calls":[]},"finish_reason":"stop"}]}"#,
+            ),
+        ]);
+        mock_sse(&server, body).await;
+        let model = make_provider(&server);
+
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let parts = collect_stream(result).await;
+        let reasoning: Vec<String> = parts
+            .iter()
+            .filter_map(|p| match p {
+                StreamPart::ReasoningStart { id, .. } => Some(format!("start {id}")),
+                StreamPart::ReasoningDelta { id, delta, .. } => Some(format!("delta {id} {delta}")),
+                StreamPart::ReasoningEnd { id, .. } => Some(format!("end {id}")),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            reasoning,
+            [
+                "start reasoning-0",
+                "delta reasoning-0 Think ",
+                "delta reasoning-0 more...",
+                "end reasoning-0"
+            ]
+        );
+    }
+
+    /// upstream: "should handle unparsable stream parts"
+    #[tokio::test]
+    async fn unparsable_chunk_is_an_error_part_and_finish_reason_error() {
+        let server = MockServer::start().await;
+        mock_sse(
+            &server,
+            "data: {unparsable}\n\ndata: [DONE]\n\n".to_string(),
+        )
+        .await;
+        let model = make_provider(&server);
+
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let parts = collect_stream(result).await;
+
+        assert!(matches!(parts[0], StreamPart::StreamStart { .. }));
+        assert!(matches!(parts[1], StreamPart::Error { .. }), "{parts:?}");
+        match &parts[2] {
+            StreamPart::Finish {
+                finish_reason,
+                usage,
+                ..
+            } => {
+                assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
+                assert_eq!(finish_reason.raw, None);
+                assert_eq!(usage.input_tokens.total, None);
+            }
+            other => panic!("expected Finish, got {other:?}"),
+        }
+        assert_eq!(parts.len(), 3);
+    }
+
+    /// upstream: "should stream raw chunks when includeRawChunks is true"
+    #[tokio::test]
+    async fn streams_raw_chunks() {
+        let server = MockServer::start().await;
+        let chunks = [
+            r#"{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gemma2-9b-it","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}"#,
+            r#"{"id":"chatcmpl-456","object":"chat.completion.chunk","created":1234567890,"model":"gemma2-9b-it","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}"#,
+            r#"{"id":"chatcmpl-789","object":"chat.completion.chunk","created":1234567890,"model":"gemma2-9b-it","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"x_groq":{"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}}"#,
+        ];
+        mock_sse(
+            &server,
+            sse_body(
+                &chunks
+                    .map(sse_event)
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+            ),
+        )
+        .await;
+        let model = make_provider(&server);
+
+        let options = CallOptions {
+            include_raw_chunks: Some(true),
+            ..default_options(test_prompt())
+        };
+        let result = model.do_stream(&options).await.unwrap();
+        let parts = collect_stream(result).await;
+
+        let raw: Vec<&Value> = parts
+            .iter()
+            .filter_map(|p| match p {
+                StreamPart::Raw { raw_value } => Some(raw_value),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(raw.len(), 3);
+        for (raw, chunk) in raw.iter().zip(chunks) {
+            assert_eq!(**raw, serde_json::from_str::<Value>(chunk).unwrap());
+        }
     }
 }
 
@@ -1942,18 +2128,12 @@ mod package {
         assert_eq!(groq().call("m").provider(), "groq.chat");
         assert_eq!(groq().language_model("m").unwrap().provider(), "groq.chat");
         // The registry entry point and the preset build the same identity.
-        let model = provider("groq", Some("k".into()), "m", None).unwrap();
+        let model =
+            aimux_providers::create_provider("groq", aimux_providers::PresetSettings::default())
+                .unwrap()
+                .language_model("m")
+                .unwrap();
         assert_eq!(model.provider(), "groq.chat");
-        assert_eq!(
-            aimux_providers::preset::PresetProvider::create(
-                aimux_providers::preset::lookup("groq").unwrap().descriptor,
-                aimux_providers::PresetSettings::default()
-            )
-            .unwrap()
-            .chat("m")
-            .provider(),
-            "groq.chat"
-        );
     }
 
     #[test]
@@ -1978,7 +2158,7 @@ mod package {
     }
 
     #[tokio::test]
-    async fn the_groq_namespace_is_read_and_unknown_fields_pass_through() {
+    async fn only_the_groq_namespace_is_read() {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
         let model = groq_at(&server).chat("gemma2-9b-it");
@@ -1986,8 +2166,9 @@ mod package {
         let result = model
             .do_generate(&options_with(json!({
                 "groq": {"user": "u1", "reasoningFormat": "parsed", "serviceTier": "flex",
-                         "parallelToolCalls": false, "custom_flag": true},
+                         "parallelToolCalls": false},
                 "openai": {"user": "ignored"},
+                "openaiCompatible": {"reasoningEffort": "low"},
             })))
             .await
             .unwrap();
@@ -1997,40 +2178,8 @@ mod package {
         assert_eq!(body["reasoning_format"], "parsed");
         assert_eq!(body["service_tier"], "flex");
         assert_eq!(body["parallel_tool_calls"], json!(false));
-        assert_eq!(body["custom_flag"], json!(true));
-        assert!(
-            body.get("reasoningFormat").is_none(),
-            "consumed, not forwarded"
-        );
-    }
-
-    #[tokio::test]
-    async fn the_generic_namespace_is_read_too_and_the_groq_one_wins() {
-        let server = MockServer::start().await;
-        mock_json(&server, text_completion_body()).await;
-        let model = groq_at(&server).chat("gemma2-9b-it");
-        let result = model
-            .do_generate(&options_with(json!({
-                "openaiCompatible": {"user": "generic", "reasoningEffort": "low"},
-                "groq": {"user": "groq"},
-            })))
-            .await
-            .unwrap();
-        let body = result.request_body.unwrap();
-        assert_eq!(body["user"], "groq");
-        assert_eq!(body["reasoning_effort"], "low");
-    }
-
-    #[tokio::test]
-    async fn metadata_is_reported_under_groq() {
-        let server = MockServer::start().await;
-        mock_json(&server, text_completion_body()).await;
-        let model = groq_at(&server).chat("gemma2-9b-it");
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .unwrap();
-        assert_eq!(result.provider_metadata.unwrap(), json!({"groq": {}}));
+        // upstream: parseProviderOptions({ provider: 'groq' }) reads that namespace only
+        assert!(body.get("reasoning_effort").is_none());
     }
 
     #[tokio::test]
@@ -2076,11 +2225,12 @@ mod package {
         assert_eq!(usage.input_tokens.cache_read, Some(4));
         assert_eq!(usage.input_tokens.no_cache, Some(6));
         assert_eq!(usage.output_tokens.total, Some(5));
-        assert_eq!(metadata.unwrap(), json!({"groq": {}}));
+        // upstream: the finish part carries no providerMetadata
+        assert!(metadata.is_none());
     }
 
     #[tokio::test]
-    async fn the_token_limit_is_max_completion_tokens() {
+    async fn the_token_limit_is_max_tokens() {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
         let model = groq_at(&server).chat("gemma2-9b-it");
@@ -2089,8 +2239,9 @@ mod package {
         options.top_k = Some(40.0);
         let result = model.do_generate(&options).await.unwrap();
         let body = result.request_body.unwrap();
-        assert_eq!(body["max_completion_tokens"], 64);
-        assert!(body.get("max_tokens").is_none());
+        // upstream: getArgs sends `max_tokens: maxOutputTokens`
+        assert_eq!(body["max_tokens"], 64);
+        assert!(body.get("max_completion_tokens").is_none());
         assert!(body.get("top_k").is_none(), "Groq has no top_k");
         assert!(
             result

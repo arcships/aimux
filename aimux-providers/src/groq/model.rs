@@ -28,7 +28,7 @@ use crate::shared::EndpointConfig;
 use super::convert::convert_to_groq_chat_messages;
 use super::error::{GroqErrorData, groq_failed_response_handler};
 use super::finish_reason::map_groq_finish_reason;
-use super::options::{self, GroqLanguageModelChatOptions, groq_metadata, parse_groq_options};
+use super::options::{self, GroqLanguageModelChatOptions, parse_groq_options};
 use super::prepare_tools::prepare_tools;
 use super::types::{GroqChatChunk, GroqChatResponse};
 use super::usage::convert_groq_usage;
@@ -116,7 +116,7 @@ impl GroqChatLanguageModel {
     ) -> Result<(Map<String, Value>, Vec<Warning>), AiMuxError> {
         let mut warnings = Vec::new();
 
-        let (groq_options, extra): (GroqLanguageModelChatOptions, _) = parse_groq_options(options)?;
+        let groq_options: GroqLanguageModelChatOptions = parse_groq_options(options)?;
 
         let structured_outputs = groq_options.structured_outputs.unwrap_or(true);
         let strict_json_schema = groq_options.strict_json_schema.unwrap_or(true);
@@ -198,7 +198,7 @@ impl GroqChatLanguageModel {
 
         // standardized settings:
         if let Some(max_tokens) = options.max_output_tokens {
-            body.insert("max_completion_tokens".into(), json!(max_tokens));
+            body.insert("max_tokens".into(), json!(max_tokens));
         }
         for (key, value) in [
             ("temperature", options.temperature),
@@ -242,9 +242,6 @@ impl GroqChatLanguageModel {
             };
             body.insert("response_format".into(), response_format);
         }
-
-        // fields of the `groq` options the schema does not know:
-        body.extend(extra);
 
         // provider options:
         if let Some(format) = groq_options.reasoning_format {
@@ -354,7 +351,7 @@ impl LanguageModel for GroqChatLanguageModel {
             },
             usage: convert_groq_usage(response.usage.as_ref()),
             warnings,
-            provider_metadata: Some(groq_metadata(json!({}))),
+            provider_metadata: None,
             response: response_metadata(response.id, response.created, response.model),
             request_body: Some(body),
             response_headers: Some(response_headers),
@@ -423,12 +420,18 @@ impl LanguageModel for GroqChatLanguageModel {
             while let Some(event) = event_iter.next().await {
                 let parsed = match event {
                     Ok(parsed) => parsed,
+                    // a chunk that fails to parse is reported as an error part
+                    // (`chunk.success === false`); a transport failure ends the stream.
                     Err(error) => {
-                        let recoverable = error.is_recoverable_stream_error();
-                        yield Err(error);
-                        if !recoverable {
+                        if !error.is_recoverable_stream_error() {
+                            yield Err(error);
                             return;
                         }
+                        finish_reason = FinishReason {
+                            unified: FinishReasonUnified::Error,
+                            raw: None,
+                        };
+                        yield Ok(StreamPart::Error { error });
                         continue;
                     }
                 };
@@ -589,7 +592,7 @@ impl LanguageModel for GroqChatLanguageModel {
             yield Ok(StreamPart::Finish {
                 finish_reason,
                 usage: convert_groq_usage(usage.as_ref()),
-                provider_metadata: Some(groq_metadata(json!({}))),
+                provider_metadata: None,
             });
         };
 

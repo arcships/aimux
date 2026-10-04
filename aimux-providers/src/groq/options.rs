@@ -1,25 +1,17 @@
 //! The providerOptions namespace and the chat options of Groq.
 //!
 //! Mirrors `groq-chat-language-model-options.ts`. `@ai-sdk/groq` reads
-//! `providerOptions.groq` and reports provider metadata under `groq`, whatever
-//! the provider is named; this module is the one place that spells the key.
+//! `providerOptions.groq`, whatever the provider is named; this module is the
+//! one place that spells the key.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::options::CallOptions;
 
-/// The providerOptions / providerMetadata key.
+/// The providerOptions key.
 pub(crate) const NAMESPACE: &str = "groq";
-
-/// The generic OpenAI-compatible namespace, read under the Groq one.
-const GENERIC_NAMESPACE: &str = "openaiCompatible";
-
-/// `{ "groq": payload }`.
-pub(crate) fn groq_metadata(payload: Value) -> Value {
-    json!({ NAMESPACE: payload })
-}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -69,54 +61,26 @@ pub(crate) struct GroqLanguageModelChatOptions {
     pub service_tier: Option<ServiceTier>,
 }
 
-/// The option names the schema above consumes; any other field of the `groq`
-/// namespace goes to the request body as given.
-const SCHEMA_KEYS: [&str; 7] = [
-    "reasoningFormat",
-    "reasoningEffort",
-    "parallelToolCalls",
-    "user",
-    "structuredOutputs",
-    "strictJsonSchema",
-    "serviceTier",
-];
-
-fn namespace<'a>(options: &'a CallOptions, key: &str) -> Option<&'a Map<String, Value>> {
-    options
-        .provider_options
-        .as_ref()
-        .and_then(|all| all.get(key))
-        .and_then(Value::as_object)
-}
-
-/// Parse the Groq options of a call (`parseProviderOptions`): the generic
-/// `openaiCompatible` namespace, then the `groq` one over it. Also returns the
-/// fields of the `groq` namespace the schema does not know.
+/// Parse the Groq options of a call (`parseProviderOptions` with provider
+/// `groq`): only the `groq` namespace is read.
 ///
 /// # Errors
 ///
 /// `InvalidArgument` when an option has the wrong type or value.
 pub(crate) fn parse_groq_options(
     options: &CallOptions,
-) -> Result<(GroqLanguageModelChatOptions, Map<String, Value>), AiMuxError> {
-    let groq = namespace(options, NAMESPACE);
-    let mut merged = Map::new();
-    for object in [namespace(options, GENERIC_NAMESPACE), groq]
-        .into_iter()
-        .flatten()
-    {
-        merged.extend(object.iter().map(|(k, v)| (k.clone(), v.clone())));
-    }
-    let parsed = serde_json::from_value(Value::Object(merged)).map_err(|error| {
+) -> Result<GroqLanguageModelChatOptions, AiMuxError> {
+    let Some(groq) = options
+        .provider_options
+        .as_ref()
+        .and_then(|all| all.get(NAMESPACE))
+        .and_then(Value::as_object)
+    else {
+        return Ok(GroqLanguageModelChatOptions::default());
+    };
+    serde_json::from_value(Value::Object(groq.clone())).map_err(|error| {
         AiMuxError::InvalidArgument(format!(
             "invalid argument for parameter providerOptions: {error}"
         ))
-    })?;
-    let extra = groq
-        .into_iter()
-        .flatten()
-        .filter(|(key, _)| !SCHEMA_KEYS.contains(&key.as_str()))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-    Ok((parsed, extra))
+    })
 }
