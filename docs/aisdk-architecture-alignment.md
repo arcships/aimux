@@ -2,7 +2,7 @@
 
 > **性质**: [RFC-0036](../rfc/0036-positioning-and-layered-architecture.md)(定位与分层架构)之下的实施设计文档,不是独立 RFC,不占 RFC 编号。随本文件合入生效;§0.4 的四项决定、§0.7 对 ROADMAP 既有承诺的保留 / 调整 / 后置清单,以本文件为准,后续变更直接修改本文件并在 CHANGELOG 记录
 >
-> **Date**: 2026-09-29
+> **Date**: 2026-09-29 · 2026-10-04 修订（撤销切换后的 ABI 共存承诺、xAI/HF chat 扩展登记后撤回、preset 改为运行时 descriptor 表、重定向规则收归 helper、修复附录 §6.4-14 裁定缺失等评审问题）
 >
 > **Reference baseline**: `reference/aisdk-review/node_modules`(本地安装、带 `src/`):`ai` 7.0.122、`@ai-sdk/provider` 4.0.19、`@ai-sdk/provider-utils` 5.0.51、openai 4.0.80、anthropic 4.0.68、google 4.0.85、google-vertex 5.0.98、amazon-bedrock 5.0.100、azure 4.0.84、xai 5.0.12、mistral 4.0.54、cohere 4.0.52、deepseek 3.0.56、groq 4.0.52、openai-compatible 3.0.59、gateway 4.0.100。这是调研与正文 file:line 证据对应的版本;实现用于行为对照的协议 fixture 由随实现提交入库的 `fixtures/aisdk/VERSIONS.json` 单独锁定,可晚于此处,升级时以该文件为准
 >
@@ -132,7 +132,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 >
 > **范围：**provider、model、调用运行时、传输、观测、录制回放、组合模型、catalogue、FFI、八种语言接口及工具。
 >
-> **证据约定：**`AX:` 相对仓库根；`AI:` 相对上述 `node_modules`。代码块是接口设计，省略辅助类型与实现。
+> **证据约定：**`AX:` 相对仓库根；`AI:` 相对上述 `node_modules`（本地检出的参考源码，`.gitignore` 排除 `reference/`，仓库内不含该目录，路径仅在本机有效）。代码块是接口设计，省略辅助类型与实现。
 >
 > 本次完成源码核验，未修改仓库文件，未运行构建或测试。文中的验收项均为实施要求。
 
@@ -198,7 +198,7 @@ settings
 
 model 可以持有 base URL、闭包、静态字段和厂商协议参数。必须禁止的是下游通过公开 config、`config_snapshot()` 等接口读取配置，再自行推导凭证、实例身份或重建方式。
 
-AI SDK 确实具有模型序列化机制。[serialize-model-options.ts](../reference/aisdk-review/node_modules/@ai-sdk/provider-utils/src/serialize-model-options.ts:26) 会同步解析 headers；这既证明模型可以包含可序列化数据，也说明该机制不适合作为本文的录制格式。
+AI SDK 确实具有模型序列化机制。`AI:@ai-sdk/provider-utils/src/serialize-model-options.ts:26` 会同步解析 headers；这既证明模型可以包含可序列化数据，也说明该机制不适合作为本文的录制格式。
 
 ### 1.2 blocker/major 逐条裁定
 
@@ -231,7 +231,7 @@ AI SDK 确实具有模型序列化机制。[serialize-model-options.ts](../refer
 
 ### 1.3 额外确认：录制和回放必须处于同一边界
 
-[Bedrock-Anthropic fetch](../reference/aisdk-review/node_modules/@ai-sdk/amazon-bedrock/src/anthropic/amazon-bedrock-anthropic-fetch.ts:18) 会转换错误响应，并将 AWS event-stream 转为 SSE。
+`AI:@ai-sdk/amazon-bedrock/src/anthropic/amazon-bedrock-anthropic-fetch.ts:18`（Bedrock-Anthropic fetch）会转换错误响应，并将 AWS event-stream 转为 SSE。
 
 因此，“helper 录到什么，leaf 就回放什么”不能成立。修订后：
 
@@ -389,7 +389,7 @@ fn do_stream<'a>(
 }
 ```
 
-本地 [ProviderV4](../reference/aisdk-review/node_modules/@ai-sdk/provider/src/provider/v4/provider-v4.ts:13) 没有 `evaluationModel`。Evaluation、Realtime、SpeechTranslation、Batch 的具体能力不在本文交付范围；不注册空实现，不宣称已支持。
+本地 `AI:@ai-sdk/provider/src/provider/v4/provider-v4.ts:13`（ProviderV4）没有 `evaluationModel`。Evaluation、Realtime、SpeechTranslation、Batch 的具体能力不在本文交付范围；不注册空实现，不宣称已支持。
 
 ### 3.2 provider-utils：传输、设置与诊断
 
@@ -399,7 +399,6 @@ pub struct FetchRequest {
     pub url: Url,
     pub headers: Headers,
     pub body: Bytes,
-    pub redirect: RedirectPolicy,
     pub signal: Option<AbortSignal>,
 }
 
@@ -424,6 +423,7 @@ pub type FetchFunction = Arc<dyn Fetch>;
 关键规则：
 
 - multipart 在 helper 内编码成字节，签名处理最终发送字节。
+- 重定向由 helper 逐跳处理，transport（含注入的 `Fetch`）不跟随重定向、原样返回 `3xx`。普通 API 调用只跟随同源重定向，跨 origin 的 `3xx` 按非 2xx 返回，请求头与 fetch 装饰器注入的凭证都不会到达另一个 origin；每一跳重新经过请求的 `Fetch`，签名装饰器对实际发送的 URL 重新签名。校验下载（D26）沿用逐跳校验、pin 与离开 credentialed origin 后剥离调用方头的规则。
 - 默认 HTTP client 按 Tokio runtime 分片，保留现有连接池生命周期约束。
 - `settings.fetch == None` 时，每次请求读取当前默认 leaf；不在工厂创建时冻结全局 fetch。
 - WebSocket 使用独立 connector，和默认 HTTP leaf 共用显式 `TransportSettings`。
@@ -685,7 +685,7 @@ retry {
 完成 operation；流式操作在流终结或取消时完成
 ```
 
-LM 的 start/end 是逻辑调用事件，retry 内的 attempt spans 与传输事件逐次产生。这与 [generate-text.ts](../reference/aisdk-review/node_modules/ai/src/generate-text/generate-text.ts:1024) 的基本顺序一致。
+LM 的 start/end 是逻辑调用事件，retry 内的 attempt spans 与传输事件逐次产生。这与 `AI:ai/src/generate-text/generate-text.ts:1024` 的基本顺序一致。
 
 **关闭观测：**
 
@@ -2419,7 +2419,7 @@ timeBetweenOutputChunksMs?: { min, p10, median, avg, p90, max }
 - `StepResult.reasoning` 为输入形态 `ReasoningPart | ReasoningFilePart`，使用 `providerOptions`。
 - `GenerateTextResult.reasoning` 为输出形态 `ReasoningOutput | ReasoningFileOutput`，使用 `providerMetadata`。
 
-分别见 [step-result.ts:187](../reference/aisdk-review/node_modules/ai/src/generate-text/step-result.ts:187) 和 [generate-text-result.ts:54](../reference/aisdk-review/node_modules/ai/src/generate-text/generate-text-result.ts:54)。应共享转换函数，不能直接将两者定义为一个别名。
+分别见 `A/generate-text/step-result.ts:187` 和 `A/generate-text/generate-text-result.ts:54`。应共享转换函数，不能直接将两者定义为一个别名。
 
 最终 `GenerateTextResult` 持有 `steps`、累计 usage、初始审批响应消息及 output；其余通过 getter 或生成的 wire snapshot 派生：
 
@@ -2436,7 +2436,7 @@ timeBetweenOutputChunksMs?: { min, p10, median, avg, p90, max }
 | finalStep | 最后一步 |
 | output | 按 Output 配置得到的最终输出；没有输出时按 SDK 行为报错 |
 
-这不是旧版本常见的“usage 等于最后一步”。依据 [generate-text.ts:1714](../reference/aisdk-review/node_modules/ai/src/generate-text/generate-text.ts:1714)，尤其 `:1797`。
+这不是旧版本常见的“usage 等于最后一步”。依据 `A/generate-text/generate-text.ts:1714`，尤其 `:1797`。
 
 `StreamTextResult` 是拥有流及完成结果的运行时对象。流完成后使用相同 StepResult/最终聚合逻辑，不再维护 `StreamTextResultAggregated` 的另一套字段定义。对象输出使用同一 Output/结果机制；现有 `GenerateObjectResult` 的重复 raw 镜像结构应删除。
 
@@ -2683,7 +2683,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 - 不再手写第二份消息 enum、result struct 或字段名映射。
 - Schema 是生成物，不与 Rust 同时人工维护。
 - 自定义 serde 类型必须同时提供生成描述：Optional、base64、ToolChoice、受约束静态/动态工具调用、日期和错误。
-- `ts-rs` 与 `scripts/gen_*` 退役（§0.5）；TS 声明与其他语言一样由 descriptor + manifest 生成链产出，并与同源 schema/serde fixture 校验，不靠 `derive(TS)` 推断自定义行为。
+- ~~`ts-rs` 可以继续生成原生 Rust DTO 的 TS 声明~~（**§0.5 已裁定不采纳**：ts-rs 与 `scripts/gen_*` 全部退役，第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源）。若日后重新引入任何 TS 生成器，必须与同源 schema/serde fixture 校验，不能只靠 `derive(TS)` 推断自定义行为。
 - Go 不再用 RawMessage 代替已知协议联合；opaque JSON 字段才使用通用 JSON 类型。
 - Java/Kotlin 不再为必填字段默认填空字符串、空对象。
 - Python/Dart 不再对同一 providerMetadata 字段一处接受 Any、一处强制字典。
