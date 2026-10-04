@@ -377,15 +377,7 @@ impl StreamTextResult {
                     rm.tool_call(&call);
                     tool_calls.push(call);
                 }
-                StreamPart::ToolResult(result) => rm.tool_result(
-                    result.tool_call_id,
-                    result.tool_name,
-                    result.result,
-                    result.is_error,
-                    result.preliminary,
-                    result.dynamic,
-                    result.provider_metadata,
-                ),
+                StreamPart::ToolResult(result) => rm.tool_result(result),
                 StreamPart::Source {
                     id,
                     source_type,
@@ -668,17 +660,7 @@ pub async fn generate_text(
             }
             // Provider-executed results stay in the assistant message so the
             // provider can replay its own server-tool transcript next turn.
-            GenerateContent::ToolResult(result) => {
-                rm.tool_result(
-                    result.tool_call_id.clone(),
-                    result.tool_name.clone(),
-                    result.result.clone(),
-                    result.is_error,
-                    result.preliminary,
-                    result.dynamic,
-                    result.provider_metadata.clone(),
-                );
-            }
+            GenerateContent::ToolResult(result) => rm.tool_result(result.clone()),
         }
     }
 

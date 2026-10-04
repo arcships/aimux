@@ -113,13 +113,13 @@ pub async fn parse_tool_call(
             })
         };
         return match parsed {
-            Ok(input) => valid_tool_call(tool_call, input, Some(true)),
+            Ok(input) => parsed_tool_call(tool_call, input, Some(true)),
             Err(error) => invalid_tool_call(tool_call, error),
         };
     };
 
     match parse_and_validate_tool_call(&tool_call, tools) {
-        Ok((input, dynamic)) => valid_tool_call(tool_call, input, dynamic),
+        Ok((input, dynamic)) => parsed_tool_call(tool_call, input, dynamic),
         Err(original_error) => {
             let Some(repair_tool_call) = repair_tool_call else {
                 return invalid_tool_call(tool_call, original_error);
@@ -160,7 +160,7 @@ fn apply_repair_outcome(
 ) -> ToolCall {
     let cause = match outcome {
         RepairOutcome::Repaired(repaired) => match parse_and_validate_tool_call(&repaired, tools) {
-            Ok((input, dynamic)) => return valid_tool_call(repaired, input, dynamic),
+            Ok((input, dynamic)) => return parsed_tool_call(repaired, input, dynamic),
             Err(repaired_error) => repaired_error,
         },
         RepairOutcome::Unchanged => return invalid_tool_call(tool_call, original_error),
@@ -277,7 +277,7 @@ fn contains_forbidden_prototype(value: &Value) -> bool {
     }
 }
 
-fn valid_tool_call(tool_call: RawToolCall, input: Value, dynamic: Option<bool>) -> ToolCall {
+fn parsed_tool_call(tool_call: RawToolCall, input: Value, dynamic: Option<bool>) -> ToolCall {
     ToolCall {
         tool_call_id: tool_call.tool_call_id,
         tool_name: tool_call.tool_name,
@@ -301,15 +301,9 @@ fn invalid_tool_call(tool_call: RawToolCall, error: AiMuxError) -> ToolCall {
     let input = serde_json::from_str(&tool_call.input)
         .unwrap_or_else(|_| Value::String(tool_call.input.clone()));
     ToolCall {
-        tool_call_id: tool_call.tool_call_id,
-        tool_name: tool_call.tool_name,
-        input,
-        provider_executed: tool_call.provider_executed,
-        dynamic: Some(true),
-        thought_signature: tool_call.thought_signature,
-        provider_metadata: tool_call.provider_metadata,
         invalid: Some(true),
         error: Some(error),
+        ..parsed_tool_call(tool_call, input, Some(true))
     }
 }
 

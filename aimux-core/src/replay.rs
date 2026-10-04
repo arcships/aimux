@@ -626,13 +626,6 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
     })
 }
 
-/// 流式 tool_call 累加器(按 OpenAI `index` 稳定累积)。
-struct ToolCallAccumulator {
-    id: String,
-    name: String,
-    arguments: String,
-}
-
 /// 重建流式结果:OpenAI SSE body → `StreamPart`(镜像 openai provider 状态机)。
 ///
 /// 支持(C4-8):
@@ -663,7 +656,7 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
     let mut final_usage = Usage::default();
     let mut final_finish: Option<FinishReason> = None;
     // tool_call 按 OpenAI `index` 稳定累积;`tool_order` 保插入顺序(确定性 emit)。
-    let mut tool_calls: std::collections::HashMap<usize, ToolCallAccumulator> =
+    let mut tool_calls: std::collections::HashMap<usize, RawToolCall> =
         std::collections::HashMap::new();
     let mut tool_order: Vec<usize> = Vec::new();
     let mut saw_openai = false;
@@ -783,10 +776,14 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                                 .to_string();
                             tool_calls.insert(
                                 idx,
-                                ToolCallAccumulator {
-                                    id: id.clone(),
-                                    name: name.clone(),
-                                    arguments: String::new(),
+                                RawToolCall {
+                                    tool_call_id: id.clone(),
+                                    tool_name: name.clone(),
+                                    input: String::new(),
+                                    provider_executed: None,
+                                    dynamic: None,
+                                    thought_signature: None,
+                                    provider_metadata: None,
                                 },
                             );
                             tool_order.push(idx);
@@ -805,9 +802,9 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                             && (!is_new || !args.is_empty())
                             && let Some(acc) = tool_calls.get_mut(&idx)
                         {
-                            acc.arguments.push_str(args);
+                            acc.input.push_str(args);
                             parts.push(Ok(StreamPart::ToolInputDelta {
-                                id: acc.id.clone(),
+                                id: acc.tool_call_id.clone(),
                                 delta: args.to_string(),
                                 provider_metadata: None,
                             }));
@@ -853,20 +850,12 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
         }));
     }
     for &i in &tool_order {
-        if let Some(acc) = tool_calls.get(&i) {
+        if let Some(acc) = tool_calls.remove(&i) {
             parts.push(Ok(StreamPart::ToolInputEnd {
-                id: acc.id.clone(),
+                id: acc.tool_call_id.clone(),
                 provider_metadata: None,
             }));
-            parts.push(Ok(StreamPart::ToolCall(RawToolCall {
-                tool_call_id: acc.id.clone(),
-                tool_name: acc.name.clone(),
-                input: acc.arguments.clone(),
-                provider_executed: None,
-                dynamic: None,
-                thought_signature: None,
-                provider_metadata: None,
-            })));
+            parts.push(Ok(StreamPart::ToolCall(acc)));
         }
     }
 
