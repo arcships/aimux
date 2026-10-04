@@ -24,6 +24,7 @@ use crate::options::{CallOptions, ToolChoice};
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
 use crate::stream_part::StreamPart;
+use crate::tool::RawToolCall;
 use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 // ── 匹配策略 ────────────────────────────────────────────────────────────────
@@ -592,7 +593,7 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
                 .and_then(|x| x.as_str())
                 .unwrap_or("");
             let input = args_str.to_string();
-            content.push(GenerateContent::ToolCall {
+            content.push(GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
@@ -600,7 +601,7 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
                 dynamic: None,
                 thought_signature: None,
                 provider_metadata: None,
-            });
+            }));
         }
     }
 
@@ -857,17 +858,15 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                 id: acc.id.clone(),
                 provider_metadata: None,
             }));
-            parts.push(Ok(StreamPart::ToolCall {
+            parts.push(Ok(StreamPart::ToolCall(RawToolCall {
                 tool_call_id: acc.id.clone(),
                 tool_name: acc.name.clone(),
-                input: serde_json::Value::String(acc.arguments.clone()),
+                input: acc.arguments.clone(),
                 provider_executed: None,
                 dynamic: None,
                 thought_signature: None,
-                invalid: None,
-                error: None,
                 provider_metadata: None,
-            }));
+            })));
         }
     }
 
@@ -1610,18 +1609,18 @@ mod tests {
                 .unwrap()
         });
         assert_eq!(result.content.len(), 1);
-        let Some(GenerateContent::ToolCall {
+        let Some(GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        }) = result.content.first()
+        })) = result.content.first()
         else {
             panic!("expected ToolCall, got {:?}", result.content);
         };
         assert_eq!(tool_call_id, "call_abc");
         assert_eq!(tool_name, "get_weather");
-        assert_eq!(input, &serde_json::json!(r#"{"city":"SF"}"#));
+        assert_eq!(input, r#"{"city":"SF"}"#);
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
     }
 
@@ -1655,10 +1654,11 @@ mod tests {
                 .await
                 .unwrap()
         });
-        let Some(GenerateContent::ToolCall { input, .. }) = result.content.first() else {
+        let Some(GenerateContent::ToolCall(RawToolCall { input, .. })) = result.content.first()
+        else {
             panic!("expected ToolCall");
         };
-        assert_eq!(input, &serde_json::json!("not-json{"));
+        assert_eq!(input, "not-json{");
     }
 
     #[test]
@@ -1723,19 +1723,19 @@ mod tests {
         let calls: Vec<_> = parts
             .iter()
             .filter_map(|p| match p {
-                StreamPart::ToolCall {
+                StreamPart::ToolCall(RawToolCall {
                     tool_call_id,
                     tool_name,
                     input,
                     ..
-                } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+                }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
                 _ => None,
             })
             .collect();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "call_1");
         assert_eq!(calls[0].1, "get_weather");
-        assert_eq!(calls[0].2, serde_json::json!(r#"{"city":"SF"}"#));
+        assert_eq!(calls[0].2, r#"{"city":"SF"}"#);
         // finish_reason tool_calls。
         assert!(parts.iter().any(|p| matches!(
             p,

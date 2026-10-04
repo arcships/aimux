@@ -21,24 +21,24 @@ use crate::language_model::LanguageModel;
 use crate::language_model_message::convert_to_language_model_prompt;
 use crate::message::{ModelMessage, ModelPrompt};
 use crate::options::{CallOptions, ResponseFormat, ToolChoice};
-use crate::parse_tool_call::{RawToolCall, ToolCallRepair, parse_tool_call};
+use crate::parse_tool_call::{ToolCallRepair, parse_tool_call};
 use crate::result::{
     FilePart, GenerateContent, GenerateResult, ReasoningPart, SourcePart, StreamResult,
     StreamTextResultAggregated,
 };
-use crate::stream_part::StreamPart;
+use crate::stream_part::{StreamPart, TextStreamPart};
 use crate::tool::Tool;
 use crate::types::{FinishReason, ReasoningEffort, Usage, Warning};
 use crate::{AbortSignal, retry, timeout};
 
 /// Matches the AI SDK's `isOutputChunk`: only chunks containing model output
 /// start or reset the first/chunk output timers.
-fn is_output_chunk(part: &StreamPart) -> bool {
+fn is_output_chunk<C>(part: &StreamPart<C>) -> bool {
     match part {
         StreamPart::TextDelta { delta, .. }
         | StreamPart::ReasoningDelta { delta, .. }
         | StreamPart::ToolInputDelta { delta, .. } => !delta.is_empty(),
-        StreamPart::ToolCall { .. } | StreamPart::File { .. } => true,
+        StreamPart::ToolCall(_) | StreamPart::File { .. } => true,
         _ => false,
     }
 }
@@ -221,8 +221,8 @@ pub struct GenerateObjectResult {
 
 /// Result of `stream_text` (user-facing).
 pub struct StreamTextResult {
-    /// The stream of `StreamPart` items.
-    pub stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>>,
+    /// The stream of `TextStreamPart` items.
+    pub stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>>,
     /// The request body that was sent (for debugging / cache probing, RFC-0015).
     pub request_body: Option<serde_json::Value>,
     /// Response headers.
@@ -373,48 +373,18 @@ impl StreamTextResult {
                 StreamPart::ReasoningEnd {
                     provider_metadata, ..
                 } => rm.reasoning_end(provider_metadata),
-                StreamPart::ToolCall {
-                    tool_call_id,
-                    tool_name,
-                    input,
-                    provider_executed,
-                    dynamic,
-                    thought_signature,
-                    provider_metadata,
-                    invalid,
-                    error,
-                    ..
-                } => {
-                    let call = crate::tool::ToolCall {
-                        tool_call_id,
-                        tool_name,
-                        input,
-                        provider_executed,
-                        dynamic,
-                        thought_signature,
-                        provider_metadata,
-                        invalid,
-                        error,
-                    };
+                StreamPart::ToolCall(call) => {
                     rm.tool_call(&call);
                     tool_calls.push(call);
                 }
-                StreamPart::ToolResult {
-                    tool_call_id,
-                    tool_name,
-                    result,
-                    is_error,
-                    preliminary,
-                    dynamic,
-                    provider_metadata,
-                } => rm.tool_result(
-                    tool_call_id,
-                    tool_name,
-                    result,
-                    is_error,
-                    preliminary,
-                    dynamic,
-                    provider_metadata,
+                StreamPart::ToolResult(result) => rm.tool_result(
+                    result.tool_call_id,
+                    result.tool_name,
+                    result.result,
+                    result.is_error,
+                    result.preliminary,
+                    result.dynamic,
+                    result.provider_metadata,
                 ),
                 StreamPart::Source {
                     id,
@@ -656,26 +626,9 @@ pub async fn generate_text(
                 text.push_str(t);
                 rm.text(t, provider_metadata.as_ref());
             }
-            GenerateContent::ToolCall {
-                tool_call_id,
-                tool_name,
-                input,
-                provider_executed,
-                dynamic,
-                thought_signature,
-                provider_metadata,
-                ..
-            } => {
+            GenerateContent::ToolCall(call) => {
                 let parsed = parse_tool_call(
-                    RawToolCall {
-                        tool_call_id: tool_call_id.clone(),
-                        tool_name: tool_name.clone(),
-                        input: input.clone(),
-                        provider_executed: *provider_executed,
-                        dynamic: *dynamic,
-                        thought_signature: thought_signature.clone(),
-                        provider_metadata: provider_metadata.clone(),
-                    },
+                    call.clone(),
                     tools.as_deref(),
                     repair_tool_call.as_ref(),
                     &messages,
@@ -715,23 +668,15 @@ pub async fn generate_text(
             }
             // Provider-executed results stay in the assistant message so the
             // provider can replay its own server-tool transcript next turn.
-            GenerateContent::ToolResult {
-                tool_call_id,
-                tool_name,
-                result,
-                is_error,
-                preliminary,
-                dynamic,
-                provider_metadata,
-            } => {
+            GenerateContent::ToolResult(result) => {
                 rm.tool_result(
-                    tool_call_id.clone(),
-                    tool_name.clone(),
-                    result.clone(),
-                    *is_error,
-                    *preliminary,
-                    *dynamic,
-                    provider_metadata.clone(),
+                    result.tool_call_id.clone(),
+                    result.tool_name.clone(),
+                    result.result.clone(),
+                    result.is_error,
+                    result.preliminary,
+                    result.dynamic,
+                    result.provider_metadata.clone(),
                 );
             }
         }
@@ -1097,48 +1042,22 @@ pub async fn stream_text(
         })
     };
     let mut stream = stream;
-    let stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>> =
+    let stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>> =
         Box::pin(async_stream::stream! {
             while let Some(item) = stream.next().await {
                 match item {
-                    Ok(StreamPart::ToolCall {
-                        tool_call_id,
-                        tool_name,
-                        input,
-                        provider_executed,
-                        dynamic,
-                        thought_signature,
-                        provider_metadata,
-                        ..
-                    }) => {
+                    Ok(StreamPart::ToolCall(raw)) => {
                         let parsed = parse_tool_call(
-                            RawToolCall {
-                                tool_call_id,
-                                tool_name,
-                                input: crate::parse_tool_call::raw_tool_input(&input),
-                                provider_executed,
-                                dynamic,
-                                thought_signature,
-                                provider_metadata,
-                            },
+                            raw,
                             tools.as_deref(),
                             repair_tool_call.as_ref(),
                             &messages,
                             operation_instructions.as_deref(),
                         ).await;
-                        yield Ok(StreamPart::ToolCall {
-                            tool_call_id: parsed.tool_call_id,
-                            tool_name: parsed.tool_name,
-                            input: parsed.input,
-                            provider_executed: parsed.provider_executed,
-                            dynamic: parsed.dynamic,
-                            thought_signature: parsed.thought_signature,
-                            invalid: parsed.invalid,
-                            error: parsed.error,
-                            provider_metadata: parsed.provider_metadata,
-                        });
+                        yield Ok(StreamPart::ToolCall(parsed));
                     }
-                    item => yield item,
+                    Ok(part) => yield Ok(part.map_tool_call(|_| unreachable!("matched above"))),
+                    Err(error) => yield Err(error),
                 }
             }
         });
@@ -1749,7 +1668,7 @@ mod stream_aggregation_tests {
     use super::*;
     use crate::types::FinishReasonUnified;
 
-    fn result_from(parts: Vec<Result<StreamPart, AiMuxError>>) -> StreamTextResult {
+    fn result_from(parts: Vec<Result<TextStreamPart, AiMuxError>>) -> StreamTextResult {
         StreamTextResult {
             stream: Box::pin(futures::stream::iter(parts)),
             request_body: None,
@@ -1757,7 +1676,7 @@ mod stream_aggregation_tests {
         }
     }
 
-    fn delta(text: &str) -> StreamPart {
+    fn delta(text: &str) -> TextStreamPart {
         StreamPart::TextDelta {
             id: "text-1".into(),
             delta: text.into(),
@@ -1765,7 +1684,7 @@ mod stream_aggregation_tests {
         }
     }
 
-    fn finish() -> StreamPart {
+    fn finish() -> TextStreamPart {
         StreamPart::Finish {
             finish_reason: FinishReason {
                 unified: FinishReasonUnified::Stop,

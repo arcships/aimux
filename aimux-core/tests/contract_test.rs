@@ -255,7 +255,7 @@ fn generate_text_options_numeric_types_wire_format() {
 
 #[test]
 fn stream_part_text_delta_wire_format() {
-    let part = StreamPart::TextDelta {
+    let part: StreamPart = StreamPart::TextDelta {
         id: "tx1".into(),
         delta: "Hello".into(),
         provider_metadata: None,
@@ -270,7 +270,7 @@ fn stream_part_text_delta_wire_format() {
 
 #[test]
 fn stream_part_stream_start_wire_format() {
-    let part = StreamPart::StreamStart { warnings: vec![] };
+    let part: StreamPart = StreamPart::StreamStart { warnings: vec![] };
     let json = serde_json::to_string(&part).unwrap();
     let val: Value = serde_json::from_str(&json).unwrap();
     assert!(
@@ -281,7 +281,7 @@ fn stream_part_stream_start_wire_format() {
 
 #[test]
 fn stream_part_raw_wire_format() {
-    let part = StreamPart::Raw {
+    let part: StreamPart = StreamPart::Raw {
         raw_value: serde_json::json!({ "id": "c1", "choices": [] }),
     };
     let json = serde_json::to_string(&part).unwrap();

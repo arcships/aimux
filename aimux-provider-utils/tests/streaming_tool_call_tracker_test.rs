@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use aimux_core::stream_part::StreamPart;
+use aimux_core::tool::RawToolCall;
 use aimux_provider_utils::{
     StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, TrackerError,
     TypeValidation,
@@ -36,8 +37,7 @@ enum Part {
     ToolCall {
         tool_call_id: String,
         tool_name: String,
-        /// The raw argument text (`StreamPart::ToolCall.input` is a
-        /// `Value::String` from the tracker).
+        /// The raw argument text.
         input: String,
         provider_metadata: Option<Value>,
     },
@@ -62,17 +62,15 @@ fn project(part: StreamPart) -> Part {
             id,
             provider_metadata: None,
         } => Part::ToolInputEnd { id },
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
-            input: Value::String(input),
+            input,
             provider_executed: None,
             dynamic: None,
             thought_signature: None,
-            invalid: None,
-            error: None,
             provider_metadata,
-        } => Part::ToolCall {
+        }) => Part::ToolCall {
             tool_call_id,
             tool_name,
             input,

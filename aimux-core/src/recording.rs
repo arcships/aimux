@@ -1542,11 +1542,11 @@ impl<S> RecordingOutcomeStream<S> {
     }
 }
 
-impl<S> futures::Stream for RecordingOutcomeStream<S>
+impl<S, C> futures::Stream for RecordingOutcomeStream<S>
 where
-    S: futures::Stream<Item = Result<crate::stream_part::StreamPart, crate::AiMuxError>> + Unpin,
+    S: futures::Stream<Item = Result<crate::stream_part::StreamPart<C>, crate::AiMuxError>> + Unpin,
 {
-    type Item = Result<crate::stream_part::StreamPart, crate::AiMuxError>;
+    type Item = Result<crate::stream_part::StreamPart<C>, crate::AiMuxError>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,

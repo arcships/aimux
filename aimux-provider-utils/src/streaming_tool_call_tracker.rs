@@ -31,6 +31,7 @@ use thiserror::Error;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::stream_part::StreamPart;
+use aimux_core::tool::RawToolCall;
 use aimux_core::types::ProviderMetadata;
 
 use crate::streaming_tool_call_argument_state::{
@@ -623,18 +624,16 @@ impl StreamingToolCallTracker {
             .as_ref()
             .and_then(|build| build(tool_call.metadata.as_ref()));
 
-        parts.push(StreamPart::ToolCall {
+        parts.push(StreamPart::ToolCall(RawToolCall {
             tool_call_id: tool_call.id.clone(),
             tool_name: tool_call.function_name.clone(),
             // Raw argument text; Core parses it after `stream_text`.
-            input: Value::String(tool_call.arguments.clone()),
+            input: tool_call.arguments.clone(),
             provider_executed: None,
             dynamic: None,
             thought_signature: None,
-            invalid: None,
-            error: None,
             provider_metadata,
-        });
+        }));
     }
 }
 

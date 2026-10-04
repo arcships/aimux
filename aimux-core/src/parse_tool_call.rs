@@ -14,28 +14,7 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::tool::{Tool, ToolCall};
-use crate::types::ProviderMetadata;
-
-/// Provider-facing tool call before Core parses and validates its input.
-///
-/// The wire shape matches [`ToolCall`] field for field, except that `input`
-/// is the provider's raw argument *text* rather than a parsed value.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct RawToolCall {
-    pub tool_call_id: String,
-    pub tool_name: String,
-    pub input: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_executed: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dynamic: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thought_signature: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_metadata: Option<ProviderMetadata>,
-}
+use crate::tool::{RawToolCall, Tool, ToolCall};
 
 /// Context supplied to a one-shot tool-call repair callback.
 #[derive(Debug, Clone)]
@@ -298,16 +277,6 @@ fn contains_forbidden_prototype(value: &Value) -> bool {
     }
 }
 
-/// Recover the provider's raw argument text: string inputs pass through
-/// verbatim (possibly malformed JSON awaiting parse/repair); anything already
-/// structured re-serializes.
-pub(crate) fn raw_tool_input(input: &Value) -> String {
-    match input {
-        Value::String(input) => input.clone(),
-        input => serde_json::to_string(input).expect("serializing serde_json::Value cannot fail"),
-    }
-}
-
 fn valid_tool_call(tool_call: RawToolCall, input: Value, dynamic: Option<bool>) -> ToolCall {
     ToolCall {
         tool_call_id: tool_call.tool_call_id,
@@ -400,8 +369,8 @@ pub(crate) fn raw_tool_call_text(error: &AiMuxError) -> Option<String> {
 /// and that loses the JSON string quoting of a bare literal (`"Tokyo"` would
 /// come back as `Tokyo`), duplicate keys, number spelling and whitespace, all
 /// of which matter when a host re-submits the text unchanged under a new tool
-/// name. Only errors from before the text was recorded fall back to
-/// [`raw_tool_input`].
+/// name. Only errors from before the text was recorded fall back to the
+/// compact JSON of `input`.
 ///
 /// `dynamic` is not recovered: an invalid call always reports `Some(true)`.
 /// That only matters for re-deriving the original error, which is read off the
@@ -423,7 +392,7 @@ fn raw_from_invalid(tool_call: &ToolCall) -> Result<(RawToolCall, AiMuxError), A
         RawToolCall {
             tool_call_id: tool_call.tool_call_id.clone(),
             tool_name: tool_call.tool_name.clone(),
-            input: raw_tool_call_text(&error).unwrap_or_else(|| raw_tool_input(&tool_call.input)),
+            input: raw_tool_call_text(&error).unwrap_or_else(|| tool_call.input.to_string()),
             provider_executed: tool_call.provider_executed,
             dynamic: tool_call.dynamic,
             thought_signature: tool_call.thought_signature.clone(),

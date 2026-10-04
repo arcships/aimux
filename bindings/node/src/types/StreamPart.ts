@@ -2,12 +2,18 @@
 import type { AiMuxError } from "./AiMuxError";
 import type { FileData } from "./FileData";
 import type { FinishReason } from "./FinishReason";
+import type { ToolCall } from "./ToolCall";
+import type { ToolResult } from "./ToolResult";
 import type { Usage } from "./Usage";
 import type { Warning } from "./Warning";
 import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
  * A single chunk in the stream returned by `do_stream`.
+ *
+ * Generic over the tool-call payload: providers emit the default
+ * [`StreamPart`] (raw argument text); `stream_text` emits [`TextStreamPart`]
+ * (parsed and validated [`ToolCall`]).
  */
 export type StreamPart = { "TextStart": { id: string, provider_metadata?: JsonValue | null, } } | { "TextDelta": { id: string, delta: string, provider_metadata?: JsonValue | null, } } | { "TextEnd": { id: string, provider_metadata?: JsonValue | null, } } | { "StreamStart": { warnings: Array<Warning>, } } | { "Finish": { finish_reason: FinishReason, usage: Usage, provider_metadata: JsonValue | null, } } | { "Error": { error: AiMuxError, } } | { "ToolInputStart": { id: string, tool_name: string, 
 /**
@@ -21,50 +27,7 @@ dynamic?: boolean | null,
 /**
  * Optional title for the tool call.
  */
-title?: string | null, provider_metadata?: JsonValue | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: JsonValue | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": { tool_call_id: string, tool_name: string, 
-/**
- * Serialized argument text in a `Value::String` from `do_stream`;
- * parsed input after `stream_text`.
- */
-input: JsonValue, 
-/**
- * Whether the tool call will be executed by the provider.
- */
-provider_executed?: boolean | null, 
-/**
- * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
- */
-dynamic?: boolean | null, 
-/**
- * Provider-assigned thought signature (e.g. Google Gemini
- * `thoughtSignature`). Must be echoed back verbatim on the follow-up
- * turn when the tool result is sent.
- */
-thought_signature?: string | null, 
-/**
- * Set by Core when the call remains invalid after optional repair.
- */
-invalid?: boolean | null, 
-/**
- * Typed lookup, parsing, schema, or repair failure.
- */
-error?: AiMuxError | null, provider_metadata?: JsonValue | null, } } | { "ToolResult": { tool_call_id: string, tool_name: string, result: JsonValue, 
-/**
- * Whether the result is an error or error message.
- */
-is_error?: boolean | null, 
-/**
- * Whether the result is preliminary (replaces prior, e.g. image previews).
- */
-preliminary?: boolean | null, 
-/**
- * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
- */
-dynamic?: boolean | null, 
-/**
- * Additional provider-specific metadata for the tool result.
- */
-provider_metadata?: JsonValue | null, } } | { "File": { data: FileData, media_type: string, provider_metadata?: JsonValue | null, } } | { "ReasoningStart": { id: string, 
+title?: string | null, provider_metadata?: JsonValue | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: JsonValue | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": ToolCall } | { "ToolResult": ToolResult } | { "File": { data: FileData, media_type: string, provider_metadata?: JsonValue | null, } } | { "ReasoningStart": { id: string, 
 /**
  * Provider-specific metadata (e.g. xAI `itemId`).
  */
