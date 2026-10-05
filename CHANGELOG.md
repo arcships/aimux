@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Public surface (`aimux-core`, `aimux-provider-utils`): removed
+  `recording::init_recording_from_env`; made private the retry preparation
+  helpers and default constants, `composite::{add_usage,
+  build_aggregator_prompt, extract_text}`, `recording::new_call_id`,
+  `util::rfc3339_now`, two session helpers, `fetch_error_to_ai_mux_error`,
+  `extract_response_header_pairs`, the SigV4 signing internals, the logging
+  internals, `DEFAULT_MAX_JSON_RESPONSE_SIZE` and `TungsteniteConnector`.
+
 - Provider results carry request and response information as the AI SDK does
   (`aimux-core`). `GenerateResult` has `request: Option<RequestInfo>` and
   `response: Option<ResponseInfo>`; `ResponseInfo` gains `id` and holds the
