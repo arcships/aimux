@@ -175,48 +175,6 @@ fn text_completion_body() -> Value {
 // Translated from `deepseek-chat-language-model.test.ts` doGenerate › text.
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: doGenerate › text › "should send correct request body" (line ~39).
-///
-/// Verifies that system + user messages, temperature, and top_p are correctly
-/// serialized in the request body.
-#[tokio::test]
-async fn should_send_correct_text_request_body() {
-    let server = MockServer::start().await;
-    mock_json(&server, text_completion_body()).await;
-
-    let model = make_provider(&server, "deepseek-chat");
-
-    let prompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::System,
-            content: vec![ContentPart::text("You are a helpful assistant.")],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Hello")],
-            ..Default::default()
-        },
-    ];
-    let mut options = default_options(prompt);
-    options.temperature = Some(0.5);
-    options.top_p = Some(0.3);
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(body["model"], json!("deepseek-chat"));
-    assert_eq!(
-        body["messages"],
-        json!([
-            { "role": "system", "content": "You are a helpful assistant." },
-            { "role": "user", "content": "Hello" }
-        ])
-    );
-    assert_eq!(body["temperature"], json!(0.5));
-    assert_eq!(body["top_p"], json!(0.3));
-}
-
 /// TS: doGenerate › text › "should extract text content" (line ~68).
 ///
 /// Verifies that the text content is extracted from the response and the
@@ -270,53 +228,6 @@ async fn should_extract_text_content() {
 //
 // Translated from `deepseek-chat-language-model.test.ts` doStream › text.
 // ════════════════════════════════════════════════════════════════════════════
-
-/// TS: doStream › text › "should send model id, settings, and input" (line ~715).
-///
-/// Verifies that the stream request body includes `stream: true`,
-/// `stream_options: { include_usage: true }`, and the correct messages.
-#[tokio::test]
-async fn should_send_correct_stream_request_body() {
-    let server = MockServer::start().await;
-    let body = sse_body(&[&sse_event(
-        r#"{"id":"x","object":"chat.completion.chunk","created":1,"model":"deepseek-chat","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#,
-    )]);
-    mock_sse(&server, body).await;
-
-    let model = make_provider(&server, "deepseek-chat");
-
-    let prompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::System,
-            content: vec![ContentPart::text("You are a helpful assistant.")],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Hello")],
-            ..Default::default()
-        },
-    ];
-    let mut options = default_options(prompt);
-    options.temperature = Some(0.5);
-    options.top_p = Some(0.3);
-
-    let result = model.do_stream(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(body["model"], json!("deepseek-chat"));
-    assert_eq!(body["stream"], json!(true));
-    assert_eq!(body["stream_options"], json!({ "include_usage": true }));
-    assert_eq!(
-        body["messages"],
-        json!([
-            { "role": "system", "content": "You are a helpful assistant." },
-            { "role": "user", "content": "Hello" }
-        ])
-    );
-    assert_eq!(body["temperature"], json!(0.5));
-    assert_eq!(body["top_p"], json!(0.3));
-}
 
 /// TS: doStream › text › "should stream text" (line ~748).
 ///

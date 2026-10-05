@@ -121,7 +121,7 @@ impl LanguageModel for XaiResponsesModel {
 
         let response_headers = resp.response_headers;
 
-        let _raw_value = resp.raw_value.unwrap_or(Value::Null);
+        let raw_value = resp.raw_value.unwrap_or(Value::Null);
         let data = resp.value;
 
         let mut content: Vec<GenerateContent> = Vec::new();
@@ -353,13 +353,16 @@ impl LanguageModel for XaiResponsesModel {
             usage,
             warnings: request_result.warnings,
             provider_metadata,
-            response: ResponseMetadata {
-                id: data.id,
-                timestamp,
-                model_id: data.model,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::GenerateResponse {
+                body: Some(raw_value),
+                headers: Some(response_headers),
+                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                    id: data.id,
+                    timestamp,
+                    model_id: data.model,
+                })
+            }),
         })
     }
 
@@ -917,18 +920,16 @@ impl LanguageModel for XaiResponsesModel {
             yield Ok(StreamPart::Finish {
                 finish_reason: final_finish_reason,
                 usage: final_usage.unwrap_or(Usage {
-                    input_tokens: aimux_core::types::TokenUsage {
+                    input_tokens: aimux_core::types::InputTokenUsage {
                         total: Some(0),
                         no_cache: Some(0),
                         cache_read: Some(0),
                         cache_write: Some(0),
-                        ..Default::default()
                     },
-                    output_tokens: aimux_core::types::TokenUsage {
+                    output_tokens: aimux_core::types::OutputTokenUsage {
                         total: Some(0),
                         text: Some(0),
                         reasoning: Some(0),
-                        ..Default::default()
                     },
                     raw: None,
                 }),
@@ -938,8 +939,10 @@ impl LanguageModel for XaiResponsesModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::StreamResponse {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

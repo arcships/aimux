@@ -74,6 +74,7 @@ pub fn convert_to_responses_input(
     system_message_mode: SystemMessageMode,
     store: bool,
     has_previous_response_id: bool,
+    has_conversation: bool,
 ) -> ResponsesInputResult {
     let mut input: Vec<Value> = Vec::new();
     let mut warnings: Vec<Warning> = Vec::new();
@@ -106,6 +107,23 @@ pub fn convert_to_responses_input(
             Role::Assistant => {
                 for part in &msg.content {
                     match part {
+                        ContentPart::Custom {
+                            kind,
+                            provider_options,
+                        } if kind == "openai.compaction" => {
+                            if let Some(id) = item_id(provider_options) {
+                                if has_conversation {
+                                    continue;
+                                }
+                                if store {
+                                    input.push(json!({ "type": "item_reference", "id": id }));
+                                } else {
+                                    input.push(json!({ "type": "compaction", "id": id,
+                                        "encrypted_content": openai_sub_option(provider_options, "encryptedContent") }));
+                                }
+                            }
+                        }
+
                         ContentPart::Text {
                             text,
                             provider_options,
@@ -865,6 +883,7 @@ pub fn build_responses_request_body(
         system_message_mode,
         store_bool,
         has_previous_response_id,
+        openai_option(provider_opts, "conversation").is_some(),
     );
     warnings.extend(input_result.warnings);
 
@@ -923,7 +942,7 @@ pub fn build_responses_request_body(
     );
 
     // -- Tools --
-    let prepared = prepare_responses_tools(&options.tools, Some(&options.tool_choice));
+    let prepared = prepare_responses_tools(&options.tools, options.tool_choice.as_ref());
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);
         if let Some(tc) = prepared.tool_choice {
@@ -958,7 +977,7 @@ pub fn build_responses_request_body(
 pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value>) -> Usage {
     let Some(usage) = usage else {
         return Usage {
-            raw,
+            raw: raw.and_then(|value| value.as_object().cloned()),
             ..Default::default()
         };
     };
@@ -985,20 +1004,18 @@ pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value
     let text_tokens = output_tokens - reasoning_tokens;
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input_tokens),
             no_cache: Some(no_cache),
             cache_read: Some(cached_tokens),
             cache_write,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(output_tokens),
             text: Some(text_tokens),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
-        raw,
+        raw: raw.and_then(|value| value.as_object().cloned()),
     }
 }
 

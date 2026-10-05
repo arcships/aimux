@@ -93,7 +93,7 @@ fn convert_usage(usage: &UsageResponse) -> Usage {
     let no_cache = prompt_tokens - cache_read;
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(prompt_tokens),
             no_cache: Some(no_cache),
             cache_read: if cache_read > 0 {
@@ -102,14 +102,15 @@ fn convert_usage(usage: &UsageResponse) -> Usage {
                 None
             },
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(completion_tokens),
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -241,6 +242,7 @@ impl LanguageModel for MistralModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
         let data: ChatCompletionResponse = resp.value;
 
@@ -306,16 +308,19 @@ impl LanguageModel for MistralModel {
             usage,
             warnings: Vec::new(),
             provider_metadata: None,
-            response: ResponseMetadata {
-                id: data.id,
-                timestamp: data
-                    .created
-                    .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-                    .map(|dt| dt.to_rfc3339()),
-                model_id: data.model,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::GenerateResponse {
+                body: response_body,
+                headers: Some(response_headers),
+                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                    id: data.id,
+                    timestamp: data
+                        .created
+                        .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
+                        .map(|dt| dt.to_rfc3339()),
+                    model_id: data.model,
+                })
+            }),
         })
     }
 
@@ -606,8 +611,10 @@ impl LanguageModel for MistralModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::StreamResponse {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

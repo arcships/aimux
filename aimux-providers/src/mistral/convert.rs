@@ -273,7 +273,10 @@ fn convert_part_to_mistral(part: &ContentPart) -> Value {
         ContentPart::FileBase64 { .. }
         | ContentPart::FileUrl { .. }
         | ContentPart::FileReference { .. }
-        | ContentPart::Reasoning { .. } => Value::Null,
+        | ContentPart::Reasoning { .. }
+        | ContentPart::Custom { .. }
+        | ContentPart::ReasoningFile { .. }
+        | ContentPart::ToolApprovalRequest { .. } => Value::Null,
     }
 }
 
@@ -356,7 +359,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -
             })
             .collect()
     });
-    let prepared = prepare_tools(&function_tools, Some(&options.tool_choice));
+    let prepared = prepare_tools(&function_tools, options.tool_choice.as_ref());
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);
         if let Some(tc) = prepared.tool_choice {

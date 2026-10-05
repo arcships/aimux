@@ -258,6 +258,26 @@ fn convert_assistant_parts(
                     parts.push(p);
                 }
             }
+            ContentPart::ReasoningFile {
+                data: aimux_core::shared::GeneratedFileData::Data { data },
+                media_type,
+                provider_options,
+            } => {
+                use base64::Engine;
+                let data = match data {
+                    aimux_core::shared::FileBytes::Binary(bytes) => {
+                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                    }
+                    aimux_core::shared::FileBytes::Base64(data) => data.clone(),
+                };
+                let mut value = json!({ "inlineData": { "mimeType": media_type, "data": data }, "thought": true });
+                if let Some(signature) = read_provider_options(provider_options.as_ref(), namespace)
+                    .and_then(|options| options.get("thoughtSignature"))
+                {
+                    value["thoughtSignature"] = signature.clone();
+                }
+                parts.push(value);
+            }
             ContentPart::ToolCall {
                 tool_call_id,
                 tool_name,
@@ -422,7 +442,10 @@ pub struct PreparedTools {
 /// tools (`google_search`, `code_execution`, …) are out of scope for the Rust
 /// port — only `FunctionTool`s are supported.
 #[must_use]
-pub fn prepare_tools(tools: &Option<Vec<FunctionTool>>, tool_choice: &ToolChoice) -> PreparedTools {
+pub fn prepare_tools(
+    tools: &Option<Vec<FunctionTool>>,
+    tool_choice: Option<&ToolChoice>,
+) -> PreparedTools {
     // Coerce empty arrays to None (matches TS `tools?.length ? tools : undefined`).
     let non_empty = tools.as_ref().filter(|&t| !t.is_empty());
 
@@ -455,22 +478,23 @@ pub fn prepare_tools(tools: &Option<Vec<FunctionTool>>, tool_choice: &ToolChoice
     ]);
 
     let tool_config = match tool_choice {
-        ToolChoice::Auto => {
+        None => has_strict.then(|| json!({ "functionCallingConfig": { "mode": "VALIDATED" } })),
+        Some(ToolChoice::Auto) => {
             if has_strict {
                 Some(json!({ "functionCallingConfig": { "mode": "VALIDATED" } }))
             } else {
                 Some(json!({ "functionCallingConfig": { "mode": "AUTO" } }))
             }
         }
-        ToolChoice::None => Some(json!({ "functionCallingConfig": { "mode": "NONE" } })),
-        ToolChoice::Required => {
+        Some(ToolChoice::None) => Some(json!({ "functionCallingConfig": { "mode": "NONE" } })),
+        Some(ToolChoice::Required) => {
             if has_strict {
                 Some(json!({ "functionCallingConfig": { "mode": "VALIDATED" } }))
             } else {
                 Some(json!({ "functionCallingConfig": { "mode": "ANY" } }))
             }
         }
-        ToolChoice::Tool { tool_name } => {
+        Some(ToolChoice::Tool { tool_name }) => {
             if has_strict {
                 Some(json!({
                     "functionCallingConfig": {
@@ -613,7 +637,7 @@ pub struct PreparedToolsWithWarnings {
 #[must_use]
 pub fn prepare_all_tools(
     tools: &Option<Vec<Tool>>,
-    tool_choice: &ToolChoice,
+    tool_choice: Option<&ToolChoice>,
     model_id: &str,
 ) -> PreparedToolsWithWarnings {
     let caps = get_google_model_capabilities(model_id);
@@ -657,23 +681,23 @@ pub fn prepare_all_tools(
 
             let mut combined_config = Map::new();
             let fc = match tool_choice {
-                ToolChoice::None => {
+                Some(ToolChoice::None) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("NONE"));
                     m
                 }
-                ToolChoice::Required => {
+                Some(ToolChoice::Required) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("ANY"));
                     m
                 }
-                ToolChoice::Tool { tool_name } => {
+                Some(ToolChoice::Tool { tool_name }) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("ANY"));
                     m.insert("allowedFunctionNames".to_string(), json!([tool_name]));
                     m
                 }
-                ToolChoice::Auto => {
+                None | Some(ToolChoice::Auto) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("VALIDATED"));
                     m
@@ -1100,7 +1124,7 @@ fn build_request_body_with_warnings_for_namespace(
         );
     }
 
-    let prepared = prepare_all_tools(&options.tools, &options.tool_choice, model_id);
+    let prepared = prepare_all_tools(&options.tools, options.tool_choice.as_ref(), model_id);
     if let Some(tools) = prepared.tools {
         body.insert("tools".to_string(), Value::Array(tools));
     }
@@ -1156,7 +1180,7 @@ pub fn parse_finish_reason(reason: &str, has_tool_calls: bool) -> FinishReason {
 /// - `output.total = candidatesTokenCount + thoughtsTokenCount`
 #[must_use]
 pub fn convert_usage(usage: &super::types::GoogleUsageMetadata) -> aimux_core::types::Usage {
-    use aimux_core::types::{TokenUsage, Usage};
+    use aimux_core::types::Usage;
 
     let prompt = usage.prompt_token_count.unwrap_or(0);
     let candidates = usage.candidates_token_count.unwrap_or(0);
@@ -1164,19 +1188,21 @@ pub fn convert_usage(usage: &super::types::GoogleUsageMetadata) -> aimux_core::t
     let thoughts = usage.thoughts_token_count.unwrap_or(0);
 
     Usage {
-        input_tokens: TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(prompt),
             no_cache: Some(prompt - cached),
             cache_read: Some(cached),
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(candidates + thoughts),
-            ..Default::default()
+            text: Some(candidates),
+            reasoning: Some(thoughts),
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 

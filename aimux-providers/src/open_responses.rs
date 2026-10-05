@@ -327,6 +327,7 @@ impl LanguageModel for OpenResponsesModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
 
         let raw: Value = resp.value;
@@ -444,9 +445,12 @@ impl LanguageModel for OpenResponsesModel {
             usage,
             warnings,
             provider_metadata: None,
-            response,
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::GenerateResponse {
+                body: response_body,
+                headers: Some(response_headers),
+                ..aimux_core::result::GenerateResponse::from(response)
+            }),
         })
     }
 
@@ -822,8 +826,10 @@ impl LanguageModel for OpenResponsesModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::StreamResponse {
+                headers: Some(response_headers),
+            }),
         })
     }
 }
@@ -930,15 +936,12 @@ fn build_request_body(
         })
         .unwrap_or_default();
 
-    // Convert tool choice.
-    // Only emit when not the default (Auto) — Rust's ToolChoice::Auto is the
-    // default and indistinguishable from "not set", matching the TS behavior
-    // where undefined toolChoice is omitted from the body.
     let converted_tool_choice: Option<Value> = match &options.tool_choice {
-        ToolChoice::Auto => None,
-        ToolChoice::None => Some(json!("none")),
-        ToolChoice::Required => Some(json!("required")),
-        ToolChoice::Tool { tool_name } => Some(json!({
+        None => None,
+        Some(ToolChoice::Auto) => Some(json!("auto")),
+        Some(ToolChoice::None) => Some(json!("none")),
+        Some(ToolChoice::Required) => Some(json!("required")),
+        Some(ToolChoice::Tool { tool_name }) => Some(json!({
             "type": "function",
             "name": tool_name,
         })),
@@ -1351,6 +1354,9 @@ fn part_variant_name(part: &ContentPart) -> &'static str {
         ContentPart::FileUrl { .. } => "file-url",
         ContentPart::FileReference { .. } => "file-reference",
         ContentPart::Reasoning { .. } => "reasoning",
+        ContentPart::Custom { .. } => "custom",
+        ContentPart::ReasoningFile { .. } => "reasoning-file",
+        ContentPart::ToolApprovalRequest { .. } => "tool-approval-request",
         ContentPart::ToolCall { .. } => "tool-call",
         ContentPart::ToolResult { .. } => "tool-result",
     }
@@ -1389,20 +1395,18 @@ fn extract_usage_from_value(usage: &Value) -> Usage {
         .map(|n| n as u32);
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: input_tokens,
             no_cache: Some(input_tokens.unwrap_or(0) - cached_input_tokens.unwrap_or(0)),
             cache_read: cached_input_tokens,
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: output_tokens,
             text: Some(output_tokens.unwrap_or(0) - reasoning_tokens.unwrap_or(0)),
             reasoning: reasoning_tokens,
-            ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(usage.clone()),
+        raw: usage.as_object().cloned(),
     }
 }

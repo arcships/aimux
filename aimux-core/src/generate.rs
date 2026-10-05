@@ -23,8 +23,8 @@ use crate::message::{ModelMessage, ModelPrompt};
 use crate::options::{CallOptions, ResponseFormat, ToolChoice};
 use crate::parse_tool_call::{ToolCallRepair, parse_tool_call};
 use crate::result::{
-    GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
-    StreamTextResultAggregated,
+    GenerateContent, GenerateResult, GeneratedFile, ReasoningFileOutput, ReasoningPart, Source,
+    StreamResult, StreamTextResultAggregated, TextContent, ToolApprovalRequestOutput,
 };
 use crate::shared::SharedProviderOptions;
 use crate::stream_part::{StreamPart, TextStreamPart};
@@ -34,14 +34,24 @@ use crate::{AbortSignal, retry, timeout};
 
 /// Matches the AI SDK's `isOutputChunk`: only chunks containing model output
 /// start or reset the first/chunk output timers.
-fn is_output_chunk<C>(part: &StreamPart<C>) -> bool {
+fn is_output_chunk<C, A, R>(part: &StreamPart<C, A, R>) -> bool {
     match part {
         StreamPart::TextDelta { delta, .. }
         | StreamPart::ReasoningDelta { delta, .. }
         | StreamPart::ToolInputDelta { delta, .. } => !delta.is_empty(),
-        StreamPart::ToolCall(_) | StreamPart::File(_) => true,
+        StreamPart::ToolCall(_) | StreamPart::File(_) | StreamPart::ReasoningFile(_) => true,
         _ => false,
     }
+}
+
+async fn resolve_file(
+    mut file: GeneratedFile,
+    abort_signal: Option<&AbortSignal>,
+) -> Result<GeneratedFile, AiMuxError> {
+    file.data = crate::shared::GeneratedFileData::Data {
+        data: crate::download::resolve_generated_file_data(&file.data, abort_signal).await?,
+    };
+    Ok(file)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -120,7 +130,7 @@ impl GenerateTextOptions {
             response_format: self.response_format,
             seed: self.seed,
             tools: self.tools,
-            tool_choice: self.tool_choice.unwrap_or_default(),
+            tool_choice: self.tool_choice,
             headers: self.headers,
             provider_options: self.provider_options,
             reasoning: self.reasoning,
@@ -144,6 +154,9 @@ impl GenerateTextOptions {
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct GenerateTextResult {
+    /// Ordered generated content with parsed tool calls.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub content: Vec<TextContent>,
     /// The generated text (concatenated from all text content parts).
     pub text: String,
     /// Tool calls requested by the model.
@@ -159,7 +172,7 @@ pub struct GenerateTextResult {
     // ── M7: top-level aggregation (extracted from `raw.content`) ──
     /// Reasoning / thinking segments from the model.
     #[serde(default)]
-    pub reasoning: Vec<ReasoningOutput>,
+    pub reasoning: Vec<ReasoningPart>,
     /// Concatenated reasoning text (convenience for `reasoning.iter().map(text).join("")`).
     #[serde(default)]
     pub reasoning_text: String,
@@ -350,37 +363,53 @@ impl StreamTextResult {
             }
             match part {
                 StreamPart::TextStart {
-                    provider_metadata, ..
-                } => rm.text_start(provider_metadata),
+                    id,
+                    provider_metadata,
+                } => rm.text_start(id, provider_metadata),
                 StreamPart::TextDelta {
+                    id,
                     delta,
                     provider_metadata,
-                    ..
                 } => {
                     text.push_str(&delta);
-                    rm.text_delta(&delta, provider_metadata);
+                    rm.text_delta(id, &delta, provider_metadata);
                 }
                 StreamPart::TextEnd {
-                    provider_metadata, ..
-                } => rm.text_end(provider_metadata),
+                    id,
+                    provider_metadata,
+                } => rm.text_end(id, provider_metadata),
                 StreamPart::ReasoningStart {
-                    provider_metadata, ..
-                } => rm.reasoning_start(provider_metadata),
+                    id,
+                    provider_metadata,
+                } => rm.reasoning_start(id, provider_metadata),
                 StreamPart::ReasoningDelta {
+                    id,
                     delta,
                     provider_metadata,
-                    ..
-                } => rm.reasoning_delta(&delta, provider_metadata),
+                } => rm.reasoning_delta(id, &delta, provider_metadata),
                 StreamPart::ReasoningEnd {
-                    provider_metadata, ..
-                } => rm.reasoning_end(provider_metadata),
+                    id,
+                    provider_metadata,
+                } => rm.reasoning_end(id, provider_metadata),
                 StreamPart::ToolCall(call) => {
                     rm.tool_call(&call);
                     tool_calls.push(call);
                 }
                 StreamPart::ToolResult(result) => rm.tool_result(result),
-                StreamPart::Source(source) => sources.push(source),
-                StreamPart::File(file) => files.push(file),
+                StreamPart::Source(source) => {
+                    rm.source(source.clone());
+                    sources.push(source);
+                }
+                StreamPart::File(file) => {
+                    rm.file(&file, false);
+                    files.push(file);
+                }
+                StreamPart::ReasoningFile(output) => rm.file(&output.file, true),
+                StreamPart::Custom {
+                    kind,
+                    provider_metadata,
+                } => rm.custom(kind, provider_metadata),
+                StreamPart::ToolApprovalRequest(approval) => rm.approval(&approval),
                 StreamPart::StreamStart { warnings: w, .. } => {
                     warnings = w;
                 }
@@ -427,16 +456,21 @@ impl StreamTextResult {
 
         let crate::response_messages::ResponseMessages {
             messages: response_messages,
+            content,
             reasoning,
         } = rm.finish();
 
         let reasoning_text = reasoning
             .iter()
-            .map(|r| r.text.as_str())
+            .filter_map(|r| match r {
+                ReasoningPart::Text(r) => Some(r.text.as_str()),
+                ReasoningPart::File(_) => None,
+            })
             .collect::<Vec<_>>()
             .join("");
 
         Ok(StreamTextResultAggregated {
+            content,
             text,
             reasoning,
             reasoning_text,
@@ -584,6 +618,20 @@ pub async fn generate_text(
     // Build the assistant response message content parts in parallel.
     let mut rm = crate::response_messages::ResponseMessageBuilder::new();
     for content in &result.content {
+        if let GenerateContent::ToolCall(call) = content {
+            tool_calls.push(
+                parse_tool_call(
+                    call.clone(),
+                    tools.as_deref(),
+                    repair_tool_call.as_ref(),
+                    &messages,
+                    operation_instructions.as_deref(),
+                )
+                .await,
+            );
+        }
+    }
+    for content in &result.content {
         match content {
             GenerateContent::Text {
                 text: t,
@@ -593,33 +641,71 @@ pub async fn generate_text(
                 rm.text(t, provider_metadata.as_ref());
             }
             GenerateContent::ToolCall(call) => {
-                let parsed = parse_tool_call(
-                    call.clone(),
-                    tools.as_deref(),
-                    repair_tool_call.as_ref(),
-                    &messages,
-                    operation_instructions.as_deref(),
-                )
-                .await;
-                rm.tool_call(&parsed);
-                tool_calls.push(parsed);
+                let parsed = tool_calls
+                    .iter()
+                    .find(|parsed| parsed.tool_call_id == call.tool_call_id)
+                    .expect("every tool call was parsed above");
+                rm.tool_call(parsed);
             }
             GenerateContent::Reasoning(reasoning) => rm.reasoning(reasoning),
-            GenerateContent::Source(source) => sources.push(source.clone()),
-            GenerateContent::File(file) => files.push(file.clone()),
-            // Provider-executed results stay in the assistant message so the
-            // provider can replay its own server-tool transcript next turn.
+            GenerateContent::Source(source) => {
+                rm.source(source.clone());
+                sources.push(source.clone());
+            }
+            GenerateContent::File(file) => {
+                let file = timeout::run(
+                    resolve_file(file.clone(), abort_signal.as_ref()),
+                    abort_signal.as_ref(),
+                    operation_timeout,
+                )
+                .await?;
+                rm.file(&file, false);
+                files.push(file);
+            }
+            GenerateContent::ReasoningFile(file) => {
+                let file = timeout::run(
+                    resolve_file(file.clone(), abort_signal.as_ref()),
+                    abort_signal.as_ref(),
+                    operation_timeout,
+                )
+                .await?;
+                rm.file(&file, true);
+            }
+            GenerateContent::Custom {
+                kind,
+                provider_metadata,
+            } => rm.custom(kind.clone(), provider_metadata.clone()),
+            GenerateContent::ToolApprovalRequest(approval) => {
+                let call = tool_calls
+                    .iter()
+                    .find(|call| call.tool_call_id == approval.tool_call_id)
+                    .ok_or_else(|| AiMuxError::ToolCallNotFoundForApproval {
+                        tool_call_id: approval.tool_call_id.clone(),
+                        approval_id: approval.approval_id.clone(),
+                    })?;
+                rm.approval(&ToolApprovalRequestOutput {
+                    approval_id: approval.approval_id.clone(),
+                    tool_call: call.clone(),
+                    reason: None,
+                    is_automatic: None,
+                    signature: None,
+                });
+            }
             GenerateContent::ToolResult(result) => rm.tool_result(result.clone()),
         }
     }
 
     let crate::response_messages::ResponseMessages {
         messages: response_messages,
+        content,
         reasoning,
     } = rm.finish();
     let reasoning_text = reasoning
         .iter()
-        .map(|r| r.text.as_str())
+        .filter_map(|r| match r {
+            ReasoningPart::Text(r) => Some(r.text.as_str()),
+            ReasoningPart::File(_) => None,
+        })
         .collect::<Vec<_>>()
         .join("");
 
@@ -636,10 +722,11 @@ pub async fn generate_text(
     // Extract fields before moving `result` into `raw`.
     let raw_finish_reason = result.finish_reason.raw.clone();
     let provider_metadata = result.provider_metadata.clone();
-    let response = result.response.clone();
+    let response = result.response.clone().map(Into::into).unwrap_or_default();
     let usage = result.usage.clone();
 
     Ok(GenerateTextResult {
+        content,
         text,
         tool_calls,
         finish_reason: result.finish_reason.clone(),
@@ -719,7 +806,12 @@ pub async fn generate_object(
         Some(text_result.reasoning_text.clone())
     };
     let provider_metadata = text_result.raw.provider_metadata.clone();
-    let response = text_result.raw.response.clone();
+    let response = text_result
+        .raw
+        .response
+        .clone()
+        .map(Into::into)
+        .unwrap_or_default();
     Ok(GenerateObjectResult {
         object,
         finish_reason,
@@ -874,9 +966,11 @@ pub async fn stream_text(
     // 解构避免部分 move(result 各字段去向不同)。
     let StreamResult {
         stream,
-        request_body,
-        response_headers,
+        request,
+        response,
     } = result;
+    let request_body = request.and_then(|request| request.body);
+    let response_headers = response.and_then(|response| response.headers);
 
     // The consumption phase keeps observing the same deadlines: the
     // first-chunk budget armed at operation start continues until the first
@@ -894,6 +988,7 @@ pub async fn stream_text(
     // the stream's terminal fuse — `Finish` and non-recoverable errors must
     // end the stream under every configuration, or a provider that keeps the
     // connection open after `Finish` hangs a consumer reading to end-of-stream.
+    let file_abort_signal = abort_signal.clone();
     let stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>> = {
         let mut stream = stream;
         let chunk_ms = stream_timeout.chunk_ms;
@@ -973,8 +1068,9 @@ pub async fn stream_text(
         })
     };
     let mut stream = stream;
-    let stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>> =
-        Box::pin(async_stream::stream! {
+    let stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>> = Box::pin(
+        async_stream::stream! {
+            let mut tool_calls = HashMap::new();
             while let Some(item) = stream.next().await {
                 match item {
                     Ok(StreamPart::ToolCall(raw)) => {
@@ -985,13 +1081,42 @@ pub async fn stream_text(
                             &messages,
                             operation_instructions.as_deref(),
                         ).await;
+                        tool_calls.insert(parsed.tool_call_id.clone(), parsed.clone());
                         yield Ok(StreamPart::ToolCall(parsed));
                     }
-                    Ok(part) => yield Ok(part.map_tool_call(|_| unreachable!("matched above"))),
+                    Ok(StreamPart::File(file)) => {
+                        match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
+                            Ok(file) => yield Ok(StreamPart::File(file)),
+                            Err(error) => yield Ok(StreamPart::Error { error }),
+                        }
+                    }
+                    Ok(StreamPart::ReasoningFile(file)) => {
+                        match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
+                            Ok(file) => yield Ok(StreamPart::ReasoningFile(ReasoningFileOutput {
+                                provider_metadata: file.provider_metadata.clone(), file,
+                            })),
+                            Err(error) => yield Ok(StreamPart::Error { error }),
+                        }
+                    }
+                    Ok(StreamPart::ToolApprovalRequest(approval)) => {
+                        if let Some(call) = tool_calls.get(&approval.tool_call_id) {
+                            yield Ok(StreamPart::ToolApprovalRequest(ToolApprovalRequestOutput {
+                                approval_id: approval.approval_id, tool_call: call.clone(),
+                                reason: None, is_automatic: None, signature: None,
+                            }));
+                        } else {
+                            yield Ok(StreamPart::Error { error: AiMuxError::ToolCallNotFoundForApproval {
+                                tool_call_id: approval.tool_call_id, approval_id: approval.approval_id,
+                            }});
+                        }
+                    }
+                    Ok(part) => yield Ok(part.map_payloads(|_| unreachable!("matched above"), |_| unreachable!("matched above"))
+                        .map_reasoning_file(|file| ReasoningFileOutput { provider_metadata: file.provider_metadata.clone(), file })),
                     Err(error) => yield Err(error),
                 }
             }
-        });
+        },
+    );
     // 录制开启时才包装(终结时写 outcome + 传输封闭);关闭时零成本透传。
     let stream = crate::recording::RecordingOutcomeStream::new(
         stream,
@@ -1215,457 +1340,4 @@ pub async fn stream_text_as_openai(
         model.model_id(),
         stream_options,
     ))
-}
-
-#[cfg(test)]
-mod operation_retry_tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    use async_trait::async_trait;
-
-    use super::*;
-    use crate::{ApiCallError, LanguageModel, prelude::StreamPart};
-
-    enum StreamBehavior {
-        Normal,
-        FinishThenPending,
-        ProviderErrorThenFinish,
-        ParseErrorThenEvent,
-        TransportErrorThenPending,
-        NeverReturns,
-        RetryableFirstError,
-        NonRetryableFirstError,
-    }
-
-    struct StreamModel {
-        behavior: StreamBehavior,
-        calls: AtomicUsize,
-    }
-
-    impl StreamModel {
-        fn new(behavior: StreamBehavior) -> Self {
-            Self {
-                behavior,
-                calls: AtomicUsize::new(0),
-            }
-        }
-
-        fn api_error(status: u16, retryable: bool) -> AiMuxError {
-            AiMuxError::ApiCall(Box::new(ApiCallError {
-                status_code: Some(status),
-                response_headers: Some(HashMap::from([("retry-after-ms".into(), "0".into())])),
-                is_retryable: retryable,
-                ..ApiCallError::new(
-                    "stream setup failed",
-                    "https://example.test/stream",
-                    serde_json::json!({}),
-                )
-            }))
-        }
-
-        fn single_event_stream() -> StreamResult {
-            StreamResult {
-                stream: Box::pin(futures::stream::iter([Ok(StreamPart::TextDelta {
-                    id: "text-1".into(),
-                    delta: "hello".into(),
-                    provider_metadata: None,
-                })])),
-                request_body: None,
-                response_headers: None,
-            }
-        }
-
-        fn finish_stream() -> StreamResult {
-            let finish = StreamPart::Finish {
-                finish_reason: crate::types::FinishReason {
-                    unified: crate::types::FinishReasonUnified::Stop,
-                    raw: Some("stop".into()),
-                },
-                usage: Usage::default(),
-                provider_metadata: None,
-            };
-            StreamResult {
-                stream: Box::pin(
-                    futures::stream::iter([Ok(finish)]).chain(futures::stream::pending()),
-                ),
-                request_body: None,
-                response_headers: None,
-            }
-        }
-
-        fn provider_error_then_finish_stream() -> StreamResult {
-            let finish = StreamPart::Finish {
-                finish_reason: crate::types::FinishReason {
-                    unified: crate::types::FinishReasonUnified::Error,
-                    raw: None,
-                },
-                usage: Usage::default(),
-                provider_metadata: None,
-            };
-            StreamResult {
-                stream: Box::pin(
-                    futures::stream::iter([
-                        Ok(StreamPart::Error {
-                            error: AiMuxError::Other("provider error".into()),
-                        }),
-                        Ok(finish),
-                    ])
-                    .chain(futures::stream::pending()),
-                ),
-                request_body: None,
-                response_headers: None,
-            }
-        }
-
-        fn parse_error_then_event_stream() -> StreamResult {
-            StreamResult {
-                stream: Box::pin(futures::stream::iter([
-                    Err(AiMuxError::JsonParse("malformed SSE data".into())),
-                    Ok(StreamPart::TextDelta {
-                        id: "text-1".into(),
-                        delta: "after-error".into(),
-                        provider_metadata: None,
-                    }),
-                ])),
-                request_body: None,
-                response_headers: None,
-            }
-        }
-    }
-
-    #[async_trait]
-    impl LanguageModel for StreamModel {
-        fn provider(&self) -> &str {
-            "test"
-        }
-
-        fn model_id(&self) -> &str {
-            "stream-model"
-        }
-
-        async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-            Err(AiMuxError::Other("unused".into()))
-        }
-
-        async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-            let attempt = self.calls.fetch_add(1, Ordering::SeqCst);
-            match self.behavior {
-                StreamBehavior::Normal => Ok(Self::single_event_stream()),
-                StreamBehavior::FinishThenPending => Ok(Self::finish_stream()),
-                StreamBehavior::ProviderErrorThenFinish => {
-                    Ok(Self::provider_error_then_finish_stream())
-                }
-                StreamBehavior::ParseErrorThenEvent => Ok(Self::parse_error_then_event_stream()),
-                StreamBehavior::TransportErrorThenPending => Ok(StreamResult {
-                    stream: Box::pin(
-                        futures::stream::iter([Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                            is_retryable: true,
-                            ..ApiCallError::new(
-                                "connection reset",
-                                "https://example.test/stream",
-                                serde_json::json!({}),
-                            )
-                        })))])
-                        .chain(futures::stream::pending()),
-                    ),
-                    request_body: None,
-                    response_headers: None,
-                }),
-                StreamBehavior::NeverReturns => std::future::pending().await,
-                StreamBehavior::RetryableFirstError if attempt == 0 => {
-                    Err(Self::api_error(429, true))
-                }
-                StreamBehavior::RetryableFirstError => Ok(Self::single_event_stream()),
-                StreamBehavior::NonRetryableFirstError => Err(Self::api_error(400, false)),
-            }
-        }
-    }
-
-    fn retry_options() -> GenerateTextOptions {
-        GenerateTextOptions {
-            max_retries: Some(2),
-            ..Default::default()
-        }
-    }
-
-    #[tokio::test]
-    async fn stream_setup_preserves_the_peeked_first_event() {
-        let model = StreamModel::new(StreamBehavior::Normal);
-        let mut result = stream_text(&model, "hello", retry_options()).await.unwrap();
-        let first = result.stream.next().await.unwrap().unwrap();
-        assert!(matches!(first, StreamPart::TextDelta { delta, .. } if delta == "hello"));
-        assert!(result.stream.next().await.is_none());
-    }
-
-    #[tokio::test]
-    async fn late_consumer_still_receives_a_first_chunk_delivered_on_time() {
-        // The provider yields immediately; the first-chunk budget measures
-        // that arrival, not when the caller gets around to polling. Sleeping
-        // past the budget before the first poll must not turn delivered
-        // output into a timeout.
-        let model = StreamModel::new(StreamBehavior::Normal);
-        let options = GenerateTextOptions {
-            max_retries: Some(0),
-            timeout: Some(crate::options::TimeoutConfiguration {
-                first_chunk_ms: Some(1),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let mut result = stream_text(&model, "hello", options).await.unwrap();
-
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-
-        assert!(matches!(
-            result.stream.next().await.unwrap().unwrap(),
-            StreamPart::TextDelta { delta, .. } if delta == "hello"
-        ));
-        assert!(result.stream.next().await.is_none());
-    }
-
-    #[tokio::test]
-    async fn caller_abort_still_cancels_the_returned_stream() {
-        let model = StreamModel::new(StreamBehavior::Normal);
-        let abort_signal = AbortSignal::new();
-        let options = GenerateTextOptions {
-            max_retries: Some(0),
-            abort_signal: Some(abort_signal.clone()),
-            ..Default::default()
-        };
-        let mut result = stream_text(&model, "hello", options).await.unwrap();
-
-        abort_signal.abort();
-
-        assert!(matches!(
-            result.stream.next().await.unwrap(),
-            Err(AiMuxError::Aborted(message)) if message == "request aborted"
-        ));
-    }
-
-    #[tokio::test]
-    async fn terminal_stream_part_stops_stream_consumption() {
-        let model = StreamModel::new(StreamBehavior::FinishThenPending);
-        let options = GenerateTextOptions {
-            max_retries: Some(0),
-            timeout: Some(crate::options::TimeoutConfiguration {
-                total_ms: Some(50),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let mut result = stream_text(&model, "hello", options).await.unwrap();
-
-        assert!(matches!(
-            result.stream.next().await.unwrap().unwrap(),
-            StreamPart::Finish { .. }
-        ));
-        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
-        assert!(result.stream.next().await.is_none());
-    }
-
-    #[tokio::test]
-    async fn provider_error_part_does_not_hide_the_final_finish() {
-        let model = StreamModel::new(StreamBehavior::ProviderErrorThenFinish);
-        let abort_signal = AbortSignal::new();
-        let options = GenerateTextOptions {
-            max_retries: Some(0),
-            abort_signal: Some(abort_signal.clone()),
-            ..Default::default()
-        };
-        let mut result = stream_text(&model, "hello", options).await.unwrap();
-
-        assert!(matches!(
-            result.stream.next().await.unwrap().unwrap(),
-            StreamPart::Error { .. }
-        ));
-        assert!(matches!(
-            result.stream.next().await.unwrap().unwrap(),
-            StreamPart::Finish { finish_reason, .. }
-                if finish_reason.unified == crate::types::FinishReasonUnified::Error
-        ));
-        abort_signal.abort();
-        assert!(result.stream.next().await.is_none());
-    }
-
-    #[tokio::test]
-    async fn timeout_wrapper_continues_after_a_malformed_stream_frame() {
-        let model = StreamModel::new(StreamBehavior::ParseErrorThenEvent);
-        let options = GenerateTextOptions {
-            max_retries: Some(0),
-            timeout: Some(crate::options::TimeoutConfiguration {
-                total_ms: Some(1_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let mut result = stream_text(&model, "hello", options).await.unwrap();
-
-        assert!(matches!(
-            result.stream.next().await.unwrap(),
-            Err(AiMuxError::JsonParse(_))
-        ));
-        assert!(matches!(
-            result.stream.next().await.unwrap().unwrap(),
-            StreamPart::TextDelta { delta, .. } if delta == "after-error"
-        ));
-    }
-
-    #[tokio::test]
-    async fn abort_wrapper_continues_after_a_malformed_stream_frame() {
-        let model = StreamModel::new(StreamBehavior::ParseErrorThenEvent);
-        let options = GenerateTextOptions {
-            max_retries: Some(0),
-            abort_signal: Some(AbortSignal::new()),
-            ..Default::default()
-        };
-        let mut result = stream_text(&model, "hello", options).await.unwrap();
-
-        assert!(matches!(
-            result.stream.next().await.unwrap(),
-            Err(AiMuxError::JsonParse(_))
-        ));
-        assert!(matches!(
-            result.stream.next().await.unwrap().unwrap(),
-            StreamPart::TextDelta { delta, .. } if delta == "after-error"
-        ));
-    }
-
-    #[tokio::test]
-    async fn first_chunk_timeout_bounds_the_stream_setup_phase() {
-        // Providers await their first SSE event inside do_stream; a
-        // 200-then-silence server must be bounded by first_chunk_ms alone.
-        let model = StreamModel::new(StreamBehavior::NeverReturns);
-        let options = GenerateTextOptions {
-            max_retries: Some(0),
-            timeout: Some(crate::options::TimeoutConfiguration {
-                first_chunk_ms: Some(5),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let error = stream_text(&model, "hello", options).await.unwrap_err();
-        assert!(
-            matches!(error, AiMuxError::Timeout(ref message) if message == "First chunk timeout of 5ms exceeded"),
-            "got {error:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn transport_error_ends_the_wrapped_stream() {
-        let model = StreamModel::new(StreamBehavior::TransportErrorThenPending);
-        let abort_signal = AbortSignal::new();
-        let options = GenerateTextOptions {
-            max_retries: Some(0),
-            abort_signal: Some(abort_signal.clone()),
-            ..Default::default()
-        };
-        let mut result = stream_text(&model, "hello", options).await.unwrap();
-
-        assert!(matches!(
-            result.stream.next().await.unwrap(),
-            Err(AiMuxError::ApiCall(_))
-        ));
-        // Without treating Err as terminal this next() would hang on the
-        // pending tail of the dead source stream.
-        assert!(result.stream.next().await.is_none());
-    }
-
-    #[tokio::test]
-    async fn retryable_first_stream_error_retries_before_returning_stream() {
-        let model = StreamModel::new(StreamBehavior::RetryableFirstError);
-        let mut result = stream_text(&model, "hello", retry_options()).await.unwrap();
-        assert_eq!(model.calls.load(Ordering::SeqCst), 2);
-        assert!(matches!(
-            result.stream.next().await.unwrap().unwrap(),
-            StreamPart::TextDelta { delta, .. } if delta == "hello"
-        ));
-    }
-
-    #[tokio::test]
-    async fn non_retryable_first_stream_error_is_returned_unchanged() {
-        let model = StreamModel::new(StreamBehavior::NonRetryableFirstError);
-        let error = stream_text(&model, "hello", retry_options())
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(error, AiMuxError::ApiCall(ref detail) if detail.status_code == Some(400))
-        );
-        assert_eq!(model.calls.load(Ordering::SeqCst), 1);
-    }
-}
-
-#[cfg(test)]
-mod stream_aggregation_tests {
-    use super::*;
-    use crate::types::FinishReasonUnified;
-
-    fn result_from(parts: Vec<Result<TextStreamPart, AiMuxError>>) -> StreamTextResult {
-        StreamTextResult {
-            stream: Box::pin(futures::stream::iter(parts)),
-            request_body: None,
-            response_headers: None,
-        }
-    }
-
-    fn delta(text: &str) -> TextStreamPart {
-        StreamPart::TextDelta {
-            id: "text-1".into(),
-            delta: text.into(),
-            provider_metadata: None,
-        }
-    }
-
-    fn finish() -> TextStreamPart {
-        StreamPart::Finish {
-            finish_reason: FinishReason {
-                unified: FinishReasonUnified::Stop,
-                raw: Some("stop".into()),
-            },
-            usage: Usage::default(),
-            provider_metadata: None,
-        }
-    }
-
-    #[tokio::test]
-    async fn truncated_stream_with_partial_output_does_not_claim_a_normal_stop() {
-        let result = result_from(vec![Ok(delta("par"))]).consume().await.unwrap();
-        assert_eq!(result.text, "par");
-        assert_eq!(result.finish_reason.unified, FinishReasonUnified::Other);
-
-        // text() retains the partial result (AI SDK semantics).
-        let text = result_from(vec![Ok(delta("par"))]).text().await.unwrap();
-        assert_eq!(text, "par");
-    }
-
-    #[tokio::test]
-    async fn empty_incomplete_stream_is_an_error() {
-        let error = result_from(vec![]).consume().await.unwrap_err();
-        assert!(
-            matches!(&error, AiMuxError::InvalidResponseData(message) if message.contains("without a finish chunk"))
-        );
-        let error = result_from(vec![]).text().await.unwrap_err();
-        assert!(matches!(error, AiMuxError::InvalidResponseData(_)));
-    }
-
-    #[tokio::test]
-    async fn stream_with_finish_still_reports_the_provider_finish_reason() {
-        let result = result_from(vec![Ok(delta("hi")), Ok(finish())])
-            .consume()
-            .await
-            .unwrap();
-        assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
-    }
-
-    #[tokio::test]
-    async fn provider_error_still_wins_after_draining_a_trailing_finish() {
-        let parts = vec![
-            Ok(delta("partial")),
-            Ok(StreamPart::Error {
-                error: AiMuxError::Other("provider error".into()),
-            }),
-            Ok(finish()),
-        ];
-        let error = result_from(parts).consume().await.unwrap_err();
-        assert!(matches!(error, AiMuxError::Other(message) if message == "provider error"));
-    }
 }

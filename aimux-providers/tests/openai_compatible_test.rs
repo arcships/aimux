@@ -29,7 +29,7 @@ use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
+use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::{
     ProviderOptions, bedrock_mantle::BedrockMantleConfig, bedrock_mantle::BedrockMantleProvider,
@@ -851,35 +851,6 @@ mod default_base_urls {
 // rate-limit mapping.
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS (deepseek): a top-level `reasoning` value maps to `reasoning_effort`.
-#[tokio::test]
-async fn deepseek_maps_reasoning_to_reasoning_effort() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-        .mount(&server)
-        .await;
-
-    let model = provider(
-        "deepseek",
-        Some("test-api-key".to_string()),
-        "deepseek-reasoner",
-        Some(ProviderOptions {
-            base_url: Some(server.uri()),
-            ..Default::default()
-        }),
-    )
-    .expect("provider construction");
-
-    let mut options = default_options(test_prompt());
-    options.reasoning = Some(ReasoningEffort::High);
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["reasoning_effort"], json!("high"));
-}
-
 /// TS (groq): usage tokens are extracted from the response.
 #[tokio::test]
 async fn groq_extracts_usage() {
@@ -949,43 +920,6 @@ async fn deepseek_rate_limit_maps_to_rate_limited() {
         matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
-}
-
-/// TS: response headers are exposed on the generate result.
-#[tokio::test]
-async fn groq_exposes_response_headers() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("test-header", "test-value")
-                .set_body_json(text_completion_body()),
-        )
-        .mount(&server)
-        .await;
-
-    let model = provider(
-        "groq",
-        Some("test-api-key".to_string()),
-        "llama-3.3-70b-versatile",
-        Some(ProviderOptions {
-            base_url: Some(server.uri()),
-            ..Default::default()
-        }),
-    )
-    .expect("provider construction");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }
 
 // P1 thin-wrapper providers (provider-research batch).

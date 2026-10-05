@@ -678,6 +678,9 @@ fn convert_part_to_anthropic(
             };
             apply_cc(block, cc)
         }
+        ContentPart::Custom { .. }
+        | ContentPart::ReasoningFile { .. }
+        | ContentPart::ToolApprovalRequest { .. } => return Ok(None),
     }))
 }
 
@@ -1942,7 +1945,7 @@ fn apply_anthropic_tools(
         } else {
             None
         },
-        Some(&options.tool_choice),
+        options.tool_choice.as_ref(),
         disable_parallel_tool_use,
         caps.supports_structured_output,
         caps.supports_structured_output,

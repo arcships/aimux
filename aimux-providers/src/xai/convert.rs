@@ -96,21 +96,21 @@ pub fn convert_xai_usage(usage: &XaiUsageResponse) -> aimux_core::types::Usage {
     let output_total = completion_tokens + reasoning_tokens;
 
     aimux_core::types::Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input_total),
             no_cache: Some(input_no_cache),
             cache_read: Some(cache_read),
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(output_total),
             text: Some(completion_tokens),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -491,7 +491,7 @@ pub fn build_request_body_with_warnings(
     let (messages, message_warnings) = convert_to_xai_messages(&options.prompt)?;
     warnings.extend(message_warnings);
 
-    let prepared = prepare_tools(&options.tools, Some(&options.tool_choice));
+    let prepared = prepare_tools(&options.tools, options.tool_choice.as_ref());
     for tw in &prepared.tool_warnings {
         warnings.push(tw.clone());
     }

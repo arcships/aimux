@@ -191,8 +191,8 @@ class ContractTest {
     @Test
     fun `usage raw preserves vendor fields round-trip`() {
         val usage = Usage(
-            inputTokens = TokenUsage(total = 20L),
-            outputTokens = TokenUsage(total = 5L),
+            inputTokens = InputTokenUsage(total = 20L),
+            outputTokens = OutputTokenUsage(total = 5L),
             raw = buildJsonObject {
                 put("prompt_cache_hit_tokens", 42)
                 put("prompt_tokens", 20)

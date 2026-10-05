@@ -64,19 +64,20 @@ impl CohereModel {
 /// - `output.total = output_tokens`
 fn convert_usage(tokens: &TokenPair) -> Usage {
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(tokens.input_tokens),
             no_cache: Some(tokens.input_tokens),
             cache_read: None,
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(tokens.output_tokens),
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(tokens).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(tokens)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -139,6 +140,7 @@ impl LanguageModel for CohereModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
         let data: ChatResponse = resp.value;
 
@@ -250,13 +252,16 @@ impl LanguageModel for CohereModel {
             usage,
             warnings: body_result.warnings,
             provider_metadata: None,
-            response: ResponseMetadata {
-                id: data.generation_id,
-                timestamp: None,
-                model_id: None,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::GenerateResponse {
+                body: response_body,
+                headers: Some(response_headers),
+                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                    id: data.generation_id,
+                    timestamp: None,
+                    model_id: None,
+                })
+            }),
         })
     }
 
@@ -575,8 +580,10 @@ impl LanguageModel for CohereModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::StreamResponse {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

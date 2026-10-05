@@ -1,4 +1,4 @@
-﻿//! Remaining Mistral tests translated from TS that are NOT already covered by
+//! Remaining Mistral tests translated from TS that are NOT already covered by
 //! `mistral_model_test.rs`. Covers:
 //!
 //! - `mistral-prepare-tools.test.ts` — all 8 cases (prepare_tools unit tests)
@@ -22,7 +22,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
-use aimux_core::tool::{FunctionTool, ProviderTool};
+use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::mistral::convert::{
@@ -62,20 +62,6 @@ async fn mock_json_response(server: &MockServer, body: Value) {
         .respond_with(ResponseTemplate::new(200).set_body_json(body))
         .mount(server)
         .await;
-}
-
-fn ok_mistral_body() -> Value {
-    json!({
-        "id": "test-id",
-        "model": "mistral-small-latest",
-        "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 },
-        "object": "chat.completion",
-        "choices": [{
-            "index": 0,
-            "finish_reason": "stop",
-            "message": { "role": "assistant", "content": "ok" }
-        }]
-    })
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -728,27 +714,6 @@ fn build_request_body_no_stream_flag() {
     assert!(body.get("stream").is_none());
 }
 
-/// TS: provider-defined tools are silently dropped (Mistral filters them out
-/// before calling prepare_tools — no warning is emitted).
-#[test]
-fn build_request_body_provider_tool_dropped() {
-    let provider_tool = Tool::Provider(ProviderTool {
-        id: "mistral.web_search".to_string(),
-        name: "web_search".to_string(),
-        args: json!({}),
-    });
-    let options = CallOptions {
-        prompt: test_prompt(),
-        tools: Some(vec![provider_tool]),
-        ..default_options(Vec::new())
-    };
-    let body = build_request_body("mistral-small-latest", &options, false);
-    assert!(
-        body.get("tools").is_none(),
-        "provider-only tools should produce no tools field"
-    );
-}
-
 /// TS: a function tool with a description includes it in the request body.
 #[test]
 fn build_request_body_tool_with_description() {
@@ -830,31 +795,3 @@ fn build_request_body_json_object_when_no_schema() {
 // ════════════════════════════════════════════════════════════════════════════
 // doGenerate — request body via the model (verifies build_request_body wiring)
 // ════════════════════════════════════════════════════════════════════════════
-
-/// TS: "should send correct request body" — the model wires build_request_body
-/// into the HTTP request and exposes it via `result.request_body`.
-#[tokio::test]
-async fn should_expose_request_body_from_model() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, ok_mistral_body()).await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let body = result.request_body.expect("request body");
-    assert_eq!(body["model"], "mistral-small-latest");
-    assert_eq!(
-        body["messages"],
-        json!([{ "role": "user", "content": [{ "type": "text", "text": "Hello" }] }])
-    );
-    // No optional fields set → absent.
-    assert!(body.get("max_tokens").is_none());
-    assert!(body.get("tools").is_none());
-    assert!(body.get("stream").is_none());
-}

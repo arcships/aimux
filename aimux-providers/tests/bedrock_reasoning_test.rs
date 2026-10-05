@@ -1,4 +1,4 @@
-﻿//! Bedrock reasoning / thinking tests, translated from the TypeScript suite.
+//! Bedrock reasoning / thinking tests, translated from the TypeScript suite.
 //!
 //! Translation sources (under `reference/ai/packages/amazon-bedrock/src/`):
 //! - `amazon-bedrock-chat-language-model.test.ts`

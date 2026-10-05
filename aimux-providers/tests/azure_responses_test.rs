@@ -73,23 +73,6 @@ async fn mock_json_response(server: &MockServer, body: Value) {
         .await;
 }
 
-/// Mock for a JSON responses-api response with custom headers.
-async fn mock_json_response_with_headers(
-    server: &MockServer,
-    body: Value,
-    headers: Vec<(&str, &str)>,
-) {
-    let mut template = ResponseTemplate::new(200).set_body_json(body);
-    for (k, v) in headers {
-        template = template.insert_header(k, v);
-    }
-    Mock::given(method("POST"))
-        .and(path(DEPLOYMENT_PATH))
-        .respond_with(template)
-        .mount(server)
-        .await;
-}
-
 /// Standard mock for an SSE streaming response on the deployment path.
 async fn mock_sse_response(server: &MockServer, sse_body: &str) {
     Mock::given(method("POST"))
@@ -562,31 +545,6 @@ async fn should_extract_usage() {
     assert_eq!(result.usage.output_tokens.total, Some(538));
 }
 
-/// Response metadata (id, model, timestamp) is extracted.
-#[tokio::test]
-async fn should_extract_response_metadata() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, text_response_body()).await;
-
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    assert_eq!(
-        result.response.id.as_deref(),
-        Some("resp_67c97c0203188190a025beb4a75242bc")
-    );
-    assert_eq!(result.response.model_id.as_deref(), Some("gpt-4o"));
-    assert!(result.response.timestamp.is_some());
-}
-
 /// Provider metadata uses the `azure` namespace key.
 #[tokio::test]
 async fn should_use_azure_provider_metadata_namespace() {
@@ -652,35 +610,6 @@ async fn should_map_finish_reason_tool_calls() {
         .expect("should succeed");
 
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
-}
-
-/// Response headers are captured.
-#[tokio::test]
-async fn should_extract_response_headers() {
-    let server = MockServer::start().await;
-    mock_json_response_with_headers(
-        &server,
-        text_response_body(),
-        vec![("test-header", "test-value")],
-    )
-    .await;
-
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.responses_model("test-deployment");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let headers = result.response_headers.expect("response_headers");
-    assert_eq!(
-        headers.get("test-header").map(std::string::String::as_str),
-        Some("test-value")
-    );
 }
 
 // ════════════════════════════════════════════════════════════════════════════

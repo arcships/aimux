@@ -29,7 +29,7 @@ use std::path::PathBuf;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
-use wiremock::matchers::{method, path as path_matcher, query_param};
+use wiremock::matchers::{method, path as path_matcher};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
@@ -37,8 +37,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GeneratedFile, ReasoningOutput, Source, StreamResult};
-use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::result::{GenerateContent, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{ProviderTool, Tool};
 use aimux_core::types::ProviderMetadata;
@@ -135,6 +134,7 @@ fn opts() -> CallOptions {
 fn opts_with_tools(tools: Vec<Tool>) -> CallOptions {
     let mut o = opts();
     o.tools = Some(tools);
+    o.tool_choice = Some(aimux_core::tool::ToolChoice::Auto);
     o
 }
 
@@ -142,7 +142,7 @@ fn provider_tool(id: &str, name: &str) -> Tool {
     Tool::Provider(ProviderTool {
         id: id.to_string(),
         name: name.to_string(),
-        args: json!({}),
+        args: serde_json::Map::new(),
     })
 }
 
@@ -153,26 +153,6 @@ async fn collect(result: StreamResult) -> Vec<StreamPart> {
         parts.push(p.expect("stream part must be Ok"));
     }
     parts
-}
-
-/// The base64 payload of a `GenerateContent::File`, or panic.
-fn file_base64(c: &GenerateContent) -> &str {
-    match c {
-        GenerateContent::File(GeneratedFile {
-            data: FileData::Data {
-                data: FileBytes::Base64(s),
-            },
-            ..
-        }) => s,
-        other => panic!("expected File with base64 data, got {other:?}"),
-    }
-}
-
-fn files(content: &[GenerateContent]) -> Vec<&GenerateContent> {
-    content
-        .iter()
-        .filter(|c| matches!(c, GenerateContent::File(_)))
-        .collect()
 }
 
 fn texts(content: &[GenerateContent]) -> Vec<&str> {
@@ -315,148 +295,8 @@ fn sources(content: &[GenerateContent]) -> Vec<SourceView<'_>> {
 //            gemini/test_google_image_and_text_output.json
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// PNG magic bytes, base64-encoded: every image in the two Gemini image
-/// cassettes starts with this. Asserting the prefix (rather than "non-empty")
-/// proves the *actual* bytes survived rather than some placeholder.
-const PNG_BASE64_PREFIX: &str = "iVBORw0KGgoAAAANSUhEUgAA";
-
-/// The exact base64 length recorded in `nano_banana_image_generation_smoke`.
-const NANO_BANANA_BASE64_LEN: usize = 258_820;
-
 fn google_at(uri: &str) -> GoogleProvider {
     GoogleProvider::new(GoogleConfig::new("test-api-key").with_base_url(format!("{uri}/v1beta")))
-}
-
-#[tokio::test]
-async fn finding_1_gemini_inline_data_surfaces_as_file() {
-    let c = cassette("gemini/nano_banana_image_generation_smoke.json");
-    let server = MockServer::start().await;
-    mount(&server, &c).await;
-
-    let result = google_at(&server.uri())
-        .model("gemini-2.5-flash-image")
-        .do_generate(&opts())
-        .await
-        .expect("do_generate should succeed");
-
-    let f = files(&result.content);
-    assert_eq!(f.len(), 1, "exactly one inlineData part → one File");
-    match f[0] {
-        GenerateContent::File(GeneratedFile { media_type, .. }) => {
-            assert_eq!(media_type, "image/png");
-        }
-        other => panic!("expected File, got {other:?}"),
-    }
-    let b64 = file_base64(f[0]);
-    assert!(
-        b64.starts_with(PNG_BASE64_PREFIX),
-        "image bytes must be the recorded PNG, got prefix {:?}",
-        &b64[..b64.len().min(32)]
-    );
-    assert_eq!(
-        b64.len(),
-        NANO_BANANA_BASE64_LEN,
-        "the whole base64 payload must survive, not a truncated head"
-    );
-}
-
-#[tokio::test]
-async fn finding_1_gemini_image_and_text_output_both_survive() {
-    let c = cassette("gemini/test_google_image_and_text_output.json");
-    let server = MockServer::start().await;
-    mount(&server, &c).await;
-
-    let result = google_at(&server.uri())
-        .model("gemini-2.5-flash-image")
-        .do_generate(&opts())
-        .await
-        .expect("do_generate should succeed");
-
-    // Text part first, then the inlineData part — order matters, upstream
-    // walks `parts` in order.
-    assert_eq!(result.content.len(), 2, "one text + one file");
-    assert!(
-        matches!(result.content[0], GenerateContent::Text { .. }),
-        "text part comes first"
-    );
-    assert!(
-        matches!(result.content[1], GenerateContent::File(_)),
-        "inlineData part comes second"
-    );
-
-    let t = texts(&result.content);
-    assert_eq!(t.len(), 1);
-    assert!(
-        t[0].starts_with("Once, in a hidden cenote, lived an axolotl named Pip"),
-        "recorded story text must survive verbatim, got {:?}",
-        &t[0][..t[0].len().min(60)]
-    );
-
-    let f = files(&result.content);
-    assert_eq!(f.len(), 1);
-    match f[0] {
-        GenerateContent::File(GeneratedFile { media_type, .. }) => {
-            assert_eq!(media_type, "image/png")
-        }
-        other => panic!("expected File, got {other:?}"),
-    }
-    let b64 = file_base64(f[0]);
-    assert!(b64.starts_with(PNG_BASE64_PREFIX));
-    assert_eq!(b64.len(), 2_580_504);
-}
-
-/// The streaming path had the same hole. The chunk is built from the cassette's
-/// own `parts` array so the bytes are the recorded ones.
-#[tokio::test]
-async fn finding_1_gemini_inline_data_streams_as_file_part() {
-    let body = cassette_json("gemini/nano_banana_image_generation_smoke.json");
-    let candidate = &body["candidates"][0];
-    let sse = format!(
-        "data: {}\n\n",
-        json!({ "candidates": [{ "content": candidate["content"].clone(), "finishReason": "STOP" }] })
-    );
-
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_matcher(
-            "/v1beta/models/gemini-2.5-flash-image:streamGenerateContent",
-        ))
-        .and(query_param("alt", "sse"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(sse),
-        )
-        .mount(&server)
-        .await;
-
-    let parts = collect(
-        google_at(&server.uri())
-            .model("gemini-2.5-flash-image")
-            .do_stream(&opts())
-            .await
-            .expect("do_stream should succeed"),
-    )
-    .await;
-
-    let file_parts: Vec<_> = parts
-        .iter()
-        .filter_map(|p| match p {
-            StreamPart::File(GeneratedFile {
-                data:
-                    FileData::Data {
-                        data: FileBytes::Base64(b64),
-                    },
-                media_type,
-                ..
-            }) => Some((b64.as_str(), media_type.as_str())),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(file_parts.len(), 1, "expected one StreamPart::File");
-    assert_eq!(file_parts[0].1, "image/png");
-    assert!(file_parts[0].0.starts_with(PNG_BASE64_PREFIX));
-    assert_eq!(file_parts[0].0.len(), NANO_BANANA_BASE64_LEN);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

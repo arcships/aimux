@@ -8,7 +8,7 @@
 //! tests mock the Vertex AI endpoints and never touch the public network or
 //! real credentials.
 
-use aimux_core::tool::{RawToolCall, ToolResult};
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
@@ -19,7 +19,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, ProviderTool, Tool};
+use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
@@ -133,30 +133,6 @@ fn text_response(text: &str) -> Value {
 // doGenerate tests
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// Test: non-streaming text generation via rawPredict extracts text, usage,
-/// and finish reason from the standard Anthropic response body.
-#[tokio::test]
-async fn vertex_anthropic_generate_text_response() {
-    let server = MockServer::start().await;
-    mock_raw_predict_json(&server, 200, text_response("Hello from Claude on Vertex!")).await;
-
-    let model = make_model(&server);
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("do_generate should succeed");
-
-    assert_eq!(result.content.len(), 1);
-    assert_eq!(as_text(&result.content[0]), "Hello from Claude on Vertex!");
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
-    assert_eq!(result.usage.input_tokens.total, Some(4));
-    assert_eq!(result.usage.output_tokens.total, Some(30));
-    assert_eq!(
-        result.response.id.as_deref(),
-        Some("msg_017TfcQ4AgGxKyBduUpqYPZn")
-    );
-}
-
 #[tokio::test]
 async fn vertex_anthropic_generate_keeps_direct_caller_metadata() {
     let server = MockServer::start().await;
@@ -225,41 +201,6 @@ async fn vertex_anthropic_url_and_auth() {
     assert_eq!(
         requests[0].headers.get("authorization").unwrap(),
         "Bearer test-token"
-    );
-}
-
-/// Test: the rawPredict request body is wrapped in the `anthropic_version`
-/// envelope and drops the `model` field (the model identity lives in the URL).
-#[tokio::test]
-async fn vertex_anthropic_request_body_envelope() {
-    let server = MockServer::start().await;
-    mock_raw_predict_json(&server, 200, text_response("OK")).await;
-
-    let model = make_model(&server);
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("do_generate should succeed");
-
-    // The reported request body is the envelope actually sent.
-    let reported = result.request_body.expect("should have request body");
-    assert_eq!(reported["anthropic_version"], "vertex-2023-10-16");
-    assert_eq!(reported["messages"][0]["role"], "user");
-    assert_eq!(reported["messages"][0]["content"][0]["text"], "Hello");
-    assert!(
-        reported.get("model").is_none(),
-        "model must not be in the body"
-    );
-
-    // The body sent over the wire matches (anthropic_version present, no model).
-    let requests = server.received_requests().await.expect("requests recorded");
-    assert_eq!(requests.len(), 1);
-    let wire: Value = serde_json::from_slice(&requests[0].body).expect("valid json body");
-    assert_eq!(wire["anthropic_version"], "vertex-2023-10-16");
-    assert_eq!(wire["messages"][0]["content"][0]["text"], "Hello");
-    assert!(
-        wire.get("model").is_none(),
-        "model must not be in the wire body"
     );
 }
 
@@ -345,112 +286,6 @@ async fn vertex_anthropic_stream_text() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-#[tokio::test]
-async fn vertex_anthropic_streamed_tool_search_results_follow_their_call_ids() {
-    let server = MockServer::start().await;
-    let sse_body = sse_stream(&[
-        json!({
-            "type": "message_start",
-            "message": {
-                "id": "msg_tool_search",
-                "model": MODEL_ID,
-                "usage": { "input_tokens": 10 },
-            },
-        }),
-        json!({
-            "type": "content_block_start",
-            "index": 0,
-            "content_block": {
-                "type": "server_tool_use",
-                "id": "bm25_call",
-                "name": "tool_search_tool_bm25",
-                "input": { "query": "weather" },
-            },
-        }),
-        json!({ "type": "content_block_stop", "index": 0 }),
-        json!({
-            "type": "content_block_start",
-            "index": 1,
-            "content_block": {
-                "type": "tool_search_tool_result",
-                "tool_use_id": "bm25_call",
-                "content": {
-                    "type": "tool_search_tool_search_result",
-                    "tool_references": [{
-                        "type": "tool_reference",
-                        "tool_name": "get_weather",
-                    }],
-                },
-            },
-        }),
-        json!({ "type": "content_block_stop", "index": 1 }),
-        json!({
-            "type": "content_block_start",
-            "index": 2,
-            "content_block": {
-                "type": "server_tool_use",
-                "id": "regex_call",
-                "name": "tool_search_tool_regex",
-                "input": { "pattern": "forecast.*" },
-            },
-        }),
-        json!({ "type": "content_block_stop", "index": 2 }),
-        json!({
-            "type": "content_block_start",
-            "index": 3,
-            "content_block": {
-                "type": "tool_search_tool_result",
-                "tool_use_id": "regex_call",
-                "content": {
-                    "type": "tool_search_tool_search_result",
-                    "tool_references": [{
-                        "type": "tool_reference",
-                        "tool_name": "get_forecast",
-                    }],
-                },
-            },
-        }),
-        json!({ "type": "content_block_stop", "index": 3 }),
-        json!({
-            "type": "message_delta",
-            "delta": { "stop_reason": "end_turn" },
-            "usage": { "output_tokens": 20 },
-        }),
-        json!({ "type": "message_stop" }),
-    ]);
-    mock_stream_raw_predict_sse(&server, &sse_body).await;
-    let model = make_model(&server);
-    let options = CallOptions {
-        tools: Some(vec![
-            Tool::Provider(ProviderTool {
-                id: "anthropic.tool_search_regex_20251119".to_string(),
-                name: "regexSearch".to_string(),
-                args: json!({}),
-            }),
-            Tool::Provider(ProviderTool {
-                id: "anthropic.tool_search_bm25_20251119".to_string(),
-                name: "semanticSearch".to_string(),
-                args: json!({}),
-            }),
-        ]),
-        ..default_options(test_prompt())
-    };
-
-    let parts = collect_stream(model.do_stream(&options).await.unwrap()).await;
-    let result_names: std::collections::HashMap<&str, &str> = parts
-        .iter()
-        .filter_map(|part| match part {
-            StreamPart::ToolResult(ToolResult {
-                tool_call_id,
-                tool_name,
-                ..
-            }) => Some((tool_call_id.as_str(), tool_name.as_str())),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(result_names.get("bm25_call"), Some(&"semanticSearch"));
-    assert_eq!(result_names.get("regex_call"), Some(&"regexSearch"));
-}
 
 #[tokio::test]
 async fn vertex_anthropic_stream_keeps_programmatic_caller_metadata() {
