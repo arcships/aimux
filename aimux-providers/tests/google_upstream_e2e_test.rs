@@ -226,7 +226,6 @@ async fn generate_function_call_with_signature() {
         .unwrap();
     let mut expected = basic_request();
     expected["tools"] = json!([{"functionDeclarations":[{"name":"weather","description":"","parametersJsonSchema":schema}]}]);
-    expected["toolConfig"] = json!({"functionCallingConfig":{"mode":"AUTO"}});
     assert_eq!(mock.seen()[0].json_body(), expected);
     let [GenerateContent::ToolCall(call)] = &result.content[..] else {
         panic!("expected one tool call")

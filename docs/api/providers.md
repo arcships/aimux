@@ -328,7 +328,7 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `google` | `GoogleProvider` / `GoogleProviderSettings` / `create_google` |
 | `mistral` | `MistralProvider` / `MistralProviderSettings` / `create_mistral` |
 | `openai` | `OpenAIProvider` / `OpenAIProviderSettings` / `create_openai` |
-| `vertex` | `VertexProvider` / `VertexProviderSettings` / `create_google_vertex` |
+| `vertex` | `VertexAnthropicProvider` / `VertexAnthropicProviderSettings` / `VertexProvider` / `VertexProviderSettings` / `create_google_vertex` / `create_google_vertex_anthropic` |
 | `voyage` | `VoyageProvider` / `VoyageProviderSettings` / `create_voyage` |
 | `codex` | `CodexProvider` / `CodexProviderSettings` / `create_codex` |
 | `xai` | `XAIProvider` / `XAIProviderSettings` / `create_xai` |
