@@ -200,7 +200,7 @@ impl LanguageModel for BedrockModel {
         if is_json_response_from_tool {
             let mut payload = provider_metadata
                 .as_ref()
-                .and_then(|meta| meta.get("amazonBedrock"))
+                .and_then(|meta| meta.get(options::AMAZON_BEDROCK))
                 .cloned()
                 .unwrap_or_default();
             payload.insert("isJsonResponseFromTool".into(), json!(true));

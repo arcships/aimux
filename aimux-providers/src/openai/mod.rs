@@ -10,6 +10,7 @@
 //! same wire format are served by [`crate::openai_compatible`] (and the
 //! registry presets built on it).
 
+pub mod completion;
 pub(crate) mod config;
 pub mod convert;
 mod convert_common;
@@ -23,6 +24,7 @@ pub mod tools;
 pub mod transcription;
 mod types;
 
+pub use completion::OpenAICompletionModel;
 pub use embedding::OpenAIEmbeddingModel;
 pub use files::OpenAIFiles;
 pub use image::OpenAIImageModel;
@@ -296,6 +298,15 @@ impl OpenAIProvider {
     #[must_use]
     pub fn chat(&self, model_id: &str) -> OpenAIChatModel {
         OpenAIModel::from_config(model_id.to_string(), self.model_config("chat"))
+    }
+
+    /// A text-completion model; `provider()` is `"{name}.completion"`.
+    #[must_use]
+    pub fn completion(&self, model_id: &str) -> OpenAICompletionModel {
+        OpenAICompletionModel::from_native_config(
+            model_id.to_string(),
+            self.model_config("completion"),
+        )
     }
 
     /// A Responses API model; `provider()` is `"{name}.responses"`.

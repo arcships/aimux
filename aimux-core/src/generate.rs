@@ -1189,8 +1189,7 @@ pub async fn stream_text(
                             sent_response_metadata = true;
                             yield Ok(StreamPart::ResponseMetadata(response_metadata.clone()));
                         }
-                        yield Ok(part.map_payloads(|_| unreachable!("finish has no tool call"), |_| unreachable!("finish has no approval"))
-                            .map_reasoning_file(|file| ReasoningFileOutput { provider_metadata: file.provider_metadata.clone(), file }));
+                        yield Ok(part.map_payloads(|_| unreachable!("finish has no tool call"), |_| unreachable!("finish has no approval")).map_reasoning_file(|_| unreachable!("finish has no file")));
                     }
                     Ok(StreamPart::ToolCall(raw)) => {
                         let parsed = parse_tool_call(

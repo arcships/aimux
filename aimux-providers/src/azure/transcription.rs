@@ -13,6 +13,7 @@ use aimux_provider_utils::{HttpBody, MultipartForm};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use super::options::NAMESPACE;
 use crate::openai::{OpenAITranscriptionModel, config::OpenAIModelConfig};
 
 #[derive(Default, Deserialize, Serialize)]
@@ -67,7 +68,7 @@ fn is_default_speech(model_id: &str) -> bool {
 }
 
 fn parse_options(options: Option<&SharedProviderOptions>) -> Result<AzureOptions, AiMuxError> {
-    let Some(azure) = options.and_then(|options| options.get("azure")) else {
+    let Some(azure) = options.and_then(|options| options.get(NAMESPACE)) else {
         return Ok(AzureOptions::default());
     };
     // Optional in the upstream schema means absent, never explicitly null.
@@ -347,7 +348,7 @@ impl TranscriptionModel for AzureTranscriptionModel {
             warnings: Vec::new(),
             request: None,
             provider_metadata: Some(provider_namespace(
-                "azure",
+                NAMESPACE,
                 json!({"phrases": metadata_phrases}),
             )?),
             response: TranscriptionResponse {

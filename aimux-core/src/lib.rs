@@ -31,6 +31,7 @@ pub mod image_model;
 pub mod json_repair;
 pub mod language_model;
 pub mod language_model_message;
+pub mod language_model_middleware;
 pub mod math;
 pub mod message;
 pub mod moa;
@@ -51,6 +52,7 @@ pub mod router;
 pub mod search_model;
 pub mod session;
 pub mod shared;
+pub mod skills_model;
 pub mod speech_model;
 pub mod stream_part;
 mod timeout;
@@ -79,6 +81,9 @@ pub mod prelude {
     pub use crate::image_model::{ImageCallOptions, ImageModel, ImageResult, generate_image};
     pub use crate::language_model::{LanguageModel, SupportedUrls};
     pub use crate::language_model_message::LanguageModelPrompt;
+    pub use crate::language_model_middleware::{
+        LanguageModelMiddleware, LanguageModelOperation, wrap_language_model,
+    };
     pub use crate::message::{MessageContent, ModelMessage, ModelPrompt, Role};
     pub use crate::moa::{MoaConfig, MoaFailMode, MoaModel};
     pub use crate::model_catalogue::{
@@ -119,6 +124,7 @@ pub mod prelude {
         SharedProviderMetadata, SharedProviderOptions, SharedProviderReference, Size,
         provider_namespace,
     };
+    pub use crate::skills_model::{SkillFile, Skills, UploadSkillCallOptions, UploadSkillResult};
     pub use crate::speech_model::{SpeechCallOptions, SpeechModel, SpeechResult, generate_speech};
     pub use crate::stream_part::{StreamPart, TextStreamPart};
     pub use crate::tool::{
@@ -151,6 +157,7 @@ pub use provider::Provider;
 pub use provider_registry::{ProviderRegistry, ProviderRegistryOptions, create_provider_registry};
 pub use reranking_model::RerankingModel;
 pub use search_model::SearchModel;
+pub use skills_model::Skills;
 pub use speech_model::SpeechModel;
 pub use transcription_model::TranscriptionModel;
 pub use video_model::VideoModel;

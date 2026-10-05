@@ -49,7 +49,7 @@ impl OpenAICompatibleChatModel {
     ///
     /// `InvalidArgument` for a malformed provider option or an unconvertible
     /// prompt part.
-    pub fn request_body(
+    pub(crate) fn request_body(
         &self,
         options: &CallOptions,
         stream: bool,

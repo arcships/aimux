@@ -112,7 +112,11 @@ fn environment(value: &Value) -> bool {
                 })
         }
         Some("containerReference") => value["containerId"].is_string(),
-        Some("local") | None if value.get("type").is_none_or(|kind| kind == "local") => {
+        Some("local") | None
+            if value
+                .get("type")
+                .is_none_or(|kind| matches!(kind.as_str(), Some("local"))) =>
+        {
             optional(value, "skills", |skills| {
                 skills.as_array().is_some_and(|skills| {
                     skills.iter().all(|skill| {

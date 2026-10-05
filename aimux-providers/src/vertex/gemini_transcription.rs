@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::ProjectLocationFn;
-use crate::google::options::Namespace;
+use crate::google::options::{GOOGLE, Namespace};
 use crate::shared::EndpointConfig;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::{SharedProviderOptions, provider_namespace};
@@ -254,7 +254,7 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
                 body: response.raw_value,
             },
             provider_metadata: response.value.usage_metadata.map(|usage| {
-                provider_namespace("google", json!({"usageMetadata": usage}))
+                provider_namespace(GOOGLE, json!({"usageMetadata": usage}))
                     .expect("provider metadata must be an object")
             }),
         })
@@ -320,14 +320,12 @@ impl VertexGeminiTranscriptionModel {
             "wss://{}/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent",
             super::location_host(&target.location)
         );
-        let mut socket = ws_connect(&WebSocketRequest {
+        let mut socket = ws_connect(&WebSocketRequest::for_transcription(
             url,
-            headers: exchange.headers(),
-            subprotocols: Vec::new(),
-            abort_signal: options.abort_signal.clone(),
-            timeout: options.timeout,
-            connector: self.web_socket.clone(),
-        })
+            exchange.headers(),
+            &options,
+            self.web_socket.clone(),
+        ))
         .await?;
         socket.send_text(&setup.to_string()).await?;
         let request = Some(TranscriptionRequest {
@@ -447,7 +445,7 @@ impl VertexGeminiTranscriptionModel {
                 }
                 yield Ok(TranscriptionStreamPart::Finish {
                     text: full_text, segments: Vec::new(), language, duration_in_seconds: None,
-                    provider_metadata: usage_metadata.map(|usage| provider_namespace("google", json!({"usageMetadata": usage})).expect("provider metadata must be an object")),
+                    provider_metadata: usage_metadata.map(|usage| provider_namespace(GOOGLE, json!({"usageMetadata": usage})).expect("provider metadata must be an object")),
                 });
             }
             socket.close().await;

@@ -512,12 +512,17 @@ fn convert_message_to_openai(
         }
         LanguageModelMessage::Assistant { content, .. } => {
             let mut text = String::new();
-            let mut reasoning = String::new();
+            let mut text_parts = Vec::new();
+            let mut has_cache_breakpoint = false;
             let mut tool_calls = Vec::new();
             for part in content {
                 match part {
-                    AssistantPart::Text(part) => text.push_str(&part.text),
-                    AssistantPart::Reasoning(part) => reasoning.push_str(&part.text),
+                    AssistantPart::Text(part) => {
+                        text.push_str(&part.text);
+                        has_cache_breakpoint |=
+                            get_prompt_cache_breakpoint(&part.provider_options).is_some();
+                        text_parts.push(convert_text_part_to_openai(part));
+                    }
                     AssistantPart::ToolCall(part) => {
                         let arguments = if !part.input.is_object() {
                             "{}".to_string()
@@ -529,57 +534,19 @@ fn convert_message_to_openai(
                             "function": { "name": part.tool_name, "arguments": arguments },
                         }));
                     }
-                    AssistantPart::File(_)
-                    | AssistantPart::ToolResult(_)
-                    | AssistantPart::ReasoningFile(_)
-                    | AssistantPart::Custom(_) => {}
+                    _ => {}
                 }
             }
-            let mut message = if !tool_calls.is_empty() {
-                let value = if text.is_empty() {
-                    Value::Null
-                } else {
-                    json!(text)
-                };
-                json!({ "role": "assistant", "content": value, "tool_calls": tool_calls })
+            let content = if has_cache_breakpoint {
+                json!(text_parts)
+            } else if !tool_calls.is_empty() && text.is_empty() {
+                Value::Null
             } else {
-                let all_plain_text = content.iter().all(|part| {
-                    matches!(
-                        part,
-                        AssistantPart::Text(TextPart {
-                            provider_options: None,
-                            ..
-                        }) | AssistantPart::Reasoning(_)
-                            | AssistantPart::ToolResult(_)
-                            | AssistantPart::ReasoningFile(_)
-                            | AssistantPart::Custom(_)
-                    )
-                });
-                let value = if all_plain_text {
-                    json!(text)
-                } else {
-                    let mut parts = Vec::new();
-                    for part in content {
-                        match part {
-                            AssistantPart::Text(text) => {
-                                parts.push(convert_text_part_to_openai(text))
-                            }
-                            AssistantPart::File(file) => {
-                                parts.push(convert_file_part_to_openai(file, parts.len())?)
-                            }
-                            AssistantPart::Reasoning(_)
-                            | AssistantPart::ToolResult(_)
-                            | AssistantPart::ReasoningFile(_)
-                            | AssistantPart::Custom(_)
-                            | AssistantPart::ToolCall(_) => {}
-                        }
-                    }
-                    json!(parts)
-                };
-                json!({ "role": "assistant", "content": value })
+                json!(text)
             };
-            if !reasoning.is_empty() {
-                message["reasoning_content"] = json!(reasoning);
+            let mut message = json!({ "role": "assistant", "content": content });
+            if !tool_calls.is_empty() {
+                message["tool_calls"] = json!(tool_calls);
             }
             message
         }

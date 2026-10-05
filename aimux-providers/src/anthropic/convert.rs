@@ -496,9 +496,32 @@ fn convert_file_part(
             }
         }
         FileData::Text { text } => {
-            let mut block = json!({ "type": "document", "source": { "type": "text", "media_type": "text/plain", "data": text } });
-            if let Some(filename) = filename {
-                block["title"] = json!(filename);
+            let document_options = anthropic_options(provider_options.as_ref(), options_name);
+            let options = document_options.as_ref();
+            let mut block = json!({ "type": "document", "source": {
+                "type": "text", "media_type": "text/plain", "data": text,
+            }});
+            if let Some(title) = options
+                .and_then(|o| o.get("title"))
+                .and_then(Value::as_str)
+                .or(filename.as_deref())
+            {
+                block["title"] = json!(title);
+            }
+            if let Some(context) = options
+                .and_then(|o| o.get("context"))
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+            {
+                block["context"] = json!(context);
+            }
+            if options
+                .and_then(|o| o.get("citations"))
+                .and_then(|c| c.get("enabled"))
+                .and_then(Value::as_bool)
+                == Some(true)
+            {
+                block["citations"] = json!({ "enabled": true });
             }
             block
         }

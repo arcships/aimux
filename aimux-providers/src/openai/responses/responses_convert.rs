@@ -1369,9 +1369,9 @@ fn hosted_shell(body: &Value) -> bool {
     body["tools"].as_array().is_some_and(|tools| {
         tools.iter().any(|tool| {
             tool["type"] == "shell"
-                && tool
-                    .get("environment")
-                    .is_some_and(|environment| environment["type"] != "local")
+                && tool.get("environment").is_some_and(|environment| {
+                    !matches!(environment["type"].as_str(), Some("local"))
+                })
         })
     })
 }

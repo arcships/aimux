@@ -28,6 +28,7 @@
 //! internals; the shared model never branches on a vendor name.
 
 pub(crate) mod chat;
+pub mod completion;
 pub(crate) mod config;
 pub(crate) mod convert;
 pub mod embedding;
@@ -35,8 +36,8 @@ pub mod image;
 mod types;
 
 pub use chat::OpenAICompatibleChatModel;
+pub use completion::OpenAICompatibleCompletionModel;
 pub use config::{ConvertUsage, MetadataExtractor, StreamMetadataExtractor, TransformRequestBody};
-pub use convert::RequestBodyResult;
 pub use embedding::OpenAICompatibleEmbeddingModel;
 pub use image::OpenAICompatibleImageModel;
 
@@ -284,6 +285,15 @@ impl OpenAICompatibleProvider {
     #[must_use]
     pub fn chat(&self, model_id: &str) -> OpenAICompatibleChatModel {
         OpenAICompatibleChatModel::from_config(model_id.to_string(), self.model_config("chat"))
+    }
+
+    /// A text-completion model; `provider()` is `"{name}.completion"`.
+    #[must_use]
+    pub fn completion(&self, model_id: &str) -> OpenAICompatibleCompletionModel {
+        OpenAICompatibleCompletionModel::from_config(
+            model_id.to_string(),
+            self.model_config("completion"),
+        )
     }
 
     /// An embedding model; `provider()` is `"{name}.embedding"`.

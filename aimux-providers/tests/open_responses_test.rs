@@ -171,7 +171,7 @@ fn openai_pdf_json() -> Value {
         "created_at": 1775566496,
         "status": "completed",
         "incomplete_details": null,
-        "model": "gpt-4.1-nano-2025-04-14",
+        "model": lmstudio_basic_json()["model"],
         "output": [
             {
                 "id": "msg_048edf44633e41ae0069d4fea0d1a08194af1e491c093df1d9",

@@ -20,6 +20,7 @@ pub mod model;
 pub(crate) mod options;
 pub mod prepare_tools;
 pub mod sanitize_json_schema;
+pub mod skills;
 pub mod stream;
 pub mod tool_name_mapping;
 pub mod types;
@@ -28,6 +29,7 @@ pub mod usage;
 pub use config::TransformRequestBody;
 pub use files::AnthropicFiles;
 pub use model::AnthropicMessagesModel;
+pub use skills::AnthropicSkills;
 
 use std::sync::{Arc, OnceLock};
 
@@ -278,6 +280,14 @@ impl AnthropicProvider {
         AnthropicFiles::from_config(self.model_config(self.name.clone()))
     }
 
+    /// The skills upload interface.
+    #[must_use]
+    pub fn skills(&self) -> AnthropicSkills {
+        AnthropicSkills::from_config(
+            self.model_config(format!("{}.skills", self.name.replacen(".messages", "", 1))),
+        )
+    }
+
     /// The provider as a function: the default language model for an id. The
     /// AI SDK's callable provider; the same model as
     /// [`messages`](Self::messages) and
@@ -307,6 +317,10 @@ impl Provider for AnthropicProvider {
 
     fn files(&self) -> Option<Arc<dyn Files>> {
         Some(Arc::new(self.files()))
+    }
+
+    fn skills(&self) -> Option<Arc<dyn aimux_core::skills_model::Skills>> {
+        Some(Arc::new(self.skills()))
     }
 }
 
