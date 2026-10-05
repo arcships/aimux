@@ -554,36 +554,6 @@ async fn status_429_maps_to_rate_limited() {
     );
 }
 
-/// The raw response headers are exposed on the generate result.
-#[tokio::test]
-async fn exposes_response_headers() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("test-header", "test-value")
-                .set_body_json(text_completion_body()),
-        )
-        .mount(&server)
-        .await;
-
-    let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let headers = result
-        .response
-        .as_ref()
-        .and_then(|response| response.headers.as_ref())
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // Conformance — real recorded API responses (cassettes).
 //

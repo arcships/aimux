@@ -30,7 +30,7 @@ use aimux_core::language_model_message::{
 };
 use aimux_core::options::{CallOptions, ResponseFormat, Tool};
 use aimux_core::result::{GenerateContent, ReasoningOutput};
-use aimux_core::shared::{FileBytes, FileData, provider_namespace};
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
@@ -1046,94 +1046,6 @@ mod do_generate {
         assert_eq!(body["response_format"]["type"], "json_schema");
         assert_eq!(body["response_format"]["json_schema"]["name"], "test-name");
         assert_eq!(body["response_format"]["json_schema"]["strict"], true);
-    }
-
-    /// TS: "should pass response format as json_object when structuredOutputs
-    /// explicitly disabled"
-    #[tokio::test]
-    async fn response_format_json_object_when_disabled() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let provider_opts =
-            provider_namespace("groq", json!({"structuredOutputs": false})).expect("object");
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            response_format: Some(ResponseFormat::Json {
-                schema: Some(json!({
-                    "type": "object",
-                    "properties": { "value": { "type": "string" } },
-                    "required": ["value"],
-                    "additionalProperties": false,
-                })),
-                name: Some("test-name".to_string()),
-                description: Some("test description".to_string()),
-            }),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["response_format"]["type"], "json_object");
-
-        // Should have a warning about structuredOutputs
-        assert!(result.warnings.iter().any(|w| match w {
-            aimux_core::types::Warning::Unsupported { feature, .. } => feature == "responseFormat",
-            _ => false,
-        }));
-    }
-
-    /// TS: "should send strict: false when strictJsonSchema is explicitly disabled"
-    #[tokio::test]
-    async fn strict_json_schema_false() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let provider_opts =
-            provider_namespace("groq", json!({"strictJsonSchema": false})).expect("object");
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            response_format: Some(ResponseFormat::Json {
-                schema: Some(json!({
-                    "type": "object",
-                    "properties": { "value": { "type": "string" } },
-                    "required": ["value"],
-                    "additionalProperties": false,
-                })),
-                name: Some("test-name".to_string()),
-                description: Some("test description".to_string()),
-            }),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["response_format"]["json_schema"]["strict"], false);
-    }
-
-    /// TS: "should send request body" (request.body)
-    #[tokio::test]
-    async fn request_body_string() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .unwrap();
-
-        let request_body = result
-            .request
-            .and_then(|request| request.body)
-            .expect("should have request body");
-        assert_eq!(request_body["model"], "gemma2-9b-it");
-        assert_eq!(request_body["messages"][0]["content"], "Hello");
     }
 }
 

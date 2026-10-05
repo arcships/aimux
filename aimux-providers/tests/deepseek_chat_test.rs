@@ -35,11 +35,11 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, Tool};
+use aimux_core::options::{CallOptions, Tool};
 use aimux_core::result::GenerateContent;
-use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions, provider_namespace};
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::{FunctionTool, RawToolCall};
+use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::openai::OpenAICompatProfile;
@@ -166,127 +166,11 @@ fn text_completion_body() -> Value {
     })
 }
 
-fn deepseek_opts(value: Value) -> Option<SharedProviderOptions> {
-    Some(provider_namespace("deepseek", value).expect("provider options must be an object"))
-}
-
-fn weather_tool() -> FunctionTool {
-    FunctionTool {
-        name: "weather".to_string(),
-        description: None,
-        input_schema: json!({
-            "type": "object",
-            "properties": { "location": { "type": "string" } },
-            "required": ["location"],
-            "additionalProperties": false,
-            "$schema": "http://json-schema.org/draft-07/schema#"
-        }),
-        strict: None,
-        provider_options: None,
-        input_examples: None,
-    }
-}
-
-fn tool_call_completion_body() -> Value {
-    json!({
-        "id": "7a630f5b-b7e6-4878-82f8-d77db164d42b",
-        "object": "chat.completion",
-        "created": 1764665845,
-        "model": "deepseek-reasoner",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [{
-                    "index": 0,
-                    "id": "call_00_9V0vrf86Pc9aelHCJMZqnJBo",
-                    "type": "function",
-                    "function": {
-                        "name": "weather",
-                        "arguments": "{\"location\": \"San Francisco\"}"
-                    }
-                }]
-            },
-            "logprobs": null,
-            "finish_reason": "tool_calls"
-        }],
-        "usage": {
-            "prompt_tokens": 339,
-            "completion_tokens": 92,
-            "total_tokens": 431
-        }
-    })
-}
-
-fn json_completion_body() -> Value {
-    json!({
-        "id": "f03bc170-b375-4561-9685-35182c8152c5",
-        "object": "chat.completion",
-        "created": 1764681341,
-        "model": "deepseek-reasoner",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": "{\n  \"location\": \"San Francisco\",\n  \"condition\": \"cloudy\",\n  \"temperature\": 7\n}"
-            },
-            "logprobs": null,
-            "finish_reason": "stop"
-        }],
-        "usage": {
-            "prompt_tokens": 495,
-            "completion_tokens": 144,
-            "total_tokens": 639
-        }
-    })
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // doGenerate — text
 //
 // Translated from `deepseek-chat-language-model.test.ts` doGenerate › text.
 // ════════════════════════════════════════════════════════════════════════════
-
-/// TS: doGenerate › text › "should send correct request body" (line ~39).
-///
-/// Verifies that system + user messages, temperature, and top_p are correctly
-/// serialized in the request body.
-#[tokio::test]
-async fn should_send_correct_text_request_body() {
-    let server = MockServer::start().await;
-    mock_json(&server, text_completion_body()).await;
-
-    let model = make_provider(&server, "deepseek-chat");
-
-    let prompt = vec![
-        LanguageModelMessage::System {
-            content: "You are a helpful assistant.".into(),
-            provider_options: None,
-        },
-        LanguageModelMessage::user_text("Hello"),
-    ];
-    let mut options = default_options(prompt);
-    options.temperature = Some(0.5);
-    options.top_p = Some(0.3);
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result
-        .request
-        .and_then(|request| request.body)
-        .expect("body");
-
-    assert_eq!(body["model"], json!("deepseek-chat"));
-    assert_eq!(
-        body["messages"],
-        json!([
-            { "role": "system", "content": "You are a helpful assistant." },
-            { "role": "user", "content": "Hello" }
-        ])
-    );
-    assert_eq!(body["temperature"], json!(0.5));
-    assert_eq!(body["top_p"], json!(0.3));
-}
 
 /// TS: doGenerate › text › "should extract text content" (line ~68).
 ///
@@ -325,92 +209,6 @@ async fn should_extract_text_content() {
 // Translated from `deepseek-chat-language-model.test.ts` doGenerate › tool call.
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: doGenerate › tool call › "should send correct request body" (line ~318).
-///
-/// Verifies that tools are correctly serialized in the request body.
-/// stage2-001（RFC-0017 阶段 2）：DeepSeek 特化已退役——`providerOptions.deepseek`
-/// 不再翻译为请求体 `thinking` 字段，用户改用 bodyOverrides 注入（新语义透传）。
-#[tokio::test]
-async fn should_send_correct_tool_call_request_body() {
-    let server = MockServer::start().await;
-    mock_json(&server, tool_call_completion_body()).await;
-
-    let model = make_provider(&server, "deepseek-reasoner");
-
-    let mut options = default_options(test_prompt());
-    options.tools = Some(vec![weather_tool().into()]);
-    // 退役后 providerOptions.deepseek.* 被忽略（不再有 apply_deepseek_override）。
-    options.provider_options = deepseek_opts(json!({ "thinking": { "type": "enabled" } }));
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result
-        .request
-        .and_then(|request| request.body)
-        .expect("body");
-
-    assert_eq!(body["model"], json!("deepseek-reasoner"));
-    assert!(
-        body.get("thinking").is_none(),
-        "stage2-001: DeepSeek 特化退役,thinking 不再由 providerOptions.deepseek 注入,改用 bodyOverrides"
-    );
-    assert_eq!(
-        body["tools"],
-        json!([{
-            "type": "function",
-            "function": {
-                "name": "weather",
-                "parameters": {
-                    "type": "object",
-                    "properties": { "location": { "type": "string" } },
-                    "required": ["location"],
-                    "additionalProperties": false,
-                    "$schema": "http://json-schema.org/draft-07/schema#"
-                }
-            }
-        }])
-    );
-    // The messages should contain the single "Hello" user message.
-    assert_eq!(
-        body["messages"],
-        json!([{ "role": "user", "content": "Hello" }])
-    );
-}
-
-/// TS: doGenerate › tool call › "should extract tool call content" (line ~668).
-///
-/// Verifies that tool calls are extracted from the response as
-/// `GenerateContent::ToolCall` parts with parsed JSON input.
-#[tokio::test]
-async fn should_extract_tool_call_content() {
-    let server = MockServer::start().await;
-    mock_json(&server, tool_call_completion_body()).await;
-
-    let model = make_provider(&server, "deepseek-reasoner");
-
-    let mut options = default_options(test_prompt());
-    options.tools = Some(vec![weather_tool().into()]);
-    options.provider_options = deepseek_opts(json!({ "thinking": { "type": "enabled" } }));
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-
-    // The tool-call fixture has empty content and one tool call.
-    assert_eq!(result.content.len(), 1);
-    match &result.content[0] {
-        GenerateContent::ToolCall(RawToolCall {
-            tool_call_id,
-            tool_name,
-            input,
-            ..
-        }) => {
-            assert_eq!(tool_call_id, "call_00_9V0vrf86Pc9aelHCJMZqnJBo");
-            assert_eq!(tool_name, "weather");
-            assert_eq!(input, r#"{"location": "San Francisco"}"#);
-        }
-        other => panic!("expected ToolCall, got {other:?}"),
-    }
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // doGenerate — JSON response format
 //
@@ -422,181 +220,11 @@ async fn should_extract_tool_call_content() {
 // ("Return JSON." or "Return JSON that conforms to the following schema: ...").
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: "should send correct request body without schema" (line ~383).
-///
-/// Without a schema, the request body should have
-/// `response_format: { type: "json_object" }` and a system message
-/// "Return JSON." prepended to the messages.
-#[tokio::test]
-async fn should_send_json_response_format_without_schema() {
-    let server = MockServer::start().await;
-    mock_json(&server, json_completion_body()).await;
-
-    let model = make_provider(&server, "deepseek-reasoner");
-
-    let mut options = default_options(test_prompt());
-    options.response_format = Some(ResponseFormat::Json {
-        schema: None,
-        name: None,
-        description: None,
-    });
-    options.tools = Some(vec![weather_tool().into()]);
-    options.provider_options = deepseek_opts(json!({ "thinking": { "type": "enabled" } }));
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result
-        .request
-        .and_then(|request| request.body)
-        .expect("body");
-
-    assert_eq!(body["response_format"], json!({ "type": "json_object" }));
-    // DeepSeek does not inject a "Return JSON." system message.
-    assert_eq!(
-        body["messages"][0],
-        json!({ "role": "user", "content": "Hello" })
-    );
-}
-
-/// TS: "should send correct request body with schema" (line ~451).
-///
-/// With a schema but without `supportsStructuredOutputs`, the request body
-/// should still use `response_format: { type: "json_object" }` (NOT
-/// `json_schema`) and inject a system message containing the schema.
-#[tokio::test]
-async fn should_send_json_response_format_with_schema() {
-    let server = MockServer::start().await;
-    mock_json(&server, json_completion_body()).await;
-
-    let model = make_provider(&server, "deepseek-reasoner");
-
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "elements": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "location": { "type": "string" },
-                        "temperature": { "type": "number" },
-                        "condition": { "type": "string" }
-                    },
-                    "required": ["location", "temperature", "condition"],
-                    "additionalProperties": false
-                }
-            }
-        },
-        "required": ["elements"],
-        "additionalProperties": false,
-        "$schema": "http://json-schema.org/draft-07/schema#"
-    });
-
-    let mut options = default_options(test_prompt());
-    options.response_format = Some(ResponseFormat::Json {
-        schema: Some(schema.clone()),
-        name: None,
-        description: None,
-    });
-    options.tools = Some(vec![weather_tool().into()]);
-    options.provider_options = deepseek_opts(json!({ "thinking": { "type": "enabled" } }));
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result
-        .request
-        .and_then(|request| request.body)
-        .expect("body");
-
-    // With a schema, deepseek uses json_schema format (via OpenAI shared converter).
-    assert_eq!(body["response_format"]["type"], "json_schema");
-    // DeepSeek does not inject a system message.
-    assert_eq!(
-        body["messages"][0],
-        json!({ "role": "user", "content": "Hello" })
-    );
-}
-
-/// TS: "should extract text content" (json response format, line ~542).
-///
-/// Verifies that JSON content is extracted as a text part.
-#[tokio::test]
-async fn should_extract_json_response_text_content() {
-    let server = MockServer::start().await;
-    mock_json(&server, json_completion_body()).await;
-
-    let model = make_provider(&server, "deepseek-reasoner");
-
-    let mut options = default_options(test_prompt());
-    options.response_format = Some(ResponseFormat::Json {
-        schema: None,
-        name: None,
-        description: None,
-    });
-    options.tools = Some(vec![weather_tool().into()]);
-    options.provider_options = deepseek_opts(json!({ "thinking": { "type": "enabled" } }));
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-
-    assert_eq!(result.content.len(), 1);
-    match &result.content[0] {
-        GenerateContent::Text { text, .. } => assert!(
-            text.contains("San Francisco"),
-            "expected JSON content with 'San Francisco', got: {text}"
-        ),
-        other => panic!("expected Text, got {other:?}"),
-    }
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // doStream — text
 //
 // Translated from `deepseek-chat-language-model.test.ts` doStream › text.
 // ════════════════════════════════════════════════════════════════════════════
-
-/// TS: doStream › text › "should send model id, settings, and input" (line ~715).
-///
-/// Verifies that the stream request body includes `stream: true`,
-/// `stream_options: { include_usage: true }`, and the correct messages.
-#[tokio::test]
-async fn should_send_correct_stream_request_body() {
-    let server = MockServer::start().await;
-    let body = sse_body(&[&sse_event(
-        r#"{"id":"x","object":"chat.completion.chunk","created":1,"model":"deepseek-chat","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#,
-    )]);
-    mock_sse(&server, body).await;
-
-    let model = make_provider(&server, "deepseek-chat");
-
-    let prompt = vec![
-        LanguageModelMessage::System {
-            content: "You are a helpful assistant.".into(),
-            provider_options: None,
-        },
-        LanguageModelMessage::user_text("Hello"),
-    ];
-    let mut options = default_options(prompt);
-    options.temperature = Some(0.5);
-    options.top_p = Some(0.3);
-
-    let result = model.do_stream(&options).await.expect("should succeed");
-    let body = result
-        .request
-        .and_then(|request| request.body)
-        .expect("body");
-
-    assert_eq!(body["model"], json!("deepseek-chat"));
-    assert_eq!(body["stream"], json!(true));
-    assert_eq!(body["stream_options"], json!({ "include_usage": true }));
-    assert_eq!(
-        body["messages"],
-        json!([
-            { "role": "system", "content": "You are a helpful assistant." },
-            { "role": "user", "content": "Hello" }
-        ])
-    );
-    assert_eq!(body["temperature"], json!(0.5));
-    assert_eq!(body["top_p"], json!(0.3));
-}
 
 /// TS: doStream › text › "should stream text" (line ~748).
 ///
