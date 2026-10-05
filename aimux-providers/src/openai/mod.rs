@@ -45,7 +45,9 @@ use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{
+    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, load_optional_setting, validate_base_url,
+};
 
 use crate::shared::{Credential, provider_headers};
 
@@ -178,8 +180,8 @@ impl std::fmt::Debug for OpenAIProviderSettings {
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
+    let base_url = match load_optional_setting(settings.base_url.as_deref(), "OPENAI_BASE_URL") {
+        Some(url) => validate_base_url(&url)?,
         None => DEFAULT_BASE_URL.to_string(),
     };
     let name = settings.name.unwrap_or_else(|| "openai".to_string());
@@ -203,15 +205,11 @@ pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider,
 }
 
 /// The default provider: `create_openai` with default settings, created on
-/// first use. Creating it reads nothing from the environment and cannot fail;
-/// a missing key surfaces from the first request instead.
+/// first use. The base URL is loaded at creation; the key is loaded per request.
 pub fn openai() -> &'static OpenAIProvider {
     static DEFAULT: OnceLock<OpenAIProvider> = OnceLock::new();
     DEFAULT.get_or_init(|| {
-        // The default settings carry no base URL, so validation has nothing to
-        // reject.
-        create_openai(OpenAIProviderSettings::default())
-            .expect("default OpenAI settings are always valid")
+        create_openai(OpenAIProviderSettings::default()).expect("invalid OPENAI_BASE_URL")
     })
 }
 

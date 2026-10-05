@@ -128,8 +128,8 @@ pub struct AmazonBedrockProviderSettings {
     pub session_token: Option<String>,
     /// Base URL for the Bedrock Runtime calls (and the Agent Runtime
     /// `rerank` calls). Default `https://bedrock-runtime.{region}.amazonaws.com`,
-    /// or `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` when that is set; a trailing slash
-    /// is removed.
+    /// or the service endpoint environment variable, then `AWS_ENDPOINT_URL`;
+    /// a trailing slash is removed.
     pub base_url: Option<String>,
     /// Extra headers on every request. A `None` value removes the header.
     /// Per-call headers win over these.
@@ -286,8 +286,10 @@ impl Auth {
         if let Some(url) = explicit {
             return Ok(url.to_string());
         }
-        if let Some(url) = load_optional_setting(None, endpoint_env_var) {
-            return validate_base_url(&url);
+        if let Some(url) = load_optional_setting(None, endpoint_env_var)
+            .or_else(|| load_optional_setting(None, "AWS_ENDPOINT_URL"))
+        {
+            return Ok(without_trailing_slash(&url));
         }
         Ok(format!("https://{service}.{}.amazonaws.com", region()?))
     }

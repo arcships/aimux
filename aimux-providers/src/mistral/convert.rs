@@ -3,6 +3,7 @@
 //! Mirrors the TS `convert-to-mistral-chat-messages.ts`,
 //! `mistral-prepare-tools.ts`, and `map-mistral-finish-reason.ts`.
 
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart, ToolPart,
     ToolResultPart, UserPart,
@@ -11,6 +12,7 @@ use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
+use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Value, json};
 
 // ── Prepared tools ──────────────────────────────────────────────────────────
@@ -103,26 +105,36 @@ pub fn prepare_tools(
 ///   message if it is an assistant message (continuation mode).
 /// - Tool messages include `tool_call_id` (no `name` — the Rust data model
 ///   does not carry the tool name on `ToolResult` parts).
-#[must_use]
-pub fn convert_prompt_to_mistral_messages(prompt: &LanguageModelPrompt) -> Vec<Value> {
+///
+/// # Errors
+/// Returns an error for text file parts or an unresolved inline file media type.
+pub fn convert_prompt_to_mistral_messages(
+    prompt: &LanguageModelPrompt,
+) -> Result<Vec<Value>, AiMuxError> {
     let mut result = Vec::new();
     let last_idx = prompt.len().saturating_sub(1);
     for (i, msg) in prompt.iter().enumerate() {
         let is_last = i == last_idx;
-        for value in convert_message_to_mistral(msg, is_last) {
+        for value in convert_message_to_mistral(msg, is_last)? {
             result.push(value);
         }
     }
-    result
+    Ok(result)
 }
 
-fn convert_message_to_mistral(msg: &LanguageModelMessage, is_last: bool) -> Vec<Value> {
-    match msg {
+fn convert_message_to_mistral(
+    msg: &LanguageModelMessage,
+    is_last: bool,
+) -> Result<Vec<Value>, AiMuxError> {
+    Ok(match msg {
         LanguageModelMessage::System { content, .. } => {
             vec![json!({ "role": "system", "content": content })]
         }
         LanguageModelMessage::User { content, .. } => {
-            let parts: Vec<Value> = content.iter().map(convert_part_to_mistral).collect();
+            let parts: Vec<Value> = content
+                .iter()
+                .map(convert_part_to_mistral)
+                .collect::<Result<_, _>>()?;
             vec![json!({ "role": "user", "content": parts })]
         }
         LanguageModelMessage::Assistant { content, .. } => {
@@ -184,7 +196,7 @@ fn convert_message_to_mistral(msg: &LanguageModelMessage, is_last: bool) -> Vec<
                 })
             })
             .collect(),
-    }
+    })
 }
 
 fn join_text_parts(content: &[AssistantPart]) -> String {
@@ -205,8 +217,8 @@ fn tool_result_to_content(output: &Value) -> Value {
     }
 }
 
-fn convert_part_to_mistral(part: &UserPart) -> Value {
-    match part {
+fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
+    Ok(match part {
         UserPart::Text(TextPart { text, .. }) => json!({ "type": "text", "text": text }),
         UserPart::File(file) => {
             use base64::Engine;
@@ -218,26 +230,37 @@ fn convert_part_to_mistral(part: &UserPart) -> Value {
                         }
                         FileBytes::Base64(data) => data.clone(),
                     };
-                    format!("data:{};base64,{}", file.media_type, b64)
+                    format!("data:{};base64,{}", resolve_full_media_type(file)?, b64)
                 }
                 FileData::Url { url } => url.clone(),
-                FileData::Reference { .. } | FileData::Text { .. } => return Value::Null,
+                FileData::Reference { .. } => return Ok(Value::Null),
+                FileData::Text { .. } => {
+                    return Err(AiMuxError::UnsupportedFunctionality(
+                        "text file parts".into(),
+                    ));
+                }
             };
-            if file.media_type.starts_with("image/") {
+            if get_top_level_media_type(&file.media_type) == "image" {
                 json!({ "type": "image_url", "image_url": url })
             } else {
                 json!({ "type": "document_url", "document_url": url })
             }
         }
-    }
+    })
 }
 
 // ── Request body ────────────────────────────────────────────────────────────
 
 /// Convert `CallOptions` to a Mistral request body.
-#[must_use]
-pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -> Value {
-    let messages = convert_prompt_to_mistral_messages(&options.prompt);
+///
+/// # Errors
+/// Returns an error for text file parts or an unresolved inline file media type.
+pub fn build_request_body(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+) -> Result<Value, AiMuxError> {
+    let messages = convert_prompt_to_mistral_messages(&options.prompt)?;
 
     let mut body = json!({
         "model": model_id,
@@ -319,7 +342,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -
         }
     }
 
-    body
+    Ok(body)
 }
 
 /// Parse Mistral finish reason string into `FinishReason`.

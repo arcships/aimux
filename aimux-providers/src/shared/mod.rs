@@ -48,6 +48,8 @@ pub(crate) enum Credential {
     /// back to the environment. A [`Resolvable::Future`] is awaited once, an
     /// `AsyncFn` on every request.
     Explicit(Resolvable<String>),
+    /// An optional key: an empty resolved value sends no credential.
+    Optional(Resolvable<String>),
     /// Read the environment variable on every request; unset fails that
     /// request with `AiMuxError::LoadApiKey`.
     Env { var: String, description: String },
@@ -76,6 +78,7 @@ impl Credential {
         match self {
             Self::None => Ok(None),
             Self::Explicit(key) => Ok(Some(key.resolve().await?)),
+            Self::Optional(key) => Ok(Some(key.resolve().await?).filter(|key| !key.is_empty())),
             Self::Env { var, description } => Ok(Some(load_api_key(None, var, description)?)),
         }
     }

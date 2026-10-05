@@ -190,7 +190,7 @@ impl LanguageModel for MistralModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(build_request_body(&self.model_id, options, false));
+        let body = exchange.transform_body(build_request_body(&self.model_id, options, false)?);
         let endpoint = exchange.url("/chat/completions");
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(endpoint.clone(), options),
@@ -282,7 +282,7 @@ impl LanguageModel for MistralModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(build_request_body(&self.model_id, options, true));
+        let body = exchange.transform_body(build_request_body(&self.model_id, options, true)?);
         let endpoint = exchange.url("/chat/completions");
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(endpoint.clone(), options),

@@ -12,8 +12,8 @@
 //!   `fetch`, the capability flags, `transform_request_body`) are fixed in the
 //!   factory.
 //! - `api_key` is evaluated on every request, as a [`Resolvable`]: a plain
-//!   value is used as given (`""` included), a future is awaited once, an async
-//!   function on every request. `None` sends no `Authorization` header at all,
+//!   non-empty value is used as given, a future is awaited once, an async
+//!   function on every request. `None` or `""` sends no `Authorization` header,
 //!   which is what a local server wants.
 //!
 //! Identity: every model reports `"{name}.{method}"` (`groq.chat`,
@@ -66,8 +66,8 @@ pub struct OpenAICompatibleProviderSettings {
     /// Base URL for the API calls. Required, `http(s)` with a host; a trailing
     /// slash is removed.
     pub base_url: String,
-    /// The API key. `None` sends no `Authorization` header (a local server);
-    /// an explicit value, `""` included, is sent as `Bearer <value>`. A
+    /// The API key. `None` or `""` sends no `Authorization` header;
+    /// a non-empty value is sent as `Bearer <value>`. A
     /// [`Resolvable::Future`] is awaited once, an [`Resolvable::AsyncFn`] on
     /// every request.
     pub api_key: Option<Resolvable<String>>,
@@ -136,7 +136,7 @@ pub fn create_openai_compatible(
         name: settings.name,
         base_url: BaseUrl::Fixed(base_url),
         credential: match settings.api_key {
-            Some(key) => Credential::Explicit(key),
+            Some(key) => Credential::Optional(key),
             None => Credential::None,
         },
         fixed_headers: Vec::new(),

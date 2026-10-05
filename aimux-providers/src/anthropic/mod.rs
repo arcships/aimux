@@ -41,7 +41,9 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{
+    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, load_optional_setting, validate_base_url,
+};
 
 use crate::shared::{AuthScheme, Credential, credential_headers};
 
@@ -110,9 +112,8 @@ pub struct AnthropicProviderSettings {
     /// [`Resolvable::Future`] is awaited once, an [`Resolvable::AsyncFn`] on
     /// every request.
     pub api_key: Option<Resolvable<String>>,
-    /// A bearer token, sent as `Authorization: Bearer`. When set, no
-    /// `x-api-key` header is sent. Giving it together with `api_key` is an
-    /// error.
+    /// A non-empty bearer token is sent as `Authorization: Bearer` instead
+    /// of `x-api-key`. Giving non-empty values for both credentials is an error.
     pub auth_token: Option<Resolvable<String>>,
     /// Extra headers on every request. A `None` value removes the header,
     /// including one of the fixed ones. Per-call headers win over these.
@@ -161,17 +162,21 @@ impl std::fmt::Debug for AnthropicProviderSettings {
 pub fn create_anthropic(
     settings: AnthropicProviderSettings,
 ) -> Result<AnthropicProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => normalize_base_url(url)?,
+    let base_url = match load_optional_setting(settings.base_url.as_deref(), "ANTHROPIC_BASE_URL") {
+        Some(url) => normalize_base_url(&url)?,
         None => DEFAULT_BASE_URL.to_string(),
     };
-    if settings.api_key.is_some() && settings.auth_token.is_some() {
+    let is_truthy =
+        |value: &Resolvable<String>| !matches!(value, Resolvable::Value(value) if value.is_empty());
+    if settings.api_key.as_ref().is_some_and(is_truthy)
+        && settings.auth_token.as_ref().is_some_and(is_truthy)
+    {
         return Err(AiMuxError::InvalidArgument(
             "Both apiKey and authToken were provided. Please use only one authentication method."
                 .to_string(),
         ));
     }
-    let (credential, scheme) = match settings.auth_token {
+    let (credential, scheme) = match settings.auth_token.filter(is_truthy) {
         Some(token) => (Credential::Explicit(token), AuthScheme::Bearer),
         None => (
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Anthropic"),
@@ -194,15 +199,11 @@ pub fn create_anthropic(
 }
 
 /// The default provider: `create_anthropic` with default settings, created on
-/// first use. Creating it reads nothing from the environment and cannot fail;
-/// a missing key surfaces from the first request instead.
+/// first use. The base URL is loaded at creation; the key is loaded per request.
 pub fn anthropic() -> &'static AnthropicProvider {
     static DEFAULT: OnceLock<AnthropicProvider> = OnceLock::new();
     DEFAULT.get_or_init(|| {
-        // The default settings carry no base URL and no credentials, so
-        // there is nothing to reject.
-        create_anthropic(AnthropicProviderSettings::default())
-            .expect("default Anthropic settings are always valid")
+        create_anthropic(AnthropicProviderSettings::default()).expect("invalid ANTHROPIC_BASE_URL")
     })
 }
 
@@ -251,11 +252,10 @@ impl AnthropicProvider {
         )
     }
 
-    /// The files interface; `provider()` is `"{name}.files"` with the
-    /// `.messages` suffix removed (`"anthropic.files"` by default).
+    /// The files interface; `provider()` is the provider name.
     #[must_use]
     pub fn files(&self) -> AnthropicFiles {
-        AnthropicFiles::from_config(self.model_config(format!("{}.files", self.bare_name())))
+        AnthropicFiles::from_config(self.model_config(self.name.clone()))
     }
 
     /// The provider as a function: the default language model for an id. The

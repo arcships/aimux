@@ -312,10 +312,13 @@ impl CodexModel {
     /// Build the request body; the subscription channel always streams and
     /// never stores (mirrors the official Codex client). That rule is part of
     /// this package's request construction, not a body override.
-    fn subscription_body(&self, options: &CallOptions) -> (Value, Vec<Warning>) {
-        let mut result = build_responses_request_body(&self.model_id, options, true);
+    fn subscription_body(
+        &self,
+        options: &CallOptions,
+    ) -> Result<(Value, Vec<Warning>), AiMuxError> {
+        let mut result = build_responses_request_body(&self.model_id, options, true)?;
         result.body["store"] = Value::Bool(false);
-        (self.config.transform_body(result.body), result.warnings)
+        Ok((self.config.transform_body(result.body), result.warnings))
     }
 
     /// Map a subscription-channel authentication failure to
@@ -345,7 +348,7 @@ impl CodexModel {
             .config
             .request_headers(options.headers.as_ref())
             .await?;
-        let (body, warnings) = self.subscription_body(options);
+        let (body, warnings) = self.subscription_body(options)?;
 
         let endpoint = self.config.url("/responses")?;
         let resp = aimux_provider_utils::post_json_to_api(
@@ -443,7 +446,7 @@ impl CodexModel {
             .config
             .request_headers(options.headers.as_ref())
             .await?;
-        let (body, warnings) = self.subscription_body(options);
+        let (body, warnings) = self.subscription_body(options)?;
 
         let endpoint = self.config.url("/responses")?;
         let resp = aimux_provider_utils::post_json_to_api(

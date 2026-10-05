@@ -186,9 +186,8 @@ pub struct GoogleProviderSettings {
     /// Extra headers on every request. A `None` value removes the header,
     /// including `x-goog-api-key`. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the `provider()` string of the language, embedding
-    /// and image models. Default `"google.generative-ai"`. The other
-    /// modalities append `.video` and `.files`.
+    /// The provider name, the `provider()` string of the language, embedding,
+    /// image, video and files models. Default `"google.generative-ai"`.
     pub name: Option<String>,
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
@@ -328,19 +327,16 @@ impl GoogleProvider {
     }
 
     /// A video generation model (e.g. `"veo-3.0-generate-001"`);
-    /// `provider()` is `"{name}.video"`.
+    /// `provider()` is the provider name.
     #[must_use]
     pub fn video(&self, model_id: &str) -> GoogleVideoModel {
-        GoogleVideoModel::from_config(
-            model_id.to_string(),
-            self.model_config(format!("{}.video", self.name)),
-        )
+        GoogleVideoModel::from_config(model_id.to_string(), self.model_config(self.name.clone()))
     }
 
-    /// The files interface; `provider()` is `"{name}.files"`.
+    /// The files interface; `provider()` is the provider name.
     #[must_use]
     pub fn files(&self) -> GoogleFiles {
-        GoogleFiles::from_config(self.model_config(format!("{}.files", self.name)))
+        GoogleFiles::from_config(self.model_config(self.name.clone()))
     }
 
     /// The provider as a function: the default language model for an id. The

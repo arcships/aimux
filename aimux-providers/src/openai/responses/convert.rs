@@ -12,6 +12,7 @@
 
 use serde_json::{Value, json};
 
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultPart, UserPart,
@@ -20,6 +21,7 @@ use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, JsonObject, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Usage, Warning};
+use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 
 use super::types::ResponsesUsage;
 
@@ -130,14 +132,16 @@ pub struct ResponsesInputResult {
 /// `has_previous_response_id` is true, assistant reasoning/function-call items
 /// that already carry an `itemId` are skipped (they live in the previous
 /// response chain).
-#[must_use]
+///
+/// # Errors
+/// Returns an error for text file parts or an unresolved inline image media type.
 pub fn convert_to_responses_input(
     ns: ResponsesNamespace,
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,
     store: bool,
     has_previous_response_id: bool,
-) -> ResponsesInputResult {
+) -> Result<ResponsesInputResult, AiMuxError> {
     let mut input: Vec<Value> = Vec::new();
     let mut warnings: Vec<Warning> = Vec::new();
 
@@ -166,7 +170,7 @@ pub fn convert_to_responses_input(
                 let content: Vec<Value> = content
                     .iter()
                     .map(|part| convert_user_part(ns, part))
-                    .collect();
+                    .collect::<Result<_, _>>()?;
                 input.push(json!({ "role": "user", "content": content }));
             }
             LanguageModelMessage::Assistant { content, .. } => {
@@ -320,12 +324,12 @@ pub fn convert_to_responses_input(
         });
     }
 
-    ResponsesInputResult { input, warnings }
+    Ok(ResponsesInputResult { input, warnings })
 }
 
 /// Convert a single user-message content part into the Responses input shape.
-fn convert_user_part(ns: ResponsesNamespace, part: &UserPart) -> Value {
-    match part {
+fn convert_user_part(ns: ResponsesNamespace, part: &UserPart) -> Result<Value, AiMuxError> {
+    Ok(match part {
         UserPart::Text(part) => json!({ "type": "input_text", "text": part.text }),
         UserPart::File(file) => match &file.data {
             FileData::Data { data } => {
@@ -336,10 +340,10 @@ fn convert_user_part(ns: ResponsesNamespace, part: &UserPart) -> Value {
                     }
                     FileBytes::Base64(data) => data.clone(),
                 };
-                if file.media_type.starts_with("image") {
+                if get_top_level_media_type(&file.media_type) == "image" {
                     let mut img = json!({
                         "type": "input_image",
-                        "image_url": format!("data:{};base64,{}", file.media_type, b64),
+                        "image_url": format!("data:{};base64,{}", resolve_full_media_type(file)?, b64),
                     });
                     if let Some(detail) =
                         openai_sub_option(ns, &file.provider_options, "imageDetail")
@@ -360,17 +364,22 @@ fn convert_user_part(ns: ResponsesNamespace, part: &UserPart) -> Value {
                 }
             }
             FileData::Url { url } => {
-                if file.media_type.starts_with("image") {
+                if get_top_level_media_type(&file.media_type) == "image" {
                     json!({ "type": "input_image", "image_url": url })
                 } else {
                     json!({ "type": "input_file", "file_url": url })
                 }
             }
-            FileData::Reference { .. } | FileData::Text { .. } => {
+            FileData::Text { .. } => {
+                return Err(AiMuxError::UnsupportedFunctionality(
+                    "text file parts".into(),
+                ));
+            }
+            FileData::Reference { .. } => {
                 json!({ "type": "input_text", "text": "" })
             }
         },
-    }
+    })
 }
 
 /// Serialize tool-call arguments: null/empty -> `"{}"`, objects -> JSON string.
@@ -890,24 +899,28 @@ fn apply_responses_reasoning_block(
 ///
 /// Splits the original ~380-line function into focused helpers (issue M11);
 /// behavior is unchanged.
-#[must_use]
+///
+/// # Errors
+/// Returns an error for text file parts or an unresolved inline image media type.
 pub fn build_responses_request_body(
     model_id: &str,
     options: &CallOptions,
     stream: bool,
-) -> ResponsesRequestBodyResult {
+) -> Result<ResponsesRequestBodyResult, AiMuxError> {
     build_responses_request_body_for(ResponsesNamespace::OPENAI, model_id, options, stream)
 }
 
 /// [`build_responses_request_body`] for a host with its own providerOptions
 /// namespace.
-#[must_use]
+///
+/// # Errors
+/// Returns an error for text file parts or an unresolved inline image media type.
 pub fn build_responses_request_body_for(
     ns: ResponsesNamespace,
     model_id: &str,
     options: &CallOptions,
     stream: bool,
-) -> ResponsesRequestBodyResult {
+) -> Result<ResponsesRequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
     let caps = get_model_capabilities(model_id);
     let provider_opts = &options.provider_options;
@@ -937,7 +950,7 @@ pub fn build_responses_request_body_for(
         system_message_mode,
         store_bool,
         has_previous_response_id,
-    );
+    )?;
     warnings.extend(input_result.warnings);
 
     // -- Base body --
@@ -1007,7 +1020,7 @@ pub fn build_responses_request_body_for(
         warnings.push(tw);
     }
 
-    ResponsesRequestBodyResult { body, warnings }
+    Ok(ResponsesRequestBodyResult { body, warnings })
 }
 
 // -- File id prefixes --------------------------------------------------------
@@ -1071,7 +1084,7 @@ fn apply_prefix_to_part(part: &mut Value, prefixes: &[&str]) {
                 obj.remove("file_data");
                 obj.remove("filename");
                 obj.insert("file_id".to_string(), json!(data));
-                if media_type.starts_with("image/") {
+                if get_top_level_media_type(media_type) == "image" {
                     obj.insert("type".to_string(), json!("input_image"));
                 }
             }

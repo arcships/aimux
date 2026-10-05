@@ -41,10 +41,8 @@ use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelMessage, UserPart};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
-use aimux_core::shared::FileData;
 
 use super::config::OpenAIModelConfig;
 
@@ -85,18 +83,9 @@ impl OpenAIResponsesModel {
         options: &CallOptions,
         stream: bool,
     ) -> Result<ResponsesRequestBodyResult, AiMuxError> {
-        if options.prompt.iter().any(|message| {
-            matches!(message, LanguageModelMessage::User { content, .. }
-                if content.iter().any(|part| matches!(part, UserPart::File(file)
-                    if matches!(&file.data, FileData::Text { .. }))))
-        }) {
-            return Err(AiMuxError::UnsupportedFunctionality(
-                "text file parts".into(),
-            ));
-        }
         let profile = &self.config.responses;
         let mut result =
-            build_responses_request_body_for(profile.namespace, &self.model_id, options, stream);
+            build_responses_request_body_for(profile.namespace, &self.model_id, options, stream)?;
         convert::apply_file_id_prefixes(&mut result.body, &profile.file_id_prefixes);
         result.body = self.config.transform_body(result.body);
         Ok(result)
