@@ -9,8 +9,9 @@
 use crate::content::ContentPart;
 use crate::error::AiMuxError;
 use crate::message::{MessageContent, ModelMessage, Role};
-use crate::shared::{FileBytes, FileData, SharedProviderOptions};
+use crate::shared::{FileBytes, FileData, GeneratedFileData, SharedProviderOptions};
 use std::borrow::Cow;
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -69,9 +70,9 @@ pub struct FilePart {
 /// Reasoning / thinking content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
+#[ts(rename = "LanguageModelReasoningPart")]
 pub struct ReasoningPart {
     pub text: String,
-    pub signature: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
@@ -86,8 +87,6 @@ pub struct ToolCallPart {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thought_signature: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
@@ -96,15 +95,88 @@ pub struct ToolCallPart {
 #[ts(export)]
 pub struct ToolResultPart {
     pub tool_call_id: String,
+    pub tool_name: String,
+    pub output: ToolResultOutput,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_name: Option<String>,
-    pub result: Value,
+    pub provider_options: Option<SharedProviderOptions>,
+}
+
+/// The provider-facing result of a tool call.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[ts(export)]
+pub enum ToolResultOutput {
+    Text {
+        value: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    Json {
+        value: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    ExecutionDenied {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    ErrorText {
+        value: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    ErrorJson {
+        value: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    Content {
+        value: Vec<ToolResultContent>,
+    },
+}
+
+/// Content within a tool result.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[ts(export)]
+pub enum ToolResultContent {
+    Text(TextPart),
+    File(FilePart),
+    Custom {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+}
+
+/// A file generated as part of reasoning.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ReasoningFilePart {
+    pub data: GeneratedFileData,
+    pub media_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub is_error: Option<bool>,
+    pub provider_options: Option<SharedProviderOptions>,
+}
+
+/// Provider-specific content identified by its provider and kind.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CustomPart {
+    pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub preliminary: Option<bool>,
+    pub provider_options: Option<SharedProviderOptions>,
+}
+
+/// The user's decision for a provider-executed tool approval request.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ToolApprovalResponsePart {
+    pub approval_id: String,
+    pub approved: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dynamic: Option<bool>,
+    pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
@@ -126,6 +198,8 @@ pub enum AssistantPart {
     Text(TextPart),
     File(FilePart),
     Reasoning(ReasoningPart),
+    ReasoningFile(ReasoningFilePart),
+    Custom(CustomPart),
     ToolCall(ToolCallPart),
     ToolResult(ToolResultPart),
 }
@@ -136,6 +210,7 @@ pub enum AssistantPart {
 #[ts(export)]
 pub enum ToolPart {
     ToolResult(ToolResultPart),
+    ToolApprovalResponse(ToolApprovalResponsePart),
 }
 
 impl LanguageModelMessage {
@@ -154,7 +229,10 @@ impl LanguageModelMessage {
 
 /// Map a user-facing part onto the widest provider part (the assistant union);
 /// the role then narrows it.
-fn to_assistant_part(part: &ContentPart) -> Result<AssistantPart, AiMuxError> {
+fn to_assistant_part(
+    part: &ContentPart,
+    tool_names: &HashMap<String, String>,
+) -> Result<AssistantPart, AiMuxError> {
     let file = |data, media_type: &String, filename: &Option<String>, po: &Option<_>| {
         AssistantPart::File(FilePart {
             data,
@@ -164,13 +242,6 @@ fn to_assistant_part(part: &ContentPart) -> Result<AssistantPart, AiMuxError> {
         })
     };
     Ok(match part {
-        ContentPart::Custom { .. }
-        | ContentPart::ReasoningFile { .. }
-        | ContentPart::ToolApprovalRequest { .. } => {
-            return Err(AiMuxError::InvalidPrompt(
-                "this output part is not supported in provider prompts".into(),
-            ));
-        }
         ContentPart::Text {
             text,
             provider_options,
@@ -250,8 +321,12 @@ fn to_assistant_part(part: &ContentPart) -> Result<AssistantPart, AiMuxError> {
             provider_options,
         } => AssistantPart::Reasoning(ReasoningPart {
             text: text.clone(),
-            signature: signature.clone(),
-            provider_options: provider_options.clone(),
+            provider_options: with_signature(
+                provider_options,
+                &["amazonBedrock", "bedrock", "anthropic"],
+                "signature",
+                signature,
+            ),
         }),
         ContentPart::ToolCall {
             tool_call_id,
@@ -265,27 +340,101 @@ fn to_assistant_part(part: &ContentPart) -> Result<AssistantPart, AiMuxError> {
             tool_name: tool_name.clone(),
             input: input.clone(),
             provider_executed: *provider_executed,
-            thought_signature: thought_signature.clone(),
-            provider_options: provider_options.clone(),
+            provider_options: with_signature(
+                provider_options,
+                &["google", "googleVertex", "vertex"],
+                "thoughtSignature",
+                thought_signature,
+            ),
         }),
         ContentPart::ToolResult {
             tool_call_id,
             result,
             tool_name,
             is_error,
-            preliminary,
-            dynamic,
             provider_options,
+            ..
         } => AssistantPart::ToolResult(ToolResultPart {
             tool_call_id: tool_call_id.clone(),
-            tool_name: tool_name.clone(),
-            result: result.clone(),
-            is_error: *is_error,
-            preliminary: *preliminary,
-            dynamic: *dynamic,
+            tool_name: tool_name
+                .as_ref()
+                .or_else(|| tool_names.get(tool_call_id))
+                .cloned()
+                .ok_or_else(|| {
+                    AiMuxError::InvalidPrompt(format!(
+                        "tool result {tool_call_id} has no tool name or preceding tool call"
+                    ))
+                })?,
+            output: if *is_error == Some(true) {
+                ToolResultOutput::ErrorText {
+                    value: match result {
+                        Value::Null => "unknown error".into(),
+                        Value::String(value) => value.clone(),
+                        _ => result.to_string(),
+                    },
+                    provider_options: None,
+                }
+            } else if let Value::String(value) = result {
+                ToolResultOutput::Text {
+                    value: value.clone(),
+                    provider_options: None,
+                }
+            } else {
+                ToolResultOutput::Json {
+                    value: result.clone(),
+                    provider_options: None,
+                }
+            },
             provider_options: provider_options.clone(),
         }),
+        ContentPart::Custom {
+            kind,
+            provider_options,
+        } => AssistantPart::Custom(CustomPart {
+            kind: kind.clone(),
+            provider_options: provider_options.clone(),
+        }),
+        ContentPart::ReasoningFile {
+            data,
+            media_type,
+            provider_options,
+        } => AssistantPart::ReasoningFile(ReasoningFilePart {
+            data: data.clone(),
+            media_type: media_type.clone(),
+            provider_options: provider_options.clone(),
+        }),
+        ContentPart::ToolApprovalRequest { .. } => {
+            return Err(AiMuxError::InvalidPrompt(
+                "tool approval requests are only allowed in assistant messages".into(),
+            ));
+        }
     })
+}
+
+fn with_signature(
+    options: &Option<SharedProviderOptions>,
+    namespaces: &[&str],
+    key: &str,
+    signature: &Option<String>,
+) -> Option<SharedProviderOptions> {
+    let Some(signature) = signature else {
+        return options.clone();
+    };
+    let mut options = options.clone().unwrap_or_default();
+    let namespace = namespaces
+        .iter()
+        .find(|name| options.contains_key(**name))
+        .copied()
+        .unwrap_or(if key == "signature" {
+            "anthropic"
+        } else {
+            "google"
+        });
+    options
+        .entry(namespace.to_owned())
+        .or_default()
+        .insert(key.to_owned(), Value::String(signature.clone()));
+    Some(options)
 }
 
 /// Convert user-facing `ModelMessage`s into a `LanguageModelPrompt`.
@@ -311,6 +460,7 @@ pub fn convert_to_language_model_prompt(
         });
     }
 
+    let mut tool_names = HashMap::new();
     for msg in messages {
         let bad = |what: &str| AiMuxError::InvalidPrompt(format!("{:?} message: {what}", msg.role));
         if msg.role == Role::System {
@@ -327,16 +477,31 @@ pub fn convert_to_language_model_prompt(
             MessageContent::Text(text) => Cow::Owned(vec![ContentPart::text(text)]),
             MessageContent::Parts(parts) => Cow::Borrowed(parts),
         };
+        if msg.role == Role::Assistant {
+            for part in parts.iter() {
+                if let ContentPart::ToolCall {
+                    tool_call_id,
+                    tool_name,
+                    ..
+                } = part
+                {
+                    tool_names.insert(tool_call_id.clone(), tool_name.clone());
+                }
+            }
+        }
         let parts = parts
             .iter()
+            .filter(|part| {
+                msg.role != Role::Assistant
+                    || !matches!(part, ContentPart::ToolApprovalRequest { .. })
+            })
             .filter(|part| {
                 !matches!(&msg.content, MessageContent::Parts(_))
                     || !matches!(part, ContentPart::Text { text, provider_options }
                         if text.is_empty() && (msg.role == Role::User
                             || (msg.role == Role::Assistant && provider_options.is_none())))
             })
-            .filter(|part| !matches!(part, ContentPart::ToolApprovalRequest { .. }))
-            .map(to_assistant_part)
+            .map(|part| to_assistant_part(part, &tool_names))
             .collect::<Result<Vec<_>, _>>()?;
         let provider_options = None;
         result.push(match msg.role {

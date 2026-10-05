@@ -19,7 +19,7 @@ use aimux_core::error::ApiCallError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart,
-    ToolPart, ToolResultPart, UserPart,
+    ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ToolChoice};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
@@ -276,6 +276,7 @@ impl LanguageModel for OpenResponsesModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        validate_tool_output_media(&options.prompt)?;
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
         let body = exchange.transform_body(body);
@@ -416,6 +417,7 @@ impl LanguageModel for OpenResponsesModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        validate_tool_output_media(&options.prompt)?;
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
 
@@ -862,7 +864,8 @@ fn build_request_body(
     }
 
     // Convert prompt to input + instructions.
-    let (input, instructions, input_warnings) = convert_to_open_responses_input(&options.prompt);
+    let (input, instructions, input_warnings) =
+        convert_to_open_responses_input_with_namespace(&options.prompt, provider_options_name);
     warnings.extend(input_warnings);
 
     // Convert function tools.
@@ -1023,6 +1026,13 @@ fn build_request_body(
 pub fn convert_to_open_responses_input(
     prompt: &LanguageModelPrompt,
 ) -> (Value, Option<String>, Vec<Warning>) {
+    convert_to_open_responses_input_with_namespace(prompt, "open-responses")
+}
+
+fn convert_to_open_responses_input_with_namespace(
+    prompt: &LanguageModelPrompt,
+    provider_options_name: &str,
+) -> (Value, Option<String>, Vec<Warning>) {
     let mut input: Vec<Value> = Vec::new();
     let mut warnings = Vec::new();
     let mut system_messages: Vec<String> = Vec::new();
@@ -1042,7 +1052,6 @@ pub fn convert_to_open_responses_input(
             }
             LanguageModelMessage::Assistant { content, .. } => {
                 let mut assistant_content: Vec<Value> = Vec::new();
-                let mut tool_calls: Vec<Value> = Vec::new();
 
                 for part in content {
                     match part {
@@ -1062,36 +1071,101 @@ pub fn convert_to_open_responses_input(
                                 Value::String(s) => s.clone(),
                                 other => other.to_string(),
                             };
-                            tool_calls.push(json!({
+                            flush_assistant_content(&mut assistant_content, &mut input);
+                            input.push(json!({
                                 "type": "function_call",
                                 "call_id": tool_call_id,
                                 "name": tool_name,
                                 "arguments": arguments,
                             }));
                         }
+                        AssistantPart::Reasoning(part) => {
+                            flush_assistant_content(&mut assistant_content, &mut input);
+                            let metadata = part
+                                .provider_options
+                                .as_ref()
+                                .and_then(|options| options.get(provider_options_name));
+                            let parse_parts = |key: &str, kind: &str| {
+                                metadata
+                                    .and_then(|data| data.get(key))
+                                    .and_then(Value::as_array)
+                                    .filter(|parts| {
+                                        parts.iter().all(|part| {
+                                            part["type"] == kind && part["text"].is_string()
+                                        })
+                                    })
+                                    .map(|parts| {
+                                        json!(
+                                            parts
+                                                .iter()
+                                                .map(
+                                                    |part| json!({"type":kind, "text":part["text"]})
+                                                )
+                                                .collect::<Vec<_>>()
+                                        )
+                                    })
+                            };
+                            let mut reasoning = json!({"type":"reasoning", "summary":parse_parts("reasoningSummary", "summary_text").unwrap_or_else(|| json!([]))});
+                            if let Some(id) = metadata
+                                .and_then(|data| data.get("itemId"))
+                                .and_then(Value::as_str)
+                            {
+                                reasoning["id"] = json!(id);
+                            }
+                            if let Some(content) = parse_parts("reasoningContent", "reasoning_text")
+                            {
+                                reasoning["content"] = content;
+                            } else if !metadata
+                                .is_some_and(|data| data.contains_key("reasoningContent"))
+                                && !part.text.is_empty()
+                            {
+                                reasoning["content"] =
+                                    json!([{"type":"reasoning_text", "text":part.text}]);
+                            }
+                            if let Some(encrypted) = metadata
+                                .and_then(|data| data.get("reasoningEncryptedContent"))
+                                .and_then(Value::as_str)
+                            {
+                                reasoning["encrypted_content"] = json!(encrypted);
+                            }
+                            if let Some(previous) = input.last_mut().filter(|previous| {
+                                reasoning.get("id").is_some()
+                                    && previous["type"] == "reasoning"
+                                    && previous.get("id") == reasoning.get("id")
+                            }) {
+                                if let Some(content) =
+                                    reasoning.get("content").and_then(Value::as_array)
+                                {
+                                    if previous.get("content").is_none() {
+                                        previous["content"] = json!([]);
+                                    }
+                                    if let Some(previous_content) =
+                                        previous["content"].as_array_mut()
+                                    {
+                                        previous_content.extend(content.iter().cloned());
+                                    }
+                                }
+                            } else {
+                                input.push(reasoning);
+                            }
+                        }
                         _ => {}
                     }
                 }
-
-                if !assistant_content.is_empty() {
-                    input.push(json!({
-                        "type": "message",
-                        "role": "assistant",
-                        "content": assistant_content,
-                    }));
-                }
-                for tc in tool_calls {
-                    input.push(tc);
-                }
+                flush_assistant_content(&mut assistant_content, &mut input);
             }
             LanguageModelMessage::Tool { content, .. } => {
                 for part in content {
                     let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
-                        result,
+                        output,
                         ..
-                    }) = part;
-                    let content_value = resolve_tool_result_output(result, &mut warnings);
+                    }) = part
+                    else {
+                        continue;
+                    };
+                    let content_value =
+                        resolve_tool_result_output(output, provider_options_name, &mut warnings);
                     input.push(json!({
                         "type": "function_call_output",
                         "call_id": tool_call_id,
@@ -1109,6 +1183,13 @@ pub fn convert_to_open_responses_input(
     };
 
     (json!(input), instructions, warnings)
+}
+
+fn flush_assistant_content(content: &mut Vec<Value>, input: &mut Vec<Value>) {
+    if !content.is_empty() {
+        input
+            .push(json!({"type":"message", "role":"assistant", "content":std::mem::take(content)}));
+    }
 }
 
 /// Convert user message content parts to the Open Responses format.
@@ -1171,92 +1252,114 @@ fn convert_user_content(content: &[UserPart], warnings: &mut Vec<Warning>) -> Va
     json!(parts)
 }
 
-/// Resolve a tool-result `output` value into the Open Responses `output`
-/// field, mirroring the TS convert logic.
-fn resolve_tool_result_output(output: &Value, warnings: &mut Vec<Warning>) -> Value {
-    let output_type = output.get("type").and_then(|x| x.as_str());
-
-    match output_type {
-        Some("text") | Some("error-text") => {
-            output.get("value").cloned().unwrap_or_else(|| Value::Null)
-        }
-        Some("execution-denied") => output
-            .get("reason")
-            .and_then(|r| r.as_str())
-            .map(|s| Value::String(s.to_string()))
-            .unwrap_or_else(|| Value::String("Tool call execution denied.".to_string())),
-        Some("json") | Some("error-json") => {
-            let v = output.get("value").unwrap_or(&Value::Null);
-            Value::String(v.to_string())
-        }
-        Some("content") => {
-            let v = output.get("value");
-            if let Some(arr) = v.and_then(|v| v.as_array()) {
-                let mut parts: Vec<Value> = Vec::new();
-                for item in arr {
-                    match item.get("type").and_then(|t| t.as_str()) {
-                        Some("text") => {
-                            if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                                parts.push(json!({ "type": "input_text", "text": text }));
-                            }
-                        }
-                        Some("file") => {
-                            if let Some(media_type) = item.get("mediaType").and_then(|m| m.as_str())
-                            {
-                                let top_level = top_level_media_type(media_type);
-                                if let Some(data) = item.get("data") {
-                                    if let Some(data_obj) =
-                                        data.get("data").and_then(|d| d.as_str())
-                                    {
-                                        if top_level == "image" {
-                                            parts.push(json!({
-                                                "type": "input_image",
-                                                "image_url": format!("data:{};base64,{}", media_type, data_obj),
-                                            }));
-                                        } else {
-                                            parts.push(json!({
-                                                "type": "input_file",
-                                                "filename": item.get("filename").and_then(|f| f.as_str()).unwrap_or("data"),
-                                                "file_data": format!("data:{};base64,{}", media_type, data_obj),
-                                            }));
-                                        }
-                                    } else if let Some(url) =
-                                        data.get("url").and_then(|u| u.as_str())
-                                    {
-                                        if top_level == "image" {
-                                            parts.push(json!({
-                                                "type": "input_image",
-                                                "image_url": url,
-                                            }));
-                                        } else {
-                                            parts.push(json!({
-                                                "type": "input_file",
-                                                "file_url": url,
-                                            }));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        _ => {
-                            warnings.push(Warning::Other {
-                                message: format!(
-                                    "unsupported tool content part type: {}",
-                                    item.get("type")
-                                        .and_then(|t| t.as_str())
-                                        .unwrap_or("unknown")
-                                ),
-                            });
-                        }
-                    }
+fn validate_tool_output_media(prompt: &LanguageModelPrompt) -> Result<(), AiMuxError> {
+    for message in prompt {
+        let LanguageModelMessage::Tool { content, .. } = message else {
+            continue;
+        };
+        for part in content {
+            let ToolPart::ToolResult(ToolResultPart {
+                output: ToolResultOutput::Content { value },
+                ..
+            }) = part
+            else {
+                continue;
+            };
+            for item in value {
+                if let ToolResultContent::File(part) = item
+                    && matches!(part.data, FileData::Data { .. })
+                {
+                    aimux_provider_utils::resolve_full_media_type(part)?;
                 }
-                Value::Array(parts)
-            } else {
-                output.clone()
             }
         }
-        _ => output.clone(),
     }
+    Ok(())
+}
+
+/// Resolve a tool-result `output` value into the Open Responses `output`
+/// field, mirroring the TS convert logic.
+fn resolve_tool_result_output(
+    output: &ToolResultOutput,
+    provider_options_name: &str,
+    warnings: &mut Vec<Warning>,
+) -> Value {
+    let ToolResultOutput::Content { value } = output else {
+        return crate::openai::convert::tool_result_to_content(output);
+    };
+    let mut parts = Vec::new();
+    for item in value {
+        match item {
+            ToolResultContent::Text(part) => {
+                parts.push(json!({"type":"input_text", "text":part.text}))
+            }
+            ToolResultContent::File(part) => {
+                let image = top_level_media_type(&part.media_type) == "image";
+                let mut converted = match &part.data {
+                    FileData::Data { data } => {
+                        use base64::Engine;
+                        let media_type = match aimux_provider_utils::resolve_full_media_type(part) {
+                            Ok(media_type) => media_type,
+                            Err(error) => {
+                                warnings.push(Warning::Other {
+                                    message: error.to_string(),
+                                });
+                                continue;
+                            }
+                        };
+                        let b64 = match data {
+                            FileBytes::Binary(bytes) => {
+                                base64::engine::general_purpose::STANDARD.encode(bytes)
+                            }
+                            FileBytes::Base64(data) => data.clone(),
+                        };
+                        let data_url = format!("data:{media_type};base64,{b64}");
+                        if image {
+                            json!({"type":"input_image", "image_url":data_url})
+                        } else {
+                            json!({"type":"input_file", "filename":part.filename.as_deref().unwrap_or("data"), "file_data":data_url})
+                        }
+                    }
+                    FileData::Url { url, .. } => {
+                        if image {
+                            json!({"type":"input_image", "image_url":url})
+                        } else {
+                            json!({"type":"input_file", "file_url":url})
+                        }
+                    }
+                    data => {
+                        warnings.push(Warning::Other {
+                            message: format!(
+                                "unsupported tool content part type: file with data type: {}",
+                                if matches!(data, FileData::Reference { .. }) {
+                                    "reference"
+                                } else {
+                                    "text"
+                                }
+                            ),
+                        });
+                        continue;
+                    }
+                };
+                if image {
+                    let detail = part
+                        .provider_options
+                        .as_ref()
+                        .and_then(|options| options.get(provider_options_name))
+                        .and_then(|options| options.get("imageDetail"))
+                        .and_then(Value::as_str)
+                        .filter(|detail| matches!(*detail, "low" | "high" | "auto"))
+                        .unwrap_or("auto");
+                    converted["detail"] = json!(detail);
+                }
+                parts.push(converted);
+            }
+            ToolResultContent::Custom { .. } => warnings.push(Warning::Other {
+                message: "unsupported tool content part type: custom".into(),
+            }),
+        }
+    }
+    json!(parts)
 }
 
 /// Extract the top-level media type (e.g. "image" from "image/png").

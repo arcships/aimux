@@ -611,12 +611,22 @@ pub async fn generate_text(
     prompt: impl Into<ModelPrompt>,
     options: GenerateTextOptions,
 ) -> Result<GenerateTextResult, AiMuxError> {
-    // 1. Convert user prompt to provider-facing prompt.
+    let (messages, instructions) = split_prompt(prompt.into(), options.instructions.as_deref());
+    let lm_prompt = convert_to_language_model_prompt(&messages, instructions)?;
+    generate_text_from_language_model_prompt(model, lm_prompt, messages, options).await
+}
+
+// Replay already has a provider prompt. Keep it intact instead of converting
+// through user content, which cannot represent every provider part.
+pub(crate) async fn generate_text_from_language_model_prompt(
+    model: &dyn LanguageModel,
+    lm_prompt: crate::language_model_message::LanguageModelPrompt,
+    messages: Vec<ModelMessage>,
+    options: GenerateTextOptions,
+) -> Result<GenerateTextResult, AiMuxError> {
     let repair_tool_call = options.repair_tool_call.clone();
     let tools = options.tools.clone();
     let operation_instructions = options.instructions.clone();
-    let (messages, instructions) = split_prompt(prompt.into(), operation_instructions.as_deref());
-    let lm_prompt = convert_to_language_model_prompt(&messages, instructions)?;
 
     // 2. Build CallOptions.
     let mut call_options = options.into_call_options(lm_prompt);
@@ -920,8 +930,6 @@ pub async fn generate_object(
     })
 }
 
-/// Extract the reasoning signature from provider metadata, checking all known
-/// provider keys (Anthropic, Bedrock).
 /// Stream text from the model.
 ///
 /// # Example

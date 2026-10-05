@@ -376,7 +376,6 @@ fn assemble(
     let profile = ChatProfile {
         include_usage: true,
         supports_structured_outputs: true,
-        supports_multi_part_tool_content: false,
         dialect,
     };
 

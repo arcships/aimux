@@ -13,8 +13,7 @@
 //! Left out: the `json response format with structured outputs` block (it needs
 //! a model built with `supportsStructuredOutputs`, which only the Azure wiring
 //! sets and this package does not expose), the tool-result `content` output
-//! cases (core tool results carry a JSON value, not the AI SDK output union),
-//! and the snapshot fixtures (the responses are inlined here).
+//! cases, and the snapshot fixtures (the responses are inlined here).
 //!
 //! HTTP is a local `wiremock` server; every model is built with
 //! `create_deepseek(..).chat(..)`.
@@ -28,7 +27,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+    ToolCallPart, ToolPart, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, Tool};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput};
@@ -1600,11 +1599,11 @@ async fn convert_should_ignore_a_name_on_a_tool_message_with_an_unsupported_warn
         LanguageModelMessage::Tool {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: ("call-1").into(),
-                result: json!("sunny"),
-                tool_name: None,
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
+                output: ToolResultOutput::Text {
+                    value: "sunny".into(),
+                    provider_options: None,
+                },
+                tool_name: "weather_tool".into(),
                 provider_options: None,
             })],
             provider_options: None,
@@ -1948,7 +1947,6 @@ fn tool_turn(reasoning: bool) -> Vec<LanguageModelMessage> {
     if reasoning {
         assistant.push(AssistantPart::Reasoning(ReasoningPart {
             text: ("I think the tool will return the correct value.").into(),
-            signature: None,
             provider_options: None,
         }));
     }
@@ -1957,7 +1955,6 @@ fn tool_turn(reasoning: bool) -> Vec<LanguageModelMessage> {
         tool_name: ("thwomp").into(),
         input: json!({ "foo": "bar123" }),
         provider_executed: None,
-        thought_signature: None,
         provider_options: None,
     }));
     vec![
@@ -1968,11 +1965,11 @@ fn tool_turn(reasoning: bool) -> Vec<LanguageModelMessage> {
         LanguageModelMessage::Tool {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: ("quux").into(),
-                result: json!({ "oof": "321rab" }),
-                tool_name: None,
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
+                output: ToolResultOutput::Json {
+                    value: json!({ "oof": "321rab" }),
+                    provider_options: None,
+                },
+                tool_name: "thwomp".into(),
                 provider_options: None,
             })],
             provider_options: None,
@@ -2012,7 +2009,6 @@ async fn convert_should_handle_text_output_type_in_tool_results() {
                     tool_name: ("getWeather").into(),
                     input: json!({ "query": "weather" }),
                     provider_executed: None,
-                    thought_signature: None,
                     provider_options: None,
                 })],
                 provider_options: None,
@@ -2020,11 +2016,11 @@ async fn convert_should_handle_text_output_type_in_tool_results() {
             LanguageModelMessage::Tool {
                 content: vec![ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: ("call-1").into(),
-                    result: json!("It is sunny today"),
-                    tool_name: None,
-                    is_error: None,
-                    preliminary: None,
-                    dynamic: None,
+                    output: ToolResultOutput::Text {
+                        value: "It is sunny today".into(),
+                        provider_options: None,
+                    },
+                    tool_name: "getWeather".into(),
                     provider_options: None,
                 })],
                 provider_options: None,
@@ -2093,7 +2089,6 @@ async fn convert_should_preserve_reasoning_content_from_prior_turns_for_the_deep
                 content: vec![
                     AssistantPart::Reasoning(ReasoningPart {
                         text: ("Prior-turn reasoning.").into(),
-                        signature: None,
                         provider_options: None,
                     }),
                     AssistantPart::Text(TextPart {

@@ -3,7 +3,7 @@
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolPart,
-    UserPart,
+    ToolResultContent, ToolResultOutput, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
@@ -465,14 +465,14 @@ fn convert_message_to_openai(
         LanguageModelMessage::Tool { content, .. } => {
             return Ok(content
                 .iter()
-                .map(|part| {
-                    let ToolPart::ToolResult(result) = part;
-                    let mut content = tool_result_to_content(&result.result);
-                    let breakpoint = result.result.get("providerOptions").and_then(|v| v.get("openai")).and_then(|v| v.get("promptCacheBreakpoint")).cloned().or_else(|| get_prompt_cache_breakpoint(&result.provider_options));
+                .filter_map(|part| {
+                    let ToolPart::ToolResult(result) = part else { return None; };
+                    let mut content = tool_result_to_content(&result.output);
+                    let breakpoint = tool_result_cache_breakpoint(&result.output).or_else(|| get_prompt_cache_breakpoint(&result.provider_options));
                     if let Some(breakpoint) = breakpoint {
                         content = json!([{ "type": "text", "text": content, "prompt_cache_breakpoint": breakpoint }]);
                     }
-                    json!({ "role": "tool", "content": content, "tool_call_id": result.tool_call_id })
+                    Some(json!({ "role": "tool", "content": content, "tool_call_id": result.tool_call_id }))
                 })
                 .collect());
         }
@@ -529,7 +529,10 @@ fn convert_message_to_openai(
                             "function": { "name": part.tool_name, "arguments": arguments },
                         }));
                     }
-                    AssistantPart::File(_) | AssistantPart::ToolResult(_) => {}
+                    AssistantPart::File(_)
+                    | AssistantPart::ToolResult(_)
+                    | AssistantPart::ReasoningFile(_)
+                    | AssistantPart::Custom(_) => {}
                 }
             }
             let mut message = if !tool_calls.is_empty() {
@@ -548,6 +551,8 @@ fn convert_message_to_openai(
                             ..
                         }) | AssistantPart::Reasoning(_)
                             | AssistantPart::ToolResult(_)
+                            | AssistantPart::ReasoningFile(_)
+                            | AssistantPart::Custom(_)
                     )
                 });
                 let value = if all_plain_text {
@@ -564,6 +569,8 @@ fn convert_message_to_openai(
                             }
                             AssistantPart::Reasoning(_)
                             | AssistantPart::ToolResult(_)
+                            | AssistantPart::ReasoningFile(_)
+                            | AssistantPart::Custom(_)
                             | AssistantPart::ToolCall(_) => {}
                         }
                     }
@@ -580,26 +587,106 @@ fn convert_message_to_openai(
     Ok(vec![message])
 }
 
-/// Serialize a tool-result `output` value into the OpenAI tool message
-/// `content` string.
-fn tool_result_to_content(output: &Value) -> Value {
-    let output = match output.get("type").and_then(Value::as_str) {
-        Some("text" | "error-text" | "json" | "error-json" | "content") => {
-            output.get("value").unwrap_or(output)
+pub(crate) fn tool_result_to_content(output: &ToolResultOutput) -> Value {
+    Value::String(match output {
+        ToolResultOutput::Text { value, .. } | ToolResultOutput::ErrorText { value, .. } => {
+            value.clone()
         }
-        Some("execution-denied") => {
-            return json!(
-                output
-                    .get("reason")
-                    .and_then(Value::as_str)
-                    .unwrap_or("Tool call execution denied.")
-            );
+        ToolResultOutput::ExecutionDenied { reason, .. } => reason
+            .clone()
+            .unwrap_or_else(|| "Tool call execution denied.".to_string()),
+        ToolResultOutput::Json { value, .. } | ToolResultOutput::ErrorJson { value, .. } => {
+            value.to_string()
         }
-        _ => output,
-    };
+        ToolResultOutput::Content { value } => tool_result_content_value(value).to_string(),
+    })
+}
+
+pub(crate) fn tool_result_content_value(content: &[ToolResultContent]) -> Value {
+    json!(
+        content
+            .iter()
+            .map(|part| {
+                let (mut item, provider_options) = match part {
+                    ToolResultContent::Text(part) => (
+                        json!({"type":"text", "text":part.text}),
+                        &part.provider_options,
+                    ),
+                    ToolResultContent::File(part) => {
+                        let data = match &part.data {
+                            FileData::Data { data } => {
+                                let data = match data {
+                                    FileBytes::Base64(data) => json!(data),
+                                    FileBytes::Binary(bytes) => Value::Object(
+                                        bytes
+                                            .iter()
+                                            .enumerate()
+                                            .map(|(i, byte)| (i.to_string(), json!(byte)))
+                                            .collect(),
+                                    ),
+                                };
+                                json!({"type":"data", "data":data})
+                            }
+                            FileData::Url { url, original_url } => {
+                                let mut data = json!({"type":"url", "url":url});
+                                if let Some(original_url) = original_url {
+                                    data["originalUrl"] = json!(original_url);
+                                }
+                                data
+                            }
+                            FileData::Reference { reference } => {
+                                json!({"type":"reference", "reference":reference})
+                            }
+                            FileData::Text { text } => json!({"type":"text", "text":text}),
+                        };
+                        let mut item =
+                            json!({"type":"file", "data":data, "mediaType":part.media_type});
+                        if let Some(filename) = &part.filename {
+                            item["filename"] = json!(filename);
+                        }
+                        (item, &part.provider_options)
+                    }
+                    ToolResultContent::Custom { provider_options } => {
+                        (json!({"type":"custom"}), provider_options)
+                    }
+                };
+                if let Some(provider_options) = provider_options {
+                    item["providerOptions"] = json!(provider_options);
+                }
+                item
+            })
+            .collect::<Vec<_>>()
+    )
+}
+
+pub(crate) fn tool_result_cache_breakpoint(output: &ToolResultOutput) -> Option<Value> {
     match output {
-        Value::String(s) => Value::String(s.clone()),
-        other => Value::String(other.to_string()),
+        ToolResultOutput::Text {
+            provider_options, ..
+        }
+        | ToolResultOutput::Json {
+            provider_options, ..
+        }
+        | ToolResultOutput::ErrorText {
+            provider_options, ..
+        }
+        | ToolResultOutput::ErrorJson {
+            provider_options, ..
+        }
+        | ToolResultOutput::ExecutionDenied {
+            provider_options, ..
+        } => get_prompt_cache_breakpoint(provider_options),
+        ToolResultOutput::Content { value } => value.iter().find_map(|part| match part {
+            aimux_core::language_model_message::ToolResultContent::Text(part) => {
+                get_prompt_cache_breakpoint(&part.provider_options)
+            }
+            aimux_core::language_model_message::ToolResultContent::File(part) => {
+                get_prompt_cache_breakpoint(&part.provider_options)
+            }
+            aimux_core::language_model_message::ToolResultContent::Custom { provider_options } => {
+                get_prompt_cache_breakpoint(provider_options)
+            }
+        }),
     }
 }
 

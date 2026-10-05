@@ -581,7 +581,6 @@ mod convert_tests {
                 tool_name: "get_weather".into(),
                 input: json!({"location": "San Francisco"}),
                 provider_executed: None,
-                thought_signature: None,
                 provider_options: None,
             })],
             provider_options: None,
@@ -606,7 +605,6 @@ mod convert_tests {
                 tool_name: "get_weather".into(),
                 input: Value::String("{\"location\":\"Berlin\"}".to_string()),
                 provider_executed: None,
-                thought_signature: None,
                 provider_options: None,
             })],
             provider_options: None,
@@ -636,7 +634,6 @@ mod convert_tests {
                     tool_name: "get_weather".into(),
                     input: json!({"location": "New York"}),
                     provider_executed: None,
-                    thought_signature: None,
                     provider_options: None,
                 }),
             ],
@@ -670,7 +667,6 @@ mod convert_tests {
                     tool_name: "get_weather".into(),
                     input: json!({"location": "Paris"}),
                     provider_executed: None,
-                    thought_signature: None,
                     provider_options: None,
                 }),
                 AssistantPart::ToolCall(ToolCallPart {
@@ -678,7 +674,6 @@ mod convert_tests {
                     tool_name: "get_time".into(),
                     input: json!({"timezone": "Europe/Paris"}),
                     provider_executed: None,
-                    thought_signature: None,
                     provider_options: None,
                 }),
             ],
@@ -711,11 +706,11 @@ mod convert_tests {
         let prompt = vec![LanguageModelMessage::Tool {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call_123".into(),
-                result: json!({"type": "json", "value": {"temperature": 72, "condition": "sunny"}}),
-                tool_name: None,
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
+                output: serde_json::from_value(
+                    json!({"type": "json", "value": {"temperature": 72, "condition": "sunny"}}),
+                )
+                .unwrap(),
+                tool_name: "get_weather".into(),
                 provider_options: None,
             })],
             provider_options: None,
@@ -736,11 +731,11 @@ mod convert_tests {
         let prompt = vec![LanguageModelMessage::Tool {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call_456".into(),
-                result: json!({"type": "text", "value": "Search results: Found 5 items"}),
-                tool_name: None,
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
+                output: serde_json::from_value(
+                    json!({"type": "text", "value": "Search results: Found 5 items"}),
+                )
+                .unwrap(),
+                tool_name: "get_weather".into(),
                 provider_options: None,
             })],
             provider_options: None,
@@ -761,11 +756,11 @@ mod convert_tests {
         let prompt = vec![LanguageModelMessage::Tool {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call_789".into(),
-                result: json!({"type": "error-text", "value": "API request failed: timeout"}),
-                tool_name: None,
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
+                output: serde_json::from_value(
+                    json!({"type": "error_text", "value": "API request failed: timeout"}),
+                )
+                .unwrap(),
+                tool_name: "get_weather".into(),
                 provider_options: None,
             })],
             provider_options: None,
@@ -786,11 +781,11 @@ mod convert_tests {
         let prompt = vec![LanguageModelMessage::Tool {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call_denied".into(),
-                result: json!({"type": "execution-denied", "reason": "User declined the action"}),
-                tool_name: None,
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
+                output: serde_json::from_value(
+                    json!({"type": "execution_denied", "reason": "User declined the action"}),
+                )
+                .unwrap(),
+                tool_name: "get_weather".into(),
                 provider_options: None,
             })],
             provider_options: None,
@@ -811,17 +806,15 @@ mod convert_tests {
         let prompt = vec![LanguageModelMessage::Tool {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call_content".into(),
-                result: json!({
+                output: serde_json::from_value(json!({
                     "type": "content",
                     "value": [
                         {"type": "text", "text": "First result"},
                         {"type": "text", "text": "Second result"}
                     ]
-                }),
-                tool_name: None,
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
+                }))
+                .unwrap(),
+                tool_name: "get_weather".into(),
                 provider_options: None,
             })],
             provider_options: None,
@@ -846,20 +839,16 @@ mod convert_tests {
             content: vec![
                 ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: "call_001".into(),
-                    result: json!({"type": "json", "value": {"temp": 72}}),
-                    tool_name: None,
-                    is_error: None,
-                    preliminary: None,
-                    dynamic: None,
+                    output: serde_json::from_value(json!({"type": "json", "value": {"temp": 72}}))
+                        .unwrap(),
+                    tool_name: "get_weather".into(),
                     provider_options: None,
                 }),
                 ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: "call_002".into(),
-                    result: json!({"type": "text", "value": "3:00 PM"}),
-                    tool_name: None,
-                    is_error: None,
-                    preliminary: None,
-                    dynamic: None,
+                    output: serde_json::from_value(json!({"type": "text", "value": "3:00 PM"}))
+                        .unwrap(),
+                    tool_name: "get_weather".into(),
                     provider_options: None,
                 }),
             ],
@@ -919,7 +908,6 @@ mod convert_tests {
                     tool_name: "get_weather".into(),
                     input: json!({"location": "Tokyo"}),
                     provider_executed: None,
-                    thought_signature: None,
                     provider_options: None,
                 })],
                 provider_options: None,
@@ -927,11 +915,8 @@ mod convert_tests {
             LanguageModelMessage::Tool {
                 content: vec![ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: "call_weather".into(),
-                    result: json!({"type": "json", "value": {"temperature": 25, "condition": "cloudy"}}),
-                    tool_name: None,
-                    is_error: None,
-                    preliminary: None,
-                    dynamic: None,
+                    output: serde_json::from_value(json!({"type": "json", "value": {"temperature": 25, "condition": "cloudy"}})).unwrap(),
+                    tool_name: "get_weather".into(),
                     provider_options: None,
                 })],
                 provider_options: None,
@@ -958,7 +943,6 @@ mod convert_tests {
                     tool_name: "get_weather".into(),
                     input: Value::String("{\"location\":\"Tokyo\"}".to_string()),
                     provider_executed: None,
-                    thought_signature: None,
                     provider_options: None,
                 })],
                 provider_options: None,
@@ -966,11 +950,8 @@ mod convert_tests {
             LanguageModelMessage::Tool {
                 content: vec![ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: "call_weather".into(),
-                    result: json!({"type": "json", "value": {"temperature": 25, "condition": "cloudy"}}),
-                    tool_name: None,
-                    is_error: None,
-                    preliminary: None,
-                    dynamic: None,
+                    output: serde_json::from_value(json!({"type": "json", "value": {"temperature": 25, "condition": "cloudy"}})).unwrap(),
+                    tool_name: "get_weather".into(),
                     provider_options: None,
                 })],
                 provider_options: None,
@@ -1449,7 +1430,6 @@ mod do_generate_tests {
                     tool_name: "get_weather".into(),
                     input: json!({"location": "Tokyo"}),
                     provider_executed: None,
-                    thought_signature: None,
                     provider_options: None,
                 })],
                 provider_options: None,
@@ -1457,14 +1437,12 @@ mod do_generate_tests {
             LanguageModelMessage::Tool {
                 content: vec![ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: "call_weather_123".into(),
-                    result: json!({
+                    output: serde_json::from_value(json!({
                         "type": "json",
                         "value": {"temperature": 22, "condition": "sunny", "humidity": 65}
-                    }),
-                    tool_name: None,
-                    is_error: None,
-                    preliminary: None,
-                    dynamic: None,
+                    }))
+                    .unwrap(),
+                    tool_name: "get_weather".into(),
                     provider_options: None,
                 })],
                 provider_options: None,

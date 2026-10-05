@@ -755,7 +755,9 @@ pub fn convert_to_huggingface_responses_messages(
                         // Responses API — skip (no warning, matching TS).
                         AssistantPart::ToolCall(_)
                         | AssistantPart::ToolResult(_)
-                        | AssistantPart::File(_) => {}
+                        | AssistantPart::File(_)
+                        | AssistantPart::ReasoningFile(_)
+                        | AssistantPart::Custom(_) => {}
                     }
                 }
             }

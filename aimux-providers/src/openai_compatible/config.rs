@@ -132,7 +132,6 @@ pub(crate) fn default_error_structure(data: &Value) -> ProviderErrorParts {
 pub(crate) struct ChatSettings {
     pub include_usage: bool,
     pub supports_structured_outputs: bool,
-    pub supports_multi_part_tool_content: bool,
     pub supported_urls: SupportedUrls,
     pub dialect: Arc<ChatDialect>,
 }

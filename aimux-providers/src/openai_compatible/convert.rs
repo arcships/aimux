@@ -115,7 +115,6 @@ pub(crate) struct ChatBodySpec<'a> {
     pub provider_options_name: &'a str,
     pub include_usage: bool,
     pub supports_structured_outputs: bool,
-    pub supports_multi_part_tool_content: bool,
     pub dialect: &'a ChatDialect,
 }
 
@@ -338,7 +337,6 @@ pub(crate) fn build_request_body(
         &options.prompt,
         &MessageSpec {
             metadata_key: &metadata_key,
-            supports_multi_part_tool_content: spec.supports_multi_part_tool_content,
         },
     )?;
     body.insert("messages".into(), Value::Array(messages));
@@ -381,7 +379,6 @@ pub(crate) fn build_request_body(
 
 pub(crate) struct MessageSpec<'a> {
     pub metadata_key: &'a str,
-    pub supports_multi_part_tool_content: bool,
 }
 
 /// The generic `openaiCompatible` metadata of a message or part
@@ -422,49 +419,50 @@ fn convert_message(
     spec: &MessageSpec<'_>,
 ) -> Result<Vec<Value>, AiMuxError> {
     match message {
-        LanguageModelMessage::System { content, provider_options } => Ok(vec![with_metadata(
+        LanguageModelMessage::System {
+            content,
+            provider_options,
+        } => Ok(vec![with_metadata(
             json!({ "role": "system", "content": content }),
             wire_metadata(provider_options.as_ref()),
         )]),
-        LanguageModelMessage::User { content, provider_options } => Ok(vec![convert_user_message(
+        LanguageModelMessage::User {
+            content,
+            provider_options,
+        } => Ok(vec![convert_user_message(
             content,
             wire_metadata(provider_options.as_ref()),
         )?]),
-        LanguageModelMessage::Assistant { content, provider_options } => Ok(vec![convert_assistant_message(
+        LanguageModelMessage::Assistant {
+            content,
+            provider_options,
+        } => Ok(vec![convert_assistant_message(
             content,
             spec,
             wire_metadata(provider_options.as_ref()),
         )]),
         LanguageModelMessage::Tool { content, .. } => Ok(content
             .iter()
-            .map(|part| {
+            .filter_map(|part| {
                 let ToolPart::ToolResult(ToolResultPart {
                     tool_call_id,
-                    result,
+                    output,
                     provider_options,
                     ..
-                }) = part;
-                with_metadata(
+                }) = part
+                else {
+                    return None;
+                };
+                Some(with_metadata(
                     json!({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
-                        "content": tool_result_content(result, spec.supports_multi_part_tool_content),
+                        "content": crate::openai::convert::tool_result_to_content(output),
                     }),
                     wire_metadata(provider_options.as_ref()),
-                )
+                ))
             })
             .collect()),
-    }
-}
-
-/// A tool result as message content: text, except that a vendor that accepts
-/// structured tool-result content (`supports_multi_part_tool_content`) gets an
-/// array result as the content parts it is.
-fn tool_result_content(result: &Value, multi_part: bool) -> Value {
-    match result {
-        Value::String(text) => Value::String(text.clone()),
-        Value::Array(_) if multi_part => result.clone(),
-        other => Value::String(other.to_string()),
     }
 }
 
@@ -620,7 +618,6 @@ fn convert_assistant_message(
                 tool_call_id,
                 tool_name,
                 input,
-                thought_signature,
                 provider_options,
                 ..
             }) => {
@@ -635,21 +632,20 @@ fn convert_assistant_message(
                     options
                         .get(key)
                         .and_then(|options| options.get("thoughtSignature"))
+                        .filter(|value| !value.is_null())
                         .or_else(|| {
                             options
                                 .get("google")
                                 .and_then(|options| options.get("thoughtSignature"))
                         })
                 });
-                let signature = signature
-                    .and_then(|value| match value {
-                        Value::Null | Value::Bool(false) => None,
-                        Value::String(text) if text.is_empty() => None,
-                        Value::Number(number) if number.as_f64() == Some(0.0) => None,
-                        Value::String(text) => Some(text.clone()),
-                        other => Some(other.to_string()),
-                    })
-                    .or_else(|| thought_signature.clone().filter(|s| !s.is_empty()));
+                let signature = signature.and_then(|value| match value {
+                    Value::Null | Value::Bool(false) => None,
+                    Value::String(text) if text.is_empty() => None,
+                    Value::Number(number) if number.as_f64() == Some(0.0) => None,
+                    Value::String(text) => Some(text.clone()),
+                    other => Some(other.to_string()),
+                });
                 if let Some(signature) = signature {
                     call["extra_content"] = json!({ "google": { "thought_signature": signature } });
                 }

@@ -36,7 +36,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, ToolCallPart, ToolPart,
-    ToolResultPart,
+    ToolResultOutput, ToolResultPart,
 };
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
@@ -321,7 +321,6 @@ async fn converts_tool_call_and_tool_result_messages() {
                 tool_name: "get_weather".to_string(),
                 input: json!({"location": "SF"}),
                 provider_executed: None,
-                thought_signature: None,
                 provider_options: None,
             })],
             provider_options: None,
@@ -329,11 +328,11 @@ async fn converts_tool_call_and_tool_result_messages() {
         LanguageModelMessage::Tool {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call-1".to_string(),
-                result: json!({"temp": 72}),
-                tool_name: None,
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
+                output: ToolResultOutput::Json {
+                    value: json!({"temp": 72}),
+                    provider_options: None,
+                },
+                tool_name: "get_weather".into(),
                 provider_options: None,
             })],
             provider_options: None,

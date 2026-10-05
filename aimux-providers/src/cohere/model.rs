@@ -107,7 +107,6 @@ impl LanguageModel for CohereModel {
         .await?;
 
         let response_headers = resp.response_headers;
-        let response_body = resp.raw_value;
         let data: ChatResponse = resp.value;
 
         // Build content array.
@@ -226,7 +225,7 @@ impl LanguageModel for CohereModel {
                 timestamp: None,
                 model_id: None,
                 headers: Some(response_headers),
-                body: response_body,
+                body: resp.raw_value,
             }),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })

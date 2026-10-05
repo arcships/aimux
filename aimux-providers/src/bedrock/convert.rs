@@ -17,7 +17,7 @@
 use super::options;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+    ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
@@ -121,7 +121,10 @@ fn convert_prompt(prompt: &LanguageModelPrompt, is_mistral: bool) -> (Vec<Value>
                             content: parts,
                             provider_options,
                         } => {
-                            for ToolPart::ToolResult(part) in parts {
+                            for part in parts {
+                                let ToolPart::ToolResult(part) = part else {
+                                    continue;
+                                };
                                 push_tool_result(
                                     part,
                                     &mut content,
@@ -180,14 +183,12 @@ fn convert_prompt(prompt: &LanguageModelPrompt, is_mistral: bool) -> (Vec<Value>
                             }
                             AssistantPart::Reasoning(ReasoningPart {
                                 text,
-                                signature,
                                 provider_options,
                             }) => {
                                 let metadata = options::read(provider_options.as_ref());
                                 if let Some(sig) = metadata
                                     .and_then(|v| v.get("signature"))
                                     .and_then(Value::as_str)
-                                    .or(signature.as_deref())
                                 {
                                     content.push(json!({"reasoningContent":{"reasoningText":{"text":text,"signature":sig}}}));
                                 } else if let Some(redacted) =
@@ -282,7 +283,7 @@ fn push_tool_result(
     doc_counter: &mut u32,
     is_mistral: bool,
 ) {
-    let result_content = resolve_tool_result_output(&part.result, doc_counter);
+    let result_content = resolve_tool_result_output(&part.output, doc_counter);
     content.push(json!({
         "toolResult": {
             "toolUseId": normalize_tool_call_id(&part.tool_call_id, is_mistral),
@@ -412,80 +413,51 @@ fn citations_enabled(provider_options: &Option<SharedProviderOptions>) -> bool {
 
 /// Resolve a tool result `output` value into Bedrock's `toolResult.content`
 /// array, mirroring the TS SDK.
-fn resolve_tool_result_output(output: &Value, doc_counter: &mut u32) -> Vec<Value> {
-    if output.get("type").and_then(Value::as_str) == Some("execution-denied") {
-        return vec![
-            json!({"text":output.get("reason").and_then(Value::as_str).unwrap_or("Tool call execution denied.")}),
-        ];
-    }
-    let (t, v) = match (
-        output.get("type").and_then(|x| x.as_str()),
-        output.get("value"),
-    ) {
-        (Some(t), Some(v)) => (t, v),
-        _ => return vec![json!({ "text": output.to_string() })],
-    };
-    match t {
-        "json" | "error-json" => vec![json!({ "text": v.to_string() })],
-        "text" | "error" | "error-text" => vec![json!({ "text": v })],
-        "execution-denied" => {
-            let reason = output
-                .get("reason")
-                .and_then(Value::as_str)
-                .unwrap_or("Tool call execution denied.");
-            vec![json!({ "text": reason })]
+fn resolve_tool_result_output(output: &ToolResultOutput, doc_counter: &mut u32) -> Vec<Value> {
+    match output {
+        ToolResultOutput::Json { value, .. } | ToolResultOutput::ErrorJson { value, .. } => {
+            vec![json!({ "text": value.to_string() })]
         }
-        "content" => {
-            if let Some(arr) = v.as_array() {
-                let mut out = Vec::new();
-                for part in arr {
-                    convert_tool_result_content_part(part, &mut out, doc_counter);
-                }
-                out
-            } else {
-                vec![json!({ "text": output.to_string() })]
-            }
+        ToolResultOutput::Text { value, .. } | ToolResultOutput::ErrorText { value, .. } => {
+            vec![json!({ "text": value })]
         }
-        _ => vec![json!({ "text": output.to_string() })],
-    }
-}
-
-/// Convert a single content part inside a tool-result `content` array.
-fn convert_tool_result_content_part(part: &Value, content: &mut Vec<Value>, doc_counter: &mut u32) {
-    let part_type = part.get("type").and_then(|t| t.as_str()).unwrap_or("");
-    match part_type {
-        "text" => {
-            let text = part.get("text").and_then(|t| t.as_str()).unwrap_or("");
-            content.push(json!({ "text": text }));
+        ToolResultOutput::ExecutionDenied { reason, .. } => {
+            vec![json!({ "text": reason.as_deref().unwrap_or("Tool call execution denied.") })]
         }
-        "file" => {
-            let media_type = part.get("mediaType").and_then(|m| m.as_str()).unwrap_or("");
-            // Tool-result file parts carry an already-base64 `data` string.
-            let b64 = part
-                .get("data")
-                .and_then(|d| d.get("data"))
-                .and_then(|d| d.as_str())
-                .unwrap_or("");
-            let filename = part.get("filename").and_then(|f| f.as_str());
-            let po = part
-                .get("providerOptions")
-                .and_then(|v| serde_json::from_value(v.clone()).ok());
-            let mut blocks = Vec::new();
-            push_file_block(b64, media_type, filename, &po, &mut blocks, doc_counter);
-            if part["data"]["type"] == "url" {
-                for block in &mut blocks {
-                    let key = if media_type.starts_with("video/") {
-                        "video"
-                    } else {
-                        "image"
-                    };
-                    block[key]["source"] = json!({"s3Location":{"uri":part["data"]["url"]}});
+        ToolResultOutput::Content { value } => {
+            let mut content = Vec::new();
+            for part in value {
+                match part {
+                    ToolResultContent::Text(part) => content.push(json!({ "text": part.text })),
+                    ToolResultContent::File(part) => {
+                        let mut resolved = part.clone();
+                        if let Ok(media_type) = aimux_provider_utils::resolve_full_media_type(part)
+                        {
+                            resolved.media_type = media_type;
+                        }
+                        let part = &resolved;
+                        if let FileData::Url { url, .. } = &part.data {
+                            let format = mime_to_video_format(&part.media_type).unwrap_or("");
+                            let source = json!({ "s3Location": { "uri": url } });
+                            content.push(if part.media_type.starts_with("image/") { json!({ "image": { "format": mime_to_image_format(&part.media_type), "source": source } }) } else { json!({ "video": { "format": format, "source": source } }) });
+                        } else if part.media_type.starts_with("video/") {
+                            if let FileData::Data { data } = &part.data {
+                                let bytes = match data {
+                                    FileBytes::Binary(bytes) => {
+                                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                                    }
+                                    FileBytes::Base64(data) => data.clone(),
+                                };
+                                content.push(json!({ "video": { "format": mime_to_video_format(&part.media_type).unwrap_or(""), "source": { "bytes": bytes } } }));
+                            }
+                        } else {
+                            push_file_part(part, &mut content, doc_counter);
+                        }
+                    }
+                    ToolResultContent::Custom { .. } => {}
                 }
             }
-            content.extend(blocks);
-        }
-        _ => {
-            content.push(json!({ "text": part.to_string() }));
+            content
         }
     }
 }
@@ -733,15 +705,19 @@ pub fn validate_prompt(prompt: &LanguageModelPrompt) -> Result<(), aimux_core::A
                         AssistantPart::Reasoning(part) => {
                             validate_part_options(part.provider_options.as_ref(), true)?
                         }
-                        AssistantPart::ToolResult(part) => validate_tool_result(&part.result)?,
-                        AssistantPart::ToolCall(_) => {}
+                        AssistantPart::ToolResult(part) => validate_tool_result(&part.output)?,
+                        AssistantPart::ToolCall(_)
+                        | AssistantPart::ReasoningFile(_)
+                        | AssistantPart::Custom(_) => {}
                     }
                 }
             }
             LanguageModelMessage::Tool { content, .. } => {
                 saw_non_system = true;
-                for ToolPart::ToolResult(part) in content {
-                    validate_tool_result(&part.result)?;
+                for part in content {
+                    if let ToolPart::ToolResult(part) = part {
+                        validate_tool_result(&part.output)?;
+                    }
                 }
             }
         }
@@ -824,24 +800,29 @@ fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
     }
 }
 
-fn validate_tool_result(result: &Value) -> Result<(), aimux_core::AiMuxError> {
-    if result["type"] == "content"
-        && let Some(parts) = result["value"].as_array()
-    {
-        for part in parts {
-            if part["type"] == "file" {
-                let mt = part["mediaType"].as_str().unwrap_or("");
-                let kind = part["data"]["type"].as_str().unwrap_or("");
-                if !matches!(kind, "data" | "url") {
+fn validate_tool_result(result: &ToolResultOutput) -> Result<(), aimux_core::AiMuxError> {
+    if let ToolResultOutput::Content { value } = result {
+        for part in value {
+            match part {
+                ToolResultContent::Text(_) => {}
+                ToolResultContent::File(file) => {
+                    let (is_url, url) = match &file.data {
+                        FileData::Data { .. } => (false, None),
+                        FileData::Url { url, .. } => (true, Some(url.as_str())),
+                        _ => {
+                            return Err(aimux_core::AiMuxError::UnsupportedFunctionality(
+                                "tool result file data".into(),
+                            ));
+                        }
+                    };
+                    let media_type = aimux_provider_utils::resolve_full_media_type(file)?;
+                    validate_media_type(&media_type, is_url, url)?;
+                }
+                ToolResultContent::Custom { .. } => {
                     return Err(aimux_core::AiMuxError::UnsupportedFunctionality(
-                        "tool result file data".into(),
+                        "unsupported tool content part".into(),
                     ));
                 }
-                validate_media_type(mt, kind == "url", part["data"]["url"].as_str())?;
-            } else if part["type"] != "text" {
-                return Err(aimux_core::AiMuxError::UnsupportedFunctionality(
-                    "unsupported tool content part".into(),
-                ));
             }
         }
     }

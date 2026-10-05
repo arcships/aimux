@@ -156,35 +156,18 @@ pub fn convert_prompt_to_mistral_messages(
                     let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
                         tool_name,
-                        result,
+                        output,
                         ..
-                    }) = part;
-                    let mut value = json!({"role":"tool", "tool_call_id":tool_call_id, "content":tool_result_to_content(result)});
-                    if let Some(name) = tool_name {
-                        value["name"] = json!(name);
-                    }
-                    messages.push(value);
+                    }) = part
+                    else {
+                        continue;
+                    };
+                    messages.push(json!({"role":"tool", "name":tool_name, "tool_call_id":tool_call_id, "content":crate::openai::convert::tool_result_to_content(output)}));
                 }
             }
         }
     }
     Ok(messages)
-}
-
-fn tool_result_to_content(output: &Value) -> String {
-    // The unified Rust content type also accepts the SDK's tagged output shape.
-    match output.get("type").and_then(Value::as_str) {
-        Some("text" | "error-text") => output["value"].as_str().unwrap_or_default().to_owned(),
-        Some("execution-denied") => output
-            .get("reason")
-            .and_then(Value::as_str)
-            .unwrap_or("Tool call execution denied.")
-            .to_owned(),
-        Some("json" | "error-json" | "content") => output["value"].to_string(),
-        _ => output
-            .as_str()
-            .map_or_else(|| output.to_string(), str::to_owned),
-    }
 }
 
 fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {

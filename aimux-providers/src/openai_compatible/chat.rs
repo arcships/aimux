@@ -62,7 +62,6 @@ impl OpenAICompatibleChatModel {
                 provider_options_name: self.config.provider_options_name(),
                 include_usage: self.config.chat.include_usage,
                 supports_structured_outputs: self.config.chat.supports_structured_outputs,
-                supports_multi_part_tool_content: self.config.chat.supports_multi_part_tool_content,
                 dialect: &self.config.chat.dialect,
             },
         )

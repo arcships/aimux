@@ -21,7 +21,7 @@
 use super::options::{GOOGLE, Namespace};
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+    ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::result::{GenerateContent, Source};
@@ -75,17 +75,17 @@ pub struct GooglePrompt {
 /// - Tool-result JSON stays structured, except values containing `$ref`, which
 ///   are stringified to avoid Google's multimodal reference handling.
 ///
-/// Thought signatures: `ToolCallPart.thought_signature` is echoed
-/// back as a `thoughtSignature` sibling of the `functionCall` part (required
-/// by Gemini thinking models on follow-up turns).
+/// Thought signatures from provider options are echoed as a
+/// `thoughtSignature` sibling of the `functionCall` part.
 #[must_use]
 pub fn convert_to_google_messages(prompt: &LanguageModelPrompt) -> GooglePrompt {
-    convert_to_google_messages_for_namespace(prompt, Namespace::Google)
+    convert_to_google_messages_for_namespace(prompt, Namespace::Google, true)
 }
 
 fn convert_to_google_messages_for_namespace(
     prompt: &LanguageModelPrompt,
     namespace: Namespace,
+    supports_function_response_parts: bool,
 ) -> GooglePrompt {
     let mut system_parts: Vec<Value> = Vec::new();
     let mut contents: Vec<Value> = Vec::new();
@@ -126,17 +126,20 @@ fn convert_to_google_messages_for_namespace(
                 let mut ordinary = Vec::new();
                 for part in content {
                     let ToolPart::ToolResult(ToolResultPart {
-                        result,
+                        output,
                         provider_options,
                         ..
-                    }) = part;
+                    }) = part
+                    else {
+                        continue;
+                    };
                     if let Some(opts) = namespace.read_part(provider_options.as_ref())
                         && let (Some(id), Some(kind)) =
                             (opts.get("serverToolCallId"), opts.get("serverToolType"))
                         && let Some(last) = contents.last_mut()
                         && last["role"] == "model"
                     {
-                        let mut response = json!({ "toolResponse": { "toolType": kind, "response": result, "id": id } });
+                        let mut response = json!({ "toolResponse": { "toolType": kind, "response": match output { ToolResultOutput::Json { value, .. } => value.clone(), _ => json!({}) }, "id": id } });
                         if let Some(signature) = opts.get("thoughtSignature") {
                             response["thoughtSignature"] = signature.clone();
                         }
@@ -145,7 +148,8 @@ fn convert_to_google_messages_for_namespace(
                         ordinary.push(part.clone());
                     }
                 }
-                let parts = convert_tool_parts(&ordinary, namespace);
+                let parts =
+                    convert_tool_parts(&ordinary, namespace, supports_function_response_parts);
                 contents.push(json!({ "role": "user", "parts": parts }));
             }
         }
@@ -233,15 +237,11 @@ fn convert_assistant_parts(content: &[AssistantPart], namespace: Namespace) -> V
             }
             AssistantPart::Reasoning(ReasoningPart {
                 text,
-                signature,
                 provider_options,
             }) => {
                 if !text.is_empty() {
                     let mut p = json!({ "text": text, "thought": true });
-                    // Prefer explicit signature field, then fall back to provider_options.
-                    if let Some(sig) = signature.as_ref() {
-                        p["thoughtSignature"] = json!(sig);
-                    } else if let Some(sig) = namespace
+                    if let Some(sig) = namespace
                         .read_part(provider_options.as_ref())
                         .and_then(|g| g.get("thoughtSignature"))
                         .and_then(|v| v.as_str())
@@ -255,7 +255,6 @@ fn convert_assistant_parts(content: &[AssistantPart], namespace: Namespace) -> V
                 tool_call_id,
                 tool_name,
                 input,
-                thought_signature,
                 provider_options,
                 provider_executed,
             }) => {
@@ -275,11 +274,9 @@ fn convert_assistant_parts(content: &[AssistantPart], namespace: Namespace) -> V
                 let server_tool_type = google_options
                     .and_then(|options| options.get("serverToolType"))
                     .and_then(|value| value.as_str());
-                let signature = thought_signature.as_deref().or_else(|| {
-                    google_options
-                        .and_then(|options| options.get("thoughtSignature"))
-                        .and_then(|value| value.as_str())
-                });
+                let signature = google_options
+                    .and_then(|options| options.get("thoughtSignature"))
+                    .and_then(Value::as_str);
 
                 let mut part_value = if let (Some(server_id), Some(server_type)) =
                     (server_tool_call_id, server_tool_type)
@@ -317,11 +314,16 @@ fn convert_assistant_parts(content: &[AssistantPart], namespace: Namespace) -> V
             }
             AssistantPart::ToolResult(ToolResultPart {
                 tool_name,
-                result,
+                output,
                 provider_options,
                 ..
             }) => {
-                if tool_name.as_deref() == Some("code_execution") {
+                let result = match output {
+                    ToolResultOutput::Json { value, .. } => value.clone(),
+                    _ => json!({}),
+                };
+                if tool_name == "code_execution" && matches!(output, ToolResultOutput::Json { .. })
+                {
                     parts.push(json!({ "codeExecutionResult": result }));
                     continue;
                 }
@@ -354,6 +356,25 @@ fn convert_assistant_parts(content: &[AssistantPart], namespace: Namespace) -> V
                     }
                 }
             }
+            AssistantPart::ReasoningFile(part) => {
+                if let aimux_core::shared::GeneratedFileData::Data { data } = &part.data {
+                    let data = match data {
+                        FileBytes::Binary(bytes) => {
+                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                        }
+                        FileBytes::Base64(data) => data.clone(),
+                    };
+                    let mut value = json!({ "inlineData": { "mimeType": part.media_type, "data": data }, "thought": true });
+                    if let Some(signature) = namespace
+                        .read_part(part.provider_options.as_ref())
+                        .and_then(|options| options.get("thoughtSignature"))
+                    {
+                        value["thoughtSignature"] = signature.clone();
+                    }
+                    parts.push(value);
+                }
+            }
+            AssistantPart::Custom(_) => {}
             AssistantPart::File(file) => {
                 let mut value = convert_file_part(file);
                 if let Some(opts) = namespace.read_part(file.provider_options.as_ref()) {
@@ -376,40 +397,123 @@ fn convert_assistant_parts(content: &[AssistantPart], namespace: Namespace) -> V
 /// The TS SDK uses the `functionResponse` shape:
 /// `{ functionResponse: { id?, name, response: { name, content } } }`.
 /// `content` preserves the tool output unless it contains a JSON Schema `$ref`.
-fn convert_tool_parts(content: &[ToolPart], namespace: Namespace) -> Vec<Value> {
+pub(crate) fn tool_file_media_type(file: &FilePart) -> Result<String, aimux_core::AiMuxError> {
+    aimux_provider_utils::resolve_full_media_type(file)
+}
+
+fn convert_tool_parts(
+    content: &[ToolPart],
+    namespace: Namespace,
+    supports_function_response_parts: bool,
+) -> Vec<Value> {
     let mut parts = Vec::new();
     for part in content {
         let ToolPart::ToolResult(ToolResultPart {
             tool_call_id,
             tool_name,
-            result,
+            output,
             ..
-        }) = part;
-        let response_content = if contains_schema_reference(result) {
-            json!(result.to_string())
-        } else {
-            result.clone()
+        }) = part
+        else {
+            continue;
         };
-        let mut function_response = Map::new();
-        if namespace == Namespace::Google && !tool_call_id.is_empty() {
-            function_response.insert("id".to_string(), json!(tool_call_id));
+        let response = |content: Value| {
+            let mut value = json!({ "functionResponse": { "name": tool_name, "response": { "name": tool_name, "content": content } } });
+            if namespace != Namespace::Vertex && !tool_call_id.is_empty() {
+                value["functionResponse"]["id"] = json!(tool_call_id);
+            }
+            value
+        };
+        match output {
+            ToolResultOutput::Content { value } => {
+                if supports_function_response_parts {
+                    let mut texts = Vec::new();
+                    let mut files = Vec::new();
+                    for part in value {
+                        match part {
+                            ToolResultContent::Text(part) => texts.push(part.text.clone()),
+                            ToolResultContent::File(file) => match &file.data {
+                                FileData::Data { data } => {
+                                    let data = match data {
+                                        FileBytes::Binary(bytes) => {
+                                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                                        }
+                                        FileBytes::Base64(data) => data.clone(),
+                                    };
+                                    files.push(json!({ "inlineData": { "mimeType": tool_file_media_type(file).unwrap_or_else(|_| file.media_type.clone()), "data": data } }));
+                                }
+                                FileData::Url { url, .. } if url.starts_with("data:") => {
+                                    if let Some((media_type, data)) = url
+                                        .strip_prefix("data:")
+                                        .and_then(|url| url.split_once(";base64,"))
+                                        .filter(|(media_type, data)| {
+                                            !media_type.is_empty()
+                                                && !media_type.contains([';', ','])
+                                                && !data.is_empty()
+                                        })
+                                    {
+                                        files.push(json!({ "inlineData": { "mimeType": media_type, "data": data } }));
+                                    } else {
+                                        texts.push(
+                                            crate::openai::convert::tool_result_content_value(
+                                                std::slice::from_ref(part),
+                                            )[0]
+                                            .to_string(),
+                                        );
+                                    }
+                                }
+                                _ => texts.push(
+                                    crate::openai::convert::tool_result_content_value(
+                                        std::slice::from_ref(part),
+                                    )[0]
+                                    .to_string(),
+                                ),
+                            },
+                            _ => texts.push(
+                                crate::openai::convert::tool_result_content_value(
+                                    std::slice::from_ref(part),
+                                )[0]
+                                .to_string(),
+                            ),
+                        }
+                    }
+                    let mut result = response(json!(if texts.is_empty() {
+                        "Tool executed successfully.".to_string()
+                    } else {
+                        texts.join("\n")
+                    }));
+                    if !files.is_empty() {
+                        result["functionResponse"]["parts"] = json!(files);
+                    }
+                    parts.push(result);
+                    continue;
+                }
+                for part in value {
+                    match part {
+                        ToolResultContent::Text(part) => parts.push(response(json!(part.text))),
+                        ToolResultContent::File(file) => if let FileData::Data { data } = &file.data {
+                            let data = match data { FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes), FileBytes::Base64(data) => data.clone() };
+                            parts.push(json!({ "inlineData": { "mimeType": tool_file_media_type(file).unwrap_or_else(|_| file.media_type.clone()), "data": data } }));
+                            parts.push(json!({ "text": format!("Tool executed successfully and returned this {} as a response", if file.media_type.starts_with("image/") { "image" } else { "file" }) }));
+                        } else { parts.push(json!({ "text": crate::openai::convert::tool_result_content_value(std::slice::from_ref(part))[0].to_string() })); },
+                        _ => parts.push(json!({ "text": crate::openai::convert::tool_result_content_value(std::slice::from_ref(part))[0].to_string() })),
+                    }
+                }
+            }
+            ToolResultOutput::Text { value, .. } | ToolResultOutput::ErrorText { value, .. } => {
+                parts.push(response(json!(value)))
+            }
+            ToolResultOutput::Json { value, .. } | ToolResultOutput::ErrorJson { value, .. } => {
+                parts.push(response(if contains_schema_reference(value) {
+                    json!(value.to_string())
+                } else {
+                    value.clone()
+                }))
+            }
+            ToolResultOutput::ExecutionDenied { reason, .. } => parts.push(response(json!(
+                reason.as_deref().unwrap_or("Tool call execution denied.")
+            ))),
         }
-        // `name` is required by the API and must be the name of the tool
-        // that was called (Gemini pairs functionResponse with the prior
-        // functionCall by name; an empty or mismatched name is rejected
-        // with HTTP 400 on multi-turn tool calls). Prefer the framework
-        // provided `tool_name`, falling back to the call id for callers
-        // that never set one.
-        let name = tool_name
-            .clone()
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| tool_call_id.clone());
-        function_response.insert("name".to_string(), json!(name));
-        function_response.insert(
-            "response".to_string(),
-            json!({ "name": name, "content": response_content }),
-        );
-        parts.push(json!({ "functionResponse": function_response }));
     }
     parts
 }
@@ -891,7 +995,11 @@ fn build_request_body_with_warnings_for_namespace(
     let GooglePrompt {
         mut system_instruction,
         mut contents,
-    } = convert_to_google_messages_for_namespace(&options.prompt, namespace);
+    } = convert_to_google_messages_for_namespace(
+        &options.prompt,
+        namespace,
+        get_google_model_capabilities(model_id).uses_gemini_3_features,
+    );
     let mut warnings = Vec::new();
     let provider_options = namespace.read_in(options.provider_options.as_ref());
     let option = |name: &str| {
@@ -1207,8 +1315,34 @@ pub(crate) fn validate_call_options(
             }
             LanguageModelMessage::Assistant { content, .. } => {
                 for part in content {
-                    if let AssistantPart::File(file) = part {
-                        validate_file_part(file, true)?;
+                    match part {
+                        AssistantPart::File(file) => validate_file_part(file, true)?,
+                        AssistantPart::ReasoningFile(file)
+                            if matches!(
+                                file.data,
+                                aimux_core::shared::GeneratedFileData::Url { .. }
+                            ) =>
+                        {
+                            return Err(AiMuxError::UnsupportedFunctionality(
+                                "File data URLs in assistant messages are not supported".into(),
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            LanguageModelMessage::Tool { content, .. } => {
+                for part in content {
+                    if let ToolPart::ToolResult(part) = part
+                        && let ToolResultOutput::Content { value } = &part.output
+                    {
+                        for part in value {
+                            if let ToolResultContent::File(file) = part
+                                && matches!(file.data, FileData::Data { .. })
+                            {
+                                aimux_provider_utils::resolve_full_media_type(file)?;
+                            }
+                        }
                     }
                 }
             }

@@ -9,7 +9,7 @@
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+    ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
@@ -567,9 +567,16 @@ pub fn convert_to_xai_responses_input(
                                 });
                             }
                         }
-                        AssistantPart::File(_) => {
+                        AssistantPart::File(_)
+                        | AssistantPart::ReasoningFile(_)
+                        | AssistantPart::Custom(_) => {
+                            let kind = match part {
+                                AssistantPart::File(_) => "file",
+                                AssistantPart::ReasoningFile(_) => "reasoning-file",
+                                _ => "custom",
+                            };
                             warnings.push(Warning::Other {
-                                message: "xAI Responses API does not support this content type in assistant messages".to_string(),
+                                message: format!("xAI Responses API does not support {kind} in assistant messages"),
                             });
                         }
                     }
@@ -579,10 +586,13 @@ pub fn convert_to_xai_responses_input(
                 for part in content {
                     let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
-                        result,
+                        output,
                         ..
-                    }) = part;
-                    let output_value = convert_tool_output(result)?;
+                    }) = part
+                    else {
+                        continue;
+                    };
+                    let output_value = convert_tool_output(output)?;
                     input.push(json!({
                         "type": "function_call_output",
                         "call_id": tool_call_id,
@@ -596,74 +606,43 @@ pub fn convert_to_xai_responses_input(
     Ok((input, warnings))
 }
 
-fn convert_tool_output(output: &Value) -> Result<Value, AiMuxError> {
-    let value = output.get("value").unwrap_or(&Value::Null);
-    match output.get("type").and_then(Value::as_str) {
-        Some("text" | "error-text") => Ok(value.clone()),
-        Some("execution-denied") => Ok(json!(
-            output
-                .get("reason")
-                .and_then(Value::as_str)
-                .unwrap_or("tool execution denied")
-        )),
-        Some("json" | "error-json") => Ok(json!(value.to_string())),
-        Some("content") => {
+fn convert_tool_output(output: &ToolResultOutput) -> Result<Value, AiMuxError> {
+    match output {
+        ToolResultOutput::ExecutionDenied { reason, .. } => {
+            Ok(json!(reason.as_deref().unwrap_or("tool execution denied")))
+        }
+        ToolResultOutput::Content { value } => {
             let mut parts = Vec::new();
-            for item in value.as_array().into_iter().flatten() {
-                match item.get("type").and_then(Value::as_str) {
-                    Some("text") => {
-                        parts.push(json!({ "type": "input_text", "text": item["text"] }))
+            for item in value {
+                match item {
+                    ToolResultContent::Text(part) => {
+                        parts.push(json!({"type":"input_text", "text":part.text}))
                     }
-                    Some("file")
-                        if item
-                            .get("mediaType")
-                            .and_then(Value::as_str)
-                            .is_some_and(|mt| get_top_level_media_type(mt) == "image") =>
+                    ToolResultContent::File(part)
+                        if get_top_level_media_type(&part.media_type) == "image" =>
                     {
-                        let data = &item["data"];
-                        let image_url = match data.get("type").and_then(Value::as_str) {
-                            Some("url") => data["url"].as_str().unwrap_or_default().to_string(),
-                            Some("data") => {
+                        let image_url = match &part.data {
+                            FileData::Url { url, .. } => url.clone(),
+                            FileData::Data { data } => {
                                 use base64::Engine;
-                                let encoded = if let Some(encoded) = data["data"].as_str() {
-                                    encoded.to_string()
-                                } else {
-                                    let bytes: Vec<u8> = data["data"]
-                                        .as_array()
-                                        .into_iter()
-                                        .flatten()
-                                        .filter_map(|v| v.as_u64().map(|v| v as u8))
-                                        .collect();
-                                    base64::engine::general_purpose::STANDARD.encode(bytes)
+                                let encoded = match data {
+                                    FileBytes::Base64(data) => data.clone(),
+                                    FileBytes::Binary(bytes) => {
+                                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                                    }
                                 };
-                                let file = FilePart {
-                                    data: FileData::Data {
-                                        data: FileBytes::Base64(encoded.clone()),
-                                    },
-                                    media_type: item["mediaType"]
-                                        .as_str()
-                                        .unwrap_or_default()
-                                        .to_string(),
-                                    filename: None,
-                                    provider_options: None,
-                                };
-                                format!("data:{};base64,{encoded}", resolve_full_media_type(&file)?)
+                                format!("data:{};base64,{encoded}", resolve_full_media_type(part)?)
                             }
                             _ => continue,
                         };
-                        parts.push(json!({ "type": "input_image", "image_url": image_url }));
+                        parts.push(json!({"type":"input_image", "image_url":image_url}));
                     }
                     _ => {}
                 }
             }
             Ok(json!(parts))
         }
-        _ => Ok(json!(
-            output
-                .as_str()
-                .map(str::to_string)
-                .unwrap_or_else(|| output.to_string())
-        )),
+        _ => Ok(crate::openai::convert::tool_result_to_content(output)),
     }
 }
 

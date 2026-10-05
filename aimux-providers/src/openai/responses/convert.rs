@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+    ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, JsonObject, SharedProviderOptions};
@@ -165,6 +165,8 @@ fn convert_responses_input_with_conversation(
     let mut input: Vec<Value> = Vec::new();
     let mut warnings: Vec<Warning> = Vec::new();
 
+    let mut processed_approval_ids = std::collections::HashSet::new();
+    let mut programmatic_tool_call_ids = std::collections::HashSet::new();
     for msg in prompt {
         match msg {
             LanguageModelMessage::System {
@@ -247,6 +249,11 @@ fn convert_responses_input_with_conversation(
                             ..
                         }) => {
                             let id = item_id(ns, provider_options);
+                            if openai_sub_option(ns, provider_options, "caller")
+                                .is_some_and(|caller| caller["type"] == "program")
+                            {
+                                programmatic_tool_call_ids.insert(tool_call_id.as_str());
+                            }
                             if has_conversation && id.is_some() {
                                 continue;
                             }
@@ -371,24 +378,43 @@ fn convert_responses_input_with_conversation(
                             }
                         }
                         AssistantPart::ToolResult(part) => {
-                            if has_conversation {
+                            if has_conversation
+                                || matches!(part.output, ToolResultOutput::ExecutionDenied { .. })
+                                || matches!(&part.output, ToolResultOutput::Json { value, .. } if value.get("type").and_then(Value::as_str) == Some("execution-denied"))
+                            {
                                 continue;
                             }
                             let id = item_id(ns, &part.provider_options)
                                 .unwrap_or_else(|| part.tool_call_id.clone());
-                            let kind = part
-                                .tool_name
-                                .as_deref()
-                                .and_then(|name| provider_tool_kind(tools, name));
+                            let kind = provider_tool_kind(tools, &part.tool_name);
                             match kind {
-                                Some("shell") => if let Some(item) = provider_tool_result_input("shell", &part.tool_call_id, &part.result)? { input.push(item); },
-                                Some("tool_search" | "programmatic_tool_calling") if !store => {
-                                    let kind = kind.unwrap_or_default();
-                                    validate_tool_result(kind, &part.result)?;
-                                    input.push(if kind == "tool_search" { json!({"type":"tool_search_output", "id":id, "execution":"server", "call_id":null, "status":"completed", "tools":part.result["tools"]}) } else { json!({"type":"program_output", "id":id, "call_id":part.tool_call_id, "result":part.result["result"], "status":part.result["status"]}) });
+                                Some("shell") => {
+                                    if let ToolResultOutput::Json { value, .. } = &part.output
+                                        && let Some(item) = provider_tool_result_input("shell", &part.tool_call_id, value)?
+                                    { input.push(item); }
                                 }
                                 _ if store => input.push(json!({"type":"item_reference", "id":id})),
-                                _ => warnings.push(Warning::Other { message:format!("Results for OpenAI tool {} are not sent to the API when store is false", part.tool_name.as_deref().unwrap_or_default()) }),
+                                Some("tool_search" | "programmatic_tool_calling") => {
+                                    if let ToolResultOutput::Json { value, .. } = &part.output {
+                                        let kind = kind.unwrap_or_default();
+                                        validate_tool_result(kind, value)?;
+                                        input.push(if kind == "tool_search" { json!({"type":"tool_search_output", "id":id, "execution":"server", "call_id":null, "status":"completed", "tools":value["tools"]}) } else { json!({"type":"program_output", "id":id, "call_id":part.tool_call_id, "result":value["result"], "status":value["status"]}) });
+                                    }
+                                }
+                                _ => warnings.push(Warning::Other { message:format!("Results for OpenAI tool {} are not sent to the API when store is false", part.tool_name) }),
+                            }
+                        }
+                        AssistantPart::Custom(part) if part.kind == "openai.compaction" => {
+                            let id = item_id(ns, &part.provider_options);
+                            if has_conversation && id.is_some() {
+                                continue;
+                            }
+                            if let Some(id) = id {
+                                if store {
+                                    input.push(json!({"type":"item_reference", "id":id}));
+                                } else {
+                                    input.push(json!({"type":"compaction", "id":id, "encrypted_content":openai_sub_option(ns, &part.provider_options, "encryptedContent")}));
+                                }
                             }
                         }
                         _ => {}
@@ -397,26 +423,83 @@ fn convert_responses_input_with_conversation(
             }
             LanguageModelMessage::Tool { content, .. } => {
                 for part in content {
+                    if let ToolPart::ToolApprovalResponse(approval) = part {
+                        if !processed_approval_ids.insert(&approval.approval_id) {
+                            continue;
+                        }
+                        if store && !has_conversation && !has_previous_response_id {
+                            input.push(json!({"type":"item_reference", "id":approval.approval_id}));
+                        }
+                        input.push(json!({"type":"mcp_approval_response", "approval_request_id":approval.approval_id, "approve":approval.approved}));
+                        continue;
+                    }
                     let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
                         tool_name,
-                        result,
-                        ..
-                    }) = part;
-                    if let Some(kind) = tool_name
-                        .as_deref()
-                        .and_then(|name| provider_tool_kind(tools, name))
-                        && let Some(item) = provider_tool_result_input(kind, tool_call_id, result)?
+                        output,
+                        provider_options,
+                    }) = part
+                    else {
+                        continue;
+                    };
+                    if let ToolResultOutput::ExecutionDenied {
+                        provider_options, ..
+                    } = output
+                        && openai_sub_option(
+                            ResponsesNamespace::OPENAI,
+                            provider_options,
+                            "approvalId",
+                        )
+                        .and_then(|id| id.as_str().map(|id| !id.is_empty()))
+                        .unwrap_or(false)
+                    {
+                        continue;
+                    }
+                    let kind = provider_tool_kind(tools, tool_name);
+                    if let Some(kind) = kind
+                        && kind != "custom"
+                        && let ToolResultOutput::Json { value, .. } = output
+                        && let Some(item) = provider_tool_result_input(kind, tool_call_id, value)?
                     {
                         input.push(item);
                         continue;
                     }
-                    let content_value = match result {
-                        Value::String(s) => Value::String(s.clone()),
-                        other => Value::String(other.to_string()),
-                    };
+                    let custom = kind == Some("custom");
+                    if !custom
+                        && matches!(output, ToolResultOutput::ExecutionDenied { .. })
+                        && (programmatic_tool_call_ids.contains(tool_call_id.as_str())
+                            || openai_sub_option(ns, provider_options, "caller")
+                                .is_some_and(|caller| caller["type"] == "program"))
+                    {
+                        return Err(AiMuxError::UnsupportedFunctionality(
+                            "execution-denied results for programmatic tool calls".into(),
+                        ));
+                    }
+                    let mut content_value =
+                        convert_tool_result_output(ns, output, custom, &mut warnings)?;
+                    let has_output_schema = tools.is_some_and(|tools| tools.iter().any(|tool| {
+                        matches!(tool, Tool::Function(tool) if tool.name == *tool_name && tool.provider_options.as_ref().and_then(|options| options.get("openai")).is_some_and(|options| options.contains_key("outputSchema")))
+                    }));
+                    if has_output_schema
+                        && matches!(
+                            output,
+                            ToolResultOutput::Text { .. }
+                                | ToolResultOutput::ErrorText { .. }
+                                | ToolResultOutput::ExecutionDenied { .. }
+                        )
+                    {
+                        content_value = json!(content_value.to_string());
+                    }
+                    if !matches!(output, ToolResultOutput::Content { .. })
+                        && let Some(breakpoint) = scalar_tool_result_cache_breakpoint(ns, output)
+                            .or_else(|| {
+                                openai_sub_option(ns, provider_options, "promptCacheBreakpoint")
+                            })
+                    {
+                        content_value = json!([{"type":"input_text", "text":content_value, "prompt_cache_breakpoint":breakpoint}]);
+                    }
                     input.push(json!({
-                        "type": "function_call_output",
+                        "type": if custom { "custom_tool_call_output" } else { "function_call_output" },
                         "call_id": tool_call_id,
                         "output": content_value,
                     }));
@@ -542,6 +625,12 @@ fn provider_tool_result_input(
     call_id: &str,
     result: &Value,
 ) -> Result<Option<Value>, AiMuxError> {
+    if !matches!(
+        kind,
+        "local_shell" | "shell" | "apply_patch" | "computer" | "tool_search" | "custom"
+    ) {
+        return Ok(None);
+    }
     validate_tool_result(kind, result)?;
     let mut value = match kind {
         "local_shell" => json!({"type":"local_shell_call_output", "output":result["output"]}),
@@ -663,6 +752,94 @@ fn convert_user_part(
             }
         },
     })
+}
+
+fn scalar_tool_result_cache_breakpoint(
+    ns: ResponsesNamespace,
+    output: &ToolResultOutput,
+) -> Option<Value> {
+    let provider_options = match output {
+        ToolResultOutput::Text {
+            provider_options, ..
+        }
+        | ToolResultOutput::Json {
+            provider_options, ..
+        }
+        | ToolResultOutput::ErrorText {
+            provider_options, ..
+        }
+        | ToolResultOutput::ErrorJson {
+            provider_options, ..
+        }
+        | ToolResultOutput::ExecutionDenied {
+            provider_options, ..
+        } => provider_options,
+        ToolResultOutput::Content { .. } => return None,
+    };
+    openai_sub_option(ns, provider_options, "promptCacheBreakpoint")
+}
+
+fn convert_tool_result_output(
+    ns: ResponsesNamespace,
+    output: &ToolResultOutput,
+    custom: bool,
+    warnings: &mut Vec<Warning>,
+) -> Result<Value, AiMuxError> {
+    let ToolResultOutput::Content { value } = output else {
+        return Ok(crate::openai::convert::tool_result_to_content(output));
+    };
+    let mut parts = Vec::new();
+    for item in value {
+        let (mut converted, provider_options) = match item {
+            ToolResultContent::Text(part) => (
+                json!({"type":"input_text", "text":part.text}),
+                &part.provider_options,
+            ),
+            ToolResultContent::File(part) => {
+                if matches!(part.data, FileData::Text { .. })
+                    || (custom && matches!(part.data, FileData::Reference { .. }))
+                {
+                    warnings.push(Warning::Other {
+                        message: format!(
+                            "unsupported {}tool content part type: file with data type: {}",
+                            if custom { "custom " } else { "" },
+                            if matches!(part.data, FileData::Reference { .. }) {
+                                "reference"
+                            } else {
+                                "text"
+                            }
+                        ),
+                    });
+                    continue;
+                }
+                let mut converted = convert_user_part(ns, &UserPart::File(part.clone()), 0)?;
+                if converted["type"] == "input_file" && converted.get("file_data").is_some() {
+                    converted["filename"] = json!(part.filename.as_deref().unwrap_or("data"));
+                }
+                if converted["type"] == "input_image"
+                    && let Some(detail) =
+                        openai_sub_option(ns, &part.provider_options, "imageDetail")
+                {
+                    converted["detail"] = detail;
+                }
+                (converted, &part.provider_options)
+            }
+            ToolResultContent::Custom { .. } => {
+                warnings.push(Warning::Other {
+                    message: format!(
+                        "unsupported {}tool content part type: custom",
+                        if custom { "custom " } else { "" }
+                    ),
+                });
+                continue;
+            }
+        };
+        if let Some(breakpoint) = openai_sub_option(ns, provider_options, "promptCacheBreakpoint") {
+            converted["prompt_cache_breakpoint"] = breakpoint;
+        }
+        parts.push(converted);
+    }
+    Ok(json!(parts))
 }
 
 fn inline_file(

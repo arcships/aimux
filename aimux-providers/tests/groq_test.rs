@@ -26,7 +26,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+    ToolCallPart, ToolPart, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, ReasoningOutput};
@@ -302,7 +302,6 @@ mod convert_messages {
                     tool_name: "thwomp".into(),
                     input: json!({"foo":"bar123"}),
                     provider_executed: None,
-                    thought_signature: None,
                     provider_options: None,
                 })],
                 provider_options: None,
@@ -310,11 +309,11 @@ mod convert_messages {
             LanguageModelMessage::Tool {
                 content: vec![ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: "quux".into(),
-                    result: json!({"oof":"321rab"}),
-                    tool_name: None,
-                    is_error: None,
-                    preliminary: None,
-                    dynamic: None,
+                    output: ToolResultOutput::Json {
+                        value: json!({"oof":"321rab"}),
+                        provider_options: None,
+                    },
+                    tool_name: "thwomp".into(),
                     provider_options: None,
                 })],
                 provider_options: None,
@@ -354,7 +353,6 @@ mod convert_messages {
             content: vec![
                 AssistantPart::Reasoning(ReasoningPart {
                     text: "I think the tool will return the correct value.".into(),
-                    signature: None,
                     provider_options: None,
                 }),
                 AssistantPart::ToolCall(ToolCallPart {
@@ -362,7 +360,6 @@ mod convert_messages {
                     tool_name: "thwomp".into(),
                     input: json!({"foo":"bar123"}),
                     provider_executed: None,
-                    thought_signature: None,
                     provider_options: None,
                 }),
             ],

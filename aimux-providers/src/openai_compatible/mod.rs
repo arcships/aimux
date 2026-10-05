@@ -160,9 +160,6 @@ pub fn create_openai_compatible(
         profile: ChatProfile {
             include_usage: settings.include_usage.unwrap_or(false),
             supports_structured_outputs: settings.supports_structured_outputs.unwrap_or(false),
-            supports_multi_part_tool_content: settings
-                .supports_multi_part_tool_content
-                .unwrap_or(false),
             dialect: ChatDialect::baseline(),
         },
     })?;
@@ -196,7 +193,6 @@ pub fn create_openai_compatible(
 pub(crate) struct ChatProfile {
     pub include_usage: bool,
     pub supports_structured_outputs: bool,
-    pub supports_multi_part_tool_content: bool,
     pub dialect: ChatDialect,
 }
 
@@ -266,7 +262,6 @@ impl OpenAICompatibleProvider {
             chat: ChatSettings {
                 include_usage: assembly.profile.include_usage,
                 supports_structured_outputs: assembly.profile.supports_structured_outputs,
-                supports_multi_part_tool_content: assembly.profile.supports_multi_part_tool_content,
                 supported_urls: SupportedUrls::default(),
                 dialect: Arc::new(assembly.profile.dialect),
             },
