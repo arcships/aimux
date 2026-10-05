@@ -48,20 +48,18 @@ use aimux_providers::deepseek::{
 // ---------------------------------------------------------------------------
 
 fn with_options(mut message: LanguageModelMessage, options: Value) -> LanguageModelMessage {
-    let provider_options = match &mut message {
-        LanguageModelMessage::System {
-            provider_options, ..
-        }
-        | LanguageModelMessage::User {
-            provider_options, ..
-        }
-        | LanguageModelMessage::Assistant {
-            provider_options, ..
-        }
-        | LanguageModelMessage::Tool {
-            provider_options, ..
-        } => provider_options,
-    };
+    let (LanguageModelMessage::System {
+        provider_options, ..
+    }
+    | LanguageModelMessage::User {
+        provider_options, ..
+    }
+    | LanguageModelMessage::Assistant {
+        provider_options, ..
+    }
+    | LanguageModelMessage::Tool {
+        provider_options, ..
+    }) = &mut message;
     *provider_options = Some(serde_json::from_value(options).unwrap());
     message
 }
@@ -205,7 +203,7 @@ async fn generate_body(model_id: &str, options: &CallOptions) -> Value {
         .await
         .unwrap()
         .request
-        .and_then(|request| request.body)
+        .and_then(|r| r.body)
         .unwrap()
 }
 
@@ -432,7 +430,7 @@ async fn text_should_omit_deprecated_and_ineffective_sampling_options_in_default
     options.presence_penalty = Some(0.6);
     let result = generate_result("deepseek-v4-flash", &options).await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap(),
+        result.request.and_then(|r| r.body).unwrap(),
         json!({ "model": "deepseek-v4-flash", "messages": [{ "role": "user", "content": "Hello" }] })
     );
     assert_eq!(
@@ -458,7 +456,7 @@ async fn text_should_preserve_supported_sampling_options_when_v4_thinking_is_dis
     options.presence_penalty = Some(0.6);
     let result = generate_result("deepseek-v4-flash", &options).await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap(),
+        result.request.and_then(|r| r.body).unwrap(),
         json!({
             "model": "deepseek-v4-flash",
             "messages": [{ "role": "user", "content": "Hello" }],
@@ -484,7 +482,7 @@ async fn text_should_warn_about_top_k_and_seed_and_not_send_them() {
     options.top_k = Some(40.0);
     options.seed = Some(7);
     let result = generate_result("deepseek-chat", &options).await;
-    let body = result.request.and_then(|request| request.body).unwrap();
+    let body = result.request.and_then(|r| r.body).unwrap();
     assert!(body.get("top_k").is_none() && body.get("seed").is_none());
     assert_eq!(
         warning_values(&result.warnings),
@@ -607,7 +605,7 @@ async fn text_should_send_all_strict_tools_on_the_beta_endpoint() {
         .await
         .unwrap()
         .request
-        .and_then(|request| request.body)
+        .and_then(|r| r.body)
         .unwrap();
     assert_eq!(body["tools"][0]["type"], "function");
     assert_eq!(body["tools"][0]["function"]["name"], "getWeather");
@@ -670,17 +668,11 @@ async fn text_should_extract_text_content() {
     assert_eq!(result.usage.input_tokens.total, Some(13));
     assert_eq!(result.usage.output_tokens.total, Some(300));
     assert_eq!(
-        result
-            .response
-            .as_ref()
-            .and_then(|response| response.id.as_deref()),
+        result.response.as_ref().and_then(|r| r.id.as_deref()),
         Some("00f10ecd-60b3-4707-b5db-e4bcadf7aea1")
     );
     assert_eq!(
-        result
-            .response
-            .as_ref()
-            .and_then(|response| response.model_id.as_deref()),
+        result.response.as_ref().and_then(|r| r.model_id.as_deref()),
         Some("deepseek-chat")
     );
 }
@@ -924,7 +916,7 @@ async fn top_level_reasoning_none_should_keep_the_temperature() {
     options.temperature = Some(0.4);
     let result = generate_result("deepseek-reasoner", &options).await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["temperature"],
+        result.request.and_then(|r| r.body).unwrap()["temperature"],
         0.4
     );
     assert!(result.warnings.is_empty());
@@ -938,7 +930,7 @@ async fn top_level_reasoning_xhigh_should_map_to_reasoning_effort_max() {
     )
     .await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["reasoning_effort"],
+        result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
         "max"
     );
     assert!(warning_values(&result.warnings).contains(&serde_json::to_value(compatibility(
@@ -957,7 +949,7 @@ async fn top_level_reasoning_low_should_map_to_reasoning_effort_low_without_a_co
     )
     .await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["reasoning_effort"],
+        result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
         "low"
     );
     assert!(
@@ -977,7 +969,7 @@ async fn top_level_reasoning_medium_should_map_to_reasoning_effort_high_with_a_c
     )
     .await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["reasoning_effort"],
+        result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
         "high"
     );
     assert_eq!(
@@ -998,7 +990,7 @@ async fn top_level_reasoning_minimal_should_map_to_reasoning_effort_low_with_com
     )
     .await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["reasoning_effort"],
+        result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
         "low"
     );
     assert_eq!(
@@ -1023,7 +1015,7 @@ async fn top_level_reasoning_should_map_provider_options_reasoning_effort() {
         );
         let result = generate_result("deepseek-reasoner", &options).await;
         assert_eq!(
-            result.request.and_then(|request| request.body).unwrap()["reasoning_effort"],
+            result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
             output
         );
         let expected = if warns {
@@ -1049,7 +1041,7 @@ async fn top_level_reasoning_should_map_legacy_thinking_type_adaptive_to_enabled
     );
     let result = generate_result("deepseek-reasoner", &options).await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["thinking"],
+        result.request.and_then(|r| r.body).unwrap()["thinking"],
         json!({ "type": "enabled" })
     );
     assert!(warning_values(&result.warnings).contains(&serde_json::to_value(compatibility(
@@ -1214,7 +1206,7 @@ async fn tool_call_should_warn_about_provider_defined_tools() {
         }])
     );
     assert!(
-        result.request.and_then(|request| request.body).unwrap()["tools"]
+        result.request.and_then(|r| r.body).unwrap()["tools"]
             .as_array()
             .unwrap()
             .is_empty()
@@ -1302,7 +1294,7 @@ async fn json_response_format_should_send_correct_request_body_with_schema() {
         "$schema": "http://json-schema.org/draft-07/schema#"
     });
     let result = generate_result("deepseek-reasoner", &json_options(Some(schema.clone()))).await;
-    let body = result.request.and_then(|request| request.body).unwrap();
+    let body = result.request.and_then(|r| r.body).unwrap();
     assert_eq!(
         body["messages"][0],
         json!({
@@ -1368,7 +1360,7 @@ async fn prefix_should_send_name_and_prefix_on_the_final_assistant_message() {
         .await
         .unwrap()
         .request
-        .and_then(|request| request.body)
+        .and_then(|r| r.body)
         .unwrap();
     assert_eq!(
         body["messages"],
@@ -1468,11 +1460,7 @@ async fn stream_parts(
 ) -> (Value, Vec<StreamPart>) {
     let server = sse_server(chunks).await;
     let result = chat(&server, model_id).do_stream(options).await.unwrap();
-    let body = result
-        .request
-        .clone()
-        .and_then(|request| request.body)
-        .unwrap();
+    let body = result.request.clone().and_then(|r| r.body).unwrap();
     (body, collect(result).await)
 }
 
@@ -1951,7 +1939,7 @@ async fn stream_prefix_should_send_prefix_true_on_the_final_assistant_message() 
         .do_stream(&options_for(prefix_prompt(json!({ "prefix": true }))))
         .await
         .unwrap();
-    let body = result.request.and_then(|request| request.body).unwrap();
+    let body = result.request.and_then(|r| r.body).unwrap();
     assert_eq!(
         body["messages"],
         json!([
@@ -2006,7 +1994,7 @@ async fn convert_should_ignore_a_name_on_a_tool_message_with_an_unsupported_warn
     )]);
     let result = generate_result("deepseek-chat", &options).await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["messages"],
+        result.request.and_then(|r| r.body).unwrap()["messages"],
         json!([{ "role": "tool", "tool_call_id": "call-1", "content": "sunny" }])
     );
     assert_eq!(
@@ -2043,7 +2031,7 @@ async fn convert_should_serialize_a_name_from_a_custom_provider_options_namespac
     )]);
     let result = model.do_generate(&options).await.unwrap();
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["messages"],
+        result.request.and_then(|r| r.body).unwrap()["messages"],
         json!([{ "role": "user", "content": "Hello", "name": "alice" }])
     );
 }
@@ -2198,7 +2186,7 @@ async fn convert_should_reject_image_urls_longer_than_8192_characters() {
         "deepseek-v4-flash-vision-exp",
         &options_for(vec![LanguageModelMessage::User {
             content: vec![UserPart::File(FilePart {
-                data: FileData::Url { url },
+                data: FileData::Url { url: (url) },
                 media_type: ("image/png").into(),
                 filename: None,
                 provider_options: None,
@@ -2315,7 +2303,7 @@ async fn convert_should_warn_about_unsupported_non_image_file_parts() {
     )
     .await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["messages"],
+        result.request.and_then(|r| r.body).unwrap()["messages"],
         json!([{ "role": "user", "content": "Hello" }])
     );
     assert_eq!(
@@ -2377,7 +2365,7 @@ fn wire_tool_call() -> Value {
 async fn convert_should_stringify_arguments_to_tool_calls() {
     let result = generate_result("deepseek-chat", &options_for(tool_turn(false))).await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["messages"],
+        result.request.and_then(|r| r.body).unwrap()["messages"],
         json!([
             // upstream sends the empty text as `content: ""`, not null.
             { "role": "assistant", "content": "", "tool_calls": wire_tool_call() },

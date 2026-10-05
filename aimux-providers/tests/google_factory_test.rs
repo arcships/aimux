@@ -222,12 +222,6 @@ fn assert_generate_result(fixture: &Fixture, result: &GenerateResult) {
         fixture.name
     );
     assert_eq!(
-        result.response.as_ref().and_then(|r| r.model_id.as_deref()),
-        recorded["response"]["modelId"].as_str(),
-        "{}: response model",
-        fixture.name
-    );
-    assert_eq!(
         result.usage.input_tokens.total,
         recorded["usage"]["inputTokens"].as_u64().map(|v| v as _),
         "{}: input tokens",

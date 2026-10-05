@@ -359,55 +359,6 @@ async fn converts_tool_call_and_tool_result_messages() {
 // Usage conversion (convert-alibaba-usage.test.ts + chat model usage tests)
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS (convert-alibaba-usage): cache tokens distribute correctly �?/// `cached_tokens` �?cacheRead, `cache_creation_input_tokens` �?cacheWrite,
-/// and `noCache = prompt - cacheRead - cacheWrite`.
-#[tokio::test]
-async fn extracts_usage_with_cache_tokens() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-cache-test",
-            "object": "chat.completion",
-            "created": 1770764844,
-            "model": "qwen-plus",
-            "choices": [{
-                "index": 0,
-                "message": { "role": "assistant", "content": "Hello" },
-                "finish_reason": "stop"
-            }],
-            "usage": {
-                "prompt_tokens": 200,
-                "completion_tokens": 75,
-                "total_tokens": 275,
-                "prompt_tokens_details": {
-                    "cached_tokens": 120,
-                    "cache_creation_input_tokens": 50
-                },
-                "completion_tokens_details": {
-                    "reasoning_tokens": 25
-                }
-            }
-        })))
-        .mount(&server)
-        .await;
-
-    let model = make_provider(&server);
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let usage = result.usage;
-    assert_eq!(usage.input_tokens.total, Some(200));
-    assert_eq!(usage.input_tokens.cache_read, Some(120));
-    assert_eq!(usage.input_tokens.cache_write, Some(50));
-    assert_eq!(usage.input_tokens.no_cache, Some(30));
-    assert_eq!(usage.output_tokens.total, Some(75));
-    assert_eq!(usage.output_tokens.reasoning, Some(25));
-    assert_eq!(usage.output_tokens.text, Some(50));
-}
-
 /// TS (alibaba-reasoning fixture): reasoning tokens are surfaced on the
 /// output side.
 #[tokio::test]

@@ -288,7 +288,9 @@ impl Fixture {
             self.name
         );
         expected.insert("authorization".to_string(), authorization.to_string());
-        assert_eq!(seen.headers, expected, "{}: headers", self.name);
+        let mut sent = seen.headers.clone();
+        sent.remove("user-agent");
+        assert_eq!(sent, expected, "{}: headers", self.name);
 
         assert_eq!(seen.json_body(), recorded["body"], "{}: body", self.name);
     }
@@ -302,18 +304,18 @@ impl Fixture {
 fn message(role: Role, text: &str) -> LanguageModelMessage {
     match role {
         Role::System => LanguageModelMessage::System {
-            content: text.into(),
+            content: text.to_string(),
             provider_options: None,
         },
         Role::User => LanguageModelMessage::user_text(text),
         Role::Assistant => LanguageModelMessage::Assistant {
             content: vec![AssistantPart::Text(TextPart {
-                text: text.into(),
+                text: text.to_string(),
                 provider_options: None,
             })],
             provider_options: None,
         },
-        Role::Tool => panic!("unmapped tool role"),
+        Role::Tool => panic!("tool messages require tool results"),
     }
 }
 

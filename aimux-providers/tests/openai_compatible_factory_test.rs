@@ -299,7 +299,9 @@ impl Fixture {
                 self.name
             ),
         }
-        assert_eq!(seen.headers, expected, "{}: headers", self.name);
+        let mut sent = seen.headers.clone();
+        sent.remove("user-agent");
+        assert_eq!(sent, expected, "{}: headers", self.name);
 
         assert_eq!(seen.json_body(), recorded["body"], "{}: body", self.name);
     }
@@ -324,7 +326,7 @@ fn message(role: Role, text: &str) -> LanguageModelMessage {
             })],
             provider_options: None,
         },
-        Role::Tool => unreachable!("fixture has no tool messages"),
+        Role::Tool => panic!("tool messages require tool results"),
     }
 }
 

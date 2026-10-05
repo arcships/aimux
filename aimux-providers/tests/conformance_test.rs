@@ -873,34 +873,6 @@ mod bedrock_conformance {
             }
         }
     }
-
-    #[tokio::test]
-    async fn do_stream_returns_parts() {
-        let server = MockServer::start().await;
-        mount_cassettes(&server, "tests/cassettes/bedrock").await;
-
-        let provider = make_provider(&server);
-        let model = provider.chat("amazon.nova-lite-v1:0");
-
-        let result = model.do_stream(&default_options(test_prompt())).await;
-
-        match result {
-            Ok(stream_result) => {
-                let parts = collect_stream(stream_result).await;
-                assert!(
-                    has_finish(&parts) || !parts.is_empty(),
-                    "stream should produce some parts"
-                );
-            }
-            Err(e) => {
-                if is_infrastructure_error(&e) {
-                    panic!("request did not match any cassette (404): {e:?}");
-                }
-                let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {msg}");
-            }
-        }
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

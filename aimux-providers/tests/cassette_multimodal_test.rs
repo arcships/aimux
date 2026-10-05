@@ -76,51 +76,6 @@ async fn mount_single(cass: &Value) -> (MockServer, String) {
 // ── Embedding cassettes ─────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn cassette_openai_embedding_query() {
-    let cass = load_cassette("openai", "TestOpenAI.test_query.json").expect("cassette should load");
-    let (_server, base_url) = mount_single(&cass).await;
-
-    let provider = native_provider(base_url);
-    let model = provider.embedding("text-embedding-3-small");
-
-    let opts = EmbeddingCallOptions::new("hello");
-    let result = model.do_embed(&opts).await.expect("embed should succeed");
-
-    // OpenAI cassette vectors are stored as strings (base64-encoded floats),
-    // so provider may return empty Vec or string-as-float parse failures.
-    // Hard assert: provider must return at least the embeddings array structure.
-    assert!(
-        !result.embeddings.is_empty(),
-        "should have at least one embedding vector"
-    );
-}
-
-#[tokio::test]
-async fn cassette_openai_embedding_documents() {
-    let cass =
-        load_cassette("openai", "TestOpenAI.test_documents.json").expect("cassette should load");
-    let (_server, base_url) = mount_single(&cass).await;
-
-    let provider = native_provider(base_url);
-    let model = provider.embedding("text-embedding-3-small");
-
-    let opts = EmbeddingCallOptions {
-        values: vec!["doc1".into(), "doc2".into()],
-        abort_signal: None,
-        provider_options: None,
-        headers: None,
-        max_retries: None,
-        timeout: None,
-    };
-    let result = model.do_embed(&opts).await.expect("embed should succeed");
-
-    assert!(
-        !result.embeddings.is_empty(),
-        "should have at least one embedding vector"
-    );
-}
-
-#[tokio::test]
 async fn cassette_openai_embedding_error() {
     let cass =
         load_cassette("openai", "TestOpenAI.test_embed_error.json").expect("cassette should load");

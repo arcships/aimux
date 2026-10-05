@@ -130,7 +130,7 @@ async fn an_api_key_sends_a_bearer_token_and_signs_nothing() {
     assert_eq!(seen[0].method, "POST");
     assert_eq!(
         seen[0].url,
-        "https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude-3-5-sonnet-20240620-v1:0/converse"
+        "https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude-3-5-sonnet-20240620-v1%3A0/converse"
     );
     assert_eq!(seen[0].headers["authorization"], "Bearer bedrock-key");
     assert!(
