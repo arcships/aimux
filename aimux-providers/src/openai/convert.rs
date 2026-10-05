@@ -1,11 +1,12 @@
 //! Conversion between `LanguageModelPrompt` and OpenAI API format.
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolPart,
+    UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::shared::SharedProviderOptions;
+use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
 use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
@@ -180,57 +181,57 @@ fn get_image_detail(provider_options: &Option<SharedProviderOptions>) -> Option<
 }
 
 /// Resolve a provider reference, throwing if the provider is not found.
-fn resolve_provider_reference(reference: &Value, provider: &str) -> Result<String, String> {
-    if let Some(val) = reference.get(provider) {
-        if let Some(s) = val.as_str() {
-            return Ok(s.to_string());
-        }
-        return Ok(val.to_string());
-    }
-    let available: Vec<String> = reference
-        .as_object()
-        .map(|m| m.keys().cloned().collect())
-        .unwrap_or_default();
-    Err(format!(
-        "No provider reference found for provider '{}'. Available providers: {}",
-        provider,
-        available.join(", ")
-    ))
+fn resolve_provider_reference(
+    reference: &std::collections::HashMap<String, String>,
+    provider: &str,
+) -> Result<String, String> {
+    reference.get(provider).cloned().ok_or_else(|| {
+        let mut available: Vec<&str> = reference.keys().map(String::as_str).collect();
+        available.sort_unstable();
+        format!(
+            "No provider reference found for provider '{}'. Available providers: {}",
+            provider,
+            available.join(", ")
+        )
+    })
 }
 
 /// Convert a file part to the OpenAI format, handling images, audio, and PDF.
-fn convert_file_part_to_openai(
-    content_part: &ContentPart,
-    data_b64: Option<&str>,
-    url: Option<&str>,
-    reference: Option<&Value>,
-    filename: Option<&str>,
-    provider_options: &Option<SharedProviderOptions>,
-    part_index: usize,
-) -> Result<Value, AiMuxError> {
-    let media_type = match content_part {
-        ContentPart::Image { media_type, .. }
-        | ContentPart::File { media_type, .. }
-        | ContentPart::FileBase64 { media_type, .. }
-        | ContentPart::FileUrl { media_type, .. }
-        | ContentPart::FileReference { media_type, .. } => media_type,
-        _ => unreachable!("file conversion requires a file part"),
-    };
+fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Value, AiMuxError> {
+    use base64::Engine;
+    let FilePart {
+        data,
+        media_type,
+        filename,
+        provider_options,
+    } = file;
     let prompt_cache_breakpoint = get_prompt_cache_breakpoint(provider_options);
-
-    // Reference type
-    if let Some(ref_val) = reference {
-        let file_id =
-            resolve_provider_reference(ref_val, "openai").map_err(AiMuxError::InvalidArgument)?;
-        let mut part = json!({
-            "type": "file",
-            "file": { "file_id": file_id }
-        });
-        if let Some(bpt) = prompt_cache_breakpoint {
-            part["prompt_cache_breakpoint"] = bpt;
+    let (data_b64, url) = match data {
+        FileData::Reference { reference } => {
+            let file_id = resolve_provider_reference(reference, "openai")
+                .map_err(AiMuxError::InvalidArgument)?;
+            let mut part = json!({ "type": "file", "file": { "file_id": file_id } });
+            if let Some(bpt) = prompt_cache_breakpoint {
+                part["prompt_cache_breakpoint"] = bpt;
+            }
+            return Ok(part);
         }
-        return Ok(part);
-    }
+        FileData::Text { .. } => {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "text file parts".into(),
+            ));
+        }
+        FileData::Url { url } => (None, Some(url.as_str())),
+        FileData::Data { data } => {
+            let b64 = match data {
+                FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
+                FileBytes::Base64(data) => data.clone(),
+            };
+            (Some(b64), None)
+        }
+    };
+    let data_b64 = data_b64.as_deref();
+    let filename = filename.as_deref();
 
     let top_level = get_top_level_media_type(media_type);
 
@@ -239,7 +240,7 @@ fn convert_file_part_to_openai(
         let image_url = if let Some(url_str) = url {
             json!({ "url": url_str })
         } else if let Some(b64) = data_b64 {
-            let full_mt = resolve_full_media_type(content_part)?;
+            let full_mt = resolve_full_media_type(file)?;
             json!({ "url": format!("data:{};base64,{}", full_mt, b64) })
         } else {
             return Err(AiMuxError::InvalidArgument(
@@ -271,7 +272,7 @@ fn convert_file_part_to_openai(
         }
         let b64 =
             data_b64.ok_or_else(|| AiMuxError::InvalidArgument("audio part has no data".into()))?;
-        let full_mt = resolve_full_media_type(content_part)?;
+        let full_mt = resolve_full_media_type(file)?;
         let format = match full_mt.as_str() {
             "audio/wav" => "wav",
             "audio/mp3" | "audio/mpeg" => "mp3",
@@ -292,7 +293,7 @@ fn convert_file_part_to_openai(
     }
 
     // PDF / application
-    let full_mt = resolve_full_media_type(content_part)?;
+    let full_mt = resolve_full_media_type(file)?;
 
     if full_mt != "application/pdf" {
         return Err(AiMuxError::UnsupportedFunctionality(format!(
@@ -325,238 +326,150 @@ fn convert_file_part_to_openai(
 
 /// Convert a single provider-facing message into one or more OpenAI messages.
 fn convert_message_to_openai(
-    msg: &LanguageModelPromptMessage,
+    msg: &LanguageModelMessage,
     system_message_mode: SystemMessageMode,
 ) -> Result<Vec<Value>, AiMuxError> {
-    let role = match msg.role {
-        Role::System => "system",
-        Role::User => "user",
-        Role::Assistant => "assistant",
-        Role::Tool => "tool",
-    };
-
-    // System messages: respect systemMessageMode.
-    if msg.role == Role::System {
-        match system_message_mode {
-            SystemMessageMode::Remove => return Ok(vec![]),
-            SystemMessageMode::Developer => {
-                return Ok(convert_system_message(msg, "developer"));
-            }
-            SystemMessageMode::System => {
-                return Ok(convert_system_message(msg, "system"));
-            }
+    let message = match msg {
+        LanguageModelMessage::System {
+            content,
+            provider_options,
+        } => {
+            let role = match system_message_mode {
+                SystemMessageMode::Remove => return Ok(vec![]),
+                SystemMessageMode::Developer => "developer",
+                SystemMessageMode::System => "system",
+            };
+            let content = match get_prompt_cache_breakpoint(provider_options) {
+                None => json!(content),
+                Some(bpt) => json!([{
+                    "type": "text", "text": content, "prompt_cache_breakpoint": bpt,
+                }]),
+            };
+            json!({ "role": role, "content": content })
         }
-    }
-
-    // Tool-role messages: each ToolResult part becomes its own OpenAI message.
-    if msg.role == Role::Tool {
-        let messages = msg
-            .content
-            .iter()
-            .filter_map(|part| match part {
-                ContentPart::ToolResult {
-                    tool_call_id,
-                    result,
-                    ..
-                } => {
-                    let content = tool_result_to_content(result);
-                    Some(json!({
+        LanguageModelMessage::Tool { content, .. } => {
+            return Ok(content
+                .iter()
+                .map(|part| {
+                    let ToolPart::ToolResult(result) = part;
+                    json!({
                         "role": "tool",
-                        "content": content,
-                        "tool_call_id": tool_call_id,
-                    }))
-                }
-                _ => None,
-            })
-            .collect();
-        return Ok(messages);
-    }
-
-    // Assistant messages with tool calls
-    let has_tool_calls = msg
-        .content
-        .iter()
-        .any(|p| matches!(p, ContentPart::ToolCall { .. }));
-
-    if msg.role == Role::Assistant && has_tool_calls {
-        let text: String = msg
-            .content
-            .iter()
-            .filter_map(|p| match p {
-                ContentPart::Text { text, .. } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("");
-
-        // Reasoning / thinking content. Thinking-mode servers (and other
-        // OpenAI-compatible reasoning models such as xAI) require prior
-        // assistant `reasoning_content` to be replayed on subsequent turns,
-        // including tool-call turns. Mirrors the Vercel AI SDK
-        // `openai-compatible` assistant conversion, which emits
-        // `reasoning_content` whenever a reasoning part is present.
-        let reasoning: String = collect_reasoning(&msg.content);
-
-        let tool_calls_json: Vec<Value> = msg
-            .content
-            .iter()
-            .filter_map(|p| match p {
-                ContentPart::ToolCall {
-                    tool_call_id,
-                    tool_name,
-                    input,
-                    ..
-                } => {
-                    let arguments = if input.is_null() {
-                        "{}".to_string()
-                    } else {
-                        input.to_string()
-                    };
-                    Some(json!({
-                        "type": "function",
-                        "id": tool_call_id,
-                        "function": {
-                            "name": tool_name,
-                            "arguments": arguments,
-                        }
-                    }))
-                }
-                _ => None,
-            })
-            .collect();
-
-        let content = if text.is_empty() {
-            Value::Null
-        } else {
-            Value::String(text)
-        };
-
-        let mut msg_obj = json!({
-            "role": "assistant",
-            "content": content,
-            "tool_calls": tool_calls_json,
-        });
-        if !reasoning.is_empty() {
-            msg_obj["reasoning_content"] = json!(reasoning);
+                        "content": tool_result_to_content(&result.result),
+                        "tool_call_id": result.tool_call_id,
+                    })
+                })
+                .collect());
         }
-        return Ok(vec![msg_obj]);
-    }
-
-    // Default path (no tool calls). Assistant reasoning / thinking
-    // parts are lifted to a top-level `reasoning_content` string (thinking-mode servers
-    // thinking mode and other OpenAI-compatible reasoning models require it to
-    // be replayed on later turns); they are never valid OpenAI content parts,
-    // so they are excluded from the content shape below. Non-assistant roles do
-    // not carry reasoning, but the filter is harmless.
-    let reasoning = if msg.role == Role::Assistant {
-        collect_reasoning(&msg.content)
-    } else {
-        String::new()
-    };
-    let has_reasoning = !reasoning.is_empty();
-
-    // Consider only non-reasoning parts for the content shape. When they are
-    // all plain text (without providerOptions), collapse to a string — matching
-    // the Vercel AI SDK `openai-compatible` assistant conversion
-    // (`content: toolCalls.length > 0 ? text || null : text`).
-    //
-    // Provider-executed tool results are dropped from assistant messages: the
-    // OpenAI chat wire format has no content part for them, and upstream's
-    // assistant branch handles only `text` and `tool-call`
-    // (convert-to-openai-chat-messages.ts:246-300). Emitting one produces a
-    // part type the API rejects.
-    let content_parts: Vec<&ContentPart> = msg
-        .content
-        .iter()
-        .filter(|p| match p {
-            ContentPart::Reasoning { .. } => false,
-            ContentPart::ToolResult { .. } => msg.role != Role::Assistant,
-            _ => true,
-        })
-        .collect();
-    let all_plain_text = content_parts.iter().all(|p| {
-        matches!(
-            p,
-            ContentPart::Text {
-                provider_options: None,
-                ..
+        LanguageModelMessage::User { content, .. } => {
+            let all_plain_text = content.iter().all(|part| {
+                matches!(
+                    part,
+                    UserPart::Text(TextPart {
+                        provider_options: None,
+                        ..
+                    })
+                )
+            });
+            let content = if all_plain_text {
+                json!(
+                    content
+                        .iter()
+                        .filter_map(|part| match part {
+                            UserPart::Text(text) => Some(text.text.as_str()),
+                            UserPart::File(_) => None,
+                        })
+                        .collect::<String>()
+                )
+            } else {
+                json!(
+                    content
+                        .iter()
+                        .enumerate()
+                        .map(|(index, part)| match part {
+                            UserPart::Text(text) => Ok(convert_text_part_to_openai(text)),
+                            UserPart::File(file) => convert_file_part_to_openai(file, index),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?
+                )
+            };
+            json!({ "role": "user", "content": content })
+        }
+        LanguageModelMessage::Assistant { content, .. } => {
+            let mut text = String::new();
+            let mut reasoning = String::new();
+            let mut tool_calls = Vec::new();
+            for part in content {
+                match part {
+                    AssistantPart::Text(part) => text.push_str(&part.text),
+                    AssistantPart::Reasoning(part) => reasoning.push_str(&part.text),
+                    AssistantPart::ToolCall(part) => {
+                        let arguments = if part.input.is_null() {
+                            "{}".to_string()
+                        } else {
+                            part.input.to_string()
+                        };
+                        tool_calls.push(json!({
+                            "type": "function",
+                            "id": part.tool_call_id,
+                            "function": { "name": part.tool_name, "arguments": arguments },
+                        }));
+                    }
+                    AssistantPart::File(_) | AssistantPart::ToolResult(_) => {}
+                }
             }
-        )
-    });
-
-    let mut msg_obj = if all_plain_text {
-        let text: String = content_parts
-            .iter()
-            .filter_map(|p| match p {
-                ContentPart::Text { text, .. } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("");
-        json!({ "role": role, "content": text })
-    } else {
-        let parts: Vec<Value> = content_parts
-            .iter()
-            .enumerate()
-            .map(|(i, part)| convert_part_to_openai(part, i))
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .filter(|p| !p.is_null())
-            .collect();
-        json!({ "role": role, "content": parts })
-    };
-    if has_reasoning {
-        msg_obj["reasoning_content"] = json!(reasoning);
-    }
-    Ok(vec![msg_obj])
-}
-
-/// Collect and concatenate the `text` of all `ContentPart::Reasoning` parts in
-/// `content`, mirroring the Vercel AI SDK assistant-message conversion. Used to
-/// build the OpenAI-compatible top-level `reasoning_content` / `reasoning`
-/// field that thinking models (xAI and other servers) require to be replayed
-/// across turns.
-fn collect_reasoning(content: &[ContentPart]) -> String {
-    content
-        .iter()
-        .filter_map(|p| match p {
-            ContentPart::Reasoning { text, .. } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("")
-}
-
-/// Convert a system message, respecting promptCacheBreakpoint.
-fn convert_system_message(msg: &LanguageModelPromptMessage, role: &str) -> Vec<Value> {
-    // System messages in the Rust model are always a single text part.
-    let text = msg
-        .content
-        .iter()
-        .filter_map(|p| match p {
-            ContentPart::Text {
-                text,
-                provider_options,
-            } => {
-                let bpt = get_prompt_cache_breakpoint(provider_options);
-                Some((text.clone(), bpt))
+            let mut message = if !tool_calls.is_empty() {
+                let content = if text.is_empty() {
+                    Value::Null
+                } else {
+                    json!(text)
+                };
+                json!({ "role": "assistant", "content": content, "tool_calls": tool_calls })
+            } else {
+                let parts: Vec<_> = content
+                    .iter()
+                    .filter(|part| {
+                        !matches!(
+                            part,
+                            AssistantPart::Reasoning(_) | AssistantPart::ToolResult(_)
+                        )
+                    })
+                    .collect();
+                let all_plain_text = parts.iter().all(|part| {
+                    matches!(
+                        part,
+                        AssistantPart::Text(TextPart {
+                            provider_options: None,
+                            ..
+                        })
+                    )
+                });
+                let content = if all_plain_text {
+                    json!(text)
+                } else {
+                    json!(
+                        parts
+                            .iter()
+                            .enumerate()
+                            .map(|(index, part)| match part {
+                                AssistantPart::Text(text) => Ok(convert_text_part_to_openai(text)),
+                                AssistantPart::File(file) =>
+                                    convert_file_part_to_openai(file, index),
+                                _ => unreachable!(
+                                    "only text and file parts remain without tool calls"
+                                ),
+                            })
+                            .collect::<Result<Vec<_>, _>>()?
+                    )
+                };
+                json!({ "role": "assistant", "content": content })
+            };
+            if !reasoning.is_empty() {
+                message["reasoning_content"] = json!(reasoning);
             }
-            _ => None,
-        })
-        .next();
-
-    match text {
-        Some((t, None)) => vec![json!({ "role": role, "content": t })],
-        Some((t, Some(bpt))) => vec![json!({
-            "role": role,
-            "content": [{
-                "type": "text",
-                "text": t,
-                "prompt_cache_breakpoint": bpt,
-            }]
-        })],
-        None => vec![json!({ "role": role, "content": "" })],
-    }
+            message
+        }
+    };
+    Ok(vec![message])
 }
 
 /// Serialize a tool-result `output` value into the OpenAI tool message
@@ -568,103 +481,13 @@ fn tool_result_to_content(output: &Value) -> Value {
     }
 }
 
-/// Convert a content part to the OpenAI format.
-fn convert_part_to_openai(part: &ContentPart, index: usize) -> Result<Value, AiMuxError> {
-    match part {
-        ContentPart::Text {
-            text,
-            provider_options,
-        } => {
-            let bpt = get_prompt_cache_breakpoint(provider_options);
-            let mut p = json!({ "type": "text", "text": text });
-            if let Some(b) = bpt {
-                p["prompt_cache_breakpoint"] = b;
-            }
-            Ok(p)
-        }
-        ContentPart::Image {
-            image,
-            provider_options,
-            ..
-        } => {
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-            convert_file_part_to_openai(part, Some(&b64), None, None, None, provider_options, index)
-        }
-        ContentPart::File {
-            data,
-            filename,
-            provider_options,
-            ..
-        } => {
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(data);
-            convert_file_part_to_openai(
-                part,
-                Some(&b64),
-                None,
-                None,
-                filename.as_deref(),
-                provider_options,
-                index,
-            )
-        }
-        ContentPart::FileBase64 {
-            data,
-            filename,
-            provider_options,
-            ..
-        } => convert_file_part_to_openai(
-            part,
-            Some(data),
-            None,
-            None,
-            filename.as_deref(),
-            provider_options,
-            index,
-        ),
-        ContentPart::FileUrl {
-            url,
-            provider_options,
-            ..
-        } => {
-            convert_file_part_to_openai(part, None, Some(url), None, None, provider_options, index)
-        }
-        ContentPart::FileReference {
-            reference,
-            filename,
-            provider_options,
-            ..
-        } => convert_file_part_to_openai(
-            part,
-            None,
-            None,
-            Some(reference),
-            filename.as_deref(),
-            provider_options,
-            index,
-        ),
-        ContentPart::Reasoning { .. } => Ok(Value::Null),
-        // These variants are handled by `convert_message_to_openai` for
-        // assistant/tool roles; kept here as a defensive fallback.
-        ContentPart::ToolCall {
-            tool_call_id,
-            tool_name,
-            input,
-            ..
-        } => Ok(json!({
-            "type": "tool_call",
-            "id": tool_call_id,
-            "function": {
-                "name": tool_name,
-                "arguments": input.to_string(),
-            }
-        })),
-        // Tool results reach the wire as a separate `role: "tool"` message
-        // (built by `convert_message_to_openai`), never as a content part —
-        // there is no such part type in the OpenAI chat format.
-        ContentPart::ToolResult { .. } => Ok(Value::Null),
+/// Convert a text part to the OpenAI format.
+fn convert_text_part_to_openai(part: &TextPart) -> Value {
+    let mut value = json!({ "type": "text", "text": part.text });
+    if let Some(bpt) = get_prompt_cache_breakpoint(&part.provider_options) {
+        value["prompt_cache_breakpoint"] = bpt;
     }
+    value
 }
 
 // ── Request body ────────────────────────────────────────────────────────────

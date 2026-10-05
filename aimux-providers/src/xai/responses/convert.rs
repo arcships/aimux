@@ -6,12 +6,13 @@
 //! - `map-xai-responses-finish-reason.ts`
 //! - `xai-responses-prepare-tools.ts`
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model_message::LanguageModelPrompt;
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::shared::SharedProviderOptions;
+use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort, Warning};
 
@@ -295,111 +296,64 @@ pub fn convert_to_xai_responses_input(
     let mut warnings: Vec<Warning> = Vec::new();
 
     for msg in prompt {
-        match msg.role {
-            Role::System => {
-                let content: String = msg
-                    .content
-                    .iter()
-                    .filter_map(|p| match p {
-                        ContentPart::Text { text, .. } => Some(text.as_str()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("");
+        match msg {
+            LanguageModelMessage::System { content, .. } => {
                 input.push(json!({ "role": "system", "content": content }));
             }
-            Role::User => {
+            LanguageModelMessage::User { content, .. } => {
                 let mut content_parts = Vec::new();
-                for part in &msg.content {
+                for part in content {
                     match part {
-                        ContentPart::Text { text, .. } => {
+                        UserPart::Text(TextPart { text, .. }) => {
                             content_parts.push(json!({ "type": "input_text", "text": text }));
                         }
-                        ContentPart::Image {
-                            image: data,
-                            media_type,
-                            provider_options,
-                        }
-                        | ContentPart::File {
-                            data,
-                            media_type,
-                            provider_options,
-                            ..
-                        } => {
-                            use base64::Engine;
-                            let b64 = base64::engine::general_purpose::STANDARD.encode(data);
-                            content_parts.push(convert_image_part(
-                                part,
-                                media_type,
-                                Some(&b64),
-                                None,
-                                provider_options,
-                            )?);
-                        }
-                        ContentPart::FileBase64 {
-                            data,
-                            media_type,
-                            provider_options,
-                            ..
-                        } => {
-                            content_parts.push(convert_image_part(
-                                part,
-                                media_type,
-                                Some(data),
-                                None,
-                                provider_options,
-                            )?);
-                        }
-                        ContentPart::FileUrl {
-                            url,
-                            media_type,
-                            provider_options,
-                        } => {
-                            let top_level = get_top_level_media_type(media_type);
-                            if top_level == "image" {
-                                content_parts.push(convert_image_part(
-                                    part,
-                                    media_type,
-                                    None,
-                                    Some(url),
-                                    provider_options,
-                                )?);
-                            } else {
-                                content_parts
-                                    .push(json!({ "type": "input_file", "file_url": url }));
-                            }
-                        }
-                        ContentPart::FileReference {
-                            media_type,
-                            reference,
-                            provider_options,
-                            ..
-                        } => {
-                            let _ = (media_type, provider_options);
-                            let file_id = resolve_provider_reference(
-                                reference,
-                                crate::xai::options::NAMESPACE,
-                            )
-                            .map_err(AiMuxError::InvalidArgument)?;
-                            content_parts.push(json!({ "type": "input_file", "file_id": file_id }));
-                        }
-                        _ => {
-                            warnings.push(Warning::Other {
-                                message: "xAI Responses API does not support this content type in user messages".to_string(),
+                        UserPart::File(file) => {
+                            content_parts.push(match &file.data {
+                                FileData::Data {
+                                    data: FileBytes::Binary(bytes),
+                                } => {
+                                    use base64::Engine;
+                                    let b64 =
+                                        base64::engine::general_purpose::STANDARD.encode(bytes);
+                                    convert_image_part(file, Some(&b64), None)?
+                                }
+                                FileData::Data {
+                                    data: FileBytes::Base64(data),
+                                } => convert_image_part(file, Some(data), None)?,
+                                FileData::Url { url }
+                                    if get_top_level_media_type(&file.media_type) == "image" =>
+                                {
+                                    convert_image_part(file, None, Some(url))?
+                                }
+                                FileData::Url { url } => {
+                                    json!({ "type": "input_file", "file_url": url })
+                                }
+                                FileData::Reference { reference } => {
+                                    let file_id = resolve_provider_reference(
+                                        reference,
+                                        crate::xai::options::NAMESPACE,
+                                    )
+                                    .map_err(AiMuxError::InvalidArgument)?;
+                                    json!({ "type": "input_file", "file_id": file_id })
+                                }
+                                FileData::Text { .. } => {
+                                    return Err(AiMuxError::UnsupportedFunctionality(
+                                        "text file parts".into(),
+                                    ));
+                                }
                             });
                         }
                     }
                 }
                 input.push(json!({ "role": "user", "content": content_parts }));
             }
-            Role::Assistant => {
-                for part in &msg.content {
+            LanguageModelMessage::Assistant { content, .. } => {
+                for part in content {
                     match part {
-                        ContentPart::Text {
+                        AssistantPart::Text(TextPart {
                             text,
                             provider_options,
-                            ..
-                        } => {
+                        }) => {
                             let id = provider_options
                                 .as_ref()
                                 .and_then(|po| crate::xai::options::xai_options(Some(po)))
@@ -412,14 +366,14 @@ pub fn convert_to_xai_responses_input(
                             }
                             input.push(msg_obj);
                         }
-                        ContentPart::ToolCall {
+                        AssistantPart::ToolCall(ToolCallPart {
                             tool_call_id,
                             tool_name,
                             input: tool_input,
                             provider_executed,
                             provider_options,
                             ..
-                        } => {
+                        }) => {
                             // Skip provider-executed tool calls.
                             // The standardized field is authoritative. Fall back
                             // to the legacy provider option only when it is absent.
@@ -455,12 +409,12 @@ pub fn convert_to_xai_responses_input(
                                 "status": "completed"
                             }));
                         }
-                        ContentPart::ToolResult { .. } => {}
-                        ContentPart::Reasoning {
+                        AssistantPart::ToolResult(_) => {}
+                        AssistantPart::Reasoning(ReasoningPart {
                             text,
                             provider_options,
                             ..
-                        } => {
+                        }) => {
                             let item_id = provider_options
                                 .as_ref()
                                 .and_then(|po| crate::xai::options::xai_options(Some(po)))
@@ -495,7 +449,7 @@ pub fn convert_to_xai_responses_input(
                                 });
                             }
                         }
-                        _ => {
+                        AssistantPart::File(_) => {
                             warnings.push(Warning::Other {
                                 message: "xAI Responses API does not support this content type in assistant messages".to_string(),
                             });
@@ -503,24 +457,22 @@ pub fn convert_to_xai_responses_input(
                     }
                 }
             }
-            Role::Tool => {
-                for part in &msg.content {
-                    if let ContentPart::ToolResult {
+            LanguageModelMessage::Tool { content, .. } => {
+                for part in content {
+                    let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
                         result,
                         ..
-                    } = part
-                    {
-                        let output_value = match result {
-                            Value::String(s) => s.clone(),
-                            other => other.to_string(),
-                        };
-                        input.push(json!({
-                            "type": "function_call_output",
-                            "call_id": tool_call_id,
-                            "output": output_value
-                        }));
-                    }
+                    }) = part;
+                    let output_value = match result {
+                        Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    input.push(json!({
+                        "type": "function_call_output",
+                        "call_id": tool_call_id,
+                        "output": output_value
+                    }));
                 }
             }
         }
@@ -530,12 +482,11 @@ pub fn convert_to_xai_responses_input(
 }
 
 fn convert_image_part(
-    file_part: &ContentPart,
-    media_type: &str,
+    file_part: &FilePart,
     b64_data: Option<&str>,
     url: Option<&str>,
-    provider_options: &Option<SharedProviderOptions>,
 ) -> Result<Value, AiMuxError> {
+    let media_type = &file_part.media_type;
     if get_top_level_media_type(media_type) != "image" {
         return Err(AiMuxError::UnsupportedFunctionality(format!(
             "file part media type {media_type} as inline data (xAI Responses requires a URL or a Files API reference for non-image files)"
@@ -556,7 +507,8 @@ fn convert_image_part(
     });
 
     // Image detail provider option.
-    if let Some(detail) = provider_options
+    if let Some(detail) = file_part
+        .provider_options
         .as_ref()
         .and_then(|po| crate::xai::options::xai_options(Some(po)))
         .and_then(|x| x.get("imageDetail"))

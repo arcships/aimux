@@ -25,14 +25,16 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::generate::{GenerateTextOptions, generate_text};
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, ReasoningOutput, Source};
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
@@ -46,11 +48,7 @@ use aimux_providers::{HuggingFaceProvider, HuggingFaceProviderSettings, create_h
 
 /// The TS `TEST_PROMPT`: a single user text message "Hello".
 fn test_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("Hello")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 /// `CallOptions` with only `prompt` set (everything else default/None).
@@ -322,16 +320,11 @@ async fn should_send_model_id_settings_and_input() {
     let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let prompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::System,
-            content: vec![ContentPart::text("You are a helpful assistant.")],
-            ..Default::default()
+        LanguageModelMessage::System {
+            content: "You are a helpful assistant.".into(),
+            provider_options: None,
         },
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Hello")],
-            ..Default::default()
-        },
+        LanguageModelMessage::user_text("Hello"),
     ];
     let mut options = default_options(prompt);
     options.temperature = Some(0.5);
@@ -887,13 +880,22 @@ async fn should_convert_user_messages_with_images() {
     let provider = make_provider(&server);
     let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
-    let prompt = vec![LanguageModelPromptMessage {
-        role: Role::User,
+    let prompt = vec![LanguageModelMessage::User {
         content: vec![
-            ContentPart::text("What do you see?"),
-            ContentPart::file_base64("AQIDBA==", "image/jpeg"),
+            UserPart::Text(TextPart {
+                text: "What do you see?".into(),
+                provider_options: None,
+            }),
+            UserPart::File(FilePart {
+                data: FileData::Data {
+                    data: FileBytes::Base64("AQIDBA==".into()),
+                },
+                media_type: "image/jpeg".into(),
+                filename: None,
+                provider_options: None,
+            }),
         ],
-        ..Default::default()
+        provider_options: None,
     }];
 
     let result = model
@@ -921,13 +923,16 @@ async fn should_throw_for_file_parts_with_provider_references() {
     let provider = make_provider(&server);
     let model = provider.responses("Qwen/Qwen2.5-VL-32B-Instruct");
 
-    let prompt = vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::file_reference(
-            "image/jpeg",
-            json!({ "huggingface": "file-ref-123" }),
-        )],
-        ..Default::default()
+    let prompt = vec![LanguageModelMessage::User {
+        content: vec![UserPart::File(FilePart {
+            data: FileData::Reference {
+                reference: [("huggingface".into(), "file-ref-123".into())].into(),
+            },
+            media_type: "image/jpeg".into(),
+            filename: None,
+            provider_options: None,
+        })],
+        provider_options: None,
     }];
 
     let result = model.do_generate(&default_options(prompt)).await;
@@ -951,21 +956,15 @@ async fn should_handle_assistant_messages() {
     let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let prompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Hello")],
-            ..Default::default()
+        LanguageModelMessage::user_text("Hello"),
+        LanguageModelMessage::Assistant {
+            content: vec![AssistantPart::Text(TextPart {
+                text: "Hi there!".into(),
+                provider_options: None,
+            })],
+            provider_options: None,
         },
-        LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::text("Hi there!")],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("How are you?")],
-            ..Default::default()
-        },
+        LanguageModelMessage::user_text("How are you?"),
     ];
 
     let result = model
@@ -995,14 +994,32 @@ async fn should_not_warn_about_assistant_content_types() {
     let provider = make_provider(&server);
     let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
-    let prompt = vec![LanguageModelPromptMessage {
-        role: Role::Assistant,
+    let prompt = vec![LanguageModelMessage::Assistant {
         content: vec![
-            ContentPart::tool_call("test", "test", json!({})),
-            ContentPart::tool_result("test", json!({ "type": "text", "value": "test" })),
-            ContentPart::reasoning("thinking..."),
+            AssistantPart::ToolCall(ToolCallPart {
+                tool_call_id: "test".into(),
+                tool_name: "test".into(),
+                input: json!({}),
+                provider_executed: None,
+                thought_signature: None,
+                provider_options: None,
+            }),
+            AssistantPart::ToolResult(ToolResultPart {
+                tool_call_id: "test".into(),
+                tool_name: None,
+                result: json!({ "type": "text", "value": "test" }),
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
+                provider_options: None,
+            }),
+            AssistantPart::Reasoning(ReasoningPart {
+                text: "thinking...".into(),
+                signature: None,
+                provider_options: None,
+            }),
         ],
-        ..Default::default()
+        provider_options: None,
     }];
 
     let result = model
@@ -1028,13 +1045,17 @@ async fn should_warn_about_tool_messages() {
     let provider = make_provider(&server);
     let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
-    let prompt = vec![LanguageModelPromptMessage {
-        role: Role::Tool,
-        content: vec![ContentPart::tool_result(
-            "test",
-            json!({ "type": "text", "value": "test" }),
-        )],
-        ..Default::default()
+    let prompt = vec![LanguageModelMessage::Tool {
+        content: vec![ToolPart::ToolResult(ToolResultPart {
+            tool_call_id: "test".into(),
+            tool_name: None,
+            result: json!({ "type": "text", "value": "test" }),
+            is_error: None,
+            preliminary: None,
+            dynamic: None,
+            provider_options: None,
+        })],
+        provider_options: None,
     }];
 
     let result = model
@@ -1787,10 +1808,16 @@ const PNG_BASE64: &str = "iVBORw0KGgo=";
 /// TS: "passes full image/png through unchanged for inline data"
 #[test]
 fn passes_full_image_png_through_unchanged_for_inline_data() {
-    let prompt = vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::file_base64(PNG_BASE64, "image/png")],
-        ..Default::default()
+    let prompt = vec![LanguageModelMessage::User {
+        content: vec![UserPart::File(FilePart {
+            data: FileData::Data {
+                data: FileBytes::Base64(PNG_BASE64.into()),
+            },
+            media_type: "image/png".into(),
+            filename: None,
+            provider_options: None,
+        })],
+        provider_options: None,
     }];
 
     let (input, warnings) =
@@ -1810,10 +1837,16 @@ fn passes_full_image_png_through_unchanged_for_inline_data() {
 /// TS: "detects image subtype from inline bytes for top-level 'image'"
 #[test]
 fn detects_image_subtype_from_inline_bytes_for_top_level_image() {
-    let prompt = vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::file_base64(PNG_BASE64, "image")],
-        ..Default::default()
+    let prompt = vec![LanguageModelMessage::User {
+        content: vec![UserPart::File(FilePart {
+            data: FileData::Data {
+                data: FileBytes::Base64(PNG_BASE64.into()),
+            },
+            media_type: "image".into(),
+            filename: None,
+            provider_options: None,
+        })],
+        provider_options: None,
     }];
 
     let (input, warnings) =
@@ -1833,10 +1866,16 @@ fn detects_image_subtype_from_inline_bytes_for_top_level_image() {
 /// TS: "passes through URL source for top-level-only image"
 #[test]
 fn passes_through_url_source_for_top_level_only_image() {
-    let prompt = vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::file_url("https://example.com/x.png", "image")],
-        ..Default::default()
+    let prompt = vec![LanguageModelMessage::User {
+        content: vec![UserPart::File(FilePart {
+            data: FileData::Url {
+                url: "https://example.com/x.png".into(),
+            },
+            media_type: "image".into(),
+            filename: None,
+            provider_options: None,
+        })],
+        provider_options: None,
     }];
 
     let (input, warnings) =
@@ -1856,10 +1895,16 @@ fn passes_through_url_source_for_top_level_only_image() {
 /// TS: "normalizes image/* wildcard via detection"
 #[test]
 fn normalizes_image_wildcard_via_detection() {
-    let prompt = vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::file_base64(PNG_BASE64, "image/*")],
-        ..Default::default()
+    let prompt = vec![LanguageModelMessage::User {
+        content: vec![UserPart::File(FilePart {
+            data: FileData::Data {
+                data: FileBytes::Base64(PNG_BASE64.into()),
+            },
+            media_type: "image/*".into(),
+            filename: None,
+            provider_options: None,
+        })],
+        provider_options: None,
     }];
 
     let (input, warnings) =

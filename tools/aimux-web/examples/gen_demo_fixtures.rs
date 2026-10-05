@@ -9,9 +9,7 @@
 //!
 //! The rest only enrich the Traces / Sessions listing.
 
-use aimux_core::content::ContentPart;
-use aimux_core::language_model_message::LanguageModelPromptMessage;
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{AssistantPart, LanguageModelMessage, TextPart};
 use aimux_core::options::CallOptions;
 use aimux_core::recording::{
     HttpExchange, HttpRecord, InputRecord, OutcomeRecord, OutcomeStatus, ProviderRecord, Recording,
@@ -21,21 +19,13 @@ use aimux_core::recording::{
 const AGENT_SYSTEM: &str =
     "You are a helpful assistant. Always use the calculator tool for arithmetic, then answer.";
 
-fn msg(role: Role, text: &str) -> LanguageModelPromptMessage {
-    LanguageModelPromptMessage {
-        role,
-        content: vec![ContentPart::text(text)],
-        provider_options: None,
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn recording(
     call_id: &str,
     recorded_at: &str,
     provider: &str,
     model_id: &str,
-    prompt: Vec<LanguageModelPromptMessage>,
+    prompt: Vec<LanguageModelMessage>,
     session: Option<&str>,
     step: Option<u32>,
     status: OutcomeStatus,
@@ -131,7 +121,7 @@ data: [DONE]"#;
             "2026-08-14T09:31:10.000Z",
             "openai",
             "gpt-4o",
-            vec![msg(Role::User, "what is 1 + 1?")],
+            vec![LanguageModelMessage::user_text("what is 1 + 1?")],
             Some("sess-playground"),
             Some(0),
             OutcomeStatus::Success,
@@ -150,8 +140,11 @@ data: [DONE]"#;
             "openai",
             "gpt-4o",
             vec![
-                msg(Role::System, AGENT_SYSTEM),
-                msg(Role::User, "what is 17 * 19?"),
+                LanguageModelMessage::System {
+                    content: AGENT_SYSTEM.into(),
+                    provider_options: None,
+                },
+                LanguageModelMessage::user_text("what is 17 * 19?"),
             ],
             Some("sess-agent"),
             Some(0),
@@ -171,8 +164,11 @@ data: [DONE]"#;
             "deepseek",
             "deepseek-chat",
             vec![
-                msg(Role::System, "You are a careful technical analyst."),
-                msg(Role::User, "Explain how prefix caching works."),
+                LanguageModelMessage::System {
+                    content: "You are a careful technical analyst.".into(),
+                    provider_options: None,
+                },
+                LanguageModelMessage::user_text("Explain how prefix caching works."),
             ],
             Some("sess-deepseek"),
             Some(0),
@@ -191,10 +187,19 @@ data: [DONE]"#;
             "deepseek",
             "deepseek-chat",
             vec![
-                msg(Role::System, "You are a careful technical analyst."),
-                msg(Role::User, "Explain how prefix caching works."),
-                msg(Role::Assistant, "Prefix caching reuses the KV cache..."),
-                msg(Role::User, "What is the hit rate formula?"),
+                LanguageModelMessage::System {
+                    content: "You are a careful technical analyst.".into(),
+                    provider_options: None,
+                },
+                LanguageModelMessage::user_text("Explain how prefix caching works."),
+                LanguageModelMessage::Assistant {
+                    content: vec![AssistantPart::Text(TextPart {
+                        text: "Prefix caching reuses the KV cache...".into(),
+                        provider_options: None,
+                    })],
+                    provider_options: None,
+                },
+                LanguageModelMessage::user_text("What is the hit rate formula?"),
             ],
             Some("sess-deepseek"),
             Some(1),
@@ -213,7 +218,7 @@ data: [DONE]"#;
             "2026-08-14T09:25:15.000Z",
             "groq",
             "llama-3.3-70b-versatile",
-            vec![msg(Role::User, "hi")],
+            vec![LanguageModelMessage::user_text("hi")],
             Some("sess-err"),
             Some(0),
             OutcomeStatus::Error,
@@ -228,7 +233,7 @@ data: [DONE]"#;
             "2026-08-14T09:10:05.000Z",
             "anthropic",
             "claude-3-5-sonnet-latest",
-            vec![msg(Role::User, "Write a haiku about Rust.")],
+            vec![LanguageModelMessage::user_text("Write a haiku about Rust.")],
             None,
             None,
             OutcomeStatus::Success,

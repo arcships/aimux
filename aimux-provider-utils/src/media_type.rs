@@ -2,7 +2,9 @@
 
 use std::borrow::Cow;
 
-use aimux_core::{content::ContentPart, error::AiMuxError};
+use aimux_core::error::AiMuxError;
+use aimux_core::language_model_message::FilePart;
+use aimux_core::shared::{FileBytes, FileData};
 
 /// Inline data accepted by the media type detector.
 #[derive(Clone, Copy, Debug)]
@@ -177,27 +179,18 @@ pub fn is_full_media_type(media_type: &str) -> bool {
 /// Resolve an inline file's partial media type, or preserve its full type.
 ///
 /// # Errors
-/// Returns an error for nonfile parts, malformed base64, or partial media types
+/// Returns an error for malformed base64, or partial media types
 /// that cannot be detected or whose data is not inline.
-pub fn resolve_full_media_type(part: &ContentPart) -> Result<String, AiMuxError> {
-    let (media_type, data) = match part {
-        ContentPart::Image {
-            image, media_type, ..
-        } => (media_type, Some(MediaTypeData::Bytes(image))),
-        ContentPart::File {
-            data, media_type, ..
-        } => (media_type, Some(MediaTypeData::Bytes(data))),
-        ContentPart::FileBase64 {
-            data, media_type, ..
-        } => (media_type, Some(MediaTypeData::Base64(data))),
-        ContentPart::FileUrl { media_type, .. } | ContentPart::FileReference { media_type, .. } => {
-            (media_type, None)
-        }
-        _ => {
-            return Err(AiMuxError::InvalidArgument(
-                "media type resolution requires a file part".into(),
-            ));
-        }
+pub fn resolve_full_media_type(part: &FilePart) -> Result<String, AiMuxError> {
+    let media_type = &part.media_type;
+    let data = match &part.data {
+        FileData::Data {
+            data: FileBytes::Binary(bytes),
+        } => Some(MediaTypeData::Bytes(bytes)),
+        FileData::Data {
+            data: FileBytes::Base64(base64),
+        } => Some(MediaTypeData::Base64(base64)),
+        _ => None,
     };
     if is_full_media_type(media_type) {
         return Ok(media_type.clone());

@@ -8,9 +8,7 @@
 
 use serde_json::json;
 
-use aimux_core::content::ContentPart;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::tool::{FunctionTool, Tool};
 
@@ -19,11 +17,7 @@ use aimux_providers::openai::convert::build_request_body_with_warnings as openai
 use aimux_providers::openai::responses::convert::build_responses_request_body;
 
 fn user_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("Hello")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 fn weather_tool() -> FunctionTool {

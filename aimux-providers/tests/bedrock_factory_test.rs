@@ -22,10 +22,8 @@ use serial_test::serial;
 use sha2::{Digest, Sha256};
 
 use aimux_core::AiMuxError;
-use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::LanguageModelPromptMessage;
-use aimux_core::message::Role;
+use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::CallOptions;
 use aimux_provider_utils::{HeaderMapOpt, Resolvable};
 use aimux_providers::bedrock::{
@@ -55,11 +53,7 @@ fn clean_env() -> Vec<EnvVar> {
 }
 
 fn user_prompt(text: &str) -> CallOptions {
-    CallOptions::new(vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text(text)],
-        ..Default::default()
-    }])
+    CallOptions::new(vec![LanguageModelMessage::user_text(text)])
 }
 
 fn converse_response() -> Canned {

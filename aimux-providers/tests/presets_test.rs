@@ -11,10 +11,8 @@ use serde_json::json;
 use serial_test::serial;
 
 use aimux_core::AiMuxError;
-use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::LanguageModelPromptMessage;
-use aimux_core::message::Role;
+use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::CallOptions;
 use aimux_provider_utils::{Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse};
 use aimux_providers::preset;
@@ -127,11 +125,7 @@ fn chat_ok() -> Vec<u8> {
 }
 
 fn hello() -> CallOptions {
-    CallOptions::new(vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("hi")],
-        ..Default::default()
-    }])
+    CallOptions::new(vec![LanguageModelMessage::user_text("hi")])
 }
 
 #[serial]

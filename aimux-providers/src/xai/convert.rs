@@ -4,6 +4,7 @@
 //! `remove-additional-properties.ts`, plus the media-type and provider
 //! reference helpers its input conversion uses.
 
+use aimux_core::shared::SharedProviderReference;
 use serde_json::Value;
 
 // ── Reasoning effort ─────────────────────────────────────────────────────────
@@ -60,17 +61,15 @@ pub fn remove_additional_properties_false(value: &Value) -> Value {
 ///
 /// Returns a `String` listing the available providers when the requested key
 /// is absent.
-pub fn resolve_provider_reference(reference: &Value, provider: &str) -> Result<String, String> {
-    if let Some(val) = reference.get(provider) {
-        if let Some(s) = val.as_str() {
-            return Ok(s.to_string());
-        }
-        return Ok(val.to_string());
+pub fn resolve_provider_reference(
+    reference: &SharedProviderReference,
+    provider: &str,
+) -> Result<String, String> {
+    if let Some(value) = reference.get(provider) {
+        return Ok(value.clone());
     }
-    let available: Vec<String> = reference
-        .as_object()
-        .map(|m| m.keys().cloned().collect())
-        .unwrap_or_default();
+    let mut available: Vec<&str> = reference.keys().map(String::as_str).collect();
+    available.sort_unstable();
     Err(format!(
         "No provider reference found for provider '{}'. Available providers: {}",
         provider,

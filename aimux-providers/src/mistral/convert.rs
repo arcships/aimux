@@ -3,10 +3,12 @@
 //! Mirrors the TS `convert-to-mistral-chat-messages.ts`,
 //! `mistral-prepare-tools.ts`, and `map-mistral-finish-reason.ts`.
 
-use aimux_core::content::ContentPart;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart, ToolPart,
+    ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
 use serde_json::{Value, json};
@@ -114,36 +116,33 @@ pub fn convert_prompt_to_mistral_messages(prompt: &LanguageModelPrompt) -> Vec<V
     result
 }
 
-fn convert_message_to_mistral(msg: &LanguageModelPromptMessage, is_last: bool) -> Vec<Value> {
-    match msg.role {
-        Role::System => {
-            let text = join_text_parts(&msg.content);
-            vec![json!({ "role": "system", "content": text })]
+fn convert_message_to_mistral(msg: &LanguageModelMessage, is_last: bool) -> Vec<Value> {
+    match msg {
+        LanguageModelMessage::System { content, .. } => {
+            vec![json!({ "role": "system", "content": content })]
         }
-        Role::User => {
-            let parts: Vec<Value> = msg.content.iter().map(convert_part_to_mistral).collect();
+        LanguageModelMessage::User { content, .. } => {
+            let parts: Vec<Value> = content.iter().map(convert_part_to_mistral).collect();
             vec![json!({ "role": "user", "content": parts })]
         }
-        Role::Assistant => {
-            let text = join_text_parts(&msg.content);
-            let has_tool_calls = msg
-                .content
+        LanguageModelMessage::Assistant { content, .. } => {
+            let text = join_text_parts(content);
+            let has_tool_calls = content
                 .iter()
-                .any(|p| matches!(p, ContentPart::ToolCall { .. }));
+                .any(|p| matches!(p, AssistantPart::ToolCall(_)));
 
             let mut msg_json = json!({ "role": "assistant", "content": text });
 
             if has_tool_calls {
-                let tool_calls: Vec<Value> = msg
-                    .content
+                let tool_calls: Vec<Value> = content
                     .iter()
                     .filter_map(|p| match p {
-                        ContentPart::ToolCall {
+                        AssistantPart::ToolCall(ToolCallPart {
                             tool_call_id,
                             tool_name,
                             input,
                             ..
-                        } => {
+                        }) => {
                             let arguments = if input.is_null() {
                                 "{}".to_string()
                             } else {
@@ -169,33 +168,30 @@ fn convert_message_to_mistral(msg: &LanguageModelPromptMessage, is_last: bool) -
             }
             vec![msg_json]
         }
-        Role::Tool => msg
-            .content
+        LanguageModelMessage::Tool { content, .. } => content
             .iter()
-            .filter_map(|part| match part {
-                ContentPart::ToolResult {
+            .map(|part| {
+                let ToolPart::ToolResult(ToolResultPart {
                     tool_call_id,
                     result,
                     ..
-                } => {
-                    let content = tool_result_to_content(result);
-                    Some(json!({
-                        "role": "tool",
-                        "tool_call_id": tool_call_id,
-                        "content": content,
-                    }))
-                }
-                _ => None,
+                }) = part;
+                let content = tool_result_to_content(result);
+                json!({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": content,
+                })
             })
             .collect(),
     }
 }
 
-fn join_text_parts(content: &[ContentPart]) -> String {
+fn join_text_parts(content: &[AssistantPart]) -> String {
     content
         .iter()
         .filter_map(|p| match p {
-            ContentPart::Text { text, .. } => Some(text.as_str()),
+            AssistantPart::Text(TextPart { text, .. }) => Some(text.as_str()),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -209,71 +205,30 @@ fn tool_result_to_content(output: &Value) -> Value {
     }
 }
 
-fn convert_part_to_mistral(part: &ContentPart) -> Value {
+fn convert_part_to_mistral(part: &UserPart) -> Value {
     match part {
-        ContentPart::Text { text, .. } => json!({ "type": "text", "text": text }),
-        ContentPart::Image {
-            image, media_type, ..
-        } => {
+        UserPart::Text(TextPart { text, .. }) => json!({ "type": "text", "text": text }),
+        UserPart::File(file) => {
             use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-            json!({
-                "type": "image_url",
-                "image_url": format!("data:{};base64,{}", media_type, b64),
-            })
-        }
-        ContentPart::File {
-            data, media_type, ..
-        } => {
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(data);
-            let top_level = media_type.split('/').next().unwrap_or("");
-            if top_level == "image" {
-                json!({
-                    "type": "image_url",
-                    "image_url": format!("data:{};base64,{}", media_type, b64),
-                })
+            let url = match &file.data {
+                FileData::Data { data } => {
+                    let b64 = match data {
+                        FileBytes::Binary(bytes) => {
+                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                        }
+                        FileBytes::Base64(data) => data.clone(),
+                    };
+                    format!("data:{};base64,{}", file.media_type, b64)
+                }
+                FileData::Url { url } => url.clone(),
+                FileData::Reference { .. } | FileData::Text { .. } => return Value::Null,
+            };
+            if file.media_type.starts_with("image/") {
+                json!({ "type": "image_url", "image_url": url })
             } else {
-                json!({
-                    "type": "document_url",
-                    "document_url": format!("data:{};base64,{}", media_type, b64),
-                })
+                json!({ "type": "document_url", "document_url": url })
             }
         }
-        // These variants are handled by `convert_message_to_mistral` for
-        // assistant/tool roles.
-        ContentPart::ToolCall {
-            tool_call_id,
-            tool_name,
-            input,
-            ..
-        } => {
-            json!({
-                "type": "tool_call",
-                "id": tool_call_id,
-                "function": {
-                    "name": tool_name,
-                    "arguments": input.to_string(),
-                }
-            })
-        }
-        ContentPart::ToolResult {
-            tool_call_id,
-            result,
-            ..
-        } => {
-            json!({
-                "type": "tool_result",
-                "tool_call_id": tool_call_id,
-                "content": result,
-            })
-        }
-
-        // Variants not yet modelled for Mistral; no test exercises these paths.
-        ContentPart::FileBase64 { .. }
-        | ContentPart::FileUrl { .. }
-        | ContentPart::FileReference { .. }
-        | ContentPart::Reasoning { .. } => Value::Null,
     }
 }
 

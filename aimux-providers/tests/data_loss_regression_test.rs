@@ -33,10 +33,8 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path as path_matcher, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GeneratedFile, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::{FileBytes, FileData};
@@ -126,11 +124,7 @@ fn cassette_json(rel: &str) -> Value {
 // ═══════════════════════════════════════════════════════════════════════════
 
 fn user_prompt(text: &str) -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text(text)],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text(text)]
 }
 
 fn opts() -> CallOptions {

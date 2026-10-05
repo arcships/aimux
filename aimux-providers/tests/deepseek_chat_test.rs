@@ -26,13 +26,15 @@ use wiremock::matchers::{method, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::AiMuxError;
-use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, Tool};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput};
 use aimux_core::shared::provider_namespace;
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning};
@@ -45,25 +47,28 @@ use aimux_providers::deepseek::{
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn message(role: Role, content: Vec<ContentPart>) -> LanguageModelPromptMessage {
-    LanguageModelPromptMessage {
-        role,
-        content,
-        ..Default::default()
-    }
-}
-
-fn with_options(
-    mut message: LanguageModelPromptMessage,
-    options: Value,
-) -> LanguageModelPromptMessage {
-    message.provider_options = Some(serde_json::from_value(options).unwrap());
+fn with_options(mut message: LanguageModelMessage, options: Value) -> LanguageModelMessage {
+    let provider_options = match &mut message {
+        LanguageModelMessage::System {
+            provider_options, ..
+        }
+        | LanguageModelMessage::User {
+            provider_options, ..
+        }
+        | LanguageModelMessage::Assistant {
+            provider_options, ..
+        }
+        | LanguageModelMessage::Tool {
+            provider_options, ..
+        } => provider_options,
+    };
+    *provider_options = Some(serde_json::from_value(options).unwrap());
     message
 }
 
 /// The upstream `TEST_PROMPT`.
 fn test_prompt() -> LanguageModelPrompt {
-    vec![message(Role::User, vec![ContentPart::text("Hello")])]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 fn options() -> CallOptions {
@@ -394,11 +399,11 @@ async fn should_use_the_chat_completions_path_of_the_default_and_beta_base_urls(
 #[tokio::test]
 async fn text_should_send_correct_request_body() {
     let mut options = options_for(vec![
-        message(
-            Role::System,
-            vec![ContentPart::text("You are a helpful assistant.")],
-        ),
-        message(Role::User, vec![ContentPart::text("Hello")]),
+        LanguageModelMessage::System {
+            content: ("You are a helpful assistant.").into(),
+            provider_options: None,
+        },
+        LanguageModelMessage::user_text("Hello"),
     ]);
     options.temperature = Some(0.5);
     options.top_p = Some(0.3);
@@ -513,22 +518,25 @@ async fn text_should_send_message_names() {
         "deepseek-chat",
         vec![
             with_options(
-                message(
-                    Role::System,
-                    vec![ContentPart::text("You are a helpful assistant.")],
-                ),
+                LanguageModelMessage::System {
+                    content: ("You are a helpful assistant.").into(),
+                    provider_options: None,
+                },
                 name("guide"),
             ),
+            with_options(LanguageModelMessage::user_text("Hello"), name("alice")),
             with_options(
-                message(Role::User, vec![ContentPart::text("Hello")]),
-                name("alice"),
-            ),
-            with_options(
-                message(Role::Assistant, vec![ContentPart::text("Hello, Alice.")]),
+                LanguageModelMessage::Assistant {
+                    content: vec![AssistantPart::Text(TextPart {
+                        text: ("Hello, Alice.").into(),
+                        provider_options: None,
+                    })],
+                    provider_options: None,
+                },
                 name("assistant"),
             ),
             with_options(
-                message(Role::User, vec![ContentPart::text("How are you?")]),
+                LanguageModelMessage::user_text("How are you?"),
                 name("alice"),
             ),
         ],
@@ -762,11 +770,8 @@ fn reasoning_response() -> Value {
 #[tokio::test]
 async fn reasoning_should_send_correct_request_body() {
     let options = with_provider_options(
-        options_for(vec![message(
-            Role::User,
-            vec![ContentPart::text(
-                "How many \"r\"s are in the word \"strawberry\"?",
-            )],
+        options_for(vec![LanguageModelMessage::user_text(
+            "How many \"r\"s are in the word \"strawberry\"?",
         )]),
         json!({ "deepseek": { "thinking": { "type": "enabled" } } }),
     );
@@ -1310,12 +1315,15 @@ async fn json_response_format_should_extract_text_content() {
 
 fn prefix_prompt(prefix_options: Value) -> LanguageModelPrompt {
     vec![
-        message(
-            Role::User,
-            vec![ContentPart::text("Complete this sentence.")],
-        ),
+        LanguageModelMessage::user_text("Complete this sentence."),
         with_options(
-            message(Role::Assistant, vec![ContentPart::text("The answer is")]),
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::Text(TextPart {
+                    text: ("The answer is").into(),
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
             json!({ "deepseek": prefix_options }),
         ),
     ]
@@ -1347,7 +1355,13 @@ async fn prefix_should_reject_prefix_completion_with_the_default_base_url() {
     let message = generate_error(
         "deepseek-chat",
         &options_for(vec![with_options(
-            message(Role::Assistant, vec![ContentPart::text("The answer is")]),
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::Text(TextPart {
+                    text: ("The answer is").into(),
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
             json!({ "deepseek": { "prefix": true } }),
         )]),
     )
@@ -1431,11 +1445,11 @@ async fn stream_parts(
 #[tokio::test]
 async fn stream_text_should_send_model_id_settings_and_input() {
     let mut options = options_for(vec![
-        message(
-            Role::System,
-            vec![ContentPart::text("You are a helpful assistant.")],
-        ),
-        message(Role::User, vec![ContentPart::text("Hello")]),
+        LanguageModelMessage::System {
+            content: ("You are a helpful assistant.").into(),
+            provider_options: None,
+        },
+        LanguageModelMessage::user_text("Hello"),
     ]);
     options.temperature = Some(0.5);
     options.top_p = Some(0.3);
@@ -1522,18 +1536,21 @@ async fn stream_text_should_send_message_names() {
     let name = |value: &str| json!({ "deepseek": { "name": value } });
     let options = options_for(vec![
         with_options(
-            message(
-                Role::System,
-                vec![ContentPart::text("You are a helpful assistant.")],
-            ),
+            LanguageModelMessage::System {
+                content: ("You are a helpful assistant.").into(),
+                provider_options: None,
+            },
             name("guide"),
         ),
+        with_options(LanguageModelMessage::user_text("Hello"), name("alice")),
         with_options(
-            message(Role::User, vec![ContentPart::text("Hello")]),
-            name("alice"),
-        ),
-        with_options(
-            message(Role::Assistant, vec![ContentPart::text("Hello, Alice.")]),
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::Text(TextPart {
+                    text: ("Hello, Alice.").into(),
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
             name("assistant"),
         ),
     ]);
@@ -1916,32 +1933,22 @@ async fn stream_prefix_should_send_prefix_true_on_the_final_assistant_message() 
 // convert-to-deepseek-chat-messages.test.ts (through the request body)
 // ===========================================================================
 
-fn png_data() -> ContentPart {
-    ContentPart::file_base64("AAECAw==", "image/png")
+fn png_data() -> UserPart {
+    UserPart::File(FilePart {
+        data: FileData::Data {
+            data: FileBytes::Base64("AAECAw==".into()),
+        },
+        media_type: "image/png".into(),
+        filename: None,
+        provider_options: None,
+    })
 }
 
-fn file_with_options(part: ContentPart, options: Value) -> ContentPart {
-    match part {
-        ContentPart::FileBase64 {
-            data,
-            media_type,
-            filename,
-            ..
-        } => ContentPart::FileBase64 {
-            data,
-            media_type,
-            filename,
-            provider_options: Some(serde_json::from_value(options).unwrap()),
-        },
-        ContentPart::FileUrl {
-            url, media_type, ..
-        } => ContentPart::FileUrl {
-            url,
-            media_type,
-            provider_options: Some(serde_json::from_value(options).unwrap()),
-        },
-        other => other,
+fn file_with_options(mut part: UserPart, options: Value) -> UserPart {
+    if let UserPart::File(file) = &mut part {
+        file.provider_options = Some(serde_json::from_value(options).unwrap());
     }
+    part
 }
 
 // ---- describe('message names') -------------------------------------------------------------
@@ -1949,10 +1956,18 @@ fn file_with_options(part: ContentPart, options: Value) -> ContentPart {
 #[tokio::test]
 async fn convert_should_ignore_a_name_on_a_tool_message_with_an_unsupported_warning() {
     let options = options_for(vec![with_options(
-        message(
-            Role::Tool,
-            vec![ContentPart::tool_result("call-1", json!("sunny"))],
-        ),
+        LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
+                tool_call_id: ("call-1").into(),
+                result: json!("sunny"),
+                tool_name: None,
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
+                provider_options: None,
+            })],
+            provider_options: None,
+        },
         json!({ "deepseek": { "name": "weather_tool" } }),
     )]);
     let result = generate_result("deepseek-chat", &options).await;
@@ -1972,7 +1987,7 @@ async fn convert_should_ignore_a_name_on_a_tool_message_with_an_unsupported_warn
 #[tokio::test]
 async fn convert_should_reject_a_non_string_name() {
     let options = options_for(vec![with_options(
-        message(Role::User, vec![ContentPart::text("Hello")]),
+        LanguageModelMessage::user_text("Hello"),
         json!({ "deepseek": { "name": 123 } }),
     )]);
     let message = generate_error("deepseek-chat", &options).await;
@@ -1989,7 +2004,7 @@ async fn convert_should_serialize_a_name_from_a_custom_provider_options_namespac
     .unwrap()
     .chat("deepseek-chat");
     let options = options_for(vec![with_options(
-        message(Role::User, vec![ContentPart::text("Hello")]),
+        LanguageModelMessage::user_text("Hello"),
         json!({ "azure": { "name": "alice" } }),
     )]);
     let result = model.do_generate(&options).await.unwrap();
@@ -2005,7 +2020,7 @@ async fn convert_should_serialize_a_name_from_a_custom_provider_options_namespac
 async fn convert_should_convert_messages_with_only_a_text_part_to_a_string_content() {
     let messages = wire_messages(
         "deepseek-chat",
-        vec![message(Role::User, vec![ContentPart::text("Hello")])],
+        vec![LanguageModelMessage::user_text("Hello")],
     )
     .await;
     assert_eq!(messages, [json!({ "role": "user", "content": "Hello" })]);
@@ -2015,10 +2030,16 @@ async fn convert_should_convert_messages_with_only_a_text_part_to_a_string_conte
 async fn convert_should_convert_image_data_to_an_image_url_content_part() {
     let messages = wire_messages(
         "deepseek-chat",
-        vec![message(
-            Role::User,
-            vec![ContentPart::text("Hello"), png_data()],
-        )],
+        vec![LanguageModelMessage::User {
+            content: vec![
+                UserPart::Text(TextPart {
+                    text: ("Hello").into(),
+                    provider_options: None,
+                }),
+                png_data(),
+            ],
+            provider_options: None,
+        }],
     )
     .await;
     assert_eq!(
@@ -2034,13 +2055,23 @@ async fn convert_should_convert_image_data_to_an_image_url_content_part() {
 async fn convert_should_convert_an_image_url_to_an_image_url_content_part() {
     let messages = wire_messages(
         "deepseek-chat",
-        vec![message(
-            Role::User,
-            vec![
-                ContentPart::text("Hello"),
-                ContentPart::file_url("https://example.com/image.png", "image/png"),
+        vec![LanguageModelMessage::User {
+            content: vec![
+                UserPart::Text(TextPart {
+                    text: ("Hello").into(),
+                    provider_options: None,
+                }),
+                UserPart::File(FilePart {
+                    data: FileData::Url {
+                        url: ("https://example.com/image.png").into(),
+                    },
+                    media_type: ("image/png").into(),
+                    filename: None,
+                    provider_options: None,
+                }),
             ],
-        )],
+            provider_options: None,
+        }],
     )
     .await;
     assert_eq!(
@@ -2056,13 +2087,20 @@ async fn convert_should_convert_an_image_url_to_an_image_url_content_part() {
 async fn convert_should_pass_image_detail_to_image_url_content_parts() {
     let messages = wire_messages(
         "deepseek-v4-flash-vision-exp",
-        vec![message(
-            Role::User,
-            vec![file_with_options(
-                ContentPart::file_url("https://example.com/image.webp", "image/webp"),
+        vec![LanguageModelMessage::User {
+            content: vec![file_with_options(
+                UserPart::File(FilePart {
+                    data: FileData::Url {
+                        url: ("https://example.com/image.webp").into(),
+                    },
+                    media_type: ("image/webp").into(),
+                    filename: None,
+                    provider_options: None,
+                }),
                 json!({ "deepseek": { "imageDetail": "low" } }),
             )],
-        )],
+            provider_options: None,
+        }],
     )
     .await;
     assert_eq!(
@@ -2075,15 +2113,20 @@ async fn convert_should_pass_image_detail_to_image_url_content_parts() {
 
 #[tokio::test]
 async fn convert_should_convert_inline_image_data_to_file_data_and_preserve_its_filename() {
-    let part = ContentPart::FileBase64 {
-        data: "AAECAw==".to_string(),
+    let part = UserPart::File(FilePart {
+        data: FileData::Data {
+            data: FileBytes::Base64("AAECAw==".to_string()),
+        },
         media_type: "image/jpg".to_string(),
         filename: Some("sample.jpg".to_string()),
         provider_options: Some(provider_namespace("deepseek", json!({ "fileData": true }))),
-    };
+    });
     let messages = wire_messages(
         "deepseek-v4-flash-vision-exp",
-        vec![message(Role::User, vec![part])],
+        vec![LanguageModelMessage::User {
+            content: vec![part],
+            provider_options: None,
+        }],
     )
     .await;
     assert_eq!(
@@ -2102,7 +2145,10 @@ async fn convert_should_reject_image_detail_together_with_file_data() {
     );
     let message = generate_error(
         "deepseek-v4-flash-vision-exp",
-        &options_for(vec![self::message(Role::User, vec![part])]),
+        &options_for(vec![LanguageModelMessage::User {
+            content: vec![part],
+            provider_options: None,
+        }]),
     )
     .await;
     assert!(
@@ -2116,10 +2162,15 @@ async fn convert_should_reject_image_urls_longer_than_8192_characters() {
     let url = format!("https://example.com/{}", "a".repeat(8192));
     let message = generate_error(
         "deepseek-v4-flash-vision-exp",
-        &options_for(vec![self::message(
-            Role::User,
-            vec![ContentPart::file_url(url, "image/png")],
-        )]),
+        &options_for(vec![LanguageModelMessage::User {
+            content: vec![UserPart::File(FilePart {
+                data: FileData::Url { url: (url).into() },
+                media_type: ("image/png").into(),
+                filename: None,
+                provider_options: None,
+            })],
+            provider_options: None,
+        }]),
     )
     .await;
     assert!(
@@ -2132,10 +2183,17 @@ async fn convert_should_reject_image_urls_longer_than_8192_characters() {
 async fn convert_should_reject_unsupported_image_formats() {
     let message = generate_error(
         "deepseek-v4-flash-vision-exp",
-        &options_for(vec![self::message(
-            Role::User,
-            vec![ContentPart::file_base64("AAECAw==", "image/svg+xml")],
-        )]),
+        &options_for(vec![LanguageModelMessage::User {
+            content: vec![UserPart::File(FilePart {
+                data: FileData::Data {
+                    data: FileBytes::Base64(("AAECAw==").into()),
+                },
+                media_type: ("image/svg+xml").into(),
+                filename: None,
+                provider_options: None,
+            })],
+            provider_options: None,
+        }]),
     )
     .await;
     assert!(
@@ -2148,16 +2206,26 @@ async fn convert_should_reject_unsupported_image_formats() {
 async fn convert_should_convert_an_image_provider_reference_to_a_file_content_part() {
     let messages = wire_messages(
         "deepseek-v4-flash-vision-exp",
-        vec![message(
-            Role::User,
-            vec![
-                ContentPart::text("Hello"),
-                ContentPart::file_reference(
-                    "image/png",
-                    json!({ "deepseek": "file-api-deepseek", "openai": "file-openai" }),
-                ),
+        vec![LanguageModelMessage::User {
+            content: vec![
+                UserPart::Text(TextPart {
+                    text: ("Hello").into(),
+                    provider_options: None,
+                }),
+                UserPart::File(FilePart {
+                    data: FileData::Reference {
+                        reference: serde_json::from_value(
+                            json!({ "deepseek": "file-api-deepseek", "openai": "file-openai" }),
+                        )
+                        .unwrap(),
+                    },
+                    media_type: ("image/png").into(),
+                    filename: None,
+                    provider_options: None,
+                }),
             ],
-        )],
+            provider_options: None,
+        }],
     )
     .await;
     assert_eq!(
@@ -2173,13 +2241,17 @@ async fn convert_should_convert_an_image_provider_reference_to_a_file_content_pa
 async fn convert_should_throw_when_an_image_reference_has_no_deepseek_identifier() {
     let message = generate_error(
         "deepseek-v4-flash-vision-exp",
-        &options_for(vec![self::message(
-            Role::User,
-            vec![ContentPart::file_reference(
-                "image/png",
-                json!({ "openai": "file-openai" }),
-            )],
-        )]),
+        &options_for(vec![LanguageModelMessage::User {
+            content: vec![UserPart::File(FilePart {
+                data: FileData::Reference {
+                    reference: serde_json::from_value(json!({ "openai": "file-openai" })).unwrap(),
+                },
+                media_type: ("image/png").into(),
+                filename: None,
+                provider_options: None,
+            })],
+            provider_options: None,
+        }]),
     )
     .await;
     assert!(message.contains("deepseek"), "{message}");
@@ -2189,13 +2261,23 @@ async fn convert_should_throw_when_an_image_reference_has_no_deepseek_identifier
 async fn convert_should_warn_about_unsupported_non_image_file_parts() {
     let result = generate_result(
         "deepseek-chat",
-        &options_for(vec![message(
-            Role::User,
-            vec![
-                ContentPart::text("Hello"),
-                ContentPart::file_base64("AAECAw==", "application/pdf"),
+        &options_for(vec![LanguageModelMessage::User {
+            content: vec![
+                UserPart::Text(TextPart {
+                    text: ("Hello").into(),
+                    provider_options: None,
+                }),
+                UserPart::File(FilePart {
+                    data: FileData::Data {
+                        data: FileBytes::Base64(("AAECAw==").into()),
+                    },
+                    media_type: ("application/pdf").into(),
+                    filename: None,
+                    provider_options: None,
+                }),
             ],
-        )]),
+            provider_options: None,
+        }]),
     )
     .await;
     assert_eq!(
@@ -2213,24 +2295,40 @@ async fn convert_should_warn_about_unsupported_non_image_file_parts() {
 
 // ---- describe('tool calls') ------------------------------------------------------------------
 
-fn tool_turn(reasoning: bool) -> Vec<LanguageModelPromptMessage> {
+fn tool_turn(reasoning: bool) -> Vec<LanguageModelMessage> {
     let mut assistant = vec![];
     if reasoning {
-        assistant.push(ContentPart::reasoning(
-            "I think the tool will return the correct value.",
-        ));
+        assistant.push(AssistantPart::Reasoning(ReasoningPart {
+            text: ("I think the tool will return the correct value.").into(),
+            signature: None,
+            provider_options: None,
+        }));
     }
-    assistant.push(ContentPart::tool_call(
-        "quux",
-        "thwomp",
-        json!({ "foo": "bar123" }),
-    ));
+    assistant.push(AssistantPart::ToolCall(ToolCallPart {
+        tool_call_id: ("quux").into(),
+        tool_name: ("thwomp").into(),
+        input: json!({ "foo": "bar123" }),
+        provider_executed: None,
+        thought_signature: None,
+        provider_options: None,
+    }));
     vec![
-        message(Role::Assistant, assistant),
-        message(
-            Role::Tool,
-            vec![ContentPart::tool_result("quux", json!({ "oof": "321rab" }))],
-        ),
+        LanguageModelMessage::Assistant {
+            content: assistant,
+            provider_options: None,
+        },
+        LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
+                tool_call_id: ("quux").into(),
+                result: json!({ "oof": "321rab" }),
+                tool_name: None,
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
+                provider_options: None,
+            })],
+            provider_options: None,
+        },
     ]
 }
 
@@ -2260,21 +2358,29 @@ async fn convert_should_handle_text_output_type_in_tool_results() {
     let messages = wire_messages(
         "deepseek-chat",
         vec![
-            message(
-                Role::Assistant,
-                vec![ContentPart::tool_call(
-                    "call-1",
-                    "getWeather",
-                    json!({ "query": "weather" }),
-                )],
-            ),
-            message(
-                Role::Tool,
-                vec![ContentPart::tool_result(
-                    "call-1",
-                    json!("It is sunny today"),
-                )],
-            ),
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: ("call-1").into(),
+                    tool_name: ("getWeather").into(),
+                    input: json!({ "query": "weather" }),
+                    provider_executed: None,
+                    thought_signature: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
+            LanguageModelMessage::Tool {
+                content: vec![ToolPart::ToolResult(ToolResultPart {
+                    tool_call_id: ("call-1").into(),
+                    result: json!("It is sunny today"),
+                    tool_name: None,
+                    is_error: None,
+                    preliminary: None,
+                    dynamic: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
         ],
     )
     .await;
@@ -2286,7 +2392,7 @@ async fn convert_should_handle_text_output_type_in_tool_results() {
 
 #[tokio::test]
 async fn convert_should_support_reasoning_content_in_tool_calls() {
-    let mut prompt = vec![message(Role::User, vec![ContentPart::text("Hello")])];
+    let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
     prompt.extend(tool_turn(true));
     let messages = wire_messages("deepseek-chat", prompt).await;
     assert_eq!(
@@ -2301,9 +2407,9 @@ async fn convert_should_support_reasoning_content_in_tool_calls() {
 
 #[tokio::test]
 async fn convert_should_filter_out_reasoning_content_from_turns_before_the_last_user_message() {
-    let mut prompt = vec![message(Role::User, vec![ContentPart::text("Hello")])];
+    let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
     prompt.extend(tool_turn(true));
-    prompt.push(message(Role::User, vec![ContentPart::text("Goodbye")]));
+    prompt.push(LanguageModelMessage::user_text("Goodbye"));
     let messages = wire_messages("deepseek-chat", prompt).await;
     assert_eq!(
         messages[1],
@@ -2315,9 +2421,9 @@ async fn convert_should_filter_out_reasoning_content_from_turns_before_the_last_
 
 #[tokio::test]
 async fn convert_should_preserve_reasoning_content_from_prior_turns_for_deepseek_v4() {
-    let mut prompt = vec![message(Role::User, vec![ContentPart::text("Hello")])];
+    let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
     prompt.extend(tool_turn(true));
-    prompt.push(message(Role::User, vec![ContentPart::text("Goodbye")]));
+    prompt.push(LanguageModelMessage::user_text("Goodbye"));
     let messages = wire_messages("deepseek-v4-pro", prompt).await;
     assert_eq!(
         messages[1],
@@ -2334,15 +2440,22 @@ async fn convert_should_preserve_reasoning_content_from_prior_turns_for_the_deep
     let messages = wire_messages(
         "deepseek-flash",
         vec![
-            message(Role::User, vec![ContentPart::text("Hello")]),
-            message(
-                Role::Assistant,
-                vec![
-                    ContentPart::reasoning("Prior-turn reasoning."),
-                    ContentPart::text("Hi there"),
+            LanguageModelMessage::user_text("Hello"),
+            LanguageModelMessage::Assistant {
+                content: vec![
+                    AssistantPart::Reasoning(ReasoningPart {
+                        text: ("Prior-turn reasoning.").into(),
+                        signature: None,
+                        provider_options: None,
+                    }),
+                    AssistantPart::Text(TextPart {
+                        text: ("Hi there").into(),
+                        provider_options: None,
+                    }),
                 ],
-            ),
-            message(Role::User, vec![ContentPart::text("Again")]),
+                provider_options: None,
+            },
+            LanguageModelMessage::user_text("Again"),
         ],
     )
     .await;
@@ -2358,9 +2471,15 @@ async fn convert_should_back_fill_empty_reasoning_content_for_deepseek_v4_assist
     let messages = wire_messages(
         "deepseek-v4-pro",
         vec![
-            message(Role::User, vec![ContentPart::text("Hello")]),
-            message(Role::Assistant, vec![ContentPart::text("Hi there")]),
-            message(Role::User, vec![ContentPart::text("Again")]),
+            LanguageModelMessage::user_text("Hello"),
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::Text(TextPart {
+                    text: ("Hi there").into(),
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
+            LanguageModelMessage::user_text("Again"),
         ],
     )
     .await;
@@ -2377,7 +2496,7 @@ async fn convert_should_reject_prefix_completion_on_a_non_assistant_message() {
     let message = generate_error(
         "deepseek-chat",
         &options_for(vec![with_options(
-            message(Role::User, vec![ContentPart::text("Hello")]),
+            LanguageModelMessage::user_text("Hello"),
             json!({ "deepseek": { "prefix": true } }),
         )]),
     )
@@ -2395,10 +2514,16 @@ async fn convert_should_reject_prefix_completion_on_a_non_final_assistant_messag
     let server = json_server(text_response()).await;
     let prompt = vec![
         with_options(
-            message(Role::Assistant, vec![ContentPart::text("The answer is")]),
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::Text(TextPart {
+                    text: ("The answer is").into(),
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
             json!({ "deepseek": { "prefix": true } }),
         ),
-        message(Role::User, vec![ContentPart::text("Continue")]),
+        LanguageModelMessage::user_text("Continue"),
     ];
     let error = beta_chat(&server, "deepseek-chat")
         .do_generate(&options_for(prompt))

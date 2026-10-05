@@ -23,14 +23,15 @@ use base64::Engine;
 use futures::StreamExt;
 use serde_json::{Map, Value, json};
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::LanguageModelPrompt;
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::Tool;
 use aimux_core::types::{
@@ -691,74 +692,59 @@ pub fn convert_to_huggingface_responses_messages(
     let mut warnings: Vec<Warning> = Vec::new();
 
     for msg in prompt {
-        match msg.role {
-            Role::System => {
-                // System content is a plain string (concatenation of text parts).
-                let content: String = msg
-                    .content
-                    .iter()
-                    .filter_map(|p| match p {
-                        ContentPart::Text { text, .. } => Some(text.as_str()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("");
+        match msg {
+            LanguageModelMessage::System { content, .. } => {
                 messages.push(json!({ "role": "system", "content": content }));
             }
-
-            Role::User => {
+            LanguageModelMessage::User { content, .. } => {
                 let mut parts: Vec<Value> = Vec::new();
-                for part in &msg.content {
+                for part in content {
                     match part {
-                        ContentPart::Text { text, .. } => {
+                        UserPart::Text(TextPart { text, .. }) => {
                             parts.push(json!({ "type": "input_text", "text": text }));
                         }
-                        ContentPart::FileBase64 {
-                            data, media_type, ..
-                        } => {
-                            parts.push(convert_file_part_base64(media_type, data)?);
-                        }
-                        ContentPart::FileUrl {
-                            url, media_type, ..
-                        } => {
-                            parts.push(convert_file_part_url(media_type, url)?);
-                        }
-                        ContentPart::FileReference { .. } => {
-                            return Err(AiMuxError::UnsupportedFunctionality(
-                                "file parts with provider references".into(),
-                            ));
-                        }
-                        ContentPart::Image {
-                            image, media_type, ..
-                        } => {
-                            let encoded = base64::engine::general_purpose::STANDARD.encode(image);
-                            parts.push(convert_file_part_base64(media_type, &encoded)?);
-                        }
-                        ContentPart::File {
-                            data, media_type, ..
-                        } => {
-                            let encoded = base64::engine::general_purpose::STANDARD.encode(data);
-                            parts.push(convert_file_part_base64(media_type, &encoded)?);
-                        }
-                        _ => {
-                            // Other part types (tool-call, tool-result, reasoning)
-                            // are not expected in user messages — skip.
+                        UserPart::File(file) => {
+                            parts.push(match &file.data {
+                                FileData::Data {
+                                    data: FileBytes::Binary(bytes),
+                                } => {
+                                    let encoded =
+                                        base64::engine::general_purpose::STANDARD.encode(bytes);
+                                    convert_file_part_base64(&file.media_type, &encoded)?
+                                }
+                                FileData::Data {
+                                    data: FileBytes::Base64(data),
+                                } => convert_file_part_base64(&file.media_type, data)?,
+                                FileData::Url { url } => {
+                                    convert_file_part_url(&file.media_type, url)?
+                                }
+                                FileData::Reference { .. } => {
+                                    return Err(AiMuxError::UnsupportedFunctionality(
+                                        "file parts with provider references".into(),
+                                    ));
+                                }
+                                FileData::Text { .. } => {
+                                    return Err(AiMuxError::UnsupportedFunctionality(
+                                        "text file parts".into(),
+                                    ));
+                                }
+                            });
                         }
                     }
                 }
                 messages.push(json!({ "role": "user", "content": parts }));
             }
 
-            Role::Assistant => {
-                for part in &msg.content {
+            LanguageModelMessage::Assistant { content, .. } => {
+                for part in content {
                     match part {
-                        ContentPart::Text { text, .. } => {
+                        AssistantPart::Text(TextPart { text, .. }) => {
                             messages.push(json!({
                                 "role": "assistant",
                                 "content": [{ "type": "output_text", "text": text }]
                             }));
                         }
-                        ContentPart::Reasoning { text, .. } => {
+                        AssistantPart::Reasoning(ReasoningPart { text, .. }) => {
                             messages.push(json!({
                                 "role": "assistant",
                                 "content": [{ "type": "output_text", "text": text }]
@@ -766,13 +752,14 @@ pub fn convert_to_huggingface_responses_messages(
                         }
                         // Tool calls and tool results are handled by the
                         // Responses API — skip (no warning, matching TS).
-                        ContentPart::ToolCall { .. } | ContentPart::ToolResult { .. } => {}
-                        _ => {}
+                        AssistantPart::ToolCall(_)
+                        | AssistantPart::ToolResult(_)
+                        | AssistantPart::File(_) => {}
                     }
                 }
             }
 
-            Role::Tool => {
+            LanguageModelMessage::Tool { .. } => {
                 warnings.push(Warning::Unsupported {
                     feature: "tool messages".into(),
                     details: None,

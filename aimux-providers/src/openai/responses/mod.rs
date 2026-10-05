@@ -41,8 +41,10 @@ use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model_message::{LanguageModelMessage, UserPart};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
+use aimux_core::shared::FileData;
 
 use super::config::OpenAIModelConfig;
 
@@ -78,13 +80,26 @@ impl OpenAIResponsesModel {
 
     /// The request body for one call: built with the host's providerOptions
     /// namespace, file-id prefixes applied, then the provider-level rewrite.
-    fn request_body(&self, options: &CallOptions, stream: bool) -> ResponsesRequestBodyResult {
+    fn request_body(
+        &self,
+        options: &CallOptions,
+        stream: bool,
+    ) -> Result<ResponsesRequestBodyResult, AiMuxError> {
+        if options.prompt.iter().any(|message| {
+            matches!(message, LanguageModelMessage::User { content, .. }
+                if content.iter().any(|part| matches!(part, UserPart::File(file)
+                    if matches!(&file.data, FileData::Text { .. }))))
+        }) {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "text file parts".into(),
+            ));
+        }
         let profile = &self.config.responses;
         let mut result =
             build_responses_request_body_for(profile.namespace, &self.model_id, options, stream);
         convert::apply_file_id_prefixes(&mut result.body, &profile.file_id_prefixes);
         result.body = self.config.transform_body(result.body);
-        result
+        Ok(result)
     }
 
     /// The provider-metadata key of the host.
@@ -109,7 +124,7 @@ impl LanguageModel for OpenAIResponsesModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.request_headers(options.headers.as_ref()).await?;
-        let request_result = self.request_body(options, false);
+        let request_result = self.request_body(options, false)?;
         let body = request_result.body;
         let provider_key = self.provider_options_name().to_string();
 
@@ -143,7 +158,7 @@ impl LanguageModel for OpenAIResponsesModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.request_headers(options.headers.as_ref()).await?;
-        let request_result = self.request_body(options, true);
+        let request_result = self.request_body(options, true)?;
         let body = request_result.body;
         let warnings = request_result.warnings;
         let provider_key = self.provider_options_name().to_string();

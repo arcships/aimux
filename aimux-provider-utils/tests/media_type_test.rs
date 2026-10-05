@@ -1,4 +1,6 @@
-use aimux_core::{content::ContentPart, error::AiMuxError};
+use aimux_core::error::AiMuxError;
+use aimux_core::language_model_message::FilePart;
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_provider_utils::{
     MAX_ID3_TAG_BYTES, MediaTypeData, detect_media_type, get_top_level_media_type,
     is_full_media_type, resolve_full_media_type,
@@ -177,8 +179,8 @@ fn media_type_tables_and_resolution() {
         }
         for declared in [top.to_string(), format!("{top}/*"), format!("{top}/")] {
             for part in [
-                ContentPart::file(bytes.to_vec(), &declared),
-                ContentPart::file_base64(base64, &declared),
+                part(bytes_data(bytes.to_vec(), &declared)),
+                part(base64_data(base64, &declared)),
             ] {
                 assert_eq!(resolve_full_media_type(&part).unwrap(), scoped);
             }
@@ -204,7 +206,7 @@ fn media_type_tables_and_resolution() {
             detect_media_type(MediaTypeData::Bytes(bytes), Some("image")).unwrap(),
             None
         );
-        let part = ContentPart::file(bytes.to_vec(), "image/*");
+        let part = part(bytes_data(bytes.to_vec(), "image/*"));
         assert!(matches!(resolve_full_media_type(&part),
             Err(AiMuxError::UnsupportedFunctionality(message))
             if message == "file of media type \"image/*\" must specify subtype since it could not be auto-detected"
@@ -229,16 +231,16 @@ fn media_type_tables_and_resolution() {
     }
 
     for part in [
-        ContentPart::file(vec![], "custom/type"),
-        ContentPart::file_base64("!", "custom/type"),
-        ContentPart::file_url("https://example.com/file", "custom/type"),
-        ContentPart::file_reference("custom/type", serde_json::json!({"vendor": "file-id"})),
+        part(bytes_data(vec![], "custom/type")),
+        part(base64_data("!", "custom/type")),
+        part(url_data("https://example.com/file", "custom/type")),
+        part((reference_data(), "custom/type")),
     ] {
         assert_eq!(resolve_full_media_type(&part).unwrap(), "custom/type");
     }
     for part in [
-        ContentPart::file_url("https://example.com/file", "image"),
-        ContentPart::file_reference("image", serde_json::json!({"vendor": "file-id"})),
+        part(url_data("https://example.com/file", "image")),
+        part((reference_data(), "image")),
     ] {
         assert!(matches!(resolve_full_media_type(&part),
             Err(AiMuxError::UnsupportedFunctionality(message))
@@ -246,7 +248,7 @@ fn media_type_tables_and_resolution() {
         ));
     }
     assert_eq!(
-        resolve_full_media_type(&ContentPart::image(vec![0xff, 0xd8], "image")).unwrap(),
+        resolve_full_media_type(&part(bytes_data(vec![0xff, 0xd8], "image"))).unwrap(),
         "image/jpeg"
     );
 
@@ -291,4 +293,33 @@ fn encode_base64(bytes: &[u8]) -> String {
         }
     }
     encoded
+}
+
+fn part((data, media_type): (FileData, &str)) -> FilePart {
+    FilePart {
+        data,
+        media_type: media_type.to_string(),
+        filename: None,
+        provider_options: None,
+    }
+}
+fn bytes_data(bytes: Vec<u8>, media_type: &str) -> (FileData, &str) {
+    let data = FileBytes::Binary(bytes);
+    (FileData::Data { data }, media_type)
+}
+fn base64_data<'a>(base64: &str, media_type: &'a str) -> (FileData, &'a str) {
+    let data = FileBytes::Base64(base64.to_string());
+    (FileData::Data { data }, media_type)
+}
+fn url_data<'a>(url: &str, media_type: &'a str) -> (FileData, &'a str) {
+    (
+        FileData::Url {
+            url: url.to_string(),
+        },
+        media_type,
+    )
+}
+fn reference_data() -> FileData {
+    let reference = [("vendor".to_string(), "file-id".to_string())].into();
+    FileData::Reference { reference }
 }

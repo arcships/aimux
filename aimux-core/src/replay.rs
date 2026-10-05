@@ -18,11 +18,14 @@ use std::sync::Arc;
 use crate::error::AiMuxError;
 use crate::generate::{GenerateTextOptions, GenerateTextResult, generate_text};
 use crate::language_model::LanguageModel;
-use crate::language_model_message::LanguageModelPrompt;
-use crate::message::{MessageContent, ModelMessage, ModelPrompt};
+use crate::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, UserPart,
+};
+use crate::message::{ModelMessage, ModelPrompt};
 use crate::options::{CallOptions, ToolChoice};
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
+use crate::shared::{FileBytes, FileData};
 use crate::stream_part::StreamPart;
 use crate::tool::RawToolCall;
 use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
@@ -245,10 +248,42 @@ impl ReplayMatcher for ScoreMatcher {
 }
 
 /// 消息的首个文本内容(非文本消息回退到序列化)。
-fn message_text(m: &crate::language_model_message::LanguageModelPromptMessage) -> String {
-    match m.content.first() {
-        Some(crate::content::ContentPart::Text { text, .. }) => text.clone(),
-        _ => serde_json::to_string(&m.content).unwrap_or_default(),
+fn message_text(m: &LanguageModelMessage) -> String {
+    match m {
+        LanguageModelMessage::System { content, .. } => content.clone(),
+        LanguageModelMessage::User { content, .. } => match content.first() {
+            Some(UserPart::Text(part)) => part.text.clone(),
+            _ => serde_json::to_string(content).unwrap_or_default(),
+        },
+        LanguageModelMessage::Assistant { content, .. } => match content.first() {
+            Some(AssistantPart::Text(part)) => part.text.clone(),
+            _ => serde_json::to_string(content).unwrap_or_default(),
+        },
+        LanguageModelMessage::Tool { content, .. } => {
+            serde_json::to_string(content).unwrap_or_default()
+        }
+    }
+}
+
+fn same_message_content(a: &LanguageModelMessage, b: &LanguageModelMessage) -> bool {
+    match (a, b) {
+        (
+            LanguageModelMessage::System { content: a, .. },
+            LanguageModelMessage::System { content: b, .. },
+        ) => a == b,
+        (
+            LanguageModelMessage::User { content: a, .. },
+            LanguageModelMessage::User { content: b, .. },
+        ) => a == b,
+        (
+            LanguageModelMessage::Assistant { content: a, .. },
+            LanguageModelMessage::Assistant { content: b, .. },
+        ) => a == b,
+        (
+            LanguageModelMessage::Tool { content: a, .. },
+            LanguageModelMessage::Tool { content: b, .. },
+        ) => a == b,
+        _ => false,
     }
 }
 
@@ -264,7 +299,7 @@ fn match_score(options: &CallOptions, rec: &Recording) -> u64 {
         .prompt
         .iter()
         .zip(rec.input.prompt.iter())
-        .take_while(|(a, b)| a.role == b.role && a.content == b.content)
+        .take_while(|(a, b)| same_message_content(a, b))
         .count();
     // 字符级 LCP:第一个不同消息(或双方最后一个消息),在文本内容上计算
     // (避免 JSON 结构前缀的伪匹配)。任一 prompt 为空时无消息可比,LCP=0
@@ -336,7 +371,7 @@ impl ReplayMatcher for PrefixMatcher {
                 .prompt
                 .iter()
                 .zip(r.input.prompt.iter())
-                .take_while(|(a, b)| a.role == b.role && a.content == b.content)
+                .take_while(|(a, b)| same_message_content(a, b))
                 .count();
             if common < r.input.prompt.len() {
                 continue; // 录制未被输入完整包含,不命中。
@@ -922,8 +957,8 @@ pub struct ReplayOverrides {
 /// # Errors
 ///
 /// Returns `AiMuxError::JsonParse` when the recorded call options cannot be
-/// deserialized, and propagates any error from the re-sent `generate_text`
-/// call.
+/// deserialized, `AiMuxError::InvalidPrompt` for inline text file data without
+/// a user-facing representation, and propagates errors from `generate_text`.
 pub async fn replay_with_model(
     recording: &Recording,
     model: &dyn LanguageModel,
@@ -947,25 +982,62 @@ pub async fn replay_with_model(
     }
 
     // 3. 转回用户侧类型,经 generate_text 重发。
-    let prompt = model_prompt_from_lm(&call_options.prompt);
+    let prompt = model_prompt_from_lm(&call_options.prompt)?;
     let options = generate_options_from_call_options(call_options);
     generate_text(model, prompt, options).await
 }
 
 /// `LanguageModelPrompt`(provider 侧)→ `ModelPrompt`(用户侧)。
 ///
-/// 逐消息 `provider_options` 丢弃(用户侧无对应字段;语义不丢,仅 cacheControl
-/// 之类的 provider 提示不参与重放)。
-fn model_prompt_from_lm(prompt: &LanguageModelPrompt) -> ModelPrompt {
-    ModelPrompt::Messages(
+/// 逐消息 `provider_options` 丢弃(用户侧无对应字段)。
+/// 文件 URL 的 filename 同样没有用户侧字段;inline text 文件返回错误。
+fn model_prompt_from_lm(prompt: &LanguageModelPrompt) -> Result<ModelPrompt, AiMuxError> {
+    let messages =
         prompt
             .iter()
-            .map(|m| ModelMessage {
-                role: m.role,
-                content: MessageContent::Parts(m.content.clone()),
+            .map(|message| {
+                // Non-file parts share their fields with the user-facing union.
+                let mut message = serde_json::to_value(message)?;
+                if let Some(parts) = message["content"].as_array_mut() {
+                    for part in parts {
+                        if part["type"] != "file" {
+                            continue;
+                        }
+                        let file: FilePart = serde_json::from_value(part.clone())?;
+                        part.as_object_mut()
+                            .expect("serialized file part")
+                            .remove("data");
+                        match file.data {
+                            FileData::Data {
+                                data: FileBytes::Binary(data),
+                            } => {
+                                part["data"] = serde_json::to_value(data)?;
+                            }
+                            FileData::Data {
+                                data: FileBytes::Base64(data),
+                            } => {
+                                part["type"] = "file_base64".into();
+                                part["data"] = data.into();
+                            }
+                            FileData::Url { url } => {
+                                part["type"] = "file_url".into();
+                                part["url"] = url.into();
+                            }
+                            FileData::Reference { reference } => {
+                                part["type"] = "file_reference".into();
+                                part["reference"] = serde_json::to_value(reference)?;
+                            }
+                            FileData::Text { .. } => return Err(AiMuxError::InvalidPrompt(
+                                "replay: inline text file data has no user-facing representation"
+                                    .into(),
+                            )),
+                        }
+                    }
+                }
+                serde_json::from_value::<ModelMessage>(message).map_err(AiMuxError::from)
             })
-            .collect(),
-    )
+            .collect::<Result<Vec<_>, _>>()?;
+    Ok(ModelPrompt::Messages(messages))
 }
 
 /// `CallOptions` → `GenerateTextOptions`(record 侧到用户侧的反向映射)。
@@ -1015,14 +1087,7 @@ mod tests {
     use futures::StreamExt;
 
     fn sample_options(text: &str, temperature: Option<f64>) -> CallOptions {
-        let prompt = vec![crate::language_model_message::LanguageModelPromptMessage {
-            role: crate::message::Role::User,
-            content: vec![crate::content::ContentPart::Text {
-                text: text.to_string(),
-                provider_options: None,
-            }],
-            provider_options: None,
-        }];
+        let prompt = vec![LanguageModelMessage::user_text(text.to_string())];
         GenerateTextOptions {
             temperature,
             ..Default::default()
@@ -1033,14 +1098,7 @@ mod tests {
     /// 构造 OpenAI 格式录制。
     fn openai_recording(trace_id: &str, prompt_text: &str, reply: &str, finish: &str) -> Recording {
         let input_prompt: crate::language_model_message::LanguageModelPrompt =
-            vec![crate::language_model_message::LanguageModelPromptMessage {
-                role: crate::message::Role::User,
-                content: vec![crate::content::ContentPart::Text {
-                    text: prompt_text.to_string(),
-                    provider_options: None,
-                }],
-                provider_options: None,
-            }];
+            vec![LanguageModelMessage::user_text(prompt_text.to_string())];
         let body = serde_json::json!({
             "id": "chatcmpl-mock",
             "object": "chat.completion",
@@ -1362,22 +1420,8 @@ mod tests {
         let matcher = PrefixMatcher::new("openai", "gpt-4o");
         // 输入两条消息 ["hello", "world"]:rec 是消息级前缀 → 命中。
         let prompt = vec![
-            crate::language_model_message::LanguageModelPromptMessage {
-                role: crate::message::Role::User,
-                content: vec![crate::content::ContentPart::Text {
-                    text: "hello".into(),
-                    provider_options: None,
-                }],
-                provider_options: None,
-            },
-            crate::language_model_message::LanguageModelPromptMessage {
-                role: crate::message::Role::User,
-                content: vec![crate::content::ContentPart::Text {
-                    text: "world".into(),
-                    provider_options: None,
-                }],
-                provider_options: None,
-            },
+            LanguageModelMessage::user_text("hello"),
+            LanguageModelMessage::user_text("world"),
         ];
         let opts = GenerateTextOptions::default().into_call_options(prompt);
         let recs = [rec.clone()];
@@ -1385,16 +1429,8 @@ mod tests {
         assert_eq!(hit.call_id, "t1");
 
         // 首消息不同 → 不命中(整条消息级前缀,非字符级)。
-        let opts2 = GenerateTextOptions::default().into_call_options(vec![
-            crate::language_model_message::LanguageModelPromptMessage {
-                role: crate::message::Role::User,
-                content: vec![crate::content::ContentPart::Text {
-                    text: "hi".into(),
-                    provider_options: None,
-                }],
-                provider_options: None,
-            },
-        ]);
+        let opts2 = GenerateTextOptions::default()
+            .into_call_options(vec![LanguageModelMessage::user_text("hi")]);
         assert!(matcher.r#match(&opts2, &[rec]).is_err());
     }
 
@@ -1403,14 +1439,7 @@ mod tests {
         // 多消息录制:rec-a = ["hello"],rec-b = ["hello", "world"]。
         let mut rec_a = openai_recording("ta", "hello", "a", "stop");
         let mut rec_b = openai_recording("tb", "hello world", "b", "stop");
-        let mk = |text: &str| crate::language_model_message::LanguageModelPromptMessage {
-            role: crate::message::Role::User,
-            content: vec![crate::content::ContentPart::Text {
-                text: text.into(),
-                provider_options: None,
-            }],
-            provider_options: None,
-        };
+        let mk = |text: &str| LanguageModelMessage::user_text(text);
         rec_a.input.prompt = vec![mk("hello")];
         rec_b.input.prompt = vec![mk("hello"), mk("world")];
 
@@ -1897,10 +1926,7 @@ mod tests {
             let text = options
                 .prompt
                 .iter()
-                .filter_map(|m| match m.content.first() {
-                    Some(crate::content::ContentPart::Text { text, .. }) => Some(text.clone()),
-                    _ => None,
-                })
+                .map(message_text)
                 .collect::<Vec<_>>()
                 .join(" ");
             Ok(GenerateResult {
@@ -1949,16 +1975,7 @@ mod tests {
         let rec = optioned_recording("hello");
         let model = EchoModel::new();
         let overrides = ReplayOverrides {
-            prompt: Some(vec![
-                crate::language_model_message::LanguageModelPromptMessage {
-                    role: crate::message::Role::User,
-                    content: vec![crate::content::ContentPart::Text {
-                        text: "overridden".into(),
-                        provider_options: None,
-                    }],
-                    provider_options: None,
-                },
-            ]),
+            prompt: Some(vec![LanguageModelMessage::user_text("overridden")]),
             ..Default::default()
         };
         let rt = tokio::runtime::Runtime::new().unwrap();

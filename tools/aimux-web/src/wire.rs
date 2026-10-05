@@ -211,11 +211,17 @@ pub fn to_model_prompt(messages: &[WireMessage]) -> Result<ModelPrompt, AiMuxErr
                 )));
             }
         };
-        let parts = m.content.iter().map(to_content_part).collect::<Vec<_>>();
-        out.push(ModelMessage {
-            role,
-            content: MessageContent::Parts(parts),
-        });
+        let content = if role == Role::System {
+            let [WireContentPart::Text { text }] = m.content.as_slice() else {
+                return Err(AiMuxError::InvalidPrompt(
+                    "system content must be plain text".into(),
+                ));
+            };
+            MessageContent::Text(text.clone())
+        } else {
+            MessageContent::Parts(m.content.iter().map(to_content_part).collect())
+        };
+        out.push(ModelMessage { role, content });
     }
     Ok(ModelPrompt::Messages(out))
 }

@@ -127,14 +127,7 @@ mod tests {
         // or key source, so nothing from the provider config can leak.
         let ring = aimux_core::recording::RingRecorder::with_capacity(8);
         let options = aimux_core::generate::GenerateTextOptions::default().into_call_options(vec![
-            aimux_core::language_model_message::LanguageModelPromptMessage {
-                role: aimux_core::message::Role::User,
-                content: vec![aimux_core::content::ContentPart::Text {
-                    text: "ping".into(),
-                    provider_options: None,
-                }],
-                provider_options: None,
-            },
+            aimux_core::language_model_message::LanguageModelMessage::user_text("ping"),
         ]);
         ring.record_input("c1", &options, "openai.chat", "some-model");
         ring.record_provider(

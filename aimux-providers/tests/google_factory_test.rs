@@ -23,11 +23,9 @@ use std::sync::Arc;
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use aimux_core::content::ContentPart;
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult};
 use aimux_core::stream_part::StreamPart;
@@ -149,23 +147,18 @@ impl Fixture {
     }
 }
 
-fn message(role: Role, text: &str) -> LanguageModelPromptMessage {
-    LanguageModelPromptMessage {
-        role,
-        content: vec![ContentPart::text(text)],
-        ..Default::default()
-    }
-}
-
 /// Rebuild aimux call options from a recorded `sdk.input` (the subset the
 /// Google fixtures use).
 fn call_options_from(input: &Value) -> CallOptions {
     let mut prompt: LanguageModelPrompt = Vec::new();
     if let Some(system) = input.get("system").and_then(Value::as_str) {
-        prompt.push(message(Role::System, system));
+        prompt.push(LanguageModelMessage::System {
+            content: system.to_string(),
+            provider_options: None,
+        });
     }
     if let Some(text) = input.get("prompt").and_then(Value::as_str) {
-        prompt.push(message(Role::User, text));
+        prompt.push(LanguageModelMessage::user_text(text));
     }
     let mut options = CallOptions::new(prompt);
     if let Some(tools) = input.get("tools").and_then(Value::as_object) {

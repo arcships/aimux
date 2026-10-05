@@ -24,10 +24,11 @@ use reqwest::StatusCode;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Value, json};
 
-use aimux_core::content::ContentPart;
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
+use aimux_core::language_model_message::{
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, TextPart,
+};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult};
@@ -309,11 +310,21 @@ impl Fixture {
     }
 }
 
-fn message(role: Role, text: &str) -> LanguageModelPromptMessage {
-    LanguageModelPromptMessage {
-        role,
-        content: vec![ContentPart::text(text)],
-        ..Default::default()
+fn message(role: Role, text: &str) -> LanguageModelMessage {
+    match role {
+        Role::System => LanguageModelMessage::System {
+            content: text.to_string(),
+            provider_options: None,
+        },
+        Role::User => LanguageModelMessage::user_text(text),
+        Role::Assistant => LanguageModelMessage::Assistant {
+            content: vec![AssistantPart::Text(TextPart {
+                text: text.to_string(),
+                provider_options: None,
+            })],
+            provider_options: None,
+        },
+        Role::Tool => unreachable!("fixture has no tool messages"),
     }
 }
 

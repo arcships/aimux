@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- The prompt a provider receives is modelled by role (`aimux-core`), as the AI
+  SDK's `LanguageModelV4Message`. `LanguageModelPrompt` is
+  `Vec<LanguageModelMessage>`: `System { content: String }`,
+  `User { content: Vec<UserPart> }`, `Assistant { content: Vec<AssistantPart> }`,
+  `Tool { content: Vec<ToolPart> }`. The parts are `TextPart`, `FilePart`,
+  `ReasoningPart`, `ToolCallPart`, `ToolResultPart`. A provider sees one file
+  part, `FilePart { data: FileData, media_type, filename }`; the five
+  user-facing file variants are folded into it by
+  `convert_to_language_model_prompt`, which now returns `Result` and rejects a
+  part its role does not allow. `LanguageModelPromptMessage` is removed. The
+  user-facing `ModelMessage` and `ContentPart` are unchanged. Recordings store
+  the new prompt JSON: a system message's `content` is a string and every file
+  input is a `file` part.
+
 - Provider options and provider metadata have one typed shape, the AI SDK's
   `Record<string, JSONObject>`: `SharedProviderOptions` and
   `SharedProviderMetadata` (`ProviderMetadata` is an alias) are

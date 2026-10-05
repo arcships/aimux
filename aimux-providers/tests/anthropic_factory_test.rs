@@ -25,10 +25,8 @@ use reqwest::StatusCode;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Value, json};
 
-use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput};
 use aimux_core::shared::provider_namespace;
@@ -239,23 +237,18 @@ impl Fixture {
     }
 }
 
-fn message(role: Role, text: &str) -> LanguageModelPromptMessage {
-    LanguageModelPromptMessage {
-        role,
-        content: vec![ContentPart::text(text)],
-        ..Default::default()
-    }
-}
-
 /// Rebuild aimux call options from a recorded `sdk.input` (the subset the
 /// Anthropic fixtures use).
 fn call_options_from(input: &Value) -> CallOptions {
     let mut prompt: LanguageModelPrompt = Vec::new();
     if let Some(system) = input.get("system").and_then(Value::as_str) {
-        prompt.push(message(Role::System, system));
+        prompt.push(LanguageModelMessage::System {
+            content: system.to_string(),
+            provider_options: None,
+        });
     }
     if let Some(text) = input.get("prompt").and_then(Value::as_str) {
-        prompt.push(message(Role::User, text));
+        prompt.push(LanguageModelMessage::user_text(text));
     }
     let mut options = CallOptions::new(prompt);
     options.max_output_tokens = input

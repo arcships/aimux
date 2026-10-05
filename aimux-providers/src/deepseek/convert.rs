@@ -3,12 +3,13 @@
 use base64::Engine;
 use serde_json::{Map, Value, json};
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model_message::LanguageModelPrompt;
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+};
 use aimux_core::options::ResponseFormat;
-use aimux_core::shared::SharedProviderOptions;
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::types::Warning;
 use aimux_provider_utils::resolve_full_media_type;
 
@@ -23,91 +24,7 @@ const SUPPORTED_IMAGE_MEDIA_TYPES: [&str; 5] = [
     "image/webp",
 ];
 
-/// An image file part: where its data is, and what goes with it.
-struct ImagePart<'a> {
-    source: ImageSource<'a>,
-    original: &'a ContentPart,
-    filename: Option<&'a str>,
-    provider_options: Option<&'a SharedProviderOptions>,
-}
-
-enum ImageSource<'a> {
-    /// A provider file reference object.
-    Reference(&'a Value),
-    Url(&'a str),
-    /// Inline data, base64.
-    Data(String),
-}
-
-/// The part as an image file part, when it is one.
-fn image_part(part: &ContentPart) -> Option<ImagePart<'_>> {
-    let encode =
-        |data: &[u8]| ImageSource::Data(base64::engine::general_purpose::STANDARD.encode(data));
-    let (source, media_type, filename, provider_options) = match part {
-        ContentPart::Image {
-            image,
-            media_type,
-            provider_options,
-        } => (encode(image), media_type, None, provider_options),
-        ContentPart::File {
-            data,
-            media_type,
-            filename,
-            provider_options,
-        } => (
-            encode(data),
-            media_type,
-            filename.as_deref(),
-            provider_options,
-        ),
-        ContentPart::FileBase64 {
-            data,
-            media_type,
-            filename,
-            provider_options,
-        } => (
-            ImageSource::Data(data.clone()),
-            media_type,
-            filename.as_deref(),
-            provider_options,
-        ),
-        ContentPart::FileUrl {
-            url,
-            media_type,
-            provider_options,
-        } => (ImageSource::Url(url), media_type, None, provider_options),
-        ContentPart::FileReference {
-            media_type,
-            reference,
-            filename,
-            provider_options,
-        } => (
-            ImageSource::Reference(reference),
-            media_type,
-            filename.as_deref(),
-            provider_options,
-        ),
-        _ => return None,
-    };
-    (media_type.split('/').next() == Some("image")).then_some(ImagePart {
-        source,
-        original: part,
-        filename,
-        provider_options: provider_options.as_ref(),
-    })
-}
-
-fn part_type(part: &ContentPart) -> &'static str {
-    match part {
-        ContentPart::Text { .. } => "text",
-        ContentPart::Reasoning { .. } => "reasoning",
-        ContentPart::ToolCall { .. } => "tool-call",
-        ContentPart::ToolResult { .. } => "tool-result",
-        _ => "file",
-    }
-}
-
-fn resolve_deepseek_image_media_type(part: &ContentPart) -> Result<String, AiMuxError> {
+fn resolve_deepseek_image_media_type(part: &FilePart) -> Result<String, AiMuxError> {
     let resolved = resolve_full_media_type(part)?;
     if !SUPPORTED_IMAGE_MEDIA_TYPES.contains(&resolved.as_str()) {
         return Err(AiMuxError::UnsupportedFunctionality(format!(
@@ -118,11 +35,8 @@ fn resolve_deepseek_image_media_type(part: &ContentPart) -> Result<String, AiMux
 }
 
 /// The content part of an image file part.
-fn convert_image_part(
-    part: &ImagePart<'_>,
-    provider_options_name: &str,
-) -> Result<Value, AiMuxError> {
-    let options = parse_file_part_options(part.provider_options, provider_options_name)?;
+fn convert_image_part(part: &FilePart, provider_options_name: &str) -> Result<Value, AiMuxError> {
+    let options = parse_file_part_options(part.provider_options.as_ref(), provider_options_name)?;
     let image_url = |url: &str| {
         let mut image_url = json!({ "url": url });
         if let Some(detail) = &options.image_detail {
@@ -130,20 +44,17 @@ fn convert_image_part(
         }
         json!({ "type": "image_url", "image_url": image_url })
     };
-    match &part.source {
-        ImageSource::Reference(reference) => {
-            let file_id = reference
-                .get("deepseek")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    AiMuxError::InvalidArgument(
-                        "No provider reference found for provider 'deepseek'.".to_string(),
-                    )
-                })?;
+    match &part.data {
+        FileData::Reference { reference } => {
+            let file_id = reference.get("deepseek").ok_or_else(|| {
+                AiMuxError::InvalidArgument(
+                    "No provider reference found for provider 'deepseek'.".to_string(),
+                )
+            })?;
             Ok(json!({ "type": "file", "file_id": file_id }))
         }
-        ImageSource::Url(url) => {
-            resolve_deepseek_image_media_type(part.original)?;
+        FileData::Url { url } => {
+            resolve_deepseek_image_media_type(part)?;
             if url.len() > 8192 {
                 return Err(AiMuxError::InvalidPrompt(
                     "DeepSeek image URLs must not exceed 8192 characters.".to_string(),
@@ -156,12 +67,16 @@ fn convert_image_part(
             }
             Ok(image_url(url))
         }
-        ImageSource::Data(data) => {
-            let media_type = resolve_deepseek_image_media_type(part.original)?;
+        FileData::Data { data } => {
+            let media_type = resolve_deepseek_image_media_type(part)?;
             let media_type = if media_type == "image/jpg" {
                 "image/jpeg"
             } else {
                 &media_type
+            };
+            let data = match data {
+                FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
+                FileBytes::Base64(data) => data.clone(),
             };
             let data_url = format!("data:{media_type};base64,{data}");
             if options.file_data != Some(true) {
@@ -173,11 +88,14 @@ fn convert_image_part(
                 ));
             }
             let mut file = json!({ "type": "file", "file_data": data_url });
-            if let Some(filename) = part.filename {
+            if let Some(filename) = &part.filename {
                 file["filename"] = json!(filename);
             }
             Ok(file)
         }
+        FileData::Text { .. } => Err(AiMuxError::UnsupportedFunctionality(
+            "text file parts".to_string(),
+        )),
     }
 }
 
@@ -187,11 +105,11 @@ pub(crate) struct ConvertedMessages {
     pub warnings: Vec<Warning>,
 }
 
-fn join_text(content: &[ContentPart]) -> String {
+fn join_text(content: &[UserPart]) -> String {
     content
         .iter()
         .filter_map(|part| match part {
-            ContentPart::Text { text, .. } => Some(text.as_str()),
+            UserPart::Text(TextPart { text, .. }) => Some(text.as_str()),
             _ => None,
         })
         .collect()
@@ -238,12 +156,27 @@ pub(crate) fn convert_to_deepseek_chat_messages(
     }
     let last_user_message_index = prompt
         .iter()
-        .rposition(|message| message.role == Role::User);
+        .rposition(|message| matches!(message, LanguageModelMessage::User { .. }));
 
     for (index, message) in prompt.iter().enumerate() {
-        let options =
-            parse_message_options(message.provider_options.as_ref(), provider_options_name)?;
-        if options.prefix == Some(true) && message.role != Role::Assistant {
+        let provider_options = match message {
+            LanguageModelMessage::System {
+                provider_options, ..
+            }
+            | LanguageModelMessage::User {
+                provider_options, ..
+            }
+            | LanguageModelMessage::Assistant {
+                provider_options, ..
+            }
+            | LanguageModelMessage::Tool {
+                provider_options, ..
+            } => provider_options,
+        };
+        let options = parse_message_options(provider_options.as_ref(), provider_options_name)?;
+        if options.prefix == Some(true)
+            && !matches!(message, LanguageModelMessage::Assistant { .. })
+        {
             return Err(AiMuxError::InvalidPrompt(
                 "DeepSeek assistant prefix completion requires `prefix: true` on an assistant message."
                     .to_string(),
@@ -255,30 +188,36 @@ pub(crate) fn convert_to_deepseek_chat_messages(
             }
         };
 
-        match message.role {
-            Role::System => {
+        match message {
+            LanguageModelMessage::System { content, .. } => {
                 let mut wire = Map::new();
                 wire.insert("role".into(), json!("system"));
-                wire.insert("content".into(), json!(join_text(&message.content)));
+                wire.insert("content".into(), json!(content));
                 name(&mut wire);
                 messages.push(Value::Object(wire));
             }
 
-            Role::User => {
-                let images: Vec<Option<ImagePart<'_>>> =
-                    message.content.iter().map(image_part).collect();
-                let has_image_part = images.iter().any(Option::is_some);
+            LanguageModelMessage::User { content: parts, .. } => {
+                let has_image_part = parts.iter().any(|part| {
+                    matches!(part,
+                        UserPart::File(file) if file.media_type.split('/').next() == Some("image")
+                            && !matches!(file.data, FileData::Text { .. })
+                    )
+                });
                 let mut content = Vec::new();
-                for (part, image) in message.content.iter().zip(&images) {
-                    match (part, image) {
-                        (ContentPart::Text { text, .. }, _) => {
+                for part in parts {
+                    match part {
+                        UserPart::Text(TextPart { text, .. }) => {
                             content.push(json!({ "type": "text", "text": text }));
                         }
-                        (_, Some(image)) => {
-                            content.push(convert_image_part(image, provider_options_name)?);
+                        UserPart::File(file)
+                            if file.media_type.split('/').next() == Some("image")
+                                && !matches!(file.data, FileData::Text { .. }) =>
+                        {
+                            content.push(convert_image_part(file, provider_options_name)?);
                         }
-                        (part, None) => warnings.push(Warning::Unsupported {
-                            feature: format!("user message part type: {}", part_type(part)),
+                        UserPart::File(_) => warnings.push(Warning::Unsupported {
+                            feature: "user message part type: file".to_string(),
                             details: None,
                         }),
                     }
@@ -290,14 +229,14 @@ pub(crate) fn convert_to_deepseek_chat_messages(
                     if has_image_part {
                         Value::Array(content)
                     } else {
-                        json!(join_text(&message.content))
+                        json!(join_text(parts))
                     },
                 );
                 name(&mut wire);
                 messages.push(Value::Object(wire));
             }
 
-            Role::Assistant => {
+            LanguageModelMessage::Assistant { content, .. } => {
                 if options.prefix == Some(true) {
                     if index != prompt.len() - 1 {
                         return Err(AiMuxError::InvalidPrompt(
@@ -316,10 +255,10 @@ pub(crate) fn convert_to_deepseek_chat_messages(
                 let mut text = String::new();
                 let mut reasoning: Option<String> = None;
                 let mut tool_calls = Vec::new();
-                for part in &message.content {
+                for part in content {
                     match part {
-                        ContentPart::Text { text: t, .. } => text.push_str(t),
-                        ContentPart::Reasoning { text: t, .. } => {
+                        AssistantPart::Text(TextPart { text: t, .. }) => text.push_str(t),
+                        AssistantPart::Reasoning(ReasoningPart { text: t, .. }) => {
                             // R1 must not receive prior reasoning; V4 requires it.
                             if last_user_message_index.is_some_and(|last| index <= last)
                                 && !is_deepseek_v4
@@ -328,12 +267,12 @@ pub(crate) fn convert_to_deepseek_chat_messages(
                             }
                             reasoning.get_or_insert_with(String::new).push_str(t);
                         }
-                        ContentPart::ToolCall {
+                        AssistantPart::ToolCall(ToolCallPart {
                             tool_call_id,
                             tool_name,
                             input,
                             ..
-                        } => tool_calls.push(json!({
+                        }) => tool_calls.push(json!({
                             "id": tool_call_id,
                             "type": "function",
                             "function": {
@@ -363,29 +302,27 @@ pub(crate) fn convert_to_deepseek_chat_messages(
                 messages.push(Value::Object(wire));
             }
 
-            Role::Tool => {
+            LanguageModelMessage::Tool { content, .. } => {
                 if options.name.is_some() {
                     warnings.push(Warning::Unsupported {
                         feature: "message name on tool messages".to_string(),
                         details: None,
                     });
                 }
-                for part in &message.content {
-                    if let ContentPart::ToolResult {
+                for part in content {
+                    let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
                         result,
                         ..
-                    } = part
-                    {
-                        messages.push(json!({
-                            "role": "tool",
-                            "tool_call_id": tool_call_id,
-                            "content": match result {
-                                Value::String(text) => text.clone(),
-                                other => other.to_string(),
-                            },
-                        }));
-                    }
+                    }) = part;
+                    messages.push(json!({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": match result {
+                            Value::String(text) => text.clone(),
+                            other => other.to_string(),
+                        },
+                    }));
                 }
             }
         }

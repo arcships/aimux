@@ -22,7 +22,10 @@
 //! `convert_prompt_to_openai_messages` (no network).
 
 use aimux_core::content::ContentPart;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
+use aimux_core::language_model_message::{
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultPart, convert_to_language_model_prompt,
+};
 use aimux_core::message::{ModelMessage, ModelPrompt, Role};
 use aimux_providers::openai::convert::convert_prompt_to_openai_messages;
 use serde_json::{Value, json};
@@ -95,17 +98,7 @@ fn full_tool_round_trip_from_json_converts_with_tool_call_id() {
         _ => unreachable!(),
     };
     // Convert to provider-facing prompt then to OpenAI messages.
-    let provider_prompt: LanguageModelPrompt = msgs
-        .iter()
-        .map(|m| LanguageModelPromptMessage {
-            role: m.role,
-            content: match &m.content {
-                aimux_core::message::MessageContent::Text(t) => vec![ContentPart::text(t)],
-                aimux_core::message::MessageContent::Parts(p) => p.clone(),
-            },
-            provider_options: None,
-        })
-        .collect();
+    let provider_prompt = convert_to_language_model_prompt(&msgs, None).unwrap();
     let out = convert_prompt_to_openai_messages(&provider_prompt);
     assert_eq!(out.len(), 3);
     // The tool message must carry tool_call_id (the core of issue 1).
@@ -126,30 +119,36 @@ fn full_tool_round_trip_from_json_converts_with_tool_call_id() {
 #[test]
 fn assistant_reasoning_with_tool_call_emits_reasoning_content() {
     let prompt: LanguageModelPrompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("inspect the repo")],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::Assistant,
+        LanguageModelMessage::user_text("inspect the repo"),
+        LanguageModelMessage::Assistant {
             content: vec![
-                ContentPart::reasoning("I need to inspect files before answering."),
-                ContentPart::tool_call(
-                    "call_1".to_string(),
-                    "read_file".to_string(),
-                    json!({ "path": "README.md" }),
-                ),
+                AssistantPart::Reasoning(ReasoningPart {
+                    text: "I need to inspect files before answering.".into(),
+                    signature: None,
+                    provider_options: None,
+                }),
+                AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "call_1".to_string(),
+                    tool_name: "read_file".to_string(),
+                    input: json!({ "path": "README.md" }),
+                    provider_executed: None,
+                    thought_signature: None,
+                    provider_options: None,
+                }),
             ],
-            ..Default::default()
+            provider_options: None,
         },
-        LanguageModelPromptMessage {
-            role: Role::Tool,
-            content: vec![ContentPart::tool_result(
-                "call_1".to_string(),
-                json!("contents"),
-            )],
-            ..Default::default()
+        LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
+                tool_call_id: "call_1".to_string(),
+                tool_name: None,
+                result: json!("contents"),
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
+                provider_options: None,
+            })],
+            provider_options: None,
         },
     ];
     let out = convert_prompt_to_openai_messages(&prompt);
@@ -181,24 +180,22 @@ fn assistant_reasoning_with_tool_call_emits_reasoning_content() {
 #[test]
 fn assistant_reasoning_with_text_emits_reasoning_content() {
     let prompt: LanguageModelPrompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("What is 2+2?")],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::Assistant,
+        LanguageModelMessage::user_text("What is 2+2?"),
+        LanguageModelMessage::Assistant {
             content: vec![
-                ContentPart::reasoning("2 plus 2 equals 4."),
-                ContentPart::text("4"),
+                AssistantPart::Reasoning(ReasoningPart {
+                    text: "2 plus 2 equals 4.".into(),
+                    signature: None,
+                    provider_options: None,
+                }),
+                AssistantPart::Text(TextPart {
+                    text: "4".into(),
+                    provider_options: None,
+                }),
             ],
-            ..Default::default()
+            provider_options: None,
         },
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("thanks")],
-            ..Default::default()
-        },
+        LanguageModelMessage::user_text("thanks"),
     ];
     let out = convert_prompt_to_openai_messages(&prompt);
     let assistant = &out[1];
@@ -217,14 +214,16 @@ fn assistant_reasoning_with_text_emits_reasoning_content() {
 /// `reasoning.length > 0` guard).
 #[test]
 fn assistant_without_reasoning_omits_reasoning_content() {
-    let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-        role: Role::Assistant,
-        content: vec![ContentPart::tool_call(
-            "call_1".to_string(),
-            "write_file".to_string(),
-            json!({ "path": "/tmp/x" }),
-        )],
-        ..Default::default()
+    let prompt: LanguageModelPrompt = vec![LanguageModelMessage::Assistant {
+        content: vec![AssistantPart::ToolCall(ToolCallPart {
+            tool_call_id: "call_1".to_string(),
+            tool_name: "write_file".to_string(),
+            input: json!({ "path": "/tmp/x" }),
+            provider_executed: None,
+            thought_signature: None,
+            provider_options: None,
+        })],
+        provider_options: None,
     }];
     let out = convert_prompt_to_openai_messages(&prompt);
     let assistant = &out[0];
@@ -237,44 +236,29 @@ fn assistant_without_reasoning_omits_reasoning_content() {
 /// Multiple reasoning parts are concatenated (mirrors the SDK join behaviour).
 #[test]
 fn multiple_reasoning_parts_are_concatenated() {
-    let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-        role: Role::Assistant,
+    let prompt: LanguageModelPrompt = vec![LanguageModelMessage::Assistant {
         content: vec![
-            ContentPart::reasoning("part one. "),
-            ContentPart::reasoning("part two."),
-            ContentPart::text("answer"),
+            AssistantPart::Reasoning(ReasoningPart {
+                text: "part one. ".into(),
+                signature: None,
+                provider_options: None,
+            }),
+            AssistantPart::Reasoning(ReasoningPart {
+                text: "part two.".into(),
+                signature: None,
+                provider_options: None,
+            }),
+            AssistantPart::Text(TextPart {
+                text: "answer".into(),
+                provider_options: None,
+            }),
         ],
-        ..Default::default()
+        provider_options: None,
     }];
     let out = convert_prompt_to_openai_messages(&prompt);
     let assistant = &out[0];
     assert_eq!(assistant["content"], json!("answer"));
     assert_eq!(assistant["reasoning_content"], json!("part one. part two."));
-}
-
-/// A user message never carries reasoning, so `reasoning_content` is never
-/// emitted for non-assistant roles even if a reasoning part somehow appears.
-/// The reasoning part is still dropped from the content shape, and the
-/// remaining text part collapses to a string (matching the plain-text path).
-#[test]
-fn non_assistant_role_never_emits_reasoning_content() {
-    let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![
-            ContentPart::reasoning("should be ignored"),
-            ContentPart::text("hello"),
-        ],
-        ..Default::default()
-    }];
-    let out = convert_prompt_to_openai_messages(&prompt);
-    let user = &out[0];
-    assert_eq!(user["role"], json!("user"));
-    assert!(
-        user.get("reasoning_content").is_none(),
-        "user messages must not carry reasoning_content"
-    );
-    // The text part collapses to a plain string; reasoning is dropped entirely.
-    assert_eq!(user["content"], json!("hello"));
 }
 
 /// The user-facing `ModelMessage` + `ModelPrompt` path (not just the
@@ -297,17 +281,7 @@ fn model_prompt_path_emits_reasoning_content() {
         ModelPrompt::Messages(m) => m,
         _ => unreachable!(),
     };
-    let provider_prompt: LanguageModelPrompt = msgs
-        .iter()
-        .map(|m| LanguageModelPromptMessage {
-            role: m.role,
-            content: match &m.content {
-                aimux_core::message::MessageContent::Text(t) => vec![ContentPart::text(t)],
-                aimux_core::message::MessageContent::Parts(p) => p.clone(),
-            },
-            provider_options: None,
-        })
-        .collect();
+    let provider_prompt = convert_to_language_model_prompt(&msgs, None).unwrap();
     let out = convert_prompt_to_openai_messages(&provider_prompt);
     let assistant = &out[1];
     assert_eq!(assistant["reasoning_content"], json!("thinking about hi"));

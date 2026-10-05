@@ -14,14 +14,16 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Map, Value, json};
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::LanguageModelPrompt;
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart,
+    ToolPart, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ToolChoice};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::Tool;
 use aimux_core::types::{
@@ -1024,40 +1026,36 @@ pub fn convert_to_open_responses_input(
     let mut system_messages: Vec<String> = Vec::new();
 
     for msg in prompt {
-        match msg.role {
-            Role::System => {
-                for part in &msg.content {
-                    if let ContentPart::Text { text, .. } = part {
-                        system_messages.push(text.clone());
-                    }
-                }
+        match msg {
+            LanguageModelMessage::System { content, .. } => {
+                system_messages.push(content.clone());
             }
-            Role::User => {
-                let user_content = convert_user_content(&msg.content, &mut warnings);
+            LanguageModelMessage::User { content, .. } => {
+                let user_content = convert_user_content(content, &mut warnings);
                 input.push(json!({
                     "type": "message",
                     "role": "user",
                     "content": user_content,
                 }));
             }
-            Role::Assistant => {
+            LanguageModelMessage::Assistant { content, .. } => {
                 let mut assistant_content: Vec<Value> = Vec::new();
                 let mut tool_calls: Vec<Value> = Vec::new();
 
-                for part in &msg.content {
+                for part in content {
                     match part {
-                        ContentPart::Text { text, .. } => {
+                        AssistantPart::Text(TextPart { text, .. }) => {
                             assistant_content.push(json!({
                                 "type": "output_text",
                                 "text": text,
                             }));
                         }
-                        ContentPart::ToolCall {
+                        AssistantPart::ToolCall(ToolCallPart {
                             tool_call_id,
                             tool_name,
                             input: tool_input,
                             ..
-                        } => {
+                        }) => {
                             let arguments = match tool_input {
                                 Value::String(s) => s.clone(),
                                 other => other.to_string(),
@@ -1084,21 +1082,19 @@ pub fn convert_to_open_responses_input(
                     input.push(tc);
                 }
             }
-            Role::Tool => {
-                for part in &msg.content {
-                    if let ContentPart::ToolResult {
+            LanguageModelMessage::Tool { content, .. } => {
+                for part in content {
+                    let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
                         result,
                         ..
-                    } = part
-                    {
-                        let content_value = resolve_tool_result_output(result, &mut warnings);
-                        input.push(json!({
-                            "type": "function_call_output",
-                            "call_id": tool_call_id,
-                            "output": content_value,
-                        }));
-                    }
+                    }) = part;
+                    let content_value = resolve_tool_result_output(result, &mut warnings);
+                    input.push(json!({
+                        "type": "function_call_output",
+                        "call_id": tool_call_id,
+                        "output": content_value,
+                    }));
                 }
             }
         }
@@ -1114,90 +1110,59 @@ pub fn convert_to_open_responses_input(
 }
 
 /// Convert user message content parts to the Open Responses format.
-fn convert_user_content(content: &[ContentPart], warnings: &mut Vec<Warning>) -> Value {
+fn convert_user_content(content: &[UserPart], warnings: &mut Vec<Warning>) -> Value {
+    use base64::Engine;
+
     let mut parts: Vec<Value> = Vec::new();
     for part in content {
         match part {
-            ContentPart::Text { text, .. } => {
+            UserPart::Text(TextPart { text, .. }) => {
                 parts.push(json!({ "type": "input_text", "text": text }));
             }
-            ContentPart::Image {
-                image, media_type, ..
-            } => {
-                use base64::Engine;
-                let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-                parts.push(json!({
-                    "type": "input_image",
-                    "image_url": format!("data:{};base64,{}", media_type, b64),
-                }));
-            }
-            ContentPart::File {
+            UserPart::File(FilePart {
                 data,
                 media_type,
                 filename,
                 ..
-            } => {
-                let top_level = top_level_media_type(media_type);
-                use base64::Engine;
-                let b64 = base64::engine::general_purpose::STANDARD.encode(data);
-                if top_level == "image" {
-                    parts.push(json!({
-                        "type": "input_image",
-                        "image_url": format!("data:{};base64,{}", media_type, b64),
-                    }));
-                } else {
-                    parts.push(json!({
-                        "type": "input_file",
-                        "filename": filename.as_deref().unwrap_or("data"),
-                        "file_data": format!("data:{};base64,{}", media_type, b64),
-                    }));
+            }) => {
+                let image = top_level_media_type(media_type) == "image";
+                match data {
+                    FileData::Data { data } => {
+                        let b64 = match data {
+                            FileBytes::Binary(bytes) => {
+                                base64::engine::general_purpose::STANDARD.encode(bytes)
+                            }
+                            FileBytes::Base64(data) => data.clone(),
+                        };
+                        let data_url = format!("data:{media_type};base64,{b64}");
+                        parts.push(if image {
+                            json!({ "type": "input_image", "image_url": data_url })
+                        } else {
+                            json!({
+                                "type": "input_file",
+                                "filename": filename.as_deref().unwrap_or("data"),
+                                "file_data": data_url,
+                            })
+                        });
+                    }
+                    FileData::Url { url } => {
+                        parts.push(if image {
+                            json!({ "type": "input_image", "image_url": url })
+                        } else {
+                            json!({ "type": "input_file", "file_url": url })
+                        });
+                    }
+                    FileData::Reference { .. } => {
+                        warnings.push(Warning::Other {
+                            message: "unsupported file part with provider reference".to_string(),
+                        });
+                    }
+                    FileData::Text { .. } => {
+                        warnings.push(Warning::Other {
+                            message: "unsupported text file part".to_string(),
+                        });
+                    }
                 }
-            }
-            ContentPart::FileBase64 {
-                data,
-                media_type,
-                filename,
-                ..
-            } => {
-                let top_level = top_level_media_type(media_type);
-                if top_level == "image" {
-                    parts.push(json!({
-                        "type": "input_image",
-                        "image_url": format!("data:{};base64,{}", media_type, data),
-                    }));
-                } else {
-                    parts.push(json!({
-                        "type": "input_file",
-                        "filename": filename.as_deref().unwrap_or("data"),
-                        "file_data": format!("data:{};base64,{}", media_type, data),
-                    }));
-                }
-            }
-            ContentPart::FileUrl {
-                url, media_type, ..
-            } => {
-                let top_level = top_level_media_type(media_type);
-                if top_level == "image" {
-                    parts.push(json!({
-                        "type": "input_image",
-                        "image_url": url,
-                    }));
-                } else {
-                    parts.push(json!({
-                        "type": "input_file",
-                        "file_url": url,
-                    }));
-                }
-            }
-            ContentPart::FileReference { .. } => {
-                warnings.push(Warning::Other {
-                    message: "unsupported file part with provider reference".to_string(),
-                });
-            }
-            _ => {
-                warnings.push(Warning::Other {
-                    message: format!("unsupported content part type: {}", part_variant_name(part)),
-                });
             }
         }
     }
@@ -1295,21 +1260,6 @@ fn resolve_tool_result_output(output: &Value, warnings: &mut Vec<Warning>) -> Va
 /// Extract the top-level media type (e.g. "image" from "image/png").
 fn top_level_media_type(media_type: &str) -> &str {
     media_type.split('/').next().unwrap_or("")
-}
-
-/// Get a human-readable name for a ContentPart variant (for warnings).
-fn part_variant_name(part: &ContentPart) -> &'static str {
-    match part {
-        ContentPart::Text { .. } => "text",
-        ContentPart::Image { .. } => "image",
-        ContentPart::File { .. } => "file",
-        ContentPart::FileBase64 { .. } => "file-base64",
-        ContentPart::FileUrl { .. } => "file-url",
-        ContentPart::FileReference { .. } => "file-reference",
-        ContentPart::Reasoning { .. } => "reasoning",
-        ContentPart::ToolCall { .. } => "tool-call",
-        ContentPart::ToolResult { .. } => "tool-result",
-    }
 }
 
 // == Usage extraction ==

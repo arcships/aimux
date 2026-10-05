@@ -489,7 +489,7 @@ pub async fn generate_text(
     let tools = options.tools.clone();
     let operation_instructions = options.instructions.clone();
     let (messages, instructions) = split_prompt(prompt.into(), operation_instructions.as_deref());
-    let lm_prompt = convert_to_language_model_prompt(&messages, instructions);
+    let lm_prompt = convert_to_language_model_prompt(&messages, instructions)?;
 
     // 2. Build CallOptions.
     let mut call_options = options.into_call_options(lm_prompt);
@@ -771,7 +771,7 @@ pub async fn stream_text(
     let tools = options.tools.clone();
     let operation_instructions = options.instructions.clone();
     let (messages, instructions) = split_prompt(prompt.into(), operation_instructions.as_deref());
-    let lm_prompt = convert_to_language_model_prompt(&messages, instructions);
+    let lm_prompt = convert_to_language_model_prompt(&messages, instructions)?;
 
     // 2. Build CallOptions.
     let mut call_options = options.into_call_options(lm_prompt);

@@ -13,9 +13,7 @@
 //! DeepSeek 的 reasoning 映射（thinking / reasoning_effort）对齐 `@ai-sdk/deepseek`，其用例见
 //! `deepseek_chat_test.rs` 的 `top-level reasoning`。
 
-use aimux_core::content::ContentPart;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::types::ReasoningEffort;
 use aimux_providers::PresetSettings;
@@ -31,11 +29,7 @@ fn preset_chat(name: &str, model_id: &str) -> OpenAICompatibleChatModel {
 }
 
 fn user_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("Hello")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 fn opts_with_max_tokens(n: u32) -> CallOptions {

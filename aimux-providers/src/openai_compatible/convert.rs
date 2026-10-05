@@ -7,14 +7,15 @@
 //! `reasoning_effort`, `verbosity`, `messages`, `tools`, `tool_choice`).
 //! Compatible endpoint capabilities arrive as [`ChatDialect`] data.
 
-use aimux_core::shared::SharedProviderOptions;
+use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use base64::Engine;
 use serde_json::{Map, Value, json};
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
@@ -389,38 +390,6 @@ fn with_metadata(mut object: Value, metadata: Map<String, Value>) -> Value {
     object
 }
 
-fn part_options(part: &ContentPart) -> Option<&SharedProviderOptions> {
-    match part {
-        ContentPart::Text {
-            provider_options, ..
-        }
-        | ContentPart::Image {
-            provider_options, ..
-        }
-        | ContentPart::File {
-            provider_options, ..
-        }
-        | ContentPart::FileBase64 {
-            provider_options, ..
-        }
-        | ContentPart::FileUrl {
-            provider_options, ..
-        }
-        | ContentPart::FileReference {
-            provider_options, ..
-        }
-        | ContentPart::Reasoning {
-            provider_options, ..
-        }
-        | ContentPart::ToolCall {
-            provider_options, ..
-        }
-        | ContentPart::ToolResult {
-            provider_options, ..
-        } => provider_options.as_ref(),
-    }
-}
-
 /// `messages` for the body.
 ///
 /// # Errors
@@ -439,55 +408,35 @@ pub(crate) fn convert_messages(
 }
 
 fn convert_message(
-    message: &LanguageModelPromptMessage,
+    message: &LanguageModelMessage,
     spec: &MessageSpec<'_>,
 ) -> Result<Vec<Value>, AiMuxError> {
     let key = spec.metadata_key;
-    let message_metadata = wire_metadata(message.provider_options.as_ref(), key);
-    match message.role {
-        Role::System => {
-            let text: String = message
-                .content
-                .iter()
-                .filter_map(|part| match part {
-                    ContentPart::Text { text, .. } => Some(text.as_str()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("");
-            let mut metadata = message_metadata;
-            if let Some(first) = message.content.first() {
-                metadata.extend(wire_metadata(part_options(first), key));
-            }
-            Ok(vec![with_metadata(
-                json!({ "role": "system", "content": text }),
-                metadata,
-            )])
-        }
-        Role::User => Ok(vec![convert_user_message(message, spec, message_metadata)?]),
-        Role::Assistant => Ok(vec![convert_assistant_message(
-            message,
-            spec,
-            message_metadata,
+    match message {
+        LanguageModelMessage::System { content, provider_options } => Ok(vec![with_metadata(
+            json!({ "role": "system", "content": content }),
+            wire_metadata(provider_options.as_ref(), key),
         )]),
-        Role::Tool => Ok(message
-            .content
+        LanguageModelMessage::User { content, provider_options } => Ok(vec![convert_user_message(
+            content, spec, wire_metadata(provider_options.as_ref(), key),
+        )?]),
+        LanguageModelMessage::Assistant { content, provider_options } => Ok(vec![convert_assistant_message(
+            content, spec, wire_metadata(provider_options.as_ref(), key),
+        )]),
+        LanguageModelMessage::Tool { content, .. } => Ok(content
             .iter()
-            .filter_map(|part| match part {
-                ContentPart::ToolResult {
-                    tool_call_id,
-                    result,
-                    provider_options,
-                    ..
-                } => Some(with_metadata(
+            .map(|part| {
+                let ToolPart::ToolResult(ToolResultPart {
+                    tool_call_id, result, provider_options, ..
+                }) = part;
+                with_metadata(
                     json!({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
                         "content": tool_result_content(result, spec.supports_multi_part_tool_content),
                     }),
                     wire_metadata(provider_options.as_ref(), key),
-                )),
-                _ => None,
+                )
             })
             .collect()),
     }
@@ -505,17 +454,17 @@ fn tool_result_content(result: &Value, multi_part: bool) -> Value {
 }
 
 fn convert_user_message(
-    message: &LanguageModelPromptMessage,
+    content: &[UserPart],
     spec: &MessageSpec<'_>,
     message_metadata: Map<String, Value>,
 ) -> Result<Value, AiMuxError> {
     let key = spec.metadata_key;
     if let [
-        ContentPart::Text {
+        UserPart::Text(TextPart {
             text,
             provider_options,
-        },
-    ] = message.content.as_slice()
+        }),
+    ] = content
     {
         let mut metadata = message_metadata;
         metadata.extend(wire_metadata(provider_options.as_ref(), key));
@@ -524,124 +473,73 @@ fn convert_user_message(
             metadata,
         ));
     }
-    let mut parts = Vec::new();
-    for part in &message.content {
-        let wire = convert_user_part(part, key)?;
-        if !wire.is_null() {
-            parts.push(wire);
-        }
-    }
+    let parts = content
+        .iter()
+        .map(|part| {
+            let (wire, provider_options) = match part {
+                UserPart::Text(TextPart {
+                    text,
+                    provider_options,
+                }) => (json!({ "type": "text", "text": text }), provider_options),
+                UserPart::File(file) => (file_part(file, key)?, &file.provider_options),
+            };
+            Ok(with_metadata(
+                wire,
+                wire_metadata(provider_options.as_ref(), key),
+            ))
+        })
+        .collect::<Result<Vec<_>, AiMuxError>>()?;
     Ok(with_metadata(
         json!({ "role": "user", "content": parts }),
         message_metadata,
     ))
 }
 
-fn convert_user_part(part: &ContentPart, key: &str) -> Result<Value, AiMuxError> {
-    let metadata = wire_metadata(part_options(part), key);
-    let wire = match part {
-        ContentPart::Text { text, .. } => json!({ "type": "text", "text": text }),
-        ContentPart::Image {
-            image, media_type, ..
-        } => file_part(
-            part,
-            media_type,
-            FileSource::Base64(&base64::engine::general_purpose::STANDARD.encode(image)),
-            None,
-        )?,
-        ContentPart::File {
-            data,
-            media_type,
-            filename,
-            ..
-        } => file_part(
-            part,
-            media_type,
-            FileSource::Base64(&base64::engine::general_purpose::STANDARD.encode(data)),
-            filename.as_deref(),
-        )?,
-        ContentPart::FileBase64 {
-            data,
-            media_type,
-            filename,
-            ..
-        } => file_part(
-            part,
-            media_type,
-            FileSource::Base64(data),
-            filename.as_deref(),
-        )?,
-        ContentPart::FileUrl {
-            url, media_type, ..
-        } => file_part(part, media_type, FileSource::Url(url), None)?,
-        ContentPart::FileReference {
-            media_type,
-            reference,
-            filename,
-            ..
-        } => file_part(
-            part,
-            media_type,
-            FileSource::Reference(reference, key),
-            filename.as_deref(),
-        )?,
-        // Reasoning and tool traffic have no user-content form.
-        ContentPart::Reasoning { .. }
-        | ContentPart::ToolCall { .. }
-        | ContentPart::ToolResult { .. } => return Ok(Value::Null),
-    };
-    Ok(with_metadata(wire, metadata))
-}
-
-enum FileSource<'a> {
-    Base64(&'a str),
-    Url(&'a str),
-    /// A provider file reference object and the provider key to look up.
-    Reference(&'a Value, &'a str),
-}
-
-fn file_part(
-    part: &ContentPart,
-    media_type: &str,
-    source: FileSource<'_>,
-    filename: Option<&str>,
-) -> Result<Value, AiMuxError> {
+fn file_part(part: &FilePart, key: &str) -> Result<Value, AiMuxError> {
     let unsupported = |what: String| AiMuxError::InvalidArgument(what);
-    if let FileSource::Reference(reference, key) = source {
-        let file_id = match reference
+    if let FileData::Reference { reference } = &part.data {
+        let file_id = reference
             .get(key)
             .or_else(|| reference.get("openaiCompatible"))
-        {
-            Some(Value::String(id)) => id.clone(),
-            Some(other) => other.to_string(),
-            None => {
-                let available: Vec<&str> = reference
-                    .as_object()
-                    .map(|m| m.keys().map(String::as_str).collect())
-                    .unwrap_or_default();
-                return Err(unsupported(format!(
+            .ok_or_else(|| {
+                let mut available: Vec<&str> = reference.keys().map(String::as_str).collect();
+                available.sort_unstable();
+                unsupported(format!(
                     "No provider reference found for provider '{key}'. Available providers: {}",
                     available.join(", ")
-                )));
-            }
-        };
+                ))
+            })?;
         return Ok(json!({ "type": "file", "file": { "file_id": file_id } }));
     }
-
+    let base64_data = match &part.data {
+        FileData::Data {
+            data: FileBytes::Binary(bytes),
+        } => Some(std::borrow::Cow::Owned(
+            base64::engine::general_purpose::STANDARD.encode(bytes),
+        )),
+        FileData::Data {
+            data: FileBytes::Base64(data),
+        } => Some(std::borrow::Cow::Borrowed(data.as_str())),
+        FileData::Url { .. } => None,
+        FileData::Text { .. } => return Err(unsupported("text file parts".to_string())),
+        FileData::Reference { .. } => unreachable!("handled above"),
+    };
+    let media_type = part.media_type.as_str();
     match get_top_level_media_type(media_type) {
         kind @ ("image" | "video") => {
-            let url = match source {
-                FileSource::Url(url) => url.to_string(),
-                FileSource::Base64(b64) => {
-                    format!("data:{};base64,{}", resolve_full_media_type(part)?, b64)
-                }
-                FileSource::Reference(..) => unreachable!("handled above"),
+            let url = match &part.data {
+                FileData::Url { url } => url.to_string(),
+                _ => format!(
+                    "data:{};base64,{}",
+                    resolve_full_media_type(part)?,
+                    base64_data.as_deref().unwrap()
+                ),
             };
             let kind = format!("{kind}_url");
             Ok(json!({ "type": kind, kind: { "url": url } }))
         }
         "audio" => {
-            let FileSource::Base64(b64) = source else {
+            let Some(b64) = base64_data.as_deref() else {
                 return Err(unsupported("audio file parts with URLs".to_string()));
             };
             let full_media_type = resolve_full_media_type(part)?;
@@ -657,7 +555,7 @@ fn file_part(
             Ok(json!({ "type": "input_audio", "input_audio": { "data": b64, "format": format } }))
         }
         "application" => {
-            let FileSource::Base64(b64) = source else {
+            let Some(b64) = base64_data.as_deref() else {
                 return Err(unsupported("PDF file parts with URLs".to_string()));
             };
             let full_media_type = resolve_full_media_type(part)?;
@@ -666,7 +564,7 @@ fn file_part(
                     "file part media type {full_media_type}"
                 )));
             }
-            let filename = filename.unwrap_or("document.pdf");
+            let filename = part.filename.as_deref().unwrap_or("document.pdf");
             Ok(json!({
                 "type": "file",
                 "file": {
@@ -676,7 +574,7 @@ fn file_part(
             }))
         }
         "text" => {
-            let FileSource::Base64(b64) = source else {
+            let Some(b64) = base64_data.as_deref() else {
                 return Err(unsupported("text file parts with URLs".to_string()));
             };
             let bytes = base64::engine::general_purpose::STANDARD
@@ -691,7 +589,7 @@ fn file_part(
 }
 
 fn convert_assistant_message(
-    message: &LanguageModelPromptMessage,
+    content: &[AssistantPart],
     spec: &MessageSpec<'_>,
     message_metadata: Map<String, Value>,
 ) -> Value {
@@ -700,23 +598,24 @@ fn convert_assistant_message(
     let mut reasoning = String::new();
     let mut tool_calls = Vec::new();
     let mut metadata = message_metadata;
-    for part in &message.content {
+    for part in content {
         match part {
-            ContentPart::Text { .. } => {
-                if let ContentPart::Text { text: t, .. } = part {
-                    text.push_str(t);
-                }
-                metadata.extend(wire_metadata(part_options(part), key));
+            AssistantPart::Text(TextPart {
+                text: t,
+                provider_options,
+            }) => {
+                text.push_str(t);
+                metadata.extend(wire_metadata(provider_options.as_ref(), key));
             }
-            ContentPart::Reasoning { text: t, .. } => reasoning.push_str(t),
-            ContentPart::ToolCall {
+            AssistantPart::Reasoning(ReasoningPart { text: t, .. }) => reasoning.push_str(t),
+            AssistantPart::ToolCall(ToolCallPart {
                 tool_call_id,
                 tool_name,
                 input,
                 thought_signature,
                 provider_options,
                 ..
-            } => {
+            }) => {
                 let arguments = if input.is_null() {
                     "{}".to_string()
                 } else {

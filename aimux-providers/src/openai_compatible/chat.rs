@@ -771,11 +771,9 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use aimux_core::content::ContentPart;
     use aimux_core::error::AiMuxError;
     use aimux_core::language_model::LanguageModel;
-    use aimux_core::language_model_message::LanguageModelPromptMessage;
-    use aimux_core::message::Role;
+    use aimux_core::language_model_message::LanguageModelMessage;
     use aimux_core::options::CallOptions;
     use aimux_core::shared::provider_namespace;
     use aimux_core::stream_part::StreamPart;
@@ -788,11 +786,7 @@ mod tests {
     use crate::shared::Credential;
 
     fn hello() -> CallOptions {
-        CallOptions::new(vec![LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("hi")],
-            ..Default::default()
-        }])
+        CallOptions::new(vec![LanguageModelMessage::user_text("hi")])
     }
 
     fn provider(base_url: BaseUrl, dialect: ChatDialect) -> OpenAICompatibleProvider {
