@@ -159,23 +159,8 @@ pub fn convert_prompt_to_mistral_messages(
                         result,
                         ..
                     }) = part;
-                    let name = tool_name.as_deref().or_else(|| {
-                        prompt.iter().find_map(|message| {
-                            let LanguageModelMessage::Assistant { content, .. } = message else {
-                                return None;
-                            };
-                            content.iter().find_map(|part| match part {
-                                AssistantPart::ToolCall(ToolCallPart {
-                                    tool_call_id: id,
-                                    tool_name,
-                                    ..
-                                }) if id == tool_call_id => Some(tool_name.as_str()),
-                                _ => None,
-                            })
-                        })
-                    });
                     let mut value = json!({"role":"tool", "tool_call_id":tool_call_id, "content":tool_result_to_content(result)});
-                    if let Some(name) = name {
+                    if let Some(name) = tool_name {
                         value["name"] = json!(name);
                     }
                     messages.push(value);

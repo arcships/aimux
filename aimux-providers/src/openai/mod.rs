@@ -200,8 +200,6 @@ pub struct OpenAIProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Compatibility slot for the shared registry; native factories reject it.
-    pub transform_request_body: Option<crate::shared::TransformRequestBody>,
 }
 
 impl std::fmt::Debug for OpenAIProviderSettings {
@@ -230,11 +228,6 @@ impl std::fmt::Debug for OpenAIProviderSettings {
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider, AiMuxError> {
-    if settings.transform_request_body.is_some() {
-        return Err(AiMuxError::InvalidArgument(
-            "transform_request_body is not supported by this provider".to_string(),
-        ));
-    }
     let configured_url = load_optional_setting(settings.base_url.as_deref(), "OPENAI_BASE_URL");
     let base_url = match configured_url.as_deref() {
         Some(url) => validate_base_url(url)?,

@@ -149,7 +149,9 @@ pub fn create_provider(
             AmazonBedrockProviderSettings
         ),
         "anthropic" => package!(anthropic, create_anthropic, AnthropicProviderSettings),
-        "azure" => package!(azure, create_azure, AzureOpenAIProviderSettings),
+        "azure" => {
+            package_without_transform!(azure, create_azure, AzureOpenAIProviderSettings, api_key)
+        }
         "cohere" => package!(cohere, create_cohere, CohereProviderSettings),
         "deepseek" => package!(deepseek, create_deepseek, DeepSeekProviderSettings),
         "elevenlabs" => package!(elevenlabs, create_elevenlabs, ElevenLabsProviderSettings),
@@ -159,7 +161,9 @@ pub fn create_provider(
         "mistral" => {
             package_without_transform!(mistral, create_mistral, MistralProviderSettings, api_key)
         }
-        "openai" => package!(openai, create_openai, OpenAIProviderSettings),
+        "openai" => {
+            package_without_transform!(openai, create_openai, OpenAIProviderSettings, api_key)
+        }
         "voyage" => package!(voyage, create_voyage, VoyageProviderSettings),
         "xai" => package!(xai, create_xai, XAIProviderSettings),
         "assemblyai" => package_without_transform!(

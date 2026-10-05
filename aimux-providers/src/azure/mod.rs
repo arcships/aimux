@@ -101,8 +101,6 @@ pub struct AzureOpenAIProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Compatibility slot for the shared registry; native factories reject it.
-    pub transform_request_body: Option<crate::shared::TransformRequestBody>,
     /// The `api-version` query parameter. Default `"v1"`.
     pub api_version: Option<String>,
     /// Use the legacy deployment URL form
@@ -172,11 +170,6 @@ fn base_url_info(base_url: Option<&str>) -> Result<BaseUrlInfo, AiMuxError> {
 pub fn create_azure(
     settings: AzureOpenAIProviderSettings,
 ) -> Result<AzureOpenAIProvider, AiMuxError> {
-    if settings.transform_request_body.is_some() {
-        return Err(AiMuxError::InvalidArgument(
-            "transform_request_body is not supported by this provider".to_string(),
-        ));
-    }
     let has_api_key = match &settings.api_key {
         None => false,
         Some(Resolvable::Value(value)) => !value.is_empty(),

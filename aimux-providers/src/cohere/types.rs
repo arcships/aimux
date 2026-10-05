@@ -151,7 +151,7 @@ impl StreamEvent {
                     }
             }
             Some("message-end") => {
-                raw["delta"]["finish_reason"].is_string() && raw["delta"].get("usage").is_some()
+                raw["delta"]["finish_reason"].is_string() && raw["delta"]["usage"].is_object()
             }
             Some("tool-plan-delta") => raw["delta"]["message"]["tool_plan"].is_string(),
             Some("tool-call-start" | "tool-call-delta") => {

@@ -249,23 +249,41 @@ async fn responses_stream() {
         "/responses",
         json!({"model":"test-model","input":[{"role":"user","content":[{"type":"input_text","text":"Hello"}]}],"stream":true}),
     );
-    let deltas = parts
-        .iter()
-        .filter_map(|part| match part {
-            StreamPart::TextDelta { id, delta, .. } => Some((id.as_str(), delta.as_str())),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
     assert_eq!(
-        deltas,
-        vec![
-            ("msg_67c9a81dea8c8190b79651a2b3adf91e", "Hello,"),
-            ("msg_67c9a81dea8c8190b79651a2b3adf91e", " World!")
-        ]
-    );
-    assert!(parts.iter().any(|part|matches!(part,StreamPart::TextEnd{id,..} if id=="msg_67c9a81dea8c8190b79651a2b3adf91e")));
-    assert!(
-        matches!(parts.last(),Some(StreamPart::Finish{finish_reason,usage,provider_metadata:Some(metadata)}) if finish_reason.unified==FinishReasonUnified::Stop && usage.input_tokens.total==Some(543) && usage.input_tokens.cache_read==Some(234) && usage.output_tokens.reasoning==Some(123) && metadata["openai"]["responseId"]=="resp_67c9a81b6a048190a9ee441c5755a4e8")
+        serde_json::to_value(parts).unwrap(),
+        json!([
+            {"StreamStart": {"warnings": []}},
+            {"ResponseMetadata": {
+                "id": "resp_67c9a81b6a048190a9ee441c5755a4e8",
+                "model_id": "test-model",
+                "timestamp": "2025-03-06T13:50:19+00:00"
+            }},
+            {"TextStart": {
+                "id": "msg_67c9a81dea8c8190b79651a2b3adf91e",
+                "provider_metadata": {"openai": {"itemId": "msg_67c9a81dea8c8190b79651a2b3adf91e"}}
+            }},
+            {"TextDelta": {"id": "msg_67c9a81dea8c8190b79651a2b3adf91e", "delta": "Hello,"}},
+            {"TextDelta": {"id": "msg_67c9a81dea8c8190b79651a2b3adf91e", "delta": " World!"}},
+            {"TextEnd": {
+                "id": "msg_67c9a81dea8c8190b79651a2b3adf91e",
+                "provider_metadata": {"openai": {"itemId": "msg_67c9a81dea8c8190b79651a2b3adf91e"}}
+            }},
+            {"Finish": {
+                "finish_reason": {"unified": "stop", "raw": null},
+                "provider_metadata": {"openai": {"responseId": "resp_67c9a81b6a048190a9ee441c5755a4e8"}},
+                "usage": {
+                    "input_tokens": {"total": 543, "no_cache": 309, "cache_read": 234},
+                    "output_tokens": {"total": 478, "reasoning": 123, "text": 355},
+                    "raw": {
+                        "input_tokens": 543,
+                        "input_tokens_details": {"cached_tokens": 234},
+                        "output_tokens": 478,
+                        "output_tokens_details": {"reasoning_tokens": 123},
+                        "total_tokens": 512
+                    }
+                }
+            }}
+        ])
     );
 }
 

@@ -343,6 +343,7 @@ impl LanguageModel for GroqChatLanguageModel {
             provider_metadata: None,
             response: Some(ResponseInfo {
                 headers: Some(response_headers),
+                body: resp.raw_value,
                 ..response_metadata(response.id, response.created, response.model).into()
             }),
             request: Some(RequestInfo { body: Some(body) }),

@@ -8,7 +8,6 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::GenerateContent;
-use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::FinishReasonUnified;
@@ -68,13 +67,8 @@ async fn generate_native_structured_output() {
         name: None,
         description: None,
     });
-    // Select native output explicitly so the neutral model ID needs no family detection.
-    options.provider_options = Some(provider_namespace(
-        "anthropic",
-        json!({"structuredOutputMode": "outputFormat"}),
-    ));
     let result = provider(&fetch)
-        .messages("test-model")
+        .messages("claude-future-9")
         .do_generate(&options)
         .await
         .unwrap();
@@ -84,6 +78,7 @@ async fn generate_native_structured_output() {
     assert_eq!(seen[0].url, "https://test.invalid/v1/messages");
     assert_eq!(seen[0].headers["x-api-key"], "test-api-key");
     let mut expected = request();
+    expected["model"] = json!("claude-future-9");
     expected["max_tokens"] = json!(100);
     expected["output_config"] = json!({"format": {"type": "json_schema", "schema": schema}});
     assert_eq!(seen[0].json_body(), expected);

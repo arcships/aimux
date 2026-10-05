@@ -476,7 +476,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                 timestamp: timestamp(data.created),
                 model_id: data.model,
                 headers: Some(response_headers),
-                body: None,
+                body: Some(raw),
             }),
             request: Some(RequestInfo { body: Some(body) }),
         })

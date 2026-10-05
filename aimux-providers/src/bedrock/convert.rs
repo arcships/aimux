@@ -986,14 +986,6 @@ fn reasoning_capabilities(model_id: &str) -> (f64, bool, bool) {
     }
 }
 
-/// Build the Bedrock Converse request body.
-#[must_use]
-pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
-    build_request_body_checked(model_id, options, None)
-        .expect("valid Bedrock request")
-        .0
-}
-
 /// Build a checked Converse request, preserving upstream warnings.
 ///
 /// # Errors
