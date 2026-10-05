@@ -13,6 +13,7 @@ use aimux_core::skills_model::{Skills, UploadSkillCallOptions, UploadSkillResult
 use aimux_provider_utils::{HttpBody, HttpRequest};
 
 use super::config::AnthropicModelConfig;
+use super::options::CANONICAL;
 
 #[derive(Deserialize)]
 struct SkillResponse {
@@ -158,7 +159,7 @@ impl Skills for AnthropicSkills {
             None
         };
         Ok(UploadSkillResult {
-            provider_reference: HashMap::from([("anthropic".to_string(), response.id)]),
+            provider_reference: HashMap::from([(CANONICAL.to_string(), response.id)]),
             display_title: response.display_title,
             name: version
                 .as_ref()
@@ -169,7 +170,7 @@ impl Skills for AnthropicSkills {
                 .or(response.description),
             latest_version: response.latest_version,
             provider_metadata: Some(aimux_core::shared::provider_namespace(
-                "anthropic",
+                CANONICAL,
                 json!({
                     "source": response.source,
                     "createdAt": response.created_at,

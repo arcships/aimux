@@ -163,11 +163,7 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
                                 text,
                                 provider_options,
                             }) => {
-                                let options = provider_options.as_ref().and_then(|options| {
-                                    options
-                                        .get("amazonBedrock")
-                                        .or_else(|| options.get("bedrock"))
-                                });
+                                let options = options::read(provider_options.as_ref());
                                 let Some(sig) = options
                                     .and_then(|options| options.get("signature"))
                                     .and_then(Value::as_str)

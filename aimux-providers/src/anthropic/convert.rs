@@ -1377,7 +1377,7 @@ fn resolve_tool_result_output(
                 Some(json!({ "type": if top_level == Some("image") { "image" } else { "document" }, "source": source }))
             },
             ToolResultContent::Custom { provider_options } => {
-                if let Some(options) = provider_options.as_ref().and_then(|options| options.get("anthropic"))
+                if let Some(options) = provider_options.as_ref().and_then(|options| options.get(CANONICAL))
                     && options.get("type").and_then(Value::as_str) == Some("tool-reference") {
                     Some(json!({ "type": "tool_reference", "tool_name": options.get("toolName") }))
                 } else { warnings.push(Warning::Other { message: "unsupported custom tool content part".to_string() }); None }

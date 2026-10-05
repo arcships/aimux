@@ -18,7 +18,7 @@
 //! fields we actually read back are `text`, function tool parts, and native
 //! provider-executed tool parts.
 
-use super::options::Namespace;
+use super::options::{GOOGLE, Namespace};
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
@@ -208,7 +208,7 @@ fn convert_user_parts(content: &[UserPart], namespace: Namespace) -> Vec<Value> 
                     }
                     FileData::Reference { reference } => {
                         if namespace == Namespace::Google
-                            && let Some(reference) = reference.get("google")
+                            && let Some(reference) = reference.get(GOOGLE)
                         {
                             parts.push(json!({
                                 "fileData": { "mimeType": media_type, "fileUri": reference }
@@ -400,7 +400,7 @@ fn convert_assistant_parts(content: &[AssistantPart], namespace: Namespace) -> V
                         json!({ "inlineData": { "mimeType": if aimux_provider_utils::is_full_media_type(&file.media_type) { file.media_type.as_str() } else { "text/plain" }, "data": base64::engine::general_purpose::STANDARD.encode(text.as_bytes()) } })
                     }
                     FileData::Reference { reference } => {
-                        if let Some(uri) = reference.get("google") {
+                        if let Some(uri) = reference.get(GOOGLE) {
                             json!({ "fileData": { "mimeType": file.media_type, "fileUri": uri } })
                         } else {
                             continue;
