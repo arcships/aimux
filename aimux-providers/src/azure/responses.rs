@@ -263,7 +263,7 @@ impl LanguageModel for AzureResponsesModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
-        let request_result = build_responses_request_body(&self.deployment, options, false);
+        let request_result = build_responses_request_body(&self.deployment, options, false)?;
         let mut body = request_result.body;
 
         // Apply Azure assistant- file ID prefix passthrough.
@@ -300,7 +300,7 @@ impl LanguageModel for AzureResponsesModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
-        let request_result = build_responses_request_body(&self.deployment, options, true);
+        let request_result = build_responses_request_body(&self.deployment, options, true)?;
         let mut body = request_result.body;
         let warnings = request_result.warnings;
         let provider_key = provider_key().to_string();

@@ -121,7 +121,7 @@ impl LanguageModel for CohereModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let body_result = build_request_body(&self.model_id, options, false);
+        let body_result = build_request_body(&self.model_id, options, false)?;
         let body = body_result.body.clone();
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
@@ -263,7 +263,7 @@ impl LanguageModel for CohereModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let body_result = build_request_body(&self.model_id, options, true);
+        let body_result = build_request_body(&self.model_id, options, true)?;
         let body = body_result.body.clone();
         let headers = self.build_headers(options.headers.as_ref());
         let endpoint = self.endpoint();

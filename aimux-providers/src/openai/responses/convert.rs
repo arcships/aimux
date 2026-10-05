@@ -12,6 +12,7 @@
 
 use serde_json::{Value, json};
 
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultPart, UserPart,
@@ -70,12 +71,15 @@ pub struct ResponsesInputResult {
 /// `has_previous_response_id` is true, assistant reasoning/function-call items
 /// that already carry an `itemId` are skipped (they live in the previous
 /// response chain).
+///
+/// # Errors
+/// Returns an unsupported-functionality error for text file parts.
 pub fn convert_to_responses_input(
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,
     store: bool,
     has_previous_response_id: bool,
-) -> ResponsesInputResult {
+) -> Result<ResponsesInputResult, AiMuxError> {
     let mut input: Vec<Value> = Vec::new();
     let mut warnings: Vec<Warning> = Vec::new();
 
@@ -101,7 +105,10 @@ pub fn convert_to_responses_input(
                 }
             },
             LanguageModelMessage::User { content, .. } => {
-                let content: Vec<Value> = content.iter().map(convert_user_part).collect();
+                let content: Vec<Value> = content
+                    .iter()
+                    .map(convert_user_part)
+                    .collect::<Result<_, _>>()?;
                 input.push(json!({ "role": "user", "content": content }));
             }
             LanguageModelMessage::Assistant { content, .. } => {
@@ -253,12 +260,12 @@ pub fn convert_to_responses_input(
         });
     }
 
-    ResponsesInputResult { input, warnings }
+    Ok(ResponsesInputResult { input, warnings })
 }
 
 /// Convert a single user-message content part into the Responses input shape.
-fn convert_user_part(part: &UserPart) -> Value {
-    match part {
+fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
+    Ok(match part {
         UserPart::Text(TextPart { text, .. }) => json!({ "type": "input_text", "text": text }),
         UserPart::File(FilePart {
             data,
@@ -294,8 +301,13 @@ fn convert_user_part(part: &UserPart) -> Value {
                         json!({ "type": "input_file", "file_url": url })
                     }
                 }
-                FileData::Reference { .. } | FileData::Text { .. } => {
+                FileData::Reference { .. } => {
                     json!({ "type": "input_text", "text": "" })
+                }
+                FileData::Text { .. } => {
+                    return Err(AiMuxError::UnsupportedFunctionality(
+                        "text file parts".into(),
+                    ));
                 }
             };
             if item["type"] == "input_image"
@@ -306,7 +318,7 @@ fn convert_user_part(part: &UserPart) -> Value {
             }
             item
         }
-    }
+    })
 }
 
 /// Serialize tool-call arguments: null/empty -> `"{}"`, objects -> JSON string.
@@ -805,12 +817,14 @@ fn apply_responses_reasoning_block(
 ///
 /// Splits the original ~380-line function into focused helpers (issue M11);
 /// behavior is unchanged.
-#[must_use]
+///
+/// # Errors
+/// Returns an unsupported-functionality error for text file parts.
 pub fn build_responses_request_body(
     model_id: &str,
     options: &CallOptions,
     stream: bool,
-) -> ResponsesRequestBodyResult {
+) -> Result<ResponsesRequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
     let caps = get_model_capabilities(model_id);
     let provider_opts = &options.provider_options;
@@ -839,7 +853,7 @@ pub fn build_responses_request_body(
         system_message_mode,
         store_bool,
         has_previous_response_id,
-    );
+    )?;
     warnings.extend(input_result.warnings);
 
     // -- Base body --
@@ -908,7 +922,7 @@ pub fn build_responses_request_body(
         warnings.push(tw);
     }
 
-    ResponsesRequestBodyResult { body, warnings }
+    Ok(ResponsesRequestBodyResult { body, warnings })
 }
 
 // -- Usage conversion --------------------------------------------------------

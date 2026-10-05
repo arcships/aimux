@@ -121,7 +121,7 @@ impl LanguageModel for OpenAIResponsesModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
-        let request_result = build_responses_request_body(&self.model_id, options, false);
+        let request_result = build_responses_request_body(&self.model_id, options, false)?;
         let body = request_result.body;
         let provider_key = self.provider_options_name().to_string();
 
@@ -155,7 +155,7 @@ impl LanguageModel for OpenAIResponsesModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
-        let request_result = build_responses_request_body(&self.model_id, options, true);
+        let request_result = build_responses_request_body(&self.model_id, options, true)?;
         let body = request_result.body;
         let warnings = request_result.warnings;
         let provider_key = self.provider_options_name().to_string();

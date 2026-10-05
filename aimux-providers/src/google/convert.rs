@@ -183,12 +183,15 @@ fn convert_user_parts(content: &[UserPart], namespace: ProviderMetadataNamespace
             UserPart::File(FilePart {
                 data, media_type, ..
             }) => {
-                let inline_media_type =
-                    if matches!(data, FileData::Text { .. }) && !media_type.contains('/') {
-                        "text/plain"
-                    } else {
-                        media_type.as_str()
-                    };
+                let inline_media_type = if matches!(data, FileData::Text { .. })
+                    && !media_type
+                        .split_once('/')
+                        .is_some_and(|(_, subtype)| !subtype.is_empty() && subtype != "*")
+                {
+                    "text/plain"
+                } else {
+                    media_type.as_str()
+                };
                 let data = match data {
                     FileData::Data {
                         data: FileBytes::Binary(bytes),

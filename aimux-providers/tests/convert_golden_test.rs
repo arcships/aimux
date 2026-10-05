@@ -145,7 +145,7 @@ fn responses_golden() {
         ..CallOptions::default()
     };
 
-    let result = build_responses_request_body("o3-mini", &options, false);
+    let result = build_responses_request_body("o3-mini", &options, false).unwrap();
 
     assert_eq!(
         result.body,

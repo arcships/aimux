@@ -98,7 +98,6 @@ pub struct ToolResultPart {
     pub tool_call_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
-    #[serde(alias = "output")]
     pub result: Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_error: Option<bool>,
