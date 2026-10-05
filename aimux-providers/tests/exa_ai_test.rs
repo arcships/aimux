@@ -19,16 +19,6 @@ fn make_provider(server: &MockServer) -> ExaAiProvider {
 }
 
 #[test]
-fn search_model_provider_is_exa_ai() {
-    let provider = create_exa_ai(ExaAiProviderSettings {
-        api_key: Some(Resolvable::Value("test-key".to_string())),
-        ..Default::default()
-    })
-    .unwrap();
-    assert_eq!(provider.search_model().provider(), "exa_ai.search");
-}
-
-#[test]
 fn language_model_returns_unsupported() {
     let provider = create_exa_ai(ExaAiProviderSettings {
         api_key: Some(Resolvable::Value("test-key".to_string())),

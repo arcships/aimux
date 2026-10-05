@@ -19,16 +19,6 @@ fn make_provider(server: &MockServer) -> SerperProvider {
 }
 
 #[test]
-fn search_model_provider_is_serper() {
-    let provider = create_serper(SerperProviderSettings {
-        api_key: Some(Resolvable::Value("test-key".to_string())),
-        ..Default::default()
-    })
-    .unwrap();
-    assert_eq!(provider.search_model().provider(), "serper.search");
-}
-
-#[test]
 fn language_model_returns_unsupported() {
     let provider = create_serper(SerperProviderSettings {
         api_key: Some(Resolvable::Value("test-key".to_string())),

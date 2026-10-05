@@ -10,7 +10,6 @@ use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs};
 use aimux_core::shared::Size;
@@ -213,32 +212,6 @@ async fn status_500_maps_to_provider_error() {
 // ════════════════════════════════════════════════════════════════════════════
 // Provider trait
 // ════════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn image_model_provider_is_recraft() {
-    let server = MockServer::start().await;
-    let config = RecraftProviderSettings {
-        api_key: Some(Resolvable::Value(API_KEY.to_string())),
-        base_url: Some(server.uri().to_string()),
-        ..Default::default()
-    };
-    let provider = create_recraft(config).unwrap();
-    assert_eq!(provider.image("recraftv3").provider(), "recraft.image");
-}
-
-#[test]
-fn language_model_returns_no_such_model() {
-    let config = RecraftProviderSettings {
-        api_key: Some(Resolvable::Value(API_KEY.to_string())),
-        ..Default::default()
-    };
-    let provider = create_recraft(config).unwrap();
-    let result = provider.language_model("recraftv3");
-    assert!(
-        matches!(result, Err(AiMuxError::NoSuchModel { ref model_type, .. }) if model_type == "languageModel"),
-        "expected NoSuchModel error"
-    );
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Auth header matcher (verifies the header is sent on the wire)

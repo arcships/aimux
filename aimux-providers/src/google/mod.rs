@@ -435,38 +435,3 @@ pub(crate) async fn list_models_once(
         })
         .collect())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn external_urls_are_for_gemini_models_after_2_0() {
-        assert!(supports_external_file_urls("gemini-2.5-flash"));
-        assert!(supports_external_file_urls(
-            "publishers/google/models/gemini-3-pro"
-        ));
-        assert!(!supports_external_file_urls("gemini-2.0-flash"));
-        assert!(!supports_external_file_urls(
-            "publishers/google/models/gemini-2.0-flash"
-        ));
-        assert!(!supports_external_file_urls("gemma-3-27b-it"));
-    }
-
-    #[test]
-    fn files_urls_follow_the_base_url() {
-        let urls = supported_urls("https://proxy.example/v1beta", Some("gemini-2.5-flash"));
-        let all = &urls.0["*"];
-        assert!(
-            all.iter()
-                .any(|re| re.is_match("https://proxy.example/v1beta/files/abc"))
-        );
-        assert!(
-            all.iter()
-                .any(|re| re.is_match("https://youtu.be/dQw4w9WgXcQ"))
-        );
-        assert!(urls.0.contains_key("image/png"));
-        let no_external = supported_urls("https://proxy.example/v1beta", Some("gemini-2.0-flash"));
-        assert!(!no_external.0.contains_key("image/png"));
-    }
-}

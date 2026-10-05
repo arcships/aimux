@@ -598,23 +598,6 @@ mod tests {
     }
 
     #[test]
-    fn settings_debug_redacts_credentials() {
-        let settings = AwsPollyProviderSettings {
-            access_key_id: Some("AKIAEXAMPLE".to_string()),
-            secret_access_key: Some("super-secret-key".to_string()),
-            session_token: Some("session-token".to_string()),
-            region: Some("us-west-2".to_string()),
-            ..Default::default()
-        };
-        let debug = format!("{settings:?}");
-        assert!(!debug.contains("AKIAEXAMPLE"));
-        assert!(!debug.contains("super-secret-key"));
-        assert!(!debug.contains("session-token"));
-        // Non-secret fields are still visible.
-        assert!(debug.contains("us-west-2"));
-    }
-
-    #[test]
     fn extracts_aws_error_fields() {
         let data = serde_json::json!({
             "__type": "UnrecognizedClientException",

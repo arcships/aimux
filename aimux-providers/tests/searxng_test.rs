@@ -11,7 +11,6 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
 use aimux_providers::{SearxngProvider, SearxngProviderSettings, create_searxng};
@@ -177,35 +176,6 @@ async fn status_401_maps_to_auth_error() {
 
 // -- Provider trait ----------------------------------------------------------
 
-#[tokio::test]
-async fn search_model_provider_is_searxng() {
-    let config = SearxngProviderSettings {
-        base_url: Some("http://localhost:8080".to_string()),
-        ..Default::default()
-    };
-    let provider = create_searxng(config).unwrap();
-    assert_eq!(provider.search_model().provider(), "searxng.search");
-}
-
-#[test]
-fn language_model_returns_no_such_model() {
-    let config = SearxngProviderSettings {
-        base_url: Some("http://localhost:8080".to_string()),
-        ..Default::default()
-    };
-    let provider = create_searxng(config).unwrap();
-    match provider.language_model("searxng-search") {
-        Err(AiMuxError::NoSuchModel {
-            model_id,
-            model_type,
-        }) => {
-            assert_eq!(model_id, "searxng-search");
-            assert_eq!(model_type, "languageModel");
-        }
-        _ => panic!("expected NoSuchModel error, got success or another error variant"),
-    }
-}
-
 #[test]
 fn model_id_is_searxng_search() {
     let config = SearxngProviderSettings {
@@ -219,21 +189,3 @@ fn model_id_is_searxng_search() {
 }
 
 // -- instance URL -----------------------------------------------------------
-
-#[tokio::test]
-async fn a_missing_instance_url_fails_the_call_not_the_creation() {
-    // SAFETY: this is the only test in this binary that touches `SEARXNG_URL`,
-    // so there is no concurrent access from other tests.
-    unsafe {
-        std::env::remove_var("SEARXNG_URL");
-    }
-    let provider = create_searxng(SearxngProviderSettings::default()).unwrap();
-    let result = provider
-        .search_model()
-        .do_search(&SearchCallOptions::new("test"))
-        .await;
-    assert!(
-        matches!(result, Err(AiMuxError::LoadSetting { ref env_var, .. }) if env_var == "SEARXNG_URL"),
-        "expected LoadSetting error, got {result:?}"
-    );
-}

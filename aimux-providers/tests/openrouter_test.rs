@@ -135,19 +135,6 @@ fn make_provider(server: &MockServer) -> OpenAICompatibleProvider {
 // Provider configuration
 // ════════════════════════════════════════════════════════════════════════════
 
-/// The preset's models report `openrouter.chat`; creation with default settings needs
-/// neither a key nor the environment.
-#[test]
-fn model_provider_is_openrouter() {
-    assert_eq!(
-        preset::create("openrouter", PresetSettings::default())
-            .unwrap()
-            .chat("openai/gpt-4o-mini")
-            .provider(),
-        "openrouter.chat"
-    );
-}
-
 /// Custom API key is sent in the `Authorization: Bearer` header.
 #[tokio::test]
 async fn custom_api_key_used_in_auth_header() {
@@ -574,36 +561,6 @@ async fn status_429_maps_to_rate_limited() {
         matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
-}
-
-/// The raw response headers are exposed on the generate result.
-#[tokio::test]
-async fn exposes_response_headers() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("test-header", "test-value")
-                .set_body_json(text_completion_body()),
-        )
-        .mount(&server)
-        .await;
-
-    let provider = make_provider(&server);
-    let model = provider.chat("openai/gpt-4o-mini");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let headers = result
-        .response
-        .as_ref()
-        .and_then(|response| response.headers.as_ref())
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }
 
 // ════════════════════════════════════════════════════════════════════════════

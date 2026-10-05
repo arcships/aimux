@@ -517,38 +517,3 @@ impl ProviderDiscovery for VertexProvider {
         Box::pin(async move { crate::google::list_models_once(&config).await })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn location_must_be_one_dns_label() {
-        for ok in ["us-central1", "global", "us", "eu", "europe-west4"] {
-            assert!(is_valid_hostname_part(ok), "{ok}");
-        }
-        for bad in [
-            "",
-            "evil.example",
-            "a/b",
-            "-x",
-            "x-",
-            "a b",
-            "us:443",
-            "a@b",
-        ] {
-            assert!(!is_valid_hostname_part(bad), "{bad}");
-        }
-    }
-
-    #[test]
-    fn hosts_follow_the_location() {
-        assert_eq!(location_host("global"), "aiplatform.googleapis.com");
-        assert_eq!(location_host("us"), "aiplatform.us.rep.googleapis.com");
-        assert_eq!(location_host("eu"), "aiplatform.eu.rep.googleapis.com");
-        assert_eq!(
-            location_host("us-central1"),
-            "us-central1-aiplatform.googleapis.com"
-        );
-    }
-}

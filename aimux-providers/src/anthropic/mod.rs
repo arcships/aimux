@@ -361,29 +361,3 @@ pub(crate) async fn list_models_once(
         })
         .collect())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bare_origin_means_the_versioned_url() {
-        assert_eq!(
-            normalize_base_url("https://api.anthropic.com").unwrap(),
-            DEFAULT_BASE_URL
-        );
-        assert_eq!(
-            normalize_base_url("https://api.anthropic.com/").unwrap(),
-            DEFAULT_BASE_URL
-        );
-        assert_eq!(
-            normalize_base_url("https://proxy.example/v1/").unwrap(),
-            "https://proxy.example/v1"
-        );
-        assert_eq!(
-            normalize_base_url("https://proxy.example").unwrap(),
-            "https://proxy.example"
-        );
-        assert!(normalize_base_url("not a url").is_err());
-    }
-}

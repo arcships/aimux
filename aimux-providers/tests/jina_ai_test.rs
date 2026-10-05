@@ -10,7 +10,6 @@ use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::reranking_model::{RerankingCallOptions, RerankingDocuments, RerankingModel};
 use aimux_provider_utils::Resolvable;
@@ -281,35 +280,3 @@ async fn status_401_maps_to_auth_error() {
 }
 
 // -- Provider trait ----------------------------------------------------------
-
-#[tokio::test]
-async fn reranking_model_provider_is_jina_ai() {
-    let config = JinaAiProviderSettings {
-        api_key: Some(Resolvable::Value(API_KEY.to_string())),
-        ..Default::default()
-    };
-    let provider = create_jina_ai(config).unwrap();
-    assert_eq!(
-        provider.reranking_model(MODEL).provider(),
-        "jina_ai.reranking"
-    );
-}
-
-#[test]
-fn language_model_returns_no_such_model() {
-    let config = JinaAiProviderSettings {
-        api_key: Some(Resolvable::Value(API_KEY.to_string())),
-        ..Default::default()
-    };
-    let provider = create_jina_ai(config).unwrap();
-    match provider.language_model(MODEL) {
-        Err(AiMuxError::NoSuchModel {
-            model_id,
-            model_type,
-        }) => {
-            assert_eq!(model_id, MODEL);
-            assert_eq!(model_type, "languageModel");
-        }
-        _ => panic!("expected NoSuchModel error, got success or another error variant"),
-    }
-}

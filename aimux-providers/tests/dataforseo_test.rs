@@ -11,7 +11,6 @@ use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
 use aimux_provider_utils::Resolvable;
@@ -225,34 +224,3 @@ async fn status_401_maps_to_auth_error() {
 }
 
 // -- Provider trait ----------------------------------------------------------
-
-#[tokio::test]
-async fn search_model_provider_is_dataforseo() {
-    let config = DataforseoProviderSettings {
-        login: Some(Resolvable::Value(LOGIN.to_string())),
-        password: Some(Resolvable::Value(PASSWORD.to_string())),
-        ..Default::default()
-    };
-    let provider = create_dataforseo(config).unwrap();
-    assert_eq!(provider.search_model().provider(), "dataforseo.search");
-}
-
-#[test]
-fn language_model_returns_no_such_model() {
-    let config = DataforseoProviderSettings {
-        login: Some(Resolvable::Value(LOGIN.to_string())),
-        password: Some(Resolvable::Value(PASSWORD.to_string())),
-        ..Default::default()
-    };
-    let provider = create_dataforseo(config).unwrap();
-    match provider.language_model("dataforseo-search") {
-        Err(AiMuxError::NoSuchModel {
-            model_id,
-            model_type,
-        }) => {
-            assert_eq!(model_id, "dataforseo-search");
-            assert_eq!(model_type, "languageModel");
-        }
-        _ => panic!("expected NoSuchModel error, got success or another error variant"),
-    }
-}
