@@ -1,4 +1,4 @@
-//! Shared V4 value types used across all non-chat model traits.
+//! Shared V4 value types used across model traits.
 //!
 //! Aligned with Vercel AI SDK `SharedV4*` types
 //! (`reference/ai/packages/provider/src/shared/v4/`).
@@ -247,6 +247,9 @@ fn parse_pair(s: &str, sep: char) -> Option<(u32, u32)> {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ResponseInfo {
+    /// ID of the generated response, when supplied by the provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     /// Timestamp for the start of the generated response (ISO 8601 string).
     pub timestamp: Option<String>,
     /// The ID of the model that was used to generate the response.
@@ -265,4 +268,22 @@ pub struct ResponseInfo {
 pub struct RequestInfo {
     /// The request body that was sent (opaque JSON).
     pub body: Option<Value>,
+}
+
+/// Response information returned when starting a language-model stream.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct StreamResponseInfo {
+    pub headers: Option<SharedHeaders>,
+}
+
+impl From<crate::types::ResponseMetadata> for ResponseInfo {
+    fn from(metadata: crate::types::ResponseMetadata) -> Self {
+        Self {
+            id: metadata.id,
+            timestamp: metadata.timestamp,
+            model_id: metadata.model_id,
+            ..Self::default()
+        }
+    }
 }

@@ -15,6 +15,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
+use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning,
@@ -340,9 +341,12 @@ impl LanguageModel for GroqChatLanguageModel {
             usage: convert_groq_usage(response.usage.as_ref()),
             warnings,
             provider_metadata: None,
-            response: response_metadata(response.id, response.created, response.model),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(RequestInfo { body: Some(body) }),
+            response: Some(ResponseInfo {
+                headers: Some(response_headers),
+                body: resp.raw_value,
+                ..response_metadata(response.id, response.created, response.model).into()
+            }),
         })
     }
 
@@ -585,8 +589,10 @@ impl LanguageModel for GroqChatLanguageModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(RequestInfo { body: Some(body) }),
+            response: Some(StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

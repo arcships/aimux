@@ -311,16 +311,17 @@ pub(crate) async fn execute_generate(
         usage,
         warnings: request_result.warnings,
         provider_metadata,
-        response: ResponseMetadata {
+        response: Some(aimux_core::shared::ResponseInfo {
             id: Some(data.id),
             timestamp: data
                 .created
                 .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
                 .map(|dt| dt.to_rfc3339()),
             model_id: Some(data.model),
-        },
-        request_body: Some(body),
-        response_headers: Some(response_headers),
+            headers: Some(response_headers),
+            body: Some(response_value),
+        }),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
     })
 }
 
@@ -696,8 +697,10 @@ pub(crate) async fn execute_stream(
 
     Ok(StreamResult {
         stream: Box::pin(stream),
-        request_body: Some(body),
-        response_headers: Some(response_headers),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+        response: Some(aimux_core::shared::StreamResponseInfo {
+            headers: Some(response_headers),
+        }),
     })
 }
 

@@ -322,8 +322,7 @@ mod tests {
                 warnings: vec![],
                 provider_metadata: None,
                 response: Default::default(),
-                request_body: None,
-                response_headers: None,
+                request: None,
             })
         }
         async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
@@ -352,8 +351,8 @@ mod tests {
             ];
             Ok(StreamResult {
                 stream: Box::pin(stream::iter(parts)),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }

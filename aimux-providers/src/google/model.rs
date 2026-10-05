@@ -82,6 +82,7 @@ impl LanguageModel for GoogleModel {
         .await?;
 
         let response_headers = resp.response_headers;
+        let response_body = resp.raw_value;
 
         let data: GenerateContentResponse = resp.value;
 
@@ -124,13 +125,14 @@ impl LanguageModel for GoogleModel {
             usage,
             warnings: tool_warnings,
             provider_metadata,
-            response: ResponseMetadata {
+            response: Some(aimux_core::shared::ResponseInfo {
                 id: data.response_id,
                 timestamp: None,
                 model_id: data.model_version,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+                headers: Some(response_headers),
+                body: response_body,
+            }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -606,8 +608,10 @@ impl LanguageModel for GoogleModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

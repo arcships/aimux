@@ -4284,12 +4284,14 @@ mod tests {
                 usage: aimux_core::types::Usage::default(),
                 warnings: vec![],
                 provider_metadata: None,
-                response: aimux_core::types::ResponseMetadata {
-                    model_id: Some(self.model_id.into()),
-                    ..Default::default()
-                },
-                request_body: None,
-                response_headers: None,
+                response: Some(
+                    aimux_core::types::ResponseMetadata {
+                        model_id: Some(self.model_id.into()),
+                        ..Default::default()
+                    }
+                    .into(),
+                ),
+                request: None,
             })
         }
         async fn do_stream(
@@ -4347,8 +4349,8 @@ mod tests {
                         provider_metadata: None,
                     }),
                 ])),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }

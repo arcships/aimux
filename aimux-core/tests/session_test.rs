@@ -46,16 +46,15 @@ impl LanguageModel for MockModel {
             warnings: vec![],
             provider_metadata: None,
             response: Default::default(),
-            request_body: None,
-            response_headers: None,
+            request: None,
         })
     }
 
     async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         Ok(StreamResult {
             stream: Box::pin(futures::stream::empty()),
-            request_body: None,
-            response_headers: None,
+            request: None,
+            response: None,
         })
     }
 }

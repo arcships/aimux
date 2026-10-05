@@ -11,7 +11,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
-use aimux_core::shared::provider_namespace;
+use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning,
@@ -471,13 +471,14 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                 self.provider_options_name(),
                 Value::Object(metadata),
             )),
-            response: ResponseMetadata {
+            request: Some(RequestInfo { body: Some(body) }),
+            response: Some(ResponseInfo {
                 id: data.id,
                 timestamp: timestamp(data.created),
                 model_id: data.model,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+                headers: Some(response_headers),
+                body: Some(raw),
+            }),
         })
     }
 
@@ -790,8 +791,10 @@ impl LanguageModel for DeepSeekChatLanguageModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(RequestInfo { body: Some(body) }),
+            response: Some(StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

@@ -348,13 +348,13 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
     // id / model / created
     let id = result
         .response
-        .id
-        .clone()
+        .as_ref()
+        .and_then(|response| response.id.clone())
         .unwrap_or_else(|| format!("chatcmpl-{}", random_id()));
     let model = result
         .response
-        .model_id
-        .clone()
+        .as_ref()
+        .and_then(|response| response.model_id.clone())
         .unwrap_or_else(|| model.to_string());
     let created = now_unix();
 
@@ -1081,13 +1081,15 @@ mod tests {
             usage: Usage::default(),
             warnings: vec![],
             provider_metadata: None,
-            response: ResponseMetadata {
-                id: Some("chatcmpl-test123".to_string()),
-                timestamp: None,
-                model_id: Some("gpt-4o".to_string()),
-            },
-            request_body: None,
-            response_headers: None,
+            response: Some(
+                ResponseMetadata {
+                    id: Some("chatcmpl-test123".to_string()),
+                    timestamp: None,
+                    model_id: Some("gpt-4o".to_string()),
+                }
+                .into(),
+            ),
+            request: None,
         }
     }
 

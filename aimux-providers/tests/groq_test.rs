@@ -1616,7 +1616,10 @@ mod do_generate {
             .await
             .unwrap();
 
-        let request_body = result.request_body.expect("should have request body");
+        let request_body = result
+            .request
+            .and_then(|request| request.body)
+            .expect("should have request body");
         assert_eq!(request_body["model"], "gemma2-9b-it");
         assert_eq!(request_body["messages"][0]["content"], "Hello");
     }
@@ -2194,7 +2197,7 @@ mod package {
             .await
             .unwrap();
 
-        let body = result.request_body.unwrap();
+        let body = result.request.and_then(|request| request.body).unwrap();
         assert_eq!(body["user"], "u1");
         assert_eq!(body["reasoning_format"], "parsed");
         assert_eq!(body["service_tier"], "flex");
@@ -2223,8 +2226,9 @@ mod package {
             .unwrap();
         assert!(
             result
-                .request_body
+                .request
                 .as_ref()
+                .and_then(|request| request.body.as_ref())
                 .unwrap()
                 .get("stream_options")
                 .is_none()
@@ -2259,7 +2263,7 @@ mod package {
         options.max_output_tokens = Some(64);
         options.top_k = Some(40.0);
         let result = model.do_generate(&options).await.unwrap();
-        let body = result.request_body.unwrap();
+        let body = result.request.and_then(|request| request.body).unwrap();
         // upstream: getArgs sends `max_tokens: maxOutputTokens`
         assert_eq!(body["max_tokens"], 64);
         assert!(body.get("max_completion_tokens").is_none());

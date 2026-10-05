@@ -1,17 +1,15 @@
 ﻿//! Result types for `do_generate` and `do_stream`.
 
-use std::collections::HashMap;
-
 use futures::Stream;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::shared::FileData;
+use crate::shared::{FileData, RequestInfo, ResponseInfo, StreamResponseInfo};
 use crate::stream_part::StreamPart;
 use crate::tool::{RawToolCall, ToolResult};
-use crate::types::{FinishReason, ProviderMetadata, ResponseMetadata, Usage, Warning};
+use crate::types::{FinishReason, ProviderMetadata, Usage, Warning};
 
 /// A content item in the generation result.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -140,29 +138,27 @@ pub struct GenerateResult {
     pub warnings: Vec<Warning>,
     /// Provider-specific metadata.
     pub provider_metadata: Option<ProviderMetadata>,
-    /// Response metadata (id, timestamp, model_id).
-    pub response: ResponseMetadata,
-    /// The request body that was sent (for debugging).
-    pub request_body: Option<serde_json::Value>,
-    /// Response headers.
-    pub response_headers: Option<HashMap<String, String>>,
+    /// Optional request information for telemetry and debugging.
+    pub request: Option<RequestInfo>,
+    /// Optional response metadata, headers, and body.
+    pub response: Option<ResponseInfo>,
 }
 
 /// Result of `LanguageModel::do_stream` (streaming).
 pub struct StreamResult {
     /// The stream of `StreamPart` items.
     pub stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>>,
-    /// The request body that was sent (for debugging).
-    pub request_body: Option<serde_json::Value>,
-    /// Response headers.
-    pub response_headers: Option<HashMap<String, String>>,
+    /// Optional request information for telemetry and debugging.
+    pub request: Option<RequestInfo>,
+    /// Optional response headers.
+    pub response: Option<StreamResponseInfo>,
 }
 
 impl std::fmt::Debug for StreamResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StreamResult")
-            .field("request_body", &self.request_body)
-            .field("response_headers", &self.response_headers)
+            .field("request", &self.request)
+            .field("response", &self.response)
             .field("stream", &"<stream>")
             .finish()
     }

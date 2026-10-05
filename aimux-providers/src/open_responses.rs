@@ -405,9 +405,12 @@ impl LanguageModel for OpenResponsesModel {
             usage,
             warnings,
             provider_metadata: None,
-            response,
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            response: Some(aimux_core::shared::ResponseInfo {
+                headers: Some(response_headers),
+                body: Some(raw),
+                ..response.into()
+            }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -780,8 +783,10 @@ impl LanguageModel for OpenResponsesModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

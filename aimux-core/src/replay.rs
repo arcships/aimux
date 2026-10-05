@@ -658,13 +658,15 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
         usage: parse_usage(&v)?,
         warnings: Vec::new(),
         provider_metadata: None,
-        response: ResponseMetadata {
-            id: v["id"].as_str().map(std::string::ToString::to_string),
-            timestamp: None,
-            model_id: v["model"].as_str().map(std::string::ToString::to_string),
-        },
-        request_body: None,
-        response_headers: None,
+        response: Some(
+            ResponseMetadata {
+                id: v["id"].as_str().map(std::string::ToString::to_string),
+                timestamp: None,
+                model_id: v["model"].as_str().map(std::string::ToString::to_string),
+            }
+            .into(),
+        ),
+        request: None,
     })
 }
 
@@ -919,8 +921,8 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
 
     Ok(StreamResult {
         stream: Box::pin(futures::stream::iter(parts)),
-        request_body: None,
-        response_headers: None,
+        request: None,
+        response: None,
     })
 }
 
@@ -1486,7 +1488,13 @@ mod tests {
         assert_eq!(text, "pong");
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
         assert_eq!(result.usage.input_tokens.total, Some(5));
-        assert_eq!(result.response.model_id.as_deref(), Some("gpt-4o"));
+        assert_eq!(
+            result
+                .response
+                .as_ref()
+                .and_then(|response| response.model_id.as_deref()),
+            Some("gpt-4o")
+        );
     }
 
     #[test]
@@ -1861,7 +1869,13 @@ mod tests {
         };
         assert_eq!(text, "pong");
         // 证明取的是第 1 次(id=chatcmpl-ok),而非失败的 exchange[0](id=chatcmpl-mock)。
-        assert_eq!(result.response.id.as_deref(), Some("chatcmpl-ok"));
+        assert_eq!(
+            result
+                .response
+                .as_ref()
+                .and_then(|response| response.id.as_deref()),
+            Some("chatcmpl-ok")
+        );
     }
 
     #[test]
@@ -1941,9 +1955,8 @@ mod tests {
                 usage: Usage::default(),
                 warnings: vec![],
                 provider_metadata: None,
-                response: ResponseMetadata::default(),
-                request_body: None,
-                response_headers: None,
+                response: Some(ResponseMetadata::default().into()),
+                request: None,
             })
         }
         async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {

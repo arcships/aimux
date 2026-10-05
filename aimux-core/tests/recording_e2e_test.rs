@@ -59,9 +59,8 @@ impl LanguageModel for EchoModel {
             usage: Usage::default(),
             warnings: vec![],
             provider_metadata: None,
-            response: aimux_core::types::ResponseMetadata::default(),
-            request_body: None,
-            response_headers: None,
+            response: None,
+            request: None,
         })
     }
 
@@ -83,8 +82,8 @@ impl LanguageModel for EchoModel {
             ];
             return Ok(StreamResult {
                 stream: Box::pin(futures::stream::iter(parts)),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             });
         }
         let parts = vec![
@@ -105,8 +104,8 @@ impl LanguageModel for EchoModel {
         ];
         Ok(StreamResult {
             stream: Box::pin(futures::stream::iter(parts)),
-            request_body: None,
-            response_headers: None,
+            request: None,
+            response: None,
         })
     }
 }
@@ -191,7 +190,7 @@ fn layer_a_records_all_outcome_paths() {
         .await
         .unwrap();
         let parts: Vec<_> = result.stream.collect::<Vec<_>>().await;
-        assert_eq!(parts.len(), 3);
+        assert_eq!(parts.len(), 4);
     });
     let rec = wait_sorted_line(&dir_finish);
     assert_eq!(rec.outcome.status, OutcomeStatus::Success);
@@ -210,7 +209,7 @@ fn layer_a_records_all_outcome_paths() {
         .await
         .unwrap();
         let parts: Vec<_> = result.stream.collect::<Vec<_>>().await;
-        assert_eq!(parts.len(), 2);
+        assert_eq!(parts.len(), 3);
     });
     let rec = wait_sorted_line(&dir_part_err);
     assert_eq!(rec.outcome.status, OutcomeStatus::Error);

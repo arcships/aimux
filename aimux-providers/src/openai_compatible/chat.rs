@@ -315,16 +315,17 @@ impl LanguageModel for OpenAICompatibleChatModel {
             usage,
             warnings: built.warnings,
             provider_metadata: Some(metadata),
-            response: ResponseMetadata {
+            response: Some(aimux_core::shared::ResponseInfo {
                 id: data.id,
                 timestamp: data
                     .created
                     .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
                     .map(|dt| dt.to_rfc3339()),
                 model_id: data.model,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+                headers: Some(response_headers),
+                body: Some(raw),
+            }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -686,8 +687,10 @@ impl LanguageModel for OpenAICompatibleChatModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

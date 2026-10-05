@@ -444,13 +444,17 @@ impl LanguageModel for MockModel {
             usage: self.usage.clone(),
             warnings: vec![],
             provider_metadata: None,
-            response: ResponseMetadata {
-                id: Some("req-1".into()),
-                timestamp: None,
-                model_id: Some("mock-1".into()),
-            },
-            request_body: Some(self.body.clone()),
-            response_headers: None,
+            response: Some(
+                ResponseMetadata {
+                    id: Some("req-1".into()),
+                    timestamp: None,
+                    model_id: Some("mock-1".into()),
+                }
+                .into(),
+            ),
+            request: Some(aimux_core::shared::RequestInfo {
+                body: Some(self.body.clone()),
+            }),
         })
     }
 
@@ -474,8 +478,8 @@ impl LanguageModel for MockModel {
                     provider_metadata: None,
                 });
             }),
-            request_body: Some(body),
-            response_headers: None,
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: None,
         })
     }
 }
@@ -597,8 +601,8 @@ fn trace_layer_records_stream_part_error() {
                     // Provider-reported mid-stream error (Ok(Error{..})).
                     yield Ok(StreamPart::Error { error: AiMuxError::InvalidResponseData("mid-stream failure".into()) });
                 }),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }
@@ -640,8 +644,8 @@ fn trace_layer_records_stream_transport_error() {
                     yield Ok(StreamPart::StreamStart { warnings: vec![] });
                     yield Err(AiMuxError::InvalidResponseData("transport failure".into()));
                 }),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }
@@ -913,8 +917,10 @@ fn trace_layer_stream_dropped_early_still_records() {
                         provider_metadata: None,
                     });
                 }),
-                request_body: Some(token_body(1024, 512, 0)),
-                response_headers: None,
+                request: Some(aimux_core::shared::RequestInfo {
+                    body: Some(token_body(1024, 512, 0)),
+                }),
+                response: None,
             })
         }
     }

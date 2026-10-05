@@ -91,6 +91,7 @@ impl LanguageModel for CohereModel {
         .await?;
 
         let response_headers = resp.response_headers;
+        let response_body = resp.raw_value;
         let data: ChatResponse = resp.value;
 
         // Build content array.
@@ -203,13 +204,14 @@ impl LanguageModel for CohereModel {
             usage,
             warnings: body_result.warnings,
             provider_metadata: None,
-            response: ResponseMetadata {
+            response: Some(aimux_core::shared::ResponseInfo {
                 id: data.generation_id,
                 timestamp: None,
                 model_id: None,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+                headers: Some(response_headers),
+                body: response_body,
+            }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -521,8 +523,10 @@ impl LanguageModel for CohereModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

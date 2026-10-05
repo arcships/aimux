@@ -76,7 +76,7 @@ async fn the_deepseek_namespace_is_read_and_the_openai_one_is_not() {
         .await
         .unwrap();
 
-    let body = result.request_body.unwrap();
+    let body = result.request.and_then(|r| r.body).unwrap();
     // upstream: providerOptions are read from the provider name's namespace only.
     assert_eq!(body["user_id"], "u1");
     assert_eq!(body["reasoning_effort"], "high");

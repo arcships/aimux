@@ -312,9 +312,8 @@ async fn a_patched_result_converts_to_a_chat_completion_that_reflects_the_repair
             "usage": usage,
             "warnings": [],
             "provider_metadata": null,
-            "response": { "id": null, "timestamp": null, "model_id": null },
-            "request_body": null,
-            "response_headers": null,
+            "response": null,
+            "request": null,
         }),
     );
 
