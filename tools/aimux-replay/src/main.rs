@@ -1,15 +1,16 @@
 //! aimux-replay — RFC-0023 请求回放 CLI(层 2 消费端)。
 //!
-//! 读录制 jsonl(每行一个 `Recording`),按 `ProviderRecord` 自动重建
-//! provider(OpenAI 兼容族),再用录制输入经 `replay_with_model` **重发真实
-//! API**。用途:离线重跑线上流量、改 prompt 重发(A/B)、回归对比、CI 集成。
+//! 读录制 jsonl(每行一个 `Recording`,仅 schema 3),按 `ProviderRecord` 的
+//! `provider_id` + `model_id` 重建 model,再用录制输入经 `replay_with_model`
+//! **重发真实 API**。用途:离线重跑线上流量、改 prompt 重发(A/B)、回归对比、CI 集成。
 //!
 //! 安全:
-//! - `--dry-run` 只打印重建后的 provider/prompt/目标 URL,**不发请求、
-//!   不输出任何凭据**(api_key 来源按 `api_key_source` 打印)。
+//! - `--dry-run` 只打印录制的 provider/model/prompt,**不发请求、
+//!   不输出任何凭据**。
 //! - 重发会消耗真实 token/费用,文档(§3.6.1)已有警示。
-//! - 原生协议 provider(anthropic/google/...)`rebuild_provider` 明确
-//!   `Unsupported`——CLI 打印错误并跳过,需自行传 model 实例走库 API。
+//! - 原生协议 provider(anthropic/google/...)暂无 registry 条目,
+//!   `rebuild_provider` 返回 `NoSuchProvider`——CLI 打印错误并跳过,需自行传
+//!   model 实例走库 API。
 
 use std::path::PathBuf;
 
@@ -34,13 +35,13 @@ struct Cli {
     /// 仅回放该 call_id(默认全部)。
     #[arg(long)]
     call_id: Option<String>,
-    /// 显式 api key。api_key_source 为 explicit/unknown 时需要。
+    /// 显式 api key;缺省时读 registry 条目的环境变量。
     #[arg(long)]
     api_key: Option<String>,
     /// 覆盖 prompt(替换所有录制的 prompt;A/B 重发)。
     #[arg(long)]
     prompt: Option<String>,
-    /// dry-run:打印重建后的 provider/prompt/目标 URL,不发请求、不输出凭据。
+    /// dry-run:打印录制的 provider/model/prompt,不发请求、不输出凭据。
     #[arg(long)]
     dry_run: bool,
 }
@@ -100,14 +101,9 @@ fn load_recordings(path: &PathBuf) -> Result<Vec<Recording>> {
 fn run_dry(rec: &Recording) -> Result<()> {
     println!("call_id: {}", rec.call_id);
     println!(
-        "  provider: {} / model: {}",
-        rec.provider.provider, rec.provider.model_id
+        "  provider_id: {} / provider: {} / model: {}",
+        rec.provider.provider_id, rec.provider.provider, rec.provider.model_id
     );
-    println!(
-        "  base_url: {}",
-        rec.provider.base_url.as_deref().unwrap_or("(default)")
-    );
-    println!("  api_key_source: {}", rec.provider.api_key_source);
     println!("  prompt: {} message(s)", rec.input.prompt.len());
     if let Some(text) = rec.input.prompt.first().and_then(prompt_text) {
         println!("  first message: {text:?}");
@@ -134,8 +130,22 @@ fn prompt_text(m: &LanguageModelMessage) -> Option<String> {
 
 /// 真实回放:重建 provider → replay_with_model → 打印结果。
 fn run_replay(rec: &Recording, api_key: Option<&str>, prompt: Option<&str>) -> Result<()> {
-    let model = rebuild_provider(&rec.provider, api_key)
-        .with_context(|| format!("rebuild provider for '{}'", rec.provider.provider))?;
+    let mut providers = aimux_providers::default_providers();
+    if let Some(key) = api_key {
+        providers.insert(
+            rec.provider.provider_id.clone(),
+            aimux_providers::create_provider(
+                &rec.provider.provider_id,
+                aimux_providers::PresetSettings {
+                    api_key: Some(key.to_string().into()),
+                    ..Default::default()
+                },
+            )?,
+        );
+    }
+    let registry = aimux_core::create_provider_registry(providers, Default::default());
+    let model = rebuild_provider(&rec.provider, &registry)
+        .with_context(|| format!("rebuild provider for '{}'", rec.provider.provider_id))?;
 
     let overrides = prompt.map(|text| ReplayOverrides {
         prompt: Some(vec![LanguageModelMessage::user_text(text)]),

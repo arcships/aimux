@@ -1,15 +1,12 @@
 //! Shared Anthropic request/streaming core.
 //!
-//! The standard Anthropic provider ([`crate::anthropic::model`]) and the
-//! Anthropic-AWS provider (`crate::anthropic_aws::model`) speak the exact
-//! same Messages API. The only differences are endpoint, authentication
-//! (Bearer/x-api-key vs AWS SigV4) and the wire body encoding (`Json` vs
-//! `Bytes`, the latter preventing re-serialization from invalidating the SigV4
-//! signature).
+//! The standard Anthropic provider ([`crate::anthropic::model`]), the
+//! Anthropic-AWS provider and Anthropic on Vertex all speak the same Messages
+//! API through one [`AnthropicMessagesModel`](super::model::AnthropicMessagesModel);
+//! what differs (endpoint, credentials, a SigV4 transport decorator, a body
+//! envelope) lives in the model's configuration, not here.
 //!
-//! This module factors out the parts that are identical across both providers:
-//! - `build_anthropic_request` — serialize the body once, build auth headers
-//!   via a closure, and choose the wire encoding.
+//! This module holds the parts that are identical across all of them:
 //! - `anthropic_generate_core` — non-streaming send + response parsing.
 //! - `anthropic_stream_core` — streaming send + the Anthropic SSE event loop.
 //! - `parse_anthropic_content` — shared content-block → `GenerateContent`
@@ -22,16 +19,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures::StreamExt;
 
-use aimux_core::AbortSignal;
 use aimux_core::error::AiMuxError;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 use aimux_core::types::{ProviderMetadata, Warning};
-use aimux_provider_utils::{HttpBody, HttpRequest};
+use aimux_provider_utils::HttpRequest;
 use serde_json::{Value, json};
 
+use super::config::AnthropicModelConfig;
 use super::convert::parse_stop_reason;
 use super::tool_name_mapping::ToolNameMapping;
 use super::types::{AnthropicResponse, ContentBlock, StreamErrorData, StreamEvent, ToolCallCaller};
@@ -67,58 +64,6 @@ pub(crate) fn anthropic_stream_error(
         request_body_values,
         response_headers,
     )
-}
-
-/// How the request body is sent over the wire.
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum BodyEncoding {
-    /// Send as `HttpBody::Json` — the HTTP layer re-serializes the body value.
-    /// Standard Anthropic path.
-    Json,
-    /// Send as `HttpBody::Bytes` using the *exact* bytes the headers were built
-    /// over. AWS SigV4 path — prevents re-serialization from breaking the
-    /// signature (the signature is computed over `body_bytes`, and
-    /// `body_bytes` is what is sent).
-    Bytes,
-}
-
-/// Build an Anthropic `HttpRequest`.
-///
-/// The body is serialized to bytes once so the same bytes are used both for
-/// header construction (the `build_headers` closure — needed by SigV4, which
-/// signs the request body) and for the wire body in the [`BodyEncoding::Bytes`]
-/// path. For [`BodyEncoding::Json`] the closure receives the serialized bytes
-/// but the body is sent as a re-serializable `Value` (the signature is not
-/// involved, so re-serialization is harmless).
-fn build_anthropic_request(
-    endpoint: &str,
-    body: &serde_json::Value,
-    build_headers: &impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError>,
-    body_encoding: BodyEncoding,
-    abort_signal: Option<AbortSignal>,
-    recording_context: Option<aimux_core::recording::RecordingContext>,
-) -> Result<(HttpRequest, HttpBody), AiMuxError> {
-    // Serialize once; the Bytes path sends these exact bytes and the closure
-    // signs over them, guaranteeing signature/body agreement.
-    let body_bytes = serde_json::to_vec(body).map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
-    let headers = build_headers(&body_bytes, endpoint)?;
-
-    let http_body = match body_encoding {
-        BodyEncoding::Json => HttpBody::Json(body.clone()),
-        BodyEncoding::Bytes => HttpBody::Bytes(body_bytes, "application/json".to_string()),
-    };
-
-    Ok((
-        HttpRequest {
-            url: endpoint.to_string(),
-            headers,
-            abort_signal,
-            call_id: recording_context.as_ref().map(|c| c.call_id.clone()),
-            recording_context,
-            ..Default::default()
-        },
-        http_body,
-    ))
 }
 
 /// Read a string field, dropping absent / non-string values.
@@ -350,6 +295,7 @@ pub(crate) fn initial_tool_input(input: &Value) -> String {
 
 pub(crate) fn tool_call_caller_metadata(
     caller: Option<&ToolCallCaller>,
+    options_name: &str,
 ) -> Option<ProviderMetadata> {
     let caller = match caller? {
         ToolCallCaller::CodeExecution20250825 { tool_id } => json!({
@@ -363,7 +309,7 @@ pub(crate) fn tool_call_caller_metadata(
         ToolCallCaller::Direct => json!({ "type": "direct" }),
     };
     Some(
-        provider_namespace("anthropic", json!({ "caller": caller }))
+        provider_namespace(options_name, json!({ "caller": caller }))
             .expect("provider metadata must be an object"),
     )
 }
@@ -400,6 +346,7 @@ fn tool_search_provider_name<'a>(
 /// mapping is shared with [`parse_anthropic_content`]; only the part type
 /// differs. Returns an empty vec for blocks that are not results.
 pub(crate) fn stream_parts_for_result_block(
+    options_name: &str,
     block: &ContentBlock,
     names: &ToolNameMapping,
     mcp_tool_calls: &HashMap<String, (String, String)>,
@@ -455,7 +402,7 @@ pub(crate) fn stream_parts_for_result_block(
                     title: str_field(result, "title"),
                     provider_metadata: Some(
                         provider_namespace(
-                            "anthropic",
+                            options_name,
                             json!({
                                 "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
                             }),
@@ -530,7 +477,7 @@ pub(crate) fn stream_parts_for_result_block(
                 dynamic: Some(true),
                 provider_metadata: call.map(|(_, server)| {
                     provider_namespace(
-                        "anthropic",
+                        options_name,
                         json!({ "type": "mcp-tool-use", "serverName": server }),
                     )
                     .expect("provider metadata must be an object")
@@ -551,6 +498,7 @@ pub(crate) fn stream_parts_for_result_block(
 /// `names` maps Anthropic's wire tool names back to the names the caller used;
 /// pass the mapping built from `CallOptions.tools`.
 pub(crate) fn parse_anthropic_content(
+    options_name: &str,
     blocks: &[ContentBlock],
     names: &ToolNameMapping,
 ) -> Vec<GenerateContent> {
@@ -596,7 +544,7 @@ pub(crate) fn parse_anthropic_content(
                     input: input.to_string(),
                     provider_executed: None,
                     dynamic: None,
-                    provider_metadata: tool_call_caller_metadata(caller.as_ref()),
+                    provider_metadata: tool_call_caller_metadata(caller.as_ref(), options_name),
                 }));
             }
             ContentBlock::Thinking {
@@ -606,7 +554,7 @@ pub(crate) fn parse_anthropic_content(
                 content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: thinking.clone(),
                     provider_metadata: Some(
-                        provider_namespace("anthropic", json!({ "signature": signature }))
+                        provider_namespace(options_name, json!({ "signature": signature }))
                             .expect("provider metadata must be an object"),
                     ),
                 }));
@@ -641,7 +589,7 @@ pub(crate) fn parse_anthropic_content(
                     dynamic: Some(true),
                     provider_metadata: Some(
                         provider_namespace(
-                            "anthropic",
+                            options_name,
                             json!({ "type": "mcp-tool-use", "serverName": server_name }),
                         )
                         .expect("provider metadata must be an object"),
@@ -653,7 +601,7 @@ pub(crate) fn parse_anthropic_content(
                 content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: String::new(),
                     provider_metadata: Some(
-                        provider_namespace("anthropic", json!({ "redactedData": data }))
+                        provider_namespace(options_name, json!({ "redactedData": data }))
                             .expect("provider metadata must be an object"),
                     ),
                 }));
@@ -691,7 +639,7 @@ pub(crate) fn parse_anthropic_content(
                                 title: str_field(result, "title"),
                                 provider_metadata: Some(
                                     provider_namespace(
-                                        "anthropic",
+                                        options_name,
                                         json!({
                                             "pageAge": result.get("page_age").cloned()
                                                 .unwrap_or(Value::Null),
@@ -820,7 +768,7 @@ pub(crate) fn parse_anthropic_content(
                     dynamic: Some(true),
                     provider_metadata: call.map(|(_, server)| {
                         provider_namespace(
-                            "anthropic",
+                            options_name,
                             json!({ "type": "mcp-tool-use", "serverName": server }),
                         )
                         .expect("provider metadata must be an object")
@@ -835,35 +783,24 @@ pub(crate) fn parse_anthropic_content(
 
 /// Shared non-streaming Anthropic core.
 ///
-/// Builds and sends the request (using `build_headers` for auth and
-/// `body_encoding` for the wire body), then parses the `AnthropicResponse` into
-/// a `GenerateResult`. The usage breakdown (reasoning / text token split) is the
-/// full version, so both the standard and the AWS provider report the same
-/// detailed token accounting.
-#[allow(clippy::too_many_arguments)] // core plumbing: endpoint/retry/body/warnings/auth/encoding/abort/timeout
+/// Sends `body` through `request` (URL, headers and transport already
+/// resolved by the model), then parses the `AnthropicResponse` into a
+/// `GenerateResult`. The usage breakdown (reasoning / text token split) is the
+/// full version, so every host reports the same detailed token accounting.
+/// `config` supplies the providerOptions key the metadata is written under and
+/// the host's error shape.
 pub(crate) async fn anthropic_generate_core(
-    endpoint: &str,
+    request: HttpRequest,
     body: serde_json::Value,
     warnings: Vec<Warning>,
-    build_headers: impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError>,
-    body_encoding: BodyEncoding,
-    abort_signal: Option<AbortSignal>,
-    recording_context: Option<aimux_core::recording::RecordingContext>,
+    config: &AnthropicModelConfig,
     tool_names: &ToolNameMapping,
 ) -> Result<GenerateResult, AiMuxError> {
-    let (request, request_body) = build_anthropic_request(
-        endpoint,
-        &body,
-        &build_headers,
-        body_encoding,
-        abort_signal,
-        recording_context,
-    )?;
-    let resp = aimux_provider_utils::post_to_api(
+    let resp = aimux_provider_utils::post_json_to_api(
         request,
-        request_body,
+        body.clone(),
         aimux_provider_utils::create_json_response_handler(),
-        super::anthropic_failed_response_handler(),
+        config.failed_response_handler(),
     )
     .await?;
 
@@ -872,7 +809,7 @@ pub(crate) async fn anthropic_generate_core(
 
     let data: AnthropicResponse = resp.value;
 
-    let content = parse_anthropic_content(&data.content, tool_names);
+    let content = parse_anthropic_content(&config.provider_options_name, &data.content, tool_names);
 
     let finish_reason = data
         .stop_reason
@@ -888,12 +825,20 @@ pub(crate) async fn anthropic_generate_core(
     // breakdown (text/reasoning) comes from output_tokens_details.
     let usage = super::usage::usage_from_anthropic(&data.usage);
 
+    let provider_metadata = super::usage::result_provider_metadata(
+        &config.provider_options_name,
+        &serde_json::to_value(&data.usage).unwrap_or(Value::Null),
+        data.stop_sequence.as_deref(),
+        data.container.as_ref(),
+        data.context_management.as_ref(),
+    );
+
     Ok(GenerateResult {
         content,
         finish_reason,
         usage,
         warnings,
-        provider_metadata: None,
+        provider_metadata: Some(provider_metadata),
         response: Some(aimux_core::shared::ResponseInfo {
             id: Some(data.id),
             timestamp: None,
@@ -935,37 +880,24 @@ enum BlockState {
 
 /// Shared Anthropic streaming core.
 ///
-/// Builds and sends the request (using `build_headers` for auth and
-/// `body_encoding` for the wire body), then runs the Anthropic SSE event loop
-/// to produce a `StreamResult`.
-///
-/// `build_headers` receives the serialized body bytes and the endpoint URL —
-/// the standard path returns a Bearer/x-api-key header set (ignoring the body),
-/// the AWS path returns a SigV4-signed header set (signing over the body).
-#[allow(clippy::too_many_arguments)] // core plumbing: endpoint/retry/body/warnings/auth/encoding/abort/timeout
+/// Sends `body` through `request` (URL, headers and transport already
+/// resolved by the model), then runs the Anthropic SSE event loop to produce a
+/// `StreamResult`. `config` supplies the providerOptions key the metadata is
+/// written under and the host's error shape.
 pub(crate) async fn anthropic_stream_core(
-    endpoint: &str,
+    request: HttpRequest,
     body: serde_json::Value,
     warnings: Vec<Warning>,
-    build_headers: impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError>,
-    body_encoding: BodyEncoding,
-    abort_signal: Option<AbortSignal>,
-    recording_context: Option<aimux_core::recording::RecordingContext>,
+    config: &AnthropicModelConfig,
     tool_names: ToolNameMapping,
 ) -> Result<StreamResult, AiMuxError> {
-    let (request, request_body) = build_anthropic_request(
-        endpoint,
-        &body,
-        &build_headers,
-        body_encoding,
-        abort_signal,
-        recording_context,
-    )?;
-    let resp = aimux_provider_utils::post_to_api(
+    let endpoint = request.url.clone();
+    let options_name = config.provider_options_name.clone();
+    let resp = aimux_provider_utils::post_json_to_api(
         request,
-        request_body,
+        body.clone(),
         aimux_provider_utils::create_event_source_response_handler::<StreamEvent>(),
-        super::anthropic_failed_response_handler(),
+        config.failed_response_handler(),
     )
     .await?;
 
@@ -978,12 +910,12 @@ pub(crate) async fn anthropic_stream_core(
     if let Some(Ok(StreamEvent::Error { error })) = first_event.as_ref() {
         return Err(anthropic_stream_error(
             error,
-            endpoint,
+            &endpoint,
             body.clone(),
             response_headers,
         ));
     }
-    let stream_error_url = endpoint.to_string();
+    let stream_error_url = endpoint;
     let stream_request_body = body.clone();
     let stream_response_headers = response_headers.clone();
 
@@ -995,6 +927,13 @@ pub(crate) async fn anthropic_stream_core(
         let mut blocks: HashMap<usize, BlockState> = HashMap::new();
         let mut final_usage = Usage::default();
         let mut final_finish_reason: Option<FinishReason> = None;
+        // Result-level providerMetadata: the raw usage (`message_start`'s,
+        // updated by every `message_delta`'s), the stop sequence, the
+        // container and the context-management edits.
+        let mut raw_usage = Value::Object(serde_json::Map::new());
+        let mut stop_sequence: Option<String> = None;
+        let mut container: Option<Value> = None;
+        let mut context_management: Option<Value> = None;
         let mut response_meta_emitted = false;
         let mut stream_errored = false;
         // id → (tool name, server name), so `mcp_tool_result` can inherit them
@@ -1014,6 +953,7 @@ pub(crate) async fn anthropic_stream_core(
                                 // fields + raw (Anthropic reports cache only
                                 // in message_start).
                                 final_usage = super::usage::usage_from_anthropic(usage);
+                                raw_usage = serde_json::to_value(usage).unwrap_or(raw_usage);
                             }
                             if !response_meta_emitted {
                                 yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
@@ -1065,7 +1005,7 @@ pub(crate) async fn anthropic_stream_core(
                                         dynamic: None,
                                         provider_tool_name: None,
                                         provider_tool_input_type: None,
-                                        provider_metadata: tool_call_caller_metadata(caller.as_ref()),
+                                        provider_metadata: tool_call_caller_metadata(caller.as_ref(), options_name.as_str()),
                                     });
                                 }
                                 // Server-side tool use follows the same input
@@ -1121,10 +1061,10 @@ pub(crate) async fn anthropic_stream_core(
                                         input: input.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
-                                        provider_metadata: Some(provider_namespace("anthropic", json!({
-                                            "type": "mcp-tool-use",
-                                            "serverName": server_name,
-                                        })).expect("provider metadata must be an object")),
+                                        provider_metadata: Some(provider_namespace(options_name.as_str(), json!({
+                                                "type": "mcp-tool-use",
+                                                "serverName": server_name,
+                                            })).expect("provider metadata must be an object")),
                                     }));
                                 }
                                 // Redacted thinking — emit as ReasoningStart.
@@ -1132,7 +1072,7 @@ pub(crate) async fn anthropic_stream_core(
                                     let id = index.to_string();
                                     yield Ok(StreamPart::ReasoningStart {
                                         id: id.clone(),
-                                        provider_metadata: Some(provider_namespace("anthropic", json!({ "redactedData": data })).expect("provider metadata must be an object")),
+                                        provider_metadata: Some(provider_namespace(options_name.as_str(), json!({ "redactedData": data })).expect("provider metadata must be an object")),
                                     });
                                     blocks.insert(
                                         index,
@@ -1149,6 +1089,7 @@ pub(crate) async fn anthropic_stream_core(
                                 // (anthropic-language-model.ts:1901-2178).
                                 other => {
                                     for part in stream_parts_for_result_block(
+                                        options_name.as_str(),
                                         &other,
                                         &tool_names,
                                         &mcp_tool_calls,
@@ -1297,7 +1238,7 @@ pub(crate) async fn anthropic_stream_core(
                                         yield Ok(StreamPart::ReasoningEnd {
                                             id: index.to_string(),
                                             provider_metadata: signature.map(|s| {
-                                                provider_namespace("anthropic", json!({ "signature": s })).expect("provider metadata must be an object")
+                                                provider_namespace(options_name.as_str(), json!({ "signature": s })).expect("provider metadata must be an object")
                                             }),
                                         });
                                     }
@@ -1319,7 +1260,8 @@ pub(crate) async fn anthropic_stream_core(
                                             id: id.clone(),
                                             provider_metadata: None,
                                         });
-                                        let input = finalize_streamed_tool_input(
+                                        let input =
+                                            finalize_streamed_tool_input(
                                                 accumulated_json,
                                                 provider_tool_name.as_deref(),
                                                 provider_tool_input_type.as_deref(),
@@ -1336,11 +1278,20 @@ pub(crate) async fn anthropic_stream_core(
                                 }
                             }
                         }
-                        StreamEvent::MessageDelta { delta, usage } => {
+                        StreamEvent::MessageDelta { delta, usage, context_management: edits } => {
                             if let Some(reason) = delta.stop_reason {
                                 final_finish_reason = Some(parse_stop_reason(&reason));
                             }
+                            stop_sequence = delta.stop_sequence.or(stop_sequence);
+                            container = delta.container.or(container);
+                            context_management = edits.or(context_management);
                             if let Some(u) = usage {
+                                if let (Value::Object(raw), Ok(Value::Object(update))) =
+                                    (&mut raw_usage, serde_json::to_value(&u))
+                                {
+                                    raw.extend(update);
+                                }
+                                final_usage.raw = raw_usage.as_object().cloned();
                                 let reasoning_tokens = u
                                     .output_tokens_details
                                     .as_ref()
@@ -1408,7 +1359,15 @@ pub(crate) async fn anthropic_stream_core(
             } else {
                 final_usage
             },
-            provider_metadata: None,
+            provider_metadata: (!stream_errored).then(|| {
+                super::usage::result_provider_metadata(
+                    options_name.as_str(),
+                    &raw_usage,
+                    stop_sequence.as_deref(),
+                    container.as_ref(),
+                    context_management.as_ref(),
+                )
+            }),
         });
     };
 

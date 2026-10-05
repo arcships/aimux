@@ -29,13 +29,31 @@ use ts_rs::TS;
 // ── 数据模型(三层 + call_id 关联;schema 版本)────────────────────────────
 
 /// 录制格式版本(用于未来字段迁移与绑定层兼容)。
-pub const RECORDING_SCHEMA: u32 = 2;
+pub const RECORDING_SCHEMA: u32 = 3;
+
+/// 只接受当前 [`RECORDING_SCHEMA`]:反序列化旧版本录制时给出明确错误。
+fn deserialize_current_schema<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let schema = u32::deserialize(deserializer)?;
+    if schema == RECORDING_SCHEMA {
+        Ok(schema)
+    } else {
+        Err(serde::de::Error::custom(format!(
+            "unsupported recording schema {schema}: only schema {RECORDING_SCHEMA} is \
+             readable, recordings written by older versions are no longer read"
+        )))
+    }
+}
 
 /// 一次完整调用的录制记录(三层 + call_id 关联)。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Recording {
-    /// 格式版本。
+    /// 格式版本。读取时只接受当前 [`RECORDING_SCHEMA`];旧 schema 的录制带有
+    /// 配置快照(base_url / profile 等),不再读取。
+    #[serde(deserialize_with = "deserialize_current_schema")]
     pub schema: u32,
     /// 暴露逻辑调用 ID,关联三层。
     pub call_id: String,
@@ -115,7 +133,7 @@ pub struct InputRecord {
     /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
     pub prompt: LanguageModelPrompt,
     /// 序列化的 CallOptions(abort_signal/call_id 已 serde skip);
-    /// headers/provider_options/body_overrides 已递归脱敏。
+    /// headers/provider_options 已递归脱敏。
     pub options: serde_json::Value,
 }
 
@@ -132,35 +150,38 @@ impl InputRecord {
 }
 
 /// ② 配置侧:provider 身份(请求回放重建用)。
+///
+/// 只记身份,不记配置:回放时按 `provider_id` + `model_id` 重新构建 model,
+/// 凭证与 base URL 只来自环境/registry(RFC-0036 §3.3)。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ProviderRecord {
-    /// `model.provider()`,如 "openai"。
+    /// provider 名(registry 名),回放重建的查找键,如 "openai"、"deepseek"。
+    pub provider_id: String,
+    /// `model.provider()`,如 "openai.chat"。
     pub provider: String,
     /// `model.model_id()`,如 "gpt-4o"。
     pub model_id: String,
-    /// provider 的 base_url。
-    pub base_url: Option<String>,
-    /// api_key 来源(不存明文):"env:OPENAI_API_KEY" / "explicit" / "none" / "unknown"。
-    pub api_key_source: String,
-    /// OpenAICompatProfile(能力差异)。
-    pub profile: Option<serde_json::Value>,
-    /// ProviderOptions(headers/org/project/...;已脱敏)。
-    pub provider_options: Option<serde_json::Value>,
 }
 
 impl ProviderRecord {
-    /// 最小快照(provider/model_id)——`config_snapshot` 默认实现;cover 的部分放结构方法。
+    /// 显式给出三项身份。
     #[must_use]
-    pub fn minimal(provider: &str, model_id: &str) -> Self {
+    pub fn new(provider_id: &str, provider: &str, model_id: &str) -> Self {
         Self {
+            provider_id: provider_id.to_string(),
             provider: provider.to_string(),
             model_id: model_id.to_string(),
-            base_url: None,
-            api_key_source: "unknown".to_string(),
-            profile: None,
-            provider_options: None,
         }
+    }
+
+    /// 由 model 的 `provider()` / `model_id()` 构造:`provider_id` 暂取
+    /// `provider()` 字符串的首段(`"openai.chat"` → `"openai"`);registry
+    /// 名接入后由其填写。
+    #[must_use]
+    pub fn from_model(provider: &str, model_id: &str) -> Self {
+        let provider_id = provider.split('.').next().unwrap_or_default();
+        Self::new(provider_id, provider, model_id)
     }
 }
 
@@ -337,7 +358,7 @@ pub trait Recorder: Send + Sync {
     /// 默认空实现(不参与录制的 Recorder 无需关心);开启录制且调用被归组
     /// 时,`generate_text`/`stream_text` 入口调用它。
     fn record_session(&self, _call_id: &str, _session_id: &str, _step: u32) {}
-    /// 录制配置侧完整快照。
+    /// 录制配置侧身份(`ProviderRecord`:provider_id / provider / model_id)。
     fn record_provider(&self, call_id: &str, snapshot: &ProviderRecord);
     /// 录制单次 HTTP 交换(层 B http.rs 调用,per-attempt 一条)。
     fn record_exchange(&self, call_id: &str, exchange: &HttpExchange);
@@ -462,18 +483,6 @@ pub fn init_recording(recorder: Option<Arc<dyn Recorder>>) {
     }
 }
 
-/// 从环境变量初始化:`AIMUX_RECORD=1` 开启,`AIMUX_RECORD_DIR` 指定目录(默认 `./recordings`)。
-/// 未开启返回 false(静默)。
-#[must_use]
-pub fn init_recording_from_env() -> bool {
-    if std::env::var("AIMUX_RECORD").as_deref() != Ok("1") {
-        return false;
-    }
-    let dir = std::env::var("AIMUX_RECORD_DIR").unwrap_or_else(|_| "./recordings".to_string());
-    init_recording(Some(Arc::new(JsonlRecorder::new(dir))));
-    true
-}
-
 /// 从当前全局 recorder 生成一次调用的 context(关闭时 None)。
 /// 层 A 入口:先读一次,再用 `context && ctx.start()` 记录 ①+②。
 pub fn context(call_id: impl Into<String>) -> Option<RecordingContext> {
@@ -493,7 +502,7 @@ pub fn recorder() -> Option<Arc<dyn Recorder>> {
 static CALL_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// 生成进程级唯一 call_id(`call-{ns}-{seq}`;与 session.rs 同构)。
-pub fn new_call_id() -> String {
+pub(crate) fn new_call_id() -> String {
     let ns = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -534,7 +543,7 @@ pub fn is_sensitive_key(name: &str) -> bool {
 }
 
 /// 递归脱敏(JSON 中含敏感键的项值替换为 `[REDACTED]`)。
-/// 覆盖 `CallOptions.headers`/`provider_options`/`body_overrides` 任意层级。
+/// 覆盖 `CallOptions.headers`/`provider_options` 任意层级。
 pub(crate) fn redact_json(value: serde_json::Value) -> serde_json::Value {
     match value {
         serde_json::Value::Object(map) => {
@@ -766,7 +775,7 @@ impl Recorder for JsonlRecorder {
         self.send_ev(RecordEvent::Input {
             call_id: call_id.to_string(),
             input: InputRecord::from_call_options(options),
-            provider: ProviderRecord::minimal(provider, model_id),
+            provider: ProviderRecord::from_model(provider, model_id),
         });
     }
 
@@ -779,14 +788,9 @@ impl Recorder for JsonlRecorder {
     }
 
     fn record_provider(&self, call_id: &str, snapshot: &ProviderRecord) {
-        // 核心边界统一强制脱敏 provider_options/profile(B6 评审),
-        // 不依赖 provider 端自觉。
-        let mut snap = snapshot.clone();
-        snap.provider_options = snap.provider_options.take().map(redact_json);
-        snap.profile = snap.profile.take().map(redact_json);
         self.send_ev(RecordEvent::Provider {
             call_id: call_id.to_string(),
-            provider: snap,
+            provider: snapshot.clone(),
         });
     }
 
@@ -850,7 +854,7 @@ fn entry_or_init<'a>(
                 prompt: Vec::new(),
                 options: serde_json::Value::Null,
             },
-            ProviderRecord::minimal("", ""),
+            ProviderRecord::from_model("", ""),
         )
     })
 }
@@ -1321,7 +1325,7 @@ impl RingInner {
                         prompt: Vec::new(),
                         options: serde_json::Value::Null,
                     },
-                    ProviderRecord::minimal("", ""),
+                    ProviderRecord::from_model("", ""),
                 ),
             );
         }
@@ -1395,7 +1399,7 @@ impl Recorder for RingRecorder {
         let rec = inner.entry_or_init_bounded(call_id);
         rec.input = InputRecord::from_call_options(options);
         if rec.provider.provider.is_empty() {
-            rec.provider = ProviderRecord::minimal(provider, model_id);
+            rec.provider = ProviderRecord::from_model(provider, model_id);
         }
     }
 
@@ -1409,13 +1413,9 @@ impl Recorder for RingRecorder {
     }
 
     fn record_provider(&self, call_id: &str, snapshot: &ProviderRecord) {
-        // 与 JsonlRecorder 一致的边界强制脱敏,不依赖 provider 端自觉。
-        let mut snap = snapshot.clone();
-        snap.provider_options = snap.provider_options.take().map(redact_json);
-        snap.profile = snap.profile.take().map(redact_json);
         let mut inner = self.inner.lock().unwrap();
         // C4-6:entry_or_init_bounded 兜底建条目,保证乱序 Provider 快照不丢。
-        inner.entry_or_init_bounded(call_id).provider = snap;
+        inner.entry_or_init_bounded(call_id).provider = snapshot.clone();
     }
 
     fn record_exchange(&self, call_id: &str, exchange: &HttpExchange) {
@@ -1855,11 +1855,13 @@ mod tests {
                 "x-goog-api-key": "gkey",
                 "x-amz-security-token": "sts-tok"
             },
-            "provider_options": { "headers": { "Cookie": "s=1" } },
-            "body_overrides": {
-                "api_key": "sk-secret",
-                "token": "bearer-secret",
-                "access_token": "oauth-secret"
+            "provider_options": {
+                "headers": { "Cookie": "s=1" },
+                "openai": {
+                    "api_key": "sk-secret",
+                    "token": "bearer-secret",
+                    "access_token": "oauth-secret"
+                }
             },
             // 用量字段名含 "token" 子串,但非凭据——contains("token") 曾误伤。
             "usage": {
@@ -1875,9 +1877,12 @@ mod tests {
         assert_eq!(r["headers"]["x-amz-security-token"], "[REDACTED]");
         assert_eq!(r["headers"]["X-Key"], "ok");
         assert_eq!(r["provider_options"]["headers"]["Cookie"], "[REDACTED]");
-        assert_eq!(r["body_overrides"]["api_key"], "[REDACTED]");
-        assert_eq!(r["body_overrides"]["token"], "[REDACTED]");
-        assert_eq!(r["body_overrides"]["access_token"], "[REDACTED]");
+        assert_eq!(r["provider_options"]["openai"]["api_key"], "[REDACTED]");
+        assert_eq!(r["provider_options"]["openai"]["token"], "[REDACTED]");
+        assert_eq!(
+            r["provider_options"]["openai"]["access_token"],
+            "[REDACTED]"
+        );
         // 含 "token" 子串的用量字段不再被误脱敏(回归 contains("token"))。
         assert_eq!(r["usage"]["max_output_tokens"], 4096);
         assert_eq!(r["usage"]["prompt_tokens"], 10);
@@ -1890,7 +1895,7 @@ mod tests {
         let rec = Recording::new(
             "call-1",
             InputRecord::from_call_options(&sample_options()),
-            ProviderRecord::minimal("openai", "gpt-4o"),
+            ProviderRecord::from_model("openai", "gpt-4o"),
         );
         let json = serde_json::to_string(&rec).unwrap();
         let back: Recording = serde_json::from_str(&json).unwrap();
@@ -1941,7 +1946,7 @@ mod tests {
                 prompt: Vec::new(),
                 options: serde_json::Value::Null,
             },
-            ProviderRecord::minimal("openai", "gpt-4o"),
+            ProviderRecord::from_model("openai", "gpt-4o"),
         );
         rec.transport_closed = true;
         rec.outcome = OutcomeRecord {
@@ -2014,7 +2019,7 @@ mod tests {
         tx.send(RecordEvent::Input {
             call_id: "c1".into(),
             input: InputRecord::from_call_options(&sample_options()),
-            provider: ProviderRecord::minimal("openai", "gpt-4o"),
+            provider: ProviderRecord::from_model("openai", "gpt-4o"),
         })
         .unwrap();
         tx.send(RecordEvent::TransportClosed {
@@ -2088,7 +2093,7 @@ mod tests {
         let rec = Recording::new(
             "call-1",
             InputRecord::from_call_options(&sample_options()),
-            ProviderRecord::minimal("openai", "gpt-4o"),
+            ProviderRecord::from_model("openai", "gpt-4o"),
         );
         let json = serde_json::to_string(&rec).unwrap();
         assert!(!json.contains("session_id"), "ungrouped must omit: {json}");
@@ -2626,14 +2631,7 @@ mod tests {
     // ── C4-6:Provider 先于 Input 不丢 ─────────────────────────────────────
 
     fn full_provider() -> ProviderRecord {
-        ProviderRecord {
-            provider: "openai".into(),
-            model_id: "gpt-4o".into(),
-            base_url: Some("https://api.openai.com".into()),
-            api_key_source: "env:OPENAI_API_KEY".into(),
-            profile: None,
-            provider_options: None,
-        }
+        ProviderRecord::new("openai", "openai.chat", "gpt-4o")
     }
 
     #[test]
@@ -2648,12 +2646,11 @@ mod tests {
         ring.export_jsonl(&mut buf).unwrap();
         let parsed: Recording =
             serde_json::from_str(std::str::from_utf8(&buf).unwrap().trim()).unwrap();
-        assert_eq!(parsed.provider.provider, "openai");
         assert_eq!(
-            parsed.provider.base_url.as_deref(),
-            Some("https://api.openai.com"),
-            "full snapshot preserved, not overwritten by minimal"
+            parsed.provider.provider, "openai.chat",
+            "explicit record preserved, not overwritten by the input-derived one"
         );
+        assert_eq!(parsed.provider.provider_id, "openai");
         assert_eq!(parsed.provider.model_id, "gpt-4o");
     }
 
@@ -2669,11 +2666,8 @@ mod tests {
         rec.flush();
         let content = std::fs::read_to_string(rec.path()).unwrap();
         let parsed: Recording = serde_json::from_str(content.trim()).unwrap();
-        assert_eq!(
-            parsed.provider.base_url.as_deref(),
-            Some("https://api.openai.com")
-        );
-        assert_eq!(parsed.provider.provider, "openai");
+        assert_eq!(parsed.provider.provider_id, "openai");
+        assert_eq!(parsed.provider.provider, "openai.chat");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2717,7 +2711,7 @@ mod tests {
                 prompt: Vec::new(),
                 options: serde_json::Value::Null,
             },
-            ProviderRecord::minimal("", ""),
+            ProviderRecord::from_model("", ""),
         )
     }
 

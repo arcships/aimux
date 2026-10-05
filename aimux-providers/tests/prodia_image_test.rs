@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Prodia image model tests.
+//! Rust translation of the Prodia image model tests.
 //! Source: `reference/ai/packages/prodia/src/prodia-image-model.test.ts`
 
 use serde_json::{Value, json};
@@ -6,7 +6,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs};
-use aimux_providers::{ProdiaConfig, ProdiaProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{ProdiaProviderSettings, create_prodia};
 
 const PROMPT: &str = "A cute baby sea otter";
 
@@ -48,8 +49,12 @@ async fn should_extract_generated_image() {
     let job = json!({ "job": { "status": "succeeded" } }).to_string();
     let body = multipart_response("testboundary", &job, b"fake-prodia-image");
     mock_prodia(&server, body).await;
-    let config = ProdiaConfig::new("test-key").with_base_url(server.uri());
-    let model = ProdiaProvider::new(config).image("sdxl");
+    let config = ProdiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_prodia(config).unwrap().image("sdxl");
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
     match result.images {
         ImageOutputs::Binary(imgs) => {
@@ -66,8 +71,12 @@ async fn should_pass_prompt() {
     let job = json!({ "job": { "status": "succeeded" } }).to_string();
     let body = multipart_response("testboundary", &job, b"image");
     mock_prodia(&server, body).await;
-    let config = ProdiaConfig::new("test-key").with_base_url(server.uri());
-    let model = ProdiaProvider::new(config).image("sdxl");
+    let config = ProdiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_prodia(config).unwrap().image("sdxl");
     model.do_generate(&options(PROMPT)).await.unwrap();
     let reqs = server.received_requests().await.unwrap();
     let req_body: Value = serde_json::from_slice(&reqs[0].body).unwrap();
@@ -81,8 +90,12 @@ async fn should_pass_size() {
     let job = json!({ "job": { "status": "succeeded" } }).to_string();
     let body = multipart_response("testboundary", &job, b"image");
     mock_prodia(&server, body).await;
-    let config = ProdiaConfig::new("test-key").with_base_url(server.uri());
-    let model = ProdiaProvider::new(config).image("sdxl");
+    let config = ProdiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_prodia(config).unwrap().image("sdxl");
     let mut opts = options(PROMPT);
     opts.size = Some(aimux_core::shared::Size::new(1024, 1024));
     model.do_generate(&opts).await.unwrap();
@@ -98,8 +111,12 @@ async fn should_pass_seed() {
     let job = json!({ "job": { "status": "succeeded" } }).to_string();
     let body = multipart_response("testboundary", &job, b"image");
     mock_prodia(&server, body).await;
-    let config = ProdiaConfig::new("test-key").with_base_url(server.uri());
-    let model = ProdiaProvider::new(config).image("sdxl");
+    let config = ProdiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_prodia(config).unwrap().image("sdxl");
     let mut opts = options(PROMPT);
     opts.seed = Some(42);
     model.do_generate(&opts).await.unwrap();
@@ -114,8 +131,12 @@ async fn should_pass_auth_headers() {
     let job = json!({ "job": { "status": "succeeded" } }).to_string();
     let body = multipart_response("testboundary", &job, b"image");
     mock_prodia(&server, body).await;
-    let config = ProdiaConfig::new("test-key").with_base_url(server.uri());
-    let model = ProdiaProvider::new(config).image("sdxl");
+    let config = ProdiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_prodia(config).unwrap().image("sdxl");
     model.do_generate(&options(PROMPT)).await.unwrap();
     let reqs = server.received_requests().await.unwrap();
     assert_eq!(
@@ -135,8 +156,12 @@ async fn should_return_provider_metadata() {
     let job = json!({ "status": "succeeded", "image": "url" }).to_string();
     let body = multipart_response("testboundary", &job, b"image");
     mock_prodia(&server, body).await;
-    let config = ProdiaConfig::new("test-key").with_base_url(server.uri());
-    let model = ProdiaProvider::new(config).image("sdxl");
+    let config = ProdiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_prodia(config).unwrap().image("sdxl");
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
     let meta = result.provider_metadata.unwrap();
     let prodia = meta.get("prodia").unwrap();

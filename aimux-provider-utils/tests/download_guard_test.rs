@@ -34,6 +34,7 @@ fn request(
         validate_url: true,
         trusted_origin: trusted_origin.map(str::to_owned),
         credentialed_origin: credentialed_origin.map(str::to_owned),
+        fetch: None,
     }
 }
 

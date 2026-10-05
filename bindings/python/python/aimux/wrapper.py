@@ -1024,7 +1024,6 @@ class GenerateTextOptions(BaseModel):
     provider_options: Optional[Dict[str, Any]] = None
     reasoning: Optional[ReasoningEffort] = None
     instructions: Optional[str] = None
-    body_overrides: Optional[Any] = None
     max_retries: Optional[int] = None
     session_id: Optional[str] = None
     """Session identifier (RFC-0024): groups consecutive calls into a session.
@@ -1057,12 +1056,12 @@ class GenerateTextOptions(BaseModel):
     """
 
 
-class GenerateResponseMetadata(ResponseMetadata):
-    headers: Optional[Dict[str, str]] = None
+class RequestInfo(BaseModel):
     body: Optional[Any] = None
 
 
-class RequestInfo(BaseModel):
+class GenerateResponseMetadata(ResponseMetadata):
+    headers: Optional[Dict[str, str]] = None
     body: Optional[Any] = None
 
 
@@ -1076,6 +1075,7 @@ class GenerateResult(BaseModel):
     provider_metadata: Optional[Any] = None
     request: Optional[RequestInfo] = None
     response: Optional[GenerateResponseMetadata] = None
+    request: Optional[RequestInfo] = None
 
 
 class GenerateTextResult(BaseModel):

@@ -17,8 +17,13 @@
 //!
 //! `instructions` is not supported and emits a warning. `speed` must be
 //! between 0.6 and 1.5 (inclusive) or it is ignored with a warning.
+//!
+//! [`create_cartesia`] takes [`CartesiaProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`CartesiaProvider`]. The credential is not read
+//! there: it is loaded for every request, from the setting or from `CARTESIA_API_KEY`.
+//! [`cartesia()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
@@ -28,8 +33,10 @@ use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
+use aimux_provider_utils::HttpBody;
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
-use aimux_provider_utils::{HttpBody, HttpRequest, load_api_key};
+use crate::shared::{Credential, EndpointConfig, provider_headers};
 
 fn cartesia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -62,86 +69,163 @@ const SAMPLE_RATES: &[u32] = &[8000, 16000, 22050, 24000, 44100, 48000];
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-/// Configuration for the Cartesia provider.
-#[derive(Debug, Clone)]
-pub struct CartesiaConfig {
-    pub api_key: String,
-    /// Base URL for the Cartesia API (no trailing slash). Defaults to
-    /// `https://api.cartesia.ai`.
-    pub base_url: String,
-    /// The Cartesia API version (sent via the `Cartesia-Version` header).
-    pub version: String,
-    /// Extra headers merged into every request.
-    pub headers: Option<HashMap<String, String>>,
+pub(crate) mod options;
+
+const DEFAULT_BASE_URL: &str = "https://api.cartesia.ai";
+const API_KEY_ENV_VAR: &str = "CARTESIA_API_KEY";
+const DEFAULT_NAME: &str = "cartesia";
+
+/// Settings of [`create_cartesia`].
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct CartesiaProviderSettings {
+    /// Base URL for the API calls. Default `https://api.cartesia.ai`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `CARTESIA_API_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including the credential. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings (`"{name}.speech"`, `"{name}.transcription"`).
+    /// Default `"cartesia"`. The providerOptions key stays `cartesia`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
 }
 
-impl CartesiaConfig {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: "https://api.cartesia.ai".to_string(),
-            version: CARTESIA_API_VERSION.to_string(),
-            headers: None,
-        }
-    }
-
-    /// Override the base URL (for testing or proxies).
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = url.into().trim_end_matches('/').to_string();
-        self
-    }
-
-    /// Override the Cartesia API version.
-    #[must_use]
-    pub fn with_version(mut self, version: impl Into<String>) -> Self {
-        self.version = version.into();
-        self
-    }
-
-    /// Attach extra headers merged into every request.
-    #[must_use]
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = Some(headers);
-        self
-    }
-
-    /// Create from environment variable `CARTESIA_API_KEY`.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when `CARTESIA_API_KEY` is not set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "CARTESIA_API_KEY", "Cartesia")?;
-        Ok(Self::new(api_key))
+impl std::fmt::Debug for CartesiaProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CartesiaProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .finish()
     }
 }
 
-// ── Provider ─────────────────────────────────────────────────────────────────
+/// Create a Cartesia provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_cartesia(settings: CartesiaProviderSettings) -> Result<CartesiaProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(CartesiaProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: provider_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Cartesia"),
+            vec![(
+                "Cartesia-Version".to_string(),
+                CARTESIA_API_VERSION.to_string(),
+            )],
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+    })
+}
 
-/// Cartesia provider — creates `CartesiaSpeechModel` instances.
+/// The default provider: `create_cartesia` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn cartesia() -> &'static CartesiaProvider {
+    static DEFAULT: OnceLock<CartesiaProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_cartesia(CartesiaProviderSettings::default())
+            .expect("default Cartesia settings are always valid")
+    })
+}
+
+/// A Cartesia provider. Cheap to clone the models out of; it holds no HTTP
+/// client.
 pub struct CartesiaProvider {
-    config: CartesiaConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
 }
 
 impl CartesiaProvider {
-    #[must_use]
-    pub fn new(config: CartesiaConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            None,
+        )
     }
 
-    /// Create a speech (TTS) model instance for the given model name (e.g.
-    /// `"sonic-3.5"`).
+    /// A speech (TTS) model (e.g. `"sonic-3.5"`); `provider()` is `"{name}.speech"`.
     #[must_use]
     pub fn speech(&self, model_id: &str) -> CartesiaSpeechModel {
-        CartesiaSpeechModel::new(model_id.to_string(), self.config.clone())
+        CartesiaSpeechModel::from_config(model_id.to_string(), self.model_config("speech"))
     }
 
-    /// Create a transcription (STT) model instance for the given model name
-    /// (e.g. `"best"`). Uses the `/stt` endpoint.
+    /// A transcription (STT) model (e.g. `"ink-whisper"`); `provider()` is `"{name}.transcription"`.
     #[must_use]
     pub fn transcription(&self, model_id: &str) -> CartesiaTranscriptionModel {
-        CartesiaTranscriptionModel::new(model_id.to_string(), self.config.clone())
+        CartesiaTranscriptionModel::from_config(
+            model_id.to_string(),
+            self.model_config("transcription"),
+        )
+    }
+}
+
+impl ::aimux_core::Provider for CartesiaProvider {
+    fn language_model(
+        &self,
+        model_id: &str,
+    ) -> Result<::std::sync::Arc<dyn ::aimux_core::LanguageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "languageModel"))
+    }
+
+    fn embedding_model(
+        &self,
+        model_id: &str,
+    ) -> Result<::std::sync::Arc<dyn ::aimux_core::EmbeddingModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
+    }
+
+    fn image_model(
+        &self,
+        model_id: &str,
+    ) -> Result<::std::sync::Arc<dyn ::aimux_core::ImageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "imageModel"))
+    }
+
+    fn transcription_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<::std::sync::Arc<dyn ::aimux_core::TranscriptionModel>, AiMuxError>> {
+        Some(Ok(::std::sync::Arc::new(self.transcription(model_id))))
+    }
+
+    fn speech_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<::std::sync::Arc<dyn ::aimux_core::SpeechModel>, AiMuxError>> {
+        Some(Ok(::std::sync::Arc::new(self.speech(model_id))))
     }
 }
 
@@ -150,44 +234,19 @@ impl CartesiaProvider {
 /// A Cartesia speech (TTS) model.
 pub struct CartesiaSpeechModel {
     model_id: String,
-    config: CartesiaConfig,
+    config: EndpointConfig,
 }
 
 impl CartesiaSpeechModel {
-    #[must_use]
-    pub fn new(model_id: String, config: CartesiaConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        headers.insert("Cartesia-Version".to_string(), self.config.version.clone());
-        if let Some(ref config_headers) = self.config.headers {
-            for (k, v) in config_headers {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/tts/bytes", self.config.base_url)
     }
 }
 
 #[async_trait]
 impl SpeechModel for CartesiaSpeechModel {
     fn provider(&self) -> &str {
-        "cartesia.speech"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -197,10 +256,10 @@ impl SpeechModel for CartesiaSpeechModel {
     async fn do_generate(&self, options: &SpeechCallOptions) -> Result<SpeechResult, AiMuxError> {
         let (body, warnings) = build_request(options, &self.model_id)?;
 
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), headers.into_iter().collect(), options),
+            exchange.request(exchange.url("/tts/bytes"), options),
             Value::Object(body.clone()),
             aimux_provider_utils::create_binary_response_handler(),
             cartesia_failed_response_handler(),
@@ -576,7 +635,7 @@ struct CartesiaSpeechProviderOptions {
 fn parse_cartesia_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Option<CartesiaSpeechProviderOptions> {
-    let opts = options.and_then(|opts| opts.get("cartesia"))?;
+    let opts = options::cartesia_options(options)?;
 
     Some(CartesiaSpeechProviderOptions {
         container: opts
@@ -653,37 +712,12 @@ struct CartesiaTranscriptionResponse {
 /// Endpoint: `POST {base_url}/stt` (multipart form-data)
 pub struct CartesiaTranscriptionModel {
     model_id: String,
-    config: CartesiaConfig,
+    config: EndpointConfig,
 }
 
 impl CartesiaTranscriptionModel {
-    #[must_use]
-    pub fn new(model_id: String, config: CartesiaConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        headers.insert("Cartesia-Version".to_string(), self.config.version.clone());
-        if let Some(ref config_headers) = self.config.headers {
-            for (k, v) in config_headers {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/stt", self.config.base_url)
     }
 }
 
@@ -700,7 +734,7 @@ fn audio_input_to_bytes_stt(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
 #[async_trait]
 impl TranscriptionModel for CartesiaTranscriptionModel {
     fn provider(&self) -> &str {
-        "cartesia"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -723,9 +757,7 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
         // Parse provider options.
         let mut language: Option<String> = None;
         let mut timestamp_granularities: Option<Vec<String>> = None;
-        if let Some(ref po) = options.provider_options
-            && let Some(cartesia) = po.get("cartesia")
-        {
+        if let Some(cartesia) = options::cartesia_options(options.provider_options.as_ref()) {
             if let Some(l) = cartesia.get("language").and_then(|v| v.as_str()) {
                 language = Some(l.to_string());
             }
@@ -769,10 +801,10 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
 
         let (body_bytes, content_type) = form.finish();
 
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest::new(self.endpoint(), headers.into_iter().collect(), options),
+            exchange.request(exchange.url("/stt"), options),
             HttpBody::Bytes(body_bytes, content_type),
             aimux_provider_utils::create_json_response_handler::<CartesiaTranscriptionResponse>(),
             cartesia_failed_response_handler(),

@@ -27,7 +27,8 @@ use aimux_core::types::Warning;
 
 use aimux_provider_utils::{HttpBody, HttpRequest, sleep_or_abort};
 
-use super::GoogleConfig;
+use super::options::GOOGLE;
+use crate::shared::EndpointConfig;
 
 /// Google-specific error structure: `{ "error": { "message": "..." } }`.
 /// Google provider-specific file upload options.
@@ -44,7 +45,7 @@ fn parse_google_files_options(
 ) -> GoogleFilesUploadOptions {
     let mut opts = GoogleFilesUploadOptions::default();
     if let Some(po) = provider_options
-        && let Some(google) = po.get("google")
+        && let Some(google) = po.get(GOOGLE)
     {
         if let Some(display_name) = google.get("displayName").and_then(|v| v.as_str()) {
             opts.display_name = Some(display_name.to_string());
@@ -112,35 +113,19 @@ struct UploadResponse {
 /// Aligned with TS `GoogleFiles`. Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers
 /// uses the process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct GoogleFiles {
-    config: GoogleConfig,
+    config: EndpointConfig,
 }
 
 impl GoogleFiles {
-    #[must_use]
-    pub fn new(config: GoogleConfig) -> Self {
+    pub(crate) fn from_config(config: EndpointConfig) -> Self {
         Self { config }
-    }
-
-    fn build_headers(&self) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert("x-goog-api-key".to_string(), self.config.api_key.clone());
-        headers
-    }
-
-    /// The base origin is `base_url` with `/v1beta` stripped.
-    fn base_origin(&self) -> String {
-        self.config.base_url.replace("/v1beta", "")
-    }
-
-    fn init_endpoint(&self) -> String {
-        format!("{}/upload/v1beta/files", self.base_origin())
     }
 }
 
 #[async_trait]
 impl Files for GoogleFiles {
     fn provider(&self) -> &str {
-        "google.generative-ai"
+        &self.config.provider
     }
 
     async fn upload_file(
@@ -148,7 +133,13 @@ impl Files for GoogleFiles {
         options: &UploadFileCallOptions,
     ) -> Result<UploadFileResult, AiMuxError> {
         let google_options = parse_google_files_options(options.provider_options.as_ref());
-        let resolved_headers = self.build_headers();
+        let exchange = self.config.exchange(None).await?;
+        // The upload endpoint hangs off the origin: `base_url` without
+        // `/v1beta`.
+        let init_endpoint = format!(
+            "{}/upload/v1beta/files",
+            exchange.base_url().replace("/v1beta", "")
+        );
 
         let mut warnings = Vec::new();
         if options.filename.is_some() {
@@ -170,10 +161,7 @@ impl Files for GoogleFiles {
             json!({ "file": {} })
         };
 
-        let mut init_headers: Vec<(String, String)> = resolved_headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let mut init_headers = exchange.headers();
         init_headers.push((
             "X-Goog-Upload-Protocol".to_string(),
             "resumable".to_string(),
@@ -189,55 +177,38 @@ impl Files for GoogleFiles {
         ));
         init_headers.push(("Content-Type".to_string(), "application/json".to_string()));
 
-        // Nothing above `upload_file` retries it (§9.4), so the retry lives
-        // here — per stage, not around the whole upload: a failure in the
-        // upload or poll stage must not replay the init exchange that minted
-        // `upload_url`, nor resend the file body.
-        let retries = aimux_core::retry::prepare_retries(
-            None,
-            self.config.retry_config,
-            options.abort_signal.clone(),
-        );
-        let init_resp = retries
-            .retry(|| async {
-                aimux_provider_utils::post_json_to_api(
-                    HttpRequest {
-                        url: self.init_endpoint(),
-                        headers: init_headers.clone(),
-
-                        abort_signal: options.abort_signal.clone(),
-                        call_id: None,
-                        recording_context: None,
-                        response_timeout: None,
-                        max_json_response_bytes: None,
-                        validate_url: false,
-                        trusted_origin: None,
-                        credentialed_origin: None,
-                    },
-                    init_body_value.clone(),
-                    aimux_provider_utils::ResponseHandler::new(|input| async move {
-                        let headers = aimux_provider_utils::extract_response_headers::extract_response_headers(
-                            input.response.headers(),
-                        );
-                        Ok(aimux_provider_utils::ResponseHandlerOutput {
-                            value: (),
-                            raw_value: None,
-                            response_headers: headers,
-                        })
-                    }),
-                    super::google_failed_response_handler(),
-                )
-                .await
-                // Per attempt, so a `RetryError`'s saved `errors` carry it too.
-                .map_err(|e| match e {
-                    AiMuxError::ApiCall(d) => AiMuxError::ApiCall(Box::new(ApiCallError {
-                        message: format!("Failed to initiate resumable upload: {}", d.message),
-                        ..*d
-                    })),
-                    e => e,
+        // Nothing retries a file upload: the init, upload and poll exchanges
+        // each run once, and a failure is reported as it happened (a replayed
+        // upload would resend the file body).
+        let init_resp = aimux_provider_utils::post_json_to_api(
+            exchange.with_transport(HttpRequest {
+                url: init_endpoint,
+                headers: init_headers,
+                abort_signal: options.abort_signal.clone(),
+                ..Default::default()
+            }),
+            exchange.transform_body(init_body_value),
+            aimux_provider_utils::ResponseHandler::new(|input| async move {
+                let headers =
+                    aimux_provider_utils::extract_response_headers::extract_response_headers(
+                        input.response.headers(),
+                    );
+                Ok(aimux_provider_utils::ResponseHandlerOutput {
+                    value: (),
+                    raw_value: None,
+                    response_headers: headers,
                 })
-            })
-            .await?;
+            }),
+            super::google_failed_response_handler(),
+        )
+        .await
+        .map_err(|e| match e {
+            AiMuxError::ApiCall(d) => AiMuxError::ApiCall(Box::new(ApiCallError {
+                message: format!("Failed to initiate resumable upload: {}", d.message),
+                ..*d
+            })),
+            e => e,
+        })?;
 
         let upload_url = init_resp
             .response_headers
@@ -262,36 +233,28 @@ impl Files for GoogleFiles {
         // The upload URL comes from the init response's x-goog-upload-url
         // header and receives the user's file bytes; validate it. (AI SDK
         // fetches this URL unvalidated — kept stricter here deliberately.)
-        let upload_resp = retries
-            .retry(|| async {
-                aimux_provider_utils::post_to_api(
-                    HttpRequest {
-                        url: upload_url.clone(),
-                        headers: upload_headers.clone(),
-
-                        abort_signal: options.abort_signal.clone(),
-                        call_id: None,
-                        recording_context: None,
-                        response_timeout: None,
-                        max_json_response_bytes: None,
-                        validate_url: true,
-                        trusted_origin: Some(self.config.base_url.clone()),
-                        credentialed_origin: Some(self.config.base_url.clone()),
-                    },
-                    HttpBody::Bytes(file_bytes.clone(), media_type.clone()),
-                    aimux_provider_utils::create_json_response_handler::<UploadResponse>(),
-                    super::google_failed_response_handler(),
-                )
-                .await
-                .map_err(|e| match e {
-                    AiMuxError::ApiCall(d) => AiMuxError::ApiCall(Box::new(ApiCallError {
-                        message: format!("Failed to upload file data: {}", d.message),
-                        ..*d
-                    })),
-                    e => e,
-                })
-            })
-            .await?;
+        let upload_resp = aimux_provider_utils::post_to_api(
+            HttpRequest {
+                url: upload_url,
+                headers: upload_headers,
+                abort_signal: options.abort_signal.clone(),
+                validate_url: true,
+                trusted_origin: Some(exchange.base_url().to_string()),
+                credentialed_origin: Some(exchange.base_url().to_string()),
+                ..Default::default()
+            },
+            HttpBody::Bytes(file_bytes, media_type.clone()),
+            aimux_provider_utils::create_json_response_handler::<UploadResponse>(),
+            super::google_failed_response_handler(),
+        )
+        .await
+        .map_err(|e| match e {
+            AiMuxError::ApiCall(d) => AiMuxError::ApiCall(Box::new(ApiCallError {
+                message: format!("Failed to upload file data: {}", d.message),
+                ..*d
+            })),
+            e => e,
+        })?;
 
         let mut file = upload_resp.value.file;
 
@@ -299,10 +262,6 @@ impl Files for GoogleFiles {
         let poll_interval_ms = google_options.poll_interval_ms.unwrap_or(2000);
         let poll_timeout_ms = google_options.poll_timeout_ms.unwrap_or(300000);
         let start_time = Instant::now();
-        let poll_header_list: Vec<(String, String)> = resolved_headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
 
         // Seed evidence from the upload response so a file that is already
         // FAILED (never polled) still carries the observed status + raw body.
@@ -323,29 +282,19 @@ impl Files for GoogleFiles {
             )
             .await?;
 
-            let poll_url = format!("{}/{}", self.config.base_url, file.name);
+            let poll_url = exchange.url(&format!("/{}", file.name));
 
-            let poll_resp = retries
-                .retry(|| {
-                    aimux_provider_utils::get_from_api(
-                        HttpRequest {
-                            url: poll_url.clone(),
-                            headers: poll_header_list.clone(),
-
-                            abort_signal: options.abort_signal.clone(),
-                            call_id: None,
-                            recording_context: None,
-                            response_timeout: None,
-                            max_json_response_bytes: None,
-                            validate_url: false,
-                            trusted_origin: None,
-                            credentialed_origin: None,
-                        },
-                        aimux_provider_utils::create_json_response_handler::<GoogleFileResource>(),
-                        super::google_failed_response_handler(),
-                    )
-                })
-                .await?;
+            let poll_resp = aimux_provider_utils::get_from_api(
+                exchange.with_transport(HttpRequest {
+                    url: poll_url.clone(),
+                    headers: exchange.headers(),
+                    abort_signal: options.abort_signal.clone(),
+                    ..Default::default()
+                }),
+                aimux_provider_utils::create_json_response_handler::<GoogleFileResource>(),
+                super::google_failed_response_handler(),
+            )
+            .await?;
 
             file = poll_resp.value;
             last_poll_body = poll_resp.raw_value.map(|value| value.to_string());
@@ -390,7 +339,7 @@ impl Files for GoogleFiles {
         }
 
         let mut provider_ref = HashMap::new();
-        provider_ref.insert("google".to_string(), file.uri.clone());
+        provider_ref.insert(GOOGLE.to_string(), file.uri.clone());
 
         let result_media_type = if file.mime_type.is_empty() {
             Some(options.media_type.clone())
@@ -402,7 +351,7 @@ impl Files for GoogleFiles {
             provider_reference: provider_ref,
             media_type: result_media_type,
             filename: None,
-            provider_metadata: Some(HashMap::from([("google".to_string(), metadata)])),
+            provider_metadata: Some(HashMap::from([(GOOGLE.to_string(), metadata)])),
             warnings,
         })
     }

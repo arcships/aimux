@@ -12,6 +12,7 @@ use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
+use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Value, json};
 
 // ── Prepared tools ──────────────────────────────────────────────────────────
@@ -123,7 +124,7 @@ pub struct ConvertedPrompt {
 /// - Tool messages are flat `{role:"tool", content, tool_call_id}`.
 ///
 /// # Errors
-/// Returns an error for unsupported text file data.
+/// Returns an error for image text data or an unresolved inline image media type.
 pub fn convert_prompt_to_cohere(
     prompt: &LanguageModelPrompt,
 ) -> Result<ConvertedPrompt, AiMuxError> {
@@ -148,7 +149,7 @@ pub fn convert_prompt_to_cohere(
                         }
                         UserPart::File(file) => {
                             use base64::Engine;
-                            if file.media_type.split('/').next() == Some("image") {
+                            if get_top_level_media_type(&file.media_type) == "image" {
                                 let url = match &file.data {
                                     FileData::Data { data } => {
                                         let b64 = match data {
@@ -158,13 +159,17 @@ pub fn convert_prompt_to_cohere(
                                             }
                                             FileBytes::Base64(data) => data.clone(),
                                         };
-                                        format!("data:{};base64,{}", file.media_type, b64)
+                                        format!(
+                                            "data:{};base64,{}",
+                                            resolve_full_media_type(file)?,
+                                            b64
+                                        )
                                     }
                                     FileData::Url { url, .. } => url.clone(),
                                     FileData::Reference { .. } => continue,
                                     FileData::Text { .. } => {
                                         return Err(AiMuxError::UnsupportedFunctionality(
-                                            "image file parts with text data".to_string(),
+                                            "text file parts".into(),
                                         ));
                                     }
                                 };
@@ -304,7 +309,7 @@ pub struct RequestBodyResult {
 /// and the `thinking` config resolved from `reasoning` / provider options.
 ///
 /// # Errors
-/// Returns an error for unsupported text file data.
+/// Returns an error for image text data or an unresolved inline image media type.
 pub fn build_request_body(
     model_id: &str,
     options: &CallOptions,
@@ -415,8 +420,7 @@ pub fn resolve_cohere_thinking(
     provider_options: &Option<SharedProviderOptions>,
 ) -> Option<Value> {
     // Provider options take precedence.
-    if let Some(po) = provider_options
-        && let Some(cohere) = po.get("cohere")
+    if let Some(cohere) = super::options::cohere_options(provider_options.as_ref())
         && let Some(thinking) = cohere.get("thinking")
     {
         let t_type = thinking

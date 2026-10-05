@@ -22,7 +22,8 @@
 //!   against re-reads of the cassette (a re-read would pass even if both the
 //!   producer and the assertion regressed together).
 
-use aimux_core::tool::{RawToolCall, ToolResult};
+use aimux_core::tool::RawToolCall;
+use aimux_core::tool::ToolResult;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
@@ -40,12 +41,16 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{ProviderTool, Tool};
 use aimux_core::types::ProviderMetadata;
 
-use aimux_providers::anthropic::AnthropicConfig;
-use aimux_providers::anthropic::model::AnthropicModel;
-use aimux_providers::bedrock::{BedrockAuth, BedrockConfig, BedrockModel, event_stream};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::anthropic::AnthropicMessagesModel;
+use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
+use aimux_providers::bedrock::{
+    AmazonBedrockProviderSettings, BedrockModel, create_amazon_bedrock, event_stream,
+};
+use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
 use aimux_providers::{
-    CohereConfig, CohereProvider, GoogleConfig, GoogleProvider, MistralConfig, MistralProvider,
-    OpenAIConfig, OpenAIProvider,
+    CohereProviderSettings, GoogleProvider, GoogleProviderSettings, MistralProviderSettings,
+    create_cohere, create_google, create_mistral,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -298,7 +303,12 @@ fn sources(content: &[GenerateContent]) -> Vec<SourceView<'_>> {
 // ═══════════════════════════════════════════════════════════════════════════
 
 fn google_at(uri: &str) -> GoogleProvider {
-    GoogleProvider::new(GoogleConfig::new("test-api-key").with_base_url(format!("{uri}/v1beta")))
+    create_google(GoogleProviderSettings {
+        api_key: Some("test-api-key".to_string()),
+        base_url: Some(format!("{uri}/v1beta")),
+        ..Default::default()
+    })
+    .unwrap()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -321,7 +331,7 @@ async fn finding_3_gemini_thought_part_becomes_reasoning_not_text() {
     mount(&server, &c).await;
 
     let result = google_at(&server.uri())
-        .model("gemini-3-pro-preview")
+        .chat("gemini-3-pro-preview")
         .do_generate(&opts())
         .await
         .expect("do_generate should succeed");
@@ -362,7 +372,7 @@ async fn finding_5_gemini_thought_signature_reaches_provider_metadata() {
     mount(&server, &c).await;
 
     let result = google_at(&server.uri())
-        .model("gemini-3-pro-preview")
+        .chat("gemini-3-pro-preview")
         .do_generate(&opts())
         .await
         .expect("do_generate should succeed");
@@ -400,7 +410,7 @@ async fn finding_5_gemini_function_call_thought_signature_round_trips() {
     mount(&server, &c).await;
 
     let result = google_at(&server.uri())
-        .model("gemini-2.5-flash")
+        .chat("gemini-2.5-flash")
         .do_generate(&opts())
         .await
         .expect("do_generate should succeed");
@@ -430,7 +440,7 @@ async fn finding_12_gemini_code_execution_result_surfaced_with_matching_call_id(
     mount(&server, &c).await;
 
     let result = google_at(&server.uri())
-        .model("gemini-3-flash-preview")
+        .chat("gemini-3-flash-preview")
         .do_generate(&opts_with_tools(vec![provider_tool(
             "google.code_execution",
             "code_execution",
@@ -500,7 +510,7 @@ async fn finding_14_gemini_grounding_chunks_become_sources() {
     mount(&server, &c).await;
 
     let result = google_at(&server.uri())
-        .model("gemini-2.5-pro")
+        .chat("gemini-2.5-pro")
         .do_generate(&opts_with_tools(vec![provider_tool(
             "google.google_search",
             "google_search",
@@ -545,11 +555,14 @@ async fn finding_14_gemini_grounding_chunks_become_sources() {
 // camel-cased to match the upstream contract.
 // ═══════════════════════════════════════════════════════════════════════════
 
-fn anthropic_at(uri: &str) -> AnthropicModel {
-    AnthropicModel::new(
-        "claude-sonnet-4-0".to_string(),
-        AnthropicConfig::new("test-api-key").with_base_url(uri.to_string()),
-    )
+fn anthropic_at(uri: &str) -> AnthropicMessagesModel {
+    create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string()),
+        base_url: Some(format!("{uri}/v1")),
+        ..Default::default()
+    })
+    .unwrap()
+    .messages("claude-sonnet-4-0")
 }
 
 #[tokio::test]
@@ -956,11 +969,14 @@ async fn finding_25_cohere_citation_metadata_preserved_field_by_field() {
     let server = MockServer::start().await;
     mount(&server, &c).await;
 
-    let provider = CohereProvider::new(
-        CohereConfig::new("test-key").with_base_url(format!("{}/v2", server.uri())),
-    );
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(format!("{}/v2", server.uri())),
+        ..Default::default()
+    })
+    .expect("valid settings");
     let result = provider
-        .model("command-r-plus")
+        .chat("command-r-plus")
         .do_generate(&opts())
         .await
         .expect("do_generate should succeed");
@@ -1013,11 +1029,14 @@ async fn finding_13_mistral_thinking_parts_become_reasoning_in_generate() {
     let server = MockServer::start().await;
     mount(&server, &c).await;
 
-    let provider = MistralProvider::new(
-        MistralConfig::new("test-key").with_base_url(format!("{}/v1", server.uri())),
-    );
+    let provider = create_mistral(MistralProviderSettings {
+        api_key: Some("test-key".to_string().into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .expect("valid settings");
     let result = provider
-        .model("mistral-small-latest")
+        .chat("mistral-small-latest")
         .do_generate(&opts())
         .await
         .expect("do_generate should succeed");
@@ -1046,8 +1065,13 @@ async fn finding_13_mistral_thinking_parts_become_reasoning_in_generate() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 fn openai_responses_at(uri: &str, model: &str) -> impl LanguageModel {
-    OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(format!("{uri}/v1")))
-        .responses_model(model)
+    create_openai(OpenAIProviderSettings {
+        api_key: Some("test-key".to_string()),
+        base_url: Some(format!("{uri}/v1")),
+        ..Default::default()
+    })
+    .unwrap()
+    .responses(model)
 }
 
 #[tokio::test]
@@ -1150,15 +1174,14 @@ async fn finding_30_openai_responses_url_citation_annotation_becomes_source() {
 const BEDROCK_MODEL: &str = "us.anthropic.claude-sonnet-4-20250514-v1:0";
 
 fn bedrock_at(uri: &str, model: &str) -> BedrockModel {
-    BedrockModel::new(
-        model.to_string(),
-        BedrockConfig {
-            base_url: uri.to_string(),
-            auth: BedrockAuth::BearerToken("test-token".to_string()),
-            retry_config: aimux_provider_utils::RetryConfig::default(),
-            api_key_source: None,
-        },
-    )
+    create_amazon_bedrock(AmazonBedrockProviderSettings {
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        region: Some("us-east-1".to_string()),
+        base_url: Some(uri.to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .chat(model)
 }
 
 /// The real signature recorded in
@@ -1200,9 +1223,9 @@ async fn finding_10_bedrock_generate_reasoning_signature_in_provider_metadata() 
         &sig[..sig.len().min(24)]
     );
     assert_eq!(sig.len(), 496, "the signature must not be truncated");
-    assert_eq!(
-        m["bedrock"]["signature"], m["amazonBedrock"]["signature"],
-        "the signature is mirrored under both provider keys"
+    assert!(
+        m.get("bedrock").is_none(),
+        "the legacy provider key is not written"
     );
 
     // The visible answer is separate from the reasoning.
@@ -1294,7 +1317,7 @@ async fn finding_10_bedrock_stream_reasoning_signature_emitted_as_metadata_delta
         })
         .expect("the ReasoningEnd must carry the signature");
     assert_eq!(end_meta["amazonBedrock"]["signature"], json!(signature));
-    assert_eq!(end_meta["bedrock"]["signature"], json!(signature));
+    assert!(end_meta.get("bedrock").is_none());
 }
 
 #[tokio::test]
@@ -1347,9 +1370,9 @@ async fn finding_27_bedrock_stream_performance_config_and_service_tier_reach_fin
         meta["amazonBedrock"]["serviceTier"],
         json!({ "type": "flex" })
     );
-    assert_eq!(
-        meta["bedrock"], meta["amazonBedrock"],
-        "both provider keys carry the same payload"
+    assert!(
+        meta.get("bedrock").is_none(),
+        "the legacy provider key is not written"
     );
 }
 
@@ -1407,7 +1430,7 @@ async fn finding_27_bedrock_stream_guardrail_trace_reaches_finish() {
         json!(397),
         "nested metrics must not be flattened away"
     );
-    assert_eq!(meta["bedrock"]["trace"], meta["amazonBedrock"]["trace"]);
+    assert!(meta.get("bedrock").is_none());
 }
 
 #[tokio::test]
@@ -1448,5 +1471,5 @@ async fn finding_26_bedrock_stream_stop_sequence_reaches_finish() {
         })
         .expect("Finish must carry provider_metadata");
     assert_eq!(meta["amazonBedrock"]["stopSequence"], json!("STOP"));
-    assert_eq!(meta["bedrock"]["stopSequence"], json!("STOP"));
+    assert!(meta.get("bedrock").is_none());
 }

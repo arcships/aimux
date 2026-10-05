@@ -11,7 +11,7 @@ import Foundation
 //
 // Every fallible C function returns `aimux_error_t *` (`OpaquePointer?`):
 // NULL = success (result in the trailing out-param), non-NULL = failure. The
-// unified code is AiMuxError (1...17), RecordingError (100...105), or a C ABI
+// unified code is AiMuxError (1...19), RecordingError (100...105), or a C ABI
 // failure (200...206). The three `expect*` decoders copy the relevant fields, release
 // it with `aimux_error_free` (exactly once) and return the Swift error
 // to throw. Errors are not handles: never `aimux_drop_handle` one.
@@ -44,7 +44,7 @@ func expectFfiError(_ e: OpaquePointer, context: String) -> any Error {
     return invariant("aimux ffi: \(context): \(message)")
 }
 
-/// Decode a returned error from an `[AiMuxError]` call: 1...17 becomes
+/// Decode a returned error from an `[AiMuxError]` call: 1...19 becomes
 /// `AimuxError`; 200...206 is decoded by `expectFfiError`. Frees `e` once.
 func expectAimuxError(_ e: OpaquePointer, context: String) -> any Error {
     let code = aimux_error_code(e)
@@ -178,6 +178,13 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
     /// was repairing, as externally-tagged wire JSON (the same encoding as
     /// `ToolCall.error`).
     case toolCallRepair(message: String, status: Int, retryMs: Int64, retryable: Bool, originalError: String)
+    /// No API key was passed and the fallback environment variable is unset
+    /// (`AIMUX_E_LOAD_API_KEY`, the AI SDK's `LoadAPIKeyError`). No request
+    /// was made; `envVar` names the variable that was consulted.
+    case loadApiKey(message: String, status: Int, retryMs: Int64, retryable: Bool, envVar: String)
+    /// A required provider setting was not passed and its fallback environment
+    /// variable is unset (`AIMUX_E_LOAD_SETTING`, `LoadSettingError`).
+    case loadSetting(message: String, status: Int, retryMs: Int64, retryable: Bool, envVar: String)
     case other(message: String, status: Int, retryMs: Int64, retryable: Bool)
 
     // MARK: Accessors
@@ -199,6 +206,8 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
              .noSuchTool(let m, let s, let r, let t, _, _),
              .invalidToolInput(let m, let s, let r, let t, _, _),
              .toolCallRepair(let m, let s, let r, let t, _),
+             .loadApiKey(let m, let s, let r, let t, _),
+             .loadSetting(let m, let s, let r, let t, _),
              .other(let m, let s, let r, let t):
             return (m, s, r, t)
         case .retry(let m, _, _):
@@ -227,6 +236,8 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         case .noSuchTool: c = AIMUX_E_NO_SUCH_TOOL
         case .invalidToolInput: c = AIMUX_E_INVALID_TOOL_INPUT
         case .toolCallRepair: c = AIMUX_E_TOOL_CALL_REPAIR
+        case .loadApiKey: c = AIMUX_E_LOAD_API_KEY
+        case .loadSetting: c = AIMUX_E_LOAD_SETTING
         case .other: c = AIMUX_E_OTHER
         }
         return Int32(bitPattern: c.rawValue)
@@ -359,6 +370,17 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         return nil
     }
 
+    /// `.loadApiKey` / `.loadSetting` only: the environment variable that was
+    /// consulted (e.g. `"OPENAI_API_KEY"`).
+    public var envVar: String? {
+        switch self {
+        case .loadApiKey(_, _, _, _, let v), .loadSetting(_, _, _, _, let v):
+            return v
+        default:
+            return nil
+        }
+    }
+
     public var description: String { message }
 
     public var errorDescription: String? {
@@ -446,6 +468,13 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         case AIMUX_E_TOOL_CALL_REPAIR:
             return .toolCallRepair(message: message, status: status, retryMs: retryMs, retryable: retryable,
                                    originalError: takeCString(aimux_error_original_error(h)) ?? "")
+        case AIMUX_E_LOAD_API_KEY:
+            // The consulted environment variable rides the provider-code getter.
+            return .loadApiKey(message: message, status: status, retryMs: retryMs, retryable: retryable,
+                               envVar: takeCString(aimux_error_provider_code(h)) ?? "")
+        case AIMUX_E_LOAD_SETTING:
+            return .loadSetting(message: message, status: status, retryMs: retryMs, retryable: retryable,
+                                envVar: takeCString(aimux_error_provider_code(h)) ?? "")
         case AIMUX_E_OTHER:
             return .other(message: message, status: status, retryMs: retryMs, retryable: retryable)
         default:
@@ -718,8 +747,10 @@ public final class Model: @unchecked Sendable {
     ///     registry entry.
     ///   - modelId: Model id.
     ///   - configJson: Optional JSON object of `ProviderOptions`
-    ///     (`{"base_url": "...", "headers": {...}, "max_retries": 0,
-    ///     "body_overrides": {...}}`); `nil` for defaults.
+    ///     (`{"base_url": "...", "headers": {...}, "organization": "...",
+    ///     "project": "...", "params": {...}}`); `nil` for defaults.
+    ///     `max_retries` (a per-call option) and `body_overrides` (removed) are
+    ///     rejected as `.invalidArgument`.
     public static func provider(
         name: String, apiKey: String? = nil, modelId: String, configJson: String? = nil
     ) throws -> Model {

@@ -28,12 +28,22 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::stream_part::StreamPart;
-use aimux_provider_utils::RetryConfig;
-use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
-use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
+use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use futures::StreamExt;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+/// A native OpenAI provider against `base_url`. The key is an explicit value,
+/// so the environment is never consulted.
+fn provider_with(api_key: &str, base_url: impl Into<String>) -> OpenAIProvider {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(api_key.to_string()),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("settings are valid")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -73,13 +83,7 @@ mod openai_generate_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = OpenAIConfig::new("test-api-key")
-            .with_base_url(server.uri())
-            .with_retry_config(RetryConfig {
-                max_retries: 0,
-                ..Default::default()
-            });
-        OpenAIProvider::new(config).model("gpt-4o")
+        provider_with("test-api-key", server.uri()).chat("gpt-4o")
     }
 
     /// TS response-handler: 401 → AuthenticationError.
@@ -216,13 +220,7 @@ mod openai_stream_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = OpenAIConfig::new("test-api-key")
-            .with_base_url(server.uri())
-            .with_retry_config(RetryConfig {
-                max_retries: 0,
-                ..Default::default()
-            });
-        OpenAIProvider::new(config).model("gpt-4o")
+        provider_with("test-api-key", server.uri()).chat("gpt-4o")
     }
 
     /// A non-success HTTP status on the stream endpoint makes `do_stream`
@@ -339,13 +337,13 @@ mod anthropic_generate_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = AnthropicConfig::new("test-api-key")
-            .with_base_url(server.uri())
-            .with_retry_config(RetryConfig {
-                max_retries: 0,
-                ..Default::default()
-            });
-        AnthropicProvider::new(config).model("claude-3-haiku-20240307")
+        create_anthropic(AnthropicProviderSettings {
+            api_key: Some("test-api-key".to_string()),
+            base_url: Some(format!("{}/v1", server.uri())),
+            ..Default::default()
+        })
+        .unwrap()
+        .messages("claude-3-haiku-20240307")
     }
 
     /// Anthropic 401 → `ApiCall` (401). Anthropic body shape:
@@ -473,13 +471,13 @@ mod anthropic_stream_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = AnthropicConfig::new("test-api-key")
-            .with_base_url(server.uri())
-            .with_retry_config(RetryConfig {
-                max_retries: 0,
-                ..Default::default()
-            });
-        AnthropicProvider::new(config).model("claude-3-haiku-20240307")
+        create_anthropic(AnthropicProviderSettings {
+            api_key: Some("test-api-key".to_string()),
+            base_url: Some(format!("{}/v1", server.uri())),
+            ..Default::default()
+        })
+        .unwrap()
+        .messages("claude-3-haiku-20240307")
     }
 
     /// TS: "should throw an api error when the server is returning a 529

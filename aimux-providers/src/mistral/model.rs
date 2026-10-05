@@ -5,14 +5,11 @@
 //! - `content` in responses can be a string or an array of typed parts
 //!   (text, thinking, image_url). Thinking parts are extracted as reasoning
 //!   in streaming mode.
-//! - Streaming tool calls arrive complete in a single chunk (no index-based
-//!   incremental accumulation).
+//! - Streamed tool calls are assembled by the shared `StreamingToolCallTracker`.
 //! - Usage supports `num_cached_tokens` / `prompt_tokens_details.cached_tokens`.
 //! - Finish reasons include `model_length`.
 
 use aimux_core::tool::RawToolCall;
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::Value;
@@ -21,43 +18,27 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
-use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::HttpRequest;
+use aimux_provider_utils::{
+    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, generate_id,
+};
 
-use super::MistralConfig;
+use crate::shared::EndpointConfig;
+
 use super::convert::{build_request_body, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
 
-/// An Mistral language model.
+/// A Mistral language model.
 pub struct MistralModel {
     model_id: String,
-    config: MistralConfig,
+    config: EndpointConfig,
 }
 
 impl MistralModel {
-    pub fn new(model_id: String, config: MistralConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/chat/completions", self.config.base_url)
     }
 }
 
@@ -197,45 +178,23 @@ fn extract_reasoning_content(content: &Option<Value>) -> Option<String> {
 #[async_trait]
 impl LanguageModel for MistralModel {
     fn provider(&self) -> &str {
-        "mistral"
+        &self.config.provider
+    }
+
+    fn supported_urls(&self) -> aimux_core::language_model::SupportedUrls {
+        (self.config.supported_urls)(&self.model_id)
     }
 
     fn model_id(&self) -> &str {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        use aimux_core::recording::ProviderRecord;
-        ProviderRecord {
-            provider: self.provider().to_string(),
-            model_id: self.model_id.clone(),
-            base_url: Some(self.config.base_url.clone()),
-            api_key_source: self
-                .config
-                .api_key_source
-                .clone()
-                .unwrap_or_else(|| "explicit".to_string()),
-            profile: None,
-            provider_options: None,
-        }
-    }
-
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options, false)?;
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(build_request_body(&self.model_id, options, false)?);
+        let endpoint = exchange.url("/chat/completions");
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(
-                self.endpoint(),
-                headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                options,
-            ),
+            exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler(),
             super::mistral_failed_response_handler(),
@@ -322,17 +281,11 @@ impl LanguageModel for MistralModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options, true)?;
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(build_request_body(&self.model_id, options, true)?);
+        let endpoint = exchange.url("/chat/completions");
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(
-                self.endpoint(),
-                headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                options,
-            ),
+            exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             super::mistral_failed_response_handler(),
@@ -352,13 +305,13 @@ impl LanguageModel for MistralModel {
         {
             return Err(super::mistral_stream_error(
                 err_obj,
-                &self.endpoint(),
+                &endpoint,
                 body.clone(),
                 response_headers.clone(),
             ));
         }
 
-        let stream_error_url = self.endpoint();
+        let stream_error_url = endpoint;
         let stream_error_body = body.clone();
         let stream_response_headers = response_headers.clone();
 
@@ -368,6 +321,7 @@ impl LanguageModel for MistralModel {
             let text_id = 0usize;
             let mut text_started = false;
             let mut reasoning_started = false;
+            let mut tool_calls = StreamingToolCallTracker::new().with_generate_id(generate_id);
             let mut reasoning_id: Option<String> = None;
             let mut final_usage = Usage::default();
             let mut final_finish_reason: Option<FinishReason> = None;
@@ -429,8 +383,8 @@ impl LanguageModel for MistralModel {
                             final_usage = convert_usage(usage);
                         }
 
-                        // Process choices.
-                        for choice in chunk.choices {
+                        // Upstream processes only the first choice.
+                        if let Some(choice) = chunk.choices.into_iter().next() {
                             // Reasoning content (from thinking parts in array content).
                             if let Some(reasoning_delta) =
                                 extract_reasoning_content(&choice.delta.content)
@@ -495,44 +449,33 @@ impl LanguageModel for MistralModel {
                                     });
                                 }
 
-                            // Tool calls (complete in a single chunk).
+                            // Tool calls: assembled by the shared tracker.
                             if let Some(tool_call_deltas) = choice.delta.tool_calls {
                                 for dtc in tool_call_deltas {
-                                    let tool_id = dtc.id;
-                                    let tool_name = dtc.function.name;
-                                    let args = dtc.function.arguments;
-
-                                    yield Ok(StreamPart::ToolInputStart {
-                                        id: tool_id.clone(),
-                                        tool_name: tool_name.clone(),
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        title: None,
-                                        provider_metadata: None,
-                                    });
-
-                                    if !args.is_empty() {
-                                        yield Ok(StreamPart::ToolInputDelta {
-                                            id: tool_id.clone(),
-                                            delta: args.clone(),
-                                            provider_metadata: None,
-                                        });
+                                    let delta = StreamingToolCallDelta {
+                                        index: dtc.index,
+                                        id: dtc.id,
+                                        r#type: None,
+                                        function: Some(StreamingToolCallFunction {
+                                            name: dtc.function.name,
+                                            arguments: dtc.function.arguments,
+                                        }),
+                                        extra: Value::Null,
+                                    };
+                                    match tool_calls.process_delta(&delta) {
+                                        Ok(parts) => {
+                                            for part in parts {
+                                                yield Ok(part);
+                                            }
+                                        }
+                                        // A new call without a function name
+                                        // is invalid response data, as in the
+                                        // AI SDK; the stream ends.
+                                        Err(error) => {
+                                            yield Err(error.into());
+                                            return;
+                                        }
                                     }
-
-                                    yield Ok(StreamPart::ToolInputEnd {
-                                        id: tool_id.clone(),
-                                        provider_metadata: None,
-                                    });
-
-                                    let input = args;
-                                    yield Ok(StreamPart::ToolCall(RawToolCall {
-                                        tool_call_id: tool_id,
-                                        tool_name,
-                                        input,
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        provider_metadata: None,
-                                    }));
                                 }
                             }
 
@@ -584,6 +527,10 @@ impl LanguageModel for MistralModel {
             });
                 }
 
+            for part in tool_calls.flush() {
+                yield Ok(part);
+            }
+
             yield Ok(StreamPart::Finish {
                 finish_reason: if stream_errored {
                     FinishReason {
@@ -601,7 +548,7 @@ impl LanguageModel for MistralModel {
                 } else {
                     final_usage
                 },
-                provider_metadata: Some(provider_namespace("mistral", serde_json::json!({})).expect("provider metadata must be an object")),
+                provider_metadata: Some(super::options::mistral_metadata(serde_json::json!({}))),
             });
         };
 
@@ -612,26 +559,5 @@ impl LanguageModel for MistralModel {
                 headers: Some(response_headers),
             }),
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn config_snapshot_reports_config() {
-        let model = MistralModel::new(
-            "mistral-small-latest".to_string(),
-            MistralConfig::new("test-key"),
-        );
-        let snapshot = model.config_snapshot();
-        assert_eq!(snapshot.provider, "mistral");
-        assert_eq!(snapshot.model_id, "mistral-small-latest");
-        assert_eq!(
-            snapshot.base_url.as_deref(),
-            Some("https://api.mistral.ai/v1")
-        );
-        assert_eq!(snapshot.api_key_source, "explicit");
     }
 }

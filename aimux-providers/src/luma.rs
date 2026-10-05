@@ -5,8 +5,14 @@
 //!
 //! Uses an async submit + poll pattern: POST to create generation, then GET
 //! poll until state is "completed", then download the image.
+//!
+//! [`create_luma`] takes [`LumaProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`LumaProvider`]. The credential is not read
+//! there: it is loaded for every request, from the setting or from `LUMA_API_KEY`.
+//! [`luma()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
+use std::sync::OnceLock;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
@@ -16,9 +22,14 @@ use aimux_core::error::ApiCallError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
-use aimux_core::retry;
 use aimux_core::shared::Warning;
-use aimux_provider_utils::{HttpRequest, load_api_key, sleep_or_abort, without_trailing_slash};
+use aimux_provider_utils::HttpRequest;
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+
+use crate::shared::{
+    Credential, EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, is_poll_control_key,
+    poll_interval_ms, poll_until, provider_headers, retry_download,
+};
 
 fn luma_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -37,109 +48,141 @@ fn luma_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMux
     })
 }
 
-const DEFAULT_POLL_INTERVAL_MS: u64 = 500;
-const DEFAULT_MAX_POLL_ATTEMPTS: u64 = 120;
+/// Milliseconds between two polls of a generation (`providerOptions.luma.pollIntervalMillis`
+/// overrides it for one call).
+const POLL_INTERVAL_MS: u64 = 500;
+/// How many times a generation is polled before the call gives up.
+const MAX_POLL_ATTEMPTS: u32 = 120;
 
-/// Configuration for the Luma provider.
-#[derive(Debug, Clone)]
-pub struct LumaConfig {
-    pub api_key: String,
-    pub base_url: String,
-    pub headers: Option<HashMap<String, String>>,
+pub(crate) mod options;
+
+const DEFAULT_BASE_URL: &str = "https://api.lumalabs.ai";
+const API_KEY_ENV_VAR: &str = "LUMA_API_KEY";
+const DEFAULT_NAME: &str = "luma";
+
+/// Settings of [`create_luma`].
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct LumaProviderSettings {
+    /// Base URL for the API calls. Default `https://api.lumalabs.ai`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `LUMA_API_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including the credential. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings (`"{name}.image"`).
+    /// Default `"luma"`. The providerOptions key stays `luma`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
 }
 
-impl LumaConfig {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: "https://api.lumalabs.ai".to_string(),
-            headers: None,
-        }
-    }
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-    #[must_use]
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = Some(headers);
-        self
-    }
-    /// Create from the `LUMA_API_KEY` environment variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
-    /// set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "LUMA_API_KEY", "Luma")?;
-        Ok(Self::new(api_key))
+impl std::fmt::Debug for LumaProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LumaProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .finish()
     }
 }
 
+/// Create a Luma provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_luma(settings: LumaProviderSettings) -> Result<LumaProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(LumaProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: provider_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Luma"),
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_luma` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn luma() -> &'static LumaProvider {
+    static DEFAULT: OnceLock<LumaProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_luma(LumaProviderSettings::default())
+            .expect("default Luma settings are always valid")
+    })
+}
+
+/// A Luma provider. Cheap to clone the models out of; it holds no HTTP
+/// client.
 pub struct LumaProvider {
-    config: LumaConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
 }
+
 impl LumaProvider {
-    #[must_use]
-    pub fn new(config: LumaConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            None,
+        )
     }
+
+    /// An image model (e.g. `"photon-1"`); `provider()` is `"{name}.image"`.
     #[must_use]
     pub fn image(&self, model_id: &str) -> LumaImageModel {
-        LumaImageModel::new(model_id.to_string(), self.config.clone())
+        LumaImageModel::from_config(model_id.to_string(), self.model_config("image"))
     }
 }
+
+crate::impl_single_modality_provider!(LumaProvider, image_model, |p, id| p.image(id));
 
 /// A Luma image generation model.
 pub struct LumaImageModel {
     model_id: String,
-    config: LumaConfig,
+    config: EndpointConfig,
 }
+
 impl LumaImageModel {
-    #[must_use]
-    pub fn new(model_id: String, config: LumaConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut h = HashMap::new();
-        h.insert(
-            "Authorization".into(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(ref ch) = self.config.headers {
-            for (k, v) in ch {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        h
-    }
-
-    fn generations_url(&self, generation_id: Option<&str>) -> String {
-        match generation_id {
-            Some(id) => format!(
-                "{}/dream-machine/v1/generations/{}",
-                self.config.base_url, id
-            ),
-            None => format!(
-                "{}/dream-machine/v1/generations/image",
-                self.config.base_url
-            ),
-        }
     }
 }
 
 #[async_trait]
 impl ImageModel for LumaImageModel {
     fn provider(&self) -> &str {
-        "luma"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
@@ -167,17 +210,14 @@ impl ImageModel for LumaImageModel {
             });
         }
 
-        let luma_opts = options.provider_options.get("luma");
+        let luma_opts = options::luma_options(Some(&options.provider_options));
 
         // Extract non-request options
-        let poll_interval = luma_opts
-            .and_then(|o| o.get("pollIntervalMillis"))
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(DEFAULT_POLL_INTERVAL_MS);
-        let max_poll_attempts = luma_opts
-            .and_then(|o| o.get("maxPollAttempts"))
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(DEFAULT_MAX_POLL_ATTEMPTS);
+        let poll_interval = Duration::from_millis(poll_interval_ms(
+            luma_opts,
+            POLL_INTERVAL_MILLIS_KEY,
+            POLL_INTERVAL_MS,
+        ));
         let reference_type = luma_opts
             .and_then(|o| o.get("referenceType"))
             .and_then(|v| v.as_str())
@@ -303,22 +343,23 @@ impl ImageModel for LumaImageModel {
         // Forward luma provider options (excluding non-request options)
         if let Some(luma) = luma_opts {
             for (k, v) in luma {
-                if matches!(
-                    k.as_str(),
-                    "pollIntervalMillis" | "maxPollAttempts" | "referenceType" | "images"
-                ) {
+                if is_poll_control_key(k) || matches!(k.as_str(), "referenceType" | "images") {
                     continue;
                 }
                 body.insert(k.clone(), v.clone());
             }
         }
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let generations_url = |generation_id: Option<&str>| match generation_id {
+            Some(id) => exchange.url(&format!("/dream-machine/v1/generations/{id}")),
+            None => exchange.url("/dream-machine/v1/generations/image"),
+        };
 
-        // Submit
+        // Submit. This is the only request that creates a generation: nothing
+        // below sends it again.
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.generations_url(None), header_list.clone(), options),
+            exchange.request(generations_url(None), options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             luma_failed_response_handler(),
@@ -334,95 +375,72 @@ impl ImageModel for LumaImageModel {
                 AiMuxError::InvalidResponseData("missing id in Luma response".to_string())
             })?
             .to_string();
-        let retries = retry::prepare_retries(
-            options.max_retries,
-            self.retry_config(),
-            options.abort_signal.clone(),
-        );
 
-        // Poll for completion
-        let mut image_url = None;
-        for _ in 0..max_poll_attempts {
-            let pr = retries
-                .retry(|| {
-                    aimux_provider_utils::get_from_api(
-                        HttpRequest::new(
-                            self.generations_url(Some(&generation_id)),
-                            header_list.clone(),
-                            options,
-                        ),
-                        aimux_provider_utils::create_json_response_handler::<Value>(),
-                        luma_failed_response_handler(),
-                    )
-                })
+        // Poll for completion.
+        let poll_url = generations_url(Some(&generation_id));
+        let image_url = poll_until(
+            &format!("luma generation {generation_id}"),
+            options.abort_signal.as_ref(),
+            poll_interval,
+            MAX_POLL_ATTEMPTS,
+            || async {
+                let pr = aimux_provider_utils::get_from_api(
+                    exchange.request(poll_url.clone(), options),
+                    aimux_provider_utils::create_json_response_handler::<Value>(),
+                    luma_failed_response_handler(),
+                )
                 .await?;
-            let response_body = pr.raw_value.as_ref().map(ToString::to_string);
-            let pv = pr.value;
+                let response_body = pr.raw_value.as_ref().map(ToString::to_string);
+                let pv = pr.value;
 
-            let state = pv.get("state").and_then(|v| v.as_str()).unwrap_or("");
-            if state == "completed" {
-                image_url = pv
-                    .get("assets")
-                    .and_then(|a| a.get("image"))
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                if image_url.is_none() {
-                    return Err(AiMuxError::InvalidResponseData(format!(
-                        "Luma generation {generation_id} completed without assets.image"
-                    )));
+                let state = pv.get("state").and_then(|v| v.as_str()).unwrap_or("");
+                if state == "completed" {
+                    return pv
+                        .get("assets")
+                        .and_then(|a| a.get("image"))
+                        .and_then(|v| v.as_str())
+                        .map(|url| PollStep::Ready(url.to_string()))
+                        .ok_or_else(|| {
+                            AiMuxError::InvalidResponseData(format!(
+                                "Luma generation {generation_id} completed without assets.image"
+                            ))
+                        });
                 }
-                break;
-            }
-            if state == "failed" {
-                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                    status_code: Some(200),
-                    provider_code: Some(state.to_string()),
-                    message: "Image generation failed.".into(),
-                    response_body,
-                    ..ApiCallError::new(
-                        "Image generation failed.",
-                        self.generations_url(Some(&generation_id)),
-                        serde_json::json!({}),
-                    )
-                })));
-            }
-            sleep_or_abort(
-                std::time::Duration::from_millis(poll_interval),
-                options.abort_signal.as_ref(),
-            )
-            .await?;
-        }
-
-        let image_url = image_url.ok_or_else(|| {
-            AiMuxError::Timeout(format!(
-                "luma generation {generation_id} polling timed out after {max_poll_attempts} attempts ({}ms)",
-                max_poll_attempts * poll_interval
-            ))
-        })?;
+                if state == "failed" {
+                    return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                        status_code: Some(200),
+                        provider_code: Some(state.to_string()),
+                        message: "Image generation failed.".into(),
+                        response_body,
+                        ..ApiCallError::new(
+                            "Image generation failed.",
+                            poll_url.clone(),
+                            serde_json::json!({}),
+                        )
+                    })));
+                }
+                Ok(PollStep::Pending)
+            },
+        )
+        .await?;
 
         // Download image; assets.image is a URL from the poll response body,
         // so it goes through the SSRF download guard.
-        let ir = retries
-            .retry(|| {
-                aimux_provider_utils::get_from_api(
-                    HttpRequest {
-                        url: image_url.clone(),
-                        headers: vec![],
-
-                        abort_signal: options.abort_signal.clone(),
-                        call_id: None,
-                        recording_context: None,
-                        response_timeout: None,
-                        max_json_response_bytes: None,
-                        validate_url: true,
-                        trusted_origin: Some(self.config.base_url.clone()),
-                        credentialed_origin: Some(self.config.base_url.clone()),
-                    },
-                    aimux_provider_utils::create_binary_response_handler(),
-                    aimux_provider_utils::create_status_code_error_response_handler(),
-                )
-            })
-            .await?;
+        let ir = retry_download(options.abort_signal.as_ref(), poll_interval, || {
+            aimux_provider_utils::get_from_api(
+                HttpRequest {
+                    url: image_url.clone(),
+                    abort_signal: options.abort_signal.clone(),
+                    validate_url: true,
+                    trusted_origin: Some(exchange.base_url().to_string()),
+                    credentialed_origin: Some(exchange.base_url().to_string()),
+                    ..Default::default()
+                },
+                aimux_provider_utils::create_binary_response_handler(),
+                aimux_provider_utils::create_status_code_error_response_handler(),
+            )
+        })
+        .await?;
         let image_bytes = ir.value.to_vec();
 
         Ok(ImageResult {

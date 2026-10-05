@@ -1,4 +1,4 @@
-﻿//! Rust translation of the fal image model tests.
+//! Rust translation of the fal image model tests.
 //! Source: `reference/ai/packages/fal/src/fal-image-model.test.ts`
 
 use serde_json::{Value, json};
@@ -6,7 +6,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs};
-use aimux_providers::{FalConfig, FalProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{FalProviderSettings, create_fal};
 
 const PROMPT: &str = "A cute baby sea otter";
 
@@ -35,8 +36,12 @@ fn options(prompt: &str) -> ImageCallOptions {
 async fn should_extract_generated_images() {
     let server = MockServer::start().await;
     mock_fal(&server, fal_response(&server.uri())).await;
-    let config = FalConfig::new("test-key").with_base_url(server.uri());
-    let model = FalProvider::new(config).image("fal-ai/flux/schnell");
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_fal(config).unwrap().image("fal-ai/flux/schnell");
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
     match result.images {
         ImageOutputs::Binary(imgs) => {
@@ -51,8 +56,12 @@ async fn should_extract_generated_images() {
 async fn should_pass_prompt_and_n() {
     let server = MockServer::start().await;
     mock_fal(&server, fal_response(&server.uri())).await;
-    let config = FalConfig::new("test-key").with_base_url(server.uri());
-    let model = FalProvider::new(config).image("fal-ai/flux/schnell");
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_fal(config).unwrap().image("fal-ai/flux/schnell");
     let mut opts = options(PROMPT);
     opts.n = 1;
     model.do_generate(&opts).await.unwrap();
@@ -66,8 +75,12 @@ async fn should_pass_prompt_and_n() {
 async fn should_pass_size() {
     let server = MockServer::start().await;
     mock_fal(&server, fal_response(&server.uri())).await;
-    let config = FalConfig::new("test-key").with_base_url(server.uri());
-    let model = FalProvider::new(config).image("fal-ai/flux/schnell");
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_fal(config).unwrap().image("fal-ai/flux/schnell");
     let mut opts = options(PROMPT);
     opts.n = 1;
     opts.size = Some(aimux_core::shared::Size::new(1024, 1024));
@@ -82,8 +95,12 @@ async fn should_pass_size() {
 async fn should_pass_aspect_ratio() {
     let server = MockServer::start().await;
     mock_fal(&server, fal_response(&server.uri())).await;
-    let config = FalConfig::new("test-key").with_base_url(server.uri());
-    let model = FalProvider::new(config).image("fal-ai/flux/schnell");
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_fal(config).unwrap().image("fal-ai/flux/schnell");
     let mut opts = options(PROMPT);
     opts.n = 1;
     opts.aspect_ratio = Some(aimux_core::shared::AspectRatio::new(16, 9));
@@ -97,8 +114,12 @@ async fn should_pass_aspect_ratio() {
 async fn should_pass_seed() {
     let server = MockServer::start().await;
     mock_fal(&server, fal_response(&server.uri())).await;
-    let config = FalConfig::new("test-key").with_base_url(server.uri());
-    let model = FalProvider::new(config).image("fal-ai/flux/schnell");
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_fal(config).unwrap().image("fal-ai/flux/schnell");
     let mut opts = options(PROMPT);
     opts.n = 1;
     opts.seed = Some(42);
@@ -112,8 +133,12 @@ async fn should_pass_seed() {
 async fn should_pass_auth_headers() {
     let server = MockServer::start().await;
     mock_fal(&server, fal_response(&server.uri())).await;
-    let config = FalConfig::new("test-key").with_base_url(server.uri());
-    let model = FalProvider::new(config).image("fal-ai/flux/schnell");
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_fal(config).unwrap().image("fal-ai/flux/schnell");
     model.do_generate(&options(PROMPT)).await.unwrap();
     let reqs = server.received_requests().await.unwrap();
     assert_eq!(
@@ -131,8 +156,12 @@ async fn should_pass_auth_headers() {
 async fn should_forward_provider_options() {
     let server = MockServer::start().await;
     mock_fal(&server, fal_response(&server.uri())).await;
-    let config = FalConfig::new("test-key").with_base_url(server.uri());
-    let model = FalProvider::new(config).image("fal-ai/flux/schnell");
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_fal(config).unwrap().image("fal-ai/flux/schnell");
     let mut opts = options(PROMPT);
     opts.n = 1;
     opts.provider_options.insert(
@@ -155,8 +184,12 @@ async fn should_handle_single_image_response() {
     let server = MockServer::start().await;
     let body = json!({ "image": { "url": format!("{}/image.png", server.uri()) } });
     mock_fal(&server, body).await;
-    let config = FalConfig::new("test-key").with_base_url(server.uri());
-    let model = FalProvider::new(config).image("fal-ai/flux/schnell");
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_fal(config).unwrap().image("fal-ai/flux/schnell");
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
     match result.images {
         ImageOutputs::Binary(imgs) => assert_eq!(imgs.len(), 1),

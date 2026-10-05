@@ -5,6 +5,8 @@ use futures::StreamExt;
 
 use aimux_core::{AiMuxError, ApiCallError};
 
+use crate::fetch::FetchResponse;
+
 /// Default maximum buffered response size for binary downloads (2 GiB,
 /// matching AI SDK).
 pub const DEFAULT_MAX_DOWNLOAD_SIZE: usize = 2 * 1024 * 1024 * 1024;
@@ -15,7 +17,7 @@ pub const DEFAULT_MAX_DOWNLOAD_SIZE: usize = 2 * 1024 * 1024 * 1024;
 /// `serde_json::Value`, and a deserialized struct — a 2 GiB cap lets a single
 /// response balloon to several times that in resident memory. This bound is
 /// per-request configurable via `HttpRequest::max_json_response_bytes`.
-pub const DEFAULT_MAX_JSON_RESPONSE_SIZE: usize = 64 * 1024 * 1024;
+pub(crate) const DEFAULT_MAX_JSON_RESPONSE_SIZE: usize = 64 * 1024 * 1024;
 
 /// Read a response incrementally and fail before unbounded allocation.
 ///
@@ -24,7 +26,7 @@ pub const DEFAULT_MAX_JSON_RESPONSE_SIZE: usize = 64 * 1024 * 1024;
 /// Returns an API-call error when the body exceeds `max_bytes` or cannot be
 /// read, and an abort error when the caller cancels.
 pub async fn read_response_with_size_limit(
-    response: reqwest::Response,
+    response: FetchResponse,
     url: &str,
     request_body_values: &serde_json::Value,
     max_bytes: usize,
@@ -107,7 +109,7 @@ pub async fn read_response_with_size_limit(
 /// Returns an abort error when the caller cancels; never fails on read or
 /// size problems.
 pub(crate) async fn read_error_body_truncated(
-    response: reqwest::Response,
+    response: FetchResponse,
     max_bytes: usize,
     abort_signal: Option<&aimux_core::AbortSignal>,
 ) -> Result<(Vec<u8>, bool), AiMuxError> {

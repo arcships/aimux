@@ -11,10 +11,9 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
-use aimux_providers::{SearxngConfig, SearxngProvider};
+use aimux_providers::{SearxngProvider, SearxngProviderSettings, create_searxng};
 
 // -- helpers -----------------------------------------------------------------
 
@@ -41,8 +40,11 @@ fn search_body() -> Value {
 }
 
 fn provider(server: &MockServer) -> SearxngProvider {
-    let config = SearxngConfig::new(server.uri());
-    SearxngProvider::new(config)
+    let config = SearxngProviderSettings {
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_searxng(config).unwrap()
 }
 
 fn opts(query: &str) -> SearchCallOptions {
@@ -174,50 +176,16 @@ async fn status_401_maps_to_auth_error() {
 
 // -- Provider trait ----------------------------------------------------------
 
-#[tokio::test]
-async fn provider_name_is_searxng() {
-    let config = SearxngConfig::new("http://localhost:8080");
-    let provider = SearxngProvider::new(config);
-    assert_eq!(provider.name(), "searxng");
-}
-
-#[test]
-fn language_model_returns_unsupported_error() {
-    let config = SearxngConfig::new("http://localhost:8080");
-    let provider = SearxngProvider::new(config);
-    match provider.language_model("searxng-search") {
-        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
-            assert!(
-                msg.contains("provider 'searxng' does not provide language models"),
-                "unexpected message: {msg}"
-            );
-        }
-        _ => panic!("expected Unsupported error, got success or another error variant"),
-    }
-}
-
 #[test]
 fn model_id_is_searxng_search() {
-    let config = SearxngConfig::new("http://localhost:8080");
-    let provider = SearxngProvider::new(config);
+    let config = SearxngProviderSettings {
+        base_url: Some("http://localhost:8080".to_string()),
+        ..Default::default()
+    };
+    let provider = create_searxng(config).unwrap();
     let model = provider.search_model();
     assert_eq!(model.model_id(), "searxng-search");
-    assert_eq!(model.provider(), "searxng");
+    assert_eq!(model.provider(), "searxng.search");
 }
 
-// -- from_env ----------------------------------------------------------------
-
-#[test]
-fn from_env_requires_searxng_url() {
-    // Ensure the variable is unset for this test.
-    // SAFETY: this is the only test in this binary that touches `SEARXNG_URL`,
-    // so there is no concurrent access from other tests.
-    unsafe {
-        std::env::remove_var("SEARXNG_URL");
-    }
-    let result = SearxngConfig::from_env();
-    assert!(
-        matches!(result, Err(AiMuxError::InvalidArgument(ref m)) if m.contains("SEARXNG_URL")),
-        "expected InvalidArgument error, got {result:?}"
-    );
-}
+// -- instance URL -----------------------------------------------------------

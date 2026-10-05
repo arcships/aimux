@@ -102,8 +102,6 @@ pub struct GenerateTextOptions {
     pub reasoning: Option<ReasoningEffort>,
     /// System instructions prepended to the prompt.
     pub instructions: Option<String>,
-    /// Per-call request body overrides (deep-merged). See RFC-0017.
-    pub body_overrides: Option<Value>,
     /// Per-call retry count override. `None` = provider default, `Some(0)` = disable.
     pub max_retries: Option<u32>,
     /// Per-call timeout configuration (total / first-chunk / chunk idle).
@@ -153,7 +151,6 @@ impl GenerateTextOptions {
             headers: self.headers,
             provider_options: self.provider_options,
             reasoning: self.reasoning,
-            body_overrides: self.body_overrides,
             max_retries: self.max_retries,
             timeout: self.timeout,
             session_id: self.session_id,
@@ -562,11 +559,7 @@ pub(crate) async fn generate_text_from_language_model_prompt(
     let operation_timeout =
         timeout::OperationTimeout::new(call_options.timeout.unwrap_or_default())?;
     let abort_signal = call_options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        call_options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(call_options.max_retries, abort_signal.clone());
 
     // 2a. RFC-0023: 关闭时零成本(M2 评审)——仅在录制开启时生成 call_id
     //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier
@@ -582,8 +575,10 @@ pub(crate) async fn generate_text_from_language_model_prompt(
             model.provider(),
             model.model_id(),
         );
-        ctx.recorder
-            .record_provider(&ctx.call_id, &model.config_snapshot());
+        ctx.recorder.record_provider(
+            &ctx.call_id,
+            &crate::recording::ProviderRecord::from_model(model.provider(), model.model_id()),
+        );
         // 层 A 早发 closed(defense-in-depth):无 HTTP 的调用(mock/local)也
         // 能完成 barrier;真实 HTTP 的骨架 finalized=false 仍会挡写,由层 B
         // 结束再发 closed 完成。双发幂等。
@@ -917,11 +912,7 @@ pub async fn stream_text(
         .map(|duration_ms| timeout::TimeoutDeadline::from_now("First chunk", duration_ms))
         .transpose()?;
     let abort_signal = call_options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        call_options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(call_options.max_retries, abort_signal.clone());
 
     // 2a. RFC-0023: 关闭时零成本(M2 评审)——仅在录制开启时生成 call_id
     //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier
@@ -937,8 +928,10 @@ pub async fn stream_text(
             model.provider(),
             model.model_id(),
         );
-        ctx.recorder
-            .record_provider(&ctx.call_id, &model.config_snapshot());
+        ctx.recorder.record_provider(
+            &ctx.call_id,
+            &crate::recording::ProviderRecord::from_model(model.provider(), model.model_id()),
+        );
         // 层 A 早发 closed(defense-in-depth):无 HTTP 的调用(mock/local)也
         // 能完成 barrier;真实 HTTP 的骨架 finalized=false 仍会挡写,由层 B
         // 结束再发 closed 完成。双发幂等。
@@ -1122,8 +1115,7 @@ pub async fn stream_text(
                             sent_response_metadata = true;
                             yield Ok(StreamPart::ResponseMetadata(response_metadata.clone()));
                         }
-                        yield Ok(part.map_payloads(|_| unreachable!("finish has no tool call"), |_| unreachable!("finish has no approval"))
-                            .map_reasoning_file(|file| ReasoningFileOutput { provider_metadata: file.provider_metadata.clone(), file }));
+                        yield Ok(part.map_payloads(|_| unreachable!("finish has no tool call"), |_| unreachable!("finish has no approval")).map_reasoning_file(|_| unreachable!("finish has no file")));
                     }
                     Ok(StreamPart::ToolCall(raw)) => {
                         let parsed = parse_tool_call(

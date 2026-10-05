@@ -31,10 +31,10 @@ pub struct Choice {
 pub struct MessageResponse {
     pub role: String,
     pub content: Option<String>,
-    /// Reasoning text (Groq / OpenAI o-series models).
+    /// Reasoning text (`reasoning` field of OpenAI-shaped servers).
     #[serde(default)]
     pub reasoning: Option<String>,
-    /// DeepSeek / 阿里通义等厂商的 reasoning_content 字段。
+    /// `reasoning_content` field of OpenAI-shaped servers (DashScope and others).
     /// 优先于 `reasoning`（当两者同时存在时）。
     #[serde(default)]
     pub reasoning_content: Option<String>,
@@ -113,16 +113,6 @@ pub struct StreamChunk {
     pub choices: Vec<StreamChoice>,
     #[serde(default)]
     pub usage: Option<UsageResponse>,
-    /// Groq-specific extension: usage is sent in `x_groq.usage` during streaming.
-    #[serde(default)]
-    pub x_groq: Option<XGroq>,
-}
-
-/// Groq streaming extension (`x_groq` field in SSE chunks).
-#[derive(Debug, Deserialize, Default)]
-pub struct XGroq {
-    #[serde(default)]
-    pub usage: Option<UsageResponse>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -140,10 +130,10 @@ pub struct StreamChoice {
 pub struct Delta {
     #[serde(default)]
     pub content: Option<String>,
-    /// Reasoning text delta (Groq / OpenAI o-series).
+    /// Reasoning text delta (`reasoning` field of OpenAI-shaped servers).
     #[serde(default)]
     pub reasoning: Option<String>,
-    /// DeepSeek / 阿里通义等厂商的 reasoning_content delta。
+    /// `reasoning_content` delta of OpenAI-shaped servers (DashScope and others).
     /// 优先于 `reasoning`。
     #[serde(default)]
     pub reasoning_content: Option<String>,

@@ -9,7 +9,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs};
-use aimux_providers::{StabilityConfig, StabilityProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{StabilityProviderSettings, create_stability};
 
 const PROMPT: &str = "A cute baby sea otter";
 const API_KEY: &str = "test-key";
@@ -36,8 +37,14 @@ async fn should_extract_generated_image() {
     let server = MockServer::start().await;
     mock_ultra_image(&server, b"fake-stability-image".to_vec()).await;
 
-    let config = StabilityConfig::new(API_KEY).with_base_url(server.uri());
-    let model = StabilityProvider::new(config).image("stable-image-ultra");
+    let config = StabilityProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_stability(config)
+        .unwrap()
+        .image("stable-image-ultra");
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
 
     match result.images {
@@ -54,8 +61,14 @@ async fn should_use_correct_url_for_ultra() {
     let server = MockServer::start().await;
     mock_ultra_image(&server, b"image".to_vec()).await;
 
-    let config = StabilityConfig::new(API_KEY).with_base_url(server.uri());
-    let model = StabilityProvider::new(config).image("stable-image-ultra");
+    let config = StabilityProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_stability(config)
+        .unwrap()
+        .image("stable-image-ultra");
     model.do_generate(&options(PROMPT)).await.unwrap();
 
     let reqs = server.received_requests().await.unwrap();
@@ -76,8 +89,12 @@ async fn should_use_correct_url_for_core() {
         .mount(&server)
         .await;
 
-    let config = StabilityConfig::new(API_KEY).with_base_url(server.uri());
-    let model = StabilityProvider::new(config).image("stable-image-core");
+    let config = StabilityProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_stability(config).unwrap().image("stable-image-core");
     model.do_generate(&options(PROMPT)).await.unwrap();
 
     let reqs = server.received_requests().await.unwrap();
@@ -98,8 +115,12 @@ async fn should_use_correct_url_for_sd3() {
         .mount(&server)
         .await;
 
-    let config = StabilityConfig::new(API_KEY).with_base_url(server.uri());
-    let model = StabilityProvider::new(config).image("sd3");
+    let config = StabilityProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_stability(config).unwrap().image("sd3");
     model.do_generate(&options(PROMPT)).await.unwrap();
 
     let reqs = server.received_requests().await.unwrap();
@@ -112,8 +133,14 @@ async fn should_pass_auth_header() {
     let server = MockServer::start().await;
     mock_ultra_image(&server, b"image".to_vec()).await;
 
-    let config = StabilityConfig::new(API_KEY).with_base_url(server.uri());
-    let model = StabilityProvider::new(config).image("stable-image-ultra");
+    let config = StabilityProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_stability(config)
+        .unwrap()
+        .image("stable-image-ultra");
     model.do_generate(&options(PROMPT)).await.unwrap();
 
     let reqs = server.received_requests().await.unwrap();
@@ -133,8 +160,14 @@ async fn should_pass_prompt_and_output_format_in_multipart_body() {
     let server = MockServer::start().await;
     mock_ultra_image(&server, b"image".to_vec()).await;
 
-    let config = StabilityConfig::new(API_KEY).with_base_url(server.uri());
-    let model = StabilityProvider::new(config).image("stable-image-ultra");
+    let config = StabilityProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_stability(config)
+        .unwrap()
+        .image("stable-image-ultra");
     model.do_generate(&options(PROMPT)).await.unwrap();
 
     let reqs = server.received_requests().await.unwrap();
@@ -156,8 +189,14 @@ async fn should_pass_seed_and_aspect_ratio() {
     let server = MockServer::start().await;
     mock_ultra_image(&server, b"image".to_vec()).await;
 
-    let config = StabilityConfig::new(API_KEY).with_base_url(server.uri());
-    let model = StabilityProvider::new(config).image("stable-image-ultra");
+    let config = StabilityProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_stability(config)
+        .unwrap()
+        .image("stable-image-ultra");
     let mut opts = options(PROMPT);
     opts.seed = Some(42);
     opts.aspect_ratio = Some(aimux_core::shared::AspectRatio::new(16, 9));
@@ -194,8 +233,14 @@ async fn should_map_401_to_auth_error() {
         .mount(&server)
         .await;
 
-    let config = StabilityConfig::new(API_KEY).with_base_url(server.uri());
-    let model = StabilityProvider::new(config).image("stable-image-ultra");
+    let config = StabilityProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_stability(config)
+        .unwrap()
+        .image("stable-image-ultra");
     let result = model.do_generate(&options(PROMPT)).await;
 
     assert!(result.is_err());
@@ -223,12 +268,23 @@ async fn should_decode_base64_json_response() {
         .mount(&server)
         .await;
 
-    let config = StabilityConfig::new(API_KEY).with_base_url(server.uri());
+    let config = StabilityProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
     // Override Accept to request the JSON/base64 response shape.
-    let mut headers = std::collections::HashMap::new();
-    headers.insert("Accept".to_string(), "application/json".to_string());
-    let config = config.with_headers(headers);
-    let model = StabilityProvider::new(config).image("stable-image-ultra");
+    let config = StabilityProviderSettings {
+        headers: Some(
+            [("Accept".to_string(), Some("application/json".to_string()))]
+                .into_iter()
+                .collect(),
+        ),
+        ..config
+    };
+    let model = create_stability(config)
+        .unwrap()
+        .image("stable-image-ultra");
     let result = model.do_generate(&options(PROMPT)).await.unwrap();
 
     match result.images {

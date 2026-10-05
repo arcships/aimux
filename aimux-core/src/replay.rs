@@ -49,10 +49,10 @@ pub trait ReplayMatcher: Send + Sync {
 
 /// 精确匹配:provider/model_id 相同,且 prompt + 影响响应的可重放选项
 /// (temperature/max_output_tokens/seed/response_format/tools/tool_choice)
-/// 以及 headers/provider_options/body_overrides 规范相同才命中。运行时字段
+/// 以及 headers/provider_options 规范相同才命中。运行时字段
 /// (call_id/abort_signal/recording_context)不参与比较。
 ///
-/// headers/provider_options/body_overrides 用**脱敏感知比较**:录制侧这些
+/// headers/provider_options 用**脱敏感知比较**:录制侧这些
 /// 字段经 `recording::redact_json` 脱敏
 /// (敏感键值→`"[REDACTED]"`),脱敏值视为通配,匹配任意显式请求值;非脱敏
 /// 部分仍精确比较。规则见 `redaction_aware_eq`。
@@ -93,9 +93,9 @@ impl ReplayMatcher for ExactMatcher {
 /// `CallOptions` 中影响响应、可重放选项的规范键(ExactMatcher 用)。
 ///
 /// 含 prompt + temperature/max_output_tokens/seed/response_format/tools/
-/// tool_choice + headers/provider_options/body_overrides;排除运行时字段
+/// tool_choice + headers/provider_options;排除运行时字段
 /// (call_id/abort_signal/recording_context)。序列化为 `Value` 后比较,
-/// 等价于"稳定规范哈希"但无碰撞风险。headers/provider_options/body_overrides
+/// 等价于"稳定规范哈希"但无碰撞风险。headers/provider_options
 /// 在比较时走脱敏感知语义(见 [`canonical_keys_match`])。
 fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {
     serde_json::json!({
@@ -108,7 +108,6 @@ fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {
         "tool_choice": serde_json::to_value(&opts.tool_choice).unwrap_or_default(),
         "headers": serde_json::to_value(&opts.headers).unwrap_or_default(),
         "provider_options": serde_json::to_value(&opts.provider_options).unwrap_or_default(),
-        "body_overrides": serde_json::to_value(&opts.body_overrides).unwrap_or_default(),
     })
 }
 
@@ -125,11 +124,10 @@ fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
         "tool_choice": o.get("tool_choice").cloned().unwrap_or_default(),
         "headers": o.get("headers").cloned().unwrap_or_default(),
         "provider_options": o.get("provider_options").cloned().unwrap_or_default(),
-        "body_overrides": o.get("body_overrides").cloned().unwrap_or_default(),
     })
 }
 
-/// 脱敏感知比较(用于 headers/provider_options/body_overrides)。
+/// 脱敏感知比较(用于 headers/provider_options)。
 ///
 /// 录制侧这些字段经 `recording::redact_json`
 /// 脱敏:敏感键(authorization/api-key/apikey/key/token/cookie/...)的**值**
@@ -171,7 +169,7 @@ fn redaction_aware_eq(rec: &serde_json::Value, req: &serde_json::Value) -> bool 
     }
 }
 
-/// 比较规范键:headers/provider_options/body_overrides 用脱敏感知比较
+/// 比较规范键:headers/provider_options 用脱敏感知比较
 /// (录制侧可能已脱敏);其余字段(prompt/temperature/...)精确比较。
 ///
 /// 注意:`max_output_tokens` 等含 "token" 子串的字段在录制侧也会被
@@ -179,7 +177,7 @@ fn redaction_aware_eq(rec: &serde_json::Value, req: &serde_json::Value) -> bool 
 /// 被脱敏为 `"[REDACTED]"` 而请求值为数值,精确比较会 miss(保守:宁可 miss
 /// 不可误 hit,因为 max_output_tokens 影响响应,通配会引入伪命中)。
 fn canonical_keys_match(rec_key: &serde_json::Value, call_key: &serde_json::Value) -> bool {
-    const REDACTED_FIELDS: [&str; 3] = ["headers", "provider_options", "body_overrides"];
+    const REDACTED_FIELDS: [&str; 2] = ["headers", "provider_options"];
     let (ro, co) = match (rec_key.as_object(), call_key.as_object()) {
         (Some(a), Some(b)) => (a, b),
         _ => return rec_key == call_key,
@@ -432,8 +430,9 @@ impl MockReplayModel {
     ///
     /// # Errors
     ///
-    /// Returns `AiMuxError::InvalidArgument` when the file cannot be read or
-    /// contains no recordings, and `JsonParse` when a line is not valid JSON.
+    /// Returns `AiMuxError::InvalidArgument` when the file cannot be read,
+    /// contains no recordings, or holds a recording of an unsupported schema,
+    /// and `JsonParse` when a line is not valid JSON.
     pub fn from_jsonl(path: &str) -> Result<Self, AiMuxError> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| AiMuxError::InvalidArgument(format!("mock replay: {e}")))?;
@@ -442,8 +441,16 @@ impl MockReplayModel {
             if line.trim().is_empty() {
                 continue;
             }
-            let rec: Recording = serde_json::from_str(line)
-                .map_err(|e| AiMuxError::JsonParse(format!("mock replay line {}: {e}", idx + 1)))?;
+            let rec: Recording = serde_json::from_str(line).map_err(|e| {
+                let msg = format!("mock replay line {}: {e}", idx + 1);
+                // Well-formed JSON that is not a current-schema `Recording`
+                // (including an old `schema`) is a bad argument, not a parse error.
+                if e.classify() == serde_json::error::Category::Data {
+                    AiMuxError::InvalidArgument(msg)
+                } else {
+                    AiMuxError::JsonParse(msg)
+                }
+            })?;
             recordings.push(rec);
         }
         if recordings.is_empty() {
@@ -936,13 +943,11 @@ pub struct ReplayOverrides {
 ///   - `recording.input.options` 中的 headers/provider_options 已脱敏,
 ///     重发会用脱敏后的 `[REDACTED]` 值——需要真实头时用 `overrides` 或
 ///     重建 provider 时补充。
-///   - 逐消息 `provider_options`(如 anthropic cacheControl)不参与重建。
 ///
 /// # Errors
 ///
 /// Returns `AiMuxError::JsonParse` when the recorded call options cannot be
-/// deserialized, `AiMuxError::InvalidPrompt` for inline text file data without
-/// a user-facing representation, and propagates errors from `generate_text`.
+/// deserialized, and propagates errors from the generation pipeline.
 pub async fn replay_with_model(
     recording: &Recording,
     model: &dyn LanguageModel,
@@ -993,7 +998,6 @@ fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
         provider_options: o.provider_options,
         reasoning: o.reasoning,
         instructions: None,
-        body_overrides: o.body_overrides,
         max_retries: o.max_retries,
         timeout: o.timeout,
         session_id: o.session_id,
@@ -1046,14 +1050,7 @@ mod tests {
                 prompt: input_prompt,
                 options: serde_json::json!({ "temperature": 0.7 }),
             },
-            provider: ProviderRecord {
-                provider: "openai".into(),
-                model_id: "gpt-4o".into(),
-                base_url: None,
-                api_key_source: "none".into(),
-                profile: None,
-                provider_options: None,
-            },
+            provider: ProviderRecord::new("openai", "openai", "gpt-4o"),
             exchanges: vec![HttpExchange {
                 step: None,
                 attempt: 0,

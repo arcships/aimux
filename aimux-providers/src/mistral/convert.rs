@@ -12,6 +12,7 @@ use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
+use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Value, json};
 
 // ── Prepared tools ──────────────────────────────────────────────────────────
@@ -106,7 +107,7 @@ pub fn prepare_tools(
 ///   does not carry the tool name on `ToolResult` parts).
 ///
 /// # Errors
-/// Returns an error for unsupported text file data.
+/// Returns an error for text file parts or an unresolved inline file media type.
 pub fn convert_prompt_to_mistral_messages(
     prompt: &LanguageModelPrompt,
 ) -> Result<Vec<Value>, AiMuxError> {
@@ -237,17 +238,17 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
                         }
                         FileBytes::Base64(data) => data.clone(),
                     };
-                    format!("data:{};base64,{}", file.media_type, b64)
+                    format!("data:{};base64,{}", resolve_full_media_type(file)?, b64)
                 }
                 FileData::Url { url, .. } => url.clone(),
                 FileData::Reference { .. } => return Ok(Value::Null),
                 FileData::Text { .. } => {
                     return Err(AiMuxError::UnsupportedFunctionality(
-                        "text file parts".to_string(),
+                        "text file parts".into(),
                     ));
                 }
             };
-            if file.media_type.split('/').next() == Some("image") {
+            if get_top_level_media_type(&file.media_type) == "image" {
                 json!({ "type": "image_url", "image_url": url })
             } else {
                 json!({ "type": "document_url", "document_url": url })
@@ -261,7 +262,7 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
 /// Convert `CallOptions` to a Mistral request body.
 ///
 /// # Errors
-/// Returns an error for unsupported text file data.
+/// Returns an error for text file parts or an unresolved inline file media type.
 pub fn build_request_body(
     model_id: &str,
     options: &CallOptions,

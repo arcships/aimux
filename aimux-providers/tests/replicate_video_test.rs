@@ -1,8 +1,9 @@
-﻿//! Rust translation of the Replicate video model tests.
+//! Rust translation of the Replicate video model tests.
 //! Source: `reference/ai/packages/replicate/src/replicate-video-model.test.ts`
 
 use aimux_core::video_model::{VideoCallOptions, generate_video};
-use aimux_providers::{ReplicateConfig, ReplicateProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{ReplicateProviderSettings, create_replicate};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use wiremock::matchers::{method, path};
@@ -41,8 +42,12 @@ async fn mock_predict_and_result(server: &MockServer, output: &Value) {
 async fn should_generate_video() {
     let server = MockServer::start().await;
     mock_predict_and_result(&server, &json!("https://cdn.replicate.com/video.mp4")).await;
-    let config = ReplicateConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ReplicateProvider::new(config);
+    let config = ReplicateProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_replicate(config).unwrap();
     let model = provider.video("wan-lab/wan-2.1-t2v-14b");
     let r = generate_video(&model, options("A cat")).await.unwrap();
     assert_eq!(r.videos.len(), 1);
@@ -52,8 +57,12 @@ async fn should_generate_video() {
 async fn should_pass_model_and_prompt() {
     let server = MockServer::start().await;
     mock_predict_and_result(&server, &json!("https://cdn.replicate.com/video.mp4")).await;
-    let config = ReplicateConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ReplicateProvider::new(config);
+    let config = ReplicateProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_replicate(config).unwrap();
     let model = provider.video("wan-lab/wan-2.1-t2v-14b");
     generate_video(&model, options("A cat")).await.unwrap();
     let requests = server.received_requests().await.unwrap();
@@ -68,10 +77,13 @@ async fn should_pass_headers() {
     mock_predict_and_result(&server, &json!("https://cdn.replicate.com/video.mp4")).await;
     let mut ph = HashMap::new();
     ph.insert("Custom-Header".to_string(), "val".to_string());
-    let config = ReplicateConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(ph);
-    let provider = ReplicateProvider::new(config);
+    let config = ReplicateProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some((ph).into_iter().map(|(k, v)| (k, Some(v))).collect()),
+        ..Default::default()
+    };
+    let provider = create_replicate(config).unwrap();
     let model = provider.video("test-model");
     let mut opts = options("test");
     let mut rh = HashMap::new();
@@ -88,8 +100,12 @@ async fn should_pass_headers() {
 async fn should_include_response_data() {
     let server = MockServer::start().await;
     mock_predict_and_result(&server, &json!("https://cdn.replicate.com/video.mp4")).await;
-    let config = ReplicateConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ReplicateProvider::new(config);
+    let config = ReplicateProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_replicate(config).unwrap();
     let model = provider.video("test-model");
     let r = generate_video(&model, options("test")).await.unwrap();
     assert!(r.response.timestamp.is_some());

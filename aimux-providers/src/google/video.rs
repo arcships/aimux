@@ -8,8 +8,6 @@
 //! 2. GET `{base_url}/{operation_name}` — polled by Core via `do_status` until `done: true`
 //! 3. Return video URL(s) from operation result
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -19,9 +17,7 @@ use aimux_core::video_model::{
     VideoResponse, VideoResult,
 };
 
-use aimux_provider_utils::HttpRequest;
-
-use super::GoogleConfig;
+use crate::shared::EndpointConfig;
 
 /// A Google video generation model.
 ///
@@ -29,48 +25,22 @@ use super::GoogleConfig;
 /// `Client` internally (RFC-0009 §4.1).
 pub struct GoogleVideoModel {
     model_id: String,
-    config: GoogleConfig,
+    config: EndpointConfig,
 }
 
 impl GoogleVideoModel {
-    #[must_use]
-    pub fn new(model_id: String, config: GoogleConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut h = HashMap::new();
-        h.insert("x-goog-api-key".to_string(), self.config.api_key.clone());
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        h
-    }
-
-    fn predict_url(&self) -> String {
-        format!(
-            "{}/models/{}:predictLongRunning",
-            self.config.base_url, self.model_id
-        )
-    }
-
-    fn operation_url(&self, name: &str) -> String {
-        format!("{}/{}", self.config.base_url, name)
     }
 }
 
 #[async_trait]
 impl VideoModel for GoogleVideoModel {
     fn provider(&self) -> &str {
-        "google"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
     fn max_videos_per_call(&self) -> Option<u32> {
         Some(1)
@@ -109,25 +79,12 @@ impl VideoModel for GoogleVideoModel {
             "parameters": Value::Object(parameters),
         });
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        let url = self.predict_url();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let url = exchange.url(&format!("/models/{}:predictLongRunning", self.model_id));
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url,
-                headers: header_list.clone(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                ..Default::default()
-            },
-            body,
+            exchange.request(url, options),
+            exchange.transform_body(body),
             aimux_provider_utils::create_json_response_handler(),
             super::google_failed_response_handler(),
         )
@@ -171,15 +128,10 @@ impl VideoModel for GoogleVideoModel {
                 )
             })?;
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        let poll_url = self.operation_url(operation_name);
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let poll_url = exchange.url(&format!("/{operation_name}"));
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest::new(poll_url.clone(), header_list, options),
+            exchange.request(poll_url.clone(), options),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             super::google_failed_response_handler(),
         )

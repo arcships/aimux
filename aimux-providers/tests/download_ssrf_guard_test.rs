@@ -14,7 +14,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::image_model::{ImageCallOptions, ImageModel};
-use aimux_providers::{RecraftConfig, RecraftProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{RecraftProviderSettings, create_recraft};
 
 const PROMPT: &str = "A cute baby sea otter";
 
@@ -34,8 +35,12 @@ async fn mock_generations_with_url(server: &MockServer, url: &str) {
 }
 
 fn make_model(server: &MockServer) -> impl ImageModel {
-    let config = RecraftConfig::new("test-recraft-key").with_base_url(server.uri());
-    RecraftProvider::new(config).image("recraftv3")
+    let config = RecraftProviderSettings {
+        api_key: Some(Resolvable::Value("test-recraft-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_recraft(config).unwrap().image("recraftv3")
 }
 
 #[tokio::test]

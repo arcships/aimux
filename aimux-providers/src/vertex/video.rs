@@ -8,8 +8,6 @@
 //! 2. GET operation — polled by Core via `do_status` until `done: true`
 //! 3. Return video URL(s)
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -19,9 +17,7 @@ use aimux_core::video_model::{
     VideoResponse, VideoResult,
 };
 
-use aimux_provider_utils::{HttpRequest, RetryConfig};
-
-use super::VertexAuth;
+use crate::shared::EndpointConfig;
 
 /// A Google Vertex AI video generation model.
 ///
@@ -29,93 +25,36 @@ use super::VertexAuth;
 /// `Client` internally (RFC-0009 §4.1).
 pub struct VertexVideoModel {
     model_id: String,
-    project: String,
-    location: String,
-    auth: VertexAuth,
-    base_url: String,
-    retry_config: RetryConfig,
+    config: EndpointConfig,
 }
 
 impl VertexVideoModel {
-    #[must_use]
-    pub fn new(
-        model_id: String,
-        project: String,
-        location: String,
-        auth: VertexAuth,
-        base_url: String,
-    ) -> Self {
-        Self {
-            model_id,
-            project,
-            location,
-            auth,
-            base_url,
-            retry_config: RetryConfig::default(),
-        }
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
+        Self { model_id, config }
     }
+}
 
-    pub(crate) fn with_retry_config(mut self, retry_config: RetryConfig) -> Self {
-        self.retry_config = retry_config;
-        self
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut h = HashMap::new();
-        match &self.auth {
-            VertexAuth::BearerToken(token) => {
-                h.insert("Authorization".to_string(), format!("Bearer {token}"));
-            }
-            VertexAuth::ApiKey(key) => {
-                h.insert("x-goog-api-key".to_string(), key.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        h
-    }
-
-    fn predict_url(&self) -> String {
-        if self.base_url.starts_with("http://127.0.0.1")
-            || self.base_url.starts_with("http://localhost")
-        {
-            return format!(
-                "{}/models/{}:predictLongRunning",
-                self.base_url, self.model_id
-            );
-        }
-        format!(
-            "https://{}-aiplatform.googleapis.com/v1beta1/projects/{}/locations/{}/publishers/google/models/{}:predictLongRunning",
-            self.location, self.project, self.location, self.model_id
-        )
-    }
-
-    fn operation_url(&self, name: &str) -> String {
-        if self.base_url.starts_with("http://127.0.0.1")
-            || self.base_url.starts_with("http://localhost")
-        {
-            return format!("{}/{}", self.base_url, name);
-        }
-        format!(
-            "https://{}-aiplatform.googleapis.com/v1beta1/{}",
-            self.location, name
-        )
-    }
+/// The URL of a long-running operation: the API root plus the operation's
+/// resource name (`projects/.../operations/...`). The root is the base URL up
+/// to its `/projects/` segment, or without its `/publishers/google` suffix
+/// (Express mode, a local server).
+fn operation_url(base_url: &str, name: &str) -> String {
+    let root = match base_url.find("/projects/") {
+        Some(index) => &base_url[..index],
+        None => base_url
+            .strip_suffix("/publishers/google")
+            .unwrap_or(base_url),
+    };
+    format!("{root}/{name}")
 }
 
 #[async_trait]
 impl VideoModel for VertexVideoModel {
     fn provider(&self) -> &str {
-        "google.vertex"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.retry_config
     }
     fn max_videos_per_call(&self) -> Option<u32> {
         Some(1)
@@ -151,15 +90,12 @@ impl VideoModel for VertexVideoModel {
             "parameters": Value::Object(parameters),
         });
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let url = exchange.url(&format!("/models/{}:predictLongRunning", self.model_id));
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.predict_url(), header_list.clone(), options),
-            body,
+            exchange.request(url, options),
+            exchange.transform_body(body),
             aimux_provider_utils::create_json_response_handler(),
             crate::google::google_failed_response_handler(),
         )
@@ -203,15 +139,10 @@ impl VideoModel for VertexVideoModel {
                 )
             })?;
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        let poll_url = self.operation_url(operation_name);
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let poll_url = operation_url(exchange.base_url(), operation_name);
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest::new(poll_url.clone(), header_list, options),
+            exchange.request(poll_url.clone(), options),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             crate::google::google_failed_response_handler(),
         )

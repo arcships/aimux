@@ -303,7 +303,6 @@ GenerateTextOptions _$GenerateTextOptionsFromJson(Map<String, dynamic> json) =>
       reasoning:
           $enumDecodeNullable(_$ReasoningEffortEnumMap, json['reasoning']),
       instructions: json['instructions'] as String?,
-      bodyOverrides: json['body_overrides'] as Map<String, dynamic>?,
       maxRetries: (json['max_retries'] as num?)?.toInt(),
       timeout: json['timeout'] == null
           ? null
@@ -329,7 +328,6 @@ Map<String, dynamic> _$GenerateTextOptionsToJson(
       'provider_options': instance.providerOptions,
       'reasoning': instance.reasoning,
       'instructions': instance.instructions,
-      'body_overrides': instance.bodyOverrides,
       'max_retries': instance.maxRetries,
       'timeout': instance.timeout,
     };

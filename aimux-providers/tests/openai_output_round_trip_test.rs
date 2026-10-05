@@ -33,18 +33,21 @@ use aimux_core::openai_output::{
     ChatCompletionChunk, OpenAiStreamOptions, encode_chunk_sse, to_chat_completion,
     to_chat_completion_stream,
 };
-use aimux_providers::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::deepseek::{DeepSeekProviderSettings, create_deepseek};
+use aimux_providers::openai::{OpenAIModel, OpenAIProviderSettings, create_openai};
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/// Build an OpenAIProvider pointed at the replay server.
-fn openai_provider(uri: &str) -> aimux_providers::openai::OpenAIModel {
-    let provider = OpenAIProvider::new(
-        OpenAIConfig::new("test-key")
-            .with_base_url(format!("{uri}/v1"))
-            .with_profile(OpenAICompatProfile::full()),
-    );
-    provider.model("gpt-4o")
+/// Build the native OpenAI chat model pointed at the replay server.
+fn openai_provider(uri: &str) -> OpenAIModel {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some("test-key".to_string()),
+        base_url: Some(format!("{uri}/v1")),
+        ..Default::default()
+    })
+    .unwrap()
+    .chat("gpt-4o")
 }
 
 /// Mount a single non-streaming OpenAI response on the mock server.
@@ -359,15 +362,18 @@ async fn round_trip_multiple_tool_calls() {
 
 #[tokio::test]
 async fn cross_protocol_anthropic_to_openai_non_streaming() {
-    use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
+    use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
     let server = MockServer::start().await;
     replay::mount_cassettes(&server, "tests/cassettes/anthropic").await;
 
-    let provider = AnthropicProvider::new(
-        AnthropicConfig::new("test-key").with_base_url(format!("{}/v1", server.uri())),
-    );
-    let model = provider.model("claude-sonnet-4-6");
+    let provider = create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-key".to_string()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.messages("claude-sonnet-4-6");
 
     let result = generate_text(&model, "Hello", GenerateTextOptions::default())
         .await
@@ -416,15 +422,18 @@ async fn cross_protocol_anthropic_to_openai_non_streaming() {
 
 #[tokio::test]
 async fn cross_protocol_anthropic_to_openai_streaming() {
-    use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
+    use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
     let server = MockServer::start().await;
     replay::mount_cassettes(&server, "tests/cassettes/anthropic").await;
 
-    let provider = AnthropicProvider::new(
-        AnthropicConfig::new("test-key").with_base_url(format!("{}/v1", server.uri())),
-    );
-    let model = provider.model("claude-sonnet-4-6");
+    let provider = create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-key".to_string()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.messages("claude-sonnet-4-6");
 
     let result = stream_text(&model, "Hello", GenerateTextOptions::default())
         .await
@@ -838,12 +847,13 @@ async fn cross_protocol_deepseek_with_reasoning() {
         .mount(&server)
         .await;
 
-    let provider = OpenAIProvider::new(
-        OpenAIConfig::new("test-key")
-            .with_base_url(server.uri())
-            .with_profile(OpenAICompatProfile::deepseek()),
-    );
-    let model = provider.model("deepseek-chat");
+    let provider = create_deepseek(DeepSeekProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.chat("deepseek-chat");
 
     let result = generate_text(
         &model,

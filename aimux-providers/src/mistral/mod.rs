@@ -1,5 +1,11 @@
 //! Mistral AI provider.
 //!
+//! [`create_mistral`] is the Rust form of the AI SDK's `createMistral`: it
+//! takes [`MistralProviderSettings`], validates the base URL, fixes the
+//! provider name and returns a [`MistralProvider`]. The API key is not read
+//! there; it is loaded in the request headers of every call, from the setting
+//! or from `MISTRAL_API_KEY`. [`mistral()`] is the default instance.
+//!
 //! OpenAI-compatible chat completions API with Mistral-specific differences:
 //! - Tool choice uses `"any"` instead of `"required"`
 //! - Content can be a string or an array of typed parts (text, thinking, image_url)
@@ -9,15 +15,27 @@
 pub mod convert;
 pub mod embedding;
 mod model;
+pub(crate) mod options;
 mod types;
 
+pub use crate::shared::TransformRequestBody;
 pub use embedding::MistralEmbeddingModel;
+pub use model::MistralModel;
 
-use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
-use aimux_provider_utils::{RetryConfig, load_api_key, without_trailing_slash};
+use std::sync::{Arc, OnceLock};
+
+use futures::future::BoxFuture;
 use serde_json::Value;
+
+use aimux_core::embedding_model::EmbeddingModel;
+use aimux_core::error::AiMuxError;
+use aimux_core::image_model::ImageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
+use aimux_core::model_catalogue::RuntimeModel;
+use aimux_core::provider::{Provider, ProviderDiscovery};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+
+use crate::shared::{Credential, EndpointConfig, provider_headers};
 
 pub(crate) fn mistral_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {
@@ -75,156 +93,175 @@ pub(crate) fn mistral_stream_error(
     )
 }
 
-/// Configuration for the Mistral provider.
-#[derive(Debug, Clone)]
-pub struct MistralConfig {
-    pub api_key: String,
-    pub base_url: String,
-    /// api_key 来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
-    pub api_key_source: Option<String>,
-    /// Retry settings used by Core model operations.
-    pub retry_config: RetryConfig,
+const DEFAULT_BASE_URL: &str = "https://api.mistral.ai/v1";
+const API_KEY_ENV_VAR: &str = "MISTRAL_API_KEY";
+const DEFAULT_NAME: &str = "mistral";
+
+/// The URL patterns the chat model fetches itself (`supportedUrls` of the AI
+/// SDK's `MistralChatLanguageModel`): `https` PDFs.
+fn chat_supported_urls() -> SupportedUrls {
+    let https = regex::Regex::new(r"^https://.*$").expect("static pattern");
+    SupportedUrls(std::iter::once(("application/pdf".to_string(), vec![https])).collect())
 }
 
-impl MistralConfig {
-    /// Create from an API key (uses default Mistral base URL).
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: "https://api.mistral.ai/v1".to_string(),
-            api_key_source: None,
-            retry_config: RetryConfig::default(),
-        }
-    }
+/// Settings of [`create_mistral`] (the AI SDK's `MistralProviderSettings`).
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct MistralProviderSettings {
+    /// Base URL for the API calls. Default `https://api.mistral.ai/v1`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `MISTRAL_API_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including `Authorization`. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of every model's `provider()` string
+    /// (`"{name}.chat"`, `"{name}.embedding"`). Default `"mistral"`. The
+    /// providerOptions key stays `mistral`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
+    /// Rewrites every JSON request body once, after it is serialized and
+    /// before it is sent.
+    pub transform_request_body: Option<TransformRequestBody>,
+}
 
-    /// Use a custom base URL.
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-
-    /// 标注 api_key 来源(RFC-0023 回放重建用)。
-    #[must_use]
-    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.api_key_source = source.map(std::string::ToString::to_string);
-        self
-    }
-
-    /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
-    #[must_use]
-    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
-        self.retry_config = config;
-        self
-    }
-
-    /// Create from environment variable `MISTRAL_API_KEY`.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when `MISTRAL_API_KEY` is not set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "MISTRAL_API_KEY", "Mistral")?;
-        Ok(Self::new(api_key).with_api_key_source(Some("env:MISTRAL_API_KEY")))
+impl std::fmt::Debug for MistralProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MistralProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .field(
+                "transform_request_body",
+                &self.transform_request_body.is_some(),
+            )
+            .finish()
     }
 }
 
-/// Mistral provider — creates `MistralModel` instances.
+/// Create a Mistral provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_mistral(settings: MistralProviderSettings) -> Result<MistralProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(MistralProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: provider_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Mistral"),
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+        transform_request_body: settings.transform_request_body,
+    })
+}
+
+/// The default provider: `create_mistral` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn mistral() -> &'static MistralProvider {
+    static DEFAULT: OnceLock<MistralProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_mistral(MistralProviderSettings::default())
+            .expect("default Mistral settings are always valid")
+    })
+}
+
+/// A Mistral provider (the AI SDK's `MistralProvider`). Cheap to clone the
+/// models out of; it holds no HTTP client.
 pub struct MistralProvider {
-    config: MistralConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
+    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl MistralProvider {
-    #[must_use]
-    pub fn new(config: MistralConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            self.transform_request_body.clone(),
+        )
     }
 
-    /// Create a model instance for the given model name (e.g. `"mistral-small-latest"`).
+    /// A chat model; `provider()` is `"{name}.chat"`.
     #[must_use]
-    pub fn model(&self, model_id: &str) -> model::MistralModel {
-        model::MistralModel::new(model_id.to_string(), self.config.clone())
+    pub fn chat(&self, model_id: &str) -> MistralModel {
+        MistralModel::from_config(
+            model_id.to_string(),
+            self.model_config("chat")
+                .with_supported_urls(Arc::new(|_| chat_supported_urls())),
+        )
     }
 
-    /// Create an embedding model instance for the given model name (e.g.
-    /// `"mistral-embed"`).
+    /// An embedding model (e.g. `"mistral-embed"`); `provider()` is
+    /// `"{name}.embedding"`.
     #[must_use]
-    pub fn embedding_model(&self, model_id: &str) -> embedding::MistralEmbeddingModel {
-        embedding::MistralEmbeddingModel::new(model_id.to_string(), self.config.clone())
+    pub fn embedding(&self, model_id: &str) -> MistralEmbeddingModel {
+        MistralEmbeddingModel::from_config(model_id.to_string(), self.model_config("embedding"))
+    }
+
+    /// The provider as a function: the default language model for an id. The
+    /// AI SDK's callable provider; the same model as [`chat`](Self::chat) and
+    /// [`language_model`](Provider::language_model).
+    #[must_use]
+    pub fn call(&self, model_id: &str) -> Arc<dyn LanguageModel> {
+        Arc::new(self.chat(model_id))
     }
 }
 
 impl Provider for MistralProvider {
-    fn name(&self) -> &str {
-        "mistral"
+    fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
+        Some(self)
     }
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
+    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        Ok(self.call(model_id))
     }
 
-    /// List models via `GET {base_url}/models` (OpenAI-compatible, RFC-0027).
-    fn list_models(
-        &self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError>,
-                > + Send
-                + '_,
-        >,
-    > {
-        let config = self.config.clone();
+    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+        Ok(Arc::new(self.embedding(model_id)))
+    }
+
+    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "imageModel"))
+    }
+}
+
+impl ProviderDiscovery for MistralProvider {
+    /// `GET {base_url}/models`: one exchange, no retry.
+    fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
+        let config = self.model_config("models");
         Box::pin(async move {
-            let base = config.base_url.trim_end_matches('/');
-            let url = format!("{base}/models");
-            let headers = vec![
-                (
-                    "Authorization".to_string(),
-                    format!("Bearer {}", config.api_key),
-                ),
-                ("Content-Type".to_string(), "application/json".to_string()),
-            ];
-            use aimux_provider_utils::HttpRequest;
-            // Retry rationale: see `openai::model::execute_list_models`.
-            let resp = aimux_core::retry::prepare_retries(None, config.retry_config, None)
-                .retry(|| {
-                    aimux_provider_utils::get_from_api(
-                        HttpRequest {
-                            url: url.clone(),
-                            headers: headers.clone(),
-                            abort_signal: None,
-                            call_id: None,
-                            recording_context: None,
-                            ..Default::default()
-                        },
-                        aimux_provider_utils::create_json_response_handler(),
-                        mistral_failed_response_handler(),
-                    )
-                })
-                .await?;
-            #[derive(serde::Deserialize)]
-            struct Resp {
-                #[serde(default)]
-                data: Vec<Entry>,
-            }
-            #[derive(serde::Deserialize)]
-            struct Entry {
-                id: String,
-                #[serde(default)]
-                owned_by: Option<String>,
-            }
-            let parsed: Resp = resp.value;
-            let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
-                .data
-                .into_iter()
-                .map(|e| aimux_core::model_catalogue::RuntimeModel {
-                    id: e.id,
-                    owned_by: e.owned_by,
-                    created: None,
-                })
-                .collect();
-            Ok(runtime)
+            crate::shared::list_data_models(&config, mistral_failed_response_handler()).await
         })
     }
 }

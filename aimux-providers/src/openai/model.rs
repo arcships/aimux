@@ -1,15 +1,13 @@
 //! OpenAI language model — implements `LanguageModel` trait.
 //!
-//! The HTTP request/response handling lives in the free functions
-//! [`execute_generate`] and [`execute_stream`], which take an endpoint URL, a
-//! header map and a model id. They call the `aimux-provider-utils` API helpers —
+//! The HTTP request/response handling lives in the crate-internal functions
+//! `execute_generate` and `execute_stream`, which take a prepared request (URL,
+//! headers, transport) and a model id. They call the `aimux-provider-utils` API helpers —
 //! **no `reqwest` types cross this boundary**. This lets other providers that
 //! speak the OpenAI chat-completions wire format (notably Azure OpenAI) reuse
 //! the conversion + streaming logic while supplying their own URL and auth.
 
 use aimux_core::tool::RawToolCall;
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -26,87 +24,22 @@ use aimux_provider_utils::{
     HttpRequest, StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker,
 };
 
-use super::OpenAIConfig;
+use super::config::{OpenAIModelConfig, TransformRequestBody};
 use super::convert::{RequestBodyResult, build_request_body_with_warnings, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
 
-/// An OpenAI-compatible language model.
+/// An OpenAI chat-completions language model.
 ///
 /// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct OpenAIModel {
     model_id: String,
-    config: OpenAIConfig,
+    config: OpenAIModelConfig,
 }
 
 impl OpenAIModel {
-    #[must_use]
-    pub fn new(model_id: String, config: OpenAIConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: OpenAIModelConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = build_auth_headers(&self.config);
-        // Per-call headers (from CallOptions.headers), overriding provider-level.
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/chat/completions", self.config.base_url)
-    }
-}
-
-/// Build the auth + provider-level headers from a config (no per-call headers).
-///
-/// Shared by `OpenAIModel::build_headers` and the model-listing path
-/// ([`execute_list_models`]) so both use identical auth wiring.
-#[must_use]
-pub fn build_auth_headers(config: &super::OpenAIConfig) -> HashMap<String, String> {
-    let mut headers = HashMap::new();
-    headers.insert(
-        "Authorization".to_string(),
-        format!("Bearer {}", config.api_key),
-    );
-    if let Some(ref org) = config.org_id {
-        headers.insert("OpenAI-Organization".to_string(), org.clone());
-    }
-    if let Some(ref project) = config.project {
-        headers.insert("OpenAI-Project".to_string(), project.clone());
-    }
-    if let Some(ref config_headers) = config.headers {
-        for (k, v) in config_headers {
-            headers.insert(k.clone(), v.clone());
-        }
-    }
-    headers
-}
-
-/// Merge provider-level `body_overrides` into the per-call options (RFC-0017).
-///
-/// Provider-level overrides are applied first (lower priority); per-call
-/// `body_overrides` from `CallOptions` are merged on top. If neither is
-/// present, the options are returned unchanged (cheap clone).
-fn merge_body_overrides(options: &CallOptions, provider_overrides: &Option<Value>) -> CallOptions {
-    match (provider_overrides, &options.body_overrides) {
-        (Some(provider), Some(call)) => {
-            // Merge: provider first, then call (call wins).
-            let mut merged = provider.clone();
-            crate::openai::convert::deep_merge_json(&mut merged, call);
-            let mut opts = options.clone();
-            opts.body_overrides = Some(merged);
-            opts
-        }
-        (Some(provider), None) => {
-            let mut opts = options.clone();
-            opts.body_overrides = Some(provider.clone());
-            opts
-        }
-        (None, _) => options.clone(),
     }
 }
 
@@ -122,7 +55,7 @@ fn merge_body_overrides(options: &CallOptions, provider_overrides: &Option<Value
 ///
 /// `usage_raw` is the provider's original `usage` JSON object, preserved
 /// verbatim in `Usage.raw` (M10, RFC-0016). Vendor-specific fields not part
-/// of `UsageResponse` (e.g. DeepSeek `prompt_cache_hit_tokens`) survive only
+/// of `UsageResponse` (e.g. prompt-cache hit counters) survive only
 /// through this raw value.
 fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
     let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
@@ -172,7 +105,7 @@ fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
             reasoning: Some(reasoning_tokens),
         },
         // M10 (RFC-0016): keep the provider's original usage JSON verbatim —
-        // vendor-specific fields (e.g. Moonshot `cached_tokens`, DeepSeek
+        // vendor-specific fields (e.g. Moonshot `cached_tokens`, prompt-cache
         // `prompt_cache_hit_tokens`) are otherwise lost for audit/billing.
         raw: usage_raw.and_then(|value| value.as_object().cloned()),
     }
@@ -180,11 +113,8 @@ fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
 
 #[async_trait]
 impl LanguageModel for OpenAIModel {
-    /// Provider identity for recording/routing. Uses `config.provider` (the
-    /// registry entry name, e.g. `"deepseek"`/`"groq"`) rather than a hardcoded
-    /// `"openai"`, so OpenAI-compatible providers keep their real identity —
-    /// mirroring the Responses path (`OpenAIResponsesModel::provider`).
-    /// Direct `OpenAIProvider` use defaults to `"openai"`.
+    /// Provider identity for recording/routing: `"{name}.chat"` (`"openai.chat"`
+    /// by default).
     fn provider(&self) -> &str {
         &self.config.provider
     }
@@ -193,38 +123,40 @@ impl LanguageModel for OpenAIModel {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        super::config_snapshot_from_config(&self.config.provider, &self.model_id, &self.config)
+    fn supported_urls(&self) -> aimux_core::language_model::SupportedUrls {
+        self.config.supported_urls.clone()
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let headers = self.build_headers(options.headers.as_ref());
-        let options = merge_body_overrides(options, &self.config.body_overrides);
+        let headers = self
+            .config
+            .request_headers(options.headers.as_ref())
+            .await?;
+        let http =
+            self.config
+                .http_request(self.config.url("/chat/completions")?, headers, options);
         execute_generate(
-            &self.endpoint(),
-            &headers,
+            http,
             &self.model_id,
-            &options,
-            &self.config.provider,
-            &self.config.profile,
+            options,
+            self.config.transform_request_body.as_ref(),
         )
         .await
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let headers = self.build_headers(options.headers.as_ref());
-        let options = merge_body_overrides(options, &self.config.body_overrides);
+        let headers = self
+            .config
+            .request_headers(options.headers.as_ref())
+            .await?;
+        let http =
+            self.config
+                .http_request(self.config.url("/chat/completions")?, headers, options);
         execute_stream(
-            &self.endpoint(),
-            &headers,
+            http,
             &self.model_id,
-            &options,
-            &self.config.provider,
-            &self.config.profile,
+            options,
+            self.config.transform_request_body.as_ref(),
         )
         .await
     }
@@ -233,46 +165,35 @@ impl LanguageModel for OpenAIModel {
 // ── Shared OpenAI chat-completions execution ─────────────────────────────────
 //
 // These free functions contain the actual HTTP + response-parsing logic. They
-// are `pub` so that providers speaking the OpenAI wire format (Azure OpenAI)
-// can reuse them with their own endpoint URL and auth headers.
-
-/// Build the header list for a JSON POST: auth/extra headers + `Content-Type`.
-///
-/// Returns a `Vec<(String, String)>` for `HttpRequest` — no reqwest types.
-fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
-    let mut list: Vec<(String, String)> = headers
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-    list.push(("Content-Type".to_string(), "application/json".to_string()));
-    list
-}
+// are shared with providers that speak the OpenAI chat wire format (Azure
+// OpenAI), which supply their own request: URL, auth headers and transport.
 
 /// Execute a non-streaming OpenAI chat-completion request.
 ///
-/// `endpoint` is the full chat-completions URL; `headers` carries the auth
-/// headers (and any extra/request headers); `model_id` is placed in the
-/// request body's `model` field.
+/// `http` carries the full chat-completions URL, the auth and request headers
+/// and the transport; `model_id` is placed in the request body's `model`
+/// field. `transform_request_body`, when set, rewrites the finished body once
+/// before it is sent (and the rewritten body is what the result reports).
 ///
 /// # Errors
 ///
 /// Returns request-build conversion errors, `ApiCall` for HTTP/transport
 /// failures, `JsonParse` for a malformed body, and `InvalidResponseData` when
 /// `choices` is empty.
-pub async fn execute_generate(
-    endpoint: &str,
-    headers: &HashMap<String, String>,
+pub(crate) async fn execute_generate(
+    http: HttpRequest,
     model_id: &str,
     options: &CallOptions,
-    provider: &str,
-    profile: &super::OpenAICompatProfile,
+    transform_request_body: Option<&TransformRequestBody>,
 ) -> Result<GenerateResult, AiMuxError> {
-    let request_result =
-        build_request_body_with_warnings(model_id, options, false, provider, profile)?;
-    let body = request_result.body;
+    let request_result = build_request_body_with_warnings(model_id, options, false)?;
+    let body = match transform_request_body {
+        Some(transform) => transform(request_result.body),
+        None => request_result.body,
+    };
 
     let resp = aimux_provider_utils::post_json_to_api(
-        HttpRequest::new(endpoint.to_string(), build_header_list(headers), options),
+        http,
         body.clone(),
         aimux_provider_utils::create_json_response_handler::<ChatCompletionResponse>(),
         super::openai_failed_response_handler(),
@@ -302,7 +223,7 @@ pub async fn execute_generate(
             provider_metadata: None,
         });
     }
-    // Reasoning: prefer reasoning_content over reasoning (DeepSeek/阿里通义).
+    // Reasoning: prefer reasoning_content over reasoning.
     let reasoning_text = choice
         .message
         .reasoning_content
@@ -404,30 +325,32 @@ pub async fn execute_generate(
 
 /// Execute a streaming OpenAI chat-completion request.
 ///
-/// `endpoint` is the full chat-completions URL; `headers` carries the auth
-/// headers (and any extra/request headers); `model_id` is placed in the
-/// request body's `model` field.
+/// `http` carries the full chat-completions URL, the auth and request headers
+/// and the transport; `model_id` is placed in the request body's `model`
+/// field. `transform_request_body` is applied as in [`execute_generate`].
 ///
 /// # Errors
 ///
 /// Returns request-build conversion errors and `ApiCall` when establishing the
 /// stream fails; transport errors surface as `Err` items in the stream.
-pub async fn execute_stream(
-    endpoint: &str,
-    headers: &HashMap<String, String>,
+pub(crate) async fn execute_stream(
+    http: HttpRequest,
     model_id: &str,
     options: &CallOptions,
-    provider: &str,
-    profile: &super::OpenAICompatProfile,
+    transform_request_body: Option<&TransformRequestBody>,
 ) -> Result<StreamResult, AiMuxError> {
-    let request_result =
-        build_request_body_with_warnings(model_id, options, true, provider, profile)?;
+    let request_result = build_request_body_with_warnings(model_id, options, true)?;
     // M9 (RFC-0016): keep the warnings computed while building the body —
     // they are emitted in `StreamStart` below instead of being dropped.
     let RequestBodyResult { body, warnings } = request_result;
+    let body = match transform_request_body {
+        Some(transform) => transform(body),
+        None => body,
+    };
+    let endpoint = http.url.clone();
 
     let resp = aimux_provider_utils::post_json_to_api(
-        HttpRequest::new(endpoint.to_string(), build_header_list(headers), options),
+        http,
         body.clone(),
         aimux_provider_utils::create_event_source_response_handler::<Value>(),
         super::openai_failed_response_handler(),
@@ -452,22 +375,16 @@ pub async fn execute_stream(
     {
         return Err(super::openai_stream_error(
             err_obj,
-            endpoint,
+            &endpoint,
             body.clone(),
             response_headers.clone(),
         ));
     }
 
-    // Capture the provider's stream usage key before entering the async stream
-    // block (the borrowed `profile` cannot be moved into the generator).
-    // Some(key) → read streaming usage from `chunk[key].usage`;
-    // None → read from the top-level `usage`.
-    let stream_usage_key = profile.stream_usage_key;
-
     // M2 (RFC-0016): capture whether raw chunks should be emitted — the
     // borrowed `options` cannot be moved into the generator.
     let emit_raw_chunks = options.include_raw_chunks == Some(true);
-    let stream_error_url = endpoint.to_owned();
+    let stream_error_url = endpoint;
     let stream_error_body = body.clone();
     let stream_response_headers = response_headers.clone();
 
@@ -526,17 +443,10 @@ pub async fn execute_stream(
                         break;
                     }
 
-                    // Extract streaming usage based on profile.stream_usage_key
-                    // (captured before the stream block). Some(key) reads usage
-                    // from the provider-specific sub-object `key` (e.g. Groq's
-                    // "x_groq"); None reads the top-level "usage". This is done
-                    // from the raw JSON chunk before it is consumed below.
-                    // `chunk_usage_raw` keeps the provider's original object for
-                    // `Usage.raw` (M10).
-                    let chunk_usage_raw: Option<Value> = match stream_usage_key {
-                        Some(key) => parsed.get(key).and_then(|v| v.get("usage")).cloned(),
-                        None => parsed.get("usage").cloned(),
-                    };
+                    // The chunk's top-level `usage`, taken from the raw JSON before
+                    // the chunk is consumed below. `chunk_usage_raw` keeps the
+                    // provider's original object for `Usage.raw` (M10).
+                    let chunk_usage_raw: Option<Value> = parsed.get("usage").cloned();
                     let chunk_usage: Option<UsageResponse> = chunk_usage_raw
                         .as_ref()
                         .and_then(|u| serde_json::from_value(u.clone()).ok());
@@ -565,7 +475,7 @@ pub async fn execute_stream(
                         }));
                     }
 
-                    // Update usage based on profile.stream_usage_key.
+                    // Update usage from the chunk that carries it.
                     if let Some(usage) = &chunk_usage {
                         final_usage = convert_usage(usage, chunk_usage_raw.as_ref());
                         final_usage_raw = Some(usage.clone());
@@ -809,47 +719,29 @@ struct ModelEntry {
     created: Option<u64>,
 }
 
-/// Execute a `GET {base_url}/models` request (OpenAI-compatible) and return the
-/// sparse runtime model list. Used by `OpenAIProvider::list_models`.
-///
-/// `headers` carries the auth headers (Bearer key etc.); `base_url` is the
-/// provider's API base (e.g. `https://api.openai.com/v1`).
+/// One `GET {base_url}/models` exchange (OpenAI-compatible): no retry, no
+/// recording. Discovery is not a Core operation and the AI SDK has no
+/// equivalent, so a failure is reported to the caller as it happened.
 ///
 /// # Errors
 ///
-/// Returns `ApiCall` for HTTP/transport failures and `JsonParse` when the
-/// body does not deserialize into the models list.
-pub async fn execute_list_models(
-    base_url: &str,
-    headers: &HashMap<String, String>,
-    retry_config: aimux_core::retry::RetryConfig,
+/// Returns the header-resolution error (a missing key is `LoadApiKey`),
+/// `ApiCall` for HTTP/transport failures and `JsonParse` when the body does
+/// not deserialize into the models list.
+pub(crate) async fn list_models_once(
+    config: &OpenAIModelConfig,
 ) -> Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError> {
-    // Strip a trailing slash so we don't get `//models`.
-    let base = base_url.trim_end_matches('/');
-    let url = format!("{base}/models");
-
-    // `list_models` is not a Core user operation, so nothing above this call
-    // retries it — apply the Core retry primitive here (a catalogue GET is
-    // idempotent) so a transient 429/503/transport failure behaves like every
-    // other exchange instead of failing on the first hiccup.
-    let retries = aimux_core::retry::prepare_retries(None, retry_config, None);
-    let resp = retries
-        .retry(|| {
-            aimux_provider_utils::get_from_api(
-                HttpRequest {
-                    url: url.clone(),
-                    headers: build_header_list(headers),
-                    abort_signal: None,
-                    call_id: None,
-                    recording_context: None,
-                    ..Default::default()
-                },
-                aimux_provider_utils::create_json_response_handler(),
-                super::openai_failed_response_handler(),
-            )
-        })
-        .await?;
-
+    let headers = config.request_headers(None).await?;
+    let resp = aimux_provider_utils::get_from_api(
+        config.with_transport(HttpRequest {
+            url: config.url("/models")?,
+            headers,
+            ..Default::default()
+        }),
+        aimux_provider_utils::create_json_response_handler(),
+        super::openai_failed_response_handler(),
+    )
+    .await?;
     let parsed: ModelsListResponse = resp.value;
 
     Ok(parsed

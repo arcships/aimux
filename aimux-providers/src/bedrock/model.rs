@@ -16,7 +16,6 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
-use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
@@ -24,12 +23,12 @@ use aimux_core::types::{
 
 use serde_json::json;
 
-use aimux_provider_utils::{HttpBody, HttpRequest, RetryConfig};
+use aimux_provider_utils::HttpBody;
 
-use super::BedrockAuth;
 use super::convert::{build_request_body, convert_usage, map_finish_reason};
-use super::sigv4::sign_request;
+use super::options;
 use super::types::{BedrockContentBlock, BedrockConverseResponse};
+use crate::shared::EndpointConfig;
 
 fn bedrock_event_stream_response_handler()
 -> aimux_provider_utils::ResponseHandler<BoxStream<'static, Result<Bytes, AiMuxError>>> {
@@ -88,28 +87,16 @@ fn bedrock_event_stream_response_handler()
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct BedrockModel {
     model_id: String,
-    config: BedrockConfig,
-}
-
-/// Configuration for a Bedrock model instance (cloned from the provider).
-#[derive(Debug, Clone)]
-pub struct BedrockConfig {
-    pub base_url: String,
-    pub auth: BedrockAuth,
-    /// Retry settings used by Core model operations.
-    pub retry_config: RetryConfig,
-    /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
-    /// SigV4 记 access-key 来源;BearerToken 记 bearer-token 来源。不存明文。
-    pub api_key_source: Option<String>,
+    config: EndpointConfig,
 }
 
 impl BedrockModel {
-    #[must_use]
-    pub fn new(model_id: String, config: BedrockConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
     }
 
-    fn endpoint(&self, stream: bool) -> String {
+    /// `/model/{model-id}/converse` or `/converse-stream`.
+    fn path(&self, stream: bool) -> String {
         let suffix = if stream {
             "converse-stream"
         } else {
@@ -119,99 +106,29 @@ impl BedrockModel {
         // `anthropic.claude-3-5-sonnet-20240620-v1:0`). These characters are
         // valid in URL paths and are sent unencoded — matching the AWS CLI
         // and SDK behaviour.
-        format!(
-            "{}/model/{}/{}",
-            self.config.base_url, self.model_id, suffix
-        )
-    }
-
-    fn build_headers(
-        &self,
-        body: &str,
-        url: &str,
-        extra: Option<&HashMap<String, String>>,
-    ) -> Result<Vec<(String, String)>, AiMuxError> {
-        let mut extra_headers: Vec<(String, String)> = Vec::new();
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                extra_headers.push((k.clone(), v.clone()));
-            }
-        }
-
-        match &self.config.auth {
-            BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![("Authorization".to_string(), format!("Bearer {token}"))];
-                headers.extend(extra_headers);
-                Ok(headers)
-            }
-            BedrockAuth::SigV4(creds) => {
-                let signed = sign_request(creds, "bedrock", "POST", url, body, &extra_headers);
-                let mut headers: Vec<(String, String)> = Vec::new();
-                for (k, v) in &signed.headers {
-                    headers.push((k.clone(), v.clone()));
-                }
-                Ok(headers)
-            }
-        }
+        format!("/model/{}/{}", self.model_id, suffix)
     }
 }
 
 #[async_trait]
 impl LanguageModel for BedrockModel {
     fn provider(&self) -> &str {
-        "amazon-bedrock"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        use aimux_core::recording::ProviderRecord;
-        // M2b: record identity + credential source + region (encoded in
-        // base_url) + retry. Never serialize the SigV4 credentials or bearer
-        // token plaintext — only the auth *kind* and source marker.
-        let auth_kind = match &self.config.auth {
-            BedrockAuth::BearerToken(_) => "bearer_token",
-            BedrockAuth::SigV4(_) => "sigv4",
-        };
-        ProviderRecord {
-            provider: self.provider().to_string(),
-            model_id: self.model_id.clone(),
-            base_url: Some(self.config.base_url.clone()),
-            api_key_source: self
-                .config
-                .api_key_source
-                .clone()
-                .unwrap_or_else(|| "explicit".to_string()),
-            profile: None,
-            provider_options: Some(serde_json::json!({
-                "auth_kind": auth_kind,
-                "max_retries": self.config.retry_config.max_retries,
-            })),
-        }
-    }
-
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         super::convert::validate_tool_result_content(&options.prompt)?;
         let body = build_request_body(&self.model_id, options);
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(body);
         let body_str = serde_json::to_string(&body).unwrap_or_default();
-        let url = self.endpoint(false);
-        let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
+        let url = exchange.url(&self.path(false));
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url,
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
+            exchange.request(url, options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_json_response_handler(),
             super::bedrock_failed_response_handler(),
@@ -269,19 +186,12 @@ impl LanguageModel for BedrockModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         super::convert::validate_tool_result_content(&options.prompt)?;
         let body = build_request_body(&self.model_id, options);
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(body);
         let body_str = serde_json::to_string(&body).unwrap_or_default();
-        let url = self.endpoint(true);
-        let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
+        let url = exchange.url(&self.path(true));
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url,
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
+            exchange.request(url, options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             bedrock_event_stream_response_handler(),
             super::bedrock_failed_response_handler(),
@@ -588,8 +498,8 @@ impl LanguageModel for BedrockModel {
             }
 
             // #26: merge the stop sentinel into the metadata payload, then build
-            // the Finish provider_metadata under both `amazonBedrock` and
-            // `bedrock` keys (mirrors the TS `doStream` flush handler).
+            // the Finish provider_metadata under `amazonBedrock` (mirrors the
+            // TS `doStream` flush handler).
             if let Some(seq) = stop_sequence {
                 finish_meta.insert(
                     "stopSequence".to_string(),
@@ -599,10 +509,8 @@ impl LanguageModel for BedrockModel {
             let provider_metadata = if finish_meta.is_empty() {
                 None
             } else {
-                Some(HashMap::from([
-                    ("amazonBedrock".to_string(), finish_meta.clone()),
-                    ("bedrock".to_string(), finish_meta),
-                ]))
+                let payload = serde_json::Value::Object(finish_meta);
+                Some(options::metadata(payload))
             };
 
             yield Ok(StreamPart::Finish {
@@ -626,18 +534,9 @@ impl LanguageModel for BedrockModel {
 }
 
 /// Wrap the accumulated reasoning signature as provider_metadata in the same
-/// dual-key shape the non-streaming path emits (`amazonBedrock` + `bedrock`),
-/// so consumers reading either key see it.
+/// shape the non-streaming path emits (under `amazonBedrock`).
 fn reasoning_signature_meta(sig: Option<String>) -> Option<ProviderMetadata> {
-    sig.map(|s| {
-        let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": &s }))
-            .expect("provider metadata must be an object");
-        metadata.extend(
-            provider_namespace("bedrock", json!({ "signature": s }))
-                .expect("provider metadata must be an object"),
-        );
-        metadata
-    })
+    sig.map(|s| options::metadata(json!({ "signature": s })))
 }
 
 /// Extract `GenerateContent` items from a non-streaming content block.
@@ -646,10 +545,10 @@ fn reasoning_signature_meta(sig: Option<String>) -> Option<ProviderMetadata> {
 /// `text`, `toolUse`, or `reasoningContent`. Empty `text` blocks are preserved
 /// (matching the TS SDK) so that empty text between reasoning blocks survives.
 /// `reasoningContent.reasoningText` yields a `Reasoning` item whose
-/// `provider_metadata` carries the `signature` under both `amazonBedrock` and
-/// `bedrock` keys (or `None` when no signature is present).
+/// `provider_metadata` carries the `signature` under `amazonBedrock` (or
+/// `None` when no signature is present).
 /// `reasoningContent.redactedReasoning` yields a `Reasoning` item with empty
-/// text and `redactedData` under both metadata keys.
+/// text and `redactedData` under the same key.
 fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateContent>) {
     if let Some(text) = &block.text {
         content.push(GenerateContent::Text {
@@ -674,15 +573,10 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let provider_metadata = rt.get("signature").and_then(|v| v.as_str()).map(|sig| {
-                let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": sig }))
-                    .expect("provider metadata must be an object");
-                metadata.extend(
-                    provider_namespace("bedrock", json!({ "signature": sig }))
-                        .expect("provider metadata must be an object"),
-                );
-                metadata
-            });
+            let provider_metadata = rt
+                .get("signature")
+                .and_then(|v| v.as_str())
+                .map(|sig| options::metadata(json!({ "signature": sig })));
             content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata,
@@ -693,14 +587,7 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let mut metadata =
-                provider_namespace("amazonBedrock", json!({ "redactedData": &data }))
-                    .expect("provider metadata must be an object");
-            metadata.extend(
-                provider_namespace("bedrock", json!({ "redactedData": data }))
-                    .expect("provider metadata must be an object"),
-            );
-            let provider_metadata = Some(metadata);
+            let provider_metadata = Some(options::metadata(json!({ "redactedData": data })));
             content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text: String::new(),
                 provider_metadata,
