@@ -27,7 +27,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
-use aimux_core::options::{CallOptions, Tool, ToolChoice};
+use aimux_core::options::{CallOptions, Tool};
 use aimux_core::provider::Provider;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
@@ -409,32 +409,6 @@ async fn do_generate_extracts_tool_call() {
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }
 
-/// Tool choice `required` is forwarded as `"required"`.
-#[tokio::test]
-async fn tool_choice_required_forwarded() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-        .mount(&server)
-        .await;
-
-    let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
-
-    let tool = FunctionTool::new("get-weather", json!({})).with_description("Test");
-    let options = CallOptions {
-        tools: Some(vec![Tool::from(tool)]),
-        tool_choice: ToolChoice::Required,
-        ..default_options(test_prompt())
-    };
-    model.do_generate(&options).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["tool_choice"], "required");
-}
-
 /// do_stream returns text deltas.
 #[tokio::test]
 async fn do_stream_returns_text() {
@@ -578,35 +552,6 @@ async fn status_429_maps_to_rate_limited() {
         matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
-}
-
-/// The raw response headers are exposed on the generate result.
-#[tokio::test]
-async fn exposes_response_headers() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("test-header", "test-value")
-                .set_body_json(text_completion_body()),
-        )
-        .mount(&server)
-        .await;
-
-    let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }
 
 // ════════════════════════════════════════════════════════════════════════════

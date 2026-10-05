@@ -197,6 +197,7 @@ impl LanguageModel for BedrockModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        super::convert::validate_tool_result_content(&options.prompt)?;
         let body = build_request_body(&self.model_id, options);
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.endpoint(false);
@@ -217,6 +218,7 @@ impl LanguageModel for BedrockModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
 
         let data: BedrockConverseResponse = resp.value;
@@ -253,17 +255,21 @@ impl LanguageModel for BedrockModel {
             usage,
             warnings: Vec::new(),
             provider_metadata: None,
-            response: ResponseMetadata {
-                id: request_id,
-                timestamp: response_headers.get("date").cloned(),
-                model_id: Some(self.model_id.clone()),
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::GenerateResponse {
+                body: response_body,
+                headers: Some(response_headers.clone()),
+                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                    id: request_id,
+                    timestamp: response_headers.get("date").cloned(),
+                    model_id: Some(self.model_id.clone()),
+                })
+            }),
         })
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        super::convert::validate_tool_result_content(&options.prompt)?;
         let body = build_request_body(&self.model_id, options);
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.endpoint(true);
@@ -614,8 +620,10 @@ impl LanguageModel for BedrockModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::StreamResponse {
+                headers: Some(response_headers),
+            }),
         })
     }
 }
@@ -625,8 +633,12 @@ impl LanguageModel for BedrockModel {
 /// so consumers reading either key see it.
 fn reasoning_signature_meta(sig: Option<String>) -> Option<ProviderMetadata> {
     sig.map(|s| {
-        let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": &s }));
-        metadata.extend(provider_namespace("bedrock", json!({ "signature": s })));
+        let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": &s }))
+            .expect("provider metadata must be an object");
+        metadata.extend(
+            provider_namespace("bedrock", json!({ "signature": s }))
+                .expect("provider metadata must be an object"),
+        );
         metadata
     })
 }
@@ -667,8 +679,12 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
                 .unwrap_or("")
                 .to_string();
             let provider_metadata = rt.get("signature").and_then(|v| v.as_str()).map(|sig| {
-                let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": sig }));
-                metadata.extend(provider_namespace("bedrock", json!({ "signature": sig })));
+                let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": sig }))
+                    .expect("provider metadata must be an object");
+                metadata.extend(
+                    provider_namespace("bedrock", json!({ "signature": sig }))
+                        .expect("provider metadata must be an object"),
+                );
                 metadata
             });
             content.push(GenerateContent::Reasoning(ReasoningOutput {
@@ -682,11 +698,12 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
                 .unwrap_or("")
                 .to_string();
             let mut metadata =
-                provider_namespace("amazonBedrock", json!({ "redactedData": &data }));
-            metadata.extend(provider_namespace(
-                "bedrock",
-                json!({ "redactedData": data }),
-            ));
+                provider_namespace("amazonBedrock", json!({ "redactedData": &data }))
+                    .expect("provider metadata must be an object");
+            metadata.extend(
+                provider_namespace("bedrock", json!({ "redactedData": data }))
+                    .expect("provider metadata must be an object"),
+            );
             let provider_metadata = Some(metadata);
             content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text: String::new(),

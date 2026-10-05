@@ -121,7 +121,7 @@ impl LanguageModel for XaiResponsesModel {
 
         let response_headers = resp.response_headers;
 
-        let _raw_value = resp.raw_value.unwrap_or(Value::Null);
+        let raw_value = resp.raw_value.unwrap_or(Value::Null);
         let data = resp.value;
 
         let mut content: Vec<GenerateContent> = Vec::new();
@@ -306,7 +306,10 @@ impl LanguageModel for XaiResponsesModel {
                         }
                         content.push(GenerateContent::Reasoning(ReasoningOutput {
                             text: reasoning_text,
-                            provider_metadata: Some(provider_namespace("xai", meta)),
+                            provider_metadata: Some(
+                                provider_namespace("xai", meta)
+                                    .expect("provider metadata must be an object"),
+                            ),
                         }));
                     }
                 }
@@ -328,10 +331,10 @@ impl LanguageModel for XaiResponsesModel {
 
         let (usage, provider_metadata) = if let Some(u) = &data.usage {
             let meta = if u.cost_in_usd_ticks.is_some() {
-                Some(provider_namespace(
-                    "xai",
-                    json!({ "costInUsdTicks": u.cost_in_usd_ticks }),
-                ))
+                Some(
+                    provider_namespace("xai", json!({ "costInUsdTicks": u.cost_in_usd_ticks }))
+                        .expect("provider metadata must be an object"),
+                )
             } else {
                 None
             };
@@ -350,13 +353,16 @@ impl LanguageModel for XaiResponsesModel {
             usage,
             warnings: request_result.warnings,
             provider_metadata,
-            response: ResponseMetadata {
-                id: data.id,
-                timestamp,
-                model_id: data.model,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::GenerateResponse {
+                body: Some(raw_value),
+                headers: Some(response_headers),
+                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                    id: data.id,
+                    timestamp,
+                    model_id: data.model,
+                })
+            }),
         })
     }
 
@@ -448,7 +454,7 @@ impl LanguageModel for XaiResponsesModel {
                                 active_reasoning.insert(item_id.to_string(), ());
                                 yield Ok(StreamPart::ReasoningStart {
                                     id: block_id,
-                                    provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id }))),
+                                    provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
                                 });
                             }
                             continue;
@@ -462,7 +468,7 @@ impl LanguageModel for XaiResponsesModel {
                             yield Ok(StreamPart::ReasoningDelta {
                                 id: block_id,
                                 delta: delta.to_string(),
-                                provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id }))),
+                                provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
                             });
                             continue;
                         }
@@ -481,13 +487,13 @@ impl LanguageModel for XaiResponsesModel {
                                 active_reasoning.insert(item_id.to_string(), ());
                                 yield Ok(StreamPart::ReasoningStart {
                                     id: block_id.clone(),
-                                    provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id }))),
+                                    provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
                                 });
                             }
                             yield Ok(StreamPart::ReasoningDelta {
                                 id: block_id,
                                 delta: delta.to_string(),
-                                provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id }))),
+                                provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
                             });
                             continue;
                         }
@@ -672,7 +678,7 @@ impl LanguageModel for XaiResponsesModel {
                                         active_reasoning.insert(part_id.to_string(), ());
                                         yield Ok(StreamPart::ReasoningStart {
                                             id: block_id.clone(),
-                                            provider_metadata: Some(provider_namespace("xai", json!({ "itemId": part_id }))),
+                                            provider_metadata: Some(provider_namespace("xai", json!({ "itemId": part_id })).expect("provider metadata must be an object")),
                                         });
                                     }
 
@@ -682,7 +688,7 @@ impl LanguageModel for XaiResponsesModel {
                                     }
                                     yield Ok(StreamPart::ReasoningEnd {
                                         id: block_id,
-                                        provider_metadata: Some(provider_namespace("xai", meta)),
+                                        provider_metadata: Some(provider_namespace("xai", meta).expect("provider metadata must be an object")),
                                     });
                                     active_reasoning.remove(part_id);
                                 }
@@ -909,23 +915,21 @@ impl LanguageModel for XaiResponsesModel {
             }
 
             // Final part: Finish.
-            let provider_meta = cost_in_usd_ticks.map(|cost| provider_namespace("xai", json!({ "costInUsdTicks": cost })));
+            let provider_meta = cost_in_usd_ticks.map(|cost| provider_namespace("xai", json!({ "costInUsdTicks": cost })).expect("provider metadata must be an object"));
 
             yield Ok(StreamPart::Finish {
                 finish_reason: final_finish_reason,
                 usage: final_usage.unwrap_or(Usage {
-                    input_tokens: aimux_core::types::TokenUsage {
+                    input_tokens: aimux_core::types::InputTokenUsage {
                         total: Some(0),
                         no_cache: Some(0),
                         cache_read: Some(0),
                         cache_write: Some(0),
-                        ..Default::default()
                     },
-                    output_tokens: aimux_core::types::TokenUsage {
+                    output_tokens: aimux_core::types::OutputTokenUsage {
                         total: Some(0),
                         text: Some(0),
                         reasoning: Some(0),
-                        ..Default::default()
                     },
                     raw: None,
                 }),
@@ -935,8 +939,10 @@ impl LanguageModel for XaiResponsesModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::StreamResponse {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

@@ -358,7 +358,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                 let timestamp = chrono::Utc::now().to_rfc3339();
 
                 let provider_metadata: Option<SharedProviderMetadata> =
-                    Some(provider_namespace("gladia", raw_body.clone()));
+                    Some(provider_namespace("gladia", raw_body.clone())?);
                 return Ok(TranscriptionResult {
                     text: result.transcription.full_transcript,
                     segments,

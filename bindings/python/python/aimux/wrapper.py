@@ -39,12 +39,15 @@ __all__ = [
     "ResponseFormat",
     "StreamPart",
     "GenerateContent",
+    "TextContent",
     "FileData",
     "FileBytes",
     "Warning",
     "AiMuxErrorValue",
     # models
-    "TokenUsage",
+    "InputTokenUsage",
+    "OutputTokenUsage",
+    "GeneratedFileData",
     "Usage",
     "FinishReason",
     "ResponseMetadata",
@@ -54,6 +57,7 @@ __all__ = [
     "RepairToolCall",
     "ModelMessage",
     "FunctionTool",
+    "FunctionToolInputExample",
     "ProviderTool",
     "TextContentPart",
     "GenerateTextOptions",
@@ -61,6 +65,7 @@ __all__ = [
     "GenerateObjectResult",
     "StreamTextResultAggregated",
     "GenerateResult",
+    "GenerateResponseMetadata",
     # functions
     "generate_text",
     "stream_text",
@@ -112,13 +117,15 @@ AiMuxErrorValue = Any
 # Simple struct models
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TokenUsage(BaseModel):
-    """Token usage detail with cache breakdown (Rust ``TokenUsage``)."""
-
+class InputTokenUsage(BaseModel):
     total: Optional[int] = None
     no_cache: Optional[int] = None
     cache_read: Optional[int] = None
     cache_write: Optional[int] = None
+
+
+class OutputTokenUsage(BaseModel):
+    total: Optional[int] = None
     text: Optional[int] = None
     reasoning: Optional[int] = None
 
@@ -126,9 +133,9 @@ class TokenUsage(BaseModel):
 class Usage(BaseModel):
     """Token usage statistics (Rust ``Usage``)."""
 
-    input_tokens: TokenUsage = Field(default_factory=TokenUsage)
-    output_tokens: TokenUsage = Field(default_factory=TokenUsage)
-    raw: Optional[Any] = None
+    input_tokens: InputTokenUsage = Field(default_factory=InputTokenUsage)
+    output_tokens: OutputTokenUsage = Field(default_factory=OutputTokenUsage)
+    raw: Optional[Dict[str, Any]] = None
 
 
 class FinishReason(BaseModel):
@@ -321,6 +328,7 @@ class _FileDataData(BaseModel):
 class _FileDataUrl(BaseModel):
     type: Literal["Url"]
     url: str
+    original_url: Optional[str] = None
 
 
 class _FileDataReference(BaseModel):
@@ -363,6 +371,22 @@ class FileData(RootModel[_FileDataUnion]):
         return _external_tag_serializer(handler(self))
 
 
+_GeneratedFileDataUnion = Annotated[
+    Union[_FileDataData, _FileDataUrl], Field(discriminator="type")
+]
+
+
+class GeneratedFileData(RootModel[_GeneratedFileDataUnion]):
+    @model_validator(mode="before")
+    @classmethod
+    def _ext_to_int(cls, data: Any) -> Any:
+        return _external_tag_before(data)
+
+    @model_serializer(mode="wrap")
+    def _int_to_ext(self, handler):
+        return _external_tag_serializer(handler(self))
+
+
 # ── GenerateContent ─────────────────────────────────────────────────────────
 
 class _ContentText(BaseModel):
@@ -398,8 +422,8 @@ class _ContentReasoning(BaseModel):
 
 
 class _ContentFile(BaseModel):
-    type: Literal["File"]
-    data: FileData
+    type: Literal["File", "ReasoningFile"]
+    data: GeneratedFileData
     media_type: str
     provider_metadata: Optional[Dict[str, Any]] = None
 
@@ -415,6 +439,19 @@ class _ContentToolResult(BaseModel):
     provider_metadata: Optional[Any] = None
 
 
+class _ContentCustom(BaseModel):
+    type: Literal["Custom"]
+    kind: str
+    provider_metadata: Optional[Dict[str, Any]] = None
+
+
+class _ContentToolApprovalRequest(BaseModel):
+    type: Literal["ToolApprovalRequest"]
+    approval_id: str
+    tool_call_id: str
+    provider_metadata: Optional[Dict[str, Any]] = None
+
+
 _GenerateContentUnion = Annotated[
     Union[
         _ContentText,
@@ -423,6 +460,8 @@ _GenerateContentUnion = Annotated[
         _ContentReasoning,
         _ContentFile,
         _ContentToolResult,
+        _ContentCustom,
+        _ContentToolApprovalRequest,
     ],
     Field(discriminator="type"),
 ]
@@ -554,13 +593,6 @@ class _SPResponseMetadata(BaseModel):
     model_id: Optional[str] = None
 
 
-class _SPSource(BaseModel):
-    type: Literal["Source"]
-    id: str
-    source_type: str
-    url: Optional[str] = None
-    title: Optional[str] = None
-    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class _SPRaw(BaseModel):
@@ -570,9 +602,50 @@ class _SPRaw(BaseModel):
 
 class _SPFile(BaseModel):
     type: Literal["File"]
-    data: FileData
+    data: GeneratedFileData
     media_type: str
     provider_metadata: Optional[Dict[str, Any]] = None
+
+
+class _SPToolApprovalRequest(BaseModel):
+    type: Literal["ToolApprovalRequest"]
+    approval_id: str
+    tool_call: ToolCall
+    reason: Optional[str] = None
+    is_automatic: Optional[bool] = None
+    signature: Optional[str] = None
+
+
+class _GeneratedFile(BaseModel):
+    data: GeneratedFileData
+    media_type: str
+    provider_metadata: Optional[Dict[str, Any]] = None
+
+
+class _SPReasoningFile(BaseModel):
+    type: Literal["ReasoningFile"]
+    file: _GeneratedFile
+    provider_metadata: Optional[Dict[str, Any]] = None
+
+
+_TextContentUnion = Annotated[
+    Union[
+        _ContentText, _SPToolCall, _ContentSource, _ContentReasoning,
+        _SPFile, _SPReasoningFile, _ContentToolResult, _ContentCustom, _SPToolApprovalRequest,
+    ],
+    Field(discriminator="type"),
+]
+
+
+class TextContent(RootModel[_TextContentUnion]):
+    @model_validator(mode="before")
+    @classmethod
+    def _ext_to_int(cls, data: Any) -> Any:
+        return _external_tag_before(data)
+
+    @model_serializer(mode="wrap")
+    def _int_to_ext(self, handler):
+        return _external_tag_serializer(handler(self))
 
 
 _StreamPartUnion = Annotated[
@@ -589,12 +662,15 @@ _StreamPartUnion = Annotated[
         _SPToolCall,
         _SPToolResult,
         _SPFile,
+        _SPReasoningFile,
         _SPReasoningStart,
         _SPReasoningDelta,
         _SPReasoningEnd,
         _SPResponseMetadata,
-        _SPSource,
+        _ContentSource,
         _SPRaw,
+        _ContentCustom,
+        _SPToolApprovalRequest,
     ],
     Field(discriminator="type"),
 ]
@@ -665,6 +741,10 @@ class ResponseFormat(RootModel[Union[Literal["Text"], _ResponseFormatJsonBody]])
 # union with a ``type`` discriminator works directly.
 # ─────────────────────────────────────────────────────────────────────────────
 
+class FunctionToolInputExample(BaseModel):
+    input: Dict[str, Any]
+
+
 class FunctionTool(BaseModel):
     """A user-defined function tool (Rust ``FunctionTool``)."""
 
@@ -674,7 +754,7 @@ class FunctionTool(BaseModel):
     input_schema: Any
     strict: Optional[bool] = None
     provider_options: Optional[Dict[str, Any]] = None
-    input_examples: Optional[List[Any]] = None
+    input_examples: Optional[List[FunctionToolInputExample]] = None
 
 
 class ProviderTool(BaseModel):
@@ -683,7 +763,7 @@ class ProviderTool(BaseModel):
     type: Literal["provider"] = "provider"
     id: str
     name: str
-    args: Any
+    args: Dict[str, Any]
 
 
 Tool = Annotated[
@@ -768,6 +848,29 @@ class _ToolResultContentPart(BaseModel):
     provider_options: Optional[Any] = None
 
 
+class _CustomContentPart(BaseModel):
+    type: Literal["custom"] = "custom"
+    kind: str
+    provider_options: Optional[Any] = None
+
+
+class _ReasoningFileContentPart(BaseModel):
+    type: Literal["reasoning_file"] = "reasoning_file"
+    data: GeneratedFileData
+    media_type: str
+    provider_options: Optional[Any] = None
+
+
+class _ToolApprovalRequestContentPart(BaseModel):
+    type: Literal["tool_approval_request"] = "tool_approval_request"
+    approval_id: str
+    tool_call_id: str
+    reason: Optional[str] = None
+    is_automatic: Optional[bool] = None
+    signature: Optional[str] = None
+    input_schema_input: Optional[Any] = None
+
+
 ContentPart = Annotated[
     Union[
         TextContentPart,
@@ -779,6 +882,9 @@ ContentPart = Annotated[
         _ReasoningContentPart,
         _ToolCallContentPart,
         _ToolResultContentPart,
+        _CustomContentPart,
+        _ReasoningFileContentPart,
+        _ToolApprovalRequestContentPart,
     ],
     Field(discriminator="type"),
 ]
@@ -930,6 +1036,10 @@ class GenerateTextOptions(BaseModel):
     """
 
 
+class GenerateResponseMetadata(ResponseMetadata):
+    body: Optional[Any] = None
+
+
 class GenerateResult(BaseModel):
     """Raw provider result (Rust ``GenerateResult``), exposed via ``raw``."""
 
@@ -938,7 +1048,7 @@ class GenerateResult(BaseModel):
     usage: Usage
     warnings: List[Warning]
     provider_metadata: Optional[Any] = None
-    response: ResponseMetadata
+    response: Optional[GenerateResponseMetadata] = None
     request_body: Optional[Any] = None
     response_headers: Optional[Dict[str, str]] = None
 
@@ -946,6 +1056,7 @@ class GenerateResult(BaseModel):
 class GenerateTextResult(BaseModel):
     """Result of ``generate_text`` (user-facing, Rust ``GenerateTextResult``)."""
 
+    content: List[TextContent] = Field(default_factory=list)
     text: str
     tool_calls: List[ToolCall]
     finish_reason: FinishReason
@@ -1000,6 +1111,7 @@ class StreamTextResultAggregated(BaseModel):
     ``GenerateResult`` equivalent).
     """
 
+    content: List[TextContent] = Field(default_factory=list)
     text: str = ""
     # reasoning/sources/files use weak types (Dict) — same strategy as
     # GenerateTextResult.

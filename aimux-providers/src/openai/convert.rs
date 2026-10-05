@@ -3,7 +3,7 @@
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolPart,
-    UserPart,
+    ToolResultContent, ToolResultOutput, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
@@ -271,12 +271,22 @@ pub fn convert_prompt_to_openai_messages_with_provider(
     system_message_mode: SystemMessageMode,
     provider: &str,
 ) -> Result<Vec<Value>, AiMuxError> {
+    convert_prompt_with_warnings(prompt, system_message_mode, provider, &mut Vec::new())
+}
+
+fn convert_prompt_with_warnings(
+    prompt: &LanguageModelPrompt,
+    system_message_mode: SystemMessageMode,
+    provider: &str,
+    warnings: &mut Vec<Warning>,
+) -> Result<Vec<Value>, AiMuxError> {
     let mut result = Vec::new();
     for msg in prompt {
         result.extend(convert_message_to_openai(
             msg,
             system_message_mode,
             provider,
+            warnings,
         )?);
     }
     Ok(result)
@@ -369,7 +379,7 @@ fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Val
             return Ok(part);
         }
         FileData::Text { .. } => return Err("text file parts".to_string()),
-        FileData::Url { url } => (None, Some(url.as_str())),
+        FileData::Url { url, .. } => (None, Some(url.as_str())),
         FileData::Data { data } => {
             let b64 = match data {
                 FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
@@ -468,6 +478,7 @@ fn convert_message_to_openai(
     msg: &LanguageModelMessage,
     system_message_mode: SystemMessageMode,
     provider: &str,
+    warnings: &mut Vec<Warning>,
 ) -> Result<Vec<Value>, AiMuxError> {
     let message = match msg {
         LanguageModelMessage::System {
@@ -488,17 +499,27 @@ fn convert_message_to_openai(
             json!({ "role": role, "content": content })
         }
         LanguageModelMessage::Tool { content, .. } => {
-            return Ok(content
-                .iter()
-                .map(|part| {
-                    let ToolPart::ToolResult(result) = part;
-                    json!({
-                        "role": "tool",
-                        "content": tool_result_to_content(&result.result),
-                        "tool_call_id": result.tool_call_id,
-                    })
-                })
-                .collect());
+            let mut messages = Vec::new();
+            for part in content {
+                let ToolPart::ToolResult(result) = part else {
+                    continue;
+                };
+                let mut content = if provider == "deepseek" {
+                    deepseek_tool_result_content(&result.output, warnings)?
+                } else {
+                    tool_result_to_content(&result.output)
+                };
+                if provider != "deepseek"
+                    && let Some(breakpoint) = tool_result_cache_breakpoint(&result.output)
+                        .or_else(|| get_prompt_cache_breakpoint(&result.provider_options))
+                {
+                    content = json!([{"type":"text", "text":content, "prompt_cache_breakpoint":breakpoint}]);
+                }
+                messages.push(
+                    json!({"role":"tool", "content":content, "tool_call_id":result.tool_call_id}),
+                );
+            }
+            return Ok(messages);
         }
         LanguageModelMessage::User { content, .. } => {
             let all_plain_text = content.iter().all(|part| {
@@ -544,17 +565,16 @@ fn convert_message_to_openai(
                     AssistantPart::Text(part) => text.push_str(&part.text),
                     AssistantPart::Reasoning(part) => reasoning.push_str(&part.text),
                     AssistantPart::ToolCall(part) => {
-                        let arguments = if part.input.is_null() {
-                            "{}".to_string()
-                        } else {
-                            part.input.to_string()
-                        };
+                        let arguments = part.input.to_string();
                         tool_calls.push(json!({
                             "type": "function", "id": part.tool_call_id,
                             "function": { "name": part.tool_name, "arguments": arguments },
                         }));
                     }
-                    AssistantPart::File(_) | AssistantPart::ToolResult(_) => {}
+                    AssistantPart::File(_)
+                    | AssistantPart::ToolResult(_)
+                    | AssistantPart::ReasoningFile(_)
+                    | AssistantPart::Custom(_) => {}
                 }
             }
             let mut message = if provider == "groq" || !tool_calls.is_empty() {
@@ -577,6 +597,8 @@ fn convert_message_to_openai(
                             ..
                         }) | AssistantPart::Reasoning(_)
                             | AssistantPart::ToolResult(_)
+                            | AssistantPart::ReasoningFile(_)
+                            | AssistantPart::Custom(_)
                     )
                 });
                 let value = if all_plain_text {
@@ -594,6 +616,8 @@ fn convert_message_to_openai(
                             ),
                             AssistantPart::Reasoning(_)
                             | AssistantPart::ToolResult(_)
+                            | AssistantPart::ReasoningFile(_)
+                            | AssistantPart::Custom(_)
                             | AssistantPart::ToolCall(_) => {}
                         }
                     }
@@ -616,10 +640,205 @@ fn convert_message_to_openai(
 }
 
 /// Serialize a tool-result value into the OpenAI tool message content string.
-fn tool_result_to_content(output: &Value) -> Value {
+fn deepseek_tool_result_content(
+    output: &ToolResultOutput,
+    warnings: &mut Vec<Warning>,
+) -> Result<Value, AiMuxError> {
+    let ToolResultOutput::Content { value } = output else {
+        return Ok(tool_result_to_content(output));
+    };
+    let is_image = |part: &FilePart| {
+        get_top_level_media_type(&part.media_type) == "image"
+            && !matches!(part.data, FileData::Text { .. })
+    };
+    if !value
+        .iter()
+        .any(|part| matches!(part, ToolResultContent::File(file) if is_image(file)))
+    {
+        return Ok(tool_result_to_content(output));
+    }
+    let mut parts = Vec::new();
+    for part in value {
+        match part {
+            ToolResultContent::Text(part) => parts.push(json!({"type":"text", "text":part.text})),
+            ToolResultContent::File(part) if is_image(part) => {
+                if let FileData::Reference { reference } = &part.data {
+                    let file_id = resolve_provider_reference(reference, "deepseek")
+                        .map_err(AiMuxError::InvalidArgument)?;
+                    parts.push(json!({"type":"file", "file_id":file_id}));
+                    continue;
+                }
+                let url = match &part.data {
+                    FileData::Url { url, .. } => {
+                        let media_type = resolve_full_media_type(&part.media_type, "");
+                        if !matches!(
+                            media_type.as_str(),
+                            "image/jpeg" | "image/jpg" | "image/png" | "image/gif" | "image/webp"
+                        ) {
+                            return Err(AiMuxError::UnsupportedFunctionality(format!(
+                                "DeepSeek image media type {media_type}"
+                            )));
+                        }
+                        if url.len() > 8192 {
+                            return Err(AiMuxError::InvalidPrompt(
+                                "DeepSeek image URLs must not exceed 8192 characters.".into(),
+                            ));
+                        }
+                        url.clone()
+                    }
+                    FileData::Data { data } => {
+                        use base64::Engine;
+                        let b64 = match data {
+                            FileBytes::Binary(bytes) => {
+                                base64::engine::general_purpose::STANDARD.encode(bytes)
+                            }
+                            FileBytes::Base64(data) => data.clone(),
+                        };
+                        let media_type = resolve_full_media_type(&part.media_type, &b64);
+                        let media_type = if media_type == "image/jpg" {
+                            "image/jpeg"
+                        } else {
+                            media_type.as_str()
+                        };
+                        if !matches!(
+                            media_type,
+                            "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+                        ) {
+                            return Err(AiMuxError::UnsupportedFunctionality(format!(
+                                "DeepSeek image media type {media_type}"
+                            )));
+                        }
+                        format!("data:{media_type};base64,{b64}")
+                    }
+                    _ => continue,
+                };
+                let mut image_url = json!({"url":url});
+                if let Some(detail) = part
+                    .provider_options
+                    .as_ref()
+                    .and_then(|options| options.get("deepseek"))
+                    .and_then(|options| options.get("imageDetail"))
+                {
+                    image_url["detail"] = detail.clone();
+                }
+                parts.push(json!({"type":"image_url", "image_url":image_url}));
+            }
+            part => warnings.push(Warning::Unsupported {
+                feature: format!(
+                    "tool result content part type: {}",
+                    if matches!(part, ToolResultContent::File(_)) {
+                        "file"
+                    } else {
+                        "custom"
+                    }
+                ),
+                details: None,
+            }),
+        }
+    }
+    Ok(json!(parts))
+}
+
+pub(crate) fn tool_result_to_content(output: &ToolResultOutput) -> Value {
+    Value::String(match output {
+        ToolResultOutput::Text { value, .. } | ToolResultOutput::ErrorText { value, .. } => {
+            value.clone()
+        }
+        ToolResultOutput::ExecutionDenied { reason, .. } => reason
+            .clone()
+            .unwrap_or_else(|| "Tool call execution denied.".to_string()),
+        ToolResultOutput::Json { value, .. } | ToolResultOutput::ErrorJson { value, .. } => {
+            value.to_string()
+        }
+        ToolResultOutput::Content { value } => tool_result_content_value(value).to_string(),
+    })
+}
+
+pub(crate) fn tool_result_content_value(content: &[ToolResultContent]) -> Value {
+    json!(
+        content
+            .iter()
+            .map(|part| {
+                let (mut item, provider_options) = match part {
+                    ToolResultContent::Text(part) => (
+                        json!({"type":"text", "text":part.text}),
+                        &part.provider_options,
+                    ),
+                    ToolResultContent::File(part) => {
+                        let data = match &part.data {
+                            FileData::Data { data } => {
+                                let data = match data {
+                                    FileBytes::Base64(data) => json!(data),
+                                    FileBytes::Binary(bytes) => Value::Object(
+                                        bytes
+                                            .iter()
+                                            .enumerate()
+                                            .map(|(i, byte)| (i.to_string(), json!(byte)))
+                                            .collect(),
+                                    ),
+                                };
+                                json!({"type":"data", "data":data})
+                            }
+                            FileData::Url { url, original_url } => {
+                                let mut data = json!({"type":"url", "url":url});
+                                if let Some(original_url) = original_url {
+                                    data["originalUrl"] = json!(original_url);
+                                }
+                                data
+                            }
+                            FileData::Reference { reference } => {
+                                json!({"type":"reference", "reference":reference})
+                            }
+                            FileData::Text { text } => json!({"type":"text", "text":text}),
+                        };
+                        let mut item =
+                            json!({"type":"file", "data":data, "mediaType":part.media_type});
+                        if let Some(filename) = &part.filename {
+                            item["filename"] = json!(filename);
+                        }
+                        (item, &part.provider_options)
+                    }
+                    ToolResultContent::Custom { provider_options } => {
+                        (json!({"type":"custom"}), provider_options)
+                    }
+                };
+                if let Some(provider_options) = provider_options {
+                    item["providerOptions"] = json!(provider_options);
+                }
+                item
+            })
+            .collect::<Vec<_>>()
+    )
+}
+
+pub(crate) fn tool_result_cache_breakpoint(output: &ToolResultOutput) -> Option<Value> {
     match output {
-        Value::String(s) => Value::String(s.clone()),
-        other => Value::String(other.to_string()),
+        ToolResultOutput::Text {
+            provider_options, ..
+        }
+        | ToolResultOutput::Json {
+            provider_options, ..
+        }
+        | ToolResultOutput::ErrorText {
+            provider_options, ..
+        }
+        | ToolResultOutput::ErrorJson {
+            provider_options, ..
+        }
+        | ToolResultOutput::ExecutionDenied {
+            provider_options, ..
+        } => get_prompt_cache_breakpoint(provider_options),
+        ToolResultOutput::Content { value } => value.iter().find_map(|part| match part {
+            aimux_core::language_model_message::ToolResultContent::Text(part) => {
+                get_prompt_cache_breakpoint(&part.provider_options)
+            }
+            aimux_core::language_model_message::ToolResultContent::File(part) => {
+                get_prompt_cache_breakpoint(&part.provider_options)
+            }
+            aimux_core::language_model_message::ToolResultContent::Custom { provider_options } => {
+                get_prompt_cache_breakpoint(provider_options)
+            }
+        }),
     }
 }
 
@@ -1099,11 +1318,11 @@ fn apply_tools(
         prepare_tools_groq(
             &function_tools,
             options.tools.as_ref(),
-            Some(&options.tool_choice),
+            options.tool_choice.as_ref(),
             model_id,
         )
     } else {
-        prepare_tools(&function_tools, Some(&options.tool_choice))
+        prepare_tools(&function_tools, options.tool_choice.as_ref())
     };
 
     if let Some(tools) = prepared.tools {
@@ -1161,10 +1380,11 @@ pub fn build_request_body_with_warnings(
         });
     }
 
-    let messages = convert_prompt_to_openai_messages_with_provider(
+    let messages = convert_prompt_with_warnings(
         &options.prompt,
         system_message_mode,
         provider,
+        &mut warnings,
     )?;
 
     let mut body = json!({

@@ -235,8 +235,11 @@ impl VertexImageModel {
             .unwrap_or_default();
 
         let payload = json!({ "images": image_metas });
-        let mut metadata = provider_namespace("googleVertex", payload.clone());
-        metadata.extend(provider_namespace("vertex", payload));
+        let mut metadata = provider_namespace("googleVertex", payload.clone())
+            .expect("provider metadata must be an object");
+        metadata.extend(
+            provider_namespace("vertex", payload).expect("provider metadata must be an object"),
+        );
 
         Ok(ImageResult {
             images: ImageOutputs::Base64(images),
@@ -381,8 +384,11 @@ impl VertexImageModel {
         });
 
         let payload = json!({ "images": images.iter().map(|_| json!({})).collect::<Vec<_>>() });
-        let mut metadata = provider_namespace("googleVertex", payload.clone());
-        metadata.extend(provider_namespace("vertex", payload));
+        let mut metadata = provider_namespace("googleVertex", payload.clone())
+            .expect("provider metadata must be an object");
+        metadata.extend(
+            provider_namespace("vertex", payload).expect("provider metadata must be an object"),
+        );
 
         Ok(ImageResult {
             images: ImageOutputs::Base64(images),

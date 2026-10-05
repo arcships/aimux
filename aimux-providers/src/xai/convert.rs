@@ -97,21 +97,21 @@ pub fn convert_xai_usage(usage: &XaiUsageResponse) -> aimux_core::types::Usage {
     let output_total = completion_tokens + reasoning_tokens;
 
     aimux_core::types::Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input_total),
             no_cache: Some(input_no_cache),
             cache_read: Some(cache_read),
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(output_total),
             text: Some(completion_tokens),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -318,11 +318,7 @@ pub fn convert_to_xai_messages(
                             input,
                             ..
                         }) => {
-                            let arguments = if input.is_null() {
-                                "{}".to_string()
-                            } else {
-                                input.to_string()
-                            };
+                            let arguments = input.to_string();
                             tool_calls.push(json!({ "id": tool_call_id, "type": "function", "function": { "name": tool_name, "arguments": arguments } }));
                         }
                         _ => {}
@@ -338,13 +334,13 @@ pub fn convert_to_xai_messages(
                 for part in content {
                     let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
-                        result,
+                        output,
                         ..
-                    }) = part;
-                    let content = match result {
-                        Value::String(s) => s.clone(),
-                        other => other.to_string(),
+                    }) = part
+                    else {
+                        continue;
                     };
+                    let content = crate::openai::convert::tool_result_to_content(output);
                     messages.push(
                         json!({ "role": "tool", "tool_call_id": tool_call_id, "content": content }),
                     );
@@ -369,7 +365,7 @@ fn convert_user_part(part: &UserPart, _index: usize) -> Result<Value, AiMuxError
             FileData::Data {
                 data: FileBytes::Base64(data),
             } => convert_image_part(&file.media_type, Some(data), None, &file.provider_options),
-            FileData::Url { url } => {
+            FileData::Url { url, .. } => {
                 convert_image_part(&file.media_type, None, Some(url), &file.provider_options)
             }
             FileData::Reference { reference } => {
@@ -460,7 +456,7 @@ pub fn build_request_body_with_warnings(
     let (messages, message_warnings) = convert_to_xai_messages(&options.prompt)?;
     warnings.extend(message_warnings);
 
-    let prepared = prepare_tools(&options.tools, Some(&options.tool_choice));
+    let prepared = prepare_tools(&options.tools, options.tool_choice.as_ref());
     for tw in &prepared.tool_warnings {
         warnings.push(tw.clone());
     }
