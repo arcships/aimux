@@ -216,11 +216,26 @@ fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
 pub struct OpenAITranscriptionModel {
     model_id: String,
     config: OpenAIModelConfig,
+    #[cfg(feature = "realtime")]
+    web_socket: Option<std::sync::Arc<dyn aimux_provider_utils::ws::WsConnector>>,
 }
 
 impl OpenAITranscriptionModel {
     pub(crate) fn from_config(model_id: String, config: OpenAIModelConfig) -> Self {
-        Self { model_id, config }
+        Self {
+            model_id,
+            config,
+            #[cfg(feature = "realtime")]
+            web_socket: None,
+        }
+    }
+    #[cfg(feature = "realtime")]
+    pub(crate) fn with_web_socket(
+        mut self,
+        web_socket: Option<std::sync::Arc<dyn aimux_provider_utils::ws::WsConnector>>,
+    ) -> Self {
+        self.web_socket = web_socket;
+        self
     }
 }
 
@@ -458,7 +473,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             subprotocols: Vec::new(),
             abort_signal: abort.clone(),
             timeout: options.timeout,
-            connector: None,
+            connector: self.web_socket.clone(),
         };
         let mut ws = ws_connect(&req).await?;
 

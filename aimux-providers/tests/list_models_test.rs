@@ -15,7 +15,6 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::ProviderDiscovery;
-use aimux_provider_utils::Resolvable;
 use aimux_providers::catalogue;
 use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
 use aimux_providers::{PresetSettings, create_provider};
@@ -64,7 +63,7 @@ async fn openai_provider_list_models() {
     let recorded_path = mount_cassette_file(&server, cassette).await;
     let base_url = base_url_for(&server.uri(), &recorded_path);
     let provider = create_openai(OpenAIProviderSettings {
-        api_key: Some(Resolvable::Value("test-key".to_string())),
+        api_key: Some("test-key".to_string()),
         base_url: Some(base_url),
         ..Default::default()
     })
@@ -128,7 +127,7 @@ async fn anthropic_list_models() {
     let base_url = server.uri().trim_end_matches('/').to_string();
     use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
     let provider = create_anthropic(AnthropicProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(format!("{base_url}/v1")),
         ..Default::default()
     })
@@ -153,7 +152,7 @@ async fn google_list_models() {
     );
     use aimux_providers::google::{GoogleProviderSettings, create_google};
     let provider = create_google(GoogleProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(base_url),
         ..Default::default()
     })
@@ -173,7 +172,7 @@ async fn list_models_malformed_response() {
         .mount(&server)
         .await;
     let provider = create_openai(OpenAIProviderSettings {
-        api_key: Some(Resolvable::Value("test-key".to_string())),
+        api_key: Some("test-key".to_string()),
         base_url: Some(format!("{}/v1", server.uri())),
         ..Default::default()
     })
@@ -197,7 +196,7 @@ async fn list_models_empty_data() {
         .mount(&server)
         .await;
     let provider = create_openai(OpenAIProviderSettings {
-        api_key: Some(Resolvable::Value("test-key".to_string())),
+        api_key: Some("test-key".to_string()),
         base_url: Some(format!("{}/v1", server.uri())),
         ..Default::default()
     })
@@ -221,7 +220,7 @@ async fn list_models_http_error() {
         .mount(&server)
         .await;
     let provider = create_openai(OpenAIProviderSettings {
-        api_key: Some(Resolvable::Value("test-key".to_string())),
+        api_key: Some("test-key".to_string()),
         base_url: Some(format!("{}/v1", server.uri())),
         ..Default::default()
     })

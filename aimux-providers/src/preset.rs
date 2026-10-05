@@ -373,6 +373,35 @@ fn assemble(
     let mut dialect = ChatDialect::baseline();
     dialect.supports_top_k = true;
     dialect.max_tokens_key = descriptor.max_tokens_key;
+    if matches!(descriptor.name, "alibaba" | "moonshotai") {
+        dialect.convert_usage = Some(Arc::new(move |raw| {
+            let mut usage = crate::openai_compatible::chat::usage_from_raw(raw);
+            let Some(raw) = raw.filter(|raw| !raw.is_null()) else {
+                return usage;
+            };
+            let tokens = |value: &serde_json::Value| {
+                value.as_u64().and_then(|value| u32::try_from(value).ok())
+            };
+            if descriptor.name == "alibaba" {
+                let details = &raw["prompt_tokens_details"];
+                let cache_write = tokens(&details["cache_creation_input_tokens"])
+                    .or_else(|| tokens(&details["cache_write_tokens"]))
+                    .unwrap_or(0);
+                usage.input_tokens.cache_write = Some(cache_write);
+                usage.input_tokens.no_cache = usage
+                    .input_tokens
+                    .no_cache
+                    .map(|tokens| tokens.saturating_sub(cache_write));
+            } else if let Some(cached) = tokens(&raw["cached_tokens"]) {
+                usage.input_tokens.cache_read = Some(cached);
+                usage.input_tokens.no_cache = usage
+                    .input_tokens
+                    .total
+                    .map(|tokens| tokens.saturating_sub(cached));
+            }
+            usage
+        }));
+    }
     let profile = ChatProfile {
         include_usage: true,
         supports_structured_outputs: true,

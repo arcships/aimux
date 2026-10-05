@@ -39,7 +39,7 @@ fn chat_model(kind: Kind, base_url: String, model_id: &str) -> std::sync::Arc<dy
         Kind::Generic => create_openai_compatible(OpenAICompatibleProviderSettings {
             name: "compat".to_string(),
             base_url,
-            api_key,
+            api_key: Some("test-key".to_string()),
             ..Default::default()
         })
         .unwrap()
@@ -377,7 +377,7 @@ async fn replay_anthropic() {
     assert!(n > 0);
 
     let provider = create_anthropic(AnthropicProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(format!("{}/v1", server.uri())),
         ..Default::default()
     })
@@ -430,7 +430,7 @@ async fn replay_gemini() {
     let provider = create_openai_compatible(OpenAICompatibleProviderSettings {
         name: "google".to_string(),
         base_url: format!("{}/v1beta/openai", server.uri()),
-        api_key: Some(Resolvable::Value("test-key".to_string())),
+        api_key: Some("test-key".to_string()),
         ..Default::default()
     })
     .unwrap();

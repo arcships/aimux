@@ -331,6 +331,10 @@ fn logprob(token: &str, logprob: f64, bytes: Value) -> Value {
     })
 }
 
+// ===========================================================================
+// describe('model IDs') / describe('supportedUrls')
+// ===========================================================================
+
 #[tokio::test]
 async fn should_forward_the_model_id() {
     for model_id in ["deepseek-v4-flash", "deepseek-v4-pro"] {
@@ -348,6 +352,30 @@ async fn should_natively_support_http_image_urls() {
     assert!(patterns[0].is_match("http://example.com/a.png"));
     assert!(!patterns[0].is_match("data:image/png;base64,AAAA"));
 }
+
+// ===========================================================================
+// describe('doGenerate')
+// ===========================================================================
+
+#[tokio::test]
+async fn should_reject_a_response_without_choices() {
+    let server = json_server(json!({
+        "id": "chatcmpl-empty", "object": "chat.completion", "created": 0,
+        "model": "deepseek-chat", "choices": [],
+        "usage": { "prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1 }
+    }))
+    .await;
+    let error = chat(&server, "deepseek-chat")
+        .do_generate(&options())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::InvalidResponseData(m) if m == "Response did not contain any choices."),
+        "{error:?}"
+    );
+}
+
+// ---- describe('text') ------------------------------------------------------
 
 #[tokio::test]
 async fn text_should_send_correct_request_body() {
@@ -384,7 +412,7 @@ async fn text_should_omit_deprecated_and_ineffective_sampling_options_in_default
     options.presence_penalty = Some(0.6);
     let result = generate_result("deepseek-v4-flash", &options).await;
     assert_eq!(
-        result.request.and_then(|r| r.body).unwrap(),
+        result.request.and_then(|request| request.body).unwrap(),
         json!({ "model": "deepseek-v4-flash", "messages": [{ "role": "user", "content": "Hello" }] })
     );
     assert_eq!(
@@ -410,7 +438,7 @@ async fn text_should_preserve_supported_sampling_options_when_v4_thinking_is_dis
     options.presence_penalty = Some(0.6);
     let result = generate_result("deepseek-v4-flash", &options).await;
     assert_eq!(
-        result.request.and_then(|r| r.body).unwrap(),
+        result.request.and_then(|request| request.body).unwrap(),
         json!({
             "model": "deepseek-v4-flash",
             "messages": [{ "role": "user", "content": "Hello" }],

@@ -16,7 +16,6 @@ use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
 use aimux_core::image_model::ImageModel;
 use aimux_core::shared::FileBytes;
 use aimux_core::transcription_model::TranscriptionModel;
-use aimux_provider_utils::Resolvable;
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use aimux_providers::openai_compatible::{
     OpenAICompatibleProviderSettings, create_openai_compatible,
@@ -25,7 +24,7 @@ use aimux_providers::openai_compatible::{
 /// The native OpenAI package pointed at the mock server.
 fn native_provider(base_url: String) -> OpenAIProvider {
     create_openai(OpenAIProviderSettings {
-        api_key: Some(Resolvable::Value("test-key".to_string())),
+        api_key: Some("test-key".to_string()),
         base_url: Some(base_url),
         ..Default::default()
     })
@@ -228,7 +227,7 @@ async fn cassette_xai_image_generation() {
     let provider = create_openai_compatible(OpenAICompatibleProviderSettings {
         name: "xai".to_string(),
         base_url,
-        api_key: Some(Resolvable::Value("test-key".to_string())),
+        api_key: Some("test-key".to_string()),
         ..Default::default()
     })
     .unwrap();

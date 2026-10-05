@@ -42,7 +42,7 @@ use aimux_providers::openai::{OpenAIModel, OpenAIProviderSettings, create_openai
 /// Build the native OpenAI chat model pointed at the replay server.
 fn openai_provider(uri: &str) -> OpenAIModel {
     create_openai(OpenAIProviderSettings {
-        api_key: Some(Resolvable::Value("test-key".to_string())),
+        api_key: Some("test-key".to_string()),
         base_url: Some(format!("{uri}/v1")),
         ..Default::default()
     })
@@ -368,7 +368,7 @@ async fn cross_protocol_anthropic_to_openai_non_streaming() {
     replay::mount_cassettes(&server, "tests/cassettes/anthropic").await;
 
     let provider = create_anthropic(AnthropicProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(format!("{}/v1", server.uri())),
         ..Default::default()
     })
@@ -428,7 +428,7 @@ async fn cross_protocol_anthropic_to_openai_streaming() {
     replay::mount_cassettes(&server, "tests/cassettes/anthropic").await;
 
     let provider = create_anthropic(AnthropicProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(format!("{}/v1", server.uri())),
         ..Default::default()
     })

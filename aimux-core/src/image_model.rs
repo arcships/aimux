@@ -194,6 +194,16 @@ pub trait ImageModel: Send + Sync {
     /// `Option<u32>`.
     fn max_images_per_call(&self) -> Option<u32>;
 
+    /// Whether image file inputs are supported; `None` means unknown.
+    fn supports_file_inputs(&self) -> Option<bool> {
+        None
+    }
+
+    /// Whether mask inputs are supported; `None` means unknown.
+    fn supports_mask_inputs(&self) -> Option<bool> {
+        None
+    }
+
     /// Generate an array of images.
     ///
     /// Naming: the `do_` prefix prevents accidental direct usage by users.

@@ -15,7 +15,6 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
 use aimux_core::types::FinishReasonUnified;
-use aimux_provider_utils::Resolvable;
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use futures::StreamExt;
 use mock_fetch::{Canned, MockFetch};
@@ -24,7 +23,7 @@ use serde_json::{Value, json};
 fn provider(fetch: &std::sync::Arc<MockFetch>) -> OpenAIProvider {
     create_openai(OpenAIProviderSettings {
         base_url: Some("https://example.test/v1".into()),
-        api_key: Some(Resolvable::Value("test-key".into())),
+        api_key: Some("test-key".into()),
         fetch: Some(fetch.transport()),
         ..Default::default()
     })

@@ -188,9 +188,8 @@ pub struct OpenAIProviderSettings {
     /// The API key. `None` loads `OPENAI_API_KEY` when a request is made and
     /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
     /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
+    /// the environment.
+    pub api_key: Option<String>,
     /// Sent as `OpenAI-Organization`.
     pub organization: Option<String>,
     /// Sent as `OpenAI-Project`.
@@ -204,6 +203,9 @@ pub struct OpenAIProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
+    /// Custom socket connector for streaming transcription.
+    #[cfg(feature = "realtime")]
+    pub web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
 }
 
 impl std::fmt::Debug for OpenAIProviderSettings {
@@ -211,7 +213,7 @@ impl std::fmt::Debug for OpenAIProviderSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpenAIProviderSettings")
             .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
+            .field("api_key", &self.api_key.is_some())
             .field("organization", &self.organization)
             .field("project", &self.project)
             .field(
@@ -243,7 +245,11 @@ pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider,
         base_url,
         headers: config::headers_with_user_agent(
             provider_headers(
-                Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "OpenAI"),
+                Credential::explicit_or_env(
+                    settings.api_key.map(Resolvable::Value),
+                    API_KEY_ENV_VAR,
+                    "OpenAI",
+                ),
                 [
                     ("OpenAI-Organization", settings.organization),
                     ("OpenAI-Project", settings.project),
@@ -256,6 +262,8 @@ pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider,
             "ai-sdk-openai",
         ),
         fetch: settings.fetch,
+        #[cfg(feature = "realtime")]
+        web_socket: settings.web_socket,
     })
 }
 
@@ -276,6 +284,8 @@ pub struct OpenAIProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
+    #[cfg(feature = "realtime")]
+    web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
 }
 
 impl OpenAIProvider {
@@ -336,10 +346,13 @@ impl OpenAIProvider {
     /// A transcription (STT) model; `provider()` is `"{name}.transcription"`.
     #[must_use]
     pub fn transcription(&self, model_id: &str) -> OpenAITranscriptionModel {
-        OpenAITranscriptionModel::from_config(
+        let model = OpenAITranscriptionModel::from_config(
             model_id.to_string(),
             self.model_config("transcription"),
-        )
+        );
+        #[cfg(feature = "realtime")]
+        let model = model.with_web_socket(self.web_socket.clone());
+        model
     }
 
     /// The files interface; `provider()` is `"{name}.files"`.

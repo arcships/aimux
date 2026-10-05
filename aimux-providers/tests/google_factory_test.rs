@@ -31,7 +31,6 @@ use aimux_core::result::{GenerateContent, GenerateResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
 use aimux_core::types::FinishReasonUnified;
-use aimux_provider_utils::Resolvable;
 use aimux_providers::google::{GoogleProviderSettings, create_google};
 
 use mock_fetch::{Canned, MockFetch, Seen};
@@ -40,7 +39,7 @@ const KEY: &str = "sk-test-fixture";
 
 fn settings(mock: &Arc<MockFetch>) -> GoogleProviderSettings {
     GoogleProviderSettings {
-        api_key: Some(Resolvable::Value(KEY.to_string())),
+        api_key: Some(KEY.to_string()),
         fetch: Some(mock.transport()),
         ..Default::default()
     }

@@ -12,6 +12,7 @@ use crate::embedding_model::EmbeddingModel;
 use crate::error::AiMuxError;
 use crate::files_model::Files;
 use crate::image_model::ImageModel;
+use crate::image_model_middleware::{ImageModelMiddleware, wrap_image_model};
 use crate::language_model::LanguageModel;
 use crate::language_model_middleware::{LanguageModelMiddleware, wrap_language_model};
 use crate::provider::Provider;
@@ -29,6 +30,8 @@ pub struct ProviderRegistryOptions {
     pub separator: String,
     /// Middleware applied to each language model in input order.
     pub language_model_middleware: Vec<Arc<dyn LanguageModelMiddleware>>,
+    /// Middleware applied to each image model in input order.
+    pub image_model_middleware: Vec<Arc<dyn ImageModelMiddleware>>,
 }
 
 impl Default for ProviderRegistryOptions {
@@ -36,6 +39,7 @@ impl Default for ProviderRegistryOptions {
         Self {
             separator: ":".to_string(),
             language_model_middleware: Vec::new(),
+            image_model_middleware: Vec::new(),
         }
     }
 }
@@ -45,6 +49,7 @@ pub struct ProviderRegistry {
     providers: BTreeMap<String, Arc<dyn Provider>>,
     separator: String,
     language_model_middleware: Vec<Arc<dyn LanguageModelMiddleware>>,
+    image_model_middleware: Vec<Arc<dyn ImageModelMiddleware>>,
 }
 
 /// Create a registry over `providers` (the AI SDK's `createProviderRegistry`).
@@ -57,6 +62,7 @@ pub fn create_provider_registry(
         providers,
         separator: options.separator,
         language_model_middleware: options.language_model_middleware,
+        image_model_middleware: options.image_model_middleware,
     }
 }
 
@@ -123,7 +129,10 @@ impl ProviderRegistry {
     /// See [`Self::language_model`].
     pub fn image_model(&self, id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
         let (provider, model_id) = self.resolve(id, "imageModel")?;
-        provider.image_model(model_id)
+        Ok(wrap_image_model(
+            provider.image_model(model_id)?,
+            &self.image_model_middleware,
+        ))
     }
 
     /// The transcription model for a combined id. A provider that offers none

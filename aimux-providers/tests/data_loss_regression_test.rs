@@ -333,7 +333,7 @@ const NANO_BANANA_BASE64_LEN: usize = 258_820;
 
 fn google_at(uri: &str) -> GoogleProvider {
     create_google(GoogleProviderSettings {
-        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        api_key: Some("test-api-key".to_string()),
         base_url: Some(format!("{uri}/v1beta")),
         ..Default::default()
     })
@@ -718,7 +718,7 @@ async fn finding_14_gemini_grounding_chunks_become_sources() {
 
 fn anthropic_at(uri: &str) -> AnthropicMessagesModel {
     create_anthropic(AnthropicProviderSettings {
-        api_key: Some("test-api-key".to_string().into()),
+        api_key: Some("test-api-key".to_string()),
         base_url: Some(format!("{uri}/v1")),
         ..Default::default()
     })
@@ -1230,7 +1230,7 @@ async fn finding_13_mistral_thinking_parts_become_reasoning_in_generate() {
 
 fn openai_responses_at(uri: &str, model: &str) -> impl LanguageModel {
     create_openai(OpenAIProviderSettings {
-        api_key: Some(Resolvable::Value("test-key".to_string())),
+        api_key: Some("test-key".to_string()),
         base_url: Some(format!("{uri}/v1")),
         ..Default::default()
     })

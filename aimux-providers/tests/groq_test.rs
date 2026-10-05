@@ -61,6 +61,13 @@ fn model_at(server: &MockServer, model_id: &str) -> GroqChatLanguageModel {
     .chat(model_id)
 }
 
+fn browser_search_model_ids() -> Vec<&'static str> {
+    include_str!("../src/groq/browser_search_models.rs")
+        .split('"')
+        .filter(|value| value.starts_with("openai/"))
+        .collect()
+}
+
 /// Build the default test model pointed at the mock server.
 fn make_provider(server: &MockServer) -> GroqChatLanguageModel {
     model_at(server, "gemma2-9b-it")
@@ -1228,7 +1235,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let model = model_at(&server, "openai/gpt-oss-120b");
+        let model = model_at(&server, browser_search_model_ids()[1]);
 
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::None),

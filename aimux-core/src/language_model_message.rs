@@ -103,7 +103,7 @@ pub struct ToolResultPart {
 
 /// The provider-facing result of a tool call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "kebab-case")]
 #[ts(export)]
 pub enum ToolResultOutput {
     Text {
@@ -139,7 +139,7 @@ pub enum ToolResultOutput {
 
 /// Content within a tool result.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "kebab-case")]
 #[ts(export)]
 pub enum ToolResultContent {
     Text(TextPart),
@@ -183,7 +183,7 @@ pub struct ToolApprovalResponsePart {
 
 /// Parts allowed in a user message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "kebab-case")]
 #[ts(export)]
 pub enum UserPart {
     Text(TextPart),
@@ -192,7 +192,7 @@ pub enum UserPart {
 
 /// Parts allowed in an assistant message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "kebab-case")]
 #[ts(export)]
 pub enum AssistantPart {
     Text(TextPart),
@@ -206,7 +206,7 @@ pub enum AssistantPart {
 
 /// Parts allowed in a tool message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "kebab-case")]
 #[ts(export)]
 pub enum ToolPart {
     ToolResult(ToolResultPart),

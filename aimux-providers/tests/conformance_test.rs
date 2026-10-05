@@ -23,7 +23,6 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 
-use aimux_provider_utils::Resolvable;
 use aimux_providers::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use aimux_providers::openai_compatible::{
@@ -57,7 +56,7 @@ fn registry_model(
 /// The native OpenAI package pointed at the mock server.
 fn native_openai(base_url: String) -> OpenAIProvider {
     create_openai(OpenAIProviderSettings {
-        api_key: Some(Resolvable::Value("test-key".to_string())),
+        api_key: Some("test-key".to_string()),
         base_url: Some(base_url),
         ..Default::default()
     })
@@ -143,7 +142,7 @@ mod anthropic_conformance {
 
     fn make_provider(server: &MockServer) -> AnthropicProvider {
         create_anthropic(AnthropicProviderSettings {
-            api_key: Some("test-key".to_string().into()),
+            api_key: Some("test-key".to_string()),
             base_url: Some(format!("{}/v1", server.uri())),
             ..Default::default()
         })
@@ -530,7 +529,7 @@ mod gemini_conformance {
 
     fn make_provider(server: &MockServer) -> GoogleProvider {
         create_google(GoogleProviderSettings {
-            api_key: Some("test-key".to_string().into()),
+            api_key: Some("test-key".to_string()),
             base_url: Some(format!("{}/v1beta", server.uri())),
             ..Default::default()
         })
@@ -985,7 +984,7 @@ mod huggingface_conformance {
         create_openai_compatible(OpenAICompatibleProviderSettings {
             name: "huggingface".to_string(),
             base_url: format!("{}/together/v1", server.uri()),
-            api_key: Some(Resolvable::Value("test-key".to_string())),
+            api_key: Some("test-key".to_string()),
             ..Default::default()
         })
         .expect("valid settings")

@@ -33,9 +33,7 @@ use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
 use aimux_core::types::FinishReasonUnified;
-use aimux_provider_utils::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, Resolvable,
-};
+use aimux_provider_utils::{Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse};
 use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
 // ── injected transport ───────────────────────────────────────────────────────
@@ -130,7 +128,7 @@ impl Fetch for MockFetch {
 
 fn settings(mock: &Arc<MockFetch>) -> AnthropicProviderSettings {
     AnthropicProviderSettings {
-        api_key: Some(Resolvable::Value(KEY.to_string())),
+        api_key: Some(KEY.to_string()),
         fetch: Some(mock.transport()),
         ..Default::default()
     }

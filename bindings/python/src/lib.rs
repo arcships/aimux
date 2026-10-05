@@ -434,7 +434,7 @@ pub(crate) fn openai_provider(
     base_url: Option<&str>,
 ) -> PyResult<aimux_providers::openai::OpenAIProvider> {
     aimux_providers::openai::create_openai(aimux_providers::openai::OpenAIProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        api_key: Some(api_key.to_string()),
         base_url: base_url.map(str::to_string),
         ..Default::default()
     })
@@ -461,7 +461,7 @@ fn anthropic(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<
     use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
     let provider = create_anthropic(AnthropicProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        api_key: Some(api_key.to_string()),
         base_url: base_url.map(str::to_string),
         ..Default::default()
     })
@@ -505,7 +505,7 @@ fn google(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
     use aimux_providers::google::{GoogleProviderSettings, create_google};
 
     let provider = create_google(GoogleProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        api_key: Some(api_key.to_string()),
         base_url: base_url.map(str::to_string),
         ..Default::default()
     })

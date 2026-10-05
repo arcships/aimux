@@ -211,9 +211,15 @@ type ResponseMetadata struct {
 	ModelID   *string `json:"model_id,omitempty"`
 }
 
-// GenerateResponseMetadata is response metadata with an optional HTTP body.
+// GenerateResponseMetadata is response metadata with optional HTTP headers and body.
 type GenerateResponseMetadata struct {
 	ResponseMetadata
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    json.RawMessage   `json:"body,omitempty"`
+}
+
+// GenerateRequest is provider request information with an optional HTTP body.
+type GenerateRequest struct {
 	Body json.RawMessage `json:"body,omitempty"`
 }
 
@@ -226,8 +232,7 @@ type GenerateResult struct {
 	Warnings         []json.RawMessage         `json:"warnings,omitempty"`
 	ProviderMetadata json.RawMessage           `json:"provider_metadata,omitempty"`
 	Response         *GenerateResponseMetadata `json:"response,omitempty"`
-	RequestBody      json.RawMessage           `json:"request_body,omitempty"`
-	ResponseHeaders  map[string]string         `json:"response_headers,omitempty"`
+	Request          *GenerateRequest          `json:"request,omitempty"`
 }
 
 // GenerateTextResult is the typed result of a GenerateText call.

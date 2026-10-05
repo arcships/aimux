@@ -13,7 +13,6 @@ use aimux_core::message::{MessageContent, ModelMessage, Role};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool, ToolCall, ToolChoice};
 use aimux_core::types::FinishReasonUnified;
-use aimux_provider_utils::Resolvable;
 use aimux_providers::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use aimux_providers::{
@@ -24,7 +23,7 @@ use aimux_providers::{
 /// The native Anthropic package pointed at a mock server.
 fn anthropic_at(server_uri: String, key: &str) -> AnthropicProvider {
     create_anthropic(AnthropicProviderSettings {
-        api_key: Some(key.to_string().into()),
+        api_key: Some(key.to_string()),
         base_url: Some(format!("{server_uri}/v1")),
         ..Default::default()
     })
@@ -34,7 +33,7 @@ fn anthropic_at(server_uri: String, key: &str) -> AnthropicProvider {
 /// The native OpenAI package pointed at a mock server.
 fn openai_at(base_url: String, key: &str) -> OpenAIProvider {
     create_openai(OpenAIProviderSettings {
-        api_key: Some(Resolvable::Value(key.to_string())),
+        api_key: Some(key.to_string()),
         base_url: Some(base_url),
         ..Default::default()
     })
@@ -913,7 +912,7 @@ async fn e2e_google_generate_text() {
         .await;
 
     let provider = create_google(GoogleProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(server.uri()),
         ..Default::default()
     })
@@ -957,7 +956,7 @@ async fn e2e_google_stream_text() {
         .await;
 
     let provider = create_google(GoogleProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(server.uri()),
         ..Default::default()
     })

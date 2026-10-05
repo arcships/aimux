@@ -67,6 +67,7 @@ __all__ = [
     "StreamTextResultAggregated",
     "GenerateResult",
     "GenerateResponseMetadata",
+    "RequestInfo",
     # functions
     "generate_text",
     "stream_text",
@@ -1055,7 +1056,12 @@ class GenerateTextOptions(BaseModel):
     """
 
 
+class RequestInfo(BaseModel):
+    body: Optional[Any] = None
+
+
 class GenerateResponseMetadata(ResponseMetadata):
+    headers: Optional[Dict[str, str]] = None
     body: Optional[Any] = None
 
 
@@ -1067,9 +1073,9 @@ class GenerateResult(BaseModel):
     usage: Usage
     warnings: List[Warning]
     provider_metadata: Optional[Any] = None
+    request: Optional[RequestInfo] = None
     response: Optional[GenerateResponseMetadata] = None
-    request_body: Optional[Any] = None
-    response_headers: Optional[Dict[str, str]] = None
+    request: Optional[RequestInfo] = None
 
 
 class GenerateTextResult(BaseModel):

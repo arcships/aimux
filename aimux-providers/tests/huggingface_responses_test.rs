@@ -30,7 +30,7 @@ use aimux_core::generate::{GenerateTextOptions, generate_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+    ToolCallPart, ToolPart, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, ReasoningOutput, Source};
@@ -1017,14 +1017,16 @@ async fn should_not_warn_about_assistant_content_types() {
             AssistantPart::ToolResult(ToolResultPart {
                 tool_call_id: "test".into(),
                 tool_name: "test".into(),
-                output: aimux_core::language_model_message::ToolResultOutput::Text {
+                output: ToolResultOutput::Text {
                     value: "test".into(),
                     provider_options: None,
                 },
+
                 provider_options: None,
             }),
             AssistantPart::Reasoning(ReasoningPart {
                 text: "thinking...".into(),
+
                 provider_options: None,
             }),
         ],
@@ -1058,10 +1060,11 @@ async fn should_warn_about_tool_messages() {
         content: vec![ToolPart::ToolResult(ToolResultPart {
             tool_call_id: "test".into(),
             tool_name: "test".into(),
-            output: aimux_core::language_model_message::ToolResultOutput::Text {
+            output: ToolResultOutput::Text {
                 value: "test".into(),
                 provider_options: None,
             },
+
             provider_options: None,
         })],
         provider_options: None,

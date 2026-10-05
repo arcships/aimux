@@ -24,7 +24,6 @@ use serde_json::Value;
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
-use aimux_provider_utils::Resolvable;
 use aimux_providers::openai_compatible::{
     OpenAICompatibleProviderSettings, create_openai_compatible,
 };
@@ -210,7 +209,7 @@ async fn replay_single_cassette(cass: &Cassette) -> Result<(), String> {
     let provider = create_openai_compatible(OpenAICompatibleProviderSettings {
         name: "compat".to_string(),
         base_url,
-        api_key: Some(Resolvable::Value("test-key".to_string())),
+        api_key: Some("test-key".to_string()),
         ..Default::default()
     })
     .unwrap();

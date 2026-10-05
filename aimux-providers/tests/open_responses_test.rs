@@ -791,7 +791,7 @@ mod convert_tests {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call_789".into(),
                 output: serde_json::from_value(
-                    json!({"type": "error_text", "value": "API request failed: timeout"}),
+                    json!({"type": "error-text", "value": "API request failed: timeout"}),
                 )
                 .unwrap(),
                 tool_name: "get_weather".into(),
@@ -816,7 +816,7 @@ mod convert_tests {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call_denied".into(),
                 output: serde_json::from_value(
-                    json!({"type": "execution_denied", "reason": "User declined the action"}),
+                    json!({"type": "execution-denied", "reason": "User declined the action"}),
                 )
                 .unwrap(),
                 tool_name: "get_weather".into(),

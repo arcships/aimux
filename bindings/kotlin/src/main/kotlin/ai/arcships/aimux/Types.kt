@@ -146,12 +146,16 @@ data class ResponseMetadata(
 )
 
 @Serializable
-data class GenerateResponse(
+data class ResponseInfo(
     val id: String? = null,
     val timestamp: String? = null,
     @SerialName("model_id") val modelId: String? = null,
+    val headers: Map<String, String>? = null,
     val body: JsonElement? = null,
 )
+
+@Serializable
+data class RequestInfo(val body: JsonElement? = null)
 
 /**
  * A tool call requested by the model.
@@ -1047,9 +1051,8 @@ data class GenerateResult(
     val usage: Usage = Usage(),
     val warnings: List<JsonElement> = emptyList(),
     @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    val response: GenerateResponse? = null,
-    @SerialName("request_body") val requestBody: JsonElement? = null,
-    @SerialName("response_headers") val responseHeaders: Map<String, String>? = null,
+    val response: ResponseInfo? = null,
+    val request: RequestInfo? = null,
 ) {
     /** Names of the variant tags present in [content] (e.g. "Text", "ToolCall"). */
     val contentVariantTags: List<String>

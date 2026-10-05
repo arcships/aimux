@@ -611,7 +611,7 @@ pub async fn google_embedding(
         let __r: crate::error::MResult<EmbeddingModel> = async {
             use aimux_providers::google::{GoogleProviderSettings, create_google};
             let provider = create_google(GoogleProviderSettings {
-                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                api_key: Some(api_key),
                 base_url,
                 ..Default::default()
             })
@@ -637,7 +637,7 @@ pub async fn google_image(
         let __r: crate::error::MResult<ImageModel> = async {
             use aimux_providers::google::{GoogleProviderSettings, create_google};
             let provider = create_google(GoogleProviderSettings {
-                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                api_key: Some(api_key),
                 base_url,
                 ..Default::default()
             })
@@ -663,7 +663,7 @@ pub async fn google_video(
         let __r: crate::error::MResult<VideoModel> = async {
             use aimux_providers::google::{GoogleProviderSettings, create_google};
             let provider = create_google(GoogleProviderSettings {
-                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                api_key: Some(api_key),
                 base_url,
                 ..Default::default()
             })

@@ -693,7 +693,7 @@ fn openai_settings(
     base_url: Option<String>,
 ) -> aimux_providers::openai::OpenAIProviderSettings {
     aimux_providers::openai::OpenAIProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        api_key: Some(api_key),
         base_url,
         ..Default::default()
     }
@@ -1030,7 +1030,7 @@ pub async fn anthropic(
             use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
             let mut settings = AnthropicProviderSettings {
-                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                api_key: Some(api_key),
                 ..Default::default()
             };
             let native = native_config(config)?;
@@ -1089,7 +1089,7 @@ pub async fn google(
             use aimux_providers::google::{GoogleProviderSettings, create_google};
 
             let mut settings = GoogleProviderSettings {
-                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                api_key: Some(api_key),
                 ..Default::default()
             };
             let native = native_config(config)?;

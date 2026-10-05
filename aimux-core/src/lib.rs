@@ -28,6 +28,7 @@ pub mod error;
 pub mod files_model;
 pub mod generate;
 pub mod image_model;
+pub mod image_model_middleware;
 pub mod json_repair;
 pub mod language_model;
 pub mod language_model_message;
@@ -79,6 +80,7 @@ pub mod prelude {
         generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
     };
     pub use crate::image_model::{ImageCallOptions, ImageModel, ImageResult, generate_image};
+    pub use crate::image_model_middleware::{ImageModelMiddleware, wrap_image_model};
     pub use crate::language_model::{LanguageModel, SupportedUrls};
     pub use crate::language_model_message::LanguageModelPrompt;
     pub use crate::language_model_middleware::{
