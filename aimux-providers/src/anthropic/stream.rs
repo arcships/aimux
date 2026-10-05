@@ -406,10 +406,9 @@ pub(crate) fn stream_parts_for_result_block(
                 tool_use_id,
             )];
             parts.extend(results.iter().map(|result| {
-                StreamPart::Source(Source {
+                StreamPart::Source(Source::Url {
                     id: generate_source_id(),
-                    source_type: "url".to_string(),
-                    url: str_field(result, "url"),
+                    url: str_field(result, "url").unwrap_or_default(),
                     title: str_field(result, "title"),
                     provider_metadata: Some(
                         provider_namespace(
@@ -516,20 +515,32 @@ fn citation_metadata(citations: &[Value]) -> Option<ProviderMetadata> {
     })
 }
 
-fn citation_source(citation: &Value, documents: &[String]) -> Option<Source> {
-    let (source_type, url, title, metadata) = match citation["type"].as_str()? {
-        "web_search_result_location" => (
-            "url",
-            str_field(citation, "url"),
-            str_field(citation, "title"),
-            json!({
-                "citedText": citation["cited_text"],
-                "encryptedIndex": citation["encrypted_index"],
-            }),
-        ),
+pub(crate) struct CitationDocument {
+    pub title: String,
+    pub filename: Option<String>,
+    pub media_type: String,
+}
+
+fn citation_source(citation: &Value, documents: &[CitationDocument]) -> Option<Source> {
+    match citation["type"].as_str()? {
+        "web_search_result_location" => Some(Source::Url {
+            id: generate_source_id(),
+            url: str_field(citation, "url")?,
+            title: str_field(citation, "title"),
+            provider_metadata: Some(
+                provider_namespace(
+                    CANONICAL,
+                    json!({
+                        "citedText": citation["cited_text"],
+                        "encryptedIndex": citation["encrypted_index"],
+                    }),
+                )
+                .expect("provider metadata must be an object"),
+            ),
+        }),
         kind @ ("page_location" | "char_location") => {
             let index = usize::try_from(citation["document_index"].as_u64()?).ok()?;
-            let document_title = documents.get(index)?;
+            let document = documents.get(index)?;
             let metadata = if kind == "page_location" {
                 json!({
                     "citedText": citation["cited_text"],
@@ -543,33 +554,29 @@ fn citation_source(citation: &Value, documents: &[String]) -> Option<Source> {
                     "endCharIndex": citation["end_char_index"],
                 })
             };
-            (
-                "document",
-                None,
-                Some(
-                    str_field(citation, "document_title").unwrap_or_else(|| document_title.clone()),
+            Some(Source::Document {
+                id: generate_source_id(),
+                media_type: document.media_type.clone(),
+                title: str_field(citation, "document_title")
+                    .unwrap_or_else(|| document.title.clone()),
+                filename: document.filename.clone(),
+                provider_metadata: Some(
+                    provider_namespace(CANONICAL, metadata)
+                        .expect("provider metadata must be an object"),
                 ),
-                metadata,
-            )
+            })
         }
-        _ => return None,
-    };
-    Some(Source {
-        id: generate_source_id(),
-        source_type: source_type.to_string(),
-        url,
-        title,
-        provider_metadata: Some(
-            provider_namespace(CANONICAL, metadata).expect("provider metadata must be an object"),
-        ),
-    })
+        _ => None,
+    }
 }
 
-fn web_fetch_document_title(payload: &Value) -> Option<String> {
-    (payload["type"] == "web_fetch_result").then(|| {
-        str_field(&payload["content"], "title")
+fn web_fetch_document(payload: &Value) -> Option<CitationDocument> {
+    (payload["type"] == "web_fetch_result").then(|| CitationDocument {
+        title: str_field(&payload["content"], "title")
             .or_else(|| str_field(payload, "url"))
-            .unwrap_or_default()
+            .unwrap_or_default(),
+        filename: None,
+        media_type: str_field(&payload["content"]["source"], "media_type").unwrap_or_default(),
     })
 }
 
@@ -595,7 +602,7 @@ pub(crate) fn parse_anthropic_content(
     blocks: &[ContentBlock],
     names: &ToolNameMapping,
     uses_json_response_tool: bool,
-    mut citation_documents: Vec<String>,
+    mut citation_documents: Vec<CitationDocument>,
 ) -> Vec<GenerateContent> {
     let options_name = CANONICAL;
     let mut content = Vec::new();
@@ -673,7 +680,6 @@ pub(crate) fn parse_anthropic_content(
                     input: input.to_string(),
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: tool_call_caller_metadata(caller.as_ref(), options_name),
                 }));
             }
@@ -706,7 +712,6 @@ pub(crate) fn parse_anthropic_content(
                     dynamic: (provider_name == "code_execution"
                         && names.mark_code_execution_dynamic())
                     .then_some(true),
-                    thought_signature: None,
                     provider_metadata: tool_call_caller_metadata(caller.as_ref(), CANONICAL),
                 }));
             }
@@ -723,7 +728,6 @@ pub(crate) fn parse_anthropic_content(
                     input: input.to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature: None,
                     provider_metadata: Some(
                         provider_namespace(
                             options_name,
@@ -774,10 +778,9 @@ pub(crate) fn parse_anthropic_content(
                         // Each result also becomes a `Source` — that is how the
                         // URLs and titles reach `result.sources`.
                         for result in results {
-                            content.push(GenerateContent::Source(Source {
+                            content.push(GenerateContent::Source(Source::Url {
                                 id: generate_source_id(),
-                                source_type: "url".to_string(),
-                                url: str_field(result, "url"),
+                                url: str_field(result, "url").unwrap_or_default(),
                                 title: str_field(result, "title"),
                                 provider_metadata: Some(
                                     provider_namespace(
@@ -812,8 +815,8 @@ pub(crate) fn parse_anthropic_content(
                 content: payload,
                 caller,
             } => {
-                if let Some(title) = web_fetch_document_title(payload) {
-                    citation_documents.push(title);
+                if let Some(document) = web_fetch_document(payload) {
+                    citation_documents.push(document);
                 }
                 let (result, is_error) = map_web_fetch_result(payload);
                 content.push(GenerateContent::ToolResult(ToolResult {
@@ -944,7 +947,7 @@ pub(crate) async fn anthropic_generate_core(
     tool_names: &ToolNameMapping,
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
-    citation_documents: Vec<String>,
+    citation_documents: Vec<CitationDocument>,
 ) -> Result<GenerateResult, AiMuxError> {
     let resp = aimux_provider_utils::post_json_to_api(
         request,
@@ -1058,7 +1061,7 @@ pub(crate) async fn anthropic_stream_core(
     tool_names: ToolNameMapping,
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
-    mut citation_documents: Vec<String>,
+    mut citation_documents: Vec<CitationDocument>,
 ) -> Result<StreamResult, AiMuxError> {
     let endpoint = request.url.clone();
     let options_name = config.provider_options_name.clone();
@@ -1269,7 +1272,6 @@ pub(crate) async fn anthropic_stream_core(
                                         input: input.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
-                                        thought_signature: None,
                                         provider_metadata: Some(provider_namespace(CANONICAL, json!({
                                                 "type": "mcp-tool-use",
                                                 "serverName": server_name,
@@ -1295,8 +1297,8 @@ pub(crate) async fn anthropic_stream_core(
                                 // (anthropic-language-model.ts:1901-2178).
                                 other => {
                                     if let ContentBlock::WebFetchToolResult { content, .. } = &other
-                                        && let Some(title) = web_fetch_document_title(content) {
-                                        citation_documents.push(title);
+                                        && let Some(document) = web_fetch_document(content) {
+                                        citation_documents.push(document);
                                     }
                                     for part in stream_parts_for_result_block(
                                         CANONICAL,
@@ -1434,7 +1436,6 @@ pub(crate) async fn anthropic_stream_core(
                                             input,
                                             provider_executed,
                                             dynamic,
-                                            thought_signature: None,
                                             provider_metadata,
                                         }));
                                     }

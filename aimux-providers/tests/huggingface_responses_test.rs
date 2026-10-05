@@ -453,17 +453,17 @@ async fn should_generate_text_and_sources_from_annotations() {
         other => panic!("expected Text at [0], got {other:?}"),
     }
     match &result.content[1] {
-        GenerateContent::Source(Source { id, url, title, .. }) => {
+        GenerateContent::Source(Source::Url { id, url, title, .. }) => {
             assert_eq!(id, "id-0");
-            assert_eq!(url.as_deref(), Some("https://example.com/article1"));
+            assert_eq!(url, "https://example.com/article1");
             assert_eq!(title.as_deref(), Some("AI Developments Article"));
         }
         other => panic!("expected Source at [1], got {other:?}"),
     }
     match &result.content[2] {
-        GenerateContent::Source(Source { id, url, title, .. }) => {
+        GenerateContent::Source(Source::Url { id, url, title, .. }) => {
             assert_eq!(id, "id-1");
-            assert_eq!(url.as_deref(), Some("https://test.com/article2"));
+            assert_eq!(url, "https://test.com/article2");
             assert_eq!(title.as_deref(), Some("Industry Trends Report"));
         }
         other => panic!("expected Source at [2], got {other:?}"),
@@ -568,11 +568,11 @@ async fn should_handle_mcp_tools_with_annotations() {
         other => panic!("expected Text at [2], got {other:?}"),
     }
     match &result.content[3] {
-        GenerateContent::Source(Source { id, .. }) => assert_eq!(id, "id-0"),
+        GenerateContent::Source(Source::Url { id, .. }) => assert_eq!(id, "id-0"),
         other => panic!("expected Source at [3], got {other:?}"),
     }
     match &result.content[4] {
-        GenerateContent::Source(Source { id, .. }) => assert_eq!(id, "id-1"),
+        GenerateContent::Source(Source::Url { id, .. }) => assert_eq!(id, "id-1"),
         other => panic!("expected Source at [4], got {other:?}"),
     }
 

@@ -13,6 +13,7 @@
 
 package ai.arcships.aimux
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -24,6 +25,7 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
@@ -171,7 +173,6 @@ data class ToolCall(
     val input: JsonElement = JsonObject(emptyMap()),
     @SerialName("provider_executed") val providerExecuted: Boolean? = null,
     @SerialName("dynamic") val dynamic: Boolean? = null,
-    @SerialName("thought_signature") val thoughtSignature: String? = null,
     @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     val invalid: Boolean? = null,
     val error: JsonElement? = null,
@@ -408,7 +409,6 @@ sealed interface ContentPart {
         @SerialName("tool_call_id") val toolCallId: String = "",
         @SerialName("tool_name") val toolName: String = "",
         val input: JsonElement = JsonObject(emptyMap()),
-        @SerialName("thought_signature") val thoughtSignature: String? = null,
         @SerialName("provider_options") val providerOptions: JsonElement? = null,
         @SerialName("provider_executed") val providerExecuted: Boolean? = null,
     ) : ContentPart
@@ -858,6 +858,34 @@ object GeneratedFileDataSerializer : KSerializer<GeneratedFileData> {
 // [GenerateContent.Unknown] for forward compatibility (mirroring [StreamPart]).
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** A URL or document used as a source for the response. */
+@OptIn(ExperimentalSerializationApi::class)
+@Serializable
+@JsonClassDiscriminator("source_type")
+sealed interface Source {
+    val id: String
+    val providerMetadata: JsonElement?
+
+    @Serializable
+    @SerialName("url")
+    data class Url(
+        override val id: String,
+        val url: String,
+        val title: String? = null,
+        @SerialName("provider_metadata") override val providerMetadata: JsonElement? = null,
+    ) : Source
+
+    @Serializable
+    @SerialName("document")
+    data class Document(
+        override val id: String,
+        @SerialName("media_type") val mediaType: String,
+        val title: String,
+        val filename: String? = null,
+        @SerialName("provider_metadata") override val providerMetadata: JsonElement? = null,
+    ) : Source
+}
+
 /**
  * A content item in the generation result.
  *
@@ -901,18 +929,10 @@ sealed interface GenerateContent {
         val input: JsonElement = JsonObject(emptyMap()),
         @SerialName("provider_executed") val providerExecuted: Boolean? = null,
         @SerialName("dynamic") val dynamic: Boolean? = null,
-        @SerialName("thought_signature") val thoughtSignature: String? = null,
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     ) : GenerateContent
 
-    @Serializable
-    data class Source(
-        val id: String = "",
-        @SerialName("source_type") val sourceType: String = "",
-        val url: String? = null,
-        val title: String? = null,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : GenerateContent
+    data class Source(val source: ai.arcships.aimux.Source) : GenerateContent
 
     @Serializable
     data class Reasoning(
@@ -986,7 +1006,7 @@ object GenerateContentSerializer : KSerializer<GenerateContent> {
             "ToolApprovalRequest" -> ctx.decodeFromJsonElement(GenerateContent.ToolApprovalRequest.serializer(), innerObj)
             "Text" -> ctx.decodeFromJsonElement(GenerateContent.Text.serializer(), innerObj)
             "ToolCall" -> ctx.decodeFromJsonElement(GenerateContent.ToolCall.serializer(), innerObj)
-            "Source" -> ctx.decodeFromJsonElement(GenerateContent.Source.serializer(), innerObj)
+            "Source" -> GenerateContent.Source(ctx.decodeFromJsonElement(Source.serializer(), innerObj))
             "Reasoning" -> ctx.decodeFromJsonElement(GenerateContent.Reasoning.serializer(), innerObj)
             "File" -> ctx.decodeFromJsonElement(GenerateContent.File.serializer(), innerObj)
             "ToolResult" -> ctx.decodeFromJsonElement(GenerateContent.ToolResult.serializer(), innerObj)
@@ -1004,7 +1024,7 @@ object GenerateContentSerializer : KSerializer<GenerateContent> {
             is GenerateContent.ToolApprovalRequest -> "ToolApprovalRequest" to ctx.encodeToJsonElement(GenerateContent.ToolApprovalRequest.serializer(), value)
             is GenerateContent.Text -> "Text" to ctx.encodeToJsonElement(GenerateContent.Text.serializer(), value)
             is GenerateContent.ToolCall -> "ToolCall" to ctx.encodeToJsonElement(GenerateContent.ToolCall.serializer(), value)
-            is GenerateContent.Source -> "Source" to ctx.encodeToJsonElement(GenerateContent.Source.serializer(), value)
+            is GenerateContent.Source -> "Source" to ctx.encodeToJsonElement(Source.serializer(), value.source)
             is GenerateContent.Reasoning -> "Reasoning" to ctx.encodeToJsonElement(GenerateContent.Reasoning.serializer(), value)
             is GenerateContent.File -> "File" to ctx.encodeToJsonElement(GenerateContent.File.serializer(), value)
             is GenerateContent.ToolResult -> "ToolResult" to ctx.encodeToJsonElement(GenerateContent.ToolResult.serializer(), value)
@@ -1057,7 +1077,7 @@ data class GenerateTextResult(
     // M7: top-level aggregation fields
     val reasoning: List<JsonElement> = emptyList(),
     @SerialName("reasoning_text") val reasoningText: String = "",
-    val sources: List<JsonElement> = emptyList(),
+    val sources: List<Source> = emptyList(),
     val files: List<JsonElement> = emptyList(),
     @SerialName("response_messages") val responseMessages: List<ModelMessage> = emptyList(),
     // M12: raw provider-specific finish reason string.
@@ -1112,7 +1132,7 @@ data class StreamTextResultAggregated(
     val reasoning: List<JsonElement> = emptyList(),
     @SerialName("reasoning_text") val reasoningText: String = "",
     @SerialName("tool_calls") val toolCalls: List<ToolCall> = emptyList(),
-    val sources: List<JsonElement> = emptyList(),
+    val sources: List<Source> = emptyList(),
     val files: List<JsonElement> = emptyList(),
     @SerialName("finish_reason") val finishReason: FinishReason = FinishReason(),
     @SerialName("raw_finish_reason") val rawFinishReason: String? = null,
@@ -1225,7 +1245,6 @@ sealed interface StreamPart {
         val input: JsonElement = JsonObject(emptyMap()),
         @SerialName("provider_executed") val providerExecuted: Boolean? = null,
         @SerialName("dynamic") val dynamic: Boolean? = null,
-        @SerialName("thought_signature") val thoughtSignature: String? = null,
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
         val invalid: Boolean? = null,
         val error: JsonElement? = null,
@@ -1277,14 +1296,7 @@ sealed interface StreamPart {
         @SerialName("model_id") val modelId: String? = null,
     ) : StreamPart
 
-    @Serializable
-    data class Source(
-        val id: String = "",
-        @SerialName("source_type") val sourceType: String = "",
-        val url: String? = null,
-        val title: String? = null,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : StreamPart
+    data class Source(val source: ai.arcships.aimux.Source) : StreamPart
 
     @Serializable
     data class Raw(
@@ -1367,7 +1379,7 @@ object StreamPartSerializer : KSerializer<StreamPart> {
             "ReasoningDelta" -> ctx.decodeFromJsonElement(StreamPart.ReasoningDelta.serializer(), innerObj)
             "ReasoningEnd" -> ctx.decodeFromJsonElement(StreamPart.ReasoningEnd.serializer(), innerObj)
             "ResponseMetadata" -> ctx.decodeFromJsonElement(StreamPart.ResponseMetadata.serializer(), innerObj)
-            "Source" -> ctx.decodeFromJsonElement(StreamPart.Source.serializer(), innerObj)
+            "Source" -> StreamPart.Source(ctx.decodeFromJsonElement(Source.serializer(), innerObj))
             "Raw" -> ctx.decodeFromJsonElement(StreamPart.Raw.serializer(), innerObj)
             "Error" -> ctx.decodeFromJsonElement(StreamPart.Error.serializer(), innerObj)
             else -> StreamPart.Unknown(tag, inner)
@@ -1397,7 +1409,7 @@ object StreamPartSerializer : KSerializer<StreamPart> {
             is StreamPart.ReasoningDelta -> "ReasoningDelta" to ctx.encodeToJsonElement(StreamPart.ReasoningDelta.serializer(), value)
             is StreamPart.ReasoningEnd -> "ReasoningEnd" to ctx.encodeToJsonElement(StreamPart.ReasoningEnd.serializer(), value)
             is StreamPart.ResponseMetadata -> "ResponseMetadata" to ctx.encodeToJsonElement(StreamPart.ResponseMetadata.serializer(), value)
-            is StreamPart.Source -> "Source" to ctx.encodeToJsonElement(StreamPart.Source.serializer(), value)
+            is StreamPart.Source -> "Source" to ctx.encodeToJsonElement(Source.serializer(), value.source)
             is StreamPart.Raw -> "Raw" to ctx.encodeToJsonElement(StreamPart.Raw.serializer(), value)
             is StreamPart.Error -> "Error" to ctx.encodeToJsonElement(StreamPart.Error.serializer(), value)
             is StreamPart.Unknown -> value.tag to value.data

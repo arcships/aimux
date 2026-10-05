@@ -177,7 +177,6 @@ fn to_content_part(p: &WireContentPart) -> ContentPart {
             tool_name: tool_name.clone(),
             input: input.clone(),
             provider_executed: *provider_executed,
-            thought_signature: None,
             provider_options: None,
         },
         WireContentPart::ToolResult {

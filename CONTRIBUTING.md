@@ -13,7 +13,6 @@ aimux/
 ├── aimux-provider-utils/  # HTTP utilities: Fetch transport, Resolvable settings, error parsing, API-key loading, streamed tool-call tracking
 ├── aimux-ffi/             # C ABI (opaque handle + JSON + push callback) for non-native bindings
 ├── bindings/              # Node, Python, Swift, Kotlin, Flutter, Go, C — share one Rust core
-├── contract-tests/        # Shared JSON fixtures exercised across languages
 ├── rfc/                   # Design docs (RFCs)
 ├── docs/                  # Public product docs (see docs/README.md)
 └── scripts/               # Code-generation and maintenance scripts
@@ -64,9 +63,6 @@ cargo test --workspace
 
 # A single crate
 cargo test -p aimux-providers --tests
-
-# Contract tests (cross-language shared fixtures)
-cargo test --test contract_test -p aimux-core
 ```
 
 If you add or change a provider's request/response shapes, record a new
@@ -125,8 +121,7 @@ Keep the subject line imperative and ≤ 72 characters.
 2. Make your change with focused commits.
 3. Ensure `cargo fmt`, `cargo clippy -D warnings`, and `cargo test --workspace`
    all pass locally. CI runs the same.
-4. If you add a provider or binding, include cassette tests or contract
-   fixtures as appropriate.
+4. If you add a provider or binding, include cassette tests.
 5. Update the relevant doc (README, `docs/`, or `rfc/`) if your change affects
    the public surface.
 6. Open a PR against `master` and fill in the template.

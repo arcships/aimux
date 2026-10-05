@@ -194,7 +194,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
                         if let Some(annotations) = cp.get("annotations").and_then(|v| v.as_array())
                         {
                             for ann in annotations {
-                                if let Some(source) = annotation_source(ann) {
+                                if let Some(source) = annotation_source(ann, &provider_key) {
                                     content.push(GenerateContent::Source(source));
                                 }
                             }
@@ -226,7 +226,6 @@ pub(crate) fn build_responses_generate_result_with_tools(
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: Some(
                         provider_namespace(&provider_key, tool_metadata(part))
                             .expect("provider metadata must be an object"),
@@ -254,7 +253,6 @@ pub(crate) fn build_responses_generate_result_with_tools(
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: Some(
                         provider_namespace(&provider_key, tool_metadata(part))
                             .expect("provider metadata must be an object"),
@@ -429,22 +427,48 @@ fn text_metadata(item: &Value, annotations: Option<&Vec<Value>>) -> Value {
     metadata
 }
 
-fn annotation_source(annotation: &Value) -> Option<Source> {
-    if annotation["type"] != "url_citation" {
-        return None;
+fn annotation_source(annotation: &Value, provider_key: &str) -> Option<Source> {
+    let kind = annotation.get("type").and_then(Value::as_str)?;
+    if kind == "url_citation" {
+        return Some(Source::Url {
+            id: generate_source_id(),
+            url: annotation
+                .get("url")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            title: annotation
+                .get("title")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            provider_metadata: None,
+        });
     }
-    Some(Source {
+    let (media_type, filename) = match kind {
+        "file_citation" | "container_file_citation" => ("text/plain", "filename"),
+        "file_path" => ("application/octet-stream", "file_id"),
+        _ => return None,
+    };
+    let filename = annotation
+        .get(filename)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let mut metadata = json!({ "type": kind, "fileId": annotation["file_id"] });
+    if kind == "container_file_citation" {
+        metadata["containerId"] = annotation["container_id"].clone();
+    } else {
+        metadata["index"] = annotation["index"].clone();
+    }
+    Some(Source::Document {
         id: generate_source_id(),
-        source_type: "url".into(),
-        url: annotation
-            .get("url")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        title: annotation
-            .get("title")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        provider_metadata: None,
+        media_type: media_type.to_owned(),
+        title: filename.clone(),
+        filename: Some(filename),
+        provider_metadata: Some(
+            provider_namespace(provider_key, metadata)
+                .expect("provider metadata must be an object"),
+        ),
     })
 }
 
@@ -985,7 +1009,6 @@ where
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
-                                            thought_signature: None,
                                             provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(item)).expect("provider metadata must be an object")),
                                         }));
                                     }
@@ -1020,7 +1043,6 @@ where
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
-                                            thought_signature: None,
                                             provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(item)).expect("provider metadata must be an object")),
                                         }));
                                     }
@@ -1122,7 +1144,7 @@ where
                             if let Some(ann) = parsed.get("annotation") {
                                 let id = parsed.get("item_id").and_then(Value::as_str).unwrap_or_default().to_string();
                                 text_annotations.entry(id).or_default().push(ann.clone());
-                                if let Some(source) = annotation_source(ann) { yield Ok(StreamPart::Source(source)); }
+                                if let Some(source) = annotation_source(ann, &provider_key) { yield Ok(StreamPart::Source(source)); }
                             }
                         }
 
@@ -1307,7 +1329,6 @@ fn provider_tool_start(item: &Value, names: &HashMap<String, String>) -> Vec<Str
             input: "{}".to_owned(),
             provider_executed: hosted,
             dynamic: None,
-            thought_signature: None,
             provider_metadata: None,
         })
     };

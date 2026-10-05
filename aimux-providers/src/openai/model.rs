@@ -248,7 +248,6 @@ pub(crate) async fn execute_generate(
                 input,
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
                 provider_metadata: None,
             }));
         }
@@ -259,13 +258,13 @@ pub(crate) async fn execute_generate(
             if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation")
                 && let Some(uc) = ann.get("url_citation")
             {
-                content.push(GenerateContent::Source(Source {
+                content.push(GenerateContent::Source(Source::Url {
                     id: format!("annotation-{i}"),
-                    source_type: "url".to_string(),
                     url: uc
                         .get("url")
                         .and_then(|v| v.as_str())
-                        .map(std::string::ToString::to_string),
+                        .unwrap_or_default()
+                        .to_string(),
                     title: uc
                         .get("title")
                         .and_then(|v| v.as_str())
@@ -586,13 +585,13 @@ pub(crate) async fn execute_stream(
                                     == Some("url_citation")
                                     && let Some(uc) = ann.get("url_citation")
                                 {
-                                    yield Ok(StreamPart::Source(Source {
+                                    yield Ok(StreamPart::Source(Source::Url {
                                         id: format!("annotation-{i}"),
-                                        source_type: "url".to_string(),
                                         url: uc
                                             .get("url")
                                             .and_then(|v| v.as_str())
-                                            .map(std::string::ToString::to_string),
+                                            .unwrap_or_default()
+                                            .to_string(),
                                         title: uc
                                             .get("title")
                                             .and_then(|v| v.as_str())

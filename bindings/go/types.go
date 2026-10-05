@@ -77,6 +77,83 @@ func ToolChoiceTool(name string) ToolChoice {
 
 // ── Core types ───────────────────────────────────────────────────────────────
 
+// Source is a URL or document source. Exactly one variant is populated.
+type Source struct {
+	URL      *URLSource
+	Document *DocumentSource
+}
+
+type URLSource struct {
+	ID               string          `json:"id"`
+	URL              string          `json:"url"`
+	Title            *string         `json:"title,omitempty"`
+	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
+}
+
+type DocumentSource struct {
+	ID               string          `json:"id"`
+	MediaType        string          `json:"media_type"`
+	Title            string          `json:"title"`
+	Filename         *string         `json:"filename,omitempty"`
+	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
+}
+
+func (s Source) MarshalJSON() ([]byte, error) {
+	if s.URL != nil && s.Document == nil {
+		return json.Marshal(struct {
+			SourceType string `json:"source_type"`
+			*URLSource
+		}{"url", s.URL})
+	}
+	if s.Document != nil && s.URL == nil {
+		return json.Marshal(struct {
+			SourceType string `json:"source_type"`
+			*DocumentSource
+		}{"document", s.Document})
+	}
+	return nil, fmt.Errorf("aimux: Source must have exactly one variant")
+}
+
+func (s *Source) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	var sourceType string
+	if err := json.Unmarshal(fields["source_type"], &sourceType); err != nil {
+		return fmt.Errorf("aimux: invalid source_type: %w", err)
+	}
+	required := []string{"id"}
+	switch sourceType {
+	case "url":
+		required = append(required, "url")
+	case "document":
+		required = append(required, "media_type", "title")
+	default:
+		return fmt.Errorf("aimux: unknown source_type %q", sourceType)
+	}
+	for _, name := range required {
+		var value *string
+		if err := json.Unmarshal(fields[name], &value); err != nil || value == nil {
+			return fmt.Errorf("aimux: Source requires string %s", name)
+		}
+	}
+	if sourceType == "url" {
+		var value URLSource
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*s = Source{URL: &value}
+	} else {
+		var value DocumentSource
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*s = Source{Document: &value}
+	}
+	return nil
+}
+
 // InputTokenUsage is input token usage detail with cache breakdown.
 type InputTokenUsage struct {
 	Total      *uint32 `json:"total,omitempty"`
@@ -113,7 +190,6 @@ type ToolCall struct {
 	Input            json.RawMessage `json:"input,omitempty"`
 	ProviderExecuted *bool           `json:"provider_executed,omitempty"`
 	Dynamic          *bool           `json:"dynamic,omitempty"`
-	ThoughtSignature *string         `json:"thought_signature,omitempty"`
 	// ProviderMetadata carries provider-specific data associated with this call.
 	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
 	// Invalid is set by Core when the tool call stays invalid after optional repair.
@@ -166,7 +242,7 @@ type GenerateTextResult struct {
 	Raw              GenerateResult    `json:"raw"`
 	Reasoning        []json.RawMessage `json:"reasoning,omitempty"`
 	ReasoningText    string            `json:"reasoning_text,omitempty"`
-	Sources          []json.RawMessage `json:"sources,omitempty"`
+	Sources          []Source          `json:"sources,omitempty"`
 	Files            []json.RawMessage `json:"files,omitempty"`
 	ResponseMessages []ModelMessage    `json:"response_messages,omitempty"`
 	// RawFinishReason is the raw provider-specific finish reason string (M12).
@@ -207,7 +283,7 @@ type StreamTextResultAggregated struct {
 	Reasoning        []json.RawMessage `json:"reasoning,omitempty"`
 	ReasoningText    string            `json:"reasoning_text,omitempty"`
 	ToolCalls        []ToolCall        `json:"tool_calls,omitempty"`
-	Sources          []json.RawMessage `json:"sources,omitempty"`
+	Sources          []Source          `json:"sources,omitempty"`
 	Files            []json.RawMessage `json:"files,omitempty"`
 	FinishReason     FinishReason      `json:"finish_reason,omitempty"`
 	RawFinishReason  *string           `json:"raw_finish_reason,omitempty"`
@@ -375,6 +451,18 @@ func ParseStreamPart(jsonStr string) (*StreamPart, error) {
 		return &StreamPart{Tag: tag, Payload: payload}, nil
 	}
 	return &StreamPart{}, nil
+}
+
+// Source decodes the payload of a Source stream part.
+func (p *StreamPart) Source() (*Source, error) {
+	if p.Tag != "Source" {
+		return nil, fmt.Errorf("aimux: expected Source stream part, got %s", p.Tag)
+	}
+	var source Source
+	if err := json.Unmarshal(p.Payload, &source); err != nil {
+		return nil, err
+	}
+	return &source, nil
 }
 
 // TextDeltaPayload is the payload of a {"TextDelta":{...}} stream part.

@@ -467,7 +467,6 @@ impl LanguageModel for BedrockModel {
                                 input,
                                 provider_executed: None,
                                 dynamic: None,
-                                thought_signature: None,
                                 provider_metadata: None,
                             }));
                             }
@@ -616,7 +615,6 @@ fn extract_content(
             input: tool_use.input.to_string(),
             provider_executed: None,
             dynamic: None,
-            thought_signature: None,
             provider_metadata: None,
         }));
     }

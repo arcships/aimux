@@ -16,7 +16,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::language_model_message::{LanguageModelMessage, UserPart};
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::Warning;
 use aimux_provider_utils::HttpRequest;
@@ -24,7 +24,7 @@ use aimux_provider_utils::HttpRequest;
 use super::config::AnthropicModelConfig;
 use super::convert::build_request_body_for;
 use super::options::CANONICAL;
-use super::stream::{anthropic_generate_core, anthropic_stream_core};
+use super::stream::{CitationDocument, anthropic_generate_core, anthropic_stream_core};
 use super::tool_name_mapping::ToolNameMapping;
 
 /// One call, ready to send.
@@ -64,7 +64,7 @@ impl AnthropicMessagesModel {
         self
     }
 
-    fn citation_documents(options: &CallOptions) -> Vec<String> {
+    fn citation_documents(options: &CallOptions) -> Vec<CitationDocument> {
         options
             .prompt
             .iter()
@@ -85,11 +85,14 @@ impl AnthropicMessagesModel {
                             .and_then(Value::as_bool)
                             == Some(true) =>
                 {
-                    Some(
-                        file.filename
+                    Some(CitationDocument {
+                        title: file
+                            .filename
                             .clone()
                             .unwrap_or_else(|| "Untitled Document".to_string()),
-                    )
+                        filename: file.filename.clone(),
+                        media_type: file.media_type.clone(),
+                    })
                 }
                 _ => None,
             })
@@ -163,7 +166,8 @@ impl LanguageModel for AnthropicMessagesModel {
         .await?;
         for content in &mut result.content {
             if let GenerateContent::Source(source) = content {
-                source.id = (self.generate_id)();
+                let (Source::Url { id, .. } | Source::Document { id, .. }) = source;
+                *id = (self.generate_id)();
             }
         }
         Ok(result)
@@ -186,7 +190,8 @@ impl LanguageModel for AnthropicMessagesModel {
         result.stream = Box::pin(result.stream.map(move |part| {
             part.map(|mut part| {
                 if let StreamPart::Source(source) = &mut part {
-                    source.id = generate_id();
+                    let (Source::Url { id, .. } | Source::Document { id, .. }) = source;
+                    *id = generate_id();
                 }
                 part
             })

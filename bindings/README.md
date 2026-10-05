@@ -111,17 +111,3 @@ gradle test
 The Java binding uses JNA (no native toolchain needed at build time); the
 native library ships as per-platform classifier JARs. See
 [RFC-0013](../rfc/0013-java-bindings.md) for details.
-
-## Contract Tests
-
-Shared JSON fixtures drive all languages, ensuring wire format consistency:
-
-```bash
-# Rust side
-cargo test -p aimux-core --test contract_test
-
-# Node side
-node --experimental-strip-types contract-tests/run-node.ts
-```
-
-The fixtures are located at [contract-tests/fixtures/wire-format.json](../contract-tests/fixtures/wire-format.json).

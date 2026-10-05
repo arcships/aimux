@@ -308,18 +308,16 @@ impl LanguageModel for GoogleModel {
                         let chunk_sources =
                             extract_sources(candidate.grounding_metadata.as_ref(), &mut source_id);
                         for src in chunk_sources {
-                            if let GenerateContent::Source(Source {
-                                url: Some(url),
-                                source_type,
+                            if let GenerateContent::Source(Source::Url {
+                                url,
                                 id: _,
                                 title,
                                 provider_metadata: None,
                             }) = src
                                 && emitted_source_urls.insert(url.clone()) {
-                                    yield Ok(StreamPart::Source(Source {
+                                    yield Ok(StreamPart::Source(Source::Url {
                                         id: generate_id(),
-                                        source_type,
-                                        url: Some(url),
+                                        url,
                                         title,
                                         provider_metadata: None,
                                     }));
@@ -416,7 +414,6 @@ impl LanguageModel for GoogleModel {
                                             input: ec.to_string(),
                                             provider_executed: Some(true),
                                             dynamic: None,
-                                            thought_signature: None,
                                             provider_metadata: None,
                                         }));
                                         // provider-executed → does NOT set has_tool_calls
@@ -471,7 +468,6 @@ impl LanguageModel for GoogleModel {
                                         input: args.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
-                                        thought_signature: None,
                                         provider_metadata: Some(server_meta),
                                     }));
                                     // provider-executed → does NOT set has_tool_calls
@@ -545,10 +541,6 @@ impl LanguageModel for GoogleModel {
                                         .map(std::string::ToString::to_string)
                                         .unwrap_or_else(|| generate_id());
                                     let args = fc.get("args").cloned().unwrap_or(json!({}));
-                                    let thought_signature = part
-                                        .get("thoughtSignature")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string);
 
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
@@ -573,7 +565,6 @@ impl LanguageModel for GoogleModel {
                                         input: args_str,
                                         provider_executed: None,
                                         dynamic: None,
-                                        thought_signature,
                                         provider_metadata: thought_sig_meta.clone(),
                                     }));
                                     has_tool_calls = true;
@@ -723,7 +714,6 @@ fn extract_content_from_candidate(
                         input: ec.to_string(),
                         provider_executed: Some(true),
                         dynamic: None,
-                        thought_signature: None,
                         provider_metadata: None,
                     }));
                 }
@@ -786,17 +776,12 @@ fn extract_content_from_candidate(
                     .map(str::to_owned)
                     .unwrap_or_else(generate_id);
                 let input = fc.get("args").cloned().unwrap_or(json!({}));
-                let thought_signature = part
-                    .get("thoughtSignature")
-                    .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string);
                 content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id,
                     tool_name: name,
                     input: input.to_string(),
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature,
                     provider_metadata: thought_sig_meta.clone(),
                 }));
                 has_tool_calls = true;
@@ -836,10 +821,6 @@ fn extract_content_from_candidate(
                     .unwrap_or_else(generate_id);
                 last_server_tool_call_id = Some(id.clone());
                 let input = tc.get("args").cloned().unwrap_or(json!({}));
-                let thought_signature = part
-                    .get("thoughtSignature")
-                    .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string);
                 let server_meta = server_tool_metadata(
                     &id,
                     tool_type,
@@ -851,7 +832,6 @@ fn extract_content_from_candidate(
                     input: input.to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature,
                     provider_metadata: Some(server_meta),
                 }));
                 // provider-executed → does NOT set has_tool_calls
@@ -890,8 +870,10 @@ fn extract_content_from_candidate(
     // Sources are appended after the parts (mirrors TS).
     let mut sources = extract_sources(candidate.grounding_metadata.as_ref(), &mut source_id);
     for source in &mut sources {
-        if let GenerateContent::Source(source) = source {
-            source.id = generate_id();
+        if let GenerateContent::Source(Source::Url { id, .. } | Source::Document { id, .. }) =
+            source
+        {
+            *id = generate_id();
         }
     }
     content.append(&mut sources);
@@ -915,7 +897,10 @@ fn set_provider_metadata(item: &mut GenerateContent, meta: ProviderMetadata) {
         | GenerateContent::File(GeneratedFile {
             provider_metadata, ..
         })
-        | GenerateContent::Source(Source {
+        | GenerateContent::Source(Source::Url {
+            provider_metadata, ..
+        })
+        | GenerateContent::Source(Source::Document {
             provider_metadata, ..
         })
         | GenerateContent::ReasoningFile(GeneratedFile {

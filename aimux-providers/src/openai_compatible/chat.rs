@@ -258,20 +258,19 @@ impl LanguageModel for OpenAICompatibleChatModel {
                     provider_namespace(&metadata_key, json!({ "thoughtSignature": signature }))
                         .expect("provider metadata must be an object")
                 }),
-                thought_signature: signature,
             }));
         }
         for (i, annotation) in choice.message.annotations.iter().flatten().enumerate() {
             if annotation.get("type").and_then(Value::as_str) == Some("url_citation")
                 && let Some(citation) = annotation.get("url_citation")
             {
-                content.push(GenerateContent::Source(Source {
+                content.push(GenerateContent::Source(Source::Url {
                     id: format!("annotation-{i}"),
-                    source_type: "url".to_string(),
                     url: citation
                         .get("url")
                         .and_then(Value::as_str)
-                        .map(str::to_string),
+                        .unwrap_or_default()
+                        .to_string(),
                     title: citation
                         .get("title")
                         .and_then(Value::as_str)
@@ -575,13 +574,13 @@ impl LanguageModel for OpenAICompatibleChatModel {
                                         == Some("url_citation")
                                         && let Some(citation) = annotation.get("url_citation")
                                     {
-                                        yield Ok(StreamPart::Source(Source {
+                                        yield Ok(StreamPart::Source(Source::Url {
                                             id: format!("annotation-{i}"),
-                                            source_type: "url".to_string(),
                                             url: citation
                                                 .get("url")
                                                 .and_then(Value::as_str)
-                                                .map(str::to_string),
+                                                .unwrap_or_default()
+                                                .to_string(),
                                             title: citation
                                                 .get("title")
                                                 .and_then(Value::as_str)

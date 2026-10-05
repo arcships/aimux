@@ -234,7 +234,6 @@ impl LanguageModel for XaiResponsesModel {
                     input: "{}".to_string(),
                     provider_executed: Some(true),
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
                 content.push(GenerateContent::ToolResult(image_generation_result(
@@ -254,7 +253,6 @@ impl LanguageModel for XaiResponsesModel {
                     input: String::new(),
                     provider_executed: Some(true),
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
 
@@ -311,7 +309,6 @@ impl LanguageModel for XaiResponsesModel {
                     input: tool_input,
                     provider_executed: Some(true),
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
                 if part_type == "web_search_call" {
@@ -355,10 +352,9 @@ impl LanguageModel for XaiResponsesModel {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or(url)
                                         .to_string();
-                                    content.push(GenerateContent::Source(Source {
+                                    content.push(GenerateContent::Source(Source::Url {
                                         id: generate_source_id(),
-                                        source_type: "url".to_string(),
-                                        url: Some(url.to_string()),
+                                        url: url.to_string(),
                                         title: Some(title),
                                         provider_metadata: None,
                                     }));
@@ -379,7 +375,6 @@ impl LanguageModel for XaiResponsesModel {
                         input,
                         provider_executed: None,
                         dynamic: None,
-                        thought_signature: None,
                         provider_metadata: None,
                     }));
                 }
@@ -644,10 +639,9 @@ impl LanguageModel for XaiResponsesModel {
                                     if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
                                         let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
                                         let title = ann.get("title").and_then(|v| v.as_str()).unwrap_or(url).to_string();
-                                        yield Ok(StreamPart::Source(Source {
+                                        yield Ok(StreamPart::Source(Source::Url {
                                             id: generate_source_id(),
-                                            source_type: "url".to_string(),
-                                            url: Some(url.to_string()),
+                                            url: url.to_string(),
                                             title: Some(title),
                                             provider_metadata: None,
                                         }));
@@ -663,10 +657,9 @@ impl LanguageModel for XaiResponsesModel {
                             if annotation.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
                                 let url = annotation.get("url").and_then(|v| v.as_str()).unwrap_or("");
                                 let title = annotation.get("title").and_then(|v| v.as_str()).unwrap_or(url).to_string();
-                                yield Ok(StreamPart::Source(Source {
+                                yield Ok(StreamPart::Source(Source::Url {
                                     id: generate_source_id(),
-                                    source_type: "url".to_string(),
-                                    url: Some(url.to_string()),
+                                    url: url.to_string(),
                                     title: Some(title),
                                     provider_metadata: None,
                                 }));
@@ -865,7 +858,6 @@ impl LanguageModel for XaiResponsesModel {
                                         input: input.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: None,
-                                        thought_signature: None,
                                         provider_metadata: None,
                                     }));
                                 }
@@ -940,7 +932,6 @@ impl LanguageModel for XaiResponsesModel {
                                         input: tool_input,
                                         provider_executed: Some(true),
                                         dynamic: None,
-                                        thought_signature: None,
                                         provider_metadata: None,
                                     }));
                                 }
@@ -990,10 +981,9 @@ impl LanguageModel for XaiResponsesModel {
                                             if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
                                                 let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
                                                 let title = ann.get("title").and_then(|v| v.as_str()).unwrap_or(url).to_string();
-                                                yield Ok(StreamPart::Source(Source {
+                                                yield Ok(StreamPart::Source(Source::Url {
                                                     id: generate_source_id(),
-                                                    source_type: "url".to_string(),
-                                                    url: Some(url.to_string()),
+                                                    url: url.to_string(),
                                                     title: Some(title),
                                                     provider_metadata: None,
                                                 }));
@@ -1035,7 +1025,6 @@ impl LanguageModel for XaiResponsesModel {
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
-                                        thought_signature: None,
                                         provider_metadata: None,
                                     }));
                                 }

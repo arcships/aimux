@@ -36,7 +36,6 @@ pub(crate) fn provider_tool_content(
             input,
             provider_executed: executed,
             dynamic,
-            thought_signature: None,
             provider_metadata: meta,
         })
     };

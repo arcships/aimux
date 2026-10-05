@@ -258,12 +258,12 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                     },
                 });
             }
-            GenerateContent::Source(Source { url, title, .. }) => {
+            GenerateContent::Source(Source::Url { url, title, .. }) => {
                 // Map to OpenAI url_citation annotation.
                 let mut ann = serde_json::json!({
                     "type": "url_citation",
                     "url_citation": {
-                        "url": url.clone().unwrap_or_default(),
+                        "url": url,
                     }
                 });
                 if let Some(t) = title {
@@ -271,12 +271,10 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                 }
                 annotations.push(ann);
                 // Also append URL to content so non-annotation-aware clients see it.
-                if let Some(u) = url {
-                    if !content_text.is_empty() {
-                        content_text.push('\n');
-                    }
-                    content_text.push_str(u);
+                if !content_text.is_empty() {
+                    content_text.push('\n');
                 }
+                content_text.push_str(url);
             }
             GenerateContent::File(GeneratedFile {
                 data, media_type, ..
@@ -287,6 +285,7 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                 content_text.push_str(&file_data_to_text(data, media_type));
             }
             GenerateContent::Custom { .. }
+            | GenerateContent::Source(Source::Document { .. })
             | GenerateContent::ReasoningFile(_)
             | GenerateContent::ToolApprovalRequest(_) => {}
             GenerateContent::ToolResult(ToolResult {
@@ -830,11 +829,11 @@ impl StreamState {
                 chunks.push(chunk);
             }
 
-            StreamPart::Source(Source { url, .. }) => {
+            StreamPart::Source(Source::Url { url, .. }) => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
-                let text = url.clone().unwrap_or_default();
+                let text = url.clone();
                 if !text.is_empty() {
                     let mut chunk = self.base_chunk();
                     chunk.choices = vec![ChatCompletionChunkChoice {
@@ -870,6 +869,7 @@ impl StreamState {
             }
 
             StreamPart::Raw { .. }
+            | StreamPart::Source(Source::Document { .. })
             | StreamPart::Custom { .. }
             | StreamPart::ReasoningFile(_)
             | StreamPart::ToolApprovalRequest(_) => { /* no OpenAI chat equivalent */ }

@@ -176,11 +176,11 @@ impl LanguageModel for CohereModel {
                 {
                     cohere_meta.insert("citationType".to_string(), Value::String(t.to_string()));
                 }
-                content.push(GenerateContent::Source(Source {
+                content.push(GenerateContent::Source(Source::Document {
                     id: (self.generate_id)(),
-                    source_type: "document".to_string(),
-                    url: None,
-                    title: Some(title),
+                    media_type: "text/plain".to_string(),
+                    title,
+                    filename: None,
                     provider_metadata: Some(super::options::cohere_metadata(Value::Object(
                         cohere_meta,
                     ))),
@@ -205,7 +205,6 @@ impl LanguageModel for CohereModel {
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
             }
@@ -328,7 +327,7 @@ impl LanguageModel for CohereModel {
                                 Ok(_) => { yield Err(AiMuxError::InvalidResponseData("Object contains forbidden prototype property".into())); return; }
                                 Err(error) => { yield Err(AiMuxError::JsonParse(error.to_string())); return; }
                             };
-                            yield Ok(StreamPart::ToolCall(RawToolCall { tool_call_id: tool.id, tool_name: tool.name, input, provider_executed: None, dynamic: None, thought_signature: None, provider_metadata: None }));
+                            yield Ok(StreamPart::ToolCall(RawToolCall { tool_call_id: tool.id, tool_name: tool.name, input, provider_executed: None, dynamic: None, provider_metadata: None }));
                         }
                     }
                     "message-end" => {
