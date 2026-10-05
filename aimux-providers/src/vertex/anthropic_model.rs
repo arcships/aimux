@@ -196,6 +196,7 @@ impl LanguageModel for VertexAnthropicModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
         let data: AnthropicResponse = resp.value;
 
         let content = crate::anthropic::stream::parse_anthropic_content(
@@ -221,13 +222,16 @@ impl LanguageModel for VertexAnthropicModel {
             usage,
             warnings: req.warnings,
             provider_metadata: None,
-            response: ResponseMetadata {
-                id: Some(data.id),
-                timestamp: None,
-                model_id: Some(data.model),
-            },
-            request_body: Some(body),
-            response_headers: None,
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::GenerateResponse {
+                body: response_body,
+                headers: None,
+                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                    id: Some(data.id),
+                    timestamp: None,
+                    model_id: Some(data.model),
+                })
+            }),
         })
     }
 
@@ -606,8 +610,10 @@ impl LanguageModel for VertexAnthropicModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::StreamResponse {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

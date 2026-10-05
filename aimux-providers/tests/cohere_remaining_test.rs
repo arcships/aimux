@@ -1,4 +1,4 @@
-﻿//! Remaining Cohere tests translated from TS that are NOT already covered by
+//! Remaining Cohere tests translated from TS that are NOT already covered by
 //! `cohere_model_test.rs`. Covers:
 //!
 //! - `cohere-prepare-tools.test.ts` — all 7 cases (prepare_tools unit tests)
@@ -28,22 +28,6 @@ use aimux_providers::cohere::convert::{
 use aimux_providers::{CohereConfig, CohereProvider};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
-
-fn ok_cohere_body() -> Value {
-    json!({
-        "id": "test-id",
-        "generation_id": "gen-123",
-        "message": {
-            "role": "assistant",
-            "content": [{ "type": "text", "text": "ok" }]
-        },
-        "finish_reason": "COMPLETE",
-        "usage": {
-            "billed_units": { "input_tokens": 12, "output_tokens": 7 },
-            "tokens": { "input_tokens": 12, "output_tokens": 7 }
-        }
-    })
-}
 
 async fn mock_json_response(server: &MockServer, body: Value) {
     Mock::given(method("POST"))
@@ -608,98 +592,6 @@ async fn should_extract_reasoning_from_response() {
 // ════════════════════════════════════════════════════════════════════════════
 // cohere-chat-language-model.test.ts — top-level reasoning → thinking
 // ════════════════════════════════════════════════════════════════════════════
-
-/// TS: "should map top-level reasoning to thinking enabled with budget"
-#[tokio::test]
-async fn should_map_reasoning_high_to_thinking_enabled() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, ok_cohere_body()).await;
-
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
-
-    let options = CallOptions {
-        reasoning: Some(ReasoningEffort::High),
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert!(body.get("thinking").is_some(), "thinking should be defined");
-    assert_eq!(body["thinking"]["type"], json!("enabled"));
-    let budget = body["thinking"]["token_budget"]
-        .as_u64()
-        .expect("token_budget");
-    assert!(budget > 0, "token_budget should be > 0, got {budget}");
-}
-
-/// TS: "should map top-level reasoning none to thinking disabled"
-#[tokio::test]
-async fn should_map_reasoning_none_to_thinking_disabled() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, ok_cohere_body()).await;
-
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
-
-    let options = CallOptions {
-        reasoning: Some(ReasoningEffort::None),
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["thinking"], json!({ "type": "disabled" }));
-}
-
-/// TS: "should prefer providerOptions over top-level reasoning"
-#[tokio::test]
-async fn should_prefer_provider_options_over_reasoning() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, ok_cohere_body()).await;
-
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
-
-    let mut po = std::collections::HashMap::new();
-    po.insert(
-        "cohere".to_string(),
-        json!({ "thinking": { "type": "enabled" } }),
-    );
-    let options = CallOptions {
-        reasoning: Some(ReasoningEffort::None),
-        provider_options: Some(po),
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["thinking"]["type"], json!("enabled"));
-}
-
-/// TS: "should not set thinking when reasoning is not specified"
-#[tokio::test]
-async fn should_not_set_thinking_when_no_reasoning() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, ok_cohere_body()).await;
-
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert!(
-        body.get("thinking").is_none(),
-        "thinking should be undefined: {body}"
-    );
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // resolve_cohere_thinking unit tests

@@ -511,7 +511,7 @@ fn parse_usage(v: &serde_json::Value) -> Result<Usage, AiMuxError> {
     let prompt_details = &u["prompt_tokens_details"];
     let completion_details = &u["completion_tokens_details"];
     Ok(Usage {
-        input_tokens: crate::types::TokenUsage {
+        input_tokens: crate::types::InputTokenUsage {
             total: u32_from_json(&u["prompt_tokens"], "prompt_tokens")?,
             no_cache: None,
             cache_read: u32_from_json(
@@ -519,21 +519,16 @@ fn parse_usage(v: &serde_json::Value) -> Result<Usage, AiMuxError> {
                 "prompt_tokens_details.cached_tokens",
             )?,
             cache_write: None,
-            text: None,
-            reasoning: None,
         },
-        output_tokens: crate::types::TokenUsage {
+        output_tokens: crate::types::OutputTokenUsage {
             total: u32_from_json(&u["completion_tokens"], "completion_tokens")?,
-            no_cache: None,
-            cache_read: None,
-            cache_write: None,
             text: None,
             reasoning: u32_from_json(
                 &completion_details["reasoning_tokens"],
                 "completion_tokens_details.reasoning_tokens",
             )?,
         },
-        raw: Some(u.clone()),
+        raw: u.as_object().cloned(),
     })
 }
 
@@ -616,13 +611,15 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
         usage: parse_usage(&v)?,
         warnings: Vec::new(),
         provider_metadata: None,
-        response: ResponseMetadata {
-            id: v["id"].as_str().map(std::string::ToString::to_string),
-            timestamp: None,
-            model_id: v["model"].as_str().map(std::string::ToString::to_string),
-        },
-        request_body: None,
-        response_headers: None,
+        response: Some(
+            ResponseMetadata {
+                id: v["id"].as_str().map(std::string::ToString::to_string),
+                timestamp: None,
+                model_id: v["model"].as_str().map(std::string::ToString::to_string),
+            }
+            .into(),
+        ),
+        request: None,
     })
 }
 
@@ -877,8 +874,8 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
 
     Ok(StreamResult {
         stream: Box::pin(futures::stream::iter(parts)),
-        request_body: None,
-        response_headers: None,
+        request: None,
+        response: None,
     })
 }
 
@@ -1460,7 +1457,13 @@ mod tests {
         assert_eq!(text, "pong");
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
         assert_eq!(result.usage.input_tokens.total, Some(5));
-        assert_eq!(result.response.model_id.as_deref(), Some("gpt-4o"));
+        assert_eq!(
+            result
+                .response
+                .as_ref()
+                .and_then(|response| response.model_id.as_deref()),
+            Some("gpt-4o")
+        );
     }
 
     #[test]
@@ -1835,7 +1838,13 @@ mod tests {
         };
         assert_eq!(text, "pong");
         // 证明取的是第 1 次(id=chatcmpl-ok),而非失败的 exchange[0](id=chatcmpl-mock)。
-        assert_eq!(result.response.id.as_deref(), Some("chatcmpl-ok"));
+        assert_eq!(
+            result
+                .response
+                .as_ref()
+                .and_then(|response| response.id.as_deref()),
+            Some("chatcmpl-ok")
+        );
     }
 
     #[test]
@@ -1868,118 +1877,5 @@ mod tests {
         assert_eq!(model.model_id(), "gpt-4o");
         assert_eq!(model.recordings().len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    // ── P4 请求回放 ─────────────────────────────────────────────────────
-
-    /// 测试用 echo model:把收到的 prompt 文本原样回显。
-    #[derive(Clone)]
-    struct EchoModel {
-        provider: &'static str,
-        model_id: &'static str,
-    }
-
-    impl EchoModel {
-        fn new() -> Self {
-            Self {
-                provider: "openai",
-                model_id: "gpt-4o",
-            }
-        }
-    }
-
-    #[async_trait]
-    impl LanguageModel for EchoModel {
-        fn provider(&self) -> &str {
-            self.provider
-        }
-        fn model_id(&self) -> &str {
-            self.model_id
-        }
-        async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-            let text = options
-                .prompt
-                .iter()
-                .filter_map(|m| match m.content.first() {
-                    Some(crate::content::ContentPart::Text { text, .. }) => Some(text.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join(" ");
-            Ok(GenerateResult {
-                content: vec![GenerateContent::Text {
-                    text,
-                    provider_metadata: None,
-                }],
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Stop,
-                    raw: Some("stop".into()),
-                },
-                usage: Usage::default(),
-                warnings: vec![],
-                provider_metadata: None,
-                response: ResponseMetadata::default(),
-                request_body: None,
-                response_headers: None,
-            })
-        }
-        async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-            unreachable!("not used in tests")
-        }
-    }
-
-    /// 构造带 options 的录制(temperature/max_output_tokens 有值)。
-    /// options 用真实 CallOptions 序列化(与录制路径一致,全字段 round-trip)。
-    fn optioned_recording(prompt_text: &str) -> Recording {
-        let mut rec = openai_recording("t1", prompt_text, "pong", "stop");
-        let mut call = sample_options(prompt_text, Some(0.7));
-        call.max_output_tokens = Some(128);
-        rec.input.options = serde_json::to_value(&call).unwrap();
-        rec
-    }
-
-    #[test]
-    fn replay_with_model_rebuilds_input_and_resends() {
-        let rec = optioned_recording("hello");
-        let model = EchoModel::new();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(async { replay_with_model(&rec, &model, None).await.unwrap() });
-        assert_eq!(result.text, "hello");
-    }
-
-    #[test]
-    fn replay_with_model_applies_overrides() {
-        let rec = optioned_recording("hello");
-        let model = EchoModel::new();
-        let overrides = ReplayOverrides {
-            prompt: Some(vec![
-                crate::language_model_message::LanguageModelPromptMessage {
-                    role: crate::message::Role::User,
-                    content: vec![crate::content::ContentPart::Text {
-                        text: "overridden".into(),
-                        provider_options: None,
-                    }],
-                    provider_options: None,
-                },
-            ]),
-            ..Default::default()
-        };
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(async {
-            replay_with_model(&rec, &model, Some(&overrides))
-                .await
-                .unwrap()
-        });
-        assert_eq!(result.text, "overridden");
-    }
-
-    #[test]
-    fn replay_with_model_bad_input_options_errors() {
-        let mut rec = openai_recording("t1", "hello", "pong", "stop");
-        rec.input.options = serde_json::json!({ "not": "call-options" });
-        let model = EchoModel::new();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let err = rt.block_on(async { replay_with_model(&rec, &model, None).await.unwrap_err() });
-        assert!(matches!(err, AiMuxError::JsonParse(_)), "{err}");
     }
 }

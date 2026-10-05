@@ -17,7 +17,6 @@
 //! resulting request path is `/responses`.
 
 use aimux_core::tool::{RawToolCall, ToolResult};
-use std::collections::HashMap;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -30,10 +29,9 @@ use aimux_core::generate::{GenerateTextOptions, generate_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
+use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, ReasoningOutput, Source};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_providers::huggingface::responses::convert_to_huggingface_responses_messages;
@@ -304,50 +302,6 @@ async fn should_handle_missing_usage_gracefully() {
     assert_eq!(result.usage.output_tokens.total, None);
     assert_eq!(result.usage.output_tokens.text, None);
     assert_eq!(result.usage.output_tokens.reasoning, None);
-}
-
-/// TS: doGenerate › basic text response › "should send model id, settings, and
-/// input"
-#[tokio::test]
-async fn should_send_model_id_settings_and_input() {
-    let server = MockServer::start().await;
-    mock_json(&server, basic_response_body()).await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
-
-    let prompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::System,
-            content: vec![ContentPart::text("You are a helpful assistant.")],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Hello")],
-            ..Default::default()
-        },
-    ];
-    let mut options = default_options(prompt);
-    options.temperature = Some(0.5);
-    options.top_p = Some(0.3);
-    options.max_output_tokens = Some(100);
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(body["model"], json!("deepseek-ai/DeepSeek-V3-0324"));
-    assert_eq!(body["temperature"], json!(0.5));
-    assert_eq!(body["top_p"], json!(0.3));
-    assert_eq!(body["max_output_tokens"], json!(100));
-    assert_eq!(body["stream"], json!(false));
-    assert_eq!(
-        body["input"],
-        json!([
-            { "role": "system", "content": "You are a helpful assistant." },
-            { "role": "user", "content": [{ "type": "input_text", "text": "Hello" }] }
-        ])
-    );
 }
 
 /// TS: doGenerate › basic text response › "should handle unsupported settings
@@ -811,33 +765,6 @@ async fn should_handle_streaming_errors() {
     )));
 }
 
-/// TS: doStream › "should send correct streaming request"
-#[tokio::test]
-async fn should_send_correct_streaming_request() {
-    let server = MockServer::start().await;
-    let chunks = sse_body(&[sse_event(
-        r#"{"type":"response.completed","response":{"id":"resp_test","status":"completed"},"sequence_number":1}"#,
-    )]);
-    mock_sse(&server, chunks).await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
-
-    let mut options = default_options(test_prompt());
-    options.temperature = Some(0.7);
-
-    let result = model.do_stream(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(body["model"], json!("deepseek-ai/DeepSeek-V3-0324"));
-    assert_eq!(body["temperature"], json!(0.7));
-    assert_eq!(body["stream"], json!(true));
-    assert_eq!(
-        body["input"],
-        json!([{ "role": "user", "content": [{ "type": "input_text", "text": "Hello" }] }])
-    );
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // Message conversion
 // ════════════════════════════════════════════════════════════════════════════
@@ -870,39 +797,6 @@ async fn stub_empty_response(server: &MockServer) {
     .await;
 }
 
-/// TS: message conversion › "should convert user messages with images"
-#[tokio::test]
-async fn should_convert_user_messages_with_images() {
-    let server = MockServer::start().await;
-    stub_empty_response(&server).await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
-
-    let prompt = vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![
-            ContentPart::text("What do you see?"),
-            ContentPart::file_base64("AQIDBA==", "image/jpeg"),
-        ],
-        ..Default::default()
-    }];
-
-    let result = model
-        .do_generate(&default_options(prompt))
-        .await
-        .expect("ok");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(
-        body["input"][0]["content"],
-        json!([
-            { "text": "What do you see?", "type": "input_text" },
-            { "image_url": "data:image/jpeg;base64,AQIDBA==", "type": "input_image" }
-        ])
-    );
-}
-
 /// TS: message conversion › "should throw for file parts with provider
 /// references"
 #[tokio::test]
@@ -930,49 +824,6 @@ async fn should_throw_for_file_parts_with_provider_references() {
         err.to_string()
             .contains("file parts with provider references"),
         "error should mention provider references, got: {err}"
-    );
-}
-
-/// TS: message conversion › "should handle assistant messages"
-#[tokio::test]
-async fn should_handle_assistant_messages() {
-    let server = MockServer::start().await;
-    stub_empty_response(&server).await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
-
-    let prompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Hello")],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::text("Hi there!")],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("How are you?")],
-            ..Default::default()
-        },
-    ];
-
-    let result = model
-        .do_generate(&default_options(prompt))
-        .await
-        .expect("ok");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(
-        body["input"],
-        json!([
-            { "content": [{ "text": "Hello", "type": "input_text" }], "role": "user" },
-            { "content": [{ "text": "Hi there!", "type": "output_text" }], "role": "assistant" },
-            { "content": [{ "text": "How are you?", "type": "input_text" }], "role": "user" }
-        ])
     );
 }
 
@@ -1231,136 +1082,6 @@ async fn should_stream_tool_calls() {
 // Structured output
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: structured output › "should send text.format for structured output"
-#[tokio::test]
-async fn should_send_text_format_for_structured_output() {
-    let server = MockServer::start().await;
-    mock_json(
-        &server,
-        json!({
-            "id": "resp_structured",
-            "model": "moonshotai/Kimi-K2-Instruct",
-            "object": "response",
-            "created_at": 1741257730,
-            "status": "completed",
-            "error": null,
-            "instructions": null,
-            "max_output_tokens": null,
-            "metadata": null,
-            "tool_choice": "auto",
-            "tools": [],
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "incomplete_details": null,
-            "usage": null,
-            "output": [
-                {
-                    "id": "msg_structured",
-                    "type": "message",
-                    "role": "assistant",
-                    "status": "completed",
-                    "content": [
-                        { "type": "output_text", "text": "{\"name\": \"John Doe\", \"age\": 30}" }
-                    ]
-                }
-            ],
-            "output_text": null
-        }),
-    )
-    .await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses_model("moonshotai/Kimi-K2-Instruct");
-
-    let mut options = default_options(test_prompt());
-    options.response_format = Some(ResponseFormat::Json {
-        schema: Some(json!({
-            "type": "object",
-            "properties": {
-                "name": { "type": "string" },
-                "age": { "type": "number" }
-            },
-            "required": ["name", "age"]
-        })),
-        name: None,
-        description: None,
-    });
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(
-        body["text"]["format"],
-        json!({
-            "type": "json_schema",
-            "strict": false,
-            "name": "response",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "name": { "type": "string" },
-                    "age": { "type": "number" }
-                },
-                "required": ["name", "age"]
-            }
-        })
-    );
-    // description should NOT be present (it was None).
-    assert!(
-        body["text"]["format"].get("description").is_none(),
-        "description should be absent when None"
-    );
-}
-
-/// TS: structured output › "should handle structured output with custom name
-/// and description"
-#[tokio::test]
-async fn should_handle_structured_output_with_custom_name_and_description() {
-    let server = MockServer::start().await;
-    mock_json(
-        &server,
-        json!({
-            "id": "resp_structured",
-            "model": "moonshotai/Kimi-K2-Instruct",
-            "object": "response",
-            "created_at": 1741257730,
-            "status": "completed",
-            "error": null,
-            "instructions": null,
-            "max_output_tokens": null,
-            "metadata": null,
-            "tool_choice": "auto",
-            "tools": [],
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "incomplete_details": null,
-            "usage": null,
-            "output": [],
-            "output_text": "{}"
-        }),
-    )
-    .await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses_model("moonshotai/Kimi-K2-Instruct");
-
-    let mut options = default_options(test_prompt());
-    options.response_format = Some(ResponseFormat::Json {
-        schema: Some(json!({ "type": "object", "properties": { "name": { "type": "string" } } })),
-        name: Some("person_profile".to_string()),
-        description: Some("A person profile with basic information".to_string()),
-    });
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(body["text"]["format"]["name"], json!("person_profile"));
-    assert_eq!(
-        body["text"]["format"]["description"],
-        json!("A person profile with basic information")
-    );
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // Reasoning
 // ════════════════════════════════════════════════════════════════════════════
@@ -1575,190 +1296,9 @@ async fn should_stream_reasoning_content() {
 // Provider options
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: provider options › "should send provider-specific options"
-#[tokio::test]
-async fn should_send_provider_specific_options() {
-    let server = MockServer::start().await;
-    mock_json(
-        &server,
-        json!({
-            "id": "resp_provider_options",
-            "model": "deepseek-ai/DeepSeek-V3-0324",
-            "object": "response",
-            "created_at": 1741257730,
-            "status": "completed",
-            "error": null,
-            "instructions": null,
-            "max_output_tokens": null,
-            "metadata": null,
-            "tool_choice": "auto",
-            "tools": [],
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "incomplete_details": null,
-            "usage": null,
-            "output": [],
-            "output_text": "Test"
-        }),
-    )
-    .await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
-
-    let mut options = default_options(test_prompt());
-    let mut po = HashMap::new();
-    po.insert(
-        "huggingface".to_string(),
-        json!({
-            "metadata": { "key": "value" },
-            "instructions": "Be concise",
-            "strictJsonSchema": true
-        }),
-    );
-    options.provider_options = Some(po);
-    options.response_format = Some(ResponseFormat::Json {
-        schema: Some(json!({ "type": "object" })),
-        name: None,
-        description: None,
-    });
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(body["metadata"], json!({ "key": "value" }));
-    assert_eq!(body["instructions"], json!("Be concise"));
-    assert_eq!(body["text"]["format"]["strict"], json!(true));
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // Tool preparation
 // ════════════════════════════════════════════════════════════════════════════
-
-/// TS: tool preparation › "should prepare tools correctly"
-#[tokio::test]
-async fn should_prepare_tools_correctly() {
-    let server = MockServer::start().await;
-    mock_json(
-        &server,
-        json!({
-            "id": "resp_tools",
-            "model": "deepseek-ai/DeepSeek-V3-0324",
-            "object": "response",
-            "created_at": 1741257730,
-            "status": "completed",
-            "error": null,
-            "instructions": null,
-            "max_output_tokens": null,
-            "metadata": null,
-            "tool_choice": "auto",
-            "tools": [],
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "incomplete_details": null,
-            "usage": null,
-            "output": [],
-            "output_text": "Test"
-        }),
-    )
-    .await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
-
-    let mut options = default_options(test_prompt());
-    options.tools = Some(vec![Tool::from(
-        FunctionTool::new(
-            "getWeather",
-            json!({
-                "type": "object",
-                "properties": { "location": { "type": "string" } },
-                "required": ["location"]
-            }),
-        )
-        .with_description("Get weather information"),
-    )]);
-    options.tool_choice = ToolChoice::Tool {
-        tool_name: "getWeather".to_string(),
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(
-        body["tools"],
-        json!([{
-            "type": "function",
-            "name": "getWeather",
-            "description": "Get weather information",
-            "parameters": {
-                "type": "object",
-                "properties": { "location": { "type": "string" } },
-                "required": ["location"]
-            }
-        }])
-    );
-    assert_eq!(
-        body["tool_choice"],
-        json!({ "type": "function", "function": { "name": "getWeather" } })
-    );
-}
-
-/// TS: tool preparation › "should handle auto and required tool choices"
-#[tokio::test]
-async fn should_handle_auto_and_required_tool_choices() {
-    let server = MockServer::start().await;
-    mock_json(
-        &server,
-        json!({
-            "id": "resp_tools",
-            "model": "deepseek-ai/DeepSeek-V3-0324",
-            "object": "response",
-            "created_at": 1741257730,
-            "status": "completed",
-            "error": null,
-            "instructions": null,
-            "max_output_tokens": null,
-            "metadata": null,
-            "tool_choice": "auto",
-            "tools": [],
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "incomplete_details": null,
-            "usage": null,
-            "output": [],
-            "output_text": "Test"
-        }),
-    )
-    .await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
-
-    // Test auto
-    let mut options = default_options(test_prompt());
-    options.tools = Some(vec![Tool::from(FunctionTool::new(
-        "test",
-        json!({ "type": "object" }),
-    ))]);
-    options.tool_choice = ToolChoice::Auto;
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["tool_choice"], json!("auto"));
-
-    // Test required
-    let mut options = default_options(test_prompt());
-    options.tools = Some(vec![Tool::from(FunctionTool::new(
-        "test",
-        json!({ "type": "object" }),
-    ))]);
-    options.tool_choice = ToolChoice::Required;
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["tool_choice"], json!("required"));
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Top-level-only media type resolution

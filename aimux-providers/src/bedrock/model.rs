@@ -214,6 +214,7 @@ impl LanguageModel for BedrockModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
 
         let data: BedrockConverseResponse = resp.value;
@@ -250,13 +251,16 @@ impl LanguageModel for BedrockModel {
             usage,
             warnings: Vec::new(),
             provider_metadata: None,
-            response: ResponseMetadata {
-                id: request_id,
-                timestamp: response_headers.get("date").cloned(),
-                model_id: Some(self.model_id.clone()),
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::GenerateResponse {
+                body: response_body,
+                headers: Some(response_headers.clone()),
+                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                    id: request_id,
+                    timestamp: response_headers.get("date").cloned(),
+                    model_id: Some(self.model_id.clone()),
+                })
+            }),
         })
     }
 
@@ -612,8 +616,10 @@ impl LanguageModel for BedrockModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::StreamResponse {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

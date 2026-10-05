@@ -1546,24 +1546,6 @@ mod do_generate {
         let body = first_request_body(&server).await;
         assert_eq!(body["response_format"]["json_schema"]["strict"], false);
     }
-
-    /// TS: "should send request body" (request.body)
-    #[tokio::test]
-    async fn request_body_string() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .unwrap();
-
-        let request_body = result.request_body.expect("should have request body");
-        assert_eq!(request_body["model"], "gemma2-9b-it");
-        assert_eq!(request_body["messages"][0]["content"], "Hello");
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

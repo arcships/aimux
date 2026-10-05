@@ -262,6 +262,46 @@ pub fn build_responses_generate_result(
                     }
                 }
             }
+            Some("compaction") => {
+                content.push(GenerateContent::Custom {
+                    kind: "openai.compaction".to_string(),
+                    provider_metadata: Some(json!({ provider_key.clone(): {
+                        "type": "compaction", "itemId": part.get("id"),
+                        "encryptedContent": part.get("encrypted_content"),
+                    }})),
+                });
+            }
+            Some("mcp_approval_request") => {
+                let tool_call_id = generate_source_id();
+                content.push(GenerateContent::ToolCall(RawToolCall {
+                    tool_call_id: tool_call_id.clone(),
+                    tool_name: format!(
+                        "mcp.{}",
+                        part.get("name").and_then(Value::as_str).unwrap_or("")
+                    ),
+                    input: part
+                        .get("arguments")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    provider_executed: Some(true),
+                    dynamic: Some(true),
+                    thought_signature: None,
+                    provider_metadata: None,
+                }));
+                content.push(GenerateContent::ToolApprovalRequest(
+                    aimux_core::result::RawToolApprovalRequest {
+                        approval_id: part
+                            .get("approval_request_id")
+                            .or_else(|| part.get("id"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        tool_call_id,
+                        provider_metadata: None,
+                    },
+                ));
+            }
             _ => {}
         }
     }
@@ -310,13 +350,16 @@ pub fn build_responses_generate_result(
         usage,
         warnings: request_warnings,
         provider_metadata,
-        response: ResponseMetadata {
-            id: response_id,
-            timestamp,
-            model_id: model,
-        },
-        request_body: Some(body),
-        response_headers: Some(response_headers),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+        response: Some(aimux_core::result::GenerateResponse {
+            body: Some(data.clone()),
+            headers: Some(response_headers),
+            ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                id: response_id,
+                timestamp,
+                model_id: model,
+            })
+        }),
     })
 }
 
@@ -518,6 +561,8 @@ where
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("");
                                 match item_type {
+
+
                                     "message" => {
                                         let id = item
                                             .get("id")
@@ -764,6 +809,30 @@ where
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("");
                                 match item_type {
+                                    "mcp_approval_request" => {
+                                        let tool_call_id = generate_source_id();
+                                        yield Ok(StreamPart::ToolCall(RawToolCall {
+                                            tool_call_id: tool_call_id.clone(),
+                                            tool_name: format!("mcp.{}", item.get("name").and_then(Value::as_str).unwrap_or("")),
+                                            input: item.get("arguments").and_then(Value::as_str).unwrap_or("").to_string(),
+                                            provider_executed: Some(true), dynamic: Some(true),
+                                            thought_signature: None, provider_metadata: None,
+                                        }));
+                                        yield Ok(StreamPart::ToolApprovalRequest(aimux_core::result::RawToolApprovalRequest {
+                                            approval_id: item.get("approval_request_id").or_else(|| item.get("id")).and_then(Value::as_str).unwrap_or("").to_string(),
+                                            tool_call_id, provider_metadata: None,
+                                        }));
+                                    }
+                                    "compaction" => {
+                                        yield Ok(StreamPart::Custom {
+                                            kind: "openai.compaction".to_string(),
+                                            provider_metadata: Some(json!({ provider_key.clone(): {
+                                                "type": "compaction", "itemId": item.get("id"),
+                                                "encryptedContent": item.get("encrypted_content"),
+                                            }})),
+                                        });
+                                    }
+
                                     "message" => {
                                         let id = item
                                             .get("id")

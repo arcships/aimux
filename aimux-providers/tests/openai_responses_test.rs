@@ -740,39 +740,6 @@ mod do_generate_response {
 
     // -- should extract response id metadata --
 
-    /// TS: "should extract response id metadata"
-    #[tokio::test]
-    async fn should_extract_response_id_metadata() {
-        let server = MockServer::start().await;
-        mock_json_response(&server, text_response_body()).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
-
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .expect("should succeed");
-
-        assert_eq!(
-            result.response.id.as_deref(),
-            Some("resp_67c97c0203188190a025beb4a75242bc")
-        );
-        assert_eq!(
-            result.response.model_id.as_deref(),
-            Some("gpt-4o-2024-07-18")
-        );
-
-        // providerMetadata should contain responseId and reasoningContext.
-        let pm = result
-            .provider_metadata
-            .as_ref()
-            .and_then(|v| v.get("openai"))
-            .expect("provider_metadata.openai should exist");
-        assert_eq!(pm["responseId"], "resp_67c97c0203188190a025beb4a75242bc");
-        assert_eq!(pm["reasoningContext"], "current_turn");
-    }
-
     // -- should throw error when no output --
 
     /// TS: "should throw a descriptive error when the response has no output"

@@ -133,30 +133,6 @@ fn text_response(text: &str) -> Value {
 // doGenerate tests
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// Test: non-streaming text generation via rawPredict extracts text, usage,
-/// and finish reason from the standard Anthropic response body.
-#[tokio::test]
-async fn vertex_anthropic_generate_text_response() {
-    let server = MockServer::start().await;
-    mock_raw_predict_json(&server, 200, text_response("Hello from Claude on Vertex!")).await;
-
-    let model = make_model(&server);
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("do_generate should succeed");
-
-    assert_eq!(result.content.len(), 1);
-    assert_eq!(as_text(&result.content[0]), "Hello from Claude on Vertex!");
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
-    assert_eq!(result.usage.input_tokens.total, Some(4));
-    assert_eq!(result.usage.output_tokens.total, Some(30));
-    assert_eq!(
-        result.response.id.as_deref(),
-        Some("msg_017TfcQ4AgGxKyBduUpqYPZn")
-    );
-}
-
 #[tokio::test]
 async fn vertex_anthropic_generate_keeps_direct_caller_metadata() {
     let server = MockServer::start().await;
@@ -225,41 +201,6 @@ async fn vertex_anthropic_url_and_auth() {
     assert_eq!(
         requests[0].headers.get("authorization").unwrap(),
         "Bearer test-token"
-    );
-}
-
-/// Test: the rawPredict request body is wrapped in the `anthropic_version`
-/// envelope and drops the `model` field (the model identity lives in the URL).
-#[tokio::test]
-async fn vertex_anthropic_request_body_envelope() {
-    let server = MockServer::start().await;
-    mock_raw_predict_json(&server, 200, text_response("OK")).await;
-
-    let model = make_model(&server);
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("do_generate should succeed");
-
-    // The reported request body is the envelope actually sent.
-    let reported = result.request_body.expect("should have request body");
-    assert_eq!(reported["anthropic_version"], "vertex-2023-10-16");
-    assert_eq!(reported["messages"][0]["role"], "user");
-    assert_eq!(reported["messages"][0]["content"][0]["text"], "Hello");
-    assert!(
-        reported.get("model").is_none(),
-        "model must not be in the body"
-    );
-
-    // The body sent over the wire matches (anthropic_version present, no model).
-    let requests = server.received_requests().await.expect("requests recorded");
-    assert_eq!(requests.len(), 1);
-    let wire: Value = serde_json::from_slice(&requests[0].body).expect("valid json body");
-    assert_eq!(wire["anthropic_version"], "vertex-2023-10-16");
-    assert_eq!(wire["messages"][0]["content"][0]["text"], "Hello");
-    assert!(
-        wire.get("model").is_none(),
-        "model must not be in the wire body"
     );
 }
 

@@ -642,7 +642,7 @@ pub fn map_finish_reason(reason: &str) -> FinishReason {
 /// cases); `outputTokens.text` mirrors the TS `outputTokens.text` field.
 #[must_use]
 pub fn convert_usage(usage: Option<&BedrockUsage>) -> aimux_core::types::Usage {
-    use aimux_core::types::{TokenUsage, Usage};
+    use aimux_core::types::Usage;
 
     let Some(usage) = usage else {
         return Usage::default();
@@ -654,20 +654,21 @@ pub fn convert_usage(usage: Option<&BedrockUsage>) -> aimux_core::types::Usage {
     let cache_write = usage.cache_write_input_tokens.unwrap_or(0);
 
     Usage {
-        input_tokens: TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input + cache_read + cache_write),
             no_cache: Some(input),
             cache_read: Some(cache_read),
             cache_write: Some(cache_write),
-            ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(output),
             text: Some(output),
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 

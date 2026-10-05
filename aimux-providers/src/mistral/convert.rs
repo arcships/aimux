@@ -273,7 +273,10 @@ fn convert_part_to_mistral(part: &ContentPart) -> Value {
         ContentPart::FileBase64 { .. }
         | ContentPart::FileUrl { .. }
         | ContentPart::FileReference { .. }
-        | ContentPart::Reasoning { .. } => Value::Null,
+        | ContentPart::Reasoning { .. }
+        | ContentPart::Custom { .. }
+        | ContentPart::ReasoningFile { .. }
+        | ContentPart::ToolApprovalRequest { .. } => Value::Null,
     }
 }
 

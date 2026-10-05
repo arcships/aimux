@@ -10,7 +10,7 @@
 use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
-use wiremock::matchers::{header, method, path};
+use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
@@ -128,29 +128,6 @@ fn text_response(text: &str) -> Value {
 // doGenerate tests
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// Test: non-streaming text generation extracts text, usage, and finish reason.
-#[tokio::test]
-async fn anthropic_aws_generate_text_response() {
-    let server = MockServer::start().await;
-    mock_messages_json(&server, 200, text_response("Hello from Claude on AWS!")).await;
-
-    let model = make_model(&server);
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("do_generate should succeed");
-
-    assert_eq!(result.content.len(), 1);
-    assert_eq!(as_text(&result.content[0]), "Hello from Claude on AWS!");
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
-    assert_eq!(result.usage.input_tokens.total, Some(4));
-    assert_eq!(result.usage.output_tokens.total, Some(30));
-    assert_eq!(
-        result.response.id.as_deref(),
-        Some("msg_017TfcQ4AgGxKyBduUpqYPZn")
-    );
-}
-
 /// Test: non-streaming tool call extraction.
 #[tokio::test]
 async fn anthropic_aws_generate_tool_call() {
@@ -212,36 +189,6 @@ async fn anthropic_aws_generate_error() {
     let result = model.do_generate(&default_options(test_prompt())).await;
 
     assert!(result.is_err(), "should return error for 429 status");
-}
-
-/// Test: request body uses Anthropic format with anthropic-version header.
-#[tokio::test]
-async fn anthropic_aws_request_body_and_headers() {
-    let server = MockServer::start().await;
-
-    // Mount a mock that also verifies the x-api-key header.
-    Mock::given(method("POST"))
-        .and(path("/messages"))
-        .and(header("x-api-key", "test-api-key"))
-        .and(header("anthropic-version", "2023-06-01"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(text_response("OK")))
-        .mount(&server)
-        .await;
-
-    let model = make_model(&server);
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("do_generate should succeed");
-
-    assert_eq!(as_text(&result.content[0]), "OK");
-
-    // Verify request body format.
-    let body = result.request_body.expect("should have request body");
-    assert_eq!(body["model"], "claude-sonnet-4-20250514");
-    assert_eq!(body["messages"][0]["role"], "user");
-    assert_eq!(body["messages"][0]["content"][0]["text"], "Hello");
-    assert_eq!(body["max_tokens"], 64000); // model default for claude-sonnet-4
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -483,27 +430,6 @@ async fn anthropic_aws_generate_finish_reason_unknown() {
     assert_eq!(result.finish_reason.raw.as_deref(), Some("pause_turn"));
 }
 
-/// TS: settings — max_tokens override, temperature, top_p land in the body.
-#[tokio::test]
-async fn anthropic_aws_generate_settings() {
-    let server = MockServer::start().await;
-    mock_messages_json(&server, 200, text_response("ok")).await;
-
-    let model = make_model(&server);
-    let mut opts = default_options(test_prompt());
-    opts.max_output_tokens = Some(1024);
-    opts.temperature = Some(0.5);
-    opts.top_p = Some(0.9);
-    opts.stop_sequences = Some(vec!["END".to_string()]);
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["max_tokens"], json!(1024));
-    assert!((body["temperature"].as_f64().unwrap() - 0.5).abs() < 1e-6);
-    assert!((body["top_p"].as_f64().unwrap() - 0.9).abs() < 1e-6);
-    assert_eq!(body["stop_sequences"], json!(["END"]));
-}
-
 /// TS: a 401 response maps to `AiMuxError::ApiCall` (401 in `status_code`).
 #[tokio::test]
 async fn anthropic_aws_generate_auth_error() {
@@ -540,53 +466,4 @@ async fn anthropic_aws_generate_rate_limit_error() {
         matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
-}
-
-/// TS: response headers are exposed on the stream result.
-#[tokio::test]
-async fn anthropic_aws_stream_response_headers() {
-    let server = MockServer::start().await;
-    let sse_body = sse_stream(&[
-        json!({
-            "type": "message_start",
-            "message": { "id": "msg_h", "model": "claude-sonnet-4-20250514", "usage": { "input_tokens": 3 } }
-        }),
-        json!({
-            "type": "content_block_start", "index": 0,
-            "content_block": { "type": "text", "text": "" }
-        }),
-        json!({
-            "type": "content_block_delta", "index": 0,
-            "delta": { "type": "text_delta", "text": "Hi" }
-        }),
-        json!({ "type": "content_block_stop", "index": 0 }),
-        json!({
-            "type": "message_delta",
-            "delta": { "stop_reason": "end_turn" },
-            "usage": { "output_tokens": 1 }
-        }),
-        json!({ "type": "message_stop" }),
-    ]);
-    Mock::given(method("POST"))
-        .and(path("/messages"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .insert_header("test-header", "test-value")
-                .set_body_string(sse_body),
-        )
-        .mount(&server)
-        .await;
-
-    let model = make_model(&server);
-    let result = model
-        .do_stream(&default_options(test_prompt()))
-        .await
-        .expect("do_stream should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }

@@ -73,11 +73,29 @@ pub enum FileData {
     /// Raw bytes (`Uint8Array`) or a base64-encoded string.
     Data { data: FileBytes },
     /// A URL that points to the file.
-    Url { url: String },
+    Url {
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original_url: Option<String>,
+    },
     /// A provider reference (`{ [provider]: id }`).
     Reference { reference: SharedProviderReference },
     /// Inline text content (e.g. an inline text document).
     Text { text: String },
+}
+
+/// Data or a URL returned for a generated file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub enum GeneratedFileData {
+    Data {
+        data: FileBytes,
+    },
+    Url {
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original_url: Option<String>,
+    },
 }
 
 /// Image/video size in `{width}x{height}` format (e.g. `"1024x1024"`).

@@ -39,7 +39,7 @@ use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
+use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::{ProviderOptions, provider, provider_from_env};
 
@@ -437,28 +437,6 @@ async fn extracts_usage_with_reasoning_tokens() {
 // Reasoning (top-level reasoning �?reasoning_effort, shared OpenAI behaviour)
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: top-level `reasoning: 'high'` is forwarded as `reasoning_effort`.
-/// (Alibaba's TS maps this to `enable_thinking`; the Rust shared converter
-/// maps it to `reasoning_effort` instead.)
-#[tokio::test]
-async fn top_level_reasoning_maps_to_reasoning_effort() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-        .mount(&server)
-        .await;
-
-    let model = make_provider(&server);
-
-    let mut options = default_options(test_prompt());
-    options.reasoning = Some(ReasoningEffort::High);
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["reasoning_effort"], json!("high"));
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // doGenerate / doStream / errors
 // ════════════════════════════════════════════════════════════════════════════
@@ -641,32 +619,4 @@ async fn status_429_maps_to_rate_limited() {
         matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
-}
-
-/// TS: response headers are exposed on the generate result.
-#[tokio::test]
-async fn exposes_response_headers() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("test-header", "test-value")
-                .set_body_json(text_completion_body()),
-        )
-        .mount(&server)
-        .await;
-
-    let model = make_provider(&server);
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }

@@ -52,7 +52,11 @@ pub fn convert_to_language_model_prompt(
     for msg in messages {
         let parts = match &msg.content {
             crate::message::MessageContent::Text(text) => vec![ContentPart::text(text)],
-            crate::message::MessageContent::Parts(parts) => parts.clone(),
+            crate::message::MessageContent::Parts(parts) => parts
+                .iter()
+                .filter(|part| !matches!(part, ContentPart::ToolApprovalRequest { .. }))
+                .cloned()
+                .collect(),
         };
         result.push(LanguageModelPromptMessage {
             role: msg.role,

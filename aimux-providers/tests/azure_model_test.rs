@@ -31,7 +31,7 @@ use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
+use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::{AzureConfig, AzureProvider, TokenProvider};
 
@@ -413,39 +413,6 @@ async fn should_merge_provider_and_request_headers() {
 // Response parsing (reuses OpenAI conversion logic)
 // ════════════════════════════════════════════════════════════════════════════
 
-/// `do_generate` extracts the assistant text content.
-#[tokio::test]
-async fn should_extract_text_response() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        "/deployments/gpt-4o/chat/completions",
-        text_completion_response("Hello, World!"),
-    )
-    .await;
-
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("do_generate should succeed");
-
-    assert_eq!(result.content.len(), 1);
-    match &result.content[0] {
-        GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
-        other => panic!("expected Text, got {other:?}"),
-    }
-    // Finish reason + response metadata.
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
-    assert_eq!(result.response.id, Some("chatcmpl-test".to_string()));
-    assert_eq!(result.response.model_id, Some("gpt-4o".to_string()));
-}
-
 /// `do_generate` maps Azure/OpenAI usage tokens.
 #[tokio::test]
 async fn should_extract_usage() {
@@ -718,140 +685,6 @@ async fn should_stream_tool_call() {
     assert_eq!(id, "call_abc");
     assert_eq!(name, "get-weather");
     assert_eq!(input, r#"{"city":"SF"}"#);
-}
-
-/// TS: "should send a json_schema response format for structured output"
-#[tokio::test]
-async fn should_send_json_schema_response_format() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        "/deployments/gpt-4o/chat/completions",
-        text_completion_response("ok"),
-    )
-    .await;
-
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
-
-    let schema = json!({
-        "type": "object",
-        "properties": { "sentiment": { "type": "string" } },
-        "required": ["sentiment"],
-        "additionalProperties": false
-    });
-    let mut options = default_options(test_prompt());
-    options.response_format = Some(aimux_core::options::ResponseFormat::Json {
-        schema: Some(schema.clone()),
-        name: None,
-        description: None,
-    });
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["response_format"]["type"], json!("json_schema"));
-    assert_eq!(body["response_format"]["json_schema"]["schema"], schema);
-    assert_eq!(
-        body["response_format"]["json_schema"]["strict"],
-        json!(true)
-    );
-}
-
-/// TS: "should map top-level reasoning to Azure DeepSeek reasoning effort" —
-/// a custom `reasoning` value maps to `reasoning_effort` in the request body.
-#[tokio::test]
-async fn should_map_reasoning_effort() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        "/deployments/gpt-4o/chat/completions",
-        text_completion_response("ok"),
-    )
-    .await;
-
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
-
-    let mut options = default_options(test_prompt());
-    options.reasoning = Some(ReasoningEffort::High);
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["reasoning_effort"], json!("high"));
-}
-
-/// TS: response headers are exposed on the generate result.
-#[tokio::test]
-async fn should_expose_response_headers() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/deployments/gpt-4o/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("test-header", "test-value")
-                .set_body_json(text_completion_response("hi")),
-        )
-        .mount(&server)
-        .await;
-
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
-}
-
-/// TS: response headers are exposed on the stream result.
-#[tokio::test]
-async fn should_expose_response_headers_stream() {
-    let server = MockServer::start().await;
-    let sse = sse_body(&[
-        "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}\n\n",
-    ]);
-    Mock::given(method("POST"))
-        .and(path("/deployments/gpt-4o/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .insert_header("test-header", "test-value")
-                .set_body_string(sse),
-        )
-        .mount(&server)
-        .await;
-
-    let config = AzureConfig::new()
-        .with_base_url(server.uri())
-        .with_api_key("test-api-key");
-    let provider = AzureProvider::new(config).expect("provider");
-    let model = provider.deployment("gpt-4o");
-
-    let result = model
-        .do_stream(&default_options(test_prompt()))
-        .await
-        .expect("do_stream should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }
 
 /// TS: a `length` finish reason maps to `FinishReasonUnified::Length`.

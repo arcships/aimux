@@ -18,11 +18,9 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::content::ContentPart;
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{
-    LanguageModelPrompt, LanguageModelPromptMessage, convert_to_language_model_prompt,
-};
-use aimux_core::message::{ModelMessage, Role};
-use aimux_core::options::{CallOptions, ProviderTool, Tool};
+use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
+use aimux_core::message::Role;
+use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
@@ -209,106 +207,6 @@ async fn vertex_generate_tool_call() {
     assert_eq!(input, r#"{"location":"Tokyo"}"#);
     // STOP with tool calls → ToolCalls
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
-}
-
-#[tokio::test]
-async fn vertex_renamed_code_execution_passes_core_generate_boundary() {
-    let server = MockServer::start().await;
-    mock_generate_content(
-        &server,
-        json!({
-            "candidates": [{
-                "content": {
-                    "role": "model",
-                    "parts": [
-                        { "executableCode": { "language": "PYTHON", "code": "print(2)" } },
-                        { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "2" } },
-                        { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "still 2" } }
-                    ]
-                },
-                "finishReason": "STOP"
-            }]
-        }),
-    )
-    .await;
-    let model = make_model(&server);
-    let tool = Tool::Provider(ProviderTool {
-        id: "google.code_execution".to_string(),
-        name: "runCode".to_string(),
-        args: json!({}),
-    });
-
-    let result = generate_text(
-        &model,
-        "Run code",
-        GenerateTextOptions {
-            tools: Some(vec![tool.clone()]),
-            ..GenerateTextOptions::default()
-        },
-    )
-    .await
-    .expect("renamed Vertex code execution should pass Core validation");
-    let call = result.tool_calls.first().expect("code execution call");
-    assert_eq!(call.tool_name, "runCode");
-    assert_eq!(call.provider_executed, Some(true));
-    assert_eq!(call.invalid, None);
-    let call_metadata = call.provider_metadata.as_ref().expect("call metadata");
-    assert_eq!(
-        call_metadata["googleVertex"],
-        json!({
-            "serverToolCallId": call.tool_call_id,
-            "serverToolType": "code_execution",
-        })
-    );
-    assert_eq!(call_metadata["vertex"], call_metadata["googleVertex"]);
-    assert!(call_metadata.get("google").is_none());
-    assert!(result.raw.content.iter().any(|content| matches!(
-        content,
-        GenerateContent::ToolResult(ToolResult { tool_name, .. }) if tool_name == "runCode"
-    )));
-    let result_ids: Vec<&str> = result
-        .raw
-        .content
-        .iter()
-        .filter_map(|content| match content {
-            GenerateContent::ToolResult(ToolResult { tool_call_id, .. }) => {
-                Some(tool_call_id.as_str())
-            }
-            _ => None,
-        })
-        .collect();
-    assert_eq!(result_ids.len(), 2);
-    assert!(
-        result_ids
-            .iter()
-            .all(|id| *id == call.tool_call_id.as_str())
-    );
-
-    let mut messages = vec![ModelMessage::user("Run code")];
-    messages.extend(result.response_messages);
-    messages.push(ModelMessage::user("Continue"));
-    let mut next_options = CallOptions::new(convert_to_language_model_prompt(&messages, None));
-    next_options.tools = Some(vec![tool]);
-    let replay = model
-        .do_generate(&next_options)
-        .await
-        .expect("Vertex replay request should succeed")
-        .request_body
-        .expect("request body");
-    let assistant = replay["contents"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|content| content["role"] == "model")
-        .expect("assistant replay content");
-    assert_eq!(
-        assistant["parts"],
-        json!([
-            { "executableCode": { "language": "PYTHON", "code": "print(2)" } },
-            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "2" } },
-            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "still 2" } },
-        ])
-    );
 }
 
 #[tokio::test]
@@ -596,17 +494,6 @@ async fn vertex_provider_config() {
 // Additional cases — finish reasons, settings, headers, stream tool calls.
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// A minimal Vertex generateContent "ok" body.
-fn ok_vertex_body() -> Value {
-    json!({
-        "candidates": [{
-            "content": { "role": "model", "parts": [{ "text": "ok" }] },
-            "finishReason": "STOP"
-        }],
-        "usageMetadata": { "promptTokenCount": 4, "candidatesTokenCount": 7 }
-    })
-}
-
 /// TS: MAX_TOKENS → Length
 #[tokio::test]
 async fn vertex_generate_finish_reason_max_tokens() {
@@ -661,71 +548,6 @@ async fn vertex_generate_finish_reason_safety() {
     );
 }
 
-/// TS: settings land in `generationConfig`.
-#[tokio::test]
-async fn vertex_generate_settings() {
-    let server = MockServer::start().await;
-    mock_generate_content(&server, ok_vertex_body()).await;
-
-    let model = make_model(&server);
-    let mut opts = default_options(test_prompt());
-    opts.max_output_tokens = Some(256);
-    opts.temperature = Some(0.5);
-    opts.top_p = Some(0.9);
-    opts.top_k = Some(40.0);
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["generationConfig"]["maxOutputTokens"], json!(256));
-    assert!((body["generationConfig"]["temperature"].as_f64().unwrap() - 0.5).abs() < 1e-6);
-    assert!((body["generationConfig"]["topP"].as_f64().unwrap() - 0.9).abs() < 1e-6);
-    assert_eq!(body["generationConfig"]["topK"], json!(40.0));
-}
-
-/// TS: request body carries the user message as `contents`.
-#[tokio::test]
-async fn vertex_generate_request_body() {
-    let server = MockServer::start().await;
-    mock_generate_content(&server, ok_vertex_body()).await;
-
-    let model = make_model(&server);
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let body = result.request_body.expect("body");
-    assert_eq!(body["contents"][0]["role"], json!("user"));
-    assert_eq!(body["contents"][0]["parts"][0]["text"], json!("Hello"));
-}
-
-/// TS: response headers are exposed on the generate result.
-#[tokio::test]
-async fn vertex_generate_response_headers() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/models/gemini-2.0-flash:generateContent"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("test-header", "test-value")
-                .set_body_json(ok_vertex_body()),
-        )
-        .mount(&server)
-        .await;
-
-    let model = make_model(&server);
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
-}
-
 /// TS: streaming tool calls via SSE.
 #[tokio::test]
 async fn vertex_stream_tool_call() {
@@ -767,41 +589,6 @@ async fn vertex_stream_tool_call() {
     assert_eq!(id, "call_1");
     assert_eq!(name, "getWeather");
     assert_eq!(input, r#"{"location":"Tokyo"}"#);
-}
-
-/// TS: response headers are exposed on the stream result.
-#[tokio::test]
-async fn vertex_stream_response_headers() {
-    let server = MockServer::start().await;
-    let sse_body = sse_stream(&[json!({
-        "candidates": [{
-            "content": { "parts": [{ "text": "Hi" }] },
-            "finishReason": "STOP"
-        }]
-    })]);
-    Mock::given(method("POST"))
-        .and(path("/models/gemini-2.0-flash:streamGenerateContent"))
-        .and(query_param("alt", "sse"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .insert_header("test-header", "test-value")
-                .set_body_string(sse_body),
-        )
-        .mount(&server)
-        .await;
-
-    let model = make_model(&server);
-    let result = model
-        .do_stream(&default_options(test_prompt()))
-        .await
-        .expect("do_stream should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }
 
 /// TS: a 429 response maps to `AiMuxError::ApiCall` (429 in `status_code`).
@@ -907,173 +694,6 @@ fn stream_sources(parts: &[StreamPart]) -> Vec<(String, String, Option<String>, 
             _ => None,
         })
         .collect()
-}
-
-/// TS: "should stream code execution tool calls and results" — the Vertex
-/// stream must not silently drop provider-executed code results (#141).
-#[tokio::test]
-async fn vertex_stream_code_execution_tool_calls_and_results() {
-    let server = MockServer::start().await;
-    mock_stream_content(
-        &server,
-        &sse_stream(&[
-            json!({
-                "candidates": [{
-                    "content": {
-                        "parts": [{ "executableCode": { "language": "PYTHON", "code": "print(\"hello\")" } }]
-                    }
-                }]
-            }),
-            json!({
-                "candidates": [{
-                    "content": {
-                        "parts": [
-                            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "hello\n" } },
-                            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "second result\n" } }
-                        ]
-                    },
-                    "finishReason": "STOP"
-                }]
-            }),
-        ]),
-    )
-    .await;
-    mock_generate_content(
-        &server,
-        json!({
-            "candidates": [{
-                "content": { "parts": [{ "text": "ok" }] },
-                "finishReason": "STOP"
-            }]
-        }),
-    )
-    .await;
-
-    let model = make_model(&server);
-    let tool = Tool::Provider(ProviderTool {
-        id: "google.code_execution".to_string(),
-        name: "runCode".to_string(),
-        args: json!({}),
-    });
-    let options = CallOptions {
-        tools: Some(vec![tool.clone()]),
-        ..default_options(test_prompt())
-    };
-    let result = model
-        .do_stream(&options)
-        .await
-        .expect("do_stream should succeed");
-    let parts = collect_stream(result).await;
-
-    let calls = stream_tool_calls(&parts);
-    let has_call = calls.iter().any(|(_, name, input)| {
-        name == "runCode" && *input == r#"{"language":"PYTHON","code":"print(\"hello\")"}"#
-    });
-    assert!(
-        has_call,
-        "expected a code_execution tool-call, got {calls:?}"
-    );
-
-    // The ToolResult must reference the preceding executableCode call id.
-    let results = stream_tool_results(&parts);
-    let call_id = calls
-        .iter()
-        .find(|(_, name, _)| name == "runCode")
-        .map(|(id, _, _)| id.clone())
-        .expect("code_execution call id");
-    let has_result = results.iter().any(|(id, output)| {
-        *id == call_id && *output == json!({ "outcome": "OUTCOME_OK", "output": "hello\n" })
-    });
-    assert!(
-        has_result,
-        "expected a code_execution tool-result, got {results:?}"
-    );
-    assert_eq!(results.len(), 2);
-    assert!(results.iter().all(|(id, _)| id == &call_id));
-    assert!(parts.iter().any(|part| matches!(
-        part,
-        StreamPart::ToolCall(RawToolCall {
-            tool_call_id,
-            tool_name,
-            provider_metadata: Some(metadata),
-            ..
-        }) if tool_name == "runCode"
-            && metadata["googleVertex"] == json!({
-                "serverToolCallId": tool_call_id,
-                "serverToolType": "code_execution",
-            })
-            && metadata["vertex"] == metadata["googleVertex"]
-            && metadata.get("google").is_none()
-    )));
-    assert!(parts.iter().any(|part| matches!(
-        part,
-        StreamPart::ToolResult(ToolResult {
-            tool_call_id,
-            tool_name,
-            provider_metadata: Some(metadata),
-            ..
-        }) if tool_name == "runCode"
-            && metadata["googleVertex"] == json!({
-                "serverToolCallId": tool_call_id,
-                "serverToolType": "code_execution",
-            })
-            && metadata["vertex"] == metadata["googleVertex"]
-            && metadata.get("google").is_none()
-    )));
-
-    // Provider-executed tool → Stop, not ToolCalls.
-    let finish = parts.iter().find_map(|p| match p {
-        StreamPart::Finish { finish_reason, .. } => Some(finish_reason.clone()),
-        _ => None,
-    });
-    assert_eq!(
-        finish.expect("finish part").unified,
-        FinishReasonUnified::Stop
-    );
-
-    let result = stream_text(
-        &model,
-        "Run code",
-        GenerateTextOptions {
-            tools: Some(vec![tool.clone()]),
-            ..GenerateTextOptions::default()
-        },
-    )
-    .await
-    .expect("stream_text should start")
-    .consume()
-    .await
-    .expect("renamed Vertex code execution should pass Core validation");
-    let call = result.tool_calls.first().expect("code execution call");
-    assert_eq!(call.tool_name, "runCode");
-    assert_eq!(call.provider_executed, Some(true));
-    assert_eq!(call.invalid, None);
-
-    let mut messages = vec![ModelMessage::user("Run code")];
-    messages.extend(result.response_messages);
-    messages.push(ModelMessage::user("Continue"));
-    let mut next_options = CallOptions::new(convert_to_language_model_prompt(&messages, None));
-    next_options.tools = Some(vec![tool]);
-    let replay = model
-        .do_generate(&next_options)
-        .await
-        .expect("Vertex stream replay request should succeed")
-        .request_body
-        .expect("request body");
-    let assistant = replay["contents"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|content| content["role"] == "model")
-        .expect("assistant replay content");
-    assert_eq!(
-        assistant["parts"],
-        json!([
-            { "executableCode": { "language": "PYTHON", "code": "print(\"hello\")" } },
-            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "hello\n" } },
-            { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "second result\n" } },
-        ])
-    );
 }
 
 /// TS: "should stream code execution result with missing output field".

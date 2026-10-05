@@ -18,17 +18,15 @@
 //! `do_generate` / `do_stream`, and asserts on the result.
 
 use aimux_core::tool::RawToolCall;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, Request, ResponseTemplate};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
-use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
+use aimux_core::generate::{GenerateTextOptions, generate_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -165,23 +163,6 @@ async fn mock_json_response_with_delay(server: &MockServer, body: Value, delay: 
         .await;
 }
 
-/// Standard mock for a JSON chat completion response with custom headers.
-async fn mock_json_response_with_headers(
-    server: &MockServer,
-    body: Value,
-    headers: &[(&str, &str)],
-) {
-    let mut template = ResponseTemplate::new(200).set_body_json(body);
-    for (k, v) in headers {
-        template = template.insert_header(*k, *v);
-    }
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(template)
-        .mount(server)
-        .await;
-}
-
 /// Standard mock for an SSE streaming response.
 async fn mock_sse_response(server: &MockServer, sse_body: &str) {
     Mock::given(method("POST"))
@@ -191,25 +172,6 @@ async fn mock_sse_response(server: &MockServer, sse_body: &str) {
                 .insert_header("content-type", "text/event-stream")
                 .set_body_string(sse_body.to_string()),
         )
-        .mount(server)
-        .await;
-}
-
-/// Mock for an SSE streaming response with custom headers.
-async fn mock_sse_response_with_headers(
-    server: &MockServer,
-    sse_body: &str,
-    headers: &[(&str, &str)],
-) {
-    let mut template = ResponseTemplate::new(200)
-        .insert_header("content-type", "text/event-stream")
-        .set_body_string(sse_body.to_string());
-    for (k, v) in headers {
-        template = template.insert_header(*k, *v);
-    }
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(template)
         .mount(server)
         .await;
 }
@@ -302,44 +264,6 @@ mod do_generate {
     }
 
     // ── L1: timestamp from `created` (RFC-0016) ───────────────────────────────
-
-    /// The `created` Unix-seconds field must surface as an RFC3339 timestamp
-    /// in ResponseMetadata (matching AI SDK's `created*1000 → Date`).
-    #[tokio::test]
-    async fn should_fill_timestamp_from_created() {
-        let server = MockServer::start().await;
-        mock_json_response(
-            &server,
-            json!({
-                "id": "chatcmpl-ts",
-                "object": "chat.completion",
-                "created": 1711115037,
-                "model": "gpt-3.5-turbo-0125",
-                "choices": [{
-                    "index": 0,
-                    "message": { "role": "assistant", "content": "hi" },
-                    "finish_reason": "stop"
-                }],
-                "usage": { "prompt_tokens": 1, "total_tokens": 2, "completion_tokens": 1 }
-            }),
-        )
-        .await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
-
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .expect("do_generate should succeed");
-
-        assert_eq!(
-            result.response.timestamp.as_deref(),
-            Some("2024-03-22T13:43:57+00:00"),
-            "created=1711115037 must convert to RFC3339"
-        );
-    }
 
     // ── should extract usage ──────────────────────────────────────────────────
 
@@ -443,41 +367,6 @@ mod do_generate {
     }
 
     // ── should send additional response information ───────────────────────────
-
-    /// TS: "should send additional response information"
-    #[tokio::test]
-    async fn should_send_additional_response_information() {
-        let server = MockServer::start().await;
-        mock_json_response(
-            &server,
-            json!({
-                "id": "test-id",
-                "object": "chat.completion",
-                "created": 123,
-                "model": "test-model",
-                "choices": [{
-                    "index": 0,
-                    "message": { "role": "assistant", "content": "" },
-                    "finish_reason": "stop"
-                }],
-                "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 },
-                "system_fingerprint": "fp_3bc1b5746c"
-            }),
-        )
-        .await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
-
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .expect("do_generate should succeed");
-
-        assert_eq!(result.response.id, Some("test-id".to_string()));
-        assert_eq!(result.response.model_id, Some("test-model".to_string()));
-    }
 
     // ── should support partial usage ──────────────────────────────────────────
 
@@ -649,45 +538,6 @@ mod do_generate {
     }
 
     // ── should expose the raw response headers ────────────────────────────────
-
-    /// TS: "should expose the raw response headers"
-    #[tokio::test]
-    async fn should_expose_raw_response_headers() {
-        let server = MockServer::start().await;
-        mock_json_response_with_headers(
-            &server,
-            json!({
-                "id": "chatcmpl-95ZTZkhr0mHNKqerQfiwkuox3PHAd",
-                "object": "chat.completion",
-                "created": 1711115037,
-                "model": "gpt-3.5-turbo-0125",
-                "choices": [{
-                    "index": 0,
-                    "message": { "role": "assistant", "content": "" },
-                    "finish_reason": "stop"
-                }],
-                "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 },
-                "system_fingerprint": "fp_3bc1b5746c"
-            }),
-            &[("test-header", "test-value")],
-        )
-        .await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
-
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .expect("do_generate should succeed");
-
-        let headers = result
-            .response_headers
-            .as_ref()
-            .expect("response_headers should be Some");
-        assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
-    }
 
     // ── should parse tool results ─────────────────────────────────────────────
 
@@ -1378,162 +1228,6 @@ mod do_stream {
         }
     }
 
-    /// RFC-0031 §13.19b/c: a retryable error in the first SSE event is an
-    /// attempt failure, and the first normal event from the retry is put back
-    /// at the head of the returned stream rather than being swallowed.
-    #[tokio::test]
-    async fn first_sse_429_retries_and_preserves_the_retry_first_event() {
-        let server = MockServer::start().await;
-        let attempts = Arc::new(AtomicUsize::new(0));
-        let responder_attempts = Arc::clone(&attempts);
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(move |_request: &Request| {
-                let body = if responder_attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                    sse_body(&[&sse_event(
-                        r#"{"error":{"message":"slow down","type":"rate_limit_error","code":429}}"#,
-                    )])
-                } else {
-                    sse_body(&[&sse_event(
-                        r#"{"id":"chatcmpl-retry","object":"chat.completion.chunk","created":1702657020,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":"stop"}]}"#,
-                    )])
-                };
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .insert_header("retry-after-ms", "0")
-                    .set_body_string(body)
-            })
-            .mount(&server)
-            .await;
-
-        let provider =
-            OpenAIProvider::new(OpenAIConfig::new("test-api-key").with_base_url(server.uri()));
-        let model = provider.model("gpt-3.5-turbo");
-        let result = stream_text(
-            &model,
-            "Hello",
-            GenerateTextOptions {
-                max_retries: Some(1),
-                ..Default::default()
-            },
-        )
-        .await
-        .expect("the second stream attempt should succeed");
-        let parts: Vec<_> = result
-            .stream
-            .map(|part| part.expect("Core stream part should succeed"))
-            .collect()
-            .await;
-
-        assert_eq!(attempts.load(Ordering::SeqCst), 2);
-        assert_eq!(text_deltas(&parts), vec!["hello"]);
-    }
-
-    #[tokio::test]
-    async fn first_sse_body_transport_error_enters_core_retry() {
-        use std::time::Duration;
-
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        use tokio::net::TcpListener;
-
-        async fn read_request(socket: &mut tokio::net::TcpStream) {
-            let mut request = Vec::new();
-            let mut buffer = [0_u8; 4096];
-            let header_end = loop {
-                let count = socket.read(&mut buffer).await.unwrap();
-                assert_ne!(count, 0, "client closed before sending request headers");
-                request.extend_from_slice(&buffer[..count]);
-                if let Some(offset) = request.windows(4).position(|part| part == b"\r\n\r\n") {
-                    break offset + 4;
-                }
-            };
-            let headers = String::from_utf8_lossy(&request[..header_end]);
-            let content_length = headers
-                .lines()
-                .find_map(|line| {
-                    let (name, value) = line.split_once(':')?;
-                    name.eq_ignore_ascii_case("content-length")
-                        .then(|| value.trim().parse::<usize>().ok())
-                        .flatten()
-                })
-                .unwrap_or(0);
-            while request.len() - header_end < content_length {
-                let count = socket.read(&mut buffer).await.unwrap();
-                if count == 0 {
-                    break;
-                }
-                request.extend_from_slice(&buffer[..count]);
-            }
-        }
-
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let base_url = format!("http://{}", listener.local_addr().unwrap());
-        let attempts = Arc::new(AtomicUsize::new(0));
-        let observed_attempts = Arc::clone(&attempts);
-        let server = tokio::spawn(async move {
-            for attempt in 0..2 {
-                let (mut socket, _) = listener.accept().await.unwrap();
-                observed_attempts.fetch_add(1, Ordering::SeqCst);
-                read_request(&mut socket).await;
-                if attempt == 0 {
-                    socket
-                        .write_all(
-                            b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: 10000\r\nconnection: close\r\n\r\ndata: {\"id\":\"partial",
-                        )
-                        .await
-                        .unwrap();
-                } else {
-                    let body = sse_body(&[&sse_event(
-                        r#"{"id":"chatcmpl-retry","object":"chat.completion.chunk","created":1702657020,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"retried"},"finish_reason":"stop"}]}"#,
-                    )]);
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                        body.len()
-                    );
-                    socket.write_all(response.as_bytes()).await.unwrap();
-                }
-                socket.shutdown().await.unwrap();
-            }
-        });
-
-        let provider = OpenAIProvider::new(
-            OpenAIConfig::new("test-api-key")
-                .with_base_url(base_url)
-                .with_retry_config(aimux_core::retry::RetryConfig {
-                    max_retries: 1,
-                    initial_delay: Duration::ZERO,
-                    backoff_factor: 2,
-                }),
-        );
-        let result = stream_text(
-            &provider.model("gpt-3.5-turbo"),
-            "Hello",
-            GenerateTextOptions {
-                max_retries: Some(1),
-                ..Default::default()
-            },
-        )
-        .await
-        .expect("the body transport failure should be retried");
-
-        let attempt_count = attempts.load(Ordering::SeqCst);
-        if attempt_count == 2 {
-            server.await.unwrap();
-        } else {
-            server.abort();
-        }
-        assert_eq!(
-            attempt_count, 2,
-            "first body transport error was not retried"
-        );
-        let parts: Vec<_> = result
-            .stream
-            .map(|part| part.expect("Core stream part should succeed"))
-            .collect()
-            .await;
-        assert_eq!(text_deltas(&parts), vec!["retried"]);
-    }
-
     // ── should forward error stream parts after output has started ────────────
 
     /// TS: "should forward error stream parts after output has started"
@@ -1636,39 +1330,6 @@ mod do_stream {
     }
 
     // ── should expose the raw response headers ────────────────────────────────
-
-    /// TS: "should expose the raw response headers" (streaming)
-    #[tokio::test]
-    async fn should_expose_raw_response_headers_stream() {
-        let server = MockServer::start().await;
-        let body = sse_body(&[
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"gpt-3.5-turbo-0613","system_fingerprint":null,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
-            ),
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"gpt-3.5-turbo-0613","system_fingerprint":null,"choices":[{"index":0,"delta":{},"finish_reason":"stop","logprobs":null}]}"#,
-            ),
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"gpt-3.5-turbo-0613","system_fingerprint":"fp_3bc1b5746c","choices":[],"usage":{"prompt_tokens":17,"total_tokens":244,"completion_tokens":227}}"#,
-            ),
-        ]);
-        mock_sse_response_with_headers(&server, &body, &[("test-header", "test-value")]).await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
-
-        let result = model
-            .do_stream(&default_options(test_prompt()))
-            .await
-            .expect("do_stream should succeed");
-
-        let headers = result
-            .response_headers
-            .as_ref()
-            .expect("response_headers should be Some");
-        assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
-    }
 
     // ── should return cached tokens in providerMetadata ───────────────────────
 

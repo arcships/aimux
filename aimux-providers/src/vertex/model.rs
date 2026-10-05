@@ -155,6 +155,25 @@ impl LanguageModel for VertexModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        if options
+            .prompt
+            .iter()
+            .filter(|message| message.role == aimux_core::message::Role::Assistant)
+            .flat_map(|message| &message.content)
+            .any(|part| {
+                matches!(
+                    part,
+                    aimux_core::content::ContentPart::ReasoningFile {
+                        data: aimux_core::shared::GeneratedFileData::Url { .. },
+                        ..
+                    }
+                )
+            })
+        {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "File data URLs in assistant messages are not supported".to_string(),
+            ));
+        }
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let body = build_vertex_request_body(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
@@ -174,6 +193,7 @@ impl LanguageModel for VertexModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
 
         let data: GenerateContentResponse = resp.value;
@@ -215,19 +235,41 @@ impl LanguageModel for VertexModel {
             usage,
             warnings: Vec::new(),
             provider_metadata,
-            response: ResponseMetadata {
-                id: data.response_id,
-                // Gemini responses carry no timestamp field; use the response
-                // `Date` header (RFC1123) like Bedrock does.
-                timestamp: response_headers.get("date").cloned(),
-                model_id: data.model_version,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::GenerateResponse {
+                body: response_body,
+                headers: Some(response_headers.clone()),
+                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                    id: data.response_id,
+                    // Gemini responses carry no timestamp field; use the response
+                    // `Date` header (RFC1123) like Bedrock does.
+                    timestamp: response_headers.get("date").cloned(),
+                    model_id: data.model_version,
+                })
+            }),
         })
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        if options
+            .prompt
+            .iter()
+            .filter(|message| message.role == aimux_core::message::Role::Assistant)
+            .flat_map(|message| &message.content)
+            .any(|part| {
+                matches!(
+                    part,
+                    aimux_core::content::ContentPart::ReasoningFile {
+                        data: aimux_core::shared::GeneratedFileData::Url { .. },
+                        ..
+                    }
+                )
+            })
+        {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "File data URLs in assistant messages are not supported".to_string(),
+            ));
+        }
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let body = build_vertex_request_body(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
@@ -638,8 +680,10 @@ impl LanguageModel for VertexModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::StreamResponse {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

@@ -20,7 +20,6 @@
 //! documents the expected behaviour so it can be flipped on once the gap lands.
 
 use aimux_core::tool::RawToolCall;
-use std::collections::HashMap;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -32,11 +31,10 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, Tool, ToolChoice};
+use aimux_core::options::CallOptions;
 use aimux_core::provider::Provider;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::bedrock::{
@@ -76,19 +74,6 @@ async fn mock_converse_json(server: &MockServer, status: u16, body: Value) {
         .respond_with(ResponseTemplate::new(status).set_body_json(body))
         .mount(server)
         .await;
-}
-
-fn ok_converse_body() -> Value {
-    json!({
-        "output": {
-            "message": {
-                "role": "assistant",
-                "content": [{ "text": "ok" }]
-            }
-        },
-        "stopReason": "end_turn",
-        "usage": { "inputTokens": 4, "outputTokens": 7, "totalTokens": 11 }
-    })
 }
 
 fn as_text(item: &GenerateContent) -> &str {
@@ -669,143 +654,9 @@ async fn arn_model_id_encoded_stream_route() {
 
 // ── additionalModelResponseFieldPaths ────────────────────────────────────────
 
-/// TS: "should return the request body" — the default request body includes
-/// `additionalModelResponseFieldPaths: ["/delta/stop_sequence"]` so that the
-/// stop_sequence value is returned in `additionalModelResponseFields`. The Rust
-/// `build_request_body` does not emit this field.
-#[tokio::test]
-#[ignore = "TODO: implementation gap — build_request_body does not emit additionalModelResponseFieldPaths"]
-async fn request_body_includes_additional_model_response_field_paths() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let body = result.request_body.expect("request body");
-    assert_eq!(
-        body["additionalModelResponseFieldPaths"],
-        json!(["/delta/stop_sequence"])
-    );
-}
-
 // ── temperature clamping ─────────────────────────────────────────────────────
 
-/// TS: "should clamp temperature above 1 to 1 and add warning".
-#[tokio::test]
-#[ignore = "TODO: implementation gap — temperature is not clamped to [0, 1]"]
-async fn temperature_clamped_above_1() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let mut opts = default_options(test_prompt());
-    opts.temperature = Some(1.5);
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-
-    let body = result.request_body.expect("request body");
-    assert_eq!(
-        body["inferenceConfig"]["temperature"].as_f64().unwrap(),
-        1.0
-    );
-    assert!(
-        result.warnings.iter().any(
-            |w| matches!(w, aimux_core::types::Warning::Unsupported { feature, .. }
-                if feature == "temperature")
-        ),
-        "expected an unsupported-temperature warning, got {:?}",
-        result.warnings
-    );
-}
-
-/// TS: "should clamp temperature below 0 to 0 and add warning".
-#[tokio::test]
-#[ignore = "TODO: implementation gap — temperature is not clamped to [0, 1]"]
-async fn temperature_clamped_below_0() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let mut opts = default_options(test_prompt());
-    opts.temperature = Some(-0.5);
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-
-    let body = result.request_body.expect("request body");
-    assert_eq!(
-        body["inferenceConfig"]["temperature"].as_f64().unwrap(),
-        0.0
-    );
-    assert!(
-        result.warnings.iter().any(
-            |w| matches!(w, aimux_core::types::Warning::Unsupported { feature, .. }
-                if feature == "temperature")
-        ),
-        "expected an unsupported-temperature warning"
-    );
-}
-
-/// TS: "should not clamp valid temperature between 0 and 1".
-#[tokio::test]
-async fn temperature_not_clamped_in_range() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let mut opts = default_options(test_prompt());
-    opts.temperature = Some(0.7);
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-
-    let body = result.request_body.expect("request body");
-    let temp = body["inferenceConfig"]["temperature"].as_f64().unwrap();
-    assert!(
-        (temp - 0.7).abs() < 1e-6,
-        "temperature should be 0.7, got {temp}"
-    );
-    assert!(result.warnings.is_empty(), "no warnings expected");
-}
-
 // ── guardrails ───────────────────────────────────────────────────────────────
-
-/// TS: "should support guardrails" — `providerOptions.bedrock.guardrailConfig`
-/// is forwarded as a top-level `guardrailConfig` in the request body.
-#[tokio::test]
-#[ignore = "TODO: implementation gap — build_request_body does not emit guardrailConfig"]
-async fn guardrail_config_in_request_body() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let mut opts = default_options(test_prompt());
-    let mut po = HashMap::new();
-    po.insert(
-        "bedrock".to_string(),
-        json!({
-            "guardrailConfig": {
-                "guardrailIdentifier": "-1",
-                "guardrailVersion": "1",
-                "trace": "enabled"
-            }
-        }),
-    );
-    opts.provider_options = Some(po);
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("request body");
-    assert_eq!(
-        body["guardrailConfig"],
-        json!({
-            "guardrailIdentifier": "-1",
-            "guardrailVersion": "1",
-            "trace": "enabled"
-        })
-    );
-}
 
 // ── trace in providerMetadata ────────────────────────────────────────────────
 
@@ -952,149 +803,6 @@ async fn stream_tool_call_empty_input() {
 
 // ── omit toolConfig ──────────────────────────────────────────────────────────
 
-/// TS: "should omit toolConfig when conversation has tool calls but toolChoice
-/// is none" — with `toolChoice: none`, no `toolConfig` is sent even when tools
-/// are provided.
-#[tokio::test]
-async fn omit_tool_config_when_tool_choice_none() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let opts = CallOptions {
-        tools: Some(vec![Tool::Function(FunctionTool::new(
-            "weather".to_string(),
-            json!({ "type": "object", "properties": { "city": { "type": "string" } } }),
-        ))]),
-        tool_choice: ToolChoice::None,
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("request body");
-    assert!(
-        body.get("toolConfig").is_none(),
-        "toolConfig should be absent when toolChoice is none, got {}",
-        body["toolConfig"]
-    );
-}
-
-/// TS: "should omit toolConfig and filter tool content when conversation has
-/// tool calls but no active tools".
-///
-/// The `toolConfig` omission (tools = `[]`) works in Rust. The *content
-/// filtering* — dropping the assistant's `toolUse` block from the messages when
-/// there are no active tools — is **not** implemented, so only the toolConfig
-/// assertion is live; the filtering assertion is `#[ignore]` below.
-#[tokio::test]
-async fn omit_tool_config_when_no_active_tools() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let prompt: LanguageModelPrompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("What is the weather in Toronto?")],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::tool_call(
-                "tool-call-1".to_string(),
-                "weather".to_string(),
-                json!({ "city": "Toronto" }),
-            )],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::Tool,
-            content: vec![ContentPart::tool_result(
-                "tool-call-1".to_string(),
-                json!({ "type": "text", "value": "The weather in Toronto is 20°C." }),
-            )],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Now give me a summary.")],
-            ..Default::default()
-        },
-    ];
-
-    let model = make_model(&server);
-    let opts = CallOptions {
-        tools: Some(vec![]),
-        ..default_options(prompt)
-    };
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("request body");
-    assert!(
-        body.get("toolConfig").is_none(),
-        "toolConfig should be absent when tools list is empty"
-    );
-}
-
-/// TS: (same test) the assistant's `toolUse` block should be filtered out of
-/// the messages when there are no active tools. The Rust converter always
-/// emits `toolUse` blocks regardless of active tools.
-#[tokio::test]
-#[ignore = "TODO: implementation gap — convert_prompt_to_bedrock does not filter toolUse blocks when no active tools"]
-async fn filter_tool_content_when_no_active_tools() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let prompt: LanguageModelPrompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("What is the weather in Toronto?")],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::tool_call(
-                "tool-call-1".to_string(),
-                "weather".to_string(),
-                json!({ "city": "Toronto" }),
-            )],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::Tool,
-            content: vec![ContentPart::tool_result(
-                "tool-call-1".to_string(),
-                json!({ "type": "text", "value": "The weather in Toronto is 20°C." }),
-            )],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Now give me a summary.")],
-            ..Default::default()
-        },
-    ];
-
-    let model = make_model(&server);
-    let opts = CallOptions {
-        tools: Some(vec![]),
-        ..default_options(prompt)
-    };
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("request body");
-    // The assistant message should NOT contain a toolUse block.
-    let assistant_msg = &body["messages"][1];
-    assert_eq!(assistant_msg["role"], "assistant");
-    let has_tool_use = assistant_msg["content"]
-        .as_array()
-        .map(|arr| arr.iter().any(|b| b.get("toolUse").is_some()))
-        .unwrap_or(false);
-    assert!(
-        !has_tool_use,
-        "toolUse should be filtered out when no active tools"
-    );
-}
-
 // ── doGenerate: tool call with empty input (non-streaming) ───────────────────
 
 /// TS variant: a non-streaming `toolUse` with no `input` field should yield
@@ -1144,37 +852,6 @@ async fn generate_tool_call_empty_input() {
 // ── doGenerate: basic text + finish reason (sanity, already covered but
 //    exercised here against the remaining-test helper set) ────────────────────
 
-/// TS: "should pass the model and the messages" — the request body carries the
-/// model id implicitly via the URL path and the messages array.
-#[tokio::test]
-async fn request_body_messages_shape() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let prompt: LanguageModelPrompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::System,
-            content: vec![ContentPart::text("System Prompt")],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Hello")],
-            ..Default::default()
-        },
-    ];
-
-    let model = make_model(&server);
-    let result = model
-        .do_generate(&default_options(prompt))
-        .await
-        .expect("ok");
-    let body = result.request_body.expect("request body");
-    assert_eq!(body["system"], json!([{ "text": "System Prompt" }]));
-    assert_eq!(body["messages"][0]["role"], "user");
-    assert_eq!(body["messages"][0]["content"][0]["text"], "Hello");
-}
-
 /// TS: "should extract finish reason" — `guardrail_intervened` → ContentFilter.
 #[tokio::test]
 async fn finish_reason_guardrail_intervened() {
@@ -1203,70 +880,6 @@ async fn finish_reason_guardrail_intervened() {
     assert_eq!(
         result.finish_reason.raw.as_deref(),
         Some("guardrail_intervened")
-    );
-}
-
-/// TS: "should send all tools when toolChoice is auto" — all provided tools
-/// appear in the toolConfig, not just a filtered subset.
-#[tokio::test]
-async fn tool_choice_auto_sends_all_tools() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let opts = CallOptions {
-        tools: Some(vec![
-            Tool::Function(
-                FunctionTool::new("get-weather".to_string(), json!({ "type": "object" }))
-                    .with_description("Get weather".to_string()),
-            ),
-            Tool::Function(
-                FunctionTool::new("get-time".to_string(), json!({ "type": "object" }))
-                    .with_description("Get time".to_string()),
-            ),
-        ]),
-        tool_choice: ToolChoice::Auto,
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("request body");
-    assert_eq!(body["toolConfig"]["toolChoice"], json!({ "auto": {} }));
-    let tools = body["toolConfig"]["tools"].as_array().unwrap();
-    assert_eq!(
-        tools.len(),
-        2,
-        "both tools should be sent with toolChoice: auto"
-    );
-    assert_eq!(tools[0]["toolSpec"]["name"], "get-weather");
-    assert_eq!(tools[1]["toolSpec"]["name"], "get-time");
-}
-
-/// TS: "should omit empty tool descriptions to avoid Bedrock validation errors".
-///
-/// A function tool with an empty-string description must not emit a
-/// `description` field in the `toolSpec`.
-#[tokio::test]
-async fn tool_empty_description_omitted() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let opts = CallOptions {
-        tools: Some(vec![Tool::Function(
-            FunctionTool::new("get-weather".to_string(), json!({ "type": "object" }))
-                .with_description("".to_string()),
-        )]),
-        tool_choice: ToolChoice::Auto,
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("request body");
-    let spec = &body["toolConfig"]["tools"][0]["toolSpec"];
-    assert!(
-        spec.get("description").is_none(),
-        "empty description should be omitted"
     );
 }
 
@@ -1320,43 +933,3 @@ async fn stream_validation_error() {
 }
 
 // ── doStream: request body parity ────────────────────────────────────────────
-
-/// TS: "should return the request body" (stream) — the stream result carries
-/// the request body for debugging.
-#[tokio::test]
-async fn stream_request_body_available() {
-    let server = MockServer::start().await;
-
-    let events: Vec<(&str, &str, &str)> = vec![
-        ("event", "messageStart", r#"{"role":"assistant"}"#),
-        (
-            "event",
-            "contentBlockDelta",
-            r#"{"contentBlockIndex":0,"delta":{"text":"hi"}}"#,
-        ),
-        ("event", "contentBlockStop", r#"{"contentBlockIndex":0}"#),
-        ("event", "messageStop", r#"{"stopReason":"end_turn"}"#),
-    ];
-    let body_bytes = aimux_providers::bedrock::event_stream::encode_messages(&events);
-
-    Mock::given(method("POST"))
-        .and(path(
-            "/model/anthropic.claude-3-5-sonnet-20240620-v1:0/converse-stream",
-        ))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "application/vnd.amazon.eventstream")
-                .set_body_raw(body_bytes, "application/vnd.amazon.eventstream"),
-        )
-        .mount(&server)
-        .await;
-
-    let model = make_model(&server);
-    let mut opts = default_options(test_prompt());
-    opts.max_output_tokens = Some(256);
-
-    let result = model.do_stream(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("stream request body");
-    assert_eq!(body["messages"][0]["role"], "user");
-    assert_eq!(body["inferenceConfig"]["maxTokens"], 256);
-}

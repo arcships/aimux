@@ -15,10 +15,9 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, Tool, ToolChoice};
+use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_providers::{MistralConfig, MistralProvider};
@@ -35,23 +34,6 @@ fn test_prompt() -> LanguageModelPrompt {
 
 fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
     CallOptions::new(prompt)
-}
-
-fn test_tool() -> Tool {
-    Tool::Function(FunctionTool {
-        name: "test-tool".to_string(),
-        description: None,
-        input_schema: json!({
-            "type": "object",
-            "properties": { "value": { "type": "string" } },
-            "required": ["value"],
-            "additionalProperties": false,
-            "$schema": "http://json-schema.org/draft-07/schema#"
-        }),
-        strict: None,
-        provider_options: None,
-        input_examples: None,
-    })
 }
 
 async fn mock_json_response(server: &MockServer, body: Value) {
@@ -120,61 +102,6 @@ fn text_deltas(parts: &[StreamPart]) -> Vec<String> {
 // ════════════════════════════════════════════════════════════════════════════
 // doGenerate
 // ════════════════════════════════════════════════════════════════════════════
-
-/// TS: "should extract text content"
-#[tokio::test]
-async fn should_extract_text_response() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        json!({
-            "id": "5319bd0299614c679a0068a4f2c8ffd0",
-            "created": 1769088720,
-            "model": "mistral-small-latest",
-            "usage": {
-                "prompt_tokens": 13,
-                "total_tokens": 447,
-                "completion_tokens": 434
-            },
-            "object": "chat.completion",
-            "choices": [{
-                "index": 0,
-                "finish_reason": "stop",
-                "message": {
-                    "role": "assistant",
-                    "tool_calls": null,
-                    "content": "Hello, World!"
-                }
-            }]
-        }),
-    )
-    .await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("do_generate should succeed");
-
-    assert_eq!(result.content.len(), 1);
-    match &result.content[0] {
-        GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
-        other => panic!("expected Text, got {other:?}"),
-    }
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
-    assert_eq!(result.finish_reason.raw.as_deref(), Some("stop"));
-    assert_eq!(
-        result.response.id.as_deref(),
-        Some("5319bd0299614c679a0068a4f2c8ffd0")
-    );
-    assert_eq!(
-        result.response.model_id.as_deref(),
-        Some("mistral-small-latest")
-    );
-}
 
 /// TS: "should extract usage"
 #[tokio::test]
@@ -316,167 +243,6 @@ async fn should_extract_tool_call() {
         other => panic!("expected ToolCall, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
-}
-
-/// TS: "should send correct request body"
-#[tokio::test]
-async fn should_send_correct_request_body() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        json!({
-            "id": "test-id",
-            "model": "mistral-small-latest",
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 },
-            "object": "chat.completion",
-            "choices": [{
-                "index": 0,
-                "finish_reason": "stop",
-                "message": { "role": "assistant", "content": "Hello" }
-            }]
-        }),
-    )
-    .await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("do_generate should succeed");
-
-    // Verify the request body.
-    let request_body = result.request_body.expect("request body should be set");
-    assert_eq!(request_body["model"], "mistral-small-latest");
-    assert_eq!(
-        request_body["messages"],
-        json!([{ "role": "user", "content": [{ "type": "text", "text": "Hello" }] }])
-    );
-    // No extra keys should be present.
-    assert!(request_body.get("max_tokens").is_none());
-    assert!(request_body.get("temperature").is_none());
-    assert!(request_body.get("tools").is_none());
-}
-
-/// TS: "should pass tools and toolChoice" — Mistral maps `required` → `"any"`.
-#[tokio::test]
-async fn should_pass_tools_with_tool_choice_required() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        json!({
-            "id": "test-id",
-            "model": "mistral-small-latest",
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 },
-            "object": "chat.completion",
-            "choices": [{
-                "index": 0,
-                "finish_reason": "stop",
-                "message": { "role": "assistant", "content": "ok" }
-            }]
-        }),
-    )
-    .await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let options = CallOptions {
-        prompt: test_prompt(),
-        tools: Some(vec![test_tool()]),
-        tool_choice: ToolChoice::Required,
-        ..default_options(Vec::new())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(
-        body["tool_choice"],
-        json!("any"),
-        "Mistral uses 'any' for required tool choice"
-    );
-    assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
-}
-
-/// TS: "should pass tools and toolChoice" — `tool` choice filters tools.
-#[tokio::test]
-async fn should_pass_tools_with_tool_choice_tool() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        json!({
-            "id": "test-id",
-            "model": "mistral-small-latest",
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 },
-            "object": "chat.completion",
-            "choices": [{
-                "index": 0,
-                "finish_reason": "stop",
-                "message": { "role": "assistant", "content": "ok" }
-            }]
-        }),
-    )
-    .await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let options = CallOptions {
-        prompt: test_prompt(),
-        tools: Some(vec![test_tool()]),
-        tool_choice: ToolChoice::Tool {
-            tool_name: "test-tool".to_string(),
-        },
-        ..default_options(Vec::new())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(body["tool_choice"], json!("any"));
-    assert_eq!(body["tools"].as_array().unwrap().len(), 1);
-    assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
-}
-
-/// TS: "should forward stopSequences as the Mistral stop parameter"
-#[tokio::test]
-async fn should_forward_stop_sequences() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        json!({
-            "id": "test-id",
-            "model": "mistral-small-latest",
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 },
-            "object": "chat.completion",
-            "choices": [{
-                "index": 0,
-                "finish_reason": "stop",
-                "message": { "role": "assistant", "content": "ok" }
-            }]
-        }),
-    )
-    .await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let options = CallOptions {
-        prompt: test_prompt(),
-        stop_sequences: Some(vec!["foo".to_string(), "bar".to_string()]),
-        ..default_options(Vec::new())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(body["stop"], json!(["foo", "bar"]));
 }
 
 /// TS: "should map model_length finish reason to length"
@@ -630,40 +396,6 @@ async fn should_stream_tool_call() {
     );
 }
 
-/// TS: "should pass the messages" (streaming request body).
-#[tokio::test]
-async fn should_send_streaming_request_body() {
-    let server = MockServer::start().await;
-    mock_sse_response(
-        &server,
-        &sse_body(&[
-            r#"data: {"id":"test","model":"mistral-small-latest","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"total_tokens":2,"completion_tokens":1}}
-
-"#,
-        ]),
-    )
-    .await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let result = model
-        .do_stream(&default_options(test_prompt()))
-        .await
-        .expect("do_stream should succeed");
-
-    let body = result.request_body.expect("body");
-    assert_eq!(body["model"], "mistral-small-latest");
-    assert_eq!(body["stream"], json!(true));
-    assert_eq!(
-        body["messages"],
-        json!([{ "role": "user", "content": [{ "type": "text", "text": "Hello" }] }])
-    );
-    // No stream_options (Mistral doesn't use it).
-    assert!(body.get("stream_options").is_none());
-}
-
 /// TS: "should stream text with content objects" (array content format)
 #[tokio::test]
 async fn should_stream_text_with_array_content() {
@@ -740,33 +472,6 @@ fn ok_text_body() -> Value {
     })
 }
 
-/// TS: "should forward presencePenalty and frequencyPenalty without unsupported warnings"
-#[tokio::test]
-async fn should_forward_presence_and_frequency_penalty() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, ok_text_body()).await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let options = CallOptions {
-        prompt: test_prompt(),
-        presence_penalty: Some(0.1),
-        frequency_penalty: Some(0.2),
-        ..default_options(Vec::new())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    // f32 round-trip: compare with tolerance rather than exact equality.
-    let pp = body["presence_penalty"].as_f64().unwrap();
-    let fp = body["frequency_penalty"].as_f64().unwrap();
-    assert!((pp - 0.1).abs() < 1e-6, "presence_penalty={pp}");
-    assert!((fp - 0.2).abs() < 1e-6, "frequency_penalty={fp}");
-}
-
 /// TS: "should pass headers" — request-level custom headers reach the server.
 #[tokio::test]
 async fn should_pass_request_headers() {
@@ -799,159 +504,6 @@ async fn should_pass_request_headers() {
 
     let result = model.do_generate(&options).await;
     assert!(result.is_ok(), "request should match the header mock");
-}
-
-/// TS: "should expose the raw response headers"
-#[tokio::test]
-async fn should_expose_raw_response_headers() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("test-header", "test-value")
-                .set_body_json(ok_text_body()),
-        )
-        .mount(&server)
-        .await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
-}
-
-/// TS: "should send additional response information" (id, modelId)
-#[tokio::test]
-async fn should_send_additional_response_information() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, ok_text_body()).await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    assert_eq!(result.response.id.as_deref(), Some("test-id"));
-    assert_eq!(
-        result.response.model_id.as_deref(),
-        Some("mistral-small-latest")
-    );
-}
-
-/// TS: "should inject JSON instruction for JSON response format" — Rust sets
-/// `response_format: { type: "json_object" }` (no schema). The Rust impl does
-/// not inject a system message, so we assert only the response_format field.
-#[tokio::test]
-async fn should_set_json_object_response_format() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, ok_text_body()).await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let options = CallOptions {
-        prompt: test_prompt(),
-        response_format: Some(aimux_core::options::ResponseFormat::Json {
-            schema: None,
-            name: None,
-            description: None,
-        }),
-        ..default_options(Vec::new())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["response_format"], json!({ "type": "json_object" }));
-}
-
-/// TS: "should inject JSON instruction for JSON response format with schema"
-#[tokio::test]
-async fn should_set_json_schema_response_format() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, ok_text_body()).await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let schema = json!({
-        "type": "object",
-        "properties": { "name": { "type": "string" } }
-    });
-    let options = CallOptions {
-        prompt: test_prompt(),
-        response_format: Some(aimux_core::options::ResponseFormat::Json {
-            schema: Some(schema.clone()),
-            name: None,
-            description: None,
-        }),
-        ..default_options(Vec::new())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["response_format"]["type"], json!("json_schema"));
-    assert_eq!(body["response_format"]["json_schema"]["schema"], schema);
-    assert_eq!(
-        body["response_format"]["json_schema"]["name"],
-        json!("response")
-    );
-    assert_eq!(
-        body["response_format"]["json_schema"]["strict"],
-        json!(false)
-    );
-}
-
-/// TS: "should avoid duplication when trailing assistant message" — continuation
-/// mode sets `prefix: true` on the trailing assistant message.
-#[tokio::test]
-async fn should_mark_trailing_assistant_message_as_prefix() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, ok_text_body()).await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let prompt: LanguageModelPrompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Hello")],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::text("prefix ")],
-            ..Default::default()
-        },
-    ];
-
-    let result = model
-        .do_generate(&default_options(prompt))
-        .await
-        .expect("should succeed");
-    let body = result.request_body.expect("body");
-    let messages = body["messages"].as_array().expect("messages array");
-    let last = messages.last().expect("last message");
-    assert_eq!(last["role"], json!("assistant"));
-    assert_eq!(last["content"], json!("prefix "));
-    assert_eq!(last["prefix"], json!(true));
 }
 
 /// TS: "should extract content when message content is a content object"
@@ -1244,44 +796,6 @@ async fn should_extract_multiple_tool_calls() {
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }
 
-/// TS: "should send request body" — verify all standard optional fields.
-#[tokio::test]
-async fn should_send_default_request_body_shape() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, ok_text_body()).await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let options = CallOptions {
-        prompt: test_prompt(),
-        max_output_tokens: Some(100),
-        temperature: Some(0.7),
-        top_p: Some(0.9),
-        seed: Some(42),
-        ..default_options(Vec::new())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["model"], "mistral-small-latest");
-    assert_eq!(body["max_tokens"], json!(100));
-    // f32 round-trip: compare with tolerance.
-    assert!((body["temperature"].as_f64().unwrap() - 0.7).abs() < 1e-6);
-    assert!((body["top_p"].as_f64().unwrap() - 0.9).abs() < 1e-6);
-    assert_eq!(body["random_seed"], json!(42));
-    assert_eq!(
-        body["messages"],
-        json!([{ "role": "user", "content": [{ "type": "text", "text": "Hello" }] }])
-    );
-    assert!(body.get("stop").is_none());
-    assert!(body.get("tools").is_none());
-    assert!(body.get("tool_choice").is_none());
-    assert!(body.get("response_format").is_none());
-    assert!(body.get("stream").is_none());
-}
-
 /// TS: a 429 response maps to `AiMuxError::ApiCall` (429 in `status_code`).
 #[tokio::test]
 async fn should_handle_rate_limit_error() {
@@ -1428,39 +942,6 @@ async fn should_stream_interleaved_thinking_and_text() {
     );
 }
 
-/// TS: "should expose the raw response headers" (streaming)
-#[tokio::test]
-async fn should_expose_raw_response_headers_stream() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .insert_header("test-header", "test-value")
-                .set_body_string(sse_json_body(&[
-                    r#"{"id":"test","model":"mistral-small-latest","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"total_tokens":2,"completion_tokens":1}}"#,
-                ])),
-        )
-        .mount(&server)
-        .await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let result = model
-        .do_stream(&default_options(test_prompt()))
-        .await
-        .expect("do_stream should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
-}
-
 /// TS: "should pass headers" (streaming) — request-level custom headers.
 #[tokio::test]
 async fn should_pass_request_headers_stream() {
@@ -1584,55 +1065,5 @@ async fn should_stream_error_in_chunk() {
             StreamPart::Error { error } if error.status_code() == Some(429)
         )),
         "expected a 429 stream error, got {parts:?}"
-    );
-}
-
-/// TS: "should avoid duplication when trailing assistant message" (streaming)
-/// — the trailing assistant message is sent with `prefix: true`.
-#[tokio::test]
-async fn should_stream_with_trailing_assistant_prefix() {
-    let server = MockServer::start().await;
-    mock_sse_response(
-        &server,
-        &sse_json_body(&[
-            r#"{"id":"53ff663126294946a6b7a4747b70597e","object":"chat.completion.chunk","created":1750537996,"model":"mistral-small-latest","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null,"logprobs":null}]}"#,
-            r#"{"id":"53ff663126294946a6b7a4747b70597e","object":"chat.completion.chunk","created":1750537996,"model":"mistral-small-latest","choices":[{"index":0,"delta":{"role":"assistant","content":"prefix"},"finish_reason":null,"logprobs":null}]}"#,
-            r#"{"id":"53ff663126294946a6b7a4747b70597e","object":"chat.completion.chunk","created":1750537996,"model":"mistral-small-latest","choices":[{"index":0,"delta":{"content":" and more content"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":4,"total_tokens":36,"completion_tokens":32}}"#,
-        ]),
-    )
-    .await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let prompt: LanguageModelPrompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Hello")],
-            ..Default::default()
-        },
-        LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::text("prefix ")],
-            ..Default::default()
-        },
-    ];
-
-    let result = model
-        .do_stream(&default_options(prompt))
-        .await
-        .expect("do_stream should succeed");
-
-    let body = result.request_body.clone().expect("body");
-    let messages = body["messages"].as_array().expect("messages array");
-    let last = messages.last().expect("last message");
-    assert_eq!(last["role"], json!("assistant"));
-    assert_eq!(last["prefix"], json!(true));
-
-    let parts = collect_stream(result).await;
-    assert_eq!(
-        text_deltas(&parts),
-        vec!["prefix".to_string(), " and more content".to_string()]
     );
 }

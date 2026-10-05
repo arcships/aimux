@@ -669,6 +669,9 @@ fn convert_part_to_anthropic(
             };
             apply_cc(block, cc)
         }
+        ContentPart::Custom { .. }
+        | ContentPart::ReasoningFile { .. }
+        | ContentPart::ToolApprovalRequest { .. } => return Ok(None),
     }))
 }
 

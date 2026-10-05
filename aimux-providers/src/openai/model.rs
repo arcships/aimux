@@ -159,23 +159,21 @@ fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
     let text_tokens = completion_tokens.saturating_sub(reasoning_tokens);
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(prompt_tokens),
             no_cache: Some(no_cache),
             cache_read: Some(cached),
             cache_write,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(completion_tokens),
             text: Some(text_tokens),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
         // M10 (RFC-0016): keep the provider's original usage JSON verbatim —
         // vendor-specific fields (e.g. Moonshot `cached_tokens`, DeepSeek
         // `prompt_cache_hit_tokens`) are otherwise lost for audit/billing.
-        raw: usage_raw.cloned(),
+        raw: usage_raw.and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -389,16 +387,19 @@ pub async fn execute_generate(
         usage,
         warnings: request_result.warnings,
         provider_metadata,
-        response: ResponseMetadata {
-            id: Some(data.id),
-            timestamp: data
-                .created
-                .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-                .map(|dt| dt.to_rfc3339()),
-            model_id: Some(data.model),
-        },
-        request_body: Some(body),
-        response_headers: Some(response_headers),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+        response: Some(aimux_core::result::GenerateResponse {
+            body: Some(response_value),
+            headers: Some(response_headers),
+            ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                id: Some(data.id),
+                timestamp: data
+                    .created
+                    .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
+                    .map(|dt| dt.to_rfc3339()),
+                model_id: Some(data.model),
+            })
+        }),
     })
 }
 
@@ -785,8 +786,10 @@ pub async fn execute_stream(
 
     Ok(StreamResult {
         stream: Box::pin(stream),
-        request_body: Some(body),
-        response_headers: Some(response_headers),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+        response: Some(aimux_core::result::StreamResponse {
+            headers: Some(response_headers),
+        }),
     })
 }
 

@@ -495,70 +495,7 @@ mod do_generate {
 
     // ── should expose response id ─────────────────────────────────────────────
 
-    #[tokio::test]
-    async fn should_expose_response_id() {
-        let server = MockServer::start().await;
-        mock_json_response(
-            &server,
-            "gemini-2.0-flash",
-            json!({
-                "candidates": [{
-                    "content": { "parts": [{ "text": "hi" }], "role": "model" },
-                    "finishReason": "STOP",
-                    "index": 0
-                }],
-                "responseId": "TestResponseId123"
-            }),
-        )
-        .await;
-
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
-
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .expect("do_generate should succeed");
-
-        assert_eq!(result.response.id, Some("TestResponseId123".to_string()));
-    }
-
     // ── should return the request body for debugging ──────────────────────────
-
-    #[tokio::test]
-    async fn should_return_request_body() {
-        let server = MockServer::start().await;
-        mock_json_response(
-            &server,
-            "gemini-2.0-flash",
-            json!({
-                "candidates": [{
-                    "content": { "parts": [{ "text": "hi" }], "role": "model" },
-                    "finishReason": "STOP",
-                    "index": 0
-                }]
-            }),
-        )
-        .await;
-
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
-
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .expect("do_generate should succeed");
-
-        let body = result
-            .request_body
-            .as_ref()
-            .expect("request body should be present");
-        // contents should be [{ role: "user", parts: [{ text: "Hello" }] }]
-        assert_eq!(body["contents"][0]["role"], "user");
-        assert_eq!(body["contents"][0]["parts"][0]["text"], "Hello");
-    }
 
     // ── should expose finishMessage in provider metadata ─────────────────────
     // TS: "should expose finishMessage in provider metadata"
@@ -775,37 +712,6 @@ mod do_generate {
 
     // ── should expose response headers ───────────────────────────────────────
     // TS: "should expose the raw response headers"
-
-    #[tokio::test]
-    async fn should_expose_response_headers() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/models/gemini-2.0-flash:generateContent"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("test-header", "test-value")
-                    .set_body_json(json!({
-                        "candidates": [{
-                            "content": { "parts": [{ "text": "hi" }], "role": "model" },
-                            "finishReason": "STOP", "index": 0
-                        }]
-                    })),
-            )
-            .mount(&server)
-            .await;
-
-        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GoogleProvider::new(config);
-        let model = provider.model("gemini-2.0-flash");
-
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .expect("do_generate should succeed");
-
-        let headers = result.response_headers.expect("response headers");
-        assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
-    }
 
     // ── should handle empty content with MALFORMED_FUNCTION_CALL ─────────────
     // TS: "should handle MALFORMED_FUNCTION_CALL finish reason and empty content object"

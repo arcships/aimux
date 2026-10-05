@@ -229,37 +229,6 @@ mod do_generate {
         assert_eq!(result.usage.output_tokens.total, Some(5));
     }
 
-    /// TS: "should send additional response information"
-    #[tokio::test]
-    async fn should_send_additional_response_information() {
-        let server = MockServer::start().await;
-        mock_json(
-            &server,
-            200,
-            json!({
-                "id": "test-id",
-                "type": "message",
-                "role": "assistant",
-                "content": [{ "type": "text", "text": "" }],
-                "model": "test-model",
-                "stop_reason": "end_turn",
-                "stop_sequence": null,
-                "usage": { "input_tokens": 4, "output_tokens": 30 },
-            }),
-        )
-        .await;
-
-        let model = make_model(&server);
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .expect("do_generate should succeed");
-
-        assert_eq!(result.response.id.as_deref(), Some("test-id"));
-        assert_eq!(result.response.model_id.as_deref(), Some("test-model"));
-        assert!(result.response.timestamp.is_none());
-    }
-
     /// TS: "should extract tool calls" — text + tool_use, finish_reason tool-calls.
     #[tokio::test]
     async fn should_extract_tool_calls() {

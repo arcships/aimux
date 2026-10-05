@@ -7,30 +7,17 @@ part of 'types.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
-TokenUsage _$TokenUsageFromJson(Map<String, dynamic> json) => TokenUsage(
-      total: (json['total'] as num?)?.toInt(),
-      noCache: (json['no_cache'] as num?)?.toInt(),
-      cacheRead: (json['cache_read'] as num?)?.toInt(),
-      cacheWrite: (json['cache_write'] as num?)?.toInt(),
-      text: (json['text'] as num?)?.toInt(),
-      reasoning: (json['reasoning'] as num?)?.toInt(),
-    );
+InputTokenUsage _$InputTokenUsageFromJson(Map<String, dynamic> json) => InputTokenUsage(total: (json['total'] as num?)?.toInt(), noCache: (json['no_cache'] as num?)?.toInt(), cacheRead: (json['cache_read'] as num?)?.toInt(), cacheWrite: (json['cache_write'] as num?)?.toInt());
+Map<String, dynamic> _$InputTokenUsageToJson(InputTokenUsage instance) => {'total': instance.total, 'no_cache': instance.noCache, 'cache_read': instance.cacheRead, 'cache_write': instance.cacheWrite};
 
-Map<String, dynamic> _$TokenUsageToJson(TokenUsage instance) =>
-    <String, dynamic>{
-      'total': instance.total,
-      'no_cache': instance.noCache,
-      'cache_read': instance.cacheRead,
-      'cache_write': instance.cacheWrite,
-      'text': instance.text,
-      'reasoning': instance.reasoning,
-    };
+OutputTokenUsage _$OutputTokenUsageFromJson(Map<String, dynamic> json) => OutputTokenUsage(total: (json['total'] as num?)?.toInt(), text: (json['text'] as num?)?.toInt(), reasoning: (json['reasoning'] as num?)?.toInt());
+Map<String, dynamic> _$OutputTokenUsageToJson(OutputTokenUsage instance) => {'total': instance.total, 'text': instance.text, 'reasoning': instance.reasoning};
 
 Usage _$UsageFromJson(Map<String, dynamic> json) => Usage(
       inputTokens:
-          TokenUsage.fromJson(json['input_tokens'] as Map<String, dynamic>),
+          InputTokenUsage.fromJson(json['input_tokens'] as Map<String, dynamic>),
       outputTokens:
-          TokenUsage.fromJson(json['output_tokens'] as Map<String, dynamic>),
+          OutputTokenUsage.fromJson(json['output_tokens'] as Map<String, dynamic>),
       raw: json['raw'] as Map<String, dynamic>?,
     );
 
@@ -113,6 +100,7 @@ Map<String, dynamic> _$ResponseMetadataToJson(ResponseMetadata instance) =>
 
 GenerateTextResult _$GenerateTextResultFromJson(Map<String, dynamic> json) =>
     GenerateTextResult(
+      content: (json['content'] as List<dynamic>? ?? []).map((item) => item as Map<String, dynamic>).toList(),
       text: json['text'] as String,
       toolCalls: (json['tool_calls'] as List<dynamic>)
           .map((e) => ToolCall.fromJson(e as Map<String, dynamic>))
@@ -149,12 +137,13 @@ GenerateTextResult _$GenerateTextResultFromJson(Map<String, dynamic> json) =>
           : ResponseMetadata(),
       totalUsage: json['total_usage'] != null
           ? Usage.fromJson(json['total_usage'] as Map<String, dynamic>)
-          : Usage(inputTokens: TokenUsage(), outputTokens: TokenUsage()),
+          : Usage(inputTokens: InputTokenUsage(), outputTokens: OutputTokenUsage()),
     );
 
 Map<String, dynamic> _$GenerateTextResultToJson(GenerateTextResult instance) =>
     <String, dynamic>{
       'text': instance.text,
+      'content': instance.content,
       'tool_calls': instance.toolCalls,
       'finish_reason': instance.finishReason,
       'usage': instance.usage,
@@ -180,7 +169,7 @@ GenerateObjectResult _$GenerateObjectResultFromJson(
       rawFinishReason: json['raw_finish_reason'] as String?,
       usage: json['usage'] != null
           ? Usage.fromJson(json['usage'] as Map<String, dynamic>)
-          : Usage(inputTokens: TokenUsage(), outputTokens: TokenUsage()),
+          : Usage(inputTokens: InputTokenUsage(), outputTokens: OutputTokenUsage()),
       warnings: (json['warnings'] as List<dynamic>?)
               ?.map((e) => e as Map<String, dynamic>)
               .toList() ??
@@ -210,6 +199,7 @@ Map<String, dynamic> _$GenerateObjectResultToJson(
 StreamTextResultAggregated _$StreamTextResultAggregatedFromJson(
         Map<String, dynamic> json) =>
     StreamTextResultAggregated(
+      content: (json['content'] as List<dynamic>? ?? []).map((item) => item as Map<String, dynamic>).toList(),
       text: json['text'] as String? ?? '',
       reasoning: (json['reasoning'] as List<dynamic>?)
               ?.map((e) => e as Map<String, dynamic>)
@@ -233,10 +223,10 @@ StreamTextResultAggregated _$StreamTextResultAggregatedFromJson(
       rawFinishReason: json['raw_finish_reason'] as String?,
       usage: json['usage'] != null
           ? Usage.fromJson(json['usage'] as Map<String, dynamic>)
-          : Usage(inputTokens: TokenUsage(), outputTokens: TokenUsage()),
+          : Usage(inputTokens: InputTokenUsage(), outputTokens: OutputTokenUsage()),
       totalUsage: json['total_usage'] != null
           ? Usage.fromJson(json['total_usage'] as Map<String, dynamic>)
-          : Usage(inputTokens: TokenUsage(), outputTokens: TokenUsage()),
+          : Usage(inputTokens: InputTokenUsage(), outputTokens: OutputTokenUsage()),
       warnings: (json['warnings'] as List<dynamic>?)
               ?.map((e) => e as Map<String, dynamic>)
               .toList() ??
@@ -255,6 +245,7 @@ Map<String, dynamic> _$StreamTextResultAggregatedToJson(
         StreamTextResultAggregated instance) =>
     <String, dynamic>{
       'text': instance.text,
+      'content': instance.content,
       'reasoning': instance.reasoning,
       'reasoning_text': instance.reasoningText,
       'tool_calls': instance.toolCalls,

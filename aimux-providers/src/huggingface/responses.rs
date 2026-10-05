@@ -33,9 +33,7 @@ use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::Tool;
-use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage, Warning,
-};
+use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
 
 use aimux_provider_utils::HttpRequest;
 
@@ -196,6 +194,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
 
         let response: Value = resp.value;
@@ -225,13 +224,16 @@ impl LanguageModel for HuggingFaceResponsesModel {
             provider_metadata: Some(json!({
                 "huggingface": { "responseId": response_id }
             })),
-            response: ResponseMetadata {
-                id: response_id,
-                timestamp: format_timestamp(created_at),
-                model_id: model,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::GenerateResponse {
+                body: response_body,
+                headers: Some(response_headers),
+                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                    id: response_id,
+                    timestamp: format_timestamp(created_at),
+                    model_id: model,
+                })
+            }),
         })
     }
 
@@ -555,8 +557,10 @@ impl LanguageModel for HuggingFaceResponsesModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::StreamResponse {
+                headers: Some(response_headers),
+            }),
         })
     }
 }
@@ -1274,21 +1278,19 @@ fn convert_usage(usage: Option<&Value>) -> Usage {
         .unwrap_or(0) as u32;
 
     Usage {
-        input_tokens: TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input_tokens),
             no_cache: Some(input_tokens - cached_tokens),
             cache_read: Some(cached_tokens),
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(output_tokens),
             text: Some(output_tokens - reasoning_tokens),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(u.clone()),
+        raw: u.as_object().cloned(),
     }
 }
 

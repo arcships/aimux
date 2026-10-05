@@ -19,6 +19,35 @@ pub enum ContentPart {
         provider_options: Option<Value>,
     },
 
+    /// Provider-specific custom content.
+    Custom {
+        kind: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<Value>,
+    },
+
+    /// A file generated during reasoning.
+    ReasoningFile {
+        data: crate::shared::GeneratedFileData,
+        media_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<Value>,
+    },
+
+    /// A request to approve a tool call on a later turn.
+    ToolApprovalRequest {
+        approval_id: String,
+        tool_call_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        is_automatic: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        input_schema_input: Option<Value>,
+    },
+
     /// An image (raw bytes + MIME type).
     Image {
         image: Vec<u8>,

@@ -884,7 +884,10 @@ fn convert_part_to_openai(part: &ContentPart, index: usize) -> Result<Value, AiM
         // Tool results reach the wire as a separate `role: "tool"` message
         // (built by `convert_message_to_openai`), never as a content part —
         // there is no such part type in the OpenAI chat format.
-        ContentPart::ToolResult { .. } => Ok(Value::Null),
+        ContentPart::ToolResult { .. }
+        | ContentPart::Custom { .. }
+        | ContentPart::ReasoningFile { .. }
+        | ContentPart::ToolApprovalRequest { .. } => Ok(Value::Null),
     }
 }
 

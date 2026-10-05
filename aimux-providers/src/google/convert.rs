@@ -257,6 +257,26 @@ fn convert_assistant_parts(
                     parts.push(p);
                 }
             }
+            ContentPart::ReasoningFile {
+                data: aimux_core::shared::GeneratedFileData::Data { data },
+                media_type,
+                provider_options,
+            } => {
+                use base64::Engine;
+                let data = match data {
+                    aimux_core::shared::FileBytes::Binary(bytes) => {
+                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                    }
+                    aimux_core::shared::FileBytes::Base64(data) => data.clone(),
+                };
+                let mut value = json!({ "inlineData": { "mimeType": media_type, "data": data }, "thought": true });
+                if let Some(signature) = read_provider_options(provider_options.as_ref(), namespace)
+                    .and_then(|options| options.get("thoughtSignature"))
+                {
+                    value["thoughtSignature"] = signature.clone();
+                }
+                parts.push(value);
+            }
             ContentPart::ToolCall {
                 tool_call_id,
                 tool_name,
@@ -1155,7 +1175,7 @@ pub fn parse_finish_reason(reason: &str, has_tool_calls: bool) -> FinishReason {
 /// - `output.total = candidatesTokenCount + thoughtsTokenCount`
 #[must_use]
 pub fn convert_usage(usage: &super::types::GoogleUsageMetadata) -> aimux_core::types::Usage {
-    use aimux_core::types::{TokenUsage, Usage};
+    use aimux_core::types::Usage;
 
     let prompt = usage.prompt_token_count.unwrap_or(0);
     let candidates = usage.candidates_token_count.unwrap_or(0);
@@ -1163,19 +1183,21 @@ pub fn convert_usage(usage: &super::types::GoogleUsageMetadata) -> aimux_core::t
     let thoughts = usage.thoughts_token_count.unwrap_or(0);
 
     Usage {
-        input_tokens: TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(prompt),
             no_cache: Some(prompt - cached),
             cache_read: Some(cached),
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(candidates + thoughts),
-            ..Default::default()
+            text: Some(candidates),
+            reasoning: Some(thoughts),
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 

@@ -2,8 +2,10 @@
 import type { AiMuxError } from "./AiMuxError";
 import type { FinishReason } from "./FinishReason";
 import type { GeneratedFile } from "./GeneratedFile";
+import type { ReasoningFileOutput } from "./ReasoningFileOutput";
 import type { ResponseMetadata } from "./ResponseMetadata";
 import type { Source } from "./Source";
+import type { ToolApprovalRequestOutput } from "./ToolApprovalRequestOutput";
 import type { ToolCall } from "./ToolCall";
 import type { ToolResult } from "./ToolResult";
 import type { Usage } from "./Usage";
@@ -29,7 +31,7 @@ dynamic?: boolean | null,
 /**
  * Optional title for the tool call.
  */
-title?: string | null, provider_metadata?: JsonValue | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: JsonValue | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": ToolCall } | { "ToolResult": ToolResult } | { "File": GeneratedFile } | { "ReasoningStart": { id: string, 
+title?: string | null, provider_metadata?: JsonValue | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: JsonValue | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": ToolCall } | { "ToolResult": ToolResult } | { "File": GeneratedFile } | { "ReasoningFile": ReasoningFileOutput } | { "Custom": { kind: string, provider_metadata?: JsonValue | null, } } | { "ToolApprovalRequest": ToolApprovalRequestOutput } | { "ReasoningStart": { id: string, 
 /**
  * Provider-specific metadata (e.g. xAI `itemId`).
  */

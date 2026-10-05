@@ -27,7 +27,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::Warning;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage};
+use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 use aimux_provider_utils::{HttpBody, HttpRequest};
 use serde_json::{Value, json};
 
@@ -848,6 +848,7 @@ pub(crate) async fn anthropic_generate_core(
     )
     .await?;
 
+    let response_body = resp.raw_value;
     let data: AnthropicResponse = resp.value;
 
     let content = parse_anthropic_content(&data.content, tool_names);
@@ -872,13 +873,16 @@ pub(crate) async fn anthropic_generate_core(
         usage,
         warnings,
         provider_metadata: None,
-        response: ResponseMetadata {
-            id: Some(data.id),
-            timestamp: None,
-            model_id: Some(data.model),
-        },
-        request_body: Some(body),
-        response_headers: None,
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+        response: Some(aimux_core::result::GenerateResponse {
+            body: response_body,
+            headers: None,
+            ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                id: Some(data.id),
+                timestamp: None,
+                model_id: Some(data.model),
+            })
+        }),
     })
 }
 
@@ -1332,11 +1336,10 @@ pub(crate) async fn anthropic_stream_core(
                                 let text_tokens = reasoning_tokens
                                     .zip(output_total)
                                     .map(|(r, t)| t.saturating_sub(r));
-                                final_usage.output_tokens = TokenUsage {
+                                final_usage.output_tokens = aimux_core::types::OutputTokenUsage {
                                     total: output_total,
                                     text: text_tokens,
                                     reasoning: reasoning_tokens,
-                                    ..Default::default()
                                 };
                             }
                         }
@@ -1398,7 +1401,9 @@ pub(crate) async fn anthropic_stream_core(
 
     Ok(StreamResult {
         stream: Box::pin(stream),
-        request_body: Some(body),
-        response_headers: Some(response_headers),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+        response: Some(aimux_core::result::StreamResponse {
+            headers: Some(response_headers),
+        }),
     })
 }

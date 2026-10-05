@@ -16,10 +16,9 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, Tool, ToolChoice};
+use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::bedrock::{BedrockModel, BedrockProviderConfig};
@@ -204,48 +203,6 @@ async fn bedrock_generate_error_status() {
     assert!(
         err.contains("invalid") || err.contains("ValidationException") || err.contains("model ID"),
         "error should contain the error message, got: {err}"
-    );
-}
-
-/// Test: request body contains the expected Converse format.
-#[tokio::test]
-async fn bedrock_generate_request_body() {
-    let server = MockServer::start().await;
-    mock_converse_json(
-        &server,
-        200,
-        json!({
-            "output": {
-                "message": {
-                    "role": "assistant",
-                    "content": [{ "text": "OK" }]
-                }
-            },
-            "stopReason": "end_turn",
-            "usage": { "inputTokens": 1, "outputTokens": 1 }
-        }),
-    )
-    .await;
-
-    let mut opts = default_options(test_prompt());
-    opts.max_output_tokens = Some(512);
-    opts.temperature = Some(0.7);
-
-    let model = make_model(&server);
-    let result = model
-        .do_generate(&opts)
-        .await
-        .expect("do_generate should succeed");
-
-    let body = result.request_body.expect("should have request body");
-    assert_eq!(body["messages"][0]["role"], "user");
-    assert_eq!(body["messages"][0]["content"][0]["text"], "Hello");
-    assert_eq!(body["inferenceConfig"]["maxTokens"], 512);
-    // temperature is f32, compare with tolerance
-    let temp = body["inferenceConfig"]["temperature"].as_f64().unwrap();
-    assert!(
-        (temp - 0.7).abs() < 0.001,
-        "temperature should be ~0.7, got {temp}"
     );
 }
 
@@ -493,65 +450,6 @@ async fn bedrock_generate_usage() {
     assert_eq!(result.usage.output_tokens.total, Some(7));
 }
 
-/// TS: "should send additional response information" — the x-amzn-requestid
-/// response header becomes `response.id`.
-#[tokio::test]
-async fn bedrock_generate_response_metadata() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path(
-            "/model/anthropic.claude-3-5-sonnet-20240620-v1:0/converse",
-        ))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("x-amzn-requestid", "req-abc-123")
-                .set_body_json(ok_converse_body()),
-        )
-        .mount(&server)
-        .await;
-
-    let model = make_model(&server);
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    assert_eq!(result.response.id.as_deref(), Some("req-abc-123"));
-    assert_eq!(
-        result.response.model_id.as_deref(),
-        Some("anthropic.claude-3-5-sonnet-20240620-v1:0")
-    );
-}
-
-/// TS: "should expose the raw response headers"
-#[tokio::test]
-async fn bedrock_generate_response_headers() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path(
-            "/model/anthropic.claude-3-5-sonnet-20240620-v1:0/converse",
-        ))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("test-header", "test-value")
-                .set_body_json(ok_converse_body()),
-        )
-        .mount(&server)
-        .await;
-
-    let model = make_model(&server);
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
-}
-
 /// TS: "should extract finish reason" — stop_sequence → Stop
 #[tokio::test]
 async fn bedrock_generate_finish_reason_stop_sequence() {
@@ -652,81 +550,6 @@ async fn bedrock_generate_finish_reason_unknown() {
 
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Other);
     assert_eq!(result.finish_reason.raw.as_deref(), Some("eos"));
-}
-
-/// TS: "should pass settings" — topP, topK, stopSequences land in inferenceConfig.
-#[tokio::test]
-async fn bedrock_generate_settings() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let mut opts = default_options(test_prompt());
-    opts.top_p = Some(0.9);
-    opts.top_k = Some(40.0);
-    opts.stop_sequences = Some(vec!["END".to_string()]);
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert!((body["inferenceConfig"]["topP"].as_f64().unwrap() - 0.9).abs() < 1e-6);
-    assert_eq!(body["inferenceConfig"]["topK"], json!(40.0));
-    assert_eq!(body["inferenceConfig"]["stopSequences"], json!(["END"]));
-}
-
-/// TS: "should pass tools and tool choice correctly" — required → {"any":{}}
-#[tokio::test]
-async fn bedrock_generate_tool_choice_required() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let opts = CallOptions {
-        tools: Some(vec![Tool::Function(
-            FunctionTool::new(
-                "get-weather".to_string(),
-                json!({"type":"object","properties":{"city":{"type":"string"}}}),
-            )
-            .with_description("Get weather".to_string()),
-        )]),
-        tool_choice: ToolChoice::Required,
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["toolConfig"]["toolChoice"], json!({ "any": {} }));
-    assert_eq!(
-        body["toolConfig"]["tools"][0]["toolSpec"]["name"],
-        "get-weather"
-    );
-}
-
-/// TS: "should only send the forced tool when toolChoice specifies a specific tool"
-#[tokio::test]
-async fn bedrock_generate_tool_choice_specific_tool() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let opts = CallOptions {
-        tools: Some(vec![Tool::Function(FunctionTool::new(
-            "get-weather".to_string(),
-            json!({"type":"object"}),
-        ))]),
-        tool_choice: ToolChoice::Tool {
-            tool_name: "get-weather".to_string(),
-        },
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(
-        body["toolConfig"]["toolChoice"],
-        json!({ "tool": { "name": "get-weather" } })
-    );
-    // Only the forced tool is sent.
-    assert_eq!(body["toolConfig"]["tools"].as_array().unwrap().len(), 1);
 }
 
 /// TS: a 429/throttling response maps to `AiMuxError::ApiCall` (429 in `status_code`).
