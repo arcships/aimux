@@ -38,7 +38,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
 use aimux_core::types::FinishReasonUnified;
 use aimux_provider_utils::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt, Resolvable,
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
 };
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 
@@ -146,7 +146,7 @@ impl Fetch for MockFetch {
 
 fn settings(mock: &Arc<MockFetch>) -> OpenAIProviderSettings {
     OpenAIProviderSettings {
-        api_key: Some(Resolvable::Value(KEY.to_string())),
+        api_key: Some(KEY.to_string()),
         fetch: Some(mock.transport()),
         ..Default::default()
     }
@@ -747,7 +747,7 @@ async fn an_explicit_empty_key_is_sent_as_given() {
     let _env = EnvVar::set("OPENAI_API_KEY", Some(ENV_KEY));
     let mock = fixture.mock();
     let provider = create_openai(OpenAIProviderSettings {
-        api_key: Some(Resolvable::Value(String::new())),
+        api_key: Some(String::new()),
         fetch: Some(mock.transport()),
         ..Default::default()
     })

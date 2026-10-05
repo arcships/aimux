@@ -32,7 +32,7 @@ use crate::anthropic::AnthropicMessagesModel;
 use crate::anthropic::config::{AnthropicModelConfig, AnthropicModelHooks};
 use crate::anthropic::options::{CANONICAL, options_name_of};
 
-pub use crate::anthropic::TransformRequestBody;
+pub use crate::shared::TransformRequestBody;
 
 /// The region used when the settings name none and SigV4 credentials do not
 /// carry one.

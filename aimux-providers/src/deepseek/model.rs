@@ -502,24 +502,6 @@ impl LanguageModel for DeepSeekChatLanguageModel {
         let response_headers = resp.response_headers;
         let mut sse_stream = resp.value;
 
-        // Only the first event is checked before returning the stream: an
-        // error reported immediately stays inside Core's operation-retry
-        // boundary. A normal event is chained back and never consumed.
-        let first_event = match sse_stream.next().await {
-            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
-            first => first,
-        };
-        if let Some(Ok(event)) = &first_event
-            && event.get("error").is_some()
-        {
-            return Err(deepseek_stream_error(
-                event,
-                &endpoint,
-                body.clone(),
-                response_headers.clone(),
-            ));
-        }
-
         let provider_options_name = self.provider_options_name().to_string();
         let emit_raw_chunks = options.include_raw_chunks == Some(true);
         let stream_error_body = body.clone();
@@ -542,8 +524,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             let mut content_logprobs: Vec<Value> = Vec::new();
             let mut reasoning_logprobs: Vec<Value> = Vec::new();
 
-            let mut events = futures::stream::iter(first_event).chain(sse_stream);
-            while let Some(event) = events.next().await {
+            while let Some(event) = sse_stream.next().await {
                 let parsed = match event {
                     Ok(parsed) => parsed,
                     Err(error) => {

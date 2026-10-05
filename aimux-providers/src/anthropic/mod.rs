@@ -1,4 +1,4 @@
-//! Anthropic (Claude) provider.
+//! Anthropic provider.
 //!
 //! [`create_anthropic`] is the Rust form of the AI SDK's `createAnthropic`: it
 //! takes [`AnthropicProviderSettings`], validates the base URL, rejects an
@@ -7,7 +7,7 @@
 //! loaded in the request headers of every call, from the settings or (for the
 //! key) from `ANTHROPIC_API_KEY`. [`anthropic()`] is the default instance.
 //!
-//! The Messages model is shared with Claude Platform on AWS
+//! The Messages model is shared with Anthropic on AWS
 //! ([`crate::anthropic_aws`]) and Anthropic on Vertex
 //! ([`crate::vertex`]): they build the same private model configuration and differ
 //! only in what it holds.
@@ -26,7 +26,6 @@ pub mod tool_name_mapping;
 pub mod types;
 pub mod usage;
 
-pub use config::TransformRequestBody;
 pub use files::AnthropicFiles;
 pub use model::AnthropicMessagesModel;
 pub use skills::AnthropicSkills;
@@ -110,13 +109,11 @@ pub struct AnthropicProviderSettings {
     /// The API key, sent as `x-api-key`. `None` (with no `auth_token`) loads
     /// `ANTHROPIC_API_KEY` when a request is made and fails that request with
     /// `AiMuxError::LoadApiKey` if it is unset. An explicit value is used as
-    /// given, `""` included: it never falls back to the environment. A
-    /// [`Resolvable::Future`] is awaited once, an [`Resolvable::AsyncFn`] on
-    /// every request.
-    pub api_key: Option<Resolvable<String>>,
+    /// given, `""` included: it never falls back to the environment.
+    pub api_key: Option<String>,
     /// A non-empty bearer token is sent as `Authorization: Bearer` instead
     /// of `x-api-key`. Giving non-empty values for both credentials is an error.
-    pub auth_token: Option<Resolvable<String>>,
+    pub auth_token: Option<String>,
     /// Extra headers on every request. A `None` value removes the header,
     /// including one of the fixed ones. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
@@ -128,9 +125,6 @@ pub struct AnthropicProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for AnthropicProviderSettings {
@@ -138,18 +132,14 @@ impl std::fmt::Debug for AnthropicProviderSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AnthropicProviderSettings")
             .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
-            .field("auth_token", &self.auth_token)
+            .field("api_key", &self.api_key.is_some())
+            .field("auth_token", &self.auth_token.is_some())
             .field(
                 "headers",
                 &self.headers.as_ref().map(std::collections::HashMap::len),
             )
             .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -168,8 +158,7 @@ pub fn create_anthropic(
         Some(url) => normalize_base_url(&url)?,
         None => DEFAULT_BASE_URL.to_string(),
     };
-    let is_truthy =
-        |value: &Resolvable<String>| !matches!(value, Resolvable::Value(value) if value.is_empty());
+    let is_truthy = |value: &String| !value.is_empty();
     if settings.api_key.as_ref().is_some_and(is_truthy)
         && settings.auth_token.as_ref().is_some_and(is_truthy)
     {
@@ -179,9 +168,16 @@ pub fn create_anthropic(
         ));
     }
     let (credential, scheme) = match settings.auth_token.filter(is_truthy) {
-        Some(token) => (Credential::Explicit(token), AuthScheme::Bearer),
+        Some(token) => (
+            Credential::Explicit(Resolvable::Value(token)),
+            AuthScheme::Bearer,
+        ),
         None => (
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Anthropic"),
+            Credential::explicit_or_env(
+                settings.api_key.map(Resolvable::Value),
+                API_KEY_ENV_VAR,
+                "Anthropic",
+            ),
             AuthScheme::Header("x-api-key"),
         ),
     };
@@ -195,7 +191,6 @@ pub fn create_anthropic(
             settings.headers,
         ),
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
         supported_urls: supported_urls(),
     })
 }
@@ -216,7 +211,6 @@ pub struct AnthropicProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
     supported_urls: SupportedUrls,
 }
 
@@ -230,7 +224,7 @@ impl AnthropicProvider {
             headers: self.headers.clone(),
             fetch: self.fetch.clone(),
             supported_urls: self.supported_urls.clone(),
-            transform_request_body: self.transform_request_body.clone(),
+            transform_request_body: None,
             base_url: self.base_url.clone(),
             provider_options_name: options::options_name_of(&self.name),
             hooks: AnthropicModelHooks::default(),

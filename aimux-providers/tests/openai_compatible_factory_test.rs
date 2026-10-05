@@ -36,7 +36,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
 use aimux_core::types::FinishReasonUnified;
 use aimux_provider_utils::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt, Resolvable,
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
 };
 use aimux_providers::openai_compatible::{
     OpenAICompatibleProvider, OpenAICompatibleProviderSettings, create_openai_compatible,
@@ -150,7 +150,7 @@ fn groq_settings(mock: &Arc<MockFetch>) -> OpenAICompatibleProviderSettings {
     OpenAICompatibleProviderSettings {
         name: "groq".to_string(),
         base_url: "https://api.groq.com/openai/v1".to_string(),
-        api_key: Some(Resolvable::Value(KEY.to_string())),
+        api_key: Some(KEY.to_string()),
         fetch: Some(mock.transport()),
         ..Default::default()
     }

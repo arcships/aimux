@@ -65,7 +65,7 @@
 //! common::replay::mount_cassettes(&server, "tests/cassettes/anthropic").await;
 //!
 //! let provider = create_anthropic(AnthropicProviderSettings {
-//!     api_key: Some("test-key".to_string().into()),
+//!     api_key: Some("test-key".to_string()),
 //!     base_url: Some(format!("{}/v1", server.uri())),
 //!     ..Default::default()
 //! })

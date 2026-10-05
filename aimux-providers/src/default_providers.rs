@@ -141,22 +141,45 @@ pub fn create_provider(
             )?))
         }};
     }
+    macro_rules! package_with_string_key {
+        ($module:ident, $create:ident, $settings:ident) => {{
+            if transform_request_body.is_some() {
+                return unsupported("transform_request_body");
+            }
+            let api_key = match api_key {
+                Some(aimux_provider_utils::Resolvable::Value(key)) => Some(key),
+                None => None,
+                Some(_) => return unsupported("resolvable api_key"),
+            };
+            Ok(Arc::new(crate::$module::$create(
+                crate::$module::$settings {
+                    api_key,
+                    base_url,
+                    headers,
+                    fetch,
+                    ..Default::default()
+                },
+            )?))
+        }};
+    }
     match name {
         "amazon_bedrock" => package!(
             bedrock,
             create_amazon_bedrock,
             AmazonBedrockProviderSettings
         ),
-        "anthropic" => package!(anthropic, create_anthropic, AnthropicProviderSettings),
+        "anthropic" => {
+            package_with_string_key!(anthropic, create_anthropic, AnthropicProviderSettings)
+        }
         "azure" => package!(azure, create_azure, AzureOpenAIProviderSettings),
         "cohere" => package!(cohere, create_cohere, CohereProviderSettings),
         "deepseek" => package!(deepseek, create_deepseek, DeepSeekProviderSettings),
         "elevenlabs" => package!(elevenlabs, create_elevenlabs, ElevenLabsProviderSettings),
-        "google" => package!(google, create_google, GoogleProviderSettings),
+        "google" => package_with_string_key!(google, create_google, GoogleProviderSettings),
         "groq" => package!(groq, create_groq, GroqProviderSettings),
         "huggingface" => package!(huggingface, create_huggingface, HuggingFaceProviderSettings),
         "mistral" => package!(mistral, create_mistral, MistralProviderSettings),
-        "openai" => package!(openai, create_openai, OpenAIProviderSettings),
+        "openai" => package_with_string_key!(openai, create_openai, OpenAIProviderSettings),
         "voyage" => package!(voyage, create_voyage, VoyageProviderSettings),
         "xai" => package!(xai, create_xai, XAIProviderSettings),
         "assemblyai" => package_without_transform!(

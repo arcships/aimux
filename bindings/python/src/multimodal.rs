@@ -520,7 +520,7 @@ pub fn google_embedding(
 ) -> PyResult<EmbeddingModel> {
     use aimux_providers::google::{GoogleProviderSettings, create_google};
     let provider = create_google(GoogleProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        api_key: Some(api_key.to_string()),
         base_url: base_url.map(str::to_string),
         ..Default::default()
     })
@@ -537,7 +537,7 @@ pub fn google_embedding(
 pub fn google_image(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<ImageModel> {
     use aimux_providers::google::{GoogleProviderSettings, create_google};
     let provider = create_google(GoogleProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        api_key: Some(api_key.to_string()),
         base_url: base_url.map(str::to_string),
         ..Default::default()
     })
@@ -554,7 +554,7 @@ pub fn google_image(api_key: &str, model_id: &str, base_url: Option<&str>) -> Py
 pub fn google_video(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<VideoModel> {
     use aimux_providers::google::{GoogleProviderSettings, create_google};
     let provider = create_google(GoogleProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        api_key: Some(api_key.to_string()),
         base_url: base_url.map(str::to_string),
         ..Default::default()
     })

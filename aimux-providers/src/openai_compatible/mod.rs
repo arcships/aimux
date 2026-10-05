@@ -11,10 +11,8 @@
 //! - The explicit settings (`name`, `base_url`, `headers`, `query_params`,
 //!   `fetch`, the capability flags, `transform_request_body`) are fixed in the
 //!   factory.
-//! - `api_key` is evaluated on every request, as a [`Resolvable`]: a plain
-//!   non-empty value is used as given, a future is awaited once, an async
-//!   function on every request. `None` or `""` sends no `Authorization` header,
-//!   which is what a local server wants.
+//! - A non-empty `api_key` is used as given. `None` or `""` sends no
+//!   `Authorization` header, which is what a local server wants.
 //!
 //! Identity: every model reports `"{name}.{method}"` (`groq.chat`,
 //! `local.embedding`, ...). The providerOptions namespace is the same name:
@@ -68,10 +66,8 @@ pub struct OpenAICompatibleProviderSettings {
     /// slash is removed.
     pub base_url: String,
     /// The API key. `None` or `""` sends no `Authorization` header;
-    /// a non-empty value is sent as `Bearer <value>`. A
-    /// [`Resolvable::Future`] is awaited once, an [`Resolvable::AsyncFn`] on
-    /// every request.
-    pub api_key: Option<Resolvable<String>>,
+    /// a non-empty value is sent as `Bearer <value>`.
+    pub api_key: Option<String>,
     /// Extra headers on every request. A `None` value removes the header,
     /// including the `Authorization` one. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
@@ -85,11 +81,11 @@ pub struct OpenAICompatibleProviderSettings {
     /// Whether the chat endpoint accepts `json_schema` response formats; when
     /// not, a schema degrades to `json_object` with a warning.
     pub supports_structured_outputs: Option<bool>,
-    /// Whether tool results may carry structured (array) content.
-    pub supports_multi_part_tool_content: Option<bool>,
     /// Rewrites every JSON request body once, after it is serialized and
     /// before it is sent.
     pub transform_request_body: Option<TransformRequestBody>,
+    /// Extract provider-specific metadata from generated and streamed responses.
+    pub metadata_extractor: Option<Arc<dyn MetadataExtractor>>,
 }
 
 impl std::fmt::Debug for OpenAICompatibleProviderSettings {
@@ -98,7 +94,7 @@ impl std::fmt::Debug for OpenAICompatibleProviderSettings {
         f.debug_struct("OpenAICompatibleProviderSettings")
             .field("name", &self.name)
             .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
+            .field("api_key", &self.api_key.is_some())
             .field(
                 "headers",
                 &self.headers.as_ref().map(std::collections::HashMap::len),
@@ -111,13 +107,10 @@ impl std::fmt::Debug for OpenAICompatibleProviderSettings {
                 &self.supports_structured_outputs,
             )
             .field(
-                "supports_multi_part_tool_content",
-                &self.supports_multi_part_tool_content,
-            )
-            .field(
                 "transform_request_body",
                 &self.transform_request_body.is_some(),
             )
+            .field("metadata_extractor", &self.metadata_extractor.is_some())
             .finish()
     }
 }
@@ -133,11 +126,13 @@ pub fn create_openai_compatible(
     settings: OpenAICompatibleProviderSettings,
 ) -> Result<OpenAICompatibleProvider, AiMuxError> {
     let base_url = validate_base_url(&settings.base_url)?;
+    let mut dialect = ChatDialect::baseline();
+    dialect.metadata_extractor = settings.metadata_extractor;
     OpenAICompatibleProvider::assemble(Assembly {
         name: settings.name,
         base_url: BaseUrl::Fixed(base_url),
         credential: match settings.api_key {
-            Some(key) => Credential::Optional(key),
+            Some(key) => Credential::Optional(Resolvable::Value(key)),
             None => Credential::None,
         },
         fixed_headers: Vec::new(),
@@ -148,10 +143,8 @@ pub fn create_openai_compatible(
         profile: ChatProfile {
             include_usage: settings.include_usage.unwrap_or(false),
             supports_structured_outputs: settings.supports_structured_outputs.unwrap_or(false),
-            supports_multi_part_tool_content: settings
-                .supports_multi_part_tool_content
-                .unwrap_or(false),
-            dialect: ChatDialect::baseline(),
+            supports_multi_part_tool_content: false,
+            dialect,
         },
     })
 }

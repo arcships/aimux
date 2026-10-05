@@ -31,7 +31,6 @@ pub mod types;
 pub mod utils;
 pub mod video;
 
-pub use crate::shared::TransformRequestBody;
 pub use embedding::GoogleEmbeddingModel;
 pub use files::GoogleFiles;
 pub use image::{GoogleImageModel, GoogleImageSettings};
@@ -180,9 +179,8 @@ pub struct GoogleProviderSettings {
     /// `GOOGLE_GENERATIVE_AI_API_KEY` when a request is made and fails that
     /// request with `AiMuxError::LoadApiKey` if it is unset. An explicit value
     /// is used as given, `""` included: it never falls back to the
-    /// environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
+    /// environment.
+    pub api_key: Option<String>,
     /// Extra headers on every request. A `None` value removes the header,
     /// including `x-goog-api-key`. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
@@ -192,9 +190,6 @@ pub struct GoogleProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for GoogleProviderSettings {
@@ -202,17 +197,13 @@ impl std::fmt::Debug for GoogleProviderSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GoogleProviderSettings")
             .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
+            .field("api_key", &self.api_key.is_some())
             .field(
                 "headers",
                 &self.headers.as_ref().map(std::collections::HashMap::len),
             )
             .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -233,13 +224,16 @@ pub fn create_google(settings: GoogleProviderSettings) -> Result<GoogleProvider,
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
         headers: credential_headers(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Google Generative AI"),
+            Credential::explicit_or_env(
+                settings.api_key.map(Resolvable::Value),
+                API_KEY_ENV_VAR,
+                "Google Generative AI",
+            ),
             AuthScheme::Header("x-goog-api-key"),
             Vec::new(),
             settings.headers,
         ),
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -261,7 +255,6 @@ pub struct GoogleProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl GoogleProvider {
@@ -284,7 +277,7 @@ impl GoogleProvider {
             }),
             fetch: self.fetch.clone(),
             supported_urls: Arc::new(move |model_id| supported_urls(&urls_base, Some(model_id))),
-            transform_request_body: self.transform_request_body.clone(),
+            transform_request_body: None,
         }
     }
 

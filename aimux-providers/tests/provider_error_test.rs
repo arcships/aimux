@@ -28,7 +28,6 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::stream_part::StreamPart;
-use aimux_provider_utils::Resolvable;
 use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use futures::StreamExt;
@@ -39,7 +38,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 /// so the environment is never consulted.
 fn provider_with(api_key: &str, base_url: impl Into<String>) -> OpenAIProvider {
     create_openai(OpenAIProviderSettings {
-        api_key: Some(Resolvable::Value(api_key.to_string())),
+        api_key: Some(api_key.to_string()),
         base_url: Some(base_url.into()),
         ..Default::default()
     })
@@ -339,7 +338,7 @@ mod anthropic_generate_errors {
 
     fn model(server: &MockServer) -> impl LanguageModel {
         create_anthropic(AnthropicProviderSettings {
-            api_key: Some("test-api-key".to_string().into()),
+            api_key: Some("test-api-key".to_string()),
             base_url: Some(format!("{}/v1", server.uri())),
             ..Default::default()
         })
@@ -473,7 +472,7 @@ mod anthropic_stream_errors {
 
     fn model(server: &MockServer) -> impl LanguageModel {
         create_anthropic(AnthropicProviderSettings {
-            api_key: Some("test-api-key".to_string().into()),
+            api_key: Some("test-api-key".to_string()),
             base_url: Some(format!("{}/v1", server.uri())),
             ..Default::default()
         })

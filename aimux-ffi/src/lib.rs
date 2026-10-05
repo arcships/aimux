@@ -1082,7 +1082,7 @@ fn openai_provider(
     base_url: Option<String>,
 ) -> Result<aimux_providers::openai::OpenAIProvider, AiMuxError> {
     create_openai(OpenAIProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        api_key: Some(api_key),
         base_url,
         ..Default::default()
     })
@@ -1129,7 +1129,7 @@ fn anthropic_provider(
     base_url: Option<String>,
 ) -> Result<aimux_providers::anthropic::AnthropicProvider, AiMuxError> {
     create_anthropic(AnthropicProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        api_key: Some(api_key),
         base_url,
         ..Default::default()
     })
@@ -1311,7 +1311,7 @@ fn google_provider(
     base_url: Option<String>,
 ) -> Result<aimux_providers::google::GoogleProvider, AiMuxError> {
     create_google(GoogleProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        api_key: Some(api_key),
         base_url,
         ..Default::default()
     })

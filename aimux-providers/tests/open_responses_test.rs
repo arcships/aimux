@@ -18,9 +18,10 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
-    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, UserPart,
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart,
+    ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, Tool};
+use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, ReasoningOutput};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
@@ -158,6 +159,80 @@ fn lmstudio_basic_json() -> Value {
             "output_tokens_details": {
                 "reasoning_tokens": 2456
             }
+        }
+    })
+}
+
+/// The `lmstudio-tool-call.1.json` fixture.
+fn lmstudio_tool_call_json() -> Value {
+    json!({
+        "id": "resp_930de53bd4b5933673481fa630f3dc5f58027a2c67598a2a",
+        "object": "response",
+        "created_at": 1769005553,
+        "status": "completed",
+        "incomplete_details": null,
+        "model": "mistralai/ministral-3-14b-reasoning",
+        "output": [
+            {
+                "id": "fc_ru0kcno9erlzp8573yub",
+                "call_id": "call_2866856768160095",
+                "type": "function_call",
+                "name": "weather",
+                "arguments": "{\"location\":\"San Francisco\"}",
+                "status": "completed"
+            }
+        ],
+        "error": null,
+        "usage": {
+            "input_tokens": 1189,
+            "output_tokens": 11,
+            "total_tokens": 1200,
+            "input_tokens_details": {
+                "cached_tokens": 891
+            },
+            "output_tokens_details": {
+                "reasoning_tokens": 0
+            }
+        }
+    })
+}
+
+/// The `openai-pdf-input-file.1.json` fixture.
+fn openai_pdf_json() -> Value {
+    json!({
+        "id": "resp_048edf44633e41ae0069d4fe9fabf48194957da2d8582b1c4a",
+        "object": "response",
+        "created_at": 1775566496,
+        "status": "completed",
+        "incomplete_details": null,
+        "model": "test-pdf-model",
+        "output": [
+            {
+                "id": "msg_048edf44633e41ae0069d4fea0d1a08194af1e491c093df1d9",
+                "type": "message",
+                "status": "completed",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "annotations": [],
+                        "logprobs": [],
+                        "text": "Dummy PDF file"
+                    }
+                ],
+                "role": "assistant"
+            }
+        ],
+        "error": null,
+        "usage": {
+            "input_tokens": 44,
+            "input_tokens_details": {
+                "cached_tokens": 0
+            },
+            "output_tokens": 4,
+            "output_tokens_details": {
+                "reasoning_tokens": 0
+            },
+            "total_tokens": 48
         }
     })
 }
@@ -367,6 +442,31 @@ mod convert_tests {
     }
 
     #[test]
+    fn convert_image_file_url_to_input_image() {
+        let prompt = vec![LanguageModelMessage::User {
+            content: vec![UserPart::File(FilePart {
+                data: FileData::Url {
+                    url: "https://example.com/image.png".into(),
+                    original_url: None,
+                },
+                media_type: "image/png".into(),
+                filename: None,
+                provider_options: None,
+            })],
+            provider_options: None,
+        }];
+        let (input, _, _) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([{
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_image", "image_url": "https://example.com/image.png"}]
+            }])
+        );
+    }
+
+    #[test]
     fn convert_pdf_file_base64_to_input_file() {
         let prompt = vec![LanguageModelMessage::User {
             content: vec![
@@ -395,6 +495,32 @@ mod convert_tests {
                     {"type": "input_text", "text": "What does this PDF say?"},
                     {"type": "input_file", "filename": "data", "file_data": "data:application/pdf;base64,UERGREFUQQ=="}
                 ]
+            }])
+        );
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn convert_pdf_file_url_to_input_file() {
+        let prompt = vec![LanguageModelMessage::User {
+            content: vec![UserPart::File(FilePart {
+                data: FileData::Url {
+                    url: "https://example.com/document.pdf".into(),
+                    original_url: None,
+                },
+                media_type: "application/pdf".into(),
+                filename: None,
+                provider_options: None,
+            })],
+            provider_options: None,
+        }];
+        let (input, _, warnings) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([{
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_file", "file_url": "https://example.com/document.pdf"}]
             }])
         );
         assert!(warnings.is_empty());
@@ -481,7 +607,319 @@ mod convert_tests {
 
     // -- Assistant messages with tool calls --
 
+    #[test]
+    fn convert_assistant_single_tool_call() {
+        let prompt = vec![LanguageModelMessage::Assistant {
+            content: vec![AssistantPart::ToolCall(ToolCallPart {
+                tool_call_id: "call_123".into(),
+                tool_name: "get_weather".into(),
+                input: json!({"location": "San Francisco"}),
+                provider_executed: None,
+                provider_options: None,
+            })],
+            provider_options: None,
+        }];
+        let (input, _, _) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([{
+                "type": "function_call",
+                "call_id": "call_123",
+                "name": "get_weather",
+                "arguments": "{\"location\":\"San Francisco\"}"
+            }])
+        );
+    }
+
+    #[test]
+    fn convert_assistant_tool_call_string_input() {
+        let prompt = vec![LanguageModelMessage::Assistant {
+            content: vec![AssistantPart::ToolCall(ToolCallPart {
+                tool_call_id: "call_124".into(),
+                tool_name: "get_weather".into(),
+                input: Value::String("{\"location\":\"Berlin\"}".to_string()),
+                provider_executed: None,
+                provider_options: None,
+            })],
+            provider_options: None,
+        }];
+        let (input, _, _) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([{
+                "type": "function_call",
+                "call_id": "call_124",
+                "name": "get_weather",
+                "arguments": "{\"location\":\"Berlin\"}"
+            }])
+        );
+    }
+
+    #[test]
+    fn convert_assistant_text_and_tool_call() {
+        let prompt = vec![LanguageModelMessage::Assistant {
+            content: vec![
+                AssistantPart::Text(TextPart {
+                    text: "Let me check the weather for you.".into(),
+                    provider_options: None,
+                }),
+                AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "call_456".into(),
+                    tool_name: "get_weather".into(),
+                    input: json!({"location": "New York"}),
+                    provider_executed: None,
+                    provider_options: None,
+                }),
+            ],
+            provider_options: None,
+        }];
+        let (input, _, _) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "Let me check the weather for you."}]
+                },
+                {
+                    "type": "function_call",
+                    "call_id": "call_456",
+                    "name": "get_weather",
+                    "arguments": "{\"location\":\"New York\"}"
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn convert_assistant_multiple_tool_calls() {
+        let prompt = vec![LanguageModelMessage::Assistant {
+            content: vec![
+                AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "call_001".into(),
+                    tool_name: "get_weather".into(),
+                    input: json!({"location": "Paris"}),
+                    provider_executed: None,
+                    provider_options: None,
+                }),
+                AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "call_002".into(),
+                    tool_name: "get_time".into(),
+                    input: json!({"timezone": "Europe/Paris"}),
+                    provider_executed: None,
+                    provider_options: None,
+                }),
+            ],
+            provider_options: None,
+        }];
+        let (input, _, _) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([
+                {
+                    "type": "function_call",
+                    "call_id": "call_001",
+                    "name": "get_weather",
+                    "arguments": "{\"location\":\"Paris\"}"
+                },
+                {
+                    "type": "function_call",
+                    "call_id": "call_002",
+                    "name": "get_time",
+                    "arguments": "{\"timezone\":\"Europe/Paris\"}"
+                }
+            ])
+        );
+    }
+
     // -- Tool messages --
+
+    #[test]
+    fn convert_tool_message_json_output() {
+        let prompt = vec![LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
+                tool_call_id: "call_123".into(),
+                output: ToolResultOutput::Json {
+                    value: json!({"temperature": 72, "condition": "sunny"}),
+                    provider_options: None,
+                },
+                tool_name: "test".into(),
+
+                provider_options: None,
+            })],
+            provider_options: None,
+        }];
+        let (input, _, _) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([{
+                "type": "function_call_output",
+                "call_id": "call_123",
+                "output": "{\"temperature\":72,\"condition\":\"sunny\"}"
+            }])
+        );
+    }
+
+    #[test]
+    fn convert_tool_message_text_output() {
+        let prompt = vec![LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
+                tool_call_id: "call_456".into(),
+                output: ToolResultOutput::Text {
+                    value: "Search results: Found 5 items".into(),
+                    provider_options: None,
+                },
+                tool_name: "test".into(),
+
+                provider_options: None,
+            })],
+            provider_options: None,
+        }];
+        let (input, _, _) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([{
+                "type": "function_call_output",
+                "call_id": "call_456",
+                "output": "Search results: Found 5 items"
+            }])
+        );
+    }
+
+    #[test]
+    fn convert_tool_message_error_text_output() {
+        let prompt = vec![LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
+                tool_call_id: "call_789".into(),
+                output: ToolResultOutput::ErrorText {
+                    value: "API request failed: timeout".into(),
+                    provider_options: None,
+                },
+                tool_name: "test".into(),
+
+                provider_options: None,
+            })],
+            provider_options: None,
+        }];
+        let (input, _, _) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([{
+                "type": "function_call_output",
+                "call_id": "call_789",
+                "output": "API request failed: timeout"
+            }])
+        );
+    }
+
+    #[test]
+    fn convert_tool_message_execution_denied_output() {
+        let prompt = vec![LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
+                tool_call_id: "call_denied".into(),
+                output: ToolResultOutput::ExecutionDenied {
+                    reason: Some("User declined the action".into()),
+                    provider_options: None,
+                },
+                tool_name: "test".into(),
+
+                provider_options: None,
+            })],
+            provider_options: None,
+        }];
+        let (input, _, _) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([{
+                "type": "function_call_output",
+                "call_id": "call_denied",
+                "output": "User declined the action"
+            }])
+        );
+    }
+
+    #[test]
+    fn convert_tool_message_content_output_text() {
+        let prompt = vec![LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
+                tool_call_id: "call_content".into(),
+                output: ToolResultOutput::Content {
+                    value: vec![
+                        ToolResultContent::Text(TextPart {
+                            text: "First result".into(),
+                            provider_options: None,
+                        }),
+                        ToolResultContent::Text(TextPart {
+                            text: "Second result".into(),
+                            provider_options: None,
+                        }),
+                    ],
+                },
+                tool_name: "test".into(),
+
+                provider_options: None,
+            })],
+            provider_options: None,
+        }];
+        let (input, _, _) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([{
+                "type": "function_call_output",
+                "call_id": "call_content",
+                "output": [
+                    {"type": "input_text", "text": "First result"},
+                    {"type": "input_text", "text": "Second result"}
+                ]
+            }])
+        );
+    }
+
+    #[test]
+    fn convert_tool_message_multiple_results() {
+        let prompt = vec![LanguageModelMessage::Tool {
+            content: vec![
+                ToolPart::ToolResult(ToolResultPart {
+                    tool_call_id: "call_001".into(),
+                    output: ToolResultOutput::Json {
+                        value: json!({"temp": 72}),
+                        provider_options: None,
+                    },
+                    tool_name: "test".into(),
+
+                    provider_options: None,
+                }),
+                ToolPart::ToolResult(ToolResultPart {
+                    tool_call_id: "call_002".into(),
+                    output: ToolResultOutput::Text {
+                        value: "3:00 PM".into(),
+                        provider_options: None,
+                    },
+                    tool_name: "test".into(),
+
+                    provider_options: None,
+                }),
+            ],
+            provider_options: None,
+        }];
+        let (input, _, _) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_001",
+                    "output": "{\"temp\":72}"
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_002",
+                    "output": "3:00 PM"
+                }
+            ])
+        );
+    }
 
     // -- Message chains --
 
@@ -505,6 +943,92 @@ mod convert_tests {
                 {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "What is the capital of France?"}]},
                 {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "The capital of France is Paris."}]},
                 {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "And what about Germany?"}]}
+            ])
+        );
+    }
+
+    #[test]
+    fn convert_user_assistant_tool_tool_chain() {
+        let prompt = vec![
+            LanguageModelMessage::user_text("What is the weather in Tokyo?"),
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "call_weather".into(),
+                    tool_name: "get_weather".into(),
+                    input: json!({"location": "Tokyo"}),
+                    provider_executed: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
+            LanguageModelMessage::Tool {
+                content: vec![ToolPart::ToolResult(ToolResultPart {
+                    tool_call_id: "call_weather".into(),
+                    output: ToolResultOutput::Json {
+                        value: json!({"temperature": 25, "condition": "cloudy"}),
+                        provider_options: None,
+                    },
+                    tool_name: "test".into(),
+
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
+        ];
+        let (input, _, _) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "What is the weather in Tokyo?"}]},
+                {"type": "function_call", "call_id": "call_weather", "name": "get_weather", "arguments": "{\"location\":\"Tokyo\"}"},
+                {"type": "function_call_output", "call_id": "call_weather", "output": "{\"temperature\":25,\"condition\":\"cloudy\"}"}
+            ])
+        );
+    }
+
+    #[test]
+    fn convert_tool_roundtrip_with_followup_assistant() {
+        let prompt = vec![
+            LanguageModelMessage::user_text("What is the weather in Tokyo?"),
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "call_weather".into(),
+                    tool_name: "get_weather".into(),
+                    input: Value::String("{\"location\":\"Tokyo\"}".to_string()),
+                    provider_executed: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
+            LanguageModelMessage::Tool {
+                content: vec![ToolPart::ToolResult(ToolResultPart {
+                    tool_call_id: "call_weather".into(),
+                    output: ToolResultOutput::Json {
+                        value: json!({"temperature": 25, "condition": "cloudy"}),
+                        provider_options: None,
+                    },
+                    tool_name: "test".into(),
+
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::Text(TextPart {
+                    text: "It is 25 C and cloudy in Tokyo.".into(),
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
+        ];
+        let (input, _, _) = convert_to_open_responses_input(&prompt);
+        assert_eq!(
+            input,
+            json!([
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "What is the weather in Tokyo?"}]},
+                {"type": "function_call", "call_id": "call_weather", "name": "get_weather", "arguments": "{\"location\":\"Tokyo\"}"},
+                {"type": "function_call_output", "call_id": "call_weather", "output": "{\"temperature\":25,\"condition\":\"cloudy\"}"},
+                {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "It is 25 C and cloudy in Tokyo."}]}
             ])
         );
     }
@@ -898,9 +1422,268 @@ mod do_generate_tests {
 
     // -- ProviderOptions reasoning tests --
 
+    fn lmstudio_opts(value: Value) -> Option<aimux_core::shared::SharedProviderOptions> {
+        Some(
+            aimux_core::shared::provider_namespace("lmstudio", value)
+                .expect("provider options object"),
+        )
+    }
+
+    #[tokio::test]
+    async fn provider_options_reasoning_summary_detailed() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            provider_options: lmstudio_opts(json!({"reasoningSummary": "detailed"})),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["reasoning"], json!({"summary": "detailed"}));
+    }
+
+    #[tokio::test]
+    async fn provider_options_combines_effort_with_summary() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            reasoning: Some(ReasoningEffort::High),
+            provider_options: lmstudio_opts(json!({"reasoningSummary": "auto"})),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(
+            body["reasoning"],
+            json!({"effort": "high", "summary": "auto"})
+        );
+    }
+
+    #[tokio::test]
+    async fn provider_options_reasoning_summary_concise() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            provider_options: lmstudio_opts(json!({"reasoningSummary": "concise"})),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["reasoning"], json!({"summary": "concise"}));
+    }
+
+    #[tokio::test]
+    async fn provider_options_no_reasoning_fields() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            provider_options: lmstudio_opts(json!({})),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert!(body.get("reasoning").is_none());
+    }
+
     // -- Tool call parsing tests --
 
+    #[tokio::test]
+    async fn parse_tool_call_from_response() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_tool_call_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![Tool::from(
+                FunctionTool::new(
+                    "weather",
+                    json!({
+                        "type": "object",
+                        "properties": {
+                            "location": {"type": "string", "description": "The location to get the weather for"}
+                        },
+                        "required": ["location"]
+                    }),
+                )
+                .with_description("Get the weather in a location"),
+            )]),
+            tool_choice: Some(ToolChoice::Required),
+            ..CallOptions::new(test_prompt())
+        };
+        let result = model.do_generate(&options).await.unwrap();
+
+        assert_eq!(result.content.len(), 1);
+        match &result.content[0] {
+            GenerateContent::ToolCall(RawToolCall {
+                tool_call_id,
+                tool_name,
+                input,
+                ..
+            }) => {
+                assert_eq!(tool_call_id, "call_2866856768160095");
+                assert_eq!(tool_name, "weather");
+                assert_eq!(
+                    input,
+                    &Value::String(r#"{"location":"San Francisco"}"#.into())
+                );
+            }
+            other => panic!("expected ToolCall, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn tool_call_finish_reason() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_tool_call_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![Tool::from(
+                FunctionTool::new("weather", json!({"type": "object"}))
+                    .with_description("Get the weather in a location"),
+            )]),
+            tool_choice: Some(ToolChoice::Required),
+            ..CallOptions::new(test_prompt())
+        };
+        let result = model.do_generate(&options).await.unwrap();
+
+        assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
+        assert_eq!(result.finish_reason.raw, None);
+    }
+
+    #[tokio::test]
+    async fn tool_call_usage() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_tool_call_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![Tool::from(
+                FunctionTool::new("weather", json!({"type": "object"}))
+                    .with_description("Get the weather in a location"),
+            )]),
+            tool_choice: Some(ToolChoice::Required),
+            ..CallOptions::new(test_prompt())
+        };
+        let result = model.do_generate(&options).await.unwrap();
+
+        assert_eq!(result.usage.input_tokens.total, Some(1189));
+        assert_eq!(result.usage.input_tokens.cache_read, Some(891));
+        assert_eq!(result.usage.input_tokens.no_cache, Some(298));
+        assert_eq!(result.usage.output_tokens.total, Some(11));
+        assert_eq!(result.usage.output_tokens.reasoning, Some(0));
+        assert_eq!(result.usage.output_tokens.text, Some(11));
+    }
+
     // -- Tool choice tests --
+
+    fn test_tool() -> Tool {
+        Tool::from(
+            FunctionTool::new(
+                "get_weather",
+                json!({
+                    "type": "object",
+                    "properties": {"location": {"type": "string"}},
+                    "required": ["location"]
+                }),
+            )
+            .with_description("Get the current weather"),
+        )
+    }
+
+    #[tokio::test]
+    async fn tool_choice_auto() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![test_tool()]),
+            tool_choice: Some(ToolChoice::Auto),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["tool_choice"], json!("auto"));
+        assert!(body.get("tools").is_some());
+    }
+
+    #[tokio::test]
+    async fn tool_choice_none() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![test_tool()]),
+            tool_choice: Some(ToolChoice::None),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["tool_choice"], json!("none"));
+    }
+
+    #[tokio::test]
+    async fn tool_choice_required() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![test_tool()]),
+            tool_choice: Some(ToolChoice::Required),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["tool_choice"], json!("required"));
+    }
+
+    #[tokio::test]
+    async fn tool_choice_specific_tool() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![test_tool()]),
+            tool_choice: Some(ToolChoice::Tool {
+                tool_name: "get_weather".to_string(),
+            }),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(
+            body["tool_choice"],
+            json!({"type": "function", "name": "get_weather"})
+        );
+    }
 
     // -- System messages tests --
 
@@ -953,7 +1736,190 @@ mod do_generate_tests {
 
     // -- Multi-turn tool conversation --
 
+    #[tokio::test]
+    async fn multi_turn_tool_conversation_request_body() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let prompt = vec![
+            LanguageModelMessage::user_text("What is the weather in Tokyo?"),
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "call_weather_123".into(),
+                    tool_name: "get_weather".into(),
+                    input: json!({"location": "Tokyo"}),
+                    provider_executed: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
+            LanguageModelMessage::Tool {
+                content: vec![ToolPart::ToolResult(ToolResultPart {
+                    tool_call_id: "call_weather_123".into(),
+                    output: ToolResultOutput::Json {
+                        value: json!({"temperature": 22, "condition": "sunny", "humidity": 65}),
+                        provider_options: None,
+                    },
+                    tool_name: "test".into(),
+
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
+        ];
+        let options = CallOptions {
+            tools: Some(vec![Tool::from(
+                FunctionTool::new(
+                    "get_weather",
+                    json!({
+                        "type": "object",
+                        "properties": {"location": {"type": "string"}},
+                        "required": ["location"]
+                    }),
+                )
+                .with_description("Get the current weather for a location"),
+            )]),
+            ..CallOptions::new(prompt)
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(
+            body,
+            json!({
+                "model": "gemma-7b-it",
+                "input": [
+                    {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "What is the weather in Tokyo?"}]},
+                    {"type": "function_call", "call_id": "call_weather_123", "name": "get_weather", "arguments": "{\"location\":\"Tokyo\"}"},
+                    {"type": "function_call_output", "call_id": "call_weather_123", "output": "{\"temperature\":22,\"condition\":\"sunny\",\"humidity\":65}"}
+                ],
+                "tools": [{
+                    "type": "function",
+                    "name": "get_weather",
+                    "parameters": {"type": "object", "properties": {"location": {"type": "string"}}, "required": ["location"]},
+                    "description": "Get the current weather for a location"
+                }]
+            })
+        );
+    }
+
     // -- PDF input file --
+
+    #[tokio::test]
+    async fn pdf_input_file_request_body() {
+        let server = MockServer::start().await;
+        mock_json(&server, openai_pdf_json()).await;
+
+        let model = make_model(&server, "test-pdf-model");
+        let prompt = vec![LanguageModelMessage::User {
+            content: vec![
+UserPart::Text(TextPart {
+text: "What text does this PDF contain? Reply with just the text content, nothing else.".into(),
+provider_options: None
+}),
+UserPart::File(FilePart {
+data: FileData::Url {
+url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf".into(),
+ original_url: None,
+ },
+media_type: "application/pdf".into(),
+filename: None,
+provider_options: None
+})
+],
+            provider_options: None,
+        }];
+        model.do_generate(&default_options(prompt)).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(
+            body,
+            json!({
+                "model": "test-pdf-model",
+                "input": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "What text does this PDF contain? Reply with just the text content, nothing else."},
+                        {"type": "input_file", "file_url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"}
+                    ]
+                }]
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn pdf_input_file_content() {
+        let server = MockServer::start().await;
+        mock_json(&server, openai_pdf_json()).await;
+
+        let model = make_model(&server, "test-pdf-model");
+        let prompt = vec![LanguageModelMessage::User {
+            content: vec![
+UserPart::Text(TextPart {
+text: "What text does this PDF contain?".into(),
+provider_options: None
+}),
+UserPart::File(FilePart {
+data: FileData::Url {
+url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf".into(),
+ original_url: None,
+ },
+media_type: "application/pdf".into(),
+filename: None,
+provider_options: None
+})
+],
+            provider_options: None,
+        }];
+        let result = model.do_generate(&default_options(prompt)).await.unwrap();
+
+        assert_eq!(result.content.len(), 1);
+        assert_eq!(
+            result.content[0],
+            GenerateContent::Text {
+                text: "Dummy PDF file".to_string(),
+                provider_metadata: None,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn pdf_input_file_usage() {
+        let server = MockServer::start().await;
+        mock_json(&server, openai_pdf_json()).await;
+
+        let model = make_model(&server, "test-pdf-model");
+        let prompt = vec![LanguageModelMessage::User {
+            content: vec![
+UserPart::Text(TextPart {
+text: "What text does this PDF contain?".into(),
+provider_options: None
+}),
+UserPart::File(FilePart {
+data: FileData::Url {
+url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf".into(),
+ original_url: None,
+ },
+media_type: "application/pdf".into(),
+filename: None,
+provider_options: None
+})
+],
+            provider_options: None,
+        }];
+        let result = model.do_generate(&default_options(prompt)).await.unwrap();
+
+        assert_eq!(result.usage.input_tokens.total, Some(44));
+        assert_eq!(result.usage.input_tokens.no_cache, Some(44));
+        assert_eq!(result.usage.input_tokens.cache_read, Some(0));
+        assert_eq!(result.usage.output_tokens.total, Some(4));
+        assert_eq!(result.usage.output_tokens.reasoning, Some(0));
+        assert_eq!(result.usage.output_tokens.text, Some(4));
+    }
 }
 
 // ============================================================================
@@ -1169,6 +2135,93 @@ mod do_stream_tests {
         assert_eq!(usage.input_tokens.cache_read, Some(20));
         assert_eq!(usage.output_tokens.total, Some(50));
         assert_eq!(usage.output_tokens.reasoning, Some(10));
+    }
+
+    /// Build SSE chunks for a PDF input streaming response.
+    fn pdf_stream_chunks() -> Vec<String> {
+        vec![
+            sse_event(
+                r#"{"type":"response.created","response":{"id":"resp_1","status":"in_progress","incomplete_details":null,"usage":null},"sequence_number":0}"#,
+            ),
+            sse_event(
+                r#"{"type":"response.output_item.added","item":{"id":"msg_051","type":"message","status":"in_progress","content":[],"role":"assistant"},"output_index":0,"sequence_number":2}"#,
+            ),
+            sse_event(
+                r#"{"type":"response.output_text.delta","content_index":0,"delta":"Dummy","item_id":"msg_051","output_index":0,"sequence_number":4}"#,
+            ),
+            sse_event(
+                r#"{"type":"response.output_text.delta","content_index":0,"delta":" PDF","item_id":"msg_051","output_index":0,"sequence_number":5}"#,
+            ),
+            sse_event(
+                r#"{"type":"response.output_text.delta","content_index":0,"delta":" file","item_id":"msg_051","output_index":0,"sequence_number":6}"#,
+            ),
+            sse_event(
+                r#"{"type":"response.output_item.done","item":{"id":"msg_051","type":"message","status":"completed","content":[{"type":"output_text","text":"Dummy PDF file"}],"role":"assistant"},"output_index":0,"sequence_number":9}"#,
+            ),
+            sse_event(
+                r#"{"type":"response.completed","response":{"id":"resp_1","status":"completed","incomplete_details":null,"usage":{"input_tokens":44,"input_tokens_details":{"cached_tokens":0},"output_tokens":4,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":48}},"sequence_number":10}"#,
+            ),
+        ]
+    }
+
+    #[tokio::test]
+    async fn stream_pdf_input() {
+        let server = MockServer::start().await;
+        let chunks = pdf_stream_chunks();
+        let body = sse_body(
+            &chunks
+                .iter()
+                .map(std::string::String::as_str)
+                .collect::<Vec<_>>(),
+        );
+        mock_sse(&server, body).await;
+
+        let model = make_model(&server, "test-pdf-model");
+        let prompt = vec![LanguageModelMessage::User {
+            content: vec![
+UserPart::Text(TextPart {
+text: "What text does this PDF contain?".into(),
+provider_options: None
+}),
+UserPart::File(FilePart {
+data: FileData::Url {
+url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf".into(),
+ original_url: None,
+ },
+media_type: "application/pdf".into(),
+filename: None,
+provider_options: None
+})
+],
+            provider_options: None,
+        }];
+        let result = model.do_stream(&default_options(prompt)).await.unwrap();
+        let parts = collect_stream(result).await;
+
+        // Collect all text deltas
+        let text: String = parts
+            .iter()
+            .filter_map(|p| match p {
+                StreamPart::TextDelta { delta, .. } => Some(delta.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text, "Dummy PDF file");
+
+        // Verify finish
+        let finish = parts.iter().find_map(|p| match p {
+            StreamPart::Finish {
+                finish_reason,
+                usage,
+                ..
+            } => Some((finish_reason, usage)),
+            _ => None,
+        });
+        assert!(finish.is_some());
+        let (fr, usage) = finish.unwrap();
+        assert_eq!(fr.unified, FinishReasonUnified::Stop);
+        assert_eq!(usage.input_tokens.total, Some(44));
+        assert_eq!(usage.output_tokens.total, Some(4));
     }
 
     #[tokio::test]
