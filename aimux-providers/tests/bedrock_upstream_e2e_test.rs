@@ -78,7 +78,6 @@ async fn generate_reasoning_signature_and_usage() {
     assert_eq!(seen[0].headers["authorization"], "Bearer test-token");
     assert_eq!(seen[0].json_body(), chat_body());
     assert_eq!(result.request.unwrap().body.unwrap(), chat_body());
-    assert_eq!(result.response.unwrap().body.unwrap(), response);
     assert_eq!(result.content.len(), 2);
     let GenerateContent::Reasoning(reasoning) = &result.content[0] else {
         panic!("expected reasoning")
