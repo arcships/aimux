@@ -3,6 +3,6 @@ import type { GeneratedFileData } from "./GeneratedFileData";
 import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
- * A file produced during reasoning.
+ * A file generated as part of reasoning.
  */
-export type ReasoningFilePart = { data: GeneratedFileData, media_type: string, provider_options: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type ReasoningFilePart = { data: GeneratedFileData, media_type: string, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };

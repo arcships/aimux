@@ -425,31 +425,28 @@ fn convert_message(
         )]),
         LanguageModelMessage::Tool { content, .. } => Ok(content
             .iter()
-            .map(|part| {
+            .filter_map(|part| {
                 let ToolPart::ToolResult(ToolResultPart {
-                    tool_call_id, result, provider_options, ..
-                }) = part;
-                with_metadata(
+                    tool_call_id, output, provider_options, ..
+                }) = part else { return None; };
+                Some(with_metadata(
                     json!({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
-                        "content": tool_result_content(result, spec.supports_multi_part_tool_content),
+                        "content": if spec.supports_multi_part_tool_content {
+                            if let aimux_core::language_model_message::ToolResultOutput::Content { value } = output {
+                                crate::openai::convert::tool_result_content_value(value)
+                            } else {
+                                crate::openai::convert::tool_result_to_content(output)
+                            }
+                        } else {
+                            crate::openai::convert::tool_result_to_content(output)
+                        },
                     }),
                     wire_metadata(provider_options.as_ref(), key),
-                )
+                ))
             })
             .collect()),
-    }
-}
-
-/// A tool result as message content: text, except that a vendor that accepts
-/// structured tool-result content (`supports_multi_part_tool_content`) gets an
-/// array result as the content parts it is.
-fn tool_result_content(result: &Value, multi_part: bool) -> Value {
-    match result {
-        Value::String(text) => Value::String(text.clone()),
-        Value::Array(_) if multi_part => result.clone(),
-        other => Value::String(other.to_string()),
     }
 }
 
@@ -612,21 +609,37 @@ fn convert_assistant_message(
                 tool_call_id,
                 tool_name,
                 input,
-                thought_signature,
                 provider_options,
                 ..
             }) => {
-                let arguments = if input.is_null() {
-                    "{}".to_string()
-                } else {
-                    input.to_string()
-                };
+                let arguments = input.to_string();
                 let mut call = json!({
                     "id": tool_call_id,
                     "type": "function",
                     "function": { "name": tool_name, "arguments": arguments },
                 });
-                if let Some(signature) = thought_signature.as_ref().filter(|s| !s.is_empty()) {
+                if let Some(signature) = provider_options
+                    .as_ref()
+                    .and_then(|options| {
+                        options
+                            .get(key)
+                            .and_then(|values| values.get("thoughtSignature"))
+                            .filter(|value| !value.is_null())
+                            .or_else(|| {
+                                options
+                                    .get("google")
+                                    .and_then(|values| values.get("thoughtSignature"))
+                            })
+                    })
+                    .filter(|value| match value {
+                        Value::Null => false,
+                        Value::Bool(v) => *v,
+                        Value::String(v) => !v.is_empty(),
+                        Value::Number(v) => v.as_f64() != Some(0.0),
+                        _ => true,
+                    })
+                {
+                    let signature = signature_string(signature);
                     call["extra_content"] = json!({ "google": { "thought_signature": signature } });
                 }
                 tool_calls.push(with_metadata(
@@ -672,6 +685,36 @@ pub(crate) fn parse_finish_reason(raw: &str) -> FinishReason {
     FinishReason {
         unified,
         raw: Some(raw.to_string()),
+    }
+}
+
+// String(value), as used by the compatible package for thought signatures.
+fn signature_string(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Object(_) => "[object Object]".into(),
+        Value::Array(values) => values
+            .iter()
+            .map(|value| {
+                if value.is_null() {
+                    String::new()
+                } else {
+                    signature_string(value)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        Value::Number(value) => value.as_f64().map_or_else(
+            || value.to_string(),
+            |value| {
+                if value == 0.0 {
+                    "0".into()
+                } else {
+                    value.to_string()
+                }
+            },
+        ),
+        _ => value.to_string(),
     }
 }
 

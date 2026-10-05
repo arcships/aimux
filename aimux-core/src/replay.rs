@@ -16,16 +16,16 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 use crate::error::AiMuxError;
-use crate::generate::{GenerateTextOptions, GenerateTextResult, generate_text};
+use crate::generate::{
+    GenerateTextOptions, GenerateTextResult, generate_text_from_language_model_prompt,
+};
 use crate::language_model::LanguageModel;
 use crate::language_model_message::{
-    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, UserPart,
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, UserPart,
 };
-use crate::message::{ModelMessage, ModelPrompt};
 use crate::options::CallOptions;
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
-use crate::shared::{FileBytes, FileData};
 use crate::stream_part::StreamPart;
 use crate::tool::RawToolCall;
 use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
@@ -945,13 +945,11 @@ pub struct ReplayOverrides {
 ///   - `recording.input.options` 中的 headers/provider_options 已脱敏,
 ///     重发会用脱敏后的 `[REDACTED]` 值——需要真实头时用 `overrides` 或
 ///     重建 provider 时补充。
-///   - 逐消息 `provider_options`(如 anthropic cacheControl)不参与重建。
 ///
 /// # Errors
 ///
 /// Returns `AiMuxError::JsonParse` when the recorded call options cannot be
-/// deserialized, `AiMuxError::InvalidPrompt` for inline text file data without
-/// a user-facing representation, and propagates errors from `generate_text`.
+/// deserialized, and propagates errors from the generation pipeline.
 pub async fn replay_with_model(
     recording: &Recording,
     model: &dyn LanguageModel,
@@ -974,63 +972,11 @@ pub async fn replay_with_model(
         }
     }
 
-    // 3. 转回用户侧类型,经 generate_text 重发。
-    let prompt = model_prompt_from_lm(&call_options.prompt)?;
+    // Recorded options already contain the complete provider-facing prompt.
+    // Repair callbacks are runtime-only and are not restored from recordings.
+    let prompt = std::mem::take(&mut call_options.prompt);
     let options = generate_options_from_call_options(call_options);
-    generate_text(model, prompt, options).await
-}
-
-/// `LanguageModelPrompt`(provider 侧)→ `ModelPrompt`(用户侧)。
-///
-/// 逐消息 `provider_options` 丢弃(用户侧无对应字段)。
-/// 文件 URL 的 filename 同样没有用户侧字段;inline text 文件返回错误。
-fn model_prompt_from_lm(prompt: &LanguageModelPrompt) -> Result<ModelPrompt, AiMuxError> {
-    let messages =
-        prompt
-            .iter()
-            .map(|message| {
-                // Non-file parts share their fields with the user-facing union.
-                let mut message = serde_json::to_value(message)?;
-                if let Some(parts) = message["content"].as_array_mut() {
-                    for part in parts {
-                        if part["type"] != "file" {
-                            continue;
-                        }
-                        let file: FilePart = serde_json::from_value(part.clone())?;
-                        part.as_object_mut()
-                            .expect("serialized file part")
-                            .remove("data");
-                        match file.data {
-                            FileData::Data {
-                                data: FileBytes::Binary(data),
-                            } => {
-                                part["data"] = serde_json::to_value(data)?;
-                            }
-                            FileData::Data {
-                                data: FileBytes::Base64(data),
-                            } => {
-                                part["type"] = "file_base64".into();
-                                part["data"] = data.into();
-                            }
-                            FileData::Url { url, .. } => {
-                                part["type"] = "file_url".into();
-                                part["url"] = url.into();
-                            }
-                            FileData::Reference { reference } => {
-                                part["type"] = "file_reference".into();
-                                part["reference"] = serde_json::to_value(reference)?;
-                            }
-                            FileData::Text { .. } => return Err(AiMuxError::InvalidPrompt(
-                                "replay: inline text file data has no user-facing representation"
-                                    .into(),
-                            )),
-                        }
-                    }
-                }
-                serde_json::from_value::<ModelMessage>(message).map_err(AiMuxError::from)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-    Ok(ModelPrompt::Messages(messages))
+    generate_text_from_language_model_prompt(model, prompt, Vec::new(), options).await
 }
 
 /// `CallOptions` → `GenerateTextOptions`(record 侧到用户侧的反向映射)。

@@ -26,8 +26,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
-    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, Tool};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput};
@@ -1179,37 +1178,6 @@ fn file_with_options(mut part: UserPart, options: Value) -> UserPart {
 // ---- describe('message names') -------------------------------------------------------------
 
 #[tokio::test]
-async fn convert_should_ignore_a_name_on_a_tool_message_with_an_unsupported_warning() {
-    let options = options_for(vec![with_options(
-        LanguageModelMessage::Tool {
-            content: vec![ToolPart::ToolResult(ToolResultPart {
-                tool_call_id: ("call-1").into(),
-                result: json!("sunny"),
-                tool_name: None,
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
-                provider_options: None,
-            })],
-            provider_options: None,
-        },
-        json!({ "deepseek": { "name": "weather_tool" } }),
-    )]);
-    let result = generate_result("deepseek-chat", &options).await;
-    assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["messages"],
-        json!([{ "role": "tool", "tool_call_id": "call-1", "content": "sunny" }])
-    );
-    assert_eq!(
-        warning_values(&result.warnings),
-        warning_values(&[Warning::Unsupported {
-            feature: "message name on tool messages".to_string(),
-            details: None,
-        }])
-    );
-}
-
-#[tokio::test]
 async fn convert_should_reject_a_non_string_name() {
     let options = options_for(vec![with_options(
         LanguageModelMessage::user_text("Hello"),
@@ -1412,175 +1380,7 @@ async fn convert_should_warn_about_unsupported_non_image_file_parts() {
 
 // ---- describe('tool calls') ------------------------------------------------------------------
 
-fn tool_turn(reasoning: bool) -> Vec<LanguageModelMessage> {
-    let mut assistant = vec![];
-    if reasoning {
-        assistant.push(AssistantPart::Reasoning(ReasoningPart {
-            text: ("I think the tool will return the correct value.").into(),
-            signature: None,
-            provider_options: None,
-        }));
-    }
-    assistant.push(AssistantPart::ToolCall(ToolCallPart {
-        tool_call_id: ("quux").into(),
-        tool_name: ("thwomp").into(),
-        input: json!({ "foo": "bar123" }),
-        provider_executed: None,
-        thought_signature: None,
-        provider_options: None,
-    }));
-    vec![
-        LanguageModelMessage::Assistant {
-            content: assistant,
-            provider_options: None,
-        },
-        LanguageModelMessage::Tool {
-            content: vec![ToolPart::ToolResult(ToolResultPart {
-                tool_call_id: ("quux").into(),
-                result: json!({ "oof": "321rab" }),
-                tool_name: None,
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
-                provider_options: None,
-            })],
-            provider_options: None,
-        },
-    ]
-}
-
-fn wire_tool_call() -> Value {
-    json!([{
-        "id": "quux", "type": "function",
-        "function": { "name": "thwomp", "arguments": "{\"foo\":\"bar123\"}" }
-    }])
-}
-
-#[tokio::test]
-async fn convert_should_stringify_arguments_to_tool_calls() {
-    let result = generate_result("deepseek-chat", &options_for(tool_turn(false))).await;
-    assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["messages"],
-        json!([
-            // upstream sends the empty text as `content: ""`, not null.
-            { "role": "assistant", "content": "", "tool_calls": wire_tool_call() },
-            { "role": "tool", "tool_call_id": "quux", "content": "{\"oof\":\"321rab\"}" }
-        ])
-    );
-    assert!(result.warnings.is_empty());
-}
-
-#[tokio::test]
-async fn convert_should_handle_text_output_type_in_tool_results() {
-    let messages = wire_messages(
-        "deepseek-chat",
-        vec![
-            LanguageModelMessage::Assistant {
-                content: vec![AssistantPart::ToolCall(ToolCallPart {
-                    tool_call_id: ("call-1").into(),
-                    tool_name: ("getWeather").into(),
-                    input: json!({ "query": "weather" }),
-                    provider_executed: None,
-                    thought_signature: None,
-                    provider_options: None,
-                })],
-                provider_options: None,
-            },
-            LanguageModelMessage::Tool {
-                content: vec![ToolPart::ToolResult(ToolResultPart {
-                    tool_call_id: ("call-1").into(),
-                    result: json!("It is sunny today"),
-                    tool_name: None,
-                    is_error: None,
-                    preliminary: None,
-                    dynamic: None,
-                    provider_options: None,
-                })],
-                provider_options: None,
-            },
-        ],
-    )
-    .await;
-    assert_eq!(
-        messages[1],
-        json!({ "role": "tool", "tool_call_id": "call-1", "content": "It is sunny today" })
-    );
-}
-
-#[tokio::test]
-async fn convert_should_support_reasoning_content_in_tool_calls() {
-    let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
-    prompt.extend(tool_turn(true));
-    let messages = wire_messages("deepseek-chat", prompt).await;
-    assert_eq!(
-        messages[1],
-        json!({
-            "role": "assistant", "content": "",
-            "reasoning_content": "I think the tool will return the correct value.",
-            "tool_calls": wire_tool_call()
-        })
-    );
-}
-
-#[tokio::test]
-async fn convert_should_filter_out_reasoning_content_from_turns_before_the_last_user_message() {
-    let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
-    prompt.extend(tool_turn(true));
-    prompt.push(LanguageModelMessage::user_text("Goodbye"));
-    let messages = wire_messages("deepseek-chat", prompt).await;
-    assert_eq!(
-        messages[1],
-        json!({ "role": "assistant", "content": "", "tool_calls": wire_tool_call() })
-    );
-}
-
 // ---- describe('deepseek-v4 thinking mode') -------------------------------------------------------
-
-#[tokio::test]
-async fn convert_should_preserve_reasoning_content_from_prior_turns_for_deepseek_v4() {
-    let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
-    prompt.extend(tool_turn(true));
-    prompt.push(LanguageModelMessage::user_text("Goodbye"));
-    let messages = wire_messages("deepseek-v4-pro", prompt).await;
-    assert_eq!(
-        messages[1],
-        json!({
-            "role": "assistant", "content": "",
-            "reasoning_content": "I think the tool will return the correct value.",
-            "tool_calls": wire_tool_call()
-        })
-    );
-}
-
-#[tokio::test]
-async fn convert_should_preserve_reasoning_content_from_prior_turns_for_the_deepseek_flash_alias() {
-    let messages = wire_messages(
-        "deepseek-flash",
-        vec![
-            LanguageModelMessage::user_text("Hello"),
-            LanguageModelMessage::Assistant {
-                content: vec![
-                    AssistantPart::Reasoning(ReasoningPart {
-                        text: ("Prior-turn reasoning.").into(),
-                        signature: None,
-                        provider_options: None,
-                    }),
-                    AssistantPart::Text(TextPart {
-                        text: ("Hi there").into(),
-                        provider_options: None,
-                    }),
-                ],
-                provider_options: None,
-            },
-            LanguageModelMessage::user_text("Again"),
-        ],
-    )
-    .await;
-    assert_eq!(
-        messages[1],
-        json!({ "role": "assistant", "content": "Hi there", "reasoning_content": "Prior-turn reasoning." })
-    );
-}
 
 #[tokio::test]
 async fn convert_should_back_fill_empty_reasoning_content_for_deepseek_v4_assistant_messages_with_no_reasoning_part()

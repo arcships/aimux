@@ -1012,21 +1012,19 @@ async fn should_not_warn_about_assistant_content_types() {
                 tool_name: "test".into(),
                 input: json!({}),
                 provider_executed: None,
-                thought_signature: None,
                 provider_options: None,
             }),
             AssistantPart::ToolResult(ToolResultPart {
                 tool_call_id: "test".into(),
-                tool_name: None,
-                result: json!({ "type": "text", "value": "test" }),
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
+                tool_name: "test".into(),
+                output: aimux_core::language_model_message::ToolResultOutput::Text {
+                    value: "test".into(),
+                    provider_options: None,
+                },
                 provider_options: None,
             }),
             AssistantPart::Reasoning(ReasoningPart {
                 text: "thinking...".into(),
-                signature: None,
                 provider_options: None,
             }),
         ],
@@ -1059,11 +1057,11 @@ async fn should_warn_about_tool_messages() {
     let prompt = vec![LanguageModelMessage::Tool {
         content: vec![ToolPart::ToolResult(ToolResultPart {
             tool_call_id: "test".into(),
-            tool_name: None,
-            result: json!({ "type": "text", "value": "test" }),
-            is_error: None,
-            preliminary: None,
-            dynamic: None,
+            tool_name: "test".into(),
+            output: aimux_core::language_model_message::ToolResultOutput::Text {
+                value: "test".into(),
+                provider_options: None,
+            },
             provider_options: None,
         })],
         provider_options: None,

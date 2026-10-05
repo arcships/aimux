@@ -121,6 +121,7 @@ impl LanguageModel for BedrockModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        super::convert::validate_tool_result_content(&options.prompt)?;
         let body = build_request_body(&self.model_id, options);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
@@ -183,6 +184,7 @@ impl LanguageModel for BedrockModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        super::convert::validate_tool_result_content(&options.prompt)?;
         let body = build_request_body(&self.model_id, options);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);

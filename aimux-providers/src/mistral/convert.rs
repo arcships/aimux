@@ -6,7 +6,7 @@
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart, ToolPart,
-    ToolResultPart, UserPart,
+    ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData};
@@ -139,11 +139,22 @@ fn convert_message_to_mistral(
         }
         LanguageModelMessage::Assistant { content, .. } => {
             let text = join_text_parts(content);
+            let has_reasoning = content.iter().any(|part| matches!(part, AssistantPart::Reasoning(_)));
+            let mut content_parts = Vec::new();
+            for part in content {
+                match part {
+                    AssistantPart::Text(part) => content_parts.push(json!({ "type": "text", "text": part.text })),
+                    AssistantPart::Reasoning(part) => content_parts.push(json!({ "type": "thinking", "thinking": [{ "type": "text", "text": part.text }], "closed": true })),
+                    AssistantPart::ToolCall(_) => {},
+                    _ => return Err(AiMuxError::UnsupportedFunctionality("assistant content part".to_string())),
+                }
+            }
             let has_tool_calls = content
                 .iter()
                 .any(|p| matches!(p, AssistantPart::ToolCall(_)));
 
             let mut msg_json = json!({ "role": "assistant", "content": text });
+            if has_reasoning { msg_json["content"] = json!(content_parts); }
 
             if has_tool_calls {
                 let tool_calls: Vec<Value> = content
@@ -155,11 +166,7 @@ fn convert_message_to_mistral(
                             input,
                             ..
                         }) => {
-                            let arguments = if input.is_null() {
-                                "{}".to_string()
-                            } else {
-                                input.to_string()
-                            };
+                            let arguments = input.to_string();
                             Some(json!({
                                 "id": tool_call_id,
                                 "type": "function",
@@ -182,18 +189,9 @@ fn convert_message_to_mistral(
         }
         LanguageModelMessage::Tool { content, .. } => content
             .iter()
-            .map(|part| {
-                let ToolPart::ToolResult(ToolResultPart {
-                    tool_call_id,
-                    result,
-                    ..
-                }) = part;
-                let content = tool_result_to_content(result);
-                json!({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": content,
-                })
+            .filter_map(|part| {
+                let ToolPart::ToolResult(ToolResultPart { tool_call_id, tool_name, output, .. }) = part else { return None; };
+                Some(json!({ "role": "tool", "name": tool_name, "tool_call_id": tool_call_id, "content": tool_result_to_content(output) }))
             })
             .collect(),
     })
@@ -210,11 +208,21 @@ fn join_text_parts(content: &[AssistantPart]) -> String {
         .join("")
 }
 
-fn tool_result_to_content(output: &Value) -> Value {
-    match output {
-        Value::String(s) => Value::String(s.clone()),
-        other => Value::String(other.to_string()),
-    }
+fn tool_result_to_content(output: &ToolResultOutput) -> Value {
+    Value::String(match output {
+        ToolResultOutput::Text { value, .. } | ToolResultOutput::ErrorText { value, .. } => {
+            value.clone()
+        }
+        ToolResultOutput::ExecutionDenied { reason, .. } => reason
+            .clone()
+            .unwrap_or_else(|| "Tool call execution denied.".to_string()),
+        ToolResultOutput::Json { value, .. } | ToolResultOutput::ErrorJson { value, .. } => {
+            value.to_string()
+        }
+        ToolResultOutput::Content { value } => {
+            crate::openai::convert::tool_result_content_value(value).to_string()
+        }
+    })
 }
 
 fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {

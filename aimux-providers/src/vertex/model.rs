@@ -117,6 +117,11 @@ impl LanguageModel for VertexModel {
                             data: aimux_core::shared::GeneratedFileData::Url { .. },
                             ..
                         }
+                    ) | aimux_core::language_model_message::AssistantPart::File(
+                        aimux_core::language_model_message::FilePart {
+                            data: aimux_core::shared::FileData::Url { .. },
+                            ..
+                        }
                     )
                 )
             })
@@ -125,6 +130,27 @@ impl LanguageModel for VertexModel {
                 "File data URLs in assistant messages are not supported".to_string(),
             ));
         }
+        if options.prompt.iter().any(|message| match message {
+            aimux_core::language_model_message::LanguageModelMessage::Assistant {
+                content, ..
+            } => content.iter().any(|part| {
+                matches!(
+                    part,
+                    aimux_core::language_model_message::AssistantPart::File(
+                        aimux_core::language_model_message::FilePart {
+                            data: aimux_core::shared::FileData::Reference { .. },
+                            ..
+                        }
+                    )
+                )
+            }),
+            _ => false,
+        }) {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "file parts with provider references".to_string(),
+            ));
+        }
+        crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let body = build_vertex_request_body(&self.model_id, options);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
@@ -212,6 +238,11 @@ impl LanguageModel for VertexModel {
                             data: aimux_core::shared::GeneratedFileData::Url { .. },
                             ..
                         }
+                    ) | aimux_core::language_model_message::AssistantPart::File(
+                        aimux_core::language_model_message::FilePart {
+                            data: aimux_core::shared::FileData::Url { .. },
+                            ..
+                        }
                     )
                 )
             })
@@ -220,6 +251,27 @@ impl LanguageModel for VertexModel {
                 "File data URLs in assistant messages are not supported".to_string(),
             ));
         }
+        if options.prompt.iter().any(|message| match message {
+            aimux_core::language_model_message::LanguageModelMessage::Assistant {
+                content, ..
+            } => content.iter().any(|part| {
+                matches!(
+                    part,
+                    aimux_core::language_model_message::AssistantPart::File(
+                        aimux_core::language_model_message::FilePart {
+                            data: aimux_core::shared::FileData::Reference { .. },
+                            ..
+                        }
+                    )
+                )
+            }),
+            _ => false,
+        }) {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "file parts with provider references".to_string(),
+            ));
+        }
+        crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let body = build_vertex_request_body(&self.model_id, options);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;

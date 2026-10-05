@@ -9,7 +9,7 @@
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+    ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
@@ -395,11 +395,7 @@ pub fn convert_to_xai_responses_input(
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
                             let item_id = id.unwrap_or_else(|| tool_call_id.clone());
-                            let arguments = if tool_input.is_null() {
-                                "{}".to_string()
-                            } else {
-                                tool_input.to_string()
-                            };
+                            let arguments = tool_input.to_string();
                             input.push(json!({
                                 "type": "function_call",
                                 "id": item_id,
@@ -452,8 +448,14 @@ pub fn convert_to_xai_responses_input(
                         AssistantPart::File(_)
                         | AssistantPart::Custom(_)
                         | AssistantPart::ReasoningFile(_) => {
+                            let kind = match part {
+                                AssistantPart::File(_) => "file",
+                                AssistantPart::Custom(_) => "custom",
+                                AssistantPart::ReasoningFile(_) => "reasoning-file",
+                                _ => unreachable!(),
+                            };
                             warnings.push(Warning::Other {
-                                message: "xAI Responses API does not support this content type in assistant messages".to_string(),
+                                message: format!("xAI Responses API does not support {kind} in assistant messages"),
                             });
                         }
                     }
@@ -463,13 +465,13 @@ pub fn convert_to_xai_responses_input(
                 for part in content {
                     let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
-                        result,
+                        output,
                         ..
-                    }) = part;
-                    let output_value = match result {
-                        Value::String(s) => s.clone(),
-                        other => other.to_string(),
+                    }) = part
+                    else {
+                        continue;
                     };
+                    let output_value = convert_tool_result_output(output)?;
                     input.push(json!({
                         "type": "function_call_output",
                         "call_id": tool_call_id,
@@ -481,6 +483,46 @@ pub fn convert_to_xai_responses_input(
     }
 
     Ok((input, warnings))
+}
+
+fn convert_tool_result_output(output: &ToolResultOutput) -> Result<Value, AiMuxError> {
+    Ok(match output {
+        ToolResultOutput::ExecutionDenied { reason, .. } => {
+            json!(reason.as_deref().unwrap_or("tool execution denied"))
+        }
+        ToolResultOutput::Content { value } => {
+            let mut parts = Vec::new();
+            for item in value {
+                match item {
+                    ToolResultContent::Text(part) => {
+                        parts.push(json!({"type":"input_text", "text":part.text}))
+                    }
+                    ToolResultContent::File(part)
+                        if part.media_type.split('/').next() == Some("image") =>
+                    {
+                        let url = match &part.data {
+                            FileData::Url { url, .. } => url.clone(),
+                            FileData::Data { data } => {
+                                use base64::Engine;
+                                let b64 = match data {
+                                    FileBytes::Binary(bytes) => {
+                                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                                    }
+                                    FileBytes::Base64(data) => data.clone(),
+                                };
+                                format!("data:{};base64,{}", resolve_full_media_type(part)?, b64)
+                            }
+                            _ => continue,
+                        };
+                        parts.push(json!({"type":"input_image", "image_url":url}));
+                    }
+                    _ => {}
+                }
+            }
+            json!(parts)
+        }
+        _ => crate::openai::convert::tool_result_to_content(output),
+    })
 }
 
 fn convert_image_part(

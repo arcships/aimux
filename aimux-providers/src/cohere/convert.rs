@@ -233,11 +233,7 @@ pub fn convert_prompt_to_cohere(
                                 input,
                                 ..
                             }) => {
-                                let arguments = if input.is_null() {
-                                    "{}".to_string()
-                                } else {
-                                    input.to_string()
-                                };
+                                let arguments = input.to_string();
                                 Some(json!({
                                     "id": tool_call_id,
                                     "type": "function",
@@ -262,10 +258,13 @@ pub fn convert_prompt_to_cohere(
                 for part in content {
                     let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
-                        result,
+                        output,
                         ..
-                    }) = part;
-                    let content = tool_result_to_content(result);
+                    }) = part
+                    else {
+                        continue;
+                    };
+                    let content = crate::openai::convert::tool_result_to_content(output);
                     messages.push(json!({
                         "role": "tool",
                         "content": content,
@@ -291,13 +290,6 @@ fn join_text_parts(content: &[AssistantPart]) -> String {
         })
         .collect::<Vec<_>>()
         .join("")
-}
-
-fn tool_result_to_content(output: &Value) -> Value {
-    match output {
-        Value::String(s) => Value::String(s.clone()),
-        other => Value::String(other.to_string()),
-    }
 }
 
 // ── Request body ────────────────────────────────────────────────────────────

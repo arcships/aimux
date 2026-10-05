@@ -132,16 +132,16 @@ pub(crate) fn convert_to_groq_chat_messages(
                 for part in content {
                     let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
-                        result,
+                        output,
                         ..
-                    }) = part;
+                    }) = part
+                    else {
+                        continue;
+                    };
                     messages.push(json!({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
-                        "content": match result {
-                            Value::String(text) => text.clone(),
-                            other => other.to_string(),
-                        },
+                        "content": crate::openai::convert::tool_result_to_content(output),
                     }));
                 }
             }

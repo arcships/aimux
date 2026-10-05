@@ -87,6 +87,11 @@ impl LanguageModel for GoogleModel {
                             data: aimux_core::shared::GeneratedFileData::Url { .. },
                             ..
                         }
+                    ) | aimux_core::language_model_message::AssistantPart::File(
+                        aimux_core::language_model_message::FilePart {
+                            data: aimux_core::shared::FileData::Url { .. },
+                            ..
+                        }
                     )
                 )
             })
@@ -95,6 +100,7 @@ impl LanguageModel for GoogleModel {
                 "File data URLs in assistant messages are not supported".to_string(),
             ));
         }
+        crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
@@ -183,6 +189,11 @@ impl LanguageModel for GoogleModel {
                             data: aimux_core::shared::GeneratedFileData::Url { .. },
                             ..
                         }
+                    ) | aimux_core::language_model_message::AssistantPart::File(
+                        aimux_core::language_model_message::FilePart {
+                            data: aimux_core::shared::FileData::Url { .. },
+                            ..
+                        }
                     )
                 )
             })
@@ -191,6 +202,7 @@ impl LanguageModel for GoogleModel {
                 "File data URLs in assistant messages are not supported".to_string(),
             ));
         }
+        crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
