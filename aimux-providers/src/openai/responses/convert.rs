@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+    ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
@@ -79,10 +79,12 @@ pub fn convert_to_responses_input(
     system_message_mode: SystemMessageMode,
     store: bool,
     has_previous_response_id: bool,
+    has_conversation: bool,
 ) -> Result<ResponsesInputResult, AiMuxError> {
     let mut input: Vec<Value> = Vec::new();
     let mut warnings: Vec<Warning> = Vec::new();
 
+    let mut processed_approval_ids = std::collections::HashSet::new();
     for msg in prompt {
         match msg {
             LanguageModelMessage::System { content, .. } => match system_message_mode {
@@ -119,7 +121,7 @@ pub fn convert_to_responses_input(
                             provider_options,
                         }) => {
                             let id = item_id(provider_options);
-                            if has_previous_response_id && id.is_some() {
+                            if (has_previous_response_id || has_conversation) && id.is_some() {
                                 continue;
                             }
                             if store && let Some(ref id) = id {
@@ -147,7 +149,7 @@ pub fn convert_to_responses_input(
                             ..
                         }) => {
                             let id = item_id(provider_options);
-                            if has_previous_response_id && id.is_some() {
+                            if (has_previous_response_id || has_conversation) && id.is_some() {
                                 continue;
                             }
                             let namespace = namespace_from_provider_options(provider_options);
@@ -168,7 +170,9 @@ pub fn convert_to_responses_input(
                             ..
                         }) => {
                             let reasoning_id = openai_sub_option(provider_options, "itemId");
-                            if has_previous_response_id && reasoning_id.is_some() {
+                            if (has_previous_response_id || has_conversation)
+                                && reasoning_id.is_some()
+                            {
                                 continue;
                             }
                             if let Some(ref rid) = reasoning_id {
@@ -217,21 +221,70 @@ pub fn convert_to_responses_input(
                                 }
                             }
                         }
+                        AssistantPart::ToolResult(part) => {
+                            if has_conversation
+                                || matches!(part.output, ToolResultOutput::ExecutionDenied { .. })
+                                || matches!(&part.output, ToolResultOutput::Json { value, .. } if value.get("type").and_then(Value::as_str) == Some("execution-denied"))
+                            {
+                                continue;
+                            }
+                            if store {
+                                let id = item_id(&part.provider_options)
+                                    .unwrap_or_else(|| part.tool_call_id.clone());
+                                input.push(json!({"type":"item_reference", "id":id}));
+                            } else {
+                                warnings.push(Warning::Other {
+                                    message:format!("Results for OpenAI tool {} are not sent to the API when store is false", part.tool_name),
+                                });
+                            }
+                        }
+                        AssistantPart::Custom(part) if part.kind == "openai.compaction" => {
+                            let id = item_id(&part.provider_options);
+                            if has_conversation && id.is_some() {
+                                continue;
+                            }
+                            if let Some(id) = id {
+                                if store {
+                                    input.push(json!({"type":"item_reference", "id":id}));
+                                } else {
+                                    input.push(json!({"type":"compaction", "id":id, "encrypted_content":openai_sub_option(&part.provider_options, "encryptedContent")}));
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
             }
             LanguageModelMessage::Tool { content, .. } => {
                 for part in content {
+                    if let ToolPart::ToolApprovalResponse(approval) = part {
+                        if !processed_approval_ids.insert(&approval.approval_id) {
+                            continue;
+                        }
+                        if store && !has_conversation && !has_previous_response_id {
+                            input.push(json!({"type":"item_reference", "id":approval.approval_id}));
+                        }
+                        input.push(json!({"type":"mcp_approval_response", "approval_request_id":approval.approval_id, "approve":approval.approved}));
+                        continue;
+                    }
                     let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
-                        result,
+                        output,
+                        provider_options,
                         ..
-                    }) = part;
-                    let content_value = match result {
-                        Value::String(s) => Value::String(s.clone()),
-                        other => Value::String(other.to_string()),
+                    }) = part
+                    else {
+                        continue;
                     };
+                    let mut content_value = convert_tool_result_output(output, &mut warnings)?;
+                    if !matches!(output, ToolResultOutput::Content { .. })
+                        && let Some(breakpoint) =
+                            crate::openai::convert::tool_result_cache_breakpoint(output).or_else(
+                                || openai_sub_option(provider_options, "promptCacheBreakpoint"),
+                            )
+                    {
+                        content_value = json!([{"type":"input_text", "text":content_value, "prompt_cache_breakpoint":breakpoint}]);
+                    }
                     input.push(json!({
                         "type": "function_call_output",
                         "call_id": tool_call_id,
@@ -294,7 +347,7 @@ fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
                         })
                     }
                 }
-                FileData::Url { url } => {
+                FileData::Url { url, .. } => {
                     if is_image {
                         json!({ "type": "input_image", "image_url": url })
                     } else {
@@ -321,13 +374,63 @@ fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
     })
 }
 
-/// Serialize tool-call arguments: null/empty -> `"{}"`, objects -> JSON string.
-fn serialize_arguments(input: &Value) -> String {
-    match input {
-        Value::Null => "{}".to_string(),
-        Value::String(s) if s.is_empty() => "{}".to_string(),
-        other => other.to_string(),
+fn convert_tool_result_output(
+    output: &ToolResultOutput,
+    warnings: &mut Vec<Warning>,
+) -> Result<Value, AiMuxError> {
+    let ToolResultOutput::Content { value } = output else {
+        return Ok(crate::openai::convert::tool_result_to_content(output));
+    };
+    let mut parts = Vec::new();
+    for item in value {
+        let (mut converted, provider_options) = match item {
+            ToolResultContent::Text(part) => (
+                json!({"type":"input_text", "text":part.text}),
+                &part.provider_options,
+            ),
+            ToolResultContent::File(part) => {
+                if matches!(part.data, FileData::Text { .. }) {
+                    warnings.push(Warning::Other {
+                        message: "unsupported tool content part type: file with data type: text"
+                            .into(),
+                    });
+                    continue;
+                }
+                let mut converted = convert_user_part(&UserPart::File(part.clone()))?;
+                if let FileData::Reference { reference } = &part.data {
+                    let file_id = reference.get("openai").ok_or_else(|| {
+                        AiMuxError::InvalidArgument("missing file reference for provider".into())
+                    })?;
+                    converted = json!({"type": if part.media_type.starts_with("image/") { "input_image" } else { "input_file" }, "file_id":file_id});
+                }
+                if converted["type"] == "input_file" && converted.get("file_data").is_some() {
+                    converted["filename"] = json!(part.filename.as_deref().unwrap_or("data"));
+                }
+                if converted["type"] == "input_image"
+                    && let Some(detail) = openai_sub_option(&part.provider_options, "imageDetail")
+                {
+                    converted["detail"] = detail;
+                }
+                (converted, &part.provider_options)
+            }
+            ToolResultContent::Custom { .. } => {
+                warnings.push(Warning::Other {
+                    message: "unsupported tool content part type: custom".into(),
+                });
+                continue;
+            }
+        };
+        if let Some(breakpoint) = openai_sub_option(provider_options, "promptCacheBreakpoint") {
+            converted["prompt_cache_breakpoint"] = breakpoint;
+        }
+        parts.push(converted);
     }
+    Ok(json!(parts))
+}
+
+/// Serialize tool-call arguments as JSON, mirroring JSON.stringify.
+fn serialize_arguments(input: &Value) -> String {
+    input.to_string()
 }
 
 /// Read the `itemId` from a content part's `providerOptions.openai.itemId`.
@@ -853,6 +956,7 @@ pub fn build_responses_request_body(
         system_message_mode,
         store_bool,
         has_previous_response_id,
+        openai_option(provider_opts, "conversation").is_some(),
     )?;
     warnings.extend(input_result.warnings);
 
@@ -911,7 +1015,7 @@ pub fn build_responses_request_body(
     );
 
     // -- Tools --
-    let prepared = prepare_responses_tools(&options.tools, Some(&options.tool_choice));
+    let prepared = prepare_responses_tools(&options.tools, options.tool_choice.as_ref());
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);
         if let Some(tc) = prepared.tool_choice {
@@ -946,7 +1050,7 @@ pub fn build_responses_request_body(
 pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value>) -> Usage {
     let Some(usage) = usage else {
         return Usage {
-            raw,
+            raw: raw.and_then(|value| value.as_object().cloned()),
             ..Default::default()
         };
     };
@@ -973,20 +1077,18 @@ pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value
     let text_tokens = output_tokens - reasoning_tokens;
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input_tokens),
             no_cache: Some(no_cache),
             cache_read: Some(cached_tokens),
             cache_write,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(output_tokens),
             text: Some(text_tokens),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
-        raw,
+        raw: raw.and_then(|value| value.as_object().cloned()),
     }
 }
 

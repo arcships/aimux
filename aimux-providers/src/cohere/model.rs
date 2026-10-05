@@ -64,19 +64,20 @@ impl CohereModel {
 /// - `output.total = output_tokens`
 fn convert_usage(tokens: &TokenPair) -> Usage {
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(tokens.input_tokens),
             no_cache: Some(tokens.input_tokens),
             cache_read: None,
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(tokens.output_tokens),
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(tokens).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(tokens)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -139,8 +140,8 @@ impl LanguageModel for CohereModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers;
         let response_body = resp.raw_value;
+        let response_headers = resp.response_headers;
         let data: ChatResponse = resp.value;
 
         // Build content array.
@@ -571,7 +572,7 @@ impl LanguageModel for CohereModel {
                 } else {
                     final_usage
                 },
-                provider_metadata: Some(provider_namespace("cohere", json!({}))),
+                provider_metadata: Some(provider_namespace("cohere", json!({})).expect("provider metadata must be an object")),
             });
         };
 

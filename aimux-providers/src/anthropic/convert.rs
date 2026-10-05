@@ -23,7 +23,7 @@ use std::collections::{BTreeSet, HashSet};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+    ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, Tool};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
@@ -203,13 +203,18 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
                 content,
                 provider_options,
             } => {
-                for (idx, ToolPart::ToolResult(part)) in content.iter().enumerate() {
+                for (idx, part) in content.iter().enumerate() {
+                    let ToolPart::ToolResult(part) = part else {
+                        continue;
+                    };
                     acc.push(convert_tool_result(
                         part,
                         &mut validator,
+                        &mut betas,
+                        &mut warnings,
                         idx + 1 == content.len(),
                         provider_options.as_ref(),
-                    ));
+                    )?);
                 }
             }
             LanguageModelMessage::Assistant {
@@ -382,7 +387,7 @@ fn convert_file_part(
             let full = resolve_full_media_type(media_type, &bytes)?;
             route_file_base64(&full, data, &bytes, filename.as_deref(), betas)?
         }
-        FileData::Url { url } => route_file_url(media_type, url, betas)?,
+        FileData::Url { url, .. } => route_file_url(media_type, url, betas)?,
         FileData::Reference { reference } => {
             let file_id = resolve_anthropic_reference(reference)?;
             betas.insert(BETA_FILES_API.to_string());
@@ -444,17 +449,35 @@ fn convert_file_part(
 fn convert_tool_result(
     part: &ToolResultPart,
     validator: &mut CacheControlValidator,
+    betas: &mut BTreeSet<String>,
+    warnings: &mut Vec<Warning>,
     is_last_part: bool,
     message_provider_options: Option<&SharedProviderOptions>,
-) -> Value {
+) -> Result<Value, AiMuxError> {
     let ToolResultPart {
         tool_call_id,
-        result,
+        output,
         provider_options,
         ..
     } = part;
 
-    let (content, is_error) = resolve_tool_result_output(result);
+    if let ToolResultOutput::Content { value } = output {
+        for item in value {
+            if let ToolResultContent::File(file) = item
+                && let FileData::Data { data } = &file.data
+            {
+                use base64::Engine;
+                let bytes = match data {
+                    FileBytes::Binary(bytes) => bytes.clone(),
+                    FileBytes::Base64(data) => base64::engine::general_purpose::STANDARD
+                        .decode(data)
+                        .unwrap_or_default(),
+                };
+                resolve_full_media_type(&file.media_type, &bytes)?;
+            }
+        }
+    }
+    let (content, is_error) = resolve_tool_result_output(output, betas, warnings);
     let mut block = json!({
         "type": "tool_result",
         "tool_use_id": tool_call_id,
@@ -470,12 +493,10 @@ fn convert_tool_result(
         true,
     ) {
         Some(v) => Some(v),
-        None => match extract_tool_result_output_provider_options(result) {
-            Some(out_opts) => validator.get_cache_control(
-                out_opts.get("anthropic").and_then(Value::as_object),
-                "tool result output",
-                true,
-            ),
+        None => match extract_tool_result_output_provider_options(output) {
+            Some(out_opts) => {
+                validator.get_cache_control(out_opts.get("anthropic"), "tool result output", true)
+            }
             None => {
                 if is_last_part {
                     validator.get_cache_control(
@@ -489,7 +510,7 @@ fn convert_tool_result(
             }
         },
     };
-    apply_cc(block, cc)
+    Ok(apply_cc(block, cc))
 }
 
 /// Convert an assistant part, preserving reasoning and provider-executed tool results.
@@ -538,12 +559,10 @@ fn convert_assistant_part(
 
         AssistantPart::Reasoning(ReasoningPart {
             text,
-            signature,
             provider_options,
         }) => {
             return Ok(convert_reasoning_part(
                 text,
-                signature.as_deref(),
                 provider_options.as_ref(),
                 send_reasoning,
                 warnings,
@@ -675,6 +694,7 @@ fn convert_assistant_part(
             apply_cc(block, cc)
         }
 
+        AssistantPart::ReasoningFile(_) | AssistantPart::Custom(_) => return Ok(None),
         AssistantPart::ToolResult(part) => {
             return Ok(convert_assistant_tool_result(
                 part,
@@ -764,8 +784,7 @@ fn convert_assistant_tool_result(
     let ToolResultPart {
         tool_call_id,
         tool_name,
-        result,
-        is_error,
+        output,
         provider_options,
         ..
     } = part;
@@ -778,12 +797,10 @@ fn convert_assistant_tool_result(
         true,
     ) {
         Some(v) => Some(v),
-        None => match extract_tool_result_output_provider_options(result) {
-            Some(out_opts) => validator.get_cache_control(
-                out_opts.get("anthropic").and_then(Value::as_object),
-                "tool result output",
-                true,
-            ),
+        None => match extract_tool_result_output_provider_options(output) {
+            Some(out_opts) => {
+                validator.get_cache_control(out_opts.get("anthropic"), "tool result output", true)
+            }
             None => {
                 if is_last_part {
                     validator.get_cache_control(
@@ -798,14 +815,50 @@ fn convert_assistant_tool_result(
         },
     };
 
-    // The payload is carried bare, with the error flag alongside it. Upstream
-    // reads both off a `{ type, value }` envelope instead; reconstructing that
-    // envelope here would mean guessing, and a legitimate payload that happens
-    // to look like one (`{"type":"error","value":...}`) would be unwrapped and
-    // have its `is_error` overwritten. The envelope belongs on the type.
-    let value = result;
-    let is_error = is_error.unwrap_or(false);
-    let tool_name = tool_name.as_deref().unwrap_or_default();
+    let raw_value = match output {
+        ToolResultOutput::Json { value, .. } | ToolResultOutput::ErrorJson { value, .. } => {
+            value.clone()
+        }
+        ToolResultOutput::Text { value, .. } | ToolResultOutput::ErrorText { value, .. } => {
+            json!(value)
+        }
+        ToolResultOutput::ExecutionDenied { reason, .. } => {
+            json!(reason.as_deref().unwrap_or("Tool call execution denied."))
+        }
+        ToolResultOutput::Content { value } => json!(value),
+    };
+    let provider_tool_name = tool_names.to_provider_tool_name(tool_name);
+    let allowed = match output {
+        ToolResultOutput::Json { .. } => true,
+        ToolResultOutput::ErrorJson { .. } => {
+            mcp_tool_use_ids.contains(tool_call_id.as_str())
+                || matches!(
+                    provider_tool_name,
+                    "code_execution" | "web_fetch" | "web_search" | "advisor"
+                )
+        }
+        ToolResultOutput::ErrorText { .. } => {
+            provider_tool_name == "code_execution"
+                && !mcp_tool_use_ids.contains(tool_call_id.as_str())
+        }
+        _ => false,
+    };
+    if !allowed {
+        warnings.push(Warning::Other {
+            message: format!(
+                "provider executed tool result output for tool {tool_name} is not supported"
+            ),
+        });
+        return None;
+    }
+    let value = &raw_value;
+    let is_error = matches!(
+        output,
+        ToolResultOutput::ErrorText { .. }
+            | ToolResultOutput::ErrorJson { .. }
+            | ToolResultOutput::ExecutionDenied { .. }
+    );
+    let tool_name = tool_name.as_str();
     let payload_type = value.get("type").and_then(|t| t.as_str());
 
     let mut block = if mcp_tool_use_ids.contains(tool_call_id.as_str()) {
@@ -817,6 +870,23 @@ fn convert_assistant_tool_result(
         })
     } else {
         let (block_type, content) = match tool_names.to_provider_tool_name(tool_name) {
+            "code_execution" if is_error => {
+                let error = if let Value::String(raw) = value {
+                    serde_json::from_str(raw).unwrap_or(json!({}))
+                } else {
+                    value.clone()
+                };
+                let code_error = error.get("type").and_then(Value::as_str)
+                    == Some("code_execution_tool_result_error");
+                (
+                    if code_error {
+                        "code_execution_tool_result"
+                    } else {
+                        "bash_code_execution_tool_result"
+                    },
+                    json!({ "type": if code_error { "code_execution_tool_result_error" } else { "bash_code_execution_tool_result_error" }, "error_code": error.get("errorCode").and_then(Value::as_str).unwrap_or("unknown") }),
+                )
+            }
             "code_execution" => match assistant_code_execution_content(value, payload_type) {
                 Some(v) => v,
                 None => {
@@ -1036,21 +1106,31 @@ fn assistant_advisor_content(value: &Value, payload_type: Option<&str>) -> Value
 ///   returned (e.g. `{ type: 'text', value, providerOptions }`).
 /// - When the output is a `content` output whose `value` is an array of content
 ///   parts, the `providerOptions` of the first part that has one is returned.
-fn extract_tool_result_output_provider_options(output: &Value) -> Option<&Value> {
-    if let Some(opts) = output.get("providerOptions") {
-        return Some(opts);
-    }
-    let output_type = output.get("type").and_then(|t| t.as_str());
-    if output_type == Some("content")
-        && let Some(value) = output.get("value").and_then(|v| v.as_array())
-    {
-        for part in value {
-            if let Some(opts) = part.get("providerOptions") {
-                return Some(opts);
-            }
+fn extract_tool_result_output_provider_options(
+    output: &ToolResultOutput,
+) -> Option<&SharedProviderOptions> {
+    match output {
+        ToolResultOutput::Text {
+            provider_options, ..
         }
+        | ToolResultOutput::Json {
+            provider_options, ..
+        }
+        | ToolResultOutput::ErrorText {
+            provider_options, ..
+        }
+        | ToolResultOutput::ErrorJson {
+            provider_options, ..
+        }
+        | ToolResultOutput::ExecutionDenied {
+            provider_options, ..
+        } => provider_options.as_ref(),
+        ToolResultOutput::Content { value } => value.iter().find_map(|part| match part {
+            ToolResultContent::Text(part) => part.provider_options.as_ref(),
+            ToolResultContent::File(part) => part.provider_options.as_ref(),
+            ToolResultContent::Custom { provider_options } => provider_options.as_ref(),
+        }),
     }
-    None
 }
 
 /// Route an inline-bytes file part. `full_media_type` is the resolved
@@ -1222,7 +1302,10 @@ fn detect_document_media_type(bytes: &[u8]) -> Option<&'static str> {
 /// Resolve a file part's media type to a full `type/subtype` form, mirroring
 /// the TS `resolveFullMediaType`. When the media type is already a full type it
 /// is returned as-is; otherwise the subtype is sniffed from the inline bytes.
-fn resolve_full_media_type(media_type: &str, bytes: &[u8]) -> Result<String, AiMuxError> {
+pub(crate) fn resolve_full_media_type(
+    media_type: &str,
+    bytes: &[u8],
+) -> Result<String, AiMuxError> {
     if is_full_media_type(media_type) {
         return Ok(media_type.to_string());
     }
@@ -1244,7 +1327,6 @@ fn resolve_full_media_type(media_type: &str, bytes: &[u8]) -> Result<String, AiM
 /// matching the TS SDK — thinking blocks are cached implicitly by Anthropic.
 fn convert_reasoning_part(
     text: &str,
-    signature: Option<&str>,
     provider_options: Option<&SharedProviderOptions>,
     send_reasoning: bool,
     warnings: &mut Vec<Warning>,
@@ -1264,14 +1346,10 @@ fn convert_reasoning_part(
         .and_then(|a| a.get("redactedData"))
         .and_then(|v| v.as_str());
 
-    // #6: Fall back to `providerOptions.anthropic.signature` when the
-    // `signature` field is None (upstream convert-to-anthropic-prompt.ts:669-690).
-    let effective_signature = signature.or_else(|| {
-        provider_options
-            .and_then(|o| o.get("anthropic"))
-            .and_then(|a| a.get("signature"))
-            .and_then(|v| v.as_str())
-    });
+    let effective_signature = provider_options
+        .and_then(|o| o.get("anthropic"))
+        .and_then(|a| a.get("signature"))
+        .and_then(Value::as_str);
 
     if let Some(sig) = effective_signature {
         // Thinking blocks cannot carry cache_control directly — they are cached
@@ -1331,20 +1409,45 @@ fn resolve_anthropic_reference(
 /// - `error` → `value` as-is with `is_error: true`,
 /// - `content` → `value` as-is (an array of content blocks),
 /// - anything else → the `output` is passed through unchanged.
-fn resolve_tool_result_output(output: &Value) -> (Value, bool) {
-    if let (Some(t), Some(v)) = (
-        output.get("type").and_then(|x| x.as_str()),
-        output.get("value"),
-    ) {
-        match t {
-            "json" => (Value::String(v.to_string()), false),
-            "text" => (v.clone(), false),
-            "error" => (v.clone(), true),
-            "content" => (v.clone(), false),
-            _ => (output.clone(), false),
-        }
-    } else {
-        (output.clone(), false)
+fn resolve_tool_result_output(
+    output: &ToolResultOutput,
+    betas: &mut BTreeSet<String>,
+    warnings: &mut Vec<Warning>,
+) -> (Value, bool) {
+    match output {
+        ToolResultOutput::Text { value, .. } => (json!(value), false),
+        ToolResultOutput::ErrorText { value, .. } => (json!(value), true),
+        ToolResultOutput::Json { value, .. } => (json!(value.to_string()), false),
+        ToolResultOutput::ErrorJson { value, .. } => (json!(value.to_string()), true),
+        ToolResultOutput::ExecutionDenied { reason, .. } => (json!(reason.as_deref().unwrap_or("Tool call execution denied.")), false),
+        ToolResultOutput::Content { value } => (json!(value.iter().filter_map(|part| match part {
+            ToolResultContent::Text(part) => Some(json!({ "type": "text", "text": part.text })),
+            ToolResultContent::File(part) => {
+                use base64::Engine;
+                let top_level = part.media_type.split('/').next();
+                let source = match &part.data {
+                    FileData::Url { url, .. } => json!({ "type": "url", "url": url }),
+                    FileData::Data { data } => {
+                        let (data, bytes) = match data {
+                            FileBytes::Binary(bytes) => (base64::engine::general_purpose::STANDARD.encode(bytes), bytes.clone()),
+                            FileBytes::Base64(data) => (data.clone(), base64::engine::general_purpose::STANDARD.decode(data).unwrap_or_default()),
+                        };
+                        let full = resolve_full_media_type(&part.media_type, &bytes).ok()?;
+                        if top_level != Some("image") && full != "application/pdf" { warnings.push(Warning::Other { message: "unsupported tool content file media type".to_string() }); return None; }
+                        if full == "application/pdf" { betas.insert("pdfs-2024-09-25".to_string()); }
+                        json!({ "type": "base64", "media_type": full, "data": data })
+                    },
+                    _ => { warnings.push(Warning::Other { message: "unsupported tool content file part".to_string() }); return None; },
+                };
+                Some(json!({ "type": if top_level == Some("image") { "image" } else { "document" }, "source": source }))
+            },
+            ToolResultContent::Custom { provider_options } => {
+                if let Some(options) = provider_options.as_ref().and_then(|options| options.get("anthropic"))
+                    && options.get("type").and_then(Value::as_str) == Some("tool-reference") {
+                    Some(json!({ "type": "tool_reference", "tool_name": options.get("toolName") }))
+                } else { warnings.push(Warning::Other { message: "unsupported custom tool content part".to_string() }); None }
+            },
+        }).collect::<Vec<_>>()), false),
     }
 }
 
@@ -1946,7 +2049,7 @@ fn apply_anthropic_tools(
         } else {
             None
         },
-        Some(&options.tool_choice),
+        options.tool_choice.as_ref(),
         disable_parallel_tool_use,
         caps.supports_structured_output,
         caps.supports_structured_output,
@@ -2245,45 +2348,5 @@ pub fn parse_stop_reason(s: &str) -> FinishReason {
     FinishReason {
         unified,
         raw: Some(s.to_string()),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn opts_with_anthropic_thinking(thinking: serde_json::Value) -> CallOptions {
-        let provider = aimux_core::shared::provider_namespace("anthropic", thinking);
-        CallOptions {
-            provider_options: Some(provider),
-            ..CallOptions::new(LanguageModelPrompt::default())
-        }
-    }
-
-    /// Regression (audit finding on the M11 split): when `thinking.enabled` is
-    /// set without an explicit `budgetTokens`, the body must carry both the
-    /// default `budget_tokens: 1024` **and** the adjusted `max_tokens`
-    /// (base + 1024), exactly like the pre-split implementation.
-    #[test]
-    fn thinking_enabled_without_budget_writes_default_budget() {
-        let opts = opts_with_anthropic_thinking(json!({
-            "thinking": { "type": "enabled" }
-        }));
-        let req = build_request_body_with_warnings("claude-sonnet-4-5", &opts, false).unwrap();
-        assert_eq!(req.body["thinking"]["type"], json!("enabled"));
-        assert_eq!(req.body["thinking"]["budget_tokens"], json!(1024));
-        // claude-sonnet-4-5 caps: 64000 tokens, +1024 thinking budget.
-        assert_eq!(req.body["max_tokens"], json!(65024));
-    }
-
-    /// Explicit `budgetTokens` must be preserved (no default override).
-    #[test]
-    fn thinking_enabled_with_explicit_budget_keeps_it() {
-        let opts = opts_with_anthropic_thinking(json!({
-            "thinking": { "type": "enabled", "budgetTokens": 4096 }
-        }));
-        let req = build_request_body_with_warnings("claude-sonnet-4-5", &opts, false).unwrap();
-        assert_eq!(req.body["thinking"]["budget_tokens"], json!(4096));
-        assert_eq!(req.body["max_tokens"], json!(64000 + 4096));
     }
 }

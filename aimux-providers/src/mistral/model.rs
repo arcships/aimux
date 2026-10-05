@@ -93,7 +93,7 @@ fn convert_usage(usage: &UsageResponse) -> Usage {
     let no_cache = prompt_tokens - cache_read;
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(prompt_tokens),
             no_cache: Some(no_cache),
             cache_read: if cache_read > 0 {
@@ -102,14 +102,15 @@ fn convert_usage(usage: &UsageResponse) -> Usage {
                 None
             },
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(completion_tokens),
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -241,8 +242,8 @@ impl LanguageModel for MistralModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers;
         let response_body = resp.raw_value;
+        let response_headers = resp.response_headers;
         let data: ChatCompletionResponse = resp.value;
 
         let choice =
@@ -602,7 +603,7 @@ impl LanguageModel for MistralModel {
                 } else {
                     final_usage
                 },
-                provider_metadata: Some(provider_namespace("mistral", serde_json::json!({}))),
+                provider_metadata: Some(provider_namespace("mistral", serde_json::json!({})).expect("provider metadata must be an object")),
             });
         };
 

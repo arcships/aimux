@@ -14,7 +14,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{
     GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
 };
-use aimux_core::shared::{FileBytes, FileData, provider_namespace};
+use aimux_core::shared::{FileBytes, GeneratedFileData, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
@@ -123,6 +123,39 @@ impl LanguageModel for GoogleModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        if options
+            .prompt
+            .iter()
+            .filter_map(|message| match message {
+                aimux_core::language_model_message::LanguageModelMessage::Assistant {
+                    content,
+                    ..
+                } => Some(content),
+                _ => None,
+            })
+            .flatten()
+            .any(|part| {
+                matches!(
+                    part,
+                    aimux_core::language_model_message::AssistantPart::ReasoningFile(
+                        aimux_core::language_model_message::ReasoningFilePart {
+                            data: aimux_core::shared::GeneratedFileData::Url { .. },
+                            ..
+                        }
+                    ) | aimux_core::language_model_message::AssistantPart::File(
+                        aimux_core::language_model_message::FilePart {
+                            data: aimux_core::shared::FileData::Url { .. },
+                            ..
+                        }
+                    )
+                )
+            })
+        {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "File data URLs in assistant messages are not supported".to_string(),
+            ));
+        }
+        crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
@@ -138,9 +171,8 @@ impl LanguageModel for GoogleModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers;
-
         let response_body = resp.raw_value;
+        let response_headers = resp.response_headers;
 
         let data: GenerateContentResponse = resp.value;
 
@@ -168,17 +200,20 @@ impl LanguageModel for GoogleModel {
 
         // Provider metadata: wrap the raw Google metadata under a `google`
         // key (matching the TS `wrapProviderMetadata`).
-        let provider_metadata = Some(provider_namespace(
-            "google",
-            json!({
-                "promptFeedback": data.prompt_feedback,
-                "groundingMetadata": candidate.grounding_metadata,
-                "urlContextMetadata": candidate.url_context_metadata,
-                "safetyRatings": candidate.safety_ratings,
-                "usageMetadata": data.usage_metadata,
-                "finishMessage": candidate.finish_message,
-            }),
-        ));
+        let provider_metadata = Some(
+            provider_namespace(
+                "google",
+                json!({
+                    "promptFeedback": data.prompt_feedback,
+                    "groundingMetadata": candidate.grounding_metadata,
+                    "urlContextMetadata": candidate.url_context_metadata,
+                    "safetyRatings": candidate.safety_ratings,
+                    "usageMetadata": data.usage_metadata,
+                    "finishMessage": candidate.finish_message,
+                }),
+            )
+            .expect("provider metadata must be an object"),
+        );
 
         Ok(GenerateResult {
             content,
@@ -198,6 +233,39 @@ impl LanguageModel for GoogleModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        if options
+            .prompt
+            .iter()
+            .filter_map(|message| match message {
+                aimux_core::language_model_message::LanguageModelMessage::Assistant {
+                    content,
+                    ..
+                } => Some(content),
+                _ => None,
+            })
+            .flatten()
+            .any(|part| {
+                matches!(
+                    part,
+                    aimux_core::language_model_message::AssistantPart::ReasoningFile(
+                        aimux_core::language_model_message::ReasoningFilePart {
+                            data: aimux_core::shared::GeneratedFileData::Url { .. },
+                            ..
+                        }
+                    ) | aimux_core::language_model_message::AssistantPart::File(
+                        aimux_core::language_model_message::FilePart {
+                            data: aimux_core::shared::FileData::Url { .. },
+                            ..
+                        }
+                    )
+                )
+            })
+        {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "File data URLs in assistant messages are not supported".to_string(),
+            ));
+        }
+        crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
@@ -335,7 +403,7 @@ impl LanguageModel for GoogleModel {
                                 let thought_sig_meta: Option<ProviderMetadata> = part
                                     .get("thoughtSignature")
                                     .and_then(|v| v.as_str())
-                                    .map(|s| provider_namespace("google", json!({ "thoughtSignature": s })));
+                                    .map(|s| provider_namespace("google", json!({ "thoughtSignature": s })).expect("provider metadata must be an object"));
 
                                 // text part
                                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
@@ -575,13 +643,12 @@ impl LanguageModel for GoogleModel {
                                         inline.get("data").and_then(|v| v.as_str()),
                                         inline.get("mimeType").and_then(|v| v.as_str()),
                                     ) {
-                                        // part.thought === true → upstream emits 'reasoning-file';
-                                        // emit plain File (reasoning-file is a separate PR).
-                                        yield Ok(StreamPart::File(GeneratedFile {
-                                            data: FileData::Data { data: FileBytes::Base64(data.to_string()) },
+                                        let file = GeneratedFile {
+                                            data: GeneratedFileData::Data { data: FileBytes::Base64(data.to_string()) },
                                             media_type: mime.to_string(),
                                             provider_metadata: thought_sig_meta.clone(),
-                                        }));
+                                        };
+                                        yield Ok(if part.get("thought").and_then(serde_json::Value::as_bool).unwrap_or(false) { StreamPart::ReasoningFile(file) } else { StreamPart::File(file) });
                                     }
                                 }
                             }
@@ -644,7 +711,7 @@ impl LanguageModel for GoogleModel {
                 "safetyRatings": last_safety_ratings,
                 "usageMetadata": last_usage_metadata_value,
                 "finishMessage": last_finish_message,
-            })));
+            })).expect("provider metadata must be an object"));
 
             yield Ok(StreamPart::Finish {
                 finish_reason: if stream_errored {
@@ -687,7 +754,7 @@ fn server_tool_metadata(
     if let Some(signature) = thought_signature {
         payload["thoughtSignature"] = json!(signature);
     }
-    provider_namespace("google", payload)
+    provider_namespace("google", payload).expect("provider metadata must be an object")
 }
 
 /// Extract `GenerateContent` items from a non-streaming candidate.
@@ -721,7 +788,10 @@ fn extract_content_from_candidate(
             let thought_sig_meta: Option<ProviderMetadata> = part
                 .get("thoughtSignature")
                 .and_then(|v| v.as_str())
-                .map(|s| provider_namespace("google", json!({ "thoughtSignature": s })));
+                .map(|s| {
+                    provider_namespace("google", json!({ "thoughtSignature": s }))
+                        .expect("provider metadata must be an object")
+                });
 
             // Branch order matches upstream (google-language-model.ts:420-534):
             // executableCode → codeExecutionResult → text → functionCall
@@ -824,15 +894,24 @@ fn extract_content_from_candidate(
                     inline.get("data").and_then(|v| v.as_str()),
                     inline.get("mimeType").and_then(|v| v.as_str()),
                 ) {
-                    // part.thought === true → upstream emits 'reasoning-file';
-                    // emit plain File (reasoning-file is a separate PR).
-                    content.push(GenerateContent::File(GeneratedFile {
-                        data: FileData::Data {
+                    let file = GeneratedFile {
+                        data: GeneratedFileData::Data {
                             data: FileBytes::Base64(data.to_string()),
                         },
                         media_type: mime.to_string(),
                         provider_metadata: thought_sig_meta.clone(),
-                    }));
+                    };
+                    content.push(
+                        if part
+                            .get("thought")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false)
+                        {
+                            GenerateContent::ReasoningFile(file)
+                        } else {
+                            GenerateContent::File(file)
+                        },
+                    );
                 }
             } else if let Some(tc) = part.get("toolCall") {
                 // Server-side tool call (provider-executed, Gemini 3).
@@ -919,6 +998,16 @@ fn set_provider_metadata(item: &mut GenerateContent, meta: ProviderMetadata) {
         })
         | GenerateContent::Source(Source {
             provider_metadata, ..
+        })
+        | GenerateContent::ReasoningFile(GeneratedFile {
+            provider_metadata, ..
+        })
+        | GenerateContent::Custom {
+            provider_metadata, ..
+        }
+        | GenerateContent::ToolApprovalRequest(aimux_core::result::RawToolApprovalRequest {
+            provider_metadata,
+            ..
         })
         | GenerateContent::ToolResult(ToolResult {
             provider_metadata, ..

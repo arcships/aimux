@@ -177,7 +177,9 @@ fn aimux_error_class_name(error: &AiMuxError) -> &'static str {
         AiMuxError::ApiCall(_) => "APICallError",
         AiMuxError::Retry(_) => "RetryError",
         AiMuxError::JsonParse(_) => "JSONParseError",
-        AiMuxError::InvalidResponseData(_) => "InvalidResponseDataError",
+        AiMuxError::InvalidResponseData(_) | AiMuxError::ToolCallNotFoundForApproval { .. } => {
+            "InvalidResponseDataError"
+        }
         AiMuxError::NoSuchTool { .. } => "NoSuchToolError",
         AiMuxError::InvalidToolInput { .. } => "InvalidToolInputError",
         AiMuxError::ToolCallRepair { .. } => "ToolCallRepairError",

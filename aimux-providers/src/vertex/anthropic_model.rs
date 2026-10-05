@@ -403,7 +403,7 @@ impl LanguageModel for VertexAnthropicModel {
                                             provider_metadata: Some(provider_namespace("anthropic", json!({
                                                 "type": "mcp-tool-use",
                                                 "serverName": server_name,
-                                            }))),
+                                            })).expect("provider metadata must be an object")),
                                         }));
                                     }
                                     ContentBlock::RedactedThinking { data } => {
@@ -411,7 +411,7 @@ impl LanguageModel for VertexAnthropicModel {
                                             id: index.to_string(),
                                             provider_metadata: Some(provider_namespace("anthropic", json!({
                                                 "redactedData": data
-                                            }))),
+                                            })).expect("provider metadata must be an object")),
                                         });
                                         blocks.insert(index, BlockState::Thinking { started: true });
                                     }

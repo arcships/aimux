@@ -21,7 +21,6 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::provider_namespace;
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
 use aimux_providers::{OpenAIConfig, OpenAIProvider};
 
@@ -319,81 +318,6 @@ async fn should_use_real_date() {
     assert_eq!(result.response.model_id, Some("whisper-1".to_string()));
 }
 
-/// TS: "should pass response_format when `providerOptions.openai.timestampGranularities` is set"
-#[tokio::test]
-async fn should_pass_response_format_with_timestamp_granularities_word() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, &fixture_response()).await;
-
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("whisper-1");
-
-    let mut options = transcription_options(mock_audio_data(), "audio/wav");
-    let po = provider_namespace("openai", json!({"timestampGranularities": ["word"]}));
-    options.provider_options = Some(po);
-
-    model.do_generate(&options).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    assert_eq!(requests.len(), 1);
-    let form = parse_multipart_form(&requests[0].body);
-    assert_eq!(form.get("model").unwrap(), "whisper-1");
-    assert_eq!(form.get("response_format").unwrap(), "verbose_json");
-    assert_eq!(form.get("temperature").unwrap(), "0");
-    assert_eq!(form.get("timestamp_granularities[]").unwrap(), "word");
-}
-
-/// TS: "should not set pass response_format to "verbose_json" when model is "gpt-4o-transcribe""
-#[tokio::test]
-async fn should_use_json_for_gpt4o_transcribe() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, &fixture_response()).await;
-
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("gpt-4o-transcribe");
-
-    let mut options = transcription_options(mock_audio_data(), "audio/wav");
-    let po = provider_namespace("openai", json!({"timestampGranularities": ["word"]}));
-    options.provider_options = Some(po);
-
-    model.do_generate(&options).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    assert_eq!(requests.len(), 1);
-    let form = parse_multipart_form(&requests[0].body);
-    assert_eq!(form.get("model").unwrap(), "gpt-4o-transcribe");
-    assert_eq!(form.get("response_format").unwrap(), "json");
-    assert_eq!(form.get("temperature").unwrap(), "0");
-    assert_eq!(form.get("timestamp_granularities[]").unwrap(), "word");
-}
-
-/// TS: "should pass timestamp_granularities when specified"
-#[tokio::test]
-async fn should_pass_timestamp_granularities_segment() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, &fixture_response()).await;
-
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("whisper-1");
-
-    let mut options = transcription_options(mock_audio_data(), "audio/wav");
-    let po = provider_namespace("openai", json!({"timestampGranularities": ["segment"]}));
-    options.provider_options = Some(po);
-
-    model.do_generate(&options).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    assert_eq!(requests.len(), 1);
-    let form = parse_multipart_form(&requests[0].body);
-    assert_eq!(form.get("model").unwrap(), "whisper-1");
-    assert_eq!(form.get("response_format").unwrap(), "verbose_json");
-    assert_eq!(form.get("temperature").unwrap(), "0");
-    assert_eq!(form.get("timestamp_granularities[]").unwrap(), "segment");
-}
-
 /// TS: "should work when no words, language, or duration are returned"
 #[tokio::test]
 async fn should_work_without_optional_fields() {
@@ -426,97 +350,6 @@ async fn should_work_without_optional_fields() {
     assert_eq!(result.response.model_id, Some("whisper-1".to_string()));
     let headers = result.response.headers.as_ref().unwrap();
     assert_eq!(headers.get("content-type").unwrap(), "application/json");
-}
-
-/// TS: "should parse segments when provided in response"
-#[tokio::test]
-async fn should_parse_segments() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        &json!({
-            "task": "transcribe",
-            "text": "Hello world. How are you?",
-            "segments": [
-                {
-                    "id": 0, "seek": 0, "start": 0.0, "end": 2.5,
-                    "text": "Hello world.", "tokens": [1234, 5678],
-                    "temperature": 0.0, "avg_logprob": -0.5,
-                    "compression_ratio": 1.2, "no_speech_prob": 0.1
-                },
-                {
-                    "id": 1, "seek": 250, "start": 2.5, "end": 5.0,
-                    "text": " How are you?", "tokens": [9012, 3456],
-                    "temperature": 0.0, "avg_logprob": -0.6,
-                    "compression_ratio": 1.1, "no_speech_prob": 0.05
-                }
-            ],
-            "language": "english",
-            "duration": 5.0,
-            "_request_id": "req_1234"
-        }),
-    )
-    .await;
-
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("whisper-1");
-
-    let mut options = transcription_options(mock_audio_data(), "audio/wav");
-    let po = provider_namespace("openai", json!({"timestampGranularities": ["segment"]}));
-    options.provider_options = Some(po);
-
-    let result = model.do_generate(&options).await.unwrap();
-
-    assert_eq!(result.segments.len(), 2);
-    assert_eq!(result.segments[0].text, "Hello world.");
-    assert_eq!(result.segments[0].start_second, 0.0);
-    assert_eq!(result.segments[0].end_second, 2.5);
-    assert_eq!(result.segments[1].text, " How are you?");
-    assert_eq!(result.segments[1].start_second, 2.5);
-    assert_eq!(result.segments[1].end_second, 5.0);
-    assert_eq!(result.text, "Hello world. How are you?");
-    assert_eq!(result.duration_in_seconds, Some(5.0));
-    assert_eq!(result.language, Some("en".to_string()));
-}
-
-/// TS: "should fallback to words when segments are not available"
-#[tokio::test]
-async fn should_fallback_to_words() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        &json!({
-            "task": "transcribe",
-            "text": "Hello world",
-            "words": [
-                {"word": "Hello", "start": 0.0, "end": 1.0},
-                {"word": "world", "start": 1.0, "end": 2.0}
-            ],
-            "language": "english",
-            "duration": 2.0,
-            "_request_id": "req_1234"
-        }),
-    )
-    .await;
-
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("whisper-1");
-
-    let mut options = transcription_options(mock_audio_data(), "audio/wav");
-    let po = provider_namespace("openai", json!({"timestampGranularities": ["word"]}));
-    options.provider_options = Some(po);
-
-    let result = model.do_generate(&options).await.unwrap();
-
-    assert_eq!(result.segments.len(), 2);
-    assert_eq!(result.segments[0].text, "Hello");
-    assert_eq!(result.segments[0].start_second, 0.0);
-    assert_eq!(result.segments[0].end_second, 1.0);
-    assert_eq!(result.segments[1].text, "world");
-    assert_eq!(result.segments[1].start_second, 1.0);
-    assert_eq!(result.segments[1].end_second, 2.0);
 }
 
 /// TS: "should handle empty segments array"

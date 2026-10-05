@@ -158,6 +158,59 @@ impl LanguageModel for VertexModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        if options
+            .prompt
+            .iter()
+            .filter_map(|message| match message {
+                aimux_core::language_model_message::LanguageModelMessage::Assistant {
+                    content,
+                    ..
+                } => Some(content),
+                _ => None,
+            })
+            .flatten()
+            .any(|part| {
+                matches!(
+                    part,
+                    aimux_core::language_model_message::AssistantPart::ReasoningFile(
+                        aimux_core::language_model_message::ReasoningFilePart {
+                            data: aimux_core::shared::GeneratedFileData::Url { .. },
+                            ..
+                        }
+                    ) | aimux_core::language_model_message::AssistantPart::File(
+                        aimux_core::language_model_message::FilePart {
+                            data: aimux_core::shared::FileData::Url { .. },
+                            ..
+                        }
+                    )
+                )
+            })
+        {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "File data URLs in assistant messages are not supported".to_string(),
+            ));
+        }
+        if options.prompt.iter().any(|message| match message {
+            aimux_core::language_model_message::LanguageModelMessage::Assistant {
+                content, ..
+            } => content.iter().any(|part| {
+                matches!(
+                    part,
+                    aimux_core::language_model_message::AssistantPart::File(
+                        aimux_core::language_model_message::FilePart {
+                            data: aimux_core::shared::FileData::Reference { .. },
+                            ..
+                        }
+                    )
+                )
+            }),
+            _ => false,
+        }) {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "file parts with provider references".to_string(),
+            ));
+        }
+        crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let body = build_vertex_request_body(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
@@ -177,9 +230,8 @@ impl LanguageModel for VertexModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers;
-
         let response_body = resp.raw_value;
+        let response_headers = resp.response_headers;
 
         let data: GenerateContentResponse = resp.value;
 
@@ -234,6 +286,59 @@ impl LanguageModel for VertexModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        if options
+            .prompt
+            .iter()
+            .filter_map(|message| match message {
+                aimux_core::language_model_message::LanguageModelMessage::Assistant {
+                    content,
+                    ..
+                } => Some(content),
+                _ => None,
+            })
+            .flatten()
+            .any(|part| {
+                matches!(
+                    part,
+                    aimux_core::language_model_message::AssistantPart::ReasoningFile(
+                        aimux_core::language_model_message::ReasoningFilePart {
+                            data: aimux_core::shared::GeneratedFileData::Url { .. },
+                            ..
+                        }
+                    ) | aimux_core::language_model_message::AssistantPart::File(
+                        aimux_core::language_model_message::FilePart {
+                            data: aimux_core::shared::FileData::Url { .. },
+                            ..
+                        }
+                    )
+                )
+            })
+        {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "File data URLs in assistant messages are not supported".to_string(),
+            ));
+        }
+        if options.prompt.iter().any(|message| match message {
+            aimux_core::language_model_message::LanguageModelMessage::Assistant {
+                content, ..
+            } => content.iter().any(|part| {
+                matches!(
+                    part,
+                    aimux_core::language_model_message::AssistantPart::File(
+                        aimux_core::language_model_message::FilePart {
+                            data: aimux_core::shared::FileData::Reference { .. },
+                            ..
+                        }
+                    )
+                )
+            }),
+            _ => false,
+        }) {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "file parts with provider references".to_string(),
+            ));
+        }
+        crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let body = build_vertex_request_body(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
@@ -655,8 +760,11 @@ impl LanguageModel for VertexModel {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn vertex_provider_metadata(payload: Value) -> ProviderMetadata {
-    let mut metadata = provider_namespace("googleVertex", payload.clone());
-    metadata.extend(provider_namespace("vertex", payload));
+    let mut metadata = provider_namespace("googleVertex", payload.clone())
+        .expect("provider metadata must be an object");
+    metadata.extend(
+        provider_namespace("vertex", payload).expect("provider metadata must be an object"),
+    );
     metadata
 }
 

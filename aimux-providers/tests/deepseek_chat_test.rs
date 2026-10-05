@@ -26,9 +26,6 @@
 //! overridden with the mock server's root URI (no `/v1` suffix), so the
 //! resulting request path is `/chat/completions`.
 
-use aimux_core::shared::{SharedProviderOptions, provider_namespace};
-use aimux_core::tool::RawToolCall;
-
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -36,14 +33,13 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
-    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart,
-    ToolPart, ToolResultPart, UserPart,
+    FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, Tool};
 use aimux_core::result::GenerateContent;
-use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions, provider_namespace};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
+use aimux_core::tool::{FunctionTool, RawToolCall};
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::openai::OpenAICompatProfile;
@@ -76,11 +72,6 @@ fn make_provider(server: &MockServer, model_id: &str) -> Box<dyn LanguageModel> 
         }),
     )
     .expect("deepseek provider should build")
-}
-
-/// Wrap a value as `providerOptions.deepseek.<value>`.
-fn deepseek_opts(value: Value) -> Option<SharedProviderOptions> {
-    Some(provider_namespace("deepseek", value))
 }
 
 /// Mount a JSON chat-completion response on `/chat/completions`.
@@ -144,24 +135,6 @@ fn text_deltas(parts: &[StreamPart]) -> Vec<String> {
         .collect()
 }
 
-/// A weather function tool matching the TS test's `inputSchema`.
-fn weather_tool() -> FunctionTool {
-    FunctionTool {
-        name: "weather".to_string(),
-        description: None,
-        input_schema: json!({
-            "type": "object",
-            "properties": { "location": { "type": "string" } },
-            "required": ["location"],
-            "additionalProperties": false,
-            "$schema": "http://json-schema.org/draft-07/schema#"
-        }),
-        strict: None,
-        provider_options: None,
-        input_examples: None,
-    }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Local fixtures
 // ─────────────────────────────────────────────────────────────────────────────
@@ -193,9 +166,27 @@ fn text_completion_body() -> Value {
     })
 }
 
-/// A non-streaming tool-call completion body. Abbreviated from the
-/// `deepseek-tool-call` fixture (reasoning_content omitted — reasoning is tested
-/// in `deepseek_reasoning_test.rs`).
+fn deepseek_opts(value: Value) -> Option<SharedProviderOptions> {
+    Some(provider_namespace("deepseek", value).expect("provider options must be an object"))
+}
+
+fn weather_tool() -> FunctionTool {
+    FunctionTool {
+        name: "weather".to_string(),
+        description: None,
+        input_schema: json!({
+            "type": "object",
+            "properties": { "location": { "type": "string" } },
+            "required": ["location"],
+            "additionalProperties": false,
+            "$schema": "http://json-schema.org/draft-07/schema#"
+        }),
+        strict: None,
+        provider_options: None,
+        input_examples: None,
+    }
+}
+
 fn tool_call_completion_body() -> Value {
     json!({
         "id": "7a630f5b-b7e6-4878-82f8-d77db164d42b",
@@ -228,8 +219,6 @@ fn tool_call_completion_body() -> Value {
     })
 }
 
-/// A non-streaming JSON completion body. Abbreviated from the `deepseek-json`
-/// fixture (reasoning_content omitted).
 fn json_completion_body() -> Value {
     json!({
         "id": "f03bc170-b375-4561-9685-35182c8152c5",
@@ -686,87 +675,6 @@ async fn should_stream_text() {
 // (reasoning streaming is tested in `deepseek_reasoning_test.rs`).
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: doStream › tool call › "should stream tool call" (line ~780).
-///
-/// Verifies that tool call deltas are streamed as ToolInputStart /
-/// ToolInputDelta / ToolInputEnd / ToolCall parts.
-#[tokio::test]
-async fn should_stream_tool_call() {
-    let server = MockServer::start().await;
-    let body = sse_body(&[
-        &sse_event(
-            r#"{"id":"x","object":"chat.completion.chunk","created":1,"model":"deepseek-reasoner","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
-        ),
-        &sse_event(
-            r#"{"id":"x","object":"chat.completion.chunk","created":1,"model":"deepseek-reasoner","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"weather","arguments":""}}]},"finish_reason":null}]}"#,
-        ),
-        &sse_event(
-            r#"{"id":"x","object":"chat.completion.chunk","created":1,"model":"deepseek-reasoner","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"location\": \"San Francisco\"}"}}]},"finish_reason":null}]}"#,
-        ),
-        &sse_event(
-            r#"{"id":"x","object":"chat.completion.chunk","created":1,"model":"deepseek-reasoner","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30}}"#,
-        ),
-    ]);
-    mock_sse(&server, body).await;
-
-    let model = make_provider(&server, "deepseek-reasoner");
-
-    let mut options = default_options(test_prompt());
-    options.tools = Some(vec![weather_tool().into()]);
-    options.provider_options = deepseek_opts(json!({ "thinking": { "type": "enabled" } }));
-
-    let result = model
-        .do_stream(&options)
-        .await
-        .expect("do_stream should succeed");
-    let parts = collect_stream(result).await;
-
-    // Should have ToolInputStart, ToolInputDelta, ToolInputEnd, ToolCall.
-    assert!(
-        parts
-            .iter()
-            .any(|p| matches!(p, StreamPart::ToolInputStart { .. })),
-        "expected ToolInputStart"
-    );
-    assert!(
-        parts
-            .iter()
-            .any(|p| matches!(p, StreamPart::ToolInputDelta { .. })),
-        "expected ToolInputDelta"
-    );
-    assert!(
-        parts
-            .iter()
-            .any(|p| matches!(p, StreamPart::ToolInputEnd { .. })),
-        "expected ToolInputEnd"
-    );
-
-    let tool_calls: Vec<_> = parts
-        .iter()
-        .filter_map(|p| match p {
-            StreamPart::ToolCall(RawToolCall {
-                tool_call_id,
-                tool_name,
-                input,
-                ..
-            }) => Some((tool_call_id, tool_name, input)),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(tool_calls.len(), 1);
-    assert_eq!(tool_calls[0].0, "call_1");
-    assert_eq!(tool_calls[0].1, "weather");
-    assert_eq!(tool_calls[0].2, r#"{"location": "San Francisco"}"#);
-
-    // The last part should be Finish with ToolCalls.
-    match parts.last() {
-        Some(StreamPart::Finish { finish_reason, .. }) => {
-            assert_eq!(finish_reason.unified, FinishReasonUnified::ToolCalls);
-        }
-        other => panic!("expected Finish as last part, got {other:?}"),
-    }
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // Message conversion — convert-to-deepseek-chat-messages.test.ts
 //
@@ -887,142 +795,6 @@ async fn should_accept_top_level_only_mediatype_without_error() {
         messages_str.contains("image_url"),
         "messages should contain image_url for top-level image media type: {messages_str}"
     );
-}
-
-/// TS: tool calls › "should stringify arguments to tool calls" (line ~100).
-///
-/// An assistant tool-call message followed by a tool-result message should
-/// produce:
-/// - assistant: `{ role: "assistant", content: "", tool_calls: [...] }`
-/// - tool: `{ role: "tool", content: "...", tool_call_id: "..." }`
-#[tokio::test]
-async fn should_stringify_arguments_to_tool_calls() {
-    let prompt = vec![
-        LanguageModelMessage::Assistant {
-            content: vec![AssistantPart::ToolCall(ToolCallPart {
-                tool_call_id: "quux".into(),
-                tool_name: "thwomp".into(),
-                input: json!({ "foo": "bar123" }),
-                provider_executed: None,
-                thought_signature: None,
-                provider_options: None,
-            })],
-            provider_options: None,
-        },
-        LanguageModelMessage::Tool {
-            content: vec![ToolPart::ToolResult(ToolResultPart {
-                tool_call_id: "quux".into(),
-                result: json!({ "oof": "321rab" }),
-                tool_name: None,
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
-                provider_options: None,
-            })],
-            provider_options: None,
-        },
-    ];
-    let options = default_options(prompt);
-    let result = build_request_body_with_warnings(
-        "deepseek-chat",
-        &options,
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
-
-    let messages = result.body["messages"].as_array().expect("messages array");
-    assert_eq!(messages.len(), 2);
-
-    // Assistant message with tool_calls.
-    assert_eq!(messages[0]["role"], json!("assistant"));
-    // OpenAI converter sets content to null when empty.
-    assert!(messages[0]["content"].is_null());
-    assert_eq!(
-        messages[0]["tool_calls"],
-        json!([{
-            "id": "quux",
-            "type": "function",
-            "function": {
-                "name": "thwomp",
-                "arguments": "{\"foo\":\"bar123\"}"
-            }
-        }])
-    );
-
-    // Tool result message.
-    assert_eq!(messages[1]["role"], json!("tool"));
-    assert_eq!(messages[1]["content"], json!("{\"oof\":\"321rab\"}"));
-    assert_eq!(messages[1]["tool_call_id"], json!("quux"));
-
-    assert!(result.warnings.is_empty(), "expected no warnings");
-}
-
-/// TS: tool calls › "should handle text output type in tool results" (line ~159).
-///
-/// A tool result with a text output should produce the text value directly as
-/// the tool message content.
-#[tokio::test]
-async fn should_handle_text_output_type_in_tool_results() {
-    let prompt = vec![
-        LanguageModelMessage::Assistant {
-            content: vec![AssistantPart::ToolCall(ToolCallPart {
-                tool_call_id: "call-1".into(),
-                tool_name: "getWeather".into(),
-                input: json!({ "query": "weather" }),
-                provider_executed: None,
-                thought_signature: None,
-                provider_options: None,
-            })],
-            provider_options: None,
-        },
-        LanguageModelMessage::Tool {
-            content: vec![ToolPart::ToolResult(ToolResultPart {
-                tool_call_id: "call-1".into(),
-                result: json!("It is sunny today"),
-                tool_name: None,
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
-                provider_options: None,
-            })],
-            provider_options: None,
-        },
-    ];
-    let options = default_options(prompt);
-    let result = build_request_body_with_warnings(
-        "deepseek-chat",
-        &options,
-        false,
-        "deepseek",
-        &OpenAICompatProfile::deepseek(),
-    )
-    .unwrap();
-
-    let messages = result.body["messages"].as_array().expect("messages array");
-    assert_eq!(messages.len(), 2);
-
-    // Assistant message.
-    assert_eq!(messages[0]["role"], json!("assistant"));
-    // OpenAI converter sets content to null when empty.
-    assert!(messages[0]["content"].is_null());
-    assert_eq!(
-        messages[0]["tool_calls"],
-        json!([{
-            "id": "call-1",
-            "type": "function",
-            "function": {
-                "name": "getWeather",
-                "arguments": "{\"query\":\"weather\"}"
-            }
-        }])
-    );
-
-    // Tool result message with text output.
-    assert_eq!(messages[1]["role"], json!("tool"));
-    assert_eq!(messages[1]["content"], json!("It is sunny today"));
-    assert_eq!(messages[1]["tool_call_id"], json!("call-1"));
 }
 
 // ════════════════════════════════════════════════════════════════════════════

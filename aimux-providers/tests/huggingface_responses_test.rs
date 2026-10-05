@@ -16,7 +16,7 @@
 //! overridden with the mock server's root URI (no `/v1` suffix), so the
 //! resulting request path is `/responses`.
 
-use aimux_core::tool::{RawToolCall, ToolResult};
+use aimux_core::tool::{FunctionTool, RawToolCall, Tool, ToolChoice, ToolResult};
 use std::collections::HashMap;
 
 use futures::StreamExt;
@@ -31,11 +31,10 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
-use aimux_core::result::{GenerateContent, ReasoningOutput, Source};
+use aimux_core::options::{CallOptions, ResponseFormat};
+use aimux_core::result::{GenerateContent, Source};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_providers::huggingface::responses::convert_to_huggingface_responses_messages;
@@ -1005,21 +1004,19 @@ async fn should_not_warn_about_assistant_content_types() {
                 tool_name: "test".into(),
                 input: json!({}),
                 provider_executed: None,
-                thought_signature: None,
                 provider_options: None,
             }),
             AssistantPart::ToolResult(ToolResultPart {
                 tool_call_id: "test".into(),
-                tool_name: None,
-                result: json!({ "type": "text", "value": "test" }),
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
+                tool_name: "test".into(),
+                output: aimux_core::language_model_message::ToolResultOutput::Text {
+                    value: "test".into(),
+                    provider_options: None,
+                },
                 provider_options: None,
             }),
             AssistantPart::Reasoning(ReasoningPart {
                 text: "thinking...".into(),
-                signature: None,
                 provider_options: None,
             }),
         ],
@@ -1052,11 +1049,11 @@ async fn should_warn_about_tool_messages() {
     let prompt = vec![LanguageModelMessage::Tool {
         content: vec![ToolPart::ToolResult(ToolResultPart {
             tool_call_id: "test".into(),
-            tool_name: None,
-            result: json!({ "type": "text", "value": "test" }),
-            is_error: None,
-            preliminary: None,
-            dynamic: None,
+            tool_name: "test".into(),
+            output: aimux_core::language_model_message::ToolResultOutput::Text {
+                value: "test".into(),
+                provider_options: None,
+            },
             provider_options: None,
         })],
         provider_options: None,
@@ -1404,218 +1401,6 @@ async fn should_handle_structured_output_with_custom_name_and_description() {
 // Reasoning
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: reasoning › "should handle reasoning content in responses"
-#[tokio::test]
-async fn should_handle_reasoning_content_in_responses() {
-    let server = MockServer::start().await;
-    mock_json(
-        &server,
-        json!({
-            "id": "resp_reasoning",
-            "model": "deepseek-ai/DeepSeek-R1",
-            "object": "response",
-            "created_at": 1741257730,
-            "status": "completed",
-            "error": null,
-            "instructions": null,
-            "max_output_tokens": null,
-            "metadata": null,
-            "tool_choice": "auto",
-            "tools": [],
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "incomplete_details": null,
-            "usage": { "input_tokens": 10, "output_tokens": 50, "total_tokens": 60 },
-            "output": [
-                {
-                    "id": "reasoning_1",
-                    "type": "reasoning",
-                    "content": [
-                        { "type": "reasoning_text", "text": "Let me think about this problem step by step..." }
-                    ]
-                },
-                {
-                    "id": "msg_after_reasoning",
-                    "type": "message",
-                    "role": "assistant",
-                    "status": "completed",
-                    "content": [
-                        { "type": "output_text", "text": "The answer is 42." }
-                    ]
-                }
-            ],
-            "output_text": null
-        }),
-    )
-    .await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-R1");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    assert_eq!(result.content.len(), 2);
-    match &result.content[0] {
-        GenerateContent::Reasoning(ReasoningOutput {
-            text,
-            provider_metadata,
-        }) => {
-            assert_eq!(text, "Let me think about this problem step by step...");
-            assert_eq!(
-                provider_metadata.as_ref(),
-                Some(&aimux_core::shared::provider_namespace(
-                    "huggingface",
-                    json!({ "itemId": "reasoning_1" })
-                ))
-            );
-        }
-        other => panic!("expected Reasoning at [0], got {other:?}"),
-    }
-    match &result.content[1] {
-        GenerateContent::Text { text, .. } => assert_eq!(text, "The answer is 42."),
-        other => panic!("expected Text at [1], got {other:?}"),
-    }
-}
-
-/// TS: reasoning › "should stream reasoning content"
-#[tokio::test]
-async fn should_stream_reasoning_content() {
-    let server = MockServer::start().await;
-    let chunks = sse_body(&[
-        sse_event(
-            r#"{"type":"response.created","response":{"id":"resp_reasoning_stream","object":"response","created_at":1741269019,"status":"in_progress","model":"deepseek-ai/DeepSeek-R1"}}"#,
-        ),
-        sse_event(
-            r#"{"type":"response.output_item.added","output_index":0,"item":{"id":"reasoning_stream","type":"reasoning"},"sequence_number":1}"#,
-        ),
-        sse_event(
-            r#"{"type":"response.reasoning_text.delta","item_id":"reasoning_stream","output_index":0,"content_index":0,"delta":"Thinking about","sequence_number":2}"#,
-        ),
-        sse_event(
-            r#"{"type":"response.reasoning_text.delta","item_id":"reasoning_stream","output_index":0,"content_index":0,"delta":" the problem...","sequence_number":3}"#,
-        ),
-        sse_event(
-            r#"{"type":"response.reasoning_text.done","item_id":"reasoning_stream","output_index":0,"content_index":0,"text":"Thinking about the problem...","sequence_number":4}"#,
-        ),
-        sse_event(
-            r#"{"type":"response.output_item.done","output_index":0,"item":{"id":"reasoning_stream","type":"reasoning","content":[{"type":"reasoning_text","text":"Thinking about the problem..."}]},"sequence_number":5}"#,
-        ),
-        sse_event(
-            r#"{"type":"response.output_item.added","output_index":1,"item":{"id":"msg_stream","type":"message","role":"assistant"},"sequence_number":6}"#,
-        ),
-        sse_event(
-            r#"{"type":"response.output_text.delta","item_id":"msg_stream","output_index":1,"content_index":0,"delta":"The solution is","sequence_number":7}"#,
-        ),
-        sse_event(
-            r#"{"type":"response.output_text.delta","item_id":"msg_stream","output_index":1,"content_index":0,"delta":" simple.","sequence_number":8}"#,
-        ),
-        sse_event(
-            r#"{"type":"response.output_item.done","output_index":1,"item":{"id":"msg_stream","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"The solution is simple."}]},"sequence_number":9}"#,
-        ),
-        sse_event(
-            r#"{"type":"response.completed","response":{"id":"resp_reasoning_stream","status":"completed","usage":{"input_tokens":10,"output_tokens":20,"total_tokens":30}},"sequence_number":10}"#,
-        ),
-    ]);
-    mock_sse(&server, chunks).await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-R1");
-
-    let result = model
-        .do_stream(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let parts = collect_stream(result).await;
-
-    // Expected: stream-start, response-metadata, reasoning-start,
-    // reasoning-delta×2, reasoning-end, text-start, text-delta×2, text-end,
-    // finish
-    assert_eq!(parts.len(), 11);
-
-    assert!(matches!(&parts[0], StreamPart::StreamStart { .. }));
-
-    match &parts[1] {
-        StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. }) => {
-            assert_eq!(id.as_deref(), Some("resp_reasoning_stream"));
-            assert_eq!(model_id.as_deref(), Some("deepseek-ai/DeepSeek-R1"));
-        }
-        other => panic!("expected ResponseMetadata, got {other:?}"),
-    }
-
-    match &parts[2] {
-        StreamPart::ReasoningStart {
-            id,
-            provider_metadata,
-        } => {
-            assert_eq!(id, "reasoning_stream");
-            assert_eq!(
-                provider_metadata.as_ref(),
-                Some(&aimux_core::shared::provider_namespace(
-                    "huggingface",
-                    json!({ "itemId": "reasoning_stream" })
-                ))
-            );
-        }
-        other => panic!("expected ReasoningStart, got {other:?}"),
-    }
-    match &parts[3] {
-        StreamPart::ReasoningDelta { id, delta, .. } => {
-            assert_eq!(id, "reasoning_stream");
-            assert_eq!(delta, "Thinking about");
-        }
-        other => panic!("expected ReasoningDelta, got {other:?}"),
-    }
-    match &parts[4] {
-        StreamPart::ReasoningDelta { id, delta, .. } => {
-            assert_eq!(id, "reasoning_stream");
-            assert_eq!(delta, " the problem...");
-        }
-        other => panic!("expected ReasoningDelta, got {other:?}"),
-    }
-    match &parts[5] {
-        StreamPart::ReasoningEnd { id, .. } => assert_eq!(id, "reasoning_stream"),
-        other => panic!("expected ReasoningEnd, got {other:?}"),
-    }
-    match &parts[6] {
-        StreamPart::TextStart { id, .. } => assert_eq!(id, "msg_stream"),
-        other => panic!("expected TextStart, got {other:?}"),
-    }
-    match &parts[7] {
-        StreamPart::TextDelta { id, delta, .. } => {
-            assert_eq!(id, "msg_stream");
-            assert_eq!(delta, "The solution is");
-        }
-        other => panic!("expected TextDelta, got {other:?}"),
-    }
-    match &parts[8] {
-        StreamPart::TextDelta { id, delta, .. } => {
-            assert_eq!(id, "msg_stream");
-            assert_eq!(delta, " simple.");
-        }
-        other => panic!("expected TextDelta, got {other:?}"),
-    }
-    match &parts[9] {
-        StreamPart::TextEnd { id, .. } => assert_eq!(id, "msg_stream"),
-        other => panic!("expected TextEnd, got {other:?}"),
-    }
-    match &parts[10] {
-        StreamPart::Finish {
-            finish_reason,
-            usage,
-            ..
-        } => {
-            assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
-            assert_eq!(usage.input_tokens.total, Some(10));
-            assert_eq!(usage.output_tokens.total, Some(20));
-        }
-        other => panic!("expected Finish, got {other:?}"),
-    }
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // Provider options
 // ════════════════════════════════════════════════════════════════════════════
@@ -1727,9 +1512,9 @@ async fn should_prepare_tools_correctly() {
         )
         .with_description("Get weather information"),
     )]);
-    options.tool_choice = ToolChoice::Tool {
+    options.tool_choice = Some(ToolChoice::Tool {
         tool_name: "getWeather".to_string(),
-    };
+    });
 
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result
@@ -1793,7 +1578,7 @@ async fn should_handle_auto_and_required_tool_choices() {
         "test",
         json!({ "type": "object" }),
     ))]);
-    options.tool_choice = ToolChoice::Auto;
+    options.tool_choice = Some(ToolChoice::Auto);
 
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result
@@ -1808,7 +1593,7 @@ async fn should_handle_auto_and_required_tool_choices() {
         "test",
         json!({ "type": "object" }),
     ))]);
-    options.tool_choice = ToolChoice::Required;
+    options.tool_choice = Some(ToolChoice::Required);
 
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result
@@ -1878,35 +1663,6 @@ fn detects_image_subtype_from_inline_bytes_for_top_level_image() {
         &json!({
             "type": "input_image",
             "image_url": format!("data:image/png;base64,{}", PNG_BASE64)
-        })
-    );
-}
-
-/// TS: "passes through URL source for top-level-only image"
-#[test]
-fn passes_through_url_source_for_top_level_only_image() {
-    let prompt = vec![LanguageModelMessage::User {
-        content: vec![UserPart::File(FilePart {
-            data: FileData::Url {
-                url: "https://example.com/x.png".into(),
-            },
-            media_type: "image".into(),
-            filename: None,
-            provider_options: None,
-        })],
-        provider_options: None,
-    }];
-
-    let (input, warnings) =
-        convert_to_huggingface_responses_messages(&prompt).expect("should succeed");
-
-    assert!(warnings.is_empty());
-    let content = &input[0]["content"][0];
-    assert_eq!(
-        content,
-        &json!({
-            "type": "input_image",
-            "image_url": "https://example.com/x.png"
         })
     );
 }

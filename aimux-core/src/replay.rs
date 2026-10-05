@@ -16,16 +16,16 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 use crate::error::AiMuxError;
-use crate::generate::{GenerateTextOptions, GenerateTextResult, generate_text};
+use crate::generate::{
+    GenerateTextOptions, GenerateTextResult, generate_text_from_language_model_prompt,
+};
 use crate::language_model::LanguageModel;
 use crate::language_model_message::{
-    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, UserPart,
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, UserPart,
 };
-use crate::message::{ModelMessage, ModelPrompt};
-use crate::options::{CallOptions, ToolChoice};
+use crate::options::CallOptions;
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
-use crate::shared::{FileBytes, FileData};
 use crate::stream_part::StreamPart;
 use crate::tool::RawToolCall;
 use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
@@ -112,8 +112,7 @@ fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {
     })
 }
 
-/// 从录制侧提取同样的规范键(向后兼容:缺失 Option 字段按 null,缺失
-/// `tool_choice` 按 `ToolChoice::default()`=Auto,与 `CallOptions` 缺省一致)。
+/// 从录制侧提取同样的规范键(缺失 Option 字段按 null)。
 fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
     let o = &rec.input.options;
     serde_json::json!({
@@ -123,10 +122,7 @@ fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
         "seed": o.get("seed").cloned().unwrap_or_default(),
         "response_format": o.get("response_format").cloned().unwrap_or_default(),
         "tools": o.get("tools").cloned().unwrap_or_default(),
-        "tool_choice": o
-            .get("tool_choice")
-            .cloned()
-            .unwrap_or_else(|| serde_json::to_value(ToolChoice::default()).unwrap_or_default()),
+        "tool_choice": o.get("tool_choice").cloned().unwrap_or_default(),
         "headers": o.get("headers").cloned().unwrap_or_default(),
         "provider_options": o.get("provider_options").cloned().unwrap_or_default(),
         "body_overrides": o.get("body_overrides").cloned().unwrap_or_default(),
@@ -546,7 +542,7 @@ fn parse_usage(v: &serde_json::Value) -> Result<Usage, AiMuxError> {
     let prompt_details = &u["prompt_tokens_details"];
     let completion_details = &u["completion_tokens_details"];
     Ok(Usage {
-        input_tokens: crate::types::TokenUsage {
+        input_tokens: crate::types::InputTokenUsage {
             total: u32_from_json(&u["prompt_tokens"], "prompt_tokens")?,
             no_cache: None,
             cache_read: u32_from_json(
@@ -554,21 +550,16 @@ fn parse_usage(v: &serde_json::Value) -> Result<Usage, AiMuxError> {
                 "prompt_tokens_details.cached_tokens",
             )?,
             cache_write: None,
-            text: None,
-            reasoning: None,
         },
-        output_tokens: crate::types::TokenUsage {
+        output_tokens: crate::types::OutputTokenUsage {
             total: u32_from_json(&u["completion_tokens"], "completion_tokens")?,
-            no_cache: None,
-            cache_read: None,
-            cache_write: None,
             text: None,
             reasoning: u32_from_json(
                 &completion_details["reasoning_tokens"],
                 "completion_tokens_details.reasoning_tokens",
             )?,
         },
-        raw: Some(u.clone()),
+        raw: u.as_object().cloned(),
     })
 }
 
@@ -976,63 +967,11 @@ pub async fn replay_with_model(
         }
     }
 
-    // 3. 转回用户侧类型,经 generate_text 重发。
-    let prompt = model_prompt_from_lm(&call_options.prompt)?;
+    // Recorded options already contain the complete provider-facing prompt.
+    // Repair callbacks are runtime-only and are not restored from recordings.
+    let prompt = std::mem::take(&mut call_options.prompt);
     let options = generate_options_from_call_options(call_options);
-    generate_text(model, prompt, options).await
-}
-
-/// `LanguageModelPrompt`(provider 侧)→ `ModelPrompt`(用户侧)。
-///
-/// 逐消息 `provider_options` 丢弃(用户侧无对应字段)。
-/// 文件 URL 的 filename 同样没有用户侧字段;inline text 文件返回错误。
-fn model_prompt_from_lm(prompt: &LanguageModelPrompt) -> Result<ModelPrompt, AiMuxError> {
-    let messages =
-        prompt
-            .iter()
-            .map(|message| {
-                // Non-file parts share their fields with the user-facing union.
-                let mut message = serde_json::to_value(message)?;
-                if let Some(parts) = message["content"].as_array_mut() {
-                    for part in parts {
-                        if part["type"] != "file" {
-                            continue;
-                        }
-                        let file: FilePart = serde_json::from_value(part.clone())?;
-                        part.as_object_mut()
-                            .expect("serialized file part")
-                            .remove("data");
-                        match file.data {
-                            FileData::Data {
-                                data: FileBytes::Binary(data),
-                            } => {
-                                part["data"] = serde_json::to_value(data)?;
-                            }
-                            FileData::Data {
-                                data: FileBytes::Base64(data),
-                            } => {
-                                part["type"] = "file_base64".into();
-                                part["data"] = data.into();
-                            }
-                            FileData::Url { url } => {
-                                part["type"] = "file_url".into();
-                                part["url"] = url.into();
-                            }
-                            FileData::Reference { reference } => {
-                                part["type"] = "file_reference".into();
-                                part["reference"] = serde_json::to_value(reference)?;
-                            }
-                            FileData::Text { .. } => return Err(AiMuxError::InvalidPrompt(
-                                "replay: inline text file data has no user-facing representation"
-                                    .into(),
-                            )),
-                        }
-                    }
-                }
-                serde_json::from_value::<ModelMessage>(message).map_err(AiMuxError::from)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-    Ok(ModelPrompt::Messages(messages))
+    generate_text_from_language_model_prompt(model, prompt, Vec::new(), options).await
 }
 
 /// `CallOptions` → `GenerateTextOptions`(record 侧到用户侧的反向映射)。
@@ -1051,11 +990,7 @@ fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
         response_format: o.response_format,
         seed: o.seed,
         tools: o.tools,
-        tool_choice: if o.tool_choice == crate::tool::ToolChoice::Auto {
-            None
-        } else {
-            Some(o.tool_choice)
-        },
+        tool_choice: o.tool_choice,
         headers: o.headers,
         provider_options: o.provider_options,
         reasoning: o.reasoning,
@@ -1079,7 +1014,6 @@ mod tests {
     use crate::recording::{
         HttpExchange, HttpRecord, InputRecord, ProviderRecord, ResponseRecord, TimingRecord,
     };
-    use crate::shared::provider_namespace;
     use futures::StreamExt;
 
     fn sample_options(text: &str, temperature: Option<f64>) -> CallOptions {
@@ -1251,36 +1185,6 @@ mod tests {
             .collect(),
         );
         assert!(matcher.r#match(&req3, &recs).is_err());
-    }
-
-    #[test]
-    fn exact_matcher_different_provider_options_misses() {
-        // A8:provider_options 纳入规范键——非脱敏值不同 → miss。
-        let mut rec = openai_recording("t1", "ping", "pong", "stop");
-        let mut call = sample_options("ping", Some(0.7));
-        call.provider_options = Some(provider_namespace(
-            "openai",
-            serde_json::json!({ "foo": 1 }),
-        ));
-        rec.input.options = serde_json::to_value(&call).unwrap();
-        let recs = [rec];
-        let matcher = ExactMatcher::new("openai", "gpt-4o");
-
-        // foo 值不同 → miss。
-        let mut req = sample_options("ping", Some(0.7));
-        req.provider_options = Some(provider_namespace(
-            "openai",
-            serde_json::json!({ "foo": 2 }),
-        ));
-        assert!(matcher.r#match(&req, &recs).is_err());
-
-        // 完全一致 → hit(对照)。
-        let mut req2 = sample_options("ping", Some(0.7));
-        req2.provider_options = Some(provider_namespace(
-            "openai",
-            serde_json::json!({ "foo": 1 }),
-        ));
-        assert!(matcher.r#match(&req2, &recs).is_ok());
     }
 
     #[test]

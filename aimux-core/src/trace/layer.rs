@@ -226,7 +226,7 @@ impl RecordCtx {
             output_total: usage.output_tokens.total.map(u64::from),
             output_text: usage.output_tokens.text.map(u64::from),
             output_reasoning: usage.output_tokens.reasoning.map(u64::from),
-            raw: usage.raw.clone(),
+            raw: usage.raw.clone().map(serde_json::Value::Object),
         }
     }
 
@@ -589,6 +589,8 @@ impl LanguageModel for TraceLayer {
                     Ok(StreamPart::TextDelta { .. })
                         | Ok(StreamPart::ReasoningDelta { .. })
                         | Ok(StreamPart::ToolCall(_))
+                        | Ok(StreamPart::File(_))
+                        | Ok(StreamPart::ReasoningFile(_))
                 );
                 if is_model_output {
                     ttft_obs.store(started.elapsed().as_millis() as u64, Ordering::Relaxed);

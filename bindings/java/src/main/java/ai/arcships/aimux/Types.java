@@ -78,7 +78,7 @@ public final class Types {
          * instead of re-entering the polymorphic serializer — which would
          * otherwise infinite-recurse ({@code StackOverflowError}). Non-recursing
          * serializers that concrete variants may transitively contain
-         * ({@link ToolChoice}, {@link FileBytes}, {@link FileData}) are kept.
+         * ({@link ToolChoice}, {@link FileBytes}, {@link GeneratedFileData}) are kept.
          */
         public static final ObjectMapper INNER_MAPPER = createInnerMapper();
 
@@ -107,6 +107,8 @@ public final class Types {
             module.addDeserializer(FileBytes.class, new FileBytesDeserializer());
             module.addSerializer(FileData.class, new FileDataSerializer());
             module.addDeserializer(FileData.class, new FileDataDeserializer());
+            module.addSerializer(GeneratedFileData.class, new GeneratedFileDataSerializer());
+            module.addDeserializer(GeneratedFileData.class, new GeneratedFileDataDeserializer());
             // Externally-tagged polymorphic serializers — only on the public
             // mapper. They use INNER_MAPPER internally to avoid self-recursion.
             if (polymorphic) {
@@ -158,98 +160,86 @@ public final class Types {
     // Core nested types.
     // ─────────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Token usage detail (with cache breakdown). Every field is nullable because
-     * providers do not always populate all breakdowns.
-     */
-    public static class TokenUsage {
+    public static class InputTokenUsage {
         @JsonProperty("total") private Long total;
         @JsonProperty("no_cache") private Long noCache;
         @JsonProperty("cache_read") private Long cacheRead;
         @JsonProperty("cache_write") private Long cacheWrite;
-        @JsonProperty("text") private Long text;
-        @JsonProperty("reasoning") private Long reasoning;
-
-        @JsonCreator
-        TokenUsage() {}
-
-        private TokenUsage(Long total, Long noCache, Long cacheRead, Long cacheWrite, Long text, Long reasoning) {
+        @JsonCreator InputTokenUsage() {}
+        public InputTokenUsage(Long total, Long noCache, Long cacheRead, Long cacheWrite) {
             this.total = total;
             this.noCache = noCache;
             this.cacheRead = cacheRead;
             this.cacheWrite = cacheWrite;
-            this.text = text;
-            this.reasoning = reasoning;
         }
-
-        /** Convenience: a usage with only the total token count set. */
-        public static TokenUsage of(Long total) {
-            return new TokenUsage(total, null, null, null, null, null);
-        }
-
         public Long getTotal() { return total; }
         public Long getNoCache() { return noCache; }
         public Long getCacheRead() { return cacheRead; }
         public Long getCacheWrite() { return cacheWrite; }
-        public Long getText() { return text; }
-        public Long getReasoning() { return reasoning; }
-
         public static Builder builder() { return new Builder(); }
-
         public static class Builder {
             private Long total;
             private Long noCache;
             private Long cacheRead;
             private Long cacheWrite;
+            public Builder total(Long value) { this.total = value; return this; }
+            public Builder noCache(Long value) { this.noCache = value; return this; }
+            public Builder cacheRead(Long value) { this.cacheRead = value; return this; }
+            public Builder cacheWrite(Long value) { this.cacheWrite = value; return this; }
+            public InputTokenUsage build() { return new InputTokenUsage(total, noCache, cacheRead, cacheWrite); }
+        }
+        @Override public boolean equals(Object value) {
+            if (!(value instanceof InputTokenUsage)) return false;
+            InputTokenUsage other = (InputTokenUsage) value;
+            return Objects.equals(total, other.total) && Objects.equals(noCache, other.noCache) && Objects.equals(cacheRead, other.cacheRead) && Objects.equals(cacheWrite, other.cacheWrite);
+        }
+        @Override public int hashCode() { return Objects.hash(total, noCache, cacheRead, cacheWrite); }
+    }
+    public static class OutputTokenUsage {
+        @JsonProperty("total") private Long total;
+        @JsonProperty("text") private Long text;
+        @JsonProperty("reasoning") private Long reasoning;
+        @JsonCreator OutputTokenUsage() {}
+        public OutputTokenUsage(Long total, Long text, Long reasoning) {
+            this.total = total;
+            this.text = text;
+            this.reasoning = reasoning;
+        }
+        public Long getTotal() { return total; }
+        public Long getText() { return text; }
+        public Long getReasoning() { return reasoning; }
+        public static Builder builder() { return new Builder(); }
+        public static class Builder {
+            private Long total;
             private Long text;
             private Long reasoning;
-
-            public Builder total(Long v) { this.total = v; return this; }
-            public Builder noCache(Long v) { this.noCache = v; return this; }
-            public Builder cacheRead(Long v) { this.cacheRead = v; return this; }
-            public Builder cacheWrite(Long v) { this.cacheWrite = v; return this; }
-            public Builder text(Long v) { this.text = v; return this; }
-            public Builder reasoning(Long v) { this.reasoning = v; return this; }
-
-            public TokenUsage build() {
-                return new TokenUsage(total, noCache, cacheRead, cacheWrite, text, reasoning);
-            }
+            public Builder total(Long value) { this.total = value; return this; }
+            public Builder text(Long value) { this.text = value; return this; }
+            public Builder reasoning(Long value) { this.reasoning = value; return this; }
+            public OutputTokenUsage build() { return new OutputTokenUsage(total, text, reasoning); }
         }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof TokenUsage)) return false;
-            TokenUsage that = (TokenUsage) o;
-            return Objects.equals(total, that.total)
-                && Objects.equals(noCache, that.noCache)
-                && Objects.equals(cacheRead, that.cacheRead)
-                && Objects.equals(cacheWrite, that.cacheWrite)
-                && Objects.equals(text, that.text)
-                && Objects.equals(reasoning, that.reasoning);
+        @Override public boolean equals(Object value) {
+            if (!(value instanceof OutputTokenUsage)) return false;
+            OutputTokenUsage other = (OutputTokenUsage) value;
+            return Objects.equals(total, other.total) && Objects.equals(text, other.text) && Objects.equals(reasoning, other.reasoning);
         }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(total, noCache, cacheRead, cacheWrite, text, reasoning);
-        }
+        @Override public int hashCode() { return Objects.hash(total, text, reasoning); }
     }
-
     /**
      * Token usage statistics.
      *
-     * Mirrors `Usage.ts`: `{ input_tokens: TokenUsage, output_tokens: TokenUsage,
-     * raw?: JsonValue | null }`.
+     * Mirrors `Usage.ts`: `{ input_tokens: InputTokenUsage, output_tokens: OutputTokenUsage,
+     * raw?: JSONObject | null }`.
      */
     public static class Usage {
-        @JsonProperty("input_tokens") private TokenUsage inputTokens = new TokenUsage();
-        @JsonProperty("output_tokens") private TokenUsage outputTokens = new TokenUsage();
-        @JsonProperty("raw") private JsonNode raw;
+        @JsonProperty("input_tokens") private InputTokenUsage inputTokens = new InputTokenUsage();
+        @JsonProperty("output_tokens") private OutputTokenUsage outputTokens = new OutputTokenUsage();
+        @JsonProperty("raw") private ObjectNode raw;
 
         @JsonCreator
         Usage() {}
 
-        private Usage(TokenUsage inputTokens, TokenUsage outputTokens, JsonNode raw) {
+        private Usage(InputTokenUsage inputTokens, OutputTokenUsage outputTokens, ObjectNode raw) {
             this.inputTokens = inputTokens;
             this.outputTokens = outputTokens;
             this.raw = raw;
@@ -257,23 +247,23 @@ public final class Types {
 
         /** Convenience for tests/inspection. */
         public static Usage of(Long input, Long output) {
-            return new Usage(TokenUsage.of(input), TokenUsage.of(output), null);
+            return new Usage(InputTokenUsage.builder().total(input).build(), OutputTokenUsage.builder().total(output).build(), null);
         }
 
-        public TokenUsage getInputTokens() { return inputTokens; }
-        public TokenUsage getOutputTokens() { return outputTokens; }
-        public JsonNode getRaw() { return raw; }
+        public InputTokenUsage getInputTokens() { return inputTokens; }
+        public OutputTokenUsage getOutputTokens() { return outputTokens; }
+        public ObjectNode getRaw() { return raw; }
 
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
-            private TokenUsage inputTokens = new TokenUsage();
-            private TokenUsage outputTokens = new TokenUsage();
-            private JsonNode raw;
+            private InputTokenUsage inputTokens = new InputTokenUsage();
+            private OutputTokenUsage outputTokens = new OutputTokenUsage();
+            private ObjectNode raw;
 
-            public Builder inputTokens(TokenUsage v) { this.inputTokens = v; return this; }
-            public Builder outputTokens(TokenUsage v) { this.outputTokens = v; return this; }
-            public Builder raw(JsonNode v) { this.raw = v; return this; }
+            public Builder inputTokens(InputTokenUsage v) { this.inputTokens = v; return this; }
+            public Builder outputTokens(OutputTokenUsage v) { this.outputTokens = v; return this; }
+            public Builder raw(ObjectNode v) { this.raw = v; return this; }
 
             public Usage build() { return new Usage(inputTokens, outputTokens, raw); }
         }
@@ -501,6 +491,25 @@ public final class Types {
     // `Tool` is an internally-tagged union on `type` (`"function" | "provider"`).
     // ─────────────────────────────────────────────────────────────────────────────
 
+    public static class FunctionToolInputExample {
+        @JsonProperty("input") private ObjectNode input = emptyObject();
+
+        @JsonCreator
+        FunctionToolInputExample() {}
+
+        public FunctionToolInputExample(ObjectNode input) { this.input = input; }
+        public ObjectNode getInput() { return input; }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof FunctionToolInputExample
+                && Objects.equals(input, ((FunctionToolInputExample) o).input);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(input); }
+    }
+
     /**
      * A user-defined function tool.
      *
@@ -512,13 +521,13 @@ public final class Types {
         @JsonProperty("input_schema") private JsonNode inputSchema = emptyObject();
         @JsonProperty("strict") private Boolean strict;
         @JsonProperty("provider_options") private Map<String, JsonNode> providerOptions;
-        @JsonProperty("input_examples") private List<JsonNode> inputExamples;
+        @JsonProperty("input_examples") private List<FunctionToolInputExample> inputExamples;
 
         @JsonCreator
         FunctionTool() {}
 
         private FunctionTool(String name, String description, JsonNode inputSchema, Boolean strict,
-                             Map<String, JsonNode> providerOptions, List<JsonNode> inputExamples) {
+                             Map<String, JsonNode> providerOptions, List<FunctionToolInputExample> inputExamples) {
             this.name = name;
             this.description = description;
             this.inputSchema = inputSchema;
@@ -532,7 +541,7 @@ public final class Types {
         public JsonNode getInputSchema() { return inputSchema; }
         public Boolean getStrict() { return strict; }
         public Map<String, JsonNode> getProviderOptions() { return providerOptions; }
-        public List<JsonNode> getInputExamples() { return inputExamples; }
+        public List<FunctionToolInputExample> getInputExamples() { return inputExamples; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -542,14 +551,14 @@ public final class Types {
             private JsonNode inputSchema = emptyObject();
             private Boolean strict;
             private Map<String, JsonNode> providerOptions;
-            private List<JsonNode> inputExamples;
+            private List<FunctionToolInputExample> inputExamples;
 
             public Builder name(String v) { this.name = v; return this; }
             public Builder description(String v) { this.description = v; return this; }
             public Builder inputSchema(JsonNode v) { this.inputSchema = v; return this; }
             public Builder strict(Boolean v) { this.strict = v; return this; }
             public Builder providerOptions(Map<String, JsonNode> v) { this.providerOptions = v; return this; }
-            public Builder inputExamples(List<JsonNode> v) { this.inputExamples = v; return this; }
+            public Builder inputExamples(List<FunctionToolInputExample> v) { this.inputExamples = v; return this; }
 
             public FunctionTool build() {
                 return new FunctionTool(name, description, inputSchema, strict, providerOptions, inputExamples);
@@ -583,12 +592,12 @@ public final class Types {
     public static class ProviderTool {
         @JsonProperty("id") private String id = "";
         @JsonProperty("name") private String name = "";
-        @JsonProperty("args") private JsonNode args = emptyObject();
+        @JsonProperty("args") private ObjectNode args = emptyObject();
 
         @JsonCreator
         ProviderTool() {}
 
-        private ProviderTool(String id, String name, JsonNode args) {
+        private ProviderTool(String id, String name, ObjectNode args) {
             this.id = id;
             this.name = name;
             this.args = args;
@@ -596,18 +605,18 @@ public final class Types {
 
         public String getId() { return id; }
         public String getName() { return name; }
-        public JsonNode getArgs() { return args; }
+        public ObjectNode getArgs() { return args; }
 
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
             private String id = "";
             private String name = "";
-            private JsonNode args = emptyObject();
+            private ObjectNode args = emptyObject();
 
             public Builder id(String v) { this.id = v; return this; }
             public Builder name(String v) { this.name = v; return this; }
-            public Builder args(JsonNode v) { this.args = v; return this; }
+            public Builder args(ObjectNode v) { this.args = v; return this; }
 
             public ProviderTool build() { return new ProviderTool(id, name, args); }
         }
@@ -649,13 +658,13 @@ public final class Types {
             @JsonProperty("input_schema") private JsonNode inputSchema = emptyObject();
             @JsonProperty("strict") private Boolean strict;
             @JsonProperty("provider_options") private Map<String, JsonNode> providerOptions;
-            @JsonProperty("input_examples") private List<JsonNode> inputExamples;
+            @JsonProperty("input_examples") private List<FunctionToolInputExample> inputExamples;
 
             @JsonCreator
             Function() {}
 
             private Function(String name, String description, JsonNode inputSchema, Boolean strict,
-                             Map<String, JsonNode> providerOptions, List<JsonNode> inputExamples) {
+                             Map<String, JsonNode> providerOptions, List<FunctionToolInputExample> inputExamples) {
                 this.name = name;
                 this.description = description;
                 this.inputSchema = inputSchema;
@@ -675,7 +684,7 @@ public final class Types {
             public JsonNode getInputSchema() { return inputSchema; }
             public Boolean getStrict() { return strict; }
             public Map<String, JsonNode> getProviderOptions() { return providerOptions; }
-            public List<JsonNode> getInputExamples() { return inputExamples; }
+            public List<FunctionToolInputExample> getInputExamples() { return inputExamples; }
 
             public static Builder builder() { return new Builder(); }
 
@@ -685,14 +694,14 @@ public final class Types {
                 private JsonNode inputSchema = emptyObject();
                 private Boolean strict;
                 private Map<String, JsonNode> providerOptions;
-                private List<JsonNode> inputExamples;
+                private List<FunctionToolInputExample> inputExamples;
 
                 public Builder name(String v) { this.name = v; return this; }
                 public Builder description(String v) { this.description = v; return this; }
                 public Builder inputSchema(JsonNode v) { this.inputSchema = v; return this; }
                 public Builder strict(Boolean v) { this.strict = v; return this; }
                 public Builder providerOptions(Map<String, JsonNode> v) { this.providerOptions = v; return this; }
-                public Builder inputExamples(List<JsonNode> v) { this.inputExamples = v; return this; }
+                public Builder inputExamples(List<FunctionToolInputExample> v) { this.inputExamples = v; return this; }
 
                 public Function build() {
                     return new Function(name, description, inputSchema, strict, providerOptions, inputExamples);
@@ -722,12 +731,12 @@ public final class Types {
         public static class Provider extends Tool {
             @JsonProperty("id") private String id = "";
             @JsonProperty("name") private String name = "";
-            @JsonProperty("args") private JsonNode args = emptyObject();
+            @JsonProperty("args") private ObjectNode args = emptyObject();
 
             @JsonCreator
             Provider() {}
 
-            private Provider(String id, String name, JsonNode args) {
+            private Provider(String id, String name, ObjectNode args) {
                 this.id = id;
                 this.name = name;
                 this.args = args;
@@ -740,18 +749,18 @@ public final class Types {
 
             public String getId() { return id; }
             public String getName() { return name; }
-            public JsonNode getArgs() { return args; }
+            public ObjectNode getArgs() { return args; }
 
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
                 private String id = "";
                 private String name = "";
-                private JsonNode args = emptyObject();
+                private ObjectNode args = emptyObject();
 
                 public Builder id(String v) { this.id = v; return this; }
                 public Builder name(String v) { this.name = v; return this; }
-                public Builder args(JsonNode v) { this.args = v; return this; }
+                public Builder args(ObjectNode v) { this.args = v; return this; }
 
                 public Provider build() { return new Provider(id, name, args); }
             }
@@ -1411,6 +1420,106 @@ public final class Types {
                 return Objects.hash(toolCallId, result, toolName, isError, preliminary, dynamic, providerOptions);
             }
         }
+        public static class Custom extends ContentPart {
+            @JsonProperty("kind") private String kind;
+            @JsonProperty("provider_options") private JsonNode providerOptions;
+            @JsonCreator Custom() {}
+            public Custom(String kind, JsonNode providerOptions) {
+                this.kind = kind;
+                this.providerOptions = providerOptions;
+            }
+            public String getKind() { return kind; }
+            public JsonNode getProviderOptions() { return providerOptions; }
+            public static Builder builder() { return new Builder(); }
+            public static class Builder {
+                private String kind;
+                private JsonNode providerOptions;
+                public Builder kind(String value) { this.kind = value; return this; }
+                public Builder providerOptions(JsonNode value) { this.providerOptions = value; return this; }
+                public Custom build() { return new Custom(kind, providerOptions); }
+            }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof Custom)) return false;
+                Custom other = (Custom) value;
+                return Objects.equals(kind, other.kind) && Objects.equals(providerOptions, other.providerOptions);
+            }
+            @Override public int hashCode() { return Objects.hash(kind, providerOptions); }
+        }
+        public static class ReasoningFile extends ContentPart {
+            @JsonProperty("data") private GeneratedFileData data;
+            @JsonProperty("media_type") private String mediaType;
+            @JsonProperty("provider_options") private JsonNode providerOptions;
+            @JsonCreator ReasoningFile() {}
+            public ReasoningFile(GeneratedFileData data, String mediaType, JsonNode providerOptions) {
+                this.data = data;
+                this.mediaType = mediaType;
+                this.providerOptions = providerOptions;
+            }
+            public GeneratedFileData getData() { return data; }
+            public String getMediaType() { return mediaType; }
+            public JsonNode getProviderOptions() { return providerOptions; }
+            public static Builder builder() { return new Builder(); }
+            public static class Builder {
+                private GeneratedFileData data;
+                private String mediaType;
+                private JsonNode providerOptions;
+                public Builder data(GeneratedFileData value) { this.data = value; return this; }
+                public Builder mediaType(String value) { this.mediaType = value; return this; }
+                public Builder providerOptions(JsonNode value) { this.providerOptions = value; return this; }
+                public ReasoningFile build() { return new ReasoningFile(data, mediaType, providerOptions); }
+            }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof ReasoningFile)) return false;
+                ReasoningFile other = (ReasoningFile) value;
+                return Objects.equals(data, other.data) && Objects.equals(mediaType, other.mediaType) && Objects.equals(providerOptions, other.providerOptions);
+            }
+            @Override public int hashCode() { return Objects.hash(data, mediaType, providerOptions); }
+        }
+        public static class ToolApprovalRequest extends ContentPart {
+            @JsonProperty("approval_id") private String approvalId;
+            @JsonProperty("tool_call_id") private String toolCallId;
+            @JsonProperty("reason") private String reason;
+            @JsonProperty("is_automatic") private Boolean isAutomatic;
+            @JsonProperty("signature") private String signature;
+            @JsonProperty("input_schema_input") private JsonNode inputSchemaInput;
+            @JsonCreator ToolApprovalRequest() {}
+            public ToolApprovalRequest(String approvalId, String toolCallId, String reason, Boolean isAutomatic, String signature, JsonNode inputSchemaInput) {
+                this.approvalId = approvalId;
+                this.toolCallId = toolCallId;
+                this.reason = reason;
+                this.isAutomatic = isAutomatic;
+                this.signature = signature;
+                this.inputSchemaInput = inputSchemaInput;
+            }
+            public String getApprovalId() { return approvalId; }
+            public String getToolCallId() { return toolCallId; }
+            public String getReason() { return reason; }
+            public Boolean getIsAutomatic() { return isAutomatic; }
+            public String getSignature() { return signature; }
+            public JsonNode getInputSchemaInput() { return inputSchemaInput; }
+            public static Builder builder() { return new Builder(); }
+            public static class Builder {
+                private String approvalId;
+                private String toolCallId;
+                private String reason;
+                private Boolean isAutomatic;
+                private String signature;
+                private JsonNode inputSchemaInput;
+                public Builder approvalId(String value) { this.approvalId = value; return this; }
+                public Builder toolCallId(String value) { this.toolCallId = value; return this; }
+                public Builder reason(String value) { this.reason = value; return this; }
+                public Builder isAutomatic(Boolean value) { this.isAutomatic = value; return this; }
+                public Builder signature(String value) { this.signature = value; return this; }
+                public Builder inputSchemaInput(JsonNode value) { this.inputSchemaInput = value; return this; }
+                public ToolApprovalRequest build() { return new ToolApprovalRequest(approvalId, toolCallId, reason, isAutomatic, signature, inputSchemaInput); }
+            }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof ToolApprovalRequest)) return false;
+                ToolApprovalRequest other = (ToolApprovalRequest) value;
+                return Objects.equals(approvalId, other.approvalId) && Objects.equals(toolCallId, other.toolCallId) && Objects.equals(reason, other.reason) && Objects.equals(isAutomatic, other.isAutomatic) && Objects.equals(signature, other.signature) && Objects.equals(inputSchemaInput, other.inputSchemaInput);
+            }
+            @Override public int hashCode() { return Objects.hash(approvalId, toolCallId, reason, isAutomatic, signature, inputSchemaInput); }
+        }
     }
 
     /** Custom (de)serializer for {@link ContentPart} — internally tagged on `"type"`. */
@@ -1435,6 +1544,9 @@ public final class Types {
             if (value instanceof ContentPart.Reasoning) return "reasoning";
             if (value instanceof ContentPart.ToolCall) return "tool_call";
             if (value instanceof ContentPart.ToolResult) return "tool_result";
+            if (value instanceof ContentPart.Custom) return "custom";
+            if (value instanceof ContentPart.ReasoningFile) return "reasoning_file";
+            if (value instanceof ContentPart.ToolApprovalRequest) return "tool_approval_request";
             throw new IllegalArgumentException("Unknown ContentPart: " + value);
         }
     }
@@ -1458,6 +1570,9 @@ public final class Types {
                 case "reasoning": return AimuxJson.MAPPER.treeToValue(node, ContentPart.Reasoning.class);
                 case "tool_call": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ToolCall.class);
                 case "tool_result": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ToolResult.class);
+                case "custom": return AimuxJson.MAPPER.treeToValue(node, ContentPart.Custom.class);
+                case "reasoning_file": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ReasoningFile.class);
+                case "tool_approval_request": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ToolApprovalRequest.class);
                 default:
                     throw new IOException("Unknown ContentPart type: '" + type + "'");
             }
@@ -2007,7 +2122,7 @@ public final class Types {
     // ─────────────────────────────────────────────────────────────────────────────
     // File bytes / file data (shared V4 file types).
     //
-    // `FileBytes` and `FileData` are externally-tagged enums
+    // `FileBytes` and `GeneratedFileData` are externally-tagged enums
     // (`{"Binary": [...]}`, `{"Data": {"data": ...}}`, ...). Each is modeled with a
     // custom serializer that dispatches on the single tag key.
     // ─────────────────────────────────────────────────────────────────────────────
@@ -2145,26 +2260,30 @@ public final class Types {
         }
 
         public static class Url extends FileData {
-            private String url = "";
-
-            @JsonCreator
-            Url() {}
-
-            public Url(String url) { this.url = url; }
-
-            public String getUrl() { return url; }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) return true;
-                if (!(o instanceof Url)) return false;
-                return Objects.equals(url, ((Url) o).url);
+            @JsonProperty("url") private String url;
+            @JsonProperty("original_url") private String originalUrl;
+            @JsonCreator Url() {}
+            public Url(String url, String originalUrl) {
+                this.url = url;
+                this.originalUrl = originalUrl;
             }
-
-            @Override
-            public int hashCode() { return Objects.hash(url); }
+            public String getUrl() { return url; }
+            public String getOriginalUrl() { return originalUrl; }
+            public static Builder builder() { return new Builder(); }
+            public static class Builder {
+                private String url;
+                private String originalUrl;
+                public Builder url(String value) { this.url = value; return this; }
+                public Builder originalUrl(String value) { this.originalUrl = value; return this; }
+                public Url build() { return new Url(url, originalUrl); }
+            }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof Url)) return false;
+                Url other = (Url) value;
+                return Objects.equals(url, other.url) && Objects.equals(originalUrl, other.originalUrl);
+            }
+            @Override public int hashCode() { return Objects.hash(url, originalUrl); }
         }
-
         public static class Reference extends FileData {
             private JsonNode reference = emptyObject();
 
@@ -2219,11 +2338,19 @@ public final class Types {
                 gen.writeTree(AimuxJson.MAPPER.valueToTree(((FileData.Data) value).getData()));
                 gen.writeEndObject();
             } else if (value instanceof FileData.Url) {
-                gen.writeObjectField("Url", ((FileData.Url) value).getUrl());
+                gen.writeObjectFieldStart("Url");
+                gen.writeStringField("url", ((FileData.Url) value).getUrl());
+                if (((FileData.Url) value).getOriginalUrl() != null)
+                    gen.writeStringField("original_url", ((FileData.Url) value).getOriginalUrl());
+                gen.writeEndObject();
             } else if (value instanceof FileData.Reference) {
-                gen.writeObjectField("Reference", ((FileData.Reference) value).getReference());
+                gen.writeObjectFieldStart("Reference");
+                gen.writeObjectField("reference", ((FileData.Reference) value).getReference());
+                gen.writeEndObject();
             } else if (value instanceof FileData.Text) {
-                gen.writeObjectField("Text", ((FileData.Text) value).getText());
+                gen.writeObjectFieldStart("Text");
+                gen.writeStringField("text", ((FileData.Text) value).getText());
+                gen.writeEndObject();
             } else {
                 throw new IOException("Unknown FileData: " + value);
             }
@@ -2246,13 +2373,116 @@ public final class Types {
                 case "Data":
                     return new FileData.Data(AimuxJson.MAPPER.treeToValue(innerObj.get("data"), FileBytes.class));
                 case "Url":
-                    return new FileData.Url(inner.asText());
+                    return new FileData.Url(innerObj.path("url").asText(), innerObj.hasNonNull("original_url") ? innerObj.get("original_url").asText() : null);
                 case "Reference":
                     return new FileData.Reference(innerObj.get("reference") == null ? emptyObject() : innerObj.get("reference"));
                 case "Text":
-                    return new FileData.Text(inner.asText());
+                    return new FileData.Text(innerObj.path("text").asText());
                 default:
                     throw new IOException("Unknown FileData tag: '" + tag + "'");
+            }
+        }
+    }
+
+    /**
+     * File data as a tagged discriminated union.
+     *
+     * Mirrors `GeneratedFileData.ts`: `{"Data": {"data": FileBytes}} | {"Url": {"url": ...}}
+     * Generated files contain only data or a URL.
+     */
+    public abstract static class GeneratedFileData {
+        private GeneratedFileData() {}
+
+        public static class Data extends GeneratedFileData {
+            private FileBytes data = new FileBytes.Base64("");
+
+            @JsonCreator
+            Data() {}
+
+            public Data(FileBytes data) { this.data = data; }
+
+            public FileBytes getData() { return data; }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) return true;
+                if (!(o instanceof Data)) return false;
+                return Objects.equals(data, ((Data) o).data);
+            }
+
+            @Override
+            public int hashCode() { return Objects.hash(data); }
+        }
+
+        public static class Url extends GeneratedFileData {
+            @JsonProperty("url") private String url;
+            @JsonProperty("original_url") private String originalUrl;
+            @JsonCreator Url() {}
+            public Url(String url, String originalUrl) {
+                this.url = url;
+                this.originalUrl = originalUrl;
+            }
+            public String getUrl() { return url; }
+            public String getOriginalUrl() { return originalUrl; }
+            public static Builder builder() { return new Builder(); }
+            public static class Builder {
+                private String url;
+                private String originalUrl;
+                public Builder url(String value) { this.url = value; return this; }
+                public Builder originalUrl(String value) { this.originalUrl = value; return this; }
+                public Url build() { return new Url(url, originalUrl); }
+            }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof Url)) return false;
+                Url other = (Url) value;
+                return Objects.equals(url, other.url) && Objects.equals(originalUrl, other.originalUrl);
+            }
+            @Override public int hashCode() { return Objects.hash(url, originalUrl); }
+        }
+
+    }
+
+    /** Custom (de)serializer for {@link GeneratedFileData} — externally tagged. */
+    public static class GeneratedFileDataSerializer extends JsonSerializer<GeneratedFileData> {
+        @Override
+        public void serialize(GeneratedFileData value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+            gen.writeStartObject();
+            if (value instanceof GeneratedFileData.Data) {
+                gen.writeObjectFieldStart("Data");
+                gen.writeFieldName("data");
+                gen.writeTree(AimuxJson.MAPPER.valueToTree(((GeneratedFileData.Data) value).getData()));
+                gen.writeEndObject();
+            } else if (value instanceof GeneratedFileData.Url) {
+                gen.writeObjectFieldStart("Url");
+                gen.writeStringField("url", ((GeneratedFileData.Url) value).getUrl());
+                if (((GeneratedFileData.Url) value).getOriginalUrl() != null)
+                    gen.writeStringField("original_url", ((GeneratedFileData.Url) value).getOriginalUrl());
+                gen.writeEndObject();
+            } else {
+                throw new IOException("Unknown GeneratedFileData: " + value);
+            }
+            gen.writeEndObject();
+        }
+    }
+
+    /** Custom (de)serializer for {@link GeneratedFileData}. */
+    public static class GeneratedFileDataDeserializer extends JsonDeserializer<GeneratedFileData> {
+        @Override
+        public GeneratedFileData deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+            JsonNode node = p.getCodec().readTree(p);
+            if (!node.isObject() || node.size() != 1) {
+                throw new IOException("GeneratedFileData must be a single-key externally-tagged object, got: " + node);
+            }
+            String tag = node.fieldNames().next();
+            JsonNode inner = node.get(tag);
+            JsonNode innerObj = inner.isObject() ? inner : AimuxJson.MAPPER.createObjectNode();
+            switch (tag) {
+                case "Data":
+                    return new GeneratedFileData.Data(AimuxJson.MAPPER.treeToValue(innerObj.get("data"), FileBytes.class));
+                case "Url":
+                    return new GeneratedFileData.Url(innerObj.path("url").asText(), innerObj.hasNonNull("original_url") ? innerObj.get("original_url").asText() : null);
+                default:
+                    throw new IOException("Unknown GeneratedFileData tag: '" + tag + "'");
             }
         }
     }
@@ -2489,31 +2719,31 @@ public final class Types {
         }
 
         public static class File extends GenerateContent {
-            @JsonProperty("data") private FileData data = new FileData.Text("");
+            @JsonProperty("data") private GeneratedFileData data = new GeneratedFileData.Data(new FileBytes.Base64(""));
             @JsonProperty("media_type") private String mediaType = "";
             @JsonProperty("provider_metadata") private JsonNode providerMetadata;
 
             @JsonCreator
             File() {}
 
-            private File(FileData data, String mediaType, JsonNode providerMetadata) {
+            private File(GeneratedFileData data, String mediaType, JsonNode providerMetadata) {
                 this.data = data;
                 this.mediaType = mediaType;
                 this.providerMetadata = providerMetadata;
             }
 
-            public FileData getData() { return data; }
+            public GeneratedFileData getData() { return data; }
             public String getMediaType() { return mediaType; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
 
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
-                private FileData data = new FileData.Text("");
+                private GeneratedFileData data = new GeneratedFileData.Data(new FileBytes.Base64(""));
                 private String mediaType = "";
                 private JsonNode providerMetadata;
 
-                public Builder data(FileData v) { this.data = v; return this; }
+                public Builder data(GeneratedFileData v) { this.data = v; return this; }
                 public Builder mediaType(String v) { this.mediaType = v; return this; }
                 public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
 
@@ -2609,6 +2839,91 @@ public final class Types {
             }
         }
 
+        public static class Custom extends GenerateContent {
+            @JsonProperty("kind") private String kind;
+            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonCreator Custom() {}
+            public Custom(String kind, JsonNode providerMetadata) {
+                this.kind = kind;
+                this.providerMetadata = providerMetadata;
+            }
+            public String getKind() { return kind; }
+            public JsonNode getProviderMetadata() { return providerMetadata; }
+            public static Builder builder() { return new Builder(); }
+            public static class Builder {
+                private String kind;
+                private JsonNode providerMetadata;
+                public Builder kind(String value) { this.kind = value; return this; }
+                public Builder providerMetadata(JsonNode value) { this.providerMetadata = value; return this; }
+                public Custom build() { return new Custom(kind, providerMetadata); }
+            }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof Custom)) return false;
+                Custom other = (Custom) value;
+                return Objects.equals(kind, other.kind) && Objects.equals(providerMetadata, other.providerMetadata);
+            }
+            @Override public int hashCode() { return Objects.hash(kind, providerMetadata); }
+        }
+        public static class ReasoningFile extends GenerateContent {
+            @JsonProperty("data") private GeneratedFileData data;
+            @JsonProperty("media_type") private String mediaType;
+            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonCreator ReasoningFile() {}
+            public ReasoningFile(GeneratedFileData data, String mediaType, JsonNode providerMetadata) {
+                this.data = data;
+                this.mediaType = mediaType;
+                this.providerMetadata = providerMetadata;
+            }
+            public GeneratedFileData getData() { return data; }
+            public String getMediaType() { return mediaType; }
+            public JsonNode getProviderMetadata() { return providerMetadata; }
+            public static Builder builder() { return new Builder(); }
+            public static class Builder {
+                private GeneratedFileData data;
+                private String mediaType;
+                private JsonNode providerMetadata;
+                public Builder data(GeneratedFileData value) { this.data = value; return this; }
+                public Builder mediaType(String value) { this.mediaType = value; return this; }
+                public Builder providerMetadata(JsonNode value) { this.providerMetadata = value; return this; }
+                public ReasoningFile build() { return new ReasoningFile(data, mediaType, providerMetadata); }
+            }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof ReasoningFile)) return false;
+                ReasoningFile other = (ReasoningFile) value;
+                return Objects.equals(data, other.data) && Objects.equals(mediaType, other.mediaType) && Objects.equals(providerMetadata, other.providerMetadata);
+            }
+            @Override public int hashCode() { return Objects.hash(data, mediaType, providerMetadata); }
+        }
+        public static class ToolApprovalRequest extends GenerateContent {
+            @JsonProperty("approval_id") private String approvalId;
+            @JsonProperty("tool_call_id") private String toolCallId;
+            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonCreator ToolApprovalRequest() {}
+            public ToolApprovalRequest(String approvalId, String toolCallId, JsonNode providerMetadata) {
+                this.approvalId = approvalId;
+                this.toolCallId = toolCallId;
+                this.providerMetadata = providerMetadata;
+            }
+            public String getApprovalId() { return approvalId; }
+            public String getToolCallId() { return toolCallId; }
+            public JsonNode getProviderMetadata() { return providerMetadata; }
+            public static Builder builder() { return new Builder(); }
+            public static class Builder {
+                private String approvalId;
+                private String toolCallId;
+                private JsonNode providerMetadata;
+                public Builder approvalId(String value) { this.approvalId = value; return this; }
+                public Builder toolCallId(String value) { this.toolCallId = value; return this; }
+                public Builder providerMetadata(JsonNode value) { this.providerMetadata = value; return this; }
+                public ToolApprovalRequest build() { return new ToolApprovalRequest(approvalId, toolCallId, providerMetadata); }
+            }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof ToolApprovalRequest)) return false;
+                ToolApprovalRequest other = (ToolApprovalRequest) value;
+                return Objects.equals(approvalId, other.approvalId) && Objects.equals(toolCallId, other.toolCallId) && Objects.equals(providerMetadata, other.providerMetadata);
+            }
+            @Override public int hashCode() { return Objects.hash(approvalId, toolCallId, providerMetadata); }
+        }
         /** Fallback for variants introduced after this wrapper was written. */
         public static class Unknown extends GenerateContent {
             private String tag;
@@ -2646,6 +2961,9 @@ public final class Types {
         if (value instanceof GenerateContent.Reasoning) return "Reasoning";
         if (value instanceof GenerateContent.File) return "File";
         if (value instanceof GenerateContent.ToolResult) return "ToolResult";
+        if (value instanceof GenerateContent.Custom) return "Custom";
+        if (value instanceof GenerateContent.ReasoningFile) return "ReasoningFile";
+        if (value instanceof GenerateContent.ToolApprovalRequest) return "ToolApprovalRequest";
         if (value instanceof GenerateContent.Unknown) return ((GenerateContent.Unknown) value).getTag();
         throw new IllegalArgumentException("Unknown GenerateContent: " + value);
     }
@@ -2686,6 +3004,9 @@ public final class Types {
                 case "Reasoning": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.Reasoning.class);
                 case "File": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.File.class);
                 case "ToolResult": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.ToolResult.class);
+                case "Custom": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.Custom.class);
+                case "ReasoningFile": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.ReasoningFile.class);
+                case "ToolApprovalRequest": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.ToolApprovalRequest.class);
                 default: return new GenerateContent.Unknown(tag, inner);
             }
         }
@@ -2805,6 +3126,7 @@ public final class Types {
      * Mirrors `GenerateTextResult.ts`.
      */
     public static class GenerateTextResult {
+        @JsonProperty("content") private List<JsonNode> content = new ArrayList<>();
         @JsonProperty("text") private String text = "";
         @JsonProperty("tool_calls") private List<ToolCall> toolCalls = new ArrayList<>();
         @JsonProperty("finish_reason") private FinishReason finishReason = new FinishReason();
@@ -2847,6 +3169,7 @@ public final class Types {
             this.totalUsage = totalUsage;
         }
 
+        public List<JsonNode> getContent() { return content; }
         public String getText() { return text; }
         public List<ToolCall> getToolCalls() { return toolCalls; }
         public FinishReason getFinishReason() { return finishReason; }
@@ -3043,6 +3366,7 @@ public final class Types {
      * weak types ({@link JsonNode}) — same strategy as {@link GenerateTextResult}.
      */
     public static class StreamTextResultAggregated {
+        @JsonProperty("content") private List<JsonNode> content = new ArrayList<>();
         @JsonProperty("text") private String text = "";
         @JsonProperty("reasoning") private List<JsonNode> reasoning = new ArrayList<>();
         @JsonProperty("reasoning_text") private String reasoningText = "";
@@ -3082,6 +3406,7 @@ public final class Types {
             this.responseMessages = responseMessages;
         }
 
+        public List<JsonNode> getContent() { return content; }
         public String getText() { return text; }
         public List<JsonNode> getReasoning() { return reasoning; }
         public String getReasoningText() { return reasoningText; }
@@ -3706,31 +4031,31 @@ public final class Types {
 
         /** A file generated by the model (e.g. an image or document). */
         public static class File extends StreamPart {
-            @JsonProperty("data") private JsonNode data = emptyObject();
+            @JsonProperty("data") private GeneratedFileData data = new GeneratedFileData.Data(new FileBytes.Base64(""));
             @JsonProperty("media_type") private String mediaType = "";
             @JsonProperty("provider_metadata") private JsonNode providerMetadata;
 
             @JsonCreator
             File() {}
 
-            private File(JsonNode data, String mediaType, JsonNode providerMetadata) {
+            private File(GeneratedFileData data, String mediaType, JsonNode providerMetadata) {
                 this.data = data;
                 this.mediaType = mediaType;
                 this.providerMetadata = providerMetadata;
             }
 
-            public JsonNode getData() { return data; }
+            public GeneratedFileData getData() { return data; }
             public String getMediaType() { return mediaType; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
 
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
-                private JsonNode data = emptyObject();
+                private GeneratedFileData data = new GeneratedFileData.Data(new FileBytes.Base64(""));
                 private String mediaType = "";
                 private JsonNode providerMetadata;
 
-                public Builder data(JsonNode v) { this.data = v; return this; }
+                public Builder data(GeneratedFileData v) { this.data = v; return this; }
                 public Builder mediaType(String v) { this.mediaType = v; return this; }
                 public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
 
@@ -4041,6 +4366,106 @@ public final class Types {
             public int hashCode() { return Objects.hash(error); }
         }
 
+        public static class Custom extends StreamPart {
+            @JsonProperty("kind") private String kind;
+            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonCreator Custom() {}
+            public Custom(String kind, JsonNode providerMetadata) {
+                this.kind = kind;
+                this.providerMetadata = providerMetadata;
+            }
+            public String getKind() { return kind; }
+            public JsonNode getProviderMetadata() { return providerMetadata; }
+            public static Builder builder() { return new Builder(); }
+            public static class Builder {
+                private String kind;
+                private JsonNode providerMetadata;
+                public Builder kind(String value) { this.kind = value; return this; }
+                public Builder providerMetadata(JsonNode value) { this.providerMetadata = value; return this; }
+                public Custom build() { return new Custom(kind, providerMetadata); }
+            }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof Custom)) return false;
+                Custom other = (Custom) value;
+                return Objects.equals(kind, other.kind) && Objects.equals(providerMetadata, other.providerMetadata);
+            }
+            @Override public int hashCode() { return Objects.hash(kind, providerMetadata); }
+        }
+        public static class ReasoningFile extends StreamPart {
+            @JsonProperty("file") private GenerateContent.File file;
+            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonCreator ReasoningFile() {}
+            public ReasoningFile(GenerateContent.File file, JsonNode providerMetadata) {
+                this.file = file;
+                this.providerMetadata = providerMetadata;
+            }
+            public GenerateContent.File getFile() { return file; }
+            public JsonNode getProviderMetadata() { return providerMetadata; }
+            public static Builder builder() { return new Builder(); }
+            public static class Builder {
+                private GenerateContent.File file;
+                private JsonNode providerMetadata;
+                public Builder file(GenerateContent.File value) { this.file = value; return this; }
+                public Builder providerMetadata(JsonNode value) { this.providerMetadata = value; return this; }
+                public ReasoningFile build() { return new ReasoningFile(file, providerMetadata); }
+            }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof ReasoningFile)) return false;
+                ReasoningFile other = (ReasoningFile) value;
+                return Objects.equals(file, other.file) && Objects.equals(providerMetadata, other.providerMetadata);
+            }
+            @Override public int hashCode() { return Objects.hash(file, providerMetadata); }
+        }
+        public static class ToolApprovalRequest extends StreamPart {
+            @JsonProperty("approval_id") private String approvalId;
+            @JsonProperty("tool_call") private Types.ToolCall toolCall;
+            @JsonProperty("reason") private String reason;
+            @JsonProperty("is_automatic") private Boolean isAutomatic;
+            @JsonProperty("signature") private String signature;
+            @JsonProperty("tool_call_id") private String toolCallId;
+            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonCreator ToolApprovalRequest() {}
+            public ToolApprovalRequest(String approvalId, Types.ToolCall toolCall, String reason, Boolean isAutomatic, String signature, String toolCallId, JsonNode providerMetadata) {
+                this.approvalId = approvalId;
+                this.toolCall = toolCall;
+                this.reason = reason;
+                this.isAutomatic = isAutomatic;
+                this.signature = signature;
+                this.toolCallId = toolCallId;
+                this.providerMetadata = providerMetadata;
+            }
+            public String getApprovalId() { return approvalId; }
+            public Types.ToolCall getToolCall() { return toolCall; }
+            public String getReason() { return reason; }
+            public Boolean getIsAutomatic() { return isAutomatic; }
+            public String getSignature() { return signature; }
+            public String getToolCallId() { return toolCallId; }
+            public JsonNode getProviderMetadata() { return providerMetadata; }
+            public static Builder builder() { return new Builder(); }
+            public static class Builder {
+                private String approvalId;
+                private Types.ToolCall toolCall;
+                private String reason;
+                private Boolean isAutomatic;
+                private String signature;
+                private String toolCallId;
+                private JsonNode providerMetadata;
+                public Builder approvalId(String value) { this.approvalId = value; return this; }
+                public Builder toolCall(Types.ToolCall value) { this.toolCall = value; return this; }
+                public Builder reason(String value) { this.reason = value; return this; }
+                public Builder isAutomatic(Boolean value) { this.isAutomatic = value; return this; }
+                public Builder signature(String value) { this.signature = value; return this; }
+                public Builder toolCallId(String value) { this.toolCallId = value; return this; }
+                public Builder providerMetadata(JsonNode value) { this.providerMetadata = value; return this; }
+                public ToolApprovalRequest build() { return new ToolApprovalRequest(approvalId, toolCall, reason, isAutomatic, signature, toolCallId, providerMetadata); }
+            }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof ToolApprovalRequest)) return false;
+                ToolApprovalRequest other = (ToolApprovalRequest) value;
+                return Objects.equals(approvalId, other.approvalId) && Objects.equals(toolCall, other.toolCall) && Objects.equals(reason, other.reason) && Objects.equals(isAutomatic, other.isAutomatic) && Objects.equals(signature, other.signature) && Objects.equals(toolCallId, other.toolCallId) && Objects.equals(providerMetadata, other.providerMetadata);
+            }
+            @Override public int hashCode() { return Objects.hash(approvalId, toolCall, reason, isAutomatic, signature, toolCallId, providerMetadata); }
+        }
         /** Fallback for variants introduced after this wrapper was written. */
         public static class Unknown extends StreamPart {
             private String tag;
@@ -4090,6 +4515,9 @@ public final class Types {
         if (value instanceof StreamPart.Source) return "Source";
         if (value instanceof StreamPart.Raw) return "Raw";
         if (value instanceof StreamPart.Error) return "Error";
+        if (value instanceof StreamPart.Custom) return "Custom";
+        if (value instanceof StreamPart.ReasoningFile) return "ReasoningFile";
+        if (value instanceof StreamPart.ToolApprovalRequest) return "ToolApprovalRequest";
         if (value instanceof StreamPart.Unknown) return ((StreamPart.Unknown) value).getTag();
         throw new IllegalArgumentException("Unknown StreamPart: " + value);
     }
@@ -4142,6 +4570,9 @@ public final class Types {
                 case "Source": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Source.class);
                 case "Raw": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Raw.class);
                 case "Error": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Error.class);
+                case "Custom": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Custom.class);
+                case "ReasoningFile": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ReasoningFile.class);
+                case "ToolApprovalRequest": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolApprovalRequest.class);
                 default: return new StreamPart.Unknown(tag, inner);
             }
         }

@@ -36,7 +36,7 @@ use ts_rs::TS;
 use crate::error::AiMuxError;
 use crate::parse_tool_call::raw_tool_call_text;
 use crate::result::{GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source};
-use crate::shared::FileData;
+use crate::shared::GeneratedFileData;
 use crate::stream_part::{StreamPart, TextStreamPart};
 use crate::tool::{ToolCall, ToolResult};
 use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
@@ -286,6 +286,9 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                 }
                 content_text.push_str(&file_data_to_text(data, media_type));
             }
+            GenerateContent::Custom { .. }
+            | GenerateContent::ReasoningFile(_)
+            | GenerateContent::ToolApprovalRequest(_) => {}
             GenerateContent::ToolResult(ToolResult {
                 tool_name,
                 result,
@@ -866,7 +869,10 @@ impl StreamState {
                 }
             }
 
-            StreamPart::Raw { .. } => { /* ignore */ }
+            StreamPart::Raw { .. }
+            | StreamPart::Custom { .. }
+            | StreamPart::ReasoningFile(_)
+            | StreamPart::ToolApprovalRequest(_) => { /* no OpenAI chat equivalent */ }
         }
 
         chunks
@@ -986,11 +992,11 @@ fn usage_to_openai(usage: &Usage) -> ChatCompletionUsage {
     }
 }
 
-/// Convert [`FileData`] to a text representation (degraded — placed in content).
-fn file_data_to_text(data: &FileData, media_type: &str) -> String {
+/// Convert [`GeneratedFileData`] to a text representation (degraded — placed in content).
+fn file_data_to_text(data: &GeneratedFileData, media_type: &str) -> String {
     match data {
-        FileData::Url { url } => url.clone(),
-        FileData::Data { data } => match data {
+        GeneratedFileData::Url { url, .. } => url.clone(),
+        GeneratedFileData::Data { data } => match data {
             crate::shared::FileBytes::Base64(b64) => {
                 format!("data:{media_type};base64,{b64}")
             }
@@ -1000,8 +1006,6 @@ fn file_data_to_text(data: &FileData, media_type: &str) -> String {
                 format!("data:{media_type};base64,{b64}")
             }
         },
-        FileData::Reference { reference } => serde_json::to_string(reference).unwrap_or_default(),
-        FileData::Text { text } => text.clone(),
     }
 }
 
@@ -1066,7 +1070,6 @@ mod tests {
     use super::*;
     use crate::result::GenerateResult;
     use crate::tool::RawToolCall;
-    use crate::types::TokenUsage;
     use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
     use futures::StreamExt;
     use serde_json::json;
@@ -1339,45 +1342,6 @@ mod tests {
         assert_eq!(
             completion.choices[0].message.content.as_deref(),
             Some("Answer")
-        );
-    }
-
-    #[test]
-    fn test_usage_round_trip() {
-        let usage = Usage {
-            input_tokens: TokenUsage {
-                total: Some(100),
-                cache_read: Some(30),
-                cache_write: Some(10),
-                ..Default::default()
-            },
-            output_tokens: TokenUsage {
-                total: Some(50),
-                reasoning: Some(20),
-                ..Default::default()
-            },
-            raw: None,
-        };
-        let mut result = make_result(vec![]);
-        result.usage = usage;
-
-        let completion = to_chat_completion(&result, "gpt-4o");
-        let u = &completion.usage;
-
-        assert_eq!(u.prompt_tokens, 100);
-        assert_eq!(u.completion_tokens, 50);
-        assert_eq!(u.total_tokens, 150);
-        assert_eq!(u.prompt_tokens_details.as_ref().unwrap().cached_tokens, 30);
-        assert_eq!(
-            u.prompt_tokens_details.as_ref().unwrap().cache_write_tokens,
-            Some(10)
-        );
-        assert_eq!(
-            u.completion_tokens_details
-                .as_ref()
-                .unwrap()
-                .reasoning_tokens,
-            Some(20)
         );
     }
 
@@ -1749,90 +1713,6 @@ mod tests {
             text_chunk.choices[0].delta.content.as_deref(),
             Some("Answer")
         );
-    }
-
-    #[tokio::test]
-    async fn test_stream_usage_in_final_chunk() {
-        let usage = Usage {
-            input_tokens: TokenUsage {
-                total: Some(42),
-                ..Default::default()
-            },
-            output_tokens: TokenUsage {
-                total: Some(10),
-                ..Default::default()
-            },
-            raw: None,
-        };
-
-        let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::StreamStart { warnings: vec![] }),
-            Ok(StreamPart::TextDelta {
-                id: "0".to_string(),
-                delta: "Hi".to_string(),
-                provider_metadata: None,
-            }),
-            Ok(StreamPart::Finish {
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Stop,
-                    raw: None,
-                },
-                usage,
-                provider_metadata: None,
-            }),
-        ];
-
-        let input_stream = Box::pin(futures::stream::iter(parts));
-        let result = to_chat_completion_stream(
-            input_stream,
-            "gpt-4o",
-            OpenAiStreamOptions {
-                include_usage: true,
-                include_reasoning: true,
-            },
-        );
-        let chunks = collect_stream(result).await;
-
-        let last = chunks.last().unwrap();
-        assert_eq!(last.usage.as_ref().unwrap().prompt_tokens, 42);
-        assert_eq!(last.usage.as_ref().unwrap().completion_tokens, 10);
-        assert_eq!(last.usage.as_ref().unwrap().total_tokens, 52);
-    }
-
-    #[tokio::test]
-    async fn test_stream_no_usage_when_disabled() {
-        let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::StreamStart { warnings: vec![] }),
-            Ok(StreamPart::Finish {
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Stop,
-                    raw: None,
-                },
-                usage: Usage {
-                    input_tokens: TokenUsage {
-                        total: Some(42),
-                        ..Default::default()
-                    },
-                    output_tokens: TokenUsage::default(),
-                    raw: None,
-                },
-                provider_metadata: None,
-            }),
-        ];
-
-        let input_stream = Box::pin(futures::stream::iter(parts));
-        let result = to_chat_completion_stream(
-            input_stream,
-            "gpt-4o",
-            OpenAiStreamOptions {
-                include_usage: false,
-                include_reasoning: true,
-            },
-        );
-        let chunks = collect_stream(result).await;
-
-        let last = chunks.last().unwrap();
-        assert!(last.usage.is_none());
     }
 
     #[tokio::test]

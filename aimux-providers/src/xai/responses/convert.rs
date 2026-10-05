@@ -9,7 +9,7 @@
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+    ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
@@ -66,21 +66,21 @@ pub fn convert_xai_responses_usage(usage: &XaiResponsesUsage) -> aimux_core::typ
     };
 
     aimux_core::types::Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input_total as u32),
             no_cache: Some(input_no_cache as u32),
             cache_read: Some(cache_read as u32),
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(usage.output_tokens as u32),
             text: Some((usage.output_tokens - reasoning) as u32),
             reasoning: Some(reasoning as u32),
-            ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -330,7 +330,7 @@ pub fn convert_to_xai_responses_input(
                                     None,
                                     &file.provider_options,
                                 ),
-                                FileData::Url { url }
+                                FileData::Url { url, .. }
                                     if file.media_type.split('/').next() == Some("image") =>
                                 {
                                     convert_image_part(
@@ -340,7 +340,7 @@ pub fn convert_to_xai_responses_input(
                                         &file.provider_options,
                                     )
                                 }
-                                FileData::Url { url } => {
+                                FileData::Url { url, .. } => {
                                     json!({ "type": "input_file", "file_url": url })
                                 }
                                 FileData::Reference { reference } => {
@@ -408,11 +408,7 @@ pub fn convert_to_xai_responses_input(
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
                             let item_id = id.unwrap_or_else(|| tool_call_id.clone());
-                            let arguments = if tool_input.is_null() {
-                                "{}".to_string()
-                            } else {
-                                tool_input.to_string()
-                            };
+                            let arguments = tool_input.to_string();
                             input.push(json!({
                                 "type": "function_call",
                                 "id": item_id,
@@ -474,13 +470,13 @@ pub fn convert_to_xai_responses_input(
                 for part in content {
                     let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
-                        result,
+                        output,
                         ..
-                    }) = part;
-                    let output_value = match result {
-                        Value::String(s) => s.clone(),
-                        other => other.to_string(),
+                    }) = part
+                    else {
+                        continue;
                     };
+                    let output_value = convert_tool_result_output(output);
                     input.push(json!({
                         "type": "function_call_output",
                         "call_id": tool_call_id,
@@ -492,6 +488,50 @@ pub fn convert_to_xai_responses_input(
     }
 
     Ok((input, warnings))
+}
+
+fn convert_tool_result_output(output: &ToolResultOutput) -> Value {
+    match output {
+        ToolResultOutput::ExecutionDenied { reason, .. } => {
+            json!(reason.as_deref().unwrap_or("tool execution denied"))
+        }
+        ToolResultOutput::Content { value } => {
+            let mut parts = Vec::new();
+            for item in value {
+                match item {
+                    ToolResultContent::Text(part) => {
+                        parts.push(json!({"type":"input_text", "text":part.text}))
+                    }
+                    ToolResultContent::File(part)
+                        if part.media_type.split('/').next() == Some("image") =>
+                    {
+                        let url = match &part.data {
+                            FileData::Url { url, .. } => url.clone(),
+                            FileData::Data { data } => {
+                                use base64::Engine;
+                                let b64 = match data {
+                                    FileBytes::Binary(bytes) => {
+                                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                                    }
+                                    FileBytes::Base64(data) => data.clone(),
+                                };
+                                format!(
+                                    "data:{};base64,{}",
+                                    resolve_full_media_type(&part.media_type, &b64),
+                                    b64
+                                )
+                            }
+                            _ => continue,
+                        };
+                        parts.push(json!({"type":"input_image", "image_url":url}));
+                    }
+                    _ => {}
+                }
+            }
+            json!(parts)
+        }
+        _ => crate::openai::convert::tool_result_to_content(output),
+    }
 }
 
 fn convert_image_part(
@@ -559,7 +599,7 @@ pub fn build_responses_request_body(
     let (input, input_warnings) = convert_to_xai_responses_input(&options.prompt)?;
     warnings.extend(input_warnings);
 
-    let prepared = prepare_responses_tools(&options.tools, Some(&options.tool_choice));
+    let prepared = prepare_responses_tools(&options.tools, options.tool_choice.as_ref());
     for tw in &prepared.tool_warnings {
         warnings.push(tw.clone());
     }

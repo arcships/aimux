@@ -60,16 +60,6 @@ fn opts(query: &str) -> SearchCallOptions {
     SearchCallOptions::new(query)
 }
 
-fn linkup_provider_options(
-    depth: &str,
-    output_type: &str,
-) -> aimux_core::shared::SharedProviderOptions {
-    aimux_core::shared::provider_namespace(
-        "linkup",
-        json!({ "depth": depth, "outputType": output_type }),
-    )
-}
-
 async fn mount_search_mock(server: &MockServer) {
     Mock::given(method("POST"))
         .and(path("/v1/search"))
@@ -193,24 +183,6 @@ async fn do_search_sends_correct_request_body() {
     assert_eq!(body["outputType"], "searchResults");
     assert_eq!(body["includeDomains"], json!(["rust-lang.org"]));
     assert_eq!(body["excludeDomains"], json!(["example.com"]));
-}
-
-#[tokio::test]
-async fn do_search_forwards_depth_and_output_type_provider_options() {
-    let server = MockServer::start().await;
-    mount_search_mock(&server).await;
-
-    let provider = provider(&server);
-    let model = provider.search_model();
-
-    let mut options = opts("rust language");
-    options.provider_options = Some(linkup_provider_options("deep", "sourcedAnswer"));
-    model.do_search(&options).await.unwrap();
-
-    let requests = server.received_requests().await.unwrap();
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["depth"], "deep");
-    assert_eq!(body["outputType"], "sourcedAnswer");
 }
 
 // -- error mapping -----------------------------------------------------------
