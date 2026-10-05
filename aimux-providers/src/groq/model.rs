@@ -327,7 +327,6 @@ impl LanguageModel for GroqChatLanguageModel {
                 input: tool_call.function.arguments,
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
                 provider_metadata: None,
             }));
         }

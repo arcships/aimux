@@ -116,7 +116,6 @@ void main() {
       'input': '{"town":"Tokyo"}',
       'provider_executed': true,
       'dynamic': true,
-      'thought_signature': 'sig',
       'provider_metadata': {
         'google': {'x': 1},
       },
@@ -127,7 +126,6 @@ void main() {
       'input': '{"city":"Tokyo"}',
       'provider_executed': true,
       'dynamic': true,
-      'thought_signature': 'sig',
       'provider_metadata': {
         'google': {'x': 1},
       },

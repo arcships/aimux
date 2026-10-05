@@ -156,8 +156,6 @@ class ToolCall {
   // and mapped to the `dynamic` JSON key.
   @JsonKey(name: 'dynamic')
   final bool? isDynamic;
-  @JsonKey(name: 'thought_signature')
-  final String? thoughtSignature;
   /// Additional provider-specific metadata associated with this call.
   @JsonKey(name: 'provider_metadata', includeIfNull: false)
   final dynamic providerMetadata;
@@ -172,7 +170,6 @@ class ToolCall {
     required this.input,
     this.providerExecuted,
     this.isDynamic,
-    this.thoughtSignature,
     this.providerMetadata,
     this.invalid,
     this.error,
@@ -212,10 +209,6 @@ class RawToolCall {
   /// identifier, so the field is `isDynamic` and maps to the `dynamic` key.
   final bool? isDynamic;
 
-  /// Provider-assigned thought signature (e.g. Gemini `thoughtSignature`),
-  /// echoed back verbatim on the next turn.
-  final String? thoughtSignature;
-
   /// Additional provider-specific metadata associated with this call.
   final dynamic providerMetadata;
 
@@ -225,7 +218,6 @@ class RawToolCall {
     required this.input,
     this.providerExecuted,
     this.isDynamic,
-    this.thoughtSignature,
     this.providerMetadata,
   });
 
@@ -235,7 +227,6 @@ class RawToolCall {
         input: json['input'] as String,
         providerExecuted: json['provider_executed'] as bool?,
         isDynamic: json['dynamic'] as bool?,
-        thoughtSignature: json['thought_signature'] as String?,
         providerMetadata: json['provider_metadata'],
       );
 
@@ -248,7 +239,6 @@ class RawToolCall {
         input: input ?? this.input,
         providerExecuted: providerExecuted,
         isDynamic: isDynamic,
-        thoughtSignature: thoughtSignature,
         providerMetadata: providerMetadata,
       );
 
@@ -258,7 +248,6 @@ class RawToolCall {
         'input': input,
         if (providerExecuted != null) 'provider_executed': providerExecuted,
         if (isDynamic != null) 'dynamic': isDynamic,
-        if (thoughtSignature != null) 'thought_signature': thoughtSignature,
         if (providerMetadata != null) 'provider_metadata': providerMetadata,
       };
 }
@@ -429,10 +418,18 @@ class GenerateResponse {
   final String? id;
   final String? timestamp;
   final String? modelId;
+  final Map<String, String>? headers;
   final dynamic body;
-  GenerateResponse({this.id, this.timestamp, this.modelId, this.body});
-  factory GenerateResponse.fromJson(Map<String, dynamic> json) => GenerateResponse(id: json['id'] as String?, timestamp: json['timestamp'] as String?, modelId: json['model_id'] as String?, body: json['body']);
-  Map<String, dynamic> toJson() => {'id': id, 'timestamp': timestamp, 'model_id': modelId, if (body != null) 'body': body};
+  GenerateResponse({this.id, this.timestamp, this.modelId, this.headers, this.body});
+  factory GenerateResponse.fromJson(Map<String, dynamic> json) => GenerateResponse(id: json['id'] as String?, timestamp: json['timestamp'] as String?, modelId: json['model_id'] as String?, headers: (json['headers'] as Map<String, dynamic>?)?.map((key, value) => MapEntry(key, value as String)), body: json['body']);
+  Map<String, dynamic> toJson() => {'id': id, 'timestamp': timestamp, 'model_id': modelId, if (headers != null) 'headers': headers, if (body != null) 'body': body};
+}
+
+class GenerateRequest {
+  final dynamic body;
+  GenerateRequest({this.body});
+  factory GenerateRequest.fromJson(Map<String, dynamic> json) => GenerateRequest(body: json['body']);
+  Map<String, dynamic> toJson() => {if (body != null) 'body': body};
 }
 
 /// A content item in a `GenerateResult`. Mirrors `GenerateContent.ts`
@@ -514,7 +511,6 @@ final class GenerateContentToolCall extends GenerateContent {
   final dynamic input;
   final bool? providerExecuted;
   final bool? isDynamic;
-  final String? thoughtSignature;
   final Map<String, dynamic>? providerMetadata;
 
   GenerateContentToolCall({
@@ -523,7 +519,6 @@ final class GenerateContentToolCall extends GenerateContent {
     required this.input,
     this.providerExecuted,
     this.isDynamic,
-    this.thoughtSignature,
     this.providerMetadata,
   });
 
@@ -537,7 +532,6 @@ final class GenerateContentToolCall extends GenerateContent {
         input: json['input'],
         providerExecuted: json['provider_executed'] as bool?,
         isDynamic: json['dynamic'] as bool?,
-        thoughtSignature: json['thought_signature'] as String?,
         providerMetadata:
             json['provider_metadata'] as Map<String, dynamic>?,
       );
@@ -550,51 +544,80 @@ final class GenerateContentToolCall extends GenerateContent {
           'input': input,
           if (providerExecuted != null) 'provider_executed': providerExecuted,
           if (isDynamic != null) 'dynamic': isDynamic,
-          if (thoughtSignature != null) 'thought_signature': thoughtSignature,
           if (providerMetadata != null) 'provider_metadata': providerMetadata,
         },
       };
 }
 
-/// A source / citation (e.g. URL citation from search-preview models).
-final class GenerateContentSource extends GenerateContent {
+sealed class Source {
+  const Source();
+
+  factory Source.fromJson(Map<String, dynamic> json) => switch (json['source_type']) {
+    'url' => UrlSource(
+        id: json['id'] as String,
+        url: json['url'] as String,
+        title: json['title'] as String?,
+        providerMetadata: json['provider_metadata'] as Map<String, dynamic>?),
+    'document' => DocumentSource(
+        id: json['id'] as String,
+        mediaType: json['media_type'] as String,
+        title: json['title'] as String,
+        filename: json['filename'] as String?,
+        providerMetadata: json['provider_metadata'] as Map<String, dynamic>?),
+    _ => throw FormatException('invalid source type: ${json['source_type']}'),
+  };
+
+  Map<String, dynamic> toJson();
+}
+
+final class UrlSource extends Source {
   final String id;
-  final String sourceType;
-  final String? url;
+  final String url;
   final String? title;
   final Map<String, dynamic>? providerMetadata;
 
-  GenerateContentSource({
-    required this.id,
-    required this.sourceType,
-    this.url,
-    this.title,
-    this.providerMetadata,
-  });
+  const UrlSource({required this.id, required this.url, this.title, this.providerMetadata});
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'source_type': 'url', 'id': id, 'url': url,
+    if (title != null) 'title': title,
+    if (providerMetadata != null) 'provider_metadata': providerMetadata,
+  };
+}
+
+final class DocumentSource extends Source {
+  final String id;
+  final String mediaType;
+  final String title;
+  final String? filename;
+  final Map<String, dynamic>? providerMetadata;
+
+  const DocumentSource({required this.id, required this.mediaType, required this.title,
+      this.filename, this.providerMetadata});
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'source_type': 'document', 'id': id, 'media_type': mediaType, 'title': title,
+    if (filename != null) 'filename': filename,
+    if (providerMetadata != null) 'provider_metadata': providerMetadata,
+  };
+}
+
+/// A source / citation (e.g. URL citation from search-preview models).
+final class GenerateContentSource extends GenerateContent {
+  final Source source;
+
+  GenerateContentSource({required this.source});
 
   @override
   String get tag => 'Source';
 
   factory GenerateContentSource.fromJson(Map<String, dynamic> json) =>
-      GenerateContentSource(
-        id: json['id'] as String,
-        sourceType: json['source_type'] as String,
-        url: json['url'] as String?,
-        title: json['title'] as String?,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
+      GenerateContentSource(source: Source.fromJson(json));
 
   @override
-  Map<String, dynamic> toJson() => {
-        'Source': {
-          'id': id,
-          'source_type': sourceType,
-          if (url != null) 'url': url,
-          if (title != null) 'title': title,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
-      };
+  Map<String, dynamic> toJson() => {'Source': source.toJson()};
 }
 
 /// A reasoning / thinking segment produced by the model.
@@ -759,9 +782,8 @@ class GenerateResult {
   final List<Map<String, dynamic>> warnings;
   final Map<String, dynamic>? providerMetadata;
   final GenerateResponse? response;
-  final Map<String, dynamic>? requestBody;
-  final Map<String, dynamic>? responseHeaders;
-  GenerateResult({required this.content, required this.finishReason, required this.usage, this.warnings = const [], this.providerMetadata, this.response, this.requestBody, this.responseHeaders});
+  final GenerateRequest? request;
+  GenerateResult({required this.content, required this.finishReason, required this.usage, this.warnings = const [], this.providerMetadata, this.response, this.request});
   factory GenerateResult.fromJson(Map<String, dynamic> json) => GenerateResult(
     content: (json['content'] as List<dynamic>? ?? []).map((e) => GenerateContent.fromJson(e as Map<String, dynamic>)).toList(),
     finishReason: FinishReason.fromJson(json['finish_reason'] as Map<String, dynamic>),
@@ -769,10 +791,9 @@ class GenerateResult {
     warnings: (json['warnings'] as List<dynamic>? ?? []).map((e) => e as Map<String, dynamic>).toList(),
     providerMetadata: json['provider_metadata'] as Map<String, dynamic>?,
     response: json['response'] == null ? null : GenerateResponse.fromJson(json['response'] as Map<String, dynamic>),
-    requestBody: json['request_body'] as Map<String, dynamic>?,
-    responseHeaders: json['response_headers'] as Map<String, dynamic>?,
+    request: json['request'] == null ? null : GenerateRequest.fromJson(json['request'] as Map<String, dynamic>),
   );
-  Map<String, dynamic> toJson() => {'content': content.map((c) => c.toJson()).toList(), 'finish_reason': finishReason.toJson(), 'usage': usage.toJson(), 'warnings': warnings, 'response': response?.toJson(), if (providerMetadata != null) 'provider_metadata': providerMetadata, if (requestBody != null) 'request_body': requestBody, if (responseHeaders != null) 'response_headers': responseHeaders};
+  Map<String, dynamic> toJson() => {'content': content.map((c) => c.toJson()).toList(), 'finish_reason': finishReason.toJson(), 'usage': usage.toJson(), 'warnings': warnings, 'response': response?.toJson(), if (providerMetadata != null) 'provider_metadata': providerMetadata, if (request != null) 'request': request?.toJson()};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -795,7 +816,7 @@ class GenerateTextResult {
   final List<Map<String, dynamic>> reasoning;
   @JsonKey(name: 'reasoning_text')
   final String reasoningText;
-  final List<Map<String, dynamic>> sources;
+  final List<Source> sources;
   final List<Map<String, dynamic>> files;
   @JsonKey(name: 'response_messages')
   final List<ModelMessage> responseMessages;
@@ -882,19 +903,19 @@ class GenerateObjectResult {
 /// `GenerateTextResult`'s user-facing fields (without `raw`, since streaming
 /// has no `GenerateResult` equivalent).
 ///
-/// Mirrors `StreamTextResultAggregated.ts`. reasoning/sources/files use weak
+/// Mirrors `StreamTextResultAggregated.ts`. reasoning/files use weak
 /// types (`Map<String, dynamic>`) — same strategy as `GenerateTextResult`.
 @JsonSerializable()
 class StreamTextResultAggregated {
   final String text;
   final List<Map<String, dynamic>> content;
-  // reasoning/sources/files use weak types — same strategy as GenerateTextResult.
+  // reasoning/files use weak types — same strategy as GenerateTextResult.
   final List<Map<String, dynamic>> reasoning;
   @JsonKey(name: 'reasoning_text')
   final String reasoningText;
   @JsonKey(name: 'tool_calls')
   final List<ToolCall> toolCalls;
-  final List<Map<String, dynamic>> sources;
+  final List<Source> sources;
   final List<Map<String, dynamic>> files;
   @JsonKey(name: 'finish_reason')
   final FinishReason finishReason;
@@ -1476,7 +1497,6 @@ final class StreamPartToolCall extends StreamPart {
   final dynamic input;
   final bool? providerExecuted;
   final bool? isDynamic;
-  final String? thoughtSignature;
   final Map<String, dynamic>? providerMetadata;
   /// Set by Core when the tool call stays invalid after optional repair.
   final bool? invalid;
@@ -1489,7 +1509,6 @@ final class StreamPartToolCall extends StreamPart {
     required this.input,
     this.providerExecuted,
     this.isDynamic,
-    this.thoughtSignature,
     this.providerMetadata,
     this.invalid,
     this.error,
@@ -1502,7 +1521,6 @@ final class StreamPartToolCall extends StreamPart {
         input: json['input'],
         providerExecuted: json['provider_executed'] as bool?,
         isDynamic: json['dynamic'] as bool?,
-        thoughtSignature: json['thought_signature'] as String?,
         providerMetadata:
             json['provider_metadata'] as Map<String, dynamic>?,
         invalid: json['invalid'] as bool?,
@@ -1517,7 +1535,6 @@ final class StreamPartToolCall extends StreamPart {
           'input': input,
           if (providerExecuted != null) 'provider_executed': providerExecuted,
           if (isDynamic != null) 'dynamic': isDynamic,
-          if (thoughtSignature != null) 'thought_signature': thoughtSignature,
           if (providerMetadata != null) 'provider_metadata': providerMetadata,
           if (invalid != null) 'invalid': invalid,
           if (error != null) 'error': error,
@@ -1710,40 +1727,15 @@ final class StreamPartResponseMetadata extends StreamPart {
 
 /// A source / citation (e.g. URL citation from search-preview models).
 final class StreamPartSource extends StreamPart {
-  final String id;
-  final String sourceType;
-  final String? url;
-  final String? title;
-  final Map<String, dynamic>? providerMetadata;
+  final Source source;
 
-  StreamPartSource({
-    required this.id,
-    required this.sourceType,
-    this.url,
-    this.title,
-    this.providerMetadata,
-  });
+  StreamPartSource({required this.source});
 
   factory StreamPartSource.fromJson(Map<String, dynamic> json) =>
-      StreamPartSource(
-        id: json['id'] as String,
-        sourceType: json['source_type'] as String,
-        url: json['url'] as String?,
-        title: json['title'] as String?,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
+      StreamPartSource(source: Source.fromJson(json));
 
   @override
-  Map<String, dynamic> toJson() => {
-        'Source': {
-          'id': id,
-          'source_type': sourceType,
-          if (url != null) 'url': url,
-          if (title != null) 'title': title,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
-      };
+  Map<String, dynamic> toJson() => {'Source': source.toJson()};
 }
 
 /// A raw chunk from the provider (for debugging, when `include_raw_chunks`
@@ -2096,17 +2088,15 @@ final class ContentPartToolCall extends ContentPart {
   final String toolName;
   final dynamic input;
   final bool? providerExecuted;
-  final String? thoughtSignature;
   final Map<String, dynamic>? providerOptions;
   const ContentPartToolCall(
-      {required this.toolCallId, required this.toolName, required this.input, this.providerExecuted, this.thoughtSignature, this.providerOptions});
+      {required this.toolCallId, required this.toolName, required this.input, this.providerExecuted, this.providerOptions});
   static ContentPartToolCall fromJson(Map<String, dynamic> json) =>
       ContentPartToolCall(
         toolCallId: json['tool_call_id'] as String,
         toolName: json['tool_name'] as String,
         input: json['input'],
         providerExecuted: json['provider_executed'] as bool?,
-        thoughtSignature: json['thought_signature'] as String?,
         providerOptions: json['provider_options'] as Map<String, dynamic>?,
       );
   @override
@@ -2116,7 +2106,6 @@ final class ContentPartToolCall extends ContentPart {
         'tool_name': toolName,
         'input': input,
         if (providerExecuted != null) 'provider_executed': providerExecuted,
-        if (thoughtSignature != null) 'thought_signature': thoughtSignature,
         if (providerOptions != null) 'provider_options': providerOptions,
       };
 }

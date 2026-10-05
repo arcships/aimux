@@ -333,19 +333,13 @@ fn to_assistant_part(
             tool_name,
             input,
             provider_executed,
-            thought_signature,
             provider_options,
         } => AssistantPart::ToolCall(ToolCallPart {
             tool_call_id: tool_call_id.clone(),
             tool_name: tool_name.clone(),
             input: input.clone(),
             provider_executed: *provider_executed,
-            provider_options: with_signature(
-                provider_options,
-                &["google", "googleVertex", "vertex"],
-                "thoughtSignature",
-                thought_signature,
-            ),
+            provider_options: provider_options.clone(),
         }),
         ContentPart::ToolResult {
             tool_call_id,

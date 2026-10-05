@@ -39,6 +39,7 @@ __all__ = [
     "ResponseFormat",
     "StreamPart",
     "GenerateContent",
+    "Source",
     "TextContent",
     "FileData",
     "FileBytes",
@@ -66,6 +67,7 @@ __all__ = [
     "StreamTextResultAggregated",
     "GenerateResult",
     "GenerateResponseMetadata",
+    "RequestInfo",
     # functions
     "generate_text",
     "stream_text",
@@ -161,7 +163,6 @@ class ToolCall(BaseModel):
     input: Any
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
-    thought_signature: Optional[str] = None
     provider_metadata: Optional[Any] = None
     invalid: Optional[bool] = None
     error: Optional[AiMuxErrorValue] = None
@@ -180,7 +181,6 @@ class RawToolCall(BaseModel):
     input: str
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
-    thought_signature: Optional[str] = None
     provider_metadata: Optional[Any] = None
 
 
@@ -402,17 +402,40 @@ class _ContentToolCall(BaseModel):
     input: Any
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
-    thought_signature: Optional[str] = None
     provider_metadata: Optional[Any] = None
 
 
-class _ContentSource(BaseModel):
-    type: Literal["Source"]
+class _UrlSource(BaseModel):
     id: str
-    source_type: str
-    url: Optional[str] = None
+    source_type: Literal["url"]
+    url: str
     title: Optional[str] = None
     provider_metadata: Optional[Dict[str, Any]] = None
+
+
+class _DocumentSource(BaseModel):
+    id: str
+    source_type: Literal["document"]
+    media_type: str
+    title: str
+    filename: Optional[str] = None
+    provider_metadata: Optional[Dict[str, Any]] = None
+
+
+Source = Annotated[Union[_UrlSource, _DocumentSource], Field(discriminator="source_type")]
+
+
+class _ContentUrlSource(_UrlSource):
+    type: Literal["Source"]
+
+
+class _ContentDocumentSource(_DocumentSource):
+    type: Literal["Source"]
+
+
+_ContentSource = Annotated[
+    Union[_ContentUrlSource, _ContentDocumentSource], Field(discriminator="source_type")
+]
 
 
 class _ContentReasoning(BaseModel):
@@ -550,7 +573,6 @@ class _SPToolCall(BaseModel):
     input: Any
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
-    thought_signature: Optional[str] = None
     provider_metadata: Optional[Dict[str, Any]] = None
     invalid: Optional[bool] = None
     error: Optional[AiMuxErrorValue] = None
@@ -833,7 +855,6 @@ class _ToolCallContentPart(BaseModel):
     tool_name: str
     input: Any
     provider_executed: Optional[bool] = None
-    thought_signature: Optional[str] = None
     provider_options: Optional[Any] = None
 
 
@@ -1035,7 +1056,12 @@ class GenerateTextOptions(BaseModel):
     """
 
 
+class RequestInfo(BaseModel):
+    body: Optional[Any] = None
+
+
 class GenerateResponseMetadata(ResponseMetadata):
+    headers: Optional[Dict[str, str]] = None
     body: Optional[Any] = None
 
 
@@ -1048,8 +1074,7 @@ class GenerateResult(BaseModel):
     warnings: List[Warning]
     provider_metadata: Optional[Any] = None
     response: Optional[GenerateResponseMetadata] = None
-    request_body: Optional[Any] = None
-    response_headers: Optional[Dict[str, str]] = None
+    request: Optional[RequestInfo] = None
 
 
 class GenerateTextResult(BaseModel):
@@ -1063,11 +1088,11 @@ class GenerateTextResult(BaseModel):
     warnings: List[Warning]
     raw: GenerateResult
     # M7: top-level aggregation fields.
-    # reasoning/sources/files use weak types (Dict) — use raw.content for
+    # reasoning/files use weak types (Dict) — use raw.content for
     # full typing; response_messages reuses ModelMessage for next-turn prompt.
     reasoning: List[Dict[str, Any]] = Field(default_factory=list)
     reasoning_text: str = ""
-    sources: List[Dict[str, Any]] = Field(default_factory=list)
+    sources: List[Source] = Field(default_factory=list)
     files: List[Dict[str, Any]] = Field(default_factory=list)
     response_messages: List[ModelMessage] = Field(default_factory=list)
     # M12: raw provider-specific finish reason string (e.g. "stop", "end_turn").
@@ -1112,12 +1137,12 @@ class StreamTextResultAggregated(BaseModel):
 
     content: List[TextContent] = Field(default_factory=list)
     text: str = ""
-    # reasoning/sources/files use weak types (Dict) — same strategy as
+    # reasoning/files use weak types (Dict) — same strategy as
     # GenerateTextResult.
     reasoning: List[Dict[str, Any]] = Field(default_factory=list)
     reasoning_text: str = ""
     tool_calls: List[ToolCall] = Field(default_factory=list)
-    sources: List[Dict[str, Any]] = Field(default_factory=list)
+    sources: List[Source] = Field(default_factory=list)
     files: List[Dict[str, Any]] = Field(default_factory=list)
     finish_reason: FinishReason
     raw_finish_reason: Optional[str] = None

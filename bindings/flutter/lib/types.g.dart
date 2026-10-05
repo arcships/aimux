@@ -44,7 +44,6 @@ ToolCall _$ToolCallFromJson(Map<String, dynamic> json) => ToolCall(
       input: json['input'],
       providerExecuted: json['provider_executed'] as bool?,
       isDynamic: json['dynamic'] as bool?,
-      thoughtSignature: json['thought_signature'] as String?,
       providerMetadata: json['provider_metadata'],
       invalid: json['invalid'] as bool?,
       error: json['error'],
@@ -56,7 +55,6 @@ Map<String, dynamic> _$ToolCallToJson(ToolCall instance) => <String, dynamic>{
       'input': instance.input,
       'provider_executed': instance.providerExecuted,
       'dynamic': instance.isDynamic,
-      'thought_signature': instance.thoughtSignature,
       if (instance.providerMetadata != null)
         'provider_metadata': instance.providerMetadata,
       'invalid': instance.invalid,
@@ -119,7 +117,7 @@ GenerateTextResult _$GenerateTextResultFromJson(Map<String, dynamic> json) =>
           const [],
       reasoningText: json['reasoning_text'] as String? ?? '',
       sources: (json['sources'] as List<dynamic>?)
-              ?.map((e) => e as Map<String, dynamic>)
+              ?.map((e) => Source.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
       files: (json['files'] as List<dynamic>?)
@@ -211,7 +209,7 @@ StreamTextResultAggregated _$StreamTextResultAggregatedFromJson(
               .toList() ??
           const [],
       sources: (json['sources'] as List<dynamic>?)
-              ?.map((e) => e as Map<String, dynamic>)
+              ?.map((e) => Source.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
       files: (json['files'] as List<dynamic>?)

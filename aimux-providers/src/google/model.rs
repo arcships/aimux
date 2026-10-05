@@ -318,18 +318,16 @@ impl LanguageModel for GoogleModel {
                         let chunk_sources =
                             extract_sources(candidate.grounding_metadata.as_ref(), &mut source_id);
                         for src in chunk_sources {
-                            if let GenerateContent::Source(Source {
-                                url: Some(url),
-                                source_type,
+                            if let GenerateContent::Source(Source::Url {
+                                url,
                                 id,
                                 title,
                                 provider_metadata: None,
                             }) = src
                                 && emitted_source_urls.insert(url.clone()) {
-                                    yield Ok(StreamPart::Source(Source {
+                                    yield Ok(StreamPart::Source(Source::Url {
                                         id,
-                                        source_type,
-                                        url: Some(url),
+                                        url,
                                         title,
                                         provider_metadata: None,
                                     }));
@@ -429,10 +427,6 @@ impl LanguageModel for GoogleModel {
                                         .unwrap_or_else(|| format!("call-{block_counter}"));
                                     block_counter += 1;
                                     let args = fc.get("args").cloned().unwrap_or(json!({}));
-                                    let thought_signature = part
-                                        .get("thoughtSignature")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string);
 
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
@@ -440,22 +434,21 @@ impl LanguageModel for GoogleModel {
                                         provider_executed: None,
                                         dynamic: None,
                                         title: None,
-                                        provider_metadata: None,
+                                        provider_metadata: thought_sig_meta.clone(),
                                     });
                                     let args_str = args.to_string();
                                     yield Ok(StreamPart::ToolInputDelta {
                                         id: id.clone(),
                                         delta: args_str,
-                                        provider_metadata: None,
+                                        provider_metadata: thought_sig_meta.clone(),
                                     });
-                                    yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
+                                    yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: thought_sig_meta.clone()});
                                     yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: id,
                                         tool_name: name.to_string(),
                                         input: args.to_string(),
                                         provider_executed: None,
                                         dynamic: None,
-                                        thought_signature,
                                         provider_metadata: thought_sig_meta.clone(),
                                     }));
                                     has_tool_calls = true;
@@ -476,7 +469,6 @@ impl LanguageModel for GoogleModel {
                                             input: ec.to_string(),
                                             provider_executed: Some(true),
                                             dynamic: None,
-                                            thought_signature: None,
                                             provider_metadata: Some(server_tool_metadata(
                                                 &id,
                                                 "code_execution",
@@ -539,7 +531,6 @@ impl LanguageModel for GoogleModel {
                                         input: args.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
-                                        thought_signature: None,
                                         provider_metadata: Some(server_meta),
                                     }));
                                     // provider-executed → does NOT set has_tool_calls
@@ -749,7 +740,6 @@ fn extract_content_from_candidate(
                         input: ec.to_string(),
                         provider_executed: Some(true),
                         dynamic: None,
-                        thought_signature: None,
                         provider_metadata: Some(server_tool_metadata(&id, "code_execution", None)),
                     }));
                 }
@@ -812,17 +802,12 @@ fn extract_content_from_candidate(
                     .unwrap_or("")
                     .to_string();
                 let input = fc.get("args").cloned().unwrap_or(json!({}));
-                let thought_signature = part
-                    .get("thoughtSignature")
-                    .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string);
                 content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id,
                     tool_name: name,
                     input: input.to_string(),
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature,
                     provider_metadata: thought_sig_meta.clone(),
                 }));
                 has_tool_calls = true;
@@ -861,10 +846,6 @@ fn extract_content_from_candidate(
                     .to_string();
                 last_server_tool_call_id = Some(id.clone());
                 let input = tc.get("args").cloned().unwrap_or(json!({}));
-                let thought_signature = part
-                    .get("thoughtSignature")
-                    .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string);
                 let server_meta = server_tool_metadata(
                     &id,
                     tool_type,
@@ -876,7 +857,6 @@ fn extract_content_from_candidate(
                     input: input.to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature,
                     provider_metadata: Some(server_meta),
                 }));
                 // provider-executed → does NOT set has_tool_calls
@@ -934,7 +914,10 @@ fn set_provider_metadata(item: &mut GenerateContent, meta: ProviderMetadata) {
         | GenerateContent::File(GeneratedFile {
             provider_metadata, ..
         })
-        | GenerateContent::Source(Source {
+        | GenerateContent::Source(Source::Url {
+            provider_metadata, ..
+        })
+        | GenerateContent::Source(Source::Document {
             provider_metadata, ..
         })
         | GenerateContent::ReasoningFile(GeneratedFile {

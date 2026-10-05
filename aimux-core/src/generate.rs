@@ -184,10 +184,6 @@ pub struct GenerateTextResult {
     /// Warnings from the provider.
     pub warnings: Vec<Warning>,
     /// Raw provider result (for advanced use).
-    #[serde(with = "user_raw_result")]
-    #[ts(
-        type = "Omit<import('./GenerateResult').GenerateResult, 'request' | 'response'> & { response: ResponseMetadata, request_body: JsonValue | null, response_headers: { [key: string]: string } | null }"
-    )]
     pub raw: GenerateResult,
     // ── M7: top-level aggregation (extracted from `raw.content`) ──
     /// Reasoning / thinking segments from the model.
@@ -222,73 +218,6 @@ pub struct GenerateTextResult {
     /// default), `total_usage` equals `usage`. Provided for AI SDK parity.
     #[serde(default)]
     pub total_usage: Usage,
-}
-
-// Keep the established user-facing JSON while the provider result uses V4 envelopes.
-mod user_raw_result {
-    use super::GenerateResult;
-    use serde::{Deserialize, Serialize};
-    use serde_json::{Map, Value, json};
-
-    pub fn serialize<S: serde::Serializer>(
-        result: &GenerateResult,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        let Value::Object(mut fields) =
-            serde_json::to_value(result).map_err(serde::ser::Error::custom)?
-        else {
-            return Err(serde::ser::Error::custom("expected a result object"));
-        };
-        fields.remove("request");
-        fields.insert(
-            "request_body".into(),
-            json!(
-                result
-                    .request
-                    .as_ref()
-                    .and_then(|request| request.body.as_ref())
-            ),
-        );
-        let response = result.response.as_ref();
-        fields.insert(
-            "response_headers".into(),
-            json!(response.and_then(|response| response.headers.as_ref())),
-        );
-        fields.insert(
-            "response".into(),
-            json!({
-                "id": response.and_then(|response| response.id.as_ref()),
-                "timestamp": response.and_then(|response| response.timestamp.as_ref()),
-                "model_id": response.and_then(|response| response.model_id.as_ref()),
-            }),
-        );
-        fields.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<GenerateResult, D::Error> {
-        let mut fields = Map::<String, Value>::deserialize(deserializer)?;
-        let body = fields.remove("request_body").unwrap_or(Value::Null);
-        fields.insert(
-            "request".into(),
-            if body.is_null() {
-                Value::Null
-            } else {
-                json!({ "body": body })
-            },
-        );
-        let headers = fields.remove("response_headers").unwrap_or(Value::Null);
-        let response = fields.entry("response").or_insert_with(|| json!({}));
-        if response.is_null() {
-            *response = json!({});
-        }
-        response
-            .as_object_mut()
-            .ok_or_else(|| serde::de::Error::custom("expected a response object"))?
-            .insert("headers".into(), headers);
-        serde_json::from_value(Value::Object(fields)).map_err(serde::de::Error::custom)
-    }
 }
 
 /// Result of `generate_object` (user-facing, M12). The parsed JSON object plus

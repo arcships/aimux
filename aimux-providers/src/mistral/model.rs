@@ -244,7 +244,6 @@ impl LanguageModel for MistralModel {
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
             }
