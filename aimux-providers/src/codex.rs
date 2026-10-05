@@ -258,7 +258,7 @@ impl CodexModel {
         options: &CallOptions,
         stream: bool,
     ) -> Result<(Value, Vec<Warning>), AiMuxError> {
-        let mut result = build_responses_request_body(&self.model_id, options, stream);
+        let mut result = build_responses_request_body(&self.model_id, options, stream)?;
         if self.config.mode == CodexMode::Subscription {
             result.body["store"] = Value::Bool(false);
         }

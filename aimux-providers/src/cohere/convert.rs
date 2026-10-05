@@ -3,6 +3,7 @@
 //! Mirrors the TS `convert-to-cohere-chat-prompt.ts`,
 //! `cohere-prepare-tools.ts`, and `map-cohere-finish-reason.ts`.
 
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart, ToolPart,
     ToolResultPart, UserPart,
@@ -120,8 +121,12 @@ pub struct ConvertedPrompt {
 /// - Non-image file parts are extracted as `documents` (RAG), not in the message.
 /// - Assistant content is a plain string; with tool calls, `content` is omitted.
 /// - Tool messages are flat `{role:"tool", content, tool_call_id}`.
-#[must_use]
-pub fn convert_prompt_to_cohere(prompt: &LanguageModelPrompt) -> ConvertedPrompt {
+///
+/// # Errors
+/// Returns an error for unsupported text file data.
+pub fn convert_prompt_to_cohere(
+    prompt: &LanguageModelPrompt,
+) -> Result<ConvertedPrompt, AiMuxError> {
     let mut messages = Vec::new();
     let mut documents = Vec::new();
 
@@ -143,7 +148,7 @@ pub fn convert_prompt_to_cohere(prompt: &LanguageModelPrompt) -> ConvertedPrompt
                         }
                         UserPart::File(file) => {
                             use base64::Engine;
-                            if file.media_type.starts_with("image/") {
+                            if file.media_type.split('/').next() == Some("image") {
                                 let url = match &file.data {
                                     FileData::Data { data } => {
                                         let b64 = match data {
@@ -156,7 +161,12 @@ pub fn convert_prompt_to_cohere(prompt: &LanguageModelPrompt) -> ConvertedPrompt
                                         format!("data:{};base64,{}", file.media_type, b64)
                                     }
                                     FileData::Url { url } => url.clone(),
-                                    FileData::Reference { .. } | FileData::Text { .. } => continue,
+                                    FileData::Reference { .. } => continue,
+                                    FileData::Text { .. } => {
+                                        return Err(AiMuxError::UnsupportedFunctionality(
+                                            "image file parts with text data".to_string(),
+                                        ));
+                                    }
                                 };
                                 has_image = true;
                                 parts.push(
@@ -261,10 +271,10 @@ pub fn convert_prompt_to_cohere(prompt: &LanguageModelPrompt) -> ConvertedPrompt
         }
     }
 
-    ConvertedPrompt {
+    Ok(ConvertedPrompt {
         messages,
         documents,
-    }
+    })
 }
 
 fn join_text_parts(content: &[AssistantPart]) -> String {
@@ -300,13 +310,15 @@ pub struct RequestBodyResult {
 /// Mirrors the TS `getArgs` in `cohere-chat-language-model.ts`: assembles the
 /// model id, messages, documents, sampling settings, response format, tools,
 /// and the `thinking` config resolved from `reasoning` / provider options.
-#[must_use]
+///
+/// # Errors
+/// Returns an error for unsupported text file data.
 pub fn build_request_body(
     model_id: &str,
     options: &CallOptions,
     stream: bool,
-) -> RequestBodyResult {
-    let converted = convert_prompt_to_cohere(&options.prompt);
+) -> Result<RequestBodyResult, AiMuxError> {
+    let converted = convert_prompt_to_cohere(&options.prompt)?;
     let mut warnings: Vec<Warning> = Vec::new();
 
     let mut body = json!({
@@ -375,7 +387,7 @@ pub fn build_request_body(
         body["thinking"] = thinking;
     }
 
-    RequestBodyResult { body, warnings }
+    Ok(RequestBodyResult { body, warnings })
 }
 
 // ── Reasoning / thinking ────────────────────────────────────────────────────
