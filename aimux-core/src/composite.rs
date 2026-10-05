@@ -8,9 +8,9 @@
 //!
 //! This module holds the pieces both share:
 //! - [`ChildModel`] — the child-handle shape (`Arc<dyn LanguageModel>`).
-//! - [`add_usage`] — per-field `Usage` accumulation.
-//! - [`extract_text`] — pull text out of a `GenerateContent` list.
-//! - [`build_aggregator_prompt`] — assemble the MoA aggregator prompt.
+//! - `add_usage` — per-field `Usage` accumulation.
+//! - `extract_text` — pull text out of a `GenerateContent` list.
+//! - `build_aggregator_prompt` — assemble the MoA aggregator prompt.
 //!
 //! See [`crate::trace::layer::TraceLayer`] for the established decorator pattern
 //! (`inner: Arc<dyn LanguageModel>` implementing `LanguageModel`); composite
@@ -34,7 +34,7 @@ pub type ChildModel = Arc<dyn LanguageModel>;
 /// Each `TokenUsage` field is `Option<u32>`; `None` is treated as zero so a
 /// child that doesn't report a breakdown doesn't erase the other child's data.
 #[must_use]
-pub fn add_usage(a: Usage, b: &Usage) -> Usage {
+pub(crate) fn add_usage(a: Usage, b: &Usage) -> Usage {
     Usage {
         input_tokens: add_token_usage(a.input_tokens, &b.input_tokens),
         output_tokens: add_token_usage(a.output_tokens, &b.output_tokens),
@@ -66,7 +66,7 @@ fn opt_add(a: Option<u32>, b: Option<u32>) -> Option<u32> {
 /// are kept; `Reasoning` / `ToolCall` / `Source` / `File` are dropped (MoA
 /// thin version — references contribute analysis text, not tool calls).
 #[must_use]
-pub fn extract_text(content: &[GenerateContent]) -> String {
+pub(crate) fn extract_text(content: &[GenerateContent]) -> String {
     let mut out = String::new();
     for c in content {
         if let GenerateContent::Text { text, .. } = c {
@@ -85,7 +85,7 @@ pub fn extract_text(content: &[GenerateContent]) -> String {
 /// The reference list may be empty — in that case the aggregator just runs the
 /// original prompt (degenerates to a single-model call).
 #[must_use]
-pub fn build_aggregator_prompt(
+pub(crate) fn build_aggregator_prompt(
     prompt: &LanguageModelPrompt,
     instructions: Option<&str>,
     references: &[(String, String)],

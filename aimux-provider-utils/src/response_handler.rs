@@ -97,7 +97,7 @@ impl<T> ResponseHandler<T> {
 
 /// Parse a successful JSON response using the endpoint's response type.
 ///
-/// The body is size-limited to [`DEFAULT_MAX_JSON_RESPONSE_SIZE`] (or
+/// The body is size-limited to 64 MiB (or
 /// `HttpRequest::max_json_response_bytes`, when the caller overrides it) —
 /// deliberately smaller than the binary-download bound, since a JSON success
 /// body is deserialized straight into `T` and held alongside the raw bytes.

@@ -95,8 +95,7 @@ pub struct HttpRequest {
     /// (e.g. Replicate `prefer: wait`) declares its own bound here. Streaming
     /// exchanges are exempt regardless.
     pub response_timeout: Option<std::time::Duration>,
-    /// Per-request override of the successful-JSON-body size cap (default
-    /// [`crate::read_response_with_size_limit::DEFAULT_MAX_JSON_RESPONSE_SIZE`]).
+    /// Per-request override of the successful-JSON-body size cap (default 64 MiB).
     /// Only consulted by [`crate::response_handler::create_json_response_handler`];
     /// binary downloads keep the separate, larger
     /// `DEFAULT_MAX_DOWNLOAD_SIZE` bound regardless of this field.

@@ -17,7 +17,7 @@ pub const DEFAULT_MAX_DOWNLOAD_SIZE: usize = 2 * 1024 * 1024 * 1024;
 /// `serde_json::Value`, and a deserialized struct — a 2 GiB cap lets a single
 /// response balloon to several times that in resident memory. This bound is
 /// per-request configurable via `HttpRequest::max_json_response_bytes`.
-pub const DEFAULT_MAX_JSON_RESPONSE_SIZE: usize = 64 * 1024 * 1024;
+pub(crate) const DEFAULT_MAX_JSON_RESPONSE_SIZE: usize = 64 * 1024 * 1024;
 
 /// Read a response incrementally and fail before unbounded allocation.
 ///

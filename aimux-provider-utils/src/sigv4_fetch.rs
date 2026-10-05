@@ -35,7 +35,7 @@ pub struct AwsCredentials {
 
 /// The result of signing a request.
 #[derive(Debug, Clone)]
-pub struct SignedRequest {
+struct SignedRequest {
     /// All headers to send with the request, including the `Authorization`
     /// header and any `X-Amz-*` headers.
     pub headers: Vec<(String, String)>,
@@ -53,8 +53,9 @@ type HmacSha256 = Hmac<Sha256>;
 /// - `body` - The request body as a string (e.g. JSON).
 /// - `extra_headers` - Additional headers to include in the request (these are
 ///   also included in the canonical headers for signing).
+#[cfg(test)]
 #[must_use]
-pub fn sign_request(
+fn sign_request(
     credentials: &AwsCredentials,
     service: &str,
     method: &str,
@@ -73,9 +74,9 @@ pub fn sign_request(
     )
 }
 
-/// [`sign_request`] with an explicit signing time and a byte body.
+/// Sign an HTTP request with an explicit signing time and a byte body.
 #[must_use]
-pub fn sign_request_at(
+fn sign_request_at(
     credentials: &AwsCredentials,
     service: &str,
     method: &str,

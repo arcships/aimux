@@ -26,7 +26,7 @@ pub fn handle_fetch_error(
 /// abort; everything else is an `ApiCall` error with no status (no response
 /// arrived), retryable exactly when [`FetchError::is_retryable`] says so.
 #[must_use]
-pub fn fetch_error_to_ai_mux_error(
+pub(crate) fn fetch_error_to_ai_mux_error(
     error: FetchError,
     url: &str,
     request_body_values: &serde_json::Value,

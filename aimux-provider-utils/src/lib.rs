@@ -46,7 +46,7 @@ pub use headers::{
     HeaderMapOpt, HeadersFn, combine_headers, normalize_headers, with_user_agent_suffix,
 };
 pub use http::{ExchangeContext, HttpBody, HttpRequest, ProxyConfig, init_proxy, sleep_or_abort};
-pub use logging::{body_logging_enabled, init_logging, redact_body, redact_error_context};
+pub use logging::{init_logging, redact_error_context};
 pub use media_type::{
     MAX_ID3_TAG_BYTES, MediaTypeData, detect_media_type, get_top_level_media_type,
     is_full_media_type, resolve_full_media_type,
@@ -61,7 +61,7 @@ pub use response_handler::{
     create_standard_json_error_response_handler, create_status_code_error_response_handler,
     stream_error_api_call,
 };
-pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SignedRequest, sign_request};
+pub use sigv4_fetch::{AwsCredentials, SigV4Fetch};
 pub use streaming_tool_call_argument_state::{
     StreamingToolCallArgumentState, starts_with_structured_value,
 };

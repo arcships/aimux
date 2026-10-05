@@ -483,18 +483,6 @@ pub fn init_recording(recorder: Option<Arc<dyn Recorder>>) {
     }
 }
 
-/// 从环境变量初始化:`AIMUX_RECORD=1` 开启,`AIMUX_RECORD_DIR` 指定目录(默认 `./recordings`)。
-/// 未开启返回 false(静默)。
-#[must_use]
-pub fn init_recording_from_env() -> bool {
-    if std::env::var("AIMUX_RECORD").as_deref() != Ok("1") {
-        return false;
-    }
-    let dir = std::env::var("AIMUX_RECORD_DIR").unwrap_or_else(|_| "./recordings".to_string());
-    init_recording(Some(Arc::new(JsonlRecorder::new(dir))));
-    true
-}
-
 /// 从当前全局 recorder 生成一次调用的 context(关闭时 None)。
 /// 层 A 入口:先读一次,再用 `context && ctx.start()` 记录 ①+②。
 pub fn context(call_id: impl Into<String>) -> Option<RecordingContext> {
@@ -514,7 +502,7 @@ pub fn recorder() -> Option<Arc<dyn Recorder>> {
 static CALL_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// 生成进程级唯一 call_id(`call-{ns}-{seq}`;与 session.rs 同构)。
-pub fn new_call_id() -> String {
+pub(crate) fn new_call_id() -> String {
     let ns = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())

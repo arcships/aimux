@@ -5,7 +5,7 @@ use std::collections::HashMap;
 /// Extract response headers as ordered pairs while redacting sensitive values.
 /// Recording and public error context share this one policy.
 #[must_use]
-pub fn extract_response_header_pairs(headers: &http::HeaderMap) -> Vec<(String, String)> {
+pub(crate) fn extract_response_header_pairs(headers: &http::HeaderMap) -> Vec<(String, String)> {
     headers
         .iter()
         .map(|(name, value)| {

@@ -9,18 +9,18 @@ use crate::AbortSignal;
 use crate::error::{AiMuxError, RetryError, RetryErrorReason};
 
 /// Default maximum number of retries after the initial attempt.
-pub const DEFAULT_MAX_RETRIES: u32 = 2;
+const DEFAULT_MAX_RETRIES: u32 = 2;
 /// Default delay before the first retry, in milliseconds.
-pub const DEFAULT_INITIAL_DELAY_MS: u64 = 2_000;
+const DEFAULT_INITIAL_DELAY_MS: u64 = 2_000;
 /// Default multiplier applied to the delay after each retry.
-pub const DEFAULT_BACKOFF_FACTOR: u32 = 2;
+const DEFAULT_BACKOFF_FACTOR: u32 = 2;
 
 /// A prepared operation retry function and its resolved retry count.
 ///
 /// This is the Rust representation of the AI SDK's
 /// `prepareRetries()` result: `{ maxRetries, retry }`.
 #[derive(Debug, Clone)]
-pub struct PreparedRetries {
+pub(crate) struct PreparedRetries {
     /// The effective maximum after applying the default.
     pub max_retries: u32,
     initial_delay_ms: u64,
@@ -33,7 +33,10 @@ pub struct PreparedRetries {
 /// [`DEFAULT_INITIAL_DELAY_MS`] / [`DEFAULT_BACKOFF_FACTOR`] constants: retry
 /// is a call-level concern with no provider-level settings.
 #[must_use]
-pub fn prepare_retries(max_retries: Option<u32>, abort: Option<AbortSignal>) -> PreparedRetries {
+pub(crate) fn prepare_retries(
+    max_retries: Option<u32>,
+    abort: Option<AbortSignal>,
+) -> PreparedRetries {
     PreparedRetries {
         max_retries: max_retries.unwrap_or(DEFAULT_MAX_RETRIES),
         initial_delay_ms: DEFAULT_INITIAL_DELAY_MS,

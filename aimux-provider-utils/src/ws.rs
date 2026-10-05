@@ -460,7 +460,7 @@ pub async fn ws_connect(req: &WebSocketRequest) -> Result<WsConnection, AiMuxErr
 
 /// The built-in connector: tungstenite, with the process-wide proxy tunnel.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct TungsteniteConnector;
+struct TungsteniteConnector;
 
 #[async_trait]
 impl WsConnector for TungsteniteConnector {
