@@ -17,7 +17,6 @@ fn raw(name: &str, input: &str) -> RawToolCall {
         input: input.into(),
         provider_executed: None,
         dynamic: None,
-        thought_signature: None,
         provider_metadata: None,
     }
 }

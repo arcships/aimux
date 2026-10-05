@@ -100,9 +100,8 @@ fn read_provider_options(
 ///   as a string (JSON-stringified for non-string outputs, matching the TS
 ///   `output.type === 'json'` path).
 ///
-/// Thought signatures: `ContentPart::ToolCall.thought_signature` is echoed
-/// back as a `thoughtSignature` sibling of the `functionCall` part (required
-/// by Gemini thinking models on follow-up turns).
+/// Thought signatures from per-part provider options are echoed as a
+/// `thoughtSignature` sibling of the `functionCall` part.
 #[must_use]
 pub fn convert_to_google_messages(prompt: &LanguageModelPrompt) -> GooglePrompt {
     convert_to_google_messages_for_namespace(prompt, ProviderMetadataNamespace::Google)
@@ -281,7 +280,6 @@ fn convert_assistant_parts(
                 tool_call_id,
                 tool_name,
                 input,
-                thought_signature,
                 provider_options,
                 ..
             } => {
@@ -292,11 +290,9 @@ fn convert_assistant_parts(
                 let server_tool_type = google_options
                     .and_then(|options| options.get("serverToolType"))
                     .and_then(|value| value.as_str());
-                let signature = thought_signature.as_deref().or_else(|| {
-                    google_options
-                        .and_then(|options| options.get("thoughtSignature"))
-                        .and_then(|value| value.as_str())
-                });
+                let signature = google_options
+                    .and_then(|options| options.get("thoughtSignature"))
+                    .and_then(|value| value.as_str());
 
                 let mut part_value = if let (Some(server_id), Some(server_type)) =
                     (server_tool_call_id, server_tool_type)
@@ -1365,7 +1361,6 @@ mod tests {
                 tool_name: "runCode".to_string(),
                 input: json!({ "language": "PYTHON", "code": "print(2)" }),
                 provider_executed: Some(true),
-                thought_signature: None,
                 provider_options: Some(code_metadata("googleVertex", call_id)),
             },
             ContentPart::ToolResult {
@@ -1407,7 +1402,6 @@ mod tests {
             tool_name: "weather".to_string(),
             input: json!({}),
             provider_executed: None,
-            thought_signature: None,
             provider_options: Some(json!({
                 "googleVertex": { "thoughtSignature": "google-vertex" },
                 "vertex": { "thoughtSignature": "vertex" },
@@ -1435,7 +1429,6 @@ mod tests {
             tool_name: "weather".to_string(),
             input: json!({}),
             provider_executed: None,
-            thought_signature: None,
             provider_options: Some(json!({
                 "google": { "thoughtSignature": "gateway-signature" },
             })),

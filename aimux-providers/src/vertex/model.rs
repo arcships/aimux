@@ -481,7 +481,6 @@ impl LanguageModel for VertexModel {
                                         input: args.to_string(),
                                         provider_executed: None,
                                         dynamic: None,
-                                        thought_signature,
                                         provider_metadata: tool_metadata,
                                     }));
                                     has_tool_calls = true;
@@ -502,7 +501,6 @@ impl LanguageModel for VertexModel {
                                             input: ec.to_string(),
                                             provider_executed: Some(true),
                                             dynamic: None,
-                                            thought_signature: None,
                                             provider_metadata: Some(vertex_server_tool_metadata(
                                                 &id,
                                                 "code_execution",
@@ -569,7 +567,6 @@ impl LanguageModel for VertexModel {
                                         input: args.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
-                                        thought_signature,
                                         provider_metadata: Some(server_meta),
                                     }));
                                     // provider-executed → does NOT set has_tool_calls
@@ -739,7 +736,6 @@ fn extract_content_from_candidate(
                         input: ec.to_string(),
                         provider_executed: Some(true),
                         dynamic: None,
-                        thought_signature: None,
                         provider_metadata: Some(vertex_server_tool_metadata(
                             &id,
                             "code_execution",
@@ -807,7 +803,6 @@ fn extract_content_from_candidate(
                     input: input.to_string(),
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature,
                     provider_metadata,
                 }));
                 has_tool_calls = true;
@@ -832,7 +827,6 @@ fn extract_content_from_candidate(
                     input: input.to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature,
                     provider_metadata: Some(server_meta),
                 }));
             } else if let Some(tr) = part.get("toolResponse") {

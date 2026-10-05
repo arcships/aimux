@@ -435,7 +435,6 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
-                                                thought_signature: None,
                                                 provider_metadata: None,
                                             }));
 
@@ -1149,7 +1148,6 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
             }
@@ -1168,7 +1166,6 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     input,
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
 
@@ -1194,7 +1191,6 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     input: json!({ "server_label": server_label }).to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
 

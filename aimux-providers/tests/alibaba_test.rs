@@ -306,7 +306,6 @@ async fn converts_tool_call_and_tool_result_messages() {
                 tool_name: "get_weather".to_string(),
                 input: json!({"location": "SF"}),
                 provider_executed: None,
-                thought_signature: None,
                 provider_options: None,
             }],
             ..Default::default()

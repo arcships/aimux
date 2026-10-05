@@ -631,7 +631,6 @@ impl StreamingToolCallTracker {
             input: tool_call.arguments.clone(),
             provider_executed: None,
             dynamic: None,
-            thought_signature: None,
             provider_metadata,
         }));
     }

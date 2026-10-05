@@ -197,7 +197,6 @@ pub fn build_responses_generate_result(
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: Some(json!({
                         (provider_key.clone()): {
                             "itemId": part.get("id").cloned().unwrap_or(Value::Null),
@@ -226,7 +225,6 @@ pub fn build_responses_generate_result(
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: Some(json!({
                         (provider_key.clone()): {
                             "itemId": part.get("id").cloned().unwrap_or(Value::Null),
@@ -286,7 +284,6 @@ pub fn build_responses_generate_result(
                         .to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
                 content.push(GenerateContent::ToolApprovalRequest(
@@ -816,7 +813,7 @@ where
                                             tool_name: format!("mcp.{}", item.get("name").and_then(Value::as_str).unwrap_or("")),
                                             input: item.get("arguments").and_then(Value::as_str).unwrap_or("").to_string(),
                                             provider_executed: Some(true), dynamic: Some(true),
-                                            thought_signature: None, provider_metadata: None,
+                                            provider_metadata: None,
                                         }));
                                         yield Ok(StreamPart::ToolApprovalRequest(aimux_core::result::RawToolApprovalRequest {
                                             approval_id: item.get("approval_request_id").or_else(|| item.get("id")).and_then(Value::as_str).unwrap_or("").to_string(),
@@ -870,7 +867,6 @@ where
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
-                                            thought_signature: None,
                                             provider_metadata: None,
                                         }));
                                     }
@@ -905,7 +901,6 @@ where
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
-                                            thought_signature: None,
                                             provider_metadata: None,
                                         }));
                                     }

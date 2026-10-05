@@ -156,8 +156,6 @@ class ToolCall {
   // and mapped to the `dynamic` JSON key.
   @JsonKey(name: 'dynamic')
   final bool? isDynamic;
-  @JsonKey(name: 'thought_signature')
-  final String? thoughtSignature;
   /// Additional provider-specific metadata associated with this call.
   @JsonKey(name: 'provider_metadata', includeIfNull: false)
   final dynamic providerMetadata;
@@ -172,7 +170,6 @@ class ToolCall {
     required this.input,
     this.providerExecuted,
     this.isDynamic,
-    this.thoughtSignature,
     this.providerMetadata,
     this.invalid,
     this.error,
@@ -212,10 +209,6 @@ class RawToolCall {
   /// identifier, so the field is `isDynamic` and maps to the `dynamic` key.
   final bool? isDynamic;
 
-  /// Provider-assigned thought signature (e.g. Gemini `thoughtSignature`),
-  /// echoed back verbatim on the next turn.
-  final String? thoughtSignature;
-
   /// Additional provider-specific metadata associated with this call.
   final dynamic providerMetadata;
 
@@ -225,7 +218,6 @@ class RawToolCall {
     required this.input,
     this.providerExecuted,
     this.isDynamic,
-    this.thoughtSignature,
     this.providerMetadata,
   });
 
@@ -235,7 +227,6 @@ class RawToolCall {
         input: json['input'] as String,
         providerExecuted: json['provider_executed'] as bool?,
         isDynamic: json['dynamic'] as bool?,
-        thoughtSignature: json['thought_signature'] as String?,
         providerMetadata: json['provider_metadata'],
       );
 
@@ -248,7 +239,6 @@ class RawToolCall {
         input: input ?? this.input,
         providerExecuted: providerExecuted,
         isDynamic: isDynamic,
-        thoughtSignature: thoughtSignature,
         providerMetadata: providerMetadata,
       );
 
@@ -258,7 +248,6 @@ class RawToolCall {
         'input': input,
         if (providerExecuted != null) 'provider_executed': providerExecuted,
         if (isDynamic != null) 'dynamic': isDynamic,
-        if (thoughtSignature != null) 'thought_signature': thoughtSignature,
         if (providerMetadata != null) 'provider_metadata': providerMetadata,
       };
 }
@@ -514,7 +503,6 @@ final class GenerateContentToolCall extends GenerateContent {
   final dynamic input;
   final bool? providerExecuted;
   final bool? isDynamic;
-  final String? thoughtSignature;
   final Map<String, dynamic>? providerMetadata;
 
   GenerateContentToolCall({
@@ -523,7 +511,6 @@ final class GenerateContentToolCall extends GenerateContent {
     required this.input,
     this.providerExecuted,
     this.isDynamic,
-    this.thoughtSignature,
     this.providerMetadata,
   });
 
@@ -537,7 +524,6 @@ final class GenerateContentToolCall extends GenerateContent {
         input: json['input'],
         providerExecuted: json['provider_executed'] as bool?,
         isDynamic: json['dynamic'] as bool?,
-        thoughtSignature: json['thought_signature'] as String?,
         providerMetadata:
             json['provider_metadata'] as Map<String, dynamic>?,
       );
@@ -550,7 +536,6 @@ final class GenerateContentToolCall extends GenerateContent {
           'input': input,
           if (providerExecuted != null) 'provider_executed': providerExecuted,
           if (isDynamic != null) 'dynamic': isDynamic,
-          if (thoughtSignature != null) 'thought_signature': thoughtSignature,
           if (providerMetadata != null) 'provider_metadata': providerMetadata,
         },
       };
@@ -1511,7 +1496,6 @@ final class StreamPartToolCall extends StreamPart {
   final dynamic input;
   final bool? providerExecuted;
   final bool? isDynamic;
-  final String? thoughtSignature;
   final Map<String, dynamic>? providerMetadata;
   /// Set by Core when the tool call stays invalid after optional repair.
   final bool? invalid;
@@ -1524,7 +1508,6 @@ final class StreamPartToolCall extends StreamPart {
     required this.input,
     this.providerExecuted,
     this.isDynamic,
-    this.thoughtSignature,
     this.providerMetadata,
     this.invalid,
     this.error,
@@ -1537,7 +1520,6 @@ final class StreamPartToolCall extends StreamPart {
         input: json['input'],
         providerExecuted: json['provider_executed'] as bool?,
         isDynamic: json['dynamic'] as bool?,
-        thoughtSignature: json['thought_signature'] as String?,
         providerMetadata:
             json['provider_metadata'] as Map<String, dynamic>?,
         invalid: json['invalid'] as bool?,
@@ -1552,7 +1534,6 @@ final class StreamPartToolCall extends StreamPart {
           'input': input,
           if (providerExecuted != null) 'provider_executed': providerExecuted,
           if (isDynamic != null) 'dynamic': isDynamic,
-          if (thoughtSignature != null) 'thought_signature': thoughtSignature,
           if (providerMetadata != null) 'provider_metadata': providerMetadata,
           if (invalid != null) 'invalid': invalid,
           if (error != null) 'error': error,
@@ -2106,17 +2087,15 @@ final class ContentPartToolCall extends ContentPart {
   final String toolName;
   final dynamic input;
   final bool? providerExecuted;
-  final String? thoughtSignature;
   final Map<String, dynamic>? providerOptions;
   const ContentPartToolCall(
-      {required this.toolCallId, required this.toolName, required this.input, this.providerExecuted, this.thoughtSignature, this.providerOptions});
+      {required this.toolCallId, required this.toolName, required this.input, this.providerExecuted, this.providerOptions});
   static ContentPartToolCall fromJson(Map<String, dynamic> json) =>
       ContentPartToolCall(
         toolCallId: json['tool_call_id'] as String,
         toolName: json['tool_name'] as String,
         input: json['input'],
         providerExecuted: json['provider_executed'] as bool?,
-        thoughtSignature: json['thought_signature'] as String?,
         providerOptions: json['provider_options'] as Map<String, dynamic>?,
       );
   @override
@@ -2126,7 +2105,6 @@ final class ContentPartToolCall extends ContentPart {
         'tool_name': toolName,
         'input': input,
         if (providerExecuted != null) 'provider_executed': providerExecuted,
-        if (thoughtSignature != null) 'thought_signature': thoughtSignature,
         if (providerOptions != null) 'provider_options': providerOptions,
       };
 }

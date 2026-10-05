@@ -324,7 +324,6 @@ pub async fn execute_generate(
                 input,
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
                 provider_metadata: None,
             }));
         }

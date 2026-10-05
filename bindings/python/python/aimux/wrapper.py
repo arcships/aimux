@@ -162,7 +162,6 @@ class ToolCall(BaseModel):
     input: Any
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
-    thought_signature: Optional[str] = None
     provider_metadata: Optional[Any] = None
     invalid: Optional[bool] = None
     error: Optional[AiMuxErrorValue] = None
@@ -181,7 +180,6 @@ class RawToolCall(BaseModel):
     input: str
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
-    thought_signature: Optional[str] = None
     provider_metadata: Optional[Any] = None
 
 
@@ -403,7 +401,6 @@ class _ContentToolCall(BaseModel):
     input: Any
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
-    thought_signature: Optional[str] = None
     provider_metadata: Optional[Any] = None
 
 
@@ -575,7 +572,6 @@ class _SPToolCall(BaseModel):
     input: Any
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
-    thought_signature: Optional[str] = None
     provider_metadata: Optional[Dict[str, Any]] = None
     invalid: Optional[bool] = None
     error: Optional[AiMuxErrorValue] = None
@@ -858,7 +854,6 @@ class _ToolCallContentPart(BaseModel):
     tool_name: str
     input: Any
     provider_executed: Optional[bool] = None
-    thought_signature: Optional[str] = None
     provider_options: Optional[Any] = None
 
 

@@ -190,7 +190,6 @@ type ToolCall struct {
 	Input            json.RawMessage `json:"input,omitempty"`
 	ProviderExecuted *bool           `json:"provider_executed,omitempty"`
 	Dynamic          *bool           `json:"dynamic,omitempty"`
-	ThoughtSignature *string         `json:"thought_signature,omitempty"`
 	// ProviderMetadata carries provider-specific data associated with this call.
 	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
 	// Invalid is set by Core when the tool call stays invalid after optional repair.
