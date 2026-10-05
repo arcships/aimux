@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 
 // ── Non-streaming response ──
@@ -50,27 +50,44 @@ pub struct FunctionCallResponse {
     pub arguments: String,
 }
 
-#[derive(Debug, Deserialize, Default, Serialize)]
+#[derive(Debug)]
 pub struct UsageResponse {
-    #[serde(default)]
-    pub prompt_tokens: Option<u32>,
-    #[serde(default)]
-    pub completion_tokens: Option<u32>,
-    #[serde(default)]
-    pub total_tokens: Option<u32>,
-    #[serde(default)]
-    pub num_cached_tokens: Option<u32>,
-    #[serde(default)]
-    pub prompt_tokens_details: Option<PromptTokensDetails>,
-    // Mistral has used both spellings at different times.
-    #[serde(default)]
-    pub prompt_token_details: Option<PromptTokensDetails>,
+    pub fields: UsageFields,
+    pub raw: Value,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+impl<'de> Deserialize<'de> for UsageResponse {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = Value::deserialize(deserializer)?;
+        let fields = serde_json::from_value(raw.clone()).map_err(serde::de::Error::custom)?;
+        Ok(Self { fields, raw })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UsageFields {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+    pub prompt_audio_seconds: Option<f64>,
+    pub request_count: Option<f64>,
+    pub service_tier: Option<String>,
+    pub num_cached_tokens: Option<u32>,
+    pub prompt_tokens_details: Option<PromptTokensDetails>,
+    pub prompt_token_details: Option<PromptTokensDetails>,
+    pub completion_tokens_details: Option<CompletionTokensDetails>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct PromptTokensDetails {
-    #[serde(default)]
     pub cached_tokens: Option<u32>,
+    pub audio_tokens: Option<f64>,
+    pub messages: Option<Vec<Value>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CompletionTokensDetails {
+    pub reasoning_tokens: Option<f64>,
 }
 
 // ── Streaming response ──

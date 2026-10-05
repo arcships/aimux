@@ -9,12 +9,12 @@ use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 pub struct ChatCompletionResponse {
-    pub id: String,
-    pub model: String,
+    pub id: Option<String>,
+    pub model: Option<String>,
     #[serde(default)]
     pub created: Option<u64>,
     pub choices: Vec<Choice>,
-    pub usage: UsageResponse,
+    pub usage: Option<UsageResponse>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,8 +29,10 @@ pub struct Choice {
 
 #[derive(Debug, Deserialize)]
 pub struct MessageResponse {
-    pub role: String,
+    pub role: Option<String>,
     pub content: Option<String>,
+    #[serde(default)]
+    pub audio: Option<AudioResponse>,
     /// Reasoning text (`reasoning` field of OpenAI-shaped servers).
     #[serde(default)]
     pub reasoning: Option<String>,
@@ -46,6 +48,11 @@ pub struct MessageResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct AudioResponse {
+    pub transcript: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ToolCallResponse {
     pub id: String,
     pub function: FunctionCallResponse,
@@ -58,7 +65,7 @@ pub struct FunctionCallResponse {
     pub arguments: String,
 }
 
-#[derive(Debug, Deserialize, Clone, Serialize)]
+#[derive(Debug, Default, Deserialize, Clone, Serialize)]
 pub struct UsageResponse {
     #[serde(default)]
     pub prompt_tokens: Option<u32>,

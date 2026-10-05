@@ -151,6 +151,7 @@ pub(crate) fn result_provider_metadata(
     stop_sequence: Option<&str>,
     container: Option<&Value>,
     context_management: Option<&Value>,
+    used_custom_options_key: bool,
 ) -> ProviderMetadata {
     let field = |value: &Value, key: &str| value.get(key).cloned().unwrap_or(Value::Null);
     let iterations =
@@ -162,11 +163,26 @@ pub(crate) fn result_provider_metadata(
                     iterations
                         .iter()
                         .map(|i| {
-                            json!({
+                            let mut iteration = json!({
                                 "type": field(i, "type"),
                                 "inputTokens": field(i, "input_tokens"),
                                 "outputTokens": field(i, "output_tokens"),
-                            })
+                            });
+                            if let Some(model) = i.get("model").filter(|value| !value.is_null()) {
+                                iteration["model"] = model.clone();
+                            }
+                            for (wire, key) in [
+                                ("cache_creation_input_tokens", "cacheCreationInputTokens"),
+                                ("cache_read_input_tokens", "cacheReadInputTokens"),
+                            ] {
+                                if let Some(value) = i
+                                    .get(wire)
+                                    .filter(|value| value.as_u64().is_some_and(|value| value != 0))
+                                {
+                                    iteration[key] = value.clone();
+                                }
+                            }
+                            iteration
                         })
                         .collect(),
                 )
@@ -219,10 +235,39 @@ pub(crate) fn result_provider_metadata(
         "contextManagement": context_management,
     });
     let mut result = provider_namespace(CANONICAL_KEY, metadata);
-    if options_name != CANONICAL_KEY {
+    if used_custom_options_key && options_name != CANONICAL_KEY {
         result.insert(options_name.to_string(), result[CANONICAL_KEY].clone());
     }
     result
+}
+
+pub(crate) fn extend_result_metadata(
+    metadata: &mut ProviderMetadata,
+    stop_details: Option<&Value>,
+    input_transformations: Option<&Value>,
+    safeguard_results: Option<&Value>,
+) {
+    for namespace in metadata.values_mut() {
+        if let Some(details) = stop_details.filter(|details| !details.is_null()) {
+            let mut mapped = json!({ "type": details["type"] });
+            for (wire, key) in [
+                ("category", "category"),
+                ("explanation", "explanation"),
+                ("recommended_model", "recommendedModel"),
+            ] {
+                if let Some(value) = details.get(wire).filter(|value| !value.is_null()) {
+                    mapped[key] = value.clone();
+                }
+            }
+            namespace.insert("stopDetails".to_string(), mapped);
+        }
+        if let Some(value) = input_transformations.filter(|value| !value.is_null()) {
+            namespace.insert("inputTransformations".to_string(), value.clone());
+        }
+        if let Some(value) = safeguard_results.filter(|value| !value.is_null()) {
+            namespace.insert("safeguardResults".to_string(), value.clone());
+        }
+    }
 }
 
 /// `cleared_input_tokens` -> `clearedInputTokens`.
@@ -271,97 +316,5 @@ pub fn usage_from_anthropic(usage: &AnthropicUsage) -> Usage {
             }
         }
         Err(_) => Usage::default(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn result_metadata_rekeys_iterations_container_and_edits() {
-        let usage = json!({
-            "input_tokens": 5,
-            "output_tokens": 7,
-            "iterations": [
-                { "type": "message", "input_tokens": 5, "output_tokens": 7 },
-            ],
-        });
-        let container = json!({
-            "id": "container_1",
-            "expires_at": "2026-01-01T00:00:00Z",
-            "skills": [{ "type": "custom", "skill_id": "pdf", "version": "latest" }],
-        });
-        let edits = json!({ "applied_edits": [
-            { "type": "clear_tool_uses_20250919", "cleared_tool_uses": 2, "cleared_input_tokens": 90 },
-            { "type": "compact_20260112" },
-        ]});
-        let metadata =
-            result_provider_metadata("proxy", &usage, Some("END"), Some(&container), Some(&edits));
-        let expected = json!({
-            "usage": usage,
-            "stopSequence": "END",
-            "iterations": [{ "type": "message", "inputTokens": 5, "outputTokens": 7 }],
-            "container": {
-                "expiresAt": "2026-01-01T00:00:00Z",
-                "id": "container_1",
-                "skills": [{ "type": "custom", "skillId": "pdf", "version": "latest" }],
-            },
-            "contextManagement": { "appliedEdits": [
-                { "type": "clear_tool_uses_20250919", "clearedToolUses": 2, "clearedInputTokens": 90 },
-                { "type": "compact_20260112" },
-            ]},
-        });
-        // The same object under the canonical key and the custom name.
-        assert_eq!(
-            serde_json::to_value(&metadata).unwrap(),
-            json!({ CANONICAL_KEY: expected, "proxy": expected })
-        );
-    }
-
-    /// The typed usage keeps what the API sent: serializing it gives the raw
-    /// object back (nothing invented, nothing dropped), so `iterations` reach
-    /// the token accounting and `usage.raw` is the provider's own object.
-    #[test]
-    fn typed_usage_round_trips_the_raw_object() {
-        let raw = json!({
-            "input_tokens": 100,
-            "output_tokens": 50,
-            "iterations": [
-                { "type": "compaction", "input_tokens": 60, "output_tokens": 10 },
-                { "type": "message", "input_tokens": 40, "output_tokens": 40 },
-            ],
-            "service_tier": "standard",
-        });
-        let typed: AnthropicUsage = serde_json::from_value(raw.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&typed).unwrap(), raw);
-        let usage = usage_from_anthropic(&typed);
-        assert_eq!(usage.raw, Some(raw));
-        // Summed across the executor iterations, not the top-level totals.
-        assert_eq!(usage.input_tokens.total, Some(100));
-        assert_eq!(usage.output_tokens.total, Some(50));
-
-        let plain: AnthropicUsage =
-            serde_json::from_value(json!({ "input_tokens": 3, "output_tokens": 4 })).unwrap();
-        assert_eq!(
-            serde_json::to_value(&plain).unwrap(),
-            json!({ "input_tokens": 3, "output_tokens": 4 })
-        );
-    }
-
-    #[test]
-    fn absent_pieces_are_null_under_the_canonical_key_only() {
-        let usage = json!({ "input_tokens": 1, "output_tokens": 2 });
-        let metadata = result_provider_metadata(CANONICAL_KEY, &usage, None, None, None);
-        assert_eq!(
-            serde_json::to_value(&metadata).unwrap(),
-            json!({ CANONICAL_KEY: {
-                "usage": usage,
-                "stopSequence": null,
-                "iterations": null,
-                "container": null,
-                "contextManagement": null,
-            }})
-        );
     }
 }

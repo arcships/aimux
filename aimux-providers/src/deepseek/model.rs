@@ -471,14 +471,14 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                 self.provider_options_name(),
                 Value::Object(metadata),
             )),
-            request: Some(RequestInfo { body: Some(body) }),
             response: Some(ResponseInfo {
                 id: data.id,
                 timestamp: timestamp(data.created),
                 model_id: data.model,
                 headers: Some(response_headers),
-                body: Some(raw),
+                body: None,
             }),
+            request: Some(RequestInfo { body: Some(body) }),
         })
     }
 

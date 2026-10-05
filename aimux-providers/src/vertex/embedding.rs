@@ -56,7 +56,7 @@ impl EmbeddingModel for VertexEmbeddingModel {
         if uses_embed_content_endpoint(&self.model_id) {
             Some(1)
         } else {
-            Some(2048)
+            Some(250)
         }
     }
 
@@ -69,7 +69,16 @@ impl EmbeddingModel for VertexEmbeddingModel {
         options: &EmbeddingCallOptions,
     ) -> Result<EmbeddingResult, AiMuxError> {
         // Parse provider options: `googleVertex`, then `google`.
-        let vertex_options = parse_vertex_provider_options(options.provider_options.as_ref());
+        let vertex_options = parse_vertex_provider_options(options.provider_options.as_ref())?;
+        let max = self.max_embeddings_per_call().unwrap_or(250);
+        if options.values.len() > max as usize {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "Too many embedding values for {} model {}: maximum {max}, received {}",
+                self.provider(),
+                self.model_id,
+                options.values.len()
+            )));
+        }
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
@@ -88,7 +97,7 @@ impl EmbeddingModel for VertexEmbeddingModel {
             );
 
             let mut embed_config = Map::new();
-            if let Some(dim) = vertex_options.output_dimensionality {
+            if let Some(dim) = &vertex_options.output_dimensionality {
                 embed_config.insert("outputDimensionality".to_string(), json!(dim));
             }
             if let Some(task_type) = &vertex_options.task_type {
@@ -171,7 +180,7 @@ impl EmbeddingModel for VertexEmbeddingModel {
             .collect();
 
         let mut parameters = Map::new();
-        if let Some(dim) = vertex_options.output_dimensionality {
+        if let Some(dim) = &vertex_options.output_dimensionality {
             parameters.insert("outputDimensionality".to_string(), json!(dim));
         }
         if let Some(auto_truncate) = vertex_options.auto_truncate {
@@ -247,7 +256,7 @@ impl EmbeddingModel for VertexEmbeddingModel {
 // ── Provider options parsing ─────────────────────────────────────────────────
 
 struct VertexEmbeddingProviderOptions {
-    output_dimensionality: Option<u32>,
+    output_dimensionality: Option<Value>,
     task_type: Option<String>,
     title: Option<String>,
     auto_truncate: Option<bool>,
@@ -255,18 +264,54 @@ struct VertexEmbeddingProviderOptions {
 
 /// Parse Vertex embedding provider options.
 ///
-/// Tries the `googleVertex` key first, then `google` (the shared Gemini
-/// model's key).
+/// Tries `googleVertex`, then legacy `vertex`, then `google`.
 fn parse_vertex_provider_options(
     options: Option<&SharedProviderOptions>,
-) -> VertexEmbeddingProviderOptions {
-    let provider_opts = Namespace::Vertex.read_in(options);
+) -> Result<VertexEmbeddingProviderOptions, AiMuxError> {
+    let provider_opts = Namespace::Vertex.read(options);
+    if let Some(opts) = provider_opts {
+        for (name, valid) in [
+            (
+                "outputDimensionality",
+                opts.get("outputDimensionality")
+                    .is_none_or(Value::is_number),
+            ),
+            ("title", opts.get("title").is_none_or(Value::is_string)),
+            (
+                "autoTruncate",
+                opts.get("autoTruncate").is_none_or(Value::is_boolean),
+            ),
+            (
+                "taskType",
+                opts.get("taskType").is_none_or(|v| {
+                    v.as_str().is_some_and(|v| {
+                        matches!(
+                            v,
+                            "SEMANTIC_SIMILARITY"
+                                | "CLASSIFICATION"
+                                | "CLUSTERING"
+                                | "RETRIEVAL_DOCUMENT"
+                                | "RETRIEVAL_QUERY"
+                                | "QUESTION_ANSWERING"
+                                | "FACT_VERIFICATION"
+                                | "CODE_RETRIEVAL_QUERY"
+                        )
+                    })
+                }),
+            ),
+        ] {
+            if !valid {
+                return Err(AiMuxError::InvalidArgument(format!(
+                    "Invalid Vertex embedding provider option: {name}"
+                )));
+            }
+        }
+    }
 
-    VertexEmbeddingProviderOptions {
+    Ok(VertexEmbeddingProviderOptions {
         output_dimensionality: provider_opts
             .and_then(|o| o.get("outputDimensionality"))
-            .and_then(serde_json::Value::as_u64)
-            .map(|d| d as u32),
+            .cloned(),
         task_type: provider_opts
             .and_then(|o| o.get("taskType"))
             .and_then(|v| v.as_str())
@@ -278,5 +323,5 @@ fn parse_vertex_provider_options(
         auto_truncate: provider_opts
             .and_then(|o| o.get("autoTruncate"))
             .and_then(serde_json::Value::as_bool),
-    }
+    })
 }

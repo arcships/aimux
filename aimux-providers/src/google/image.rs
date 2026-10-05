@@ -1,44 +1,26 @@
-//! Google image model — implements the `ImageModel` trait.
-//!
-//! Aligned with Vercel AI SDK `GoogleImageModel`
-//! (`reference/ai/packages/google/src/google-image-model.ts`).
-//!
-//! Two code paths:
-//! - **Imagen** models (non-`gemini-*`): `POST {base_url}/models/{id}:predict`
-//! - **Gemini** image models (`gemini-*`): `POST {base_url}/models/{id}:generateContent`
+//! Google image generation delegates to the Gemini language model.
 
-use std::collections::HashMap;
-
-use async_trait::async_trait;
-use serde_json::{Map, Value, json};
-
+use super::convert::{build_request_body_with_warnings, convert_usage, validate_call_options};
+use super::options::{GOOGLE, google_metadata};
+use super::types::GenerateContentResponse;
+use crate::shared::EndpointConfig;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult, ImageUsage,
 };
-use aimux_core::shared::{SharedProviderMetadata, SharedProviderOptions, Warning};
+use aimux_core::language_model_message::{FilePart, LanguageModelMessage, TextPart, UserPart};
+use aimux_core::options::CallOptions;
+use aimux_core::shared::{FileBytes, FileData, Warning};
+use aimux_core::tool::{ProviderTool, Tool};
+use async_trait::async_trait;
+use serde_json::json;
 
-use super::options::{GOOGLE, google_options as read_google_options};
-use crate::shared::EndpointConfig;
-
-/// Google error structure: `{ "error": { "message": "...", "status": "..." } }`.
-/// Returns `true` if the model ID is a Gemini image model.
-fn is_gemini_model(model_id: &str) -> bool {
-    model_id.starts_with("gemini-")
-}
-
-/// Settings for the Google image model.
 #[derive(Debug, Clone, Default)]
 pub struct GoogleImageSettings {
-    /// Override the maximum number of images per call.
     pub max_images_per_call: Option<u32>,
 }
 
-/// A Google image generation model (Imagen or Gemini).
-///
-/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the process-wide shared
-/// `Client` internally (RFC-0009 §4.1).
 pub struct GoogleImageModel {
     model_id: String,
     settings: GoogleImageSettings,
@@ -57,270 +39,6 @@ impl GoogleImageModel {
             config,
         }
     }
-
-    fn predict_path(&self) -> String {
-        format!("/models/{}:predict", self.model_id)
-    }
-
-    fn generate_content_path(&self) -> String {
-        let model_path = if self.model_id.contains('/') {
-            self.model_id.clone()
-        } else {
-            format!("models/{}", self.model_id)
-        };
-        format!("/{model_path}:generateContent")
-    }
-
-    fn max_images(&self) -> u32 {
-        if let Some(max) = self.settings.max_images_per_call {
-            return max;
-        }
-        if is_gemini_model(&self.model_id) {
-            10
-        } else {
-            4
-        }
-    }
-
-    // ── Imagen path ─────────────────────────────────────────────────────────
-
-    async fn do_generate_imagen(
-        &self,
-        options: &ImageCallOptions,
-    ) -> Result<ImageResult, AiMuxError> {
-        let mut warnings = Vec::new();
-
-        // Imagen API endpoints do not support image editing
-        if let Some(ref files) = options.files
-            && !files.is_empty()
-        {
-            return Err(AiMuxError::UnsupportedFunctionality(
-                "Google Gemini API does not support image editing with Imagen models. \
-                     Use Google Vertex AI (@ai-sdk/google-vertex) for image editing capabilities."
-                    .to_string(),
-            ));
-        }
-
-        if options.mask.is_some() {
-            return Err(AiMuxError::UnsupportedFunctionality(
-                "Google Gemini API does not support image editing with masks. \
-                 Use Google Vertex AI (@ai-sdk/google-vertex) for image editing capabilities."
-                    .to_string(),
-            ));
-        }
-
-        if options.size.is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "size".to_string(),
-                details: Some(
-                    "This model does not support the `size` option. Use `aspectRatio` instead."
-                        .to_string(),
-                ),
-            });
-        }
-
-        if options.seed.is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "seed".to_string(),
-                details: Some(
-                    "This model does not support the `seed` option through this provider."
-                        .to_string(),
-                ),
-            });
-        }
-
-        let google_options = parse_google_image_options(&options.provider_options);
-
-        let mut parameters = Map::new();
-        parameters.insert("sampleCount".to_string(), json!(options.n));
-
-        if let Some(ar) = options.aspect_ratio {
-            parameters.insert("aspectRatio".to_string(), json!(ar.to_string()));
-        }
-
-        if let Some(pg) = google_options.person_generation {
-            parameters.insert("personGeneration".to_string(), json!(pg));
-        }
-
-        if google_options.google_search.is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "googleSearch".to_string(),
-                details: Some(
-                    "Google Search grounding is only supported on Gemini image models.".to_string(),
-                ),
-            });
-        }
-
-        let body = json!({
-            "instances": [{ "prompt": options.prompt }],
-            "parameters": parameters,
-        });
-
-        let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(exchange.url(&self.predict_path()), options),
-            exchange.transform_body(body),
-            aimux_provider_utils::create_json_response_handler(),
-            super::google_failed_response_handler(),
-        )
-        .await?;
-
-        let response_headers = resp.response_headers;
-
-        let response_body: Value = resp.value;
-
-        let images = extract_imagen_images(&response_body);
-        let provider_metadata = extract_imagen_metadata(&response_body);
-
-        Ok(ImageResult {
-            images,
-            warnings,
-            provider_metadata: Some(provider_metadata),
-            response: ImageResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-            },
-            usage: None,
-        })
-    }
-
-    // ── Gemini path ─────────────────────────────────────────────────────────
-
-    async fn do_generate_gemini(
-        &self,
-        options: &ImageCallOptions,
-    ) -> Result<ImageResult, AiMuxError> {
-        let mut warnings = Vec::new();
-
-        // Gemini does not support mask-based inpainting
-        if options.mask.is_some() {
-            return Err(AiMuxError::UnsupportedFunctionality(
-                "Gemini image models do not support mask-based image editing.".to_string(),
-            ));
-        }
-
-        // Gemini does not support generating multiple images per call via n parameter
-        if options.n > 1 {
-            return Err(AiMuxError::UnsupportedFunctionality(
-                "Gemini image models do not support generating a set number of images per call. \
-                 Use n=1 or omit the n parameter."
-                    .to_string(),
-            ));
-        }
-
-        if options.size.is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "size".to_string(),
-                details: Some(
-                    "This model does not support the `size` option. Use `aspectRatio` instead."
-                        .to_string(),
-                ),
-            });
-        }
-
-        let google_options = parse_google_image_options(&options.provider_options);
-
-        // Build contents parts
-        let mut parts: Vec<Value> = Vec::new();
-        if let Some(ref prompt) = options.prompt {
-            parts.push(json!({ "text": prompt }));
-        }
-
-        if let Some(ref files) = options.files {
-            for file in files {
-                match file {
-                    ImageFile::Url { url } => {
-                        return Err(AiMuxError::UnsupportedFunctionality(format!(
-                            "URL-based input images with media type \"image/*\" are not passed as \
-                             inline bytes. URL: {url}"
-                        )));
-                    }
-                    ImageFile::File { media_type, data } => {
-                        let data_str = match data {
-                            ImageFileData::Base64(b64) => b64.clone(),
-                            ImageFileData::Binary(bytes) => base64::Engine::encode(
-                                &base64::engine::general_purpose::STANDARD,
-                                bytes,
-                            ),
-                        };
-                        parts.push(json!({
-                            "inlineData": {
-                                "mimeType": media_type,
-                                "data": data_str,
-                            }
-                        }));
-                    }
-                }
-            }
-        }
-
-        let contents = json!([{ "role": "user", "parts": parts }]);
-
-        // Build generationConfig
-        let mut generation_config = Map::new();
-        generation_config.insert("responseModalities".to_string(), json!(["IMAGE"]));
-
-        if let Some(ar) = options.aspect_ratio {
-            generation_config.insert(
-                "imageConfig".to_string(),
-                json!({ "aspectRatio": ar.to_string() }),
-            );
-        }
-
-        if let Some(seed) = options.seed {
-            generation_config.insert("seed".to_string(), json!(seed));
-        }
-
-        // Passthrough provider options (excluding googleSearch)
-        if let Some(google) = read_google_options(Some(&options.provider_options)) {
-            for (key, value) in google {
-                if key == "googleSearch" || key == "personGeneration" || key == "aspectRatio" {
-                    continue;
-                }
-                generation_config.insert(key.clone(), value.clone());
-            }
-        }
-
-        let mut body = Map::new();
-        body.insert("contents".to_string(), contents);
-        body.insert(
-            "generationConfig".to_string(),
-            Value::Object(generation_config),
-        );
-
-        // Tools (googleSearch)
-        if let Some(ref gs) = google_options.google_search {
-            body.insert("tools".to_string(), json!([{ "googleSearch": gs }]));
-        }
-
-        let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(exchange.url(&self.generate_content_path()), options),
-            exchange.transform_body(Value::Object(body)),
-            aimux_provider_utils::create_json_response_handler(),
-            super::google_failed_response_handler(),
-        )
-        .await?;
-
-        let response_headers = resp.response_headers;
-
-        let response_body: Value = resp.value;
-
-        let (images, provider_metadata, usage) = extract_gemini_result(&response_body);
-
-        Ok(ImageResult {
-            images,
-            warnings,
-            provider_metadata: Some(provider_metadata),
-            response: ImageResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-            },
-            usage,
-        })
-    }
 }
 
 #[async_trait]
@@ -328,141 +46,181 @@ impl ImageModel for GoogleImageModel {
     fn provider(&self) -> &str {
         &self.config.provider
     }
-
     fn model_id(&self) -> &str {
         &self.model_id
     }
-
     fn max_images_per_call(&self) -> Option<u32> {
-        Some(self.max_images())
+        Some(self.settings.max_images_per_call.unwrap_or(1))
     }
 
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError> {
-        if is_gemini_model(&self.model_id) {
-            self.do_generate_gemini(options).await
+        if !self.model_id.starts_with("gemini-") {
+            return Err(AiMuxError::UnsupportedFunctionality("Google image models other than Gemini are no longer supported. Use a model ID that starts with `gemini-`.".into()));
+        }
+        if options.mask.is_some() {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "Gemini image models do not support mask-based image editing.".into(),
+            ));
+        }
+        let warnings = if options.size.is_some() {
+            vec![Warning::Unsupported {
+                feature: "size".into(),
+                details: Some(
+                    "This model does not support the `size` option. Use `aspectRatio` instead."
+                        .into(),
+                ),
+            }]
         } else {
-            self.do_generate_imagen(options).await
+            Vec::new()
+        };
+        let mut content = Vec::new();
+        if let Some(prompt) = &options.prompt {
+            content.push(UserPart::Text(TextPart {
+                text: prompt.clone(),
+                provider_options: None,
+            }));
         }
-    }
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-/// Parsed Google image provider options.
-struct GoogleImageOptions {
-    person_generation: Option<String>,
-    google_search: Option<Value>,
-}
-
-/// Parse Google image provider options from the `"google"` key.
-fn parse_google_image_options(provider_options: &SharedProviderOptions) -> GoogleImageOptions {
-    let google = read_google_options(Some(provider_options));
-    GoogleImageOptions {
-        person_generation: google
-            .and_then(|g| g.get("personGeneration"))
-            .and_then(|v| v.as_str())
-            .map(String::from),
-        google_search: google.and_then(|g| g.get("googleSearch")).cloned(),
-    }
-}
-
-/// Extract base64 images from an Imagen response.
-fn extract_imagen_images(response: &Value) -> ImageOutputs {
-    let images: Vec<String> = response
-        .get("predictions")
-        .and_then(|p| p.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|p| {
-                    p.get("bytesBase64Encoded")
-                        .and_then(|v| v.as_str())
-                        .map(String::from)
+        for file in options.files.iter().flatten() {
+            let (data, media_type) = match file {
+                ImageFile::Url { url } => (FileData::Url { url: url.clone() }, "image/*".into()),
+                ImageFile::File { media_type, data } => (
+                    FileData::Data {
+                        data: match data {
+                            ImageFileData::Base64(data) => FileBytes::Base64(data.clone()),
+                            ImageFileData::Binary(data) => FileBytes::Binary(data.clone()),
+                        },
+                    },
+                    media_type.clone(),
+                ),
+            };
+            content.push(UserPart::File(FilePart {
+                data,
+                media_type,
+                filename: None,
+                provider_options: None,
+            }));
+        }
+        let mut call = CallOptions::new(vec![LanguageModelMessage::User {
+            content,
+            provider_options: None,
+        }]);
+        call.seed = options.seed;
+        call.headers = options.headers.clone();
+        call.abort_signal = options.abort_signal.clone();
+        call.provider_options = Some(options.provider_options.clone());
+        let google = call
+            .provider_options
+            .as_mut()
+            .expect("set above")
+            .entry(GOOGLE.into())
+            .or_default();
+        if let Some(search) = google.remove("googleSearch") {
+            let invalid =
+                || AiMuxError::InvalidArgument("Invalid Google image googleSearch option".into());
+            let object = search.as_object().ok_or_else(invalid)?;
+            if object.get("searchTypes").is_some_and(|types| {
+                !types.as_object().is_some_and(|types| {
+                    ["webSearch", "imageSearch"]
+                        .iter()
+                        .all(|key| types.get(*key).is_none_or(serde_json::Value::is_object))
                 })
-                .collect()
-        })
-        .unwrap_or_default();
-    ImageOutputs::Base64(images)
-}
-
-/// Extract provider metadata from an Imagen response.
-fn extract_imagen_metadata(response: &Value) -> SharedProviderMetadata {
-    let mut metadata = HashMap::new();
-    let predictions = response
-        .get("predictions")
-        .and_then(|p| p.as_array())
-        .map(std::vec::Vec::len)
-        .unwrap_or(0);
-
-    let images: Vec<Value> = (0..predictions).map(|_| json!({})).collect();
-    let mut google_meta = Map::new();
-    google_meta.insert("images".to_string(), json!(images));
-    metadata.insert(GOOGLE.to_string(), google_meta);
-    metadata
-}
-
-/// Extract images, provider metadata, and usage from a Gemini generateContent response.
-fn extract_gemini_result(
-    response: &Value,
-) -> (ImageOutputs, SharedProviderMetadata, Option<ImageUsage>) {
-    let mut images: Vec<String> = Vec::new();
-    let mut grounding_metadata: Option<Value> = None;
-
-    if let Some(candidates) = response.get("candidates").and_then(|c| c.as_array()) {
-        for candidate in candidates {
-            // Extract grounding metadata
-            if let Some(gm) = candidate.get("groundingMetadata") {
-                grounding_metadata = Some(gm.clone());
+            }) || object.get("timeRangeFilter").is_some_and(|range| {
+                !range.as_object().is_some_and(|range| {
+                    ["startTime", "endTime"]
+                        .iter()
+                        .all(|key| range.get(*key).is_some_and(serde_json::Value::is_string))
+                })
+            }) {
+                return Err(invalid());
             }
-            // Extract images from content parts
-            if let Some(parts) = candidate
-                .get("content")
-                .and_then(|c| c.get("parts"))
-                .and_then(|p| p.as_array())
-            {
-                for part in parts {
-                    if let Some(inline_data) = part.get("inlineData")
-                        && let Some(mime_type) =
-                            inline_data.get("mimeType").and_then(|m| m.as_str())
-                        && mime_type.starts_with("image/")
-                        && let Some(data) = inline_data.get("data").and_then(|d| d.as_str())
-                    {
-                        images.push(data.to_string());
-                    }
+            call.tools = Some(vec![Tool::Provider(ProviderTool {
+                id: "google.google_search".into(),
+                name: "google_search".into(),
+                args: search,
+            })]);
+        }
+        google.insert("responseModalities".into(), json!(["IMAGE"]));
+        let user_config = google.remove("imageConfig").filter(|v| !v.is_null());
+        if options.aspect_ratio.is_some() || user_config.is_some() {
+            let mut config = user_config
+                .and_then(|v| v.as_object().cloned())
+                .unwrap_or_default();
+            if let Some(ratio) = options.aspect_ratio {
+                config.insert("aspectRatio".into(), json!(ratio.to_string()));
+            }
+            google.insert("imageConfig".into(), serde_json::Value::Object(config));
+        }
+        validate_call_options(&call)?;
+        let (body, _) = build_request_body_with_warnings(&self.model_id, &call);
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let response = aimux_provider_utils::post_json_to_api(
+            exchange.request(
+                exchange.url(&format!("/models/{}:generateContent", self.model_id)),
+                options,
+            ),
+            exchange.transform_body(body),
+            aimux_provider_utils::create_json_response_handler::<GenerateContentResponse>(),
+            super::google_failed_response_handler(),
+        )
+        .await?;
+        let data = response.value;
+        let candidate = data.candidates.into_iter().next().unwrap_or_default();
+        let images: Vec<String> = candidate
+            .content
+            .as_ref()
+            .and_then(|c| c.parts.as_ref())
+            .into_iter()
+            .flatten()
+            .filter_map(|part| {
+                if part.get("thought").and_then(serde_json::Value::as_bool) == Some(true) {
+                    return None;
                 }
-            }
-        }
+                let inline = part.get("inlineData")?;
+                inline
+                    .get("mimeType")?
+                    .as_str()?
+                    .starts_with("image/")
+                    .then(|| {
+                        inline
+                            .get("data")
+                            .and_then(serde_json::Value::as_str)
+                            .map(String::from)
+                    })
+                    .flatten()
+            })
+            .collect();
+        let metadata = google_metadata(json!({
+            "promptFeedback": data.prompt_feedback,
+            "groundingMetadata": candidate.grounding_metadata,
+            "urlContextMetadata": candidate.url_context_metadata,
+            "safetyRatings": candidate.safety_ratings,
+            "usageMetadata": data.usage_metadata,
+            "finishMessage": candidate.finish_message,
+            "serviceTier": data.usage_metadata.as_ref().and_then(|u| u.service_tier.as_ref()),
+            "finishReason": candidate.finish_reason.or_else(|| data.prompt_feedback.as_ref().and_then(|f| f.get("blockReason")).and_then(serde_json::Value::as_str).filter(|reason| !reason.is_empty() && *reason != "BLOCK_REASON_UNSPECIFIED" && *reason != "BLOCKED_REASON_UNSPECIFIED").map(String::from)),
+            "images": images.iter().map(|_| json!({})).collect::<Vec<_>>(),
+        }));
+        let usage = data
+            .usage_metadata
+            .as_ref()
+            .map(convert_usage)
+            .unwrap_or_default();
+        let input = usage.input_tokens.total;
+        let output = usage.output_tokens.total;
+        Ok(ImageResult {
+            images: ImageOutputs::Base64(images),
+            warnings,
+            provider_metadata: Some(metadata),
+            response: ImageResponse {
+                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                model_id: Some(self.model_id.clone()),
+                headers: Some(response.response_headers),
+            },
+            usage: Some(ImageUsage {
+                input_tokens: input,
+                output_tokens: output,
+                total_tokens: Some(input.unwrap_or(0) + output.unwrap_or(0)),
+            }),
+        })
     }
-
-    // Usage
-    let usage = response.get("usageMetadata").map(|u| {
-        let input = u
-            .get("promptTokenCount")
-            .and_then(serde_json::Value::as_u64)
-            .map(|x| x as u32);
-        let output = u
-            .get("candidatesTokenCount")
-            .and_then(serde_json::Value::as_u64)
-            .map(|x| x as u32);
-        let total = u
-            .get("totalTokenCount")
-            .and_then(serde_json::Value::as_u64)
-            .map(|x| x as u32);
-        ImageUsage {
-            input_tokens: input,
-            output_tokens: output,
-            total_tokens: total.or_else(|| Some(input.unwrap_or(0) + output.unwrap_or(0))),
-        }
-    });
-
-    // Provider metadata
-    let mut metadata = HashMap::new();
-    let mut google_meta = Map::new();
-    let image_metas: Vec<Value> = images.iter().map(|_| json!({})).collect();
-    google_meta.insert("images".to_string(), json!(image_metas));
-    if let Some(gm) = grounding_metadata {
-        google_meta.insert("groundingMetadata".to_string(), gm);
-    }
-    metadata.insert(GOOGLE.to_string(), google_meta);
-
-    (ImageOutputs::Base64(images), metadata, usage)
 }

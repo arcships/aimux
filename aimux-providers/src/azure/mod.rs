@@ -1,7 +1,7 @@
 //! # Azure OpenAI provider
 //!
 //! [`create_azure`] is the Rust form of the AI SDK's `createAzure`: it takes
-//! [`AzureOpenAIProviderSettings`], rejects an `api_key` given together with a
+//! [`AzureOpenAIProviderSettings`], rejects a non-empty `api_key` given with a
 //! `token_provider`, validates the base URL and returns an
 //! [`AzureOpenAIProvider`]. Nothing is read from the environment there: the
 //! API key (`AZURE_API_KEY`), the Entra ID token and the resource name
@@ -20,11 +20,9 @@
 //!
 //! Not ported from the AI SDK package: Azure-hosted DeepSeek (`deepseek`),
 //! the legacy completion model, MAI-Transcribe / MAI-Voice (`speechBaseURL`,
-//! `maiBaseURL`, `webSocket`), and Foundry-project message item types.
+//! `maiBaseURL`, `webSocket`).
 
 pub(crate) mod options;
-
-pub use crate::shared::TransformRequestBody;
 
 use std::sync::{Arc, OnceLock};
 
@@ -39,8 +37,9 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, Resolvable, combine_headers, load_setting,
-    normalize_headers, validate_base_url, without_trailing_slash,
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt, HeadersFn,
+    HttpRequest, Resolvable, default_fetch, load_setting, normalize_headers, validate_base_url,
+    without_trailing_slash,
 };
 
 use crate::openai::config::OpenAIModelConfig;
@@ -89,8 +88,8 @@ pub struct AzureOpenAIProviderSettings {
     /// The API key, sent as `api-key`. `None` (with no `token_provider`) loads
     /// `AZURE_API_KEY` when a request is made and fails that request with
     /// `AiMuxError::LoadApiKey` if it is unset. An explicit value is used as
-    /// given, `""` included. Giving it together with `token_provider` is an
-    /// error.
+    /// given, `""` included. Giving a non-empty key together with
+    /// `token_provider` is an error.
     pub api_key: Option<Resolvable<String>>,
     /// Microsoft Entra ID access token, sent as `Authorization: Bearer` (and
     /// no `api-key`). Use an [`Resolvable::AsyncFn`] to get a fresh token on
@@ -102,15 +101,14 @@ pub struct AzureOpenAIProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
+    /// Compatibility slot for the shared registry; native factories reject it.
+    pub transform_request_body: Option<crate::shared::TransformRequestBody>,
     /// The `api-version` query parameter. Default `"v1"`.
     pub api_version: Option<String>,
     /// Use the legacy deployment URL form
     /// `{base}/deployments/{deployment}{path}?api-version=` instead of
     /// `{base}/v1{path}`.
     pub use_deployment_based_urls: bool,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for AzureOpenAIProviderSettings {
@@ -128,10 +126,6 @@ impl std::fmt::Debug for AzureOpenAIProviderSettings {
             .field("fetch", &self.fetch.is_some())
             .field("api_version", &self.api_version)
             .field("use_deployment_based_urls", &self.use_deployment_based_urls)
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -171,14 +165,24 @@ fn base_url_info(base_url: Option<&str>) -> Result<BaseUrlInfo, AiMuxError> {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when both `api_key` and
+/// Returns `AiMuxError::InvalidArgument` when a non-empty `api_key` and
 /// `token_provider` are given or `base_url` is not an `http(s)` URL with a
 /// host. Those are the only ways this fails: credentials and the resource
 /// name are resolved per request, not here.
 pub fn create_azure(
     settings: AzureOpenAIProviderSettings,
 ) -> Result<AzureOpenAIProvider, AiMuxError> {
-    if settings.api_key.is_some() && settings.token_provider.is_some() {
+    if settings.transform_request_body.is_some() {
+        return Err(AiMuxError::InvalidArgument(
+            "transform_request_body is not supported by this provider".to_string(),
+        ));
+    }
+    let has_api_key = match &settings.api_key {
+        None => false,
+        Some(Resolvable::Value(value)) => !value.is_empty(),
+        Some(_) => true,
+    };
+    if has_api_key && settings.token_provider.is_some() {
         return Err(AiMuxError::InvalidArgument(
             "Both apiKey and tokenProvider were provided. Please use only one authentication \
              method."
@@ -191,8 +195,18 @@ pub fn create_azure(
         .map(validate_base_url)
         .transpose()?;
     let info = base_url_info(base_url.as_deref())?;
+    let fetch = settings
+        .token_provider
+        .clone()
+        .map(|token| {
+            Arc::new(BearerTokenFetch {
+                token,
+                fetch: settings.fetch.clone(),
+            }) as FetchFunction
+        })
+        .or(settings.fetch);
     let headers = match settings.token_provider {
-        Some(token) => bearer_token_headers(token, settings.headers),
+        Some(_) => Resolvable::Value(settings.headers.unwrap_or_default()),
         None => credential_headers(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Azure OpenAI"),
             AuthScheme::Header("api-key"),
@@ -206,34 +220,41 @@ pub fn create_azure(
         info,
         api_version: settings.api_version,
         use_deployment_based_urls: settings.use_deployment_based_urls,
-        headers,
-        fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
+        fetch,
+        headers: crate::openai::config::headers_with_user_agent(headers, "ai-sdk-azure"),
     })
 }
 
-/// Headers for Entra ID authentication: the user's headers, plus
-/// `Authorization: Bearer <token>` unless one of them already sets
-/// `Authorization` (then the token is not even requested, as in the AI SDK).
-fn bearer_token_headers(token: Resolvable<String>, user: Option<HeaderMapOpt>) -> HeadersFn {
-    Resolvable::from_async_fn(move || {
-        let token = token.clone();
-        let user = user.clone().unwrap_or_default();
-        async move {
-            let sets_authorization = user
-                .iter()
-                .any(|(name, value)| name.eq_ignore_ascii_case("authorization") && value.is_some());
-            if sets_authorization {
-                return Ok(combine_headers(&[&user]));
-            }
-            let mut layer = HeaderMapOpt::new();
-            layer.insert(
-                "Authorization".to_string(),
-                Some(format!("Bearer {}", token.resolve().await?)),
+/// Resolve authentication after per-call headers have been merged.
+struct BearerTokenFetch {
+    token: Resolvable<String>,
+    fetch: Option<FetchFunction>,
+}
+
+#[async_trait::async_trait]
+impl Fetch for BearerTokenFetch {
+    async fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
+        if !request.headers.contains_key("authorization") {
+            let token = self
+                .token
+                .resolve()
+                .await
+                .map_err(|error| FetchError::Other(error.to_string()))?;
+            request.headers.insert(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {token}").parse().map_err(
+                    |error: reqwest::header::InvalidHeaderValue| {
+                        FetchError::Other(error.to_string())
+                    },
+                )?,
             );
-            Ok(combine_headers(&[&layer, &user]))
         }
-    })
+        self.fetch
+            .clone()
+            .unwrap_or_else(default_fetch)
+            .fetch(request)
+            .await
+    }
 }
 
 /// The default provider: `create_azure` with default settings, created on
@@ -258,7 +279,6 @@ pub struct AzureOpenAIProvider {
     use_deployment_based_urls: bool,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 /// Everything the URL of a request depends on, owned so a closure can hold it.
@@ -367,8 +387,8 @@ impl AzureOpenAIProvider {
             url: Arc::new(move |path| rules.url(path, &deployment)),
             headers: self.headers.clone(),
             fetch: self.fetch.clone(),
-            supported_urls: aimux_core::language_model::SupportedUrls::default(),
-            transform_request_body: self.transform_request_body.clone(),
+            supported_urls: crate::openai::config::supported_urls(provider),
+            transform_request_body: None,
             responses: ResponsesProfile::default(),
         }
     }
@@ -393,6 +413,7 @@ impl AzureOpenAIProvider {
         config.responses = ResponsesProfile {
             namespace: options::RESPONSES,
             file_id_prefixes: vec!["assistant-"],
+            explicit_message_item_type: self.info.is_foundry_project,
         };
         OpenAIResponsesModel::from_config(deployment.to_string(), config)
     }

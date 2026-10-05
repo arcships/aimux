@@ -5,8 +5,6 @@
 //! plus provider-defined tools (computer use, web search, code execution, ...)
 //! via [`prepare_tools_with_provider`].
 //!
-//! Cache-control resolution is out of scope: it would require a
-//! `CacheControlValidator` plus provider options on individual parts.
 
 use std::collections::BTreeSet;
 
@@ -15,6 +13,7 @@ use aimux_core::tool::ToolChoice;
 use aimux_core::types::Warning;
 use serde_json::{Value, json};
 
+use super::cache_control::CacheControlValidator;
 use super::options::{CANONICAL, anthropic_options_in};
 
 /// Result of [`prepare_tools`] / [`prepare_tools_with_provider`].
@@ -48,63 +47,21 @@ pub fn prepare_tools(
     supports_strict_tools: bool,
     default_eager_input_streaming: bool,
 ) -> PreparedTools {
-    // Empty arrays are coerced to "no tools" to match the TS behaviour.
-    let non_empty = tools.filter(|&t| !t.is_empty());
-
-    let mut tool_warnings: Vec<Warning> = Vec::new();
-    let mut betas: BTreeSet<String> = BTreeSet::new();
-
-    let tools_opt = match non_empty {
-        None => None,
-        Some(tools) => {
-            let mut anthropic_tools: Vec<Value> = Vec::new();
-            for tool in tools {
-                anthropic_tools.push(prepare_function_tool(
-                    tool,
-                    supports_structured_output,
-                    supports_strict_tools,
-                    default_eager_input_streaming,
-                    CANONICAL,
-                    &mut betas,
-                    &mut tool_warnings,
-                ));
-            }
-            Some(anthropic_tools)
-        }
-    };
-
-    // If the tools were dropped (e.g. there never were any), there is no
-    // tool_choice to emit either.
-    let tools_opt = match tools_opt {
-        None => {
-            return PreparedTools {
-                tools: None,
-                tool_choice: None,
-                tool_warnings,
-                betas,
-            };
-        }
-        Some(t) => Some(t),
-    };
-
-    // Anthropic does not support 'none' tool choice, so the tools are removed.
-    if matches!(tool_choice, Some(ToolChoice::None)) {
-        return PreparedTools {
-            tools: None,
-            tool_choice: None,
-            tool_warnings,
-            betas,
-        };
-    }
-
-    let tool_choice_opt = build_tool_choice(tool_choice, disable_parallel_tool_use);
-
-    PreparedTools {
-        tools: tools_opt,
-        tool_choice: tool_choice_opt,
-        tool_warnings,
-        betas,
-    }
+    let tools = tools.map(|tools| {
+        tools
+            .iter()
+            .cloned()
+            .map(AnthropicTool::Function)
+            .collect::<Vec<_>>()
+    });
+    prepare_tools_with_provider(
+        tools.as_deref(),
+        tool_choice,
+        disable_parallel_tool_use,
+        supports_structured_output,
+        supports_strict_tools,
+        default_eager_input_streaming,
+    )
 }
 
 // =============================================================================
@@ -170,6 +127,32 @@ pub(crate) fn prepare_tools_for(
     default_eager_input_streaming: bool,
     options_name: &str,
 ) -> PreparedTools {
+    let mut validator = CacheControlValidator::for_options_name(options_name);
+    let mut result = prepare_tools_with_validator(
+        tools,
+        tool_choice,
+        disable_parallel_tool_use,
+        supports_structured_output,
+        supports_strict_tools,
+        default_eager_input_streaming,
+        options_name,
+        &mut validator,
+    );
+    result.tool_warnings.extend(validator.take_warnings());
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prepare_tools_with_validator(
+    tools: Option<&[AnthropicTool]>,
+    tool_choice: Option<&ToolChoice>,
+    disable_parallel_tool_use: bool,
+    supports_structured_output: bool,
+    supports_strict_tools: bool,
+    default_eager_input_streaming: bool,
+    options_name: &str,
+    validator: &mut CacheControlValidator,
+) -> PreparedTools {
     // Empty arrays are coerced to "no tools" to match the TS behaviour.
     let non_empty = tools.filter(|&t| !t.is_empty());
 
@@ -183,7 +166,7 @@ pub(crate) fn prepare_tools_for(
             for tool in tools {
                 match tool {
                     AnthropicTool::Function(ft) => {
-                        anthropic_tools.push(prepare_function_tool(
+                        let mut def = prepare_function_tool(
                             ft,
                             supports_structured_output,
                             supports_strict_tools,
@@ -191,7 +174,15 @@ pub(crate) fn prepare_tools_for(
                             options_name,
                             &mut betas,
                             &mut tool_warnings,
-                        ));
+                        );
+                        if let Some(cache_control) = validator.get_cache_control(
+                            ft.provider_options.as_ref(),
+                            "tool definition",
+                            true,
+                        ) {
+                            def["cache_control"] = cache_control;
+                        }
+                        anthropic_tools.push(def);
                     }
                     AnthropicTool::Provider { id, name: _, args } => {
                         if let Some(def) = prepare_provider_tool(id, args, &mut betas) {
@@ -353,7 +344,7 @@ pub(crate) fn prepare_provider_tool(
     args: &Value,
     betas: &mut BTreeSet<String>,
 ) -> Option<Value> {
-    Some(match id {
+    let mut def = match id {
         "anthropic.computer_20241022" => {
             betas.insert("computer-use-2024-10-22".to_string());
             json!({
@@ -384,6 +375,29 @@ pub(crate) fn prepare_provider_tool(
                 "display_number": arg(args, "displayNumber"),
                 "enable_zoom": arg(args, "enableZoom"),
             })
+        }
+        "anthropic.computer_toolset_20260801" => {
+            let mut def = json!({ "type": "computer_toolset_20260801" });
+            if let Some(configs) = args.get("configs").and_then(Value::as_object) {
+                let mapped: serde_json::Map<String, Value> = configs
+                    .iter()
+                    .map(|(member, config)| {
+                        let mut value = json!({});
+                        for (source, target) in
+                            [("enabled", "enabled"), ("deferLoading", "defer_loading")]
+                        {
+                            if let Some(option) =
+                                config.get(source).filter(|value| !value.is_null())
+                            {
+                                value[target] = option.clone();
+                            }
+                        }
+                        (member.clone(), value)
+                    })
+                    .collect();
+                def["configs"] = Value::Object(mapped);
+            }
+            def
         }
         "anthropic.text_editor_20241022" => {
             betas.insert("computer-use-2024-10-22".to_string());
@@ -472,6 +486,24 @@ pub(crate) fn prepare_provider_tool(
                 "max_content_tokens": arg(args, "maxContentTokens"),
             })
         }
+        "anthropic.web_search_20260318" => json!({
+            "type": "web_search_20260318", "name": "web_search",
+            "max_uses": arg(args, "maxUses"),
+            "allowed_domains": arg(args, "allowedDomains"),
+            "blocked_domains": arg(args, "blockedDomains"),
+            "user_location": arg(args, "userLocation"),
+            "response_inclusion": arg(args, "responseInclusion"),
+        }),
+        "anthropic.web_fetch_20260318" => json!({
+            "type": "web_fetch_20260318", "name": "web_fetch",
+            "max_uses": arg(args, "maxUses"),
+            "allowed_domains": arg(args, "allowedDomains"),
+            "blocked_domains": arg(args, "blockedDomains"),
+            "citations": arg(args, "citations"),
+            "max_content_tokens": arg(args, "maxContentTokens"),
+            "use_cache": arg(args, "useCache"),
+            "response_inclusion": arg(args, "responseInclusion"),
+        }),
         "anthropic.tool_search_regex_20251119" => {
             json!({ "name": "tool_search_tool_regex", "type": "tool_search_tool_regex_20251119" })
         }
@@ -488,11 +520,18 @@ pub(crate) fn prepare_provider_tool(
             if args.get("maxUses").is_some() {
                 def["max_uses"] = arg(args, "maxUses");
             }
+            if args.get("maxTokens").is_some() {
+                def["max_tokens"] = arg(args, "maxTokens");
+            }
             if args.get("caching").is_some() {
                 def["caching"] = arg(args, "caching");
             }
             def
         }
         _ => return None,
-    })
+    };
+    if let Some(fields) = def.as_object_mut() {
+        fields.retain(|_, value| !value.is_null());
+    }
+    Some(def)
 }

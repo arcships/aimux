@@ -22,7 +22,7 @@ use aimux_core::language_model::SupportedUrls;
 
 use super::convert::{
     build_request_body_with_warnings, code_execution_tool_name, convert_usage, extract_sources,
-    parse_finish_reason,
+    parse_finish_reason, validate_call_options,
 };
 use super::options::google_metadata;
 use super::types::{Candidate, GenerateContentResponse, GoogleStreamEvent};
@@ -35,11 +35,26 @@ use crate::shared::EndpointConfig;
 pub struct GoogleModel {
     model_id: String,
     config: EndpointConfig,
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 }
 
 impl GoogleModel {
     pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
-        Self { model_id, config }
+        Self {
+            model_id,
+            config,
+            generate_id: std::sync::Arc::new(aimux_provider_utils::generate_id),
+        }
+    }
+
+    pub(crate) fn with_generate_id(
+        mut self,
+        generate_id: Option<std::sync::Arc<dyn Fn() -> String + Send + Sync>>,
+    ) -> Self {
+        if let Some(generate_id) = generate_id {
+            self.generate_id = generate_id;
+        }
+        self
     }
 
     /// `models/{model}`, or the id itself when it already contains a `/`
@@ -68,8 +83,14 @@ impl LanguageModel for GoogleModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        validate_call_options(options)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
+        let (body, mut tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
+        for warning in &mut tool_warnings {
+            if let aimux_core::types::Warning::Other { message } = warning {
+                *message = message.replace("google.generative-ai", &self.config.provider);
+            }
+        }
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
         let url = exchange.url(&format!("/{}:generateContent", self.model_path()));
@@ -82,25 +103,35 @@ impl LanguageModel for GoogleModel {
         .await?;
 
         let response_headers = resp.response_headers;
+
         let response_body = resp.raw_value;
 
         let data: GenerateContentResponse = resp.value;
 
-        let candidate = data.candidates.into_iter().next().ok_or_else(|| {
-            AiMuxError::InvalidResponseData("no candidates in response".to_string())
-        })?;
+        let candidate = data.candidates.into_iter().next().unwrap_or_default();
+        let block_reason = confirmed_prompt_block_reason(data.prompt_feedback.as_ref());
 
-        let (content, has_tool_calls) =
-            extract_content_from_candidate(&candidate, &code_execution_tool_name);
+        let (content, has_tool_calls) = extract_content_from_candidate(
+            &candidate,
+            &code_execution_tool_name,
+            &*self.generate_id,
+        );
 
-        let finish_reason = candidate
-            .finish_reason
-            .as_deref()
-            .map(|r| parse_finish_reason(r, has_tool_calls))
-            .unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            });
+        let finish_reason = if candidate.finish_reason.is_none() && block_reason.is_some() {
+            FinishReason {
+                unified: FinishReasonUnified::ContentFilter,
+                raw: block_reason,
+            }
+        } else {
+            candidate
+                .finish_reason
+                .as_deref()
+                .map(|r| parse_finish_reason(r, has_tool_calls))
+                .unwrap_or(FinishReason {
+                    unified: FinishReasonUnified::Other,
+                    raw: None,
+                })
+        };
 
         let usage = data
             .usage_metadata
@@ -117,6 +148,7 @@ impl LanguageModel for GoogleModel {
             "safetyRatings": candidate.safety_ratings,
             "usageMetadata": data.usage_metadata,
             "finishMessage": candidate.finish_message,
+            "serviceTier": data.usage_metadata.as_ref().and_then(|usage| usage.service_tier.as_ref()),
         })));
 
         Ok(GenerateResult {
@@ -128,7 +160,7 @@ impl LanguageModel for GoogleModel {
             response: Some(aimux_core::shared::ResponseInfo {
                 id: data.response_id,
                 timestamp: None,
-                model_id: data.model_version,
+                model_id: None,
                 headers: Some(response_headers),
                 body: response_body,
             }),
@@ -137,8 +169,14 @@ impl LanguageModel for GoogleModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        validate_call_options(options)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
+        let (body, mut tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
+        for warning in &mut tool_warnings {
+            if let aimux_core::types::Warning::Other { message } = warning {
+                *message = message.replace("google.generative-ai", &self.config.provider);
+            }
+        }
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
         let endpoint = exchange.url(&format!(
@@ -148,7 +186,7 @@ impl LanguageModel for GoogleModel {
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(endpoint.clone(), options),
             body.clone(),
-            aimux_provider_utils::create_event_source_response_handler::<GoogleStreamEvent>(),
+            aimux_provider_utils::create_event_source_response_handler::<Value>(),
             super::google_failed_response_handler(),
         )
         .await?;
@@ -160,18 +198,12 @@ impl LanguageModel for GoogleModel {
             Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
             first_event => first_event,
         };
-        if let Some(Ok(GoogleStreamEvent::Error(error))) = first_event.as_ref() {
-            return Err(super::google_stream_error(
-                &error.error,
-                &endpoint,
-                body.clone(),
-                response_headers,
-            ));
-        }
         let stream_error_url = endpoint.clone();
         let stream_request_body = body.clone();
         let stream_error_headers = response_headers.clone();
 
+        let generate_id = self.generate_id.clone();
+        let include_raw_chunks = options.include_raw_chunks.unwrap_or(false);
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: tool_warnings });
 
@@ -184,6 +216,7 @@ impl LanguageModel for GoogleModel {
             let mut has_tool_calls = false;
             let mut response_metadata_emitted = false;
             let mut stream_errored = false;
+            let mut prompt_blocked = false;
 
             // Provider-metadata accumulators (mirrors TS `lastGroundingMetadata` /
             // `lastUrlContextMetadata` + the finishReason-chunk snapshot).
@@ -208,6 +241,15 @@ impl LanguageModel for GoogleModel {
                 if stream_errored {
                     break;
                 }
+                let event = match event {
+                    Ok(raw_value) => {
+                        if include_raw_chunks {
+                            yield Ok(StreamPart::Raw { raw_value: raw_value.clone() });
+                        }
+                        serde_json::from_value::<GoogleStreamEvent>(raw_value).map_err(AiMuxError::from)
+                    }
+                    Err(error) => Err(error),
+                };
                 match event {
                     Ok(GoogleStreamEvent::Chunk(chunk)) => {
 
@@ -219,7 +261,7 @@ impl LanguageModel for GoogleModel {
                                 yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                     id: Some(id.clone()),
                                     timestamp: None,
-                                    model_id: chunk.model_version.clone(),
+                                    model_id: None,
                                 }));
                             }
 
@@ -228,9 +270,16 @@ impl LanguageModel for GoogleModel {
                             last_usage_metadata_value =
                                 serde_json::to_value(usage).ok();
                         }
-                        if let Some(pf) = &chunk.prompt_feedback {
-                            last_prompt_feedback = Some(pf.clone());
-                        }
+                        if let Some(pf) = &chunk.prompt_feedback
+                            && !prompt_blocked {
+                                last_prompt_feedback = Some(pf.clone());
+                                if let Some(reason) = confirmed_prompt_block_reason(Some(pf)) {
+                                    prompt_blocked = true;
+                                    final_finish_reason = Some(FinishReason {
+                                        unified: FinishReasonUnified::ContentFilter, raw: Some(reason),
+                                    });
+                                }
+                            }
 
                         let Some(candidates) = chunk.candidates else {
                             continue;
@@ -246,6 +295,14 @@ impl LanguageModel for GoogleModel {
                             last_url_context_metadata = Some(ucm.clone());
                         }
 
+                        if let Some(sr) = &candidate.safety_ratings {
+                            last_safety_ratings = serde_json::to_value(sr).ok();
+                        }
+                        if let Some(fm) = &candidate.finish_message {
+                            last_finish_message = Some(json!(fm));
+                        }
+                        if prompt_blocked { continue; }
+
                         // Extract url sources from this chunk's grounding metadata
                         // (deduplicated across chunks; document sources are not
                         // emitted in the stream, matching TS).
@@ -255,13 +312,13 @@ impl LanguageModel for GoogleModel {
                             if let GenerateContent::Source(Source {
                                 url: Some(url),
                                 source_type,
-                                id,
+                                id: _,
                                 title,
                                 provider_metadata: None,
                             }) = src
                                 && emitted_source_urls.insert(url.clone()) {
                                     yield Ok(StreamPart::Source(Source {
-                                        id,
+                                        id: generate_id(),
                                         source_type,
                                         url: Some(url),
                                         title,
@@ -278,6 +335,7 @@ impl LanguageModel for GoogleModel {
                                 let thought_sig_meta: Option<ProviderMetadata> = part
                                     .get("thoughtSignature")
                                     .and_then(|v| v.as_str())
+                                    .filter(|signature| !signature.is_empty())
                                     .map(|s| google_metadata(json!({ "thoughtSignature": s })));
 
                                 // text part
@@ -290,21 +348,15 @@ impl LanguageModel for GoogleModel {
                                         // reasoning (mirrors the non-streaming
                                         // path, which attaches to the last
                                         // content item regardless of type).
-                                        if let Some(meta) = &thought_sig_meta {
-                                            if let Some(id) = &text_id {
+                                        if let Some(meta) = &thought_sig_meta
+                                            && let Some(id) = &text_id {
                                                 yield Ok(StreamPart::TextDelta {
                                                     id: id.clone(),
                                                     delta: String::new(),
                                                     provider_metadata: Some(meta.clone()),
                                                 });
-                                            } else if let Some(id) = &reasoning_id {
-                                                yield Ok(StreamPart::ReasoningDelta {
-                                                    id: id.clone(),
-                                                    delta: String::new(),
-                                                    provider_metadata: Some(meta.clone()),
-                                                });
+
                                             }
-                                        }
                                     } else {
                                         let is_thought = part.get("thought").and_then(serde_json::Value::as_bool).unwrap_or(false);
                                         if is_thought {
@@ -349,50 +401,6 @@ impl LanguageModel for GoogleModel {
                                             }
                                         }
                                     }
-                                } else if let Some(fc) = part.get("functionCall") {
-                                    // Single-chunk complete function call (the
-                                    // common case for the public Gemini API).
-                                    let name = fc
-                                        .get("name")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("");
-                                    let id = fc
-                                        .get("id")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string)
-                                        .unwrap_or_else(|| format!("call-{block_counter}"));
-                                    block_counter += 1;
-                                    let args = fc.get("args").cloned().unwrap_or(json!({}));
-                                    let thought_signature = part
-                                        .get("thoughtSignature")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string);
-
-                                    yield Ok(StreamPart::ToolInputStart {
-                                        id: id.clone(),
-                                        tool_name: name.to_string(),
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        title: None,
-                                        provider_metadata: None,
-                                    });
-                                    let args_str = args.to_string();
-                                    yield Ok(StreamPart::ToolInputDelta {
-                                        id: id.clone(),
-                                        delta: args_str,
-                                        provider_metadata: None,
-                                    });
-                                    yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
-                                    yield Ok(StreamPart::ToolCall(RawToolCall {
-                                        tool_call_id: id,
-                                        tool_name: name.to_string(),
-                                        input: args.to_string(),
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        thought_signature,
-                                        provider_metadata: thought_sig_meta.clone(),
-                                    }));
-                                    has_tool_calls = true;
                                 } else if let Some(ec) = part.get("executableCode") {
                                     // Provider-executed code execution.
                                     let has_code = ec
@@ -401,8 +409,7 @@ impl LanguageModel for GoogleModel {
                                         .map(|s| !s.is_empty())
                                         .unwrap_or(false);
                                     if has_code {
-                                        let id = format!("call-{block_counter}");
-                                        block_counter += 1;
+                                        let id = generate_id();
                                         last_code_execution_tool_call_id = Some(id.clone());
                                         yield Ok(StreamPart::ToolCall(RawToolCall {
                                             tool_call_id: id.clone(),
@@ -411,11 +418,7 @@ impl LanguageModel for GoogleModel {
                                             provider_executed: Some(true),
                                             dynamic: None,
                                             thought_signature: None,
-                                            provider_metadata: Some(server_tool_metadata(
-                                                &id,
-                                                "code_execution",
-                                                None,
-                                            )),
+                                            provider_metadata: None,
                                         }));
                                         // provider-executed → does NOT set has_tool_calls
                                     }
@@ -441,11 +444,7 @@ impl LanguageModel for GoogleModel {
                                             is_error: None,
                                             preliminary: None,
                                             dynamic: None,
-                                            provider_metadata: Some(server_tool_metadata(
-                                                call_id,
-                                                "code_execution",
-                                                None,
-                                            )),
+                                            provider_metadata: None,
                                         }));
                                     }
                                 } else if let Some(tc) = part.get("toolCall") {
@@ -457,9 +456,9 @@ impl LanguageModel for GoogleModel {
                                     let id = tc
                                         .get("id")
                                         .and_then(|v| v.as_str())
+                                        .filter(|id| !id.is_empty())
                                         .map(std::string::ToString::to_string)
-                                        .unwrap_or_else(|| format!("call-{block_counter}"));
-                                    block_counter += 1;
+                                        .unwrap_or_else(|| generate_id());
                                     last_server_tool_call_id = Some(id.clone());
                                     let args = tc.get("args").cloned().unwrap_or(json!({}));
                                     let server_meta = server_tool_metadata(
@@ -487,8 +486,8 @@ impl LanguageModel for GoogleModel {
                                                 .and_then(|v| v.as_str())
                                                 .map(std::string::ToString::to_string)
                                         })
-                                        .unwrap_or_else(|| format!("call-{block_counter}"));
-                                    block_counter += 1;
+                                        .filter(|id| !id.is_empty())
+                                        .unwrap_or_else(|| generate_id());
                                     let response =
                                         tr.get("response").cloned().unwrap_or(json!({}));
                                     let server_meta = server_tool_metadata(
@@ -528,24 +527,63 @@ impl LanguageModel for GoogleModel {
                                     }
                                 }
                             }
+                            for part in parts {
+                                let thought_sig_meta = part.get("thoughtSignature").and_then(Value::as_str)
+                                    .filter(|signature| !signature.is_empty())
+                                    .map(|signature| google_metadata(json!({"thoughtSignature": signature})));
+                                if let Some(fc) = part.get("functionCall") {
+                                    // Single-chunk complete function call (the
+                                    // common case for the public Gemini API).
+                                    if fc.get("name").and_then(Value::as_str).is_none() || fc.get("partialArgs").is_some() || fc.get("willContinue").and_then(Value::as_bool) == Some(true) { continue; }
+                                    let name = fc
+                                        .get("name")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("");
+                                    let id = fc
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .filter(|id| !id.is_empty())
+                                        .filter(|id| !id.is_empty())
+                                        .map(std::string::ToString::to_string)
+                                        .unwrap_or_else(|| generate_id());
+                                    let args = fc.get("args").cloned().unwrap_or(json!({}));
+                                    let thought_signature = part
+                                        .get("thoughtSignature")
+                                        .and_then(|v| v.as_str())
+                                        .map(std::string::ToString::to_string);
+
+                                    yield Ok(StreamPart::ToolInputStart {
+                                        id: id.clone(),
+                                        tool_name: name.to_string(),
+                                        provider_executed: None,
+                                        dynamic: None,
+                                        title: None,
+                                        provider_metadata: thought_sig_meta.clone(),
+                                    });
+                                    let args_str = args.as_str().map(str::to_owned).unwrap_or_else(|| args.to_string());
+                                    if fc.get("args").is_some() {
+                                    yield Ok(StreamPart::ToolInputDelta {
+                                        id: id.clone(),
+                                        delta: args_str.clone(),
+                                        provider_metadata: thought_sig_meta.clone(),
+                                    });
+                                    }
+                                    yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: thought_sig_meta.clone()});
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
+                                        tool_call_id: id,
+                                        tool_name: name.to_string(),
+                                        input: args_str,
+                                        provider_executed: None,
+                                        dynamic: None,
+                                        thought_signature,
+                                        provider_metadata: thought_sig_meta.clone(),
+                                    }));
+                                    has_tool_calls = true;
+                                }
+                            }
                         }
 
                         if let Some(reason) = candidate.finish_reason.as_deref() {
-                            // Close any open text/reasoning segment.
-                            if let Some(id) = text_id.take() {
-                                yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
-                            }
-                            if let Some(id) = reasoning_id.take() {
-                                yield Ok(StreamPart::ReasoningEnd { id, provider_metadata: None});
-                            }
-                            // Snapshot the finishReason-chunk metadata.
-                            if let Some(sr) = &candidate.safety_ratings {
-                                last_safety_ratings =
-                                    Some(serde_json::to_value(sr).unwrap_or(Value::Null));
-                            }
-                            if let Some(fm) = &candidate.finish_message {
-                                last_finish_message = Some(json!(fm));
-                            }
                             final_finish_reason =
                                 Some(parse_finish_reason(reason, has_tool_calls));
                         }
@@ -564,7 +602,7 @@ impl LanguageModel for GoogleModel {
                     }
                     Err(error) => {
                         let recoverable = error.is_recoverable_stream_error();
-                        yield Err(error);
+                        yield Ok(StreamPart::Error { error });
                         if !recoverable {
                             return;
                         }
@@ -587,6 +625,7 @@ impl LanguageModel for GoogleModel {
                 "safetyRatings": last_safety_ratings,
                 "usageMetadata": last_usage_metadata_value,
                 "finishMessage": last_finish_message,
+                "serviceTier": last_usage_metadata_value.as_ref().and_then(|usage| usage.get("serviceTier")),
             })));
 
             yield Ok(StreamPart::Finish {
@@ -597,7 +636,7 @@ impl LanguageModel for GoogleModel {
                     }
                 } else {
                     final_finish_reason.unwrap_or(FinishReason {
-                        unified: FinishReasonUnified::Stop,
+                        unified: FinishReasonUnified::Other,
                         raw: None,
                     })
                 },
@@ -646,6 +685,7 @@ fn server_tool_metadata(
 fn extract_content_from_candidate(
     candidate: &Candidate,
     code_execution_tool_name: &str,
+    generate_id: &dyn Fn() -> String,
 ) -> (Vec<GenerateContent>, bool) {
     let mut content = Vec::new();
     let mut has_tool_calls = false;
@@ -664,6 +704,7 @@ fn extract_content_from_candidate(
             let thought_sig_meta: Option<ProviderMetadata> = part
                 .get("thoughtSignature")
                 .and_then(|v| v.as_str())
+                .filter(|signature| !signature.is_empty())
                 .map(|s| google_metadata(json!({ "thoughtSignature": s })));
 
             // Branch order matches upstream (google-language-model.ts:420-534):
@@ -676,7 +717,7 @@ fn extract_content_from_candidate(
                     .map(|s| !s.is_empty())
                     .unwrap_or(false);
                 if has_code {
-                    let id = format!("call-{}", content.len());
+                    let id = generate_id();
                     last_code_execution_tool_call_id = Some(id.clone());
                     content.push(GenerateContent::ToolCall(RawToolCall {
                         tool_call_id: id.clone(),
@@ -685,7 +726,7 @@ fn extract_content_from_candidate(
                         provider_executed: Some(true),
                         dynamic: None,
                         thought_signature: None,
-                        provider_metadata: Some(server_tool_metadata(&id, "code_execution", None)),
+                        provider_metadata: None,
                     }));
                 }
             } else if let Some(cer) = part.get("codeExecutionResult") {
@@ -704,11 +745,7 @@ fn extract_content_from_candidate(
                         is_error: None,
                         preliminary: None,
                         dynamic: None,
-                        provider_metadata: Some(server_tool_metadata(
-                            call_id,
-                            "code_execution",
-                            None,
-                        )),
+                        provider_metadata: None,
                     }));
                 }
             } else if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
@@ -735,7 +772,10 @@ fn extract_content_from_candidate(
                         });
                     }
                 }
-            } else if let Some(fc) = part.get("functionCall") {
+            } else if let Some(fc) = part
+                .get("functionCall")
+                .filter(|fc| fc.get("name").and_then(Value::as_str).is_some())
+            {
                 let name = fc
                     .get("name")
                     .and_then(|v| v.as_str())
@@ -744,8 +784,9 @@ fn extract_content_from_candidate(
                 let id = fc
                     .get("id")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                    .filter(|id| !id.is_empty())
+                    .map(str::to_owned)
+                    .unwrap_or_else(generate_id);
                 let input = fc.get("args").cloned().unwrap_or(json!({}));
                 let thought_signature = part
                     .get("thoughtSignature")
@@ -783,8 +824,9 @@ fn extract_content_from_candidate(
                 let id = tc
                     .get("id")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                    .filter(|id| !id.is_empty())
+                    .map(str::to_owned)
+                    .unwrap_or_else(generate_id);
                 last_server_tool_call_id = Some(id.clone());
                 let input = tc.get("args").cloned().unwrap_or(json!({}));
                 let thought_signature = part
@@ -816,7 +858,8 @@ fn extract_content_from_candidate(
                             .and_then(|v| v.as_str())
                             .map(std::string::ToString::to_string)
                     })
-                    .unwrap_or_default();
+                    .filter(|id| !id.is_empty())
+                    .unwrap_or_else(generate_id);
                 let response = tr.get("response").cloned().unwrap_or(json!({}));
                 let server_meta = server_tool_metadata(
                     &id,
@@ -839,6 +882,11 @@ fn extract_content_from_candidate(
 
     // Sources are appended after the parts (mirrors TS).
     let mut sources = extract_sources(candidate.grounding_metadata.as_ref(), &mut source_id);
+    for source in &mut sources {
+        if let GenerateContent::Source(source) = source {
+            source.id = generate_id();
+        }
+    }
     content.append(&mut sources);
 
     (content, has_tool_calls)
@@ -869,4 +917,16 @@ fn set_provider_metadata(item: &mut GenerateContent, meta: ProviderMetadata) {
             *provider_metadata = Some(meta);
         }
     }
+}
+
+fn confirmed_prompt_block_reason(feedback: Option<&Value>) -> Option<String> {
+    feedback
+        .and_then(|feedback| feedback.get("blockReason"))
+        .and_then(Value::as_str)
+        .filter(|reason| {
+            !reason.is_empty()
+                && *reason != "BLOCK_REASON_UNSPECIFIED"
+                && *reason != "BLOCKED_REASON_UNSPECIFIED"
+        })
+        .map(str::to_owned)
 }

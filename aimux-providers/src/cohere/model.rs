@@ -19,17 +19,32 @@ use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usa
 use crate::shared::EndpointConfig;
 
 use super::convert::{build_request_body, parse_finish_reason};
-use super::types::{ChatResponse, StreamEvent, TokenPair};
+use super::types::{ChatResponse, StreamEvent, UsageResponse};
+use std::sync::Arc;
 
 /// A Cohere language model.
 pub struct CohereModel {
     model_id: String,
     config: EndpointConfig,
+    generate_id: Arc<dyn Fn() -> String + Send + Sync>,
 }
 
 impl CohereModel {
     pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
-        Self { model_id, config }
+        Self {
+            model_id,
+            config,
+            generate_id: Arc::new(aimux_provider_utils::generate_id),
+        }
+    }
+    pub(crate) fn with_generate_id(
+        mut self,
+        generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    ) -> Self {
+        if let Some(generate_id) = generate_id {
+            self.generate_id = generate_id;
+        }
+        self
     }
 }
 
@@ -40,7 +55,8 @@ impl CohereModel {
 /// Mirrors the TS `convertCohereUsage`:
 /// - `input.total = input_tokens`, `input.noCache = input_tokens`
 /// - `output.total = output_tokens`
-fn convert_usage(tokens: &TokenPair) -> Usage {
+fn convert_usage(usage: &UsageResponse) -> Usage {
+    let tokens = &usage.tokens;
     Usage {
         input_tokens: aimux_core::types::TokenUsage {
             total: Some(tokens.input_tokens),
@@ -51,10 +67,11 @@ fn convert_usage(tokens: &TokenPair) -> Usage {
         },
         output_tokens: aimux_core::types::TokenUsage {
             total: Some(tokens.output_tokens),
+            text: Some(tokens.output_tokens),
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(tokens).unwrap_or(serde_json::Value::Null)),
+        raw: Some(usage.raw.clone()),
     }
 }
 
@@ -79,7 +96,7 @@ impl LanguageModel for CohereModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let body_result = build_request_body(&self.model_id, options, false);
+        let body_result = build_request_body(&self.model_id, options, false)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body_result.body.clone());
         let resp = aimux_provider_utils::post_json_to_api(
@@ -131,7 +148,7 @@ impl LanguageModel for CohereModel {
         // item. The per-citation metadata (start/end/text/sources/citationType)
         // is preserved in `provider_metadata`.
         if let Some(citations) = &data.message.citations {
-            for (i, citation) in citations.iter().enumerate() {
+            for citation in citations {
                 let title = citation
                     .get("sources")
                     .and_then(|s| s.as_array())
@@ -139,6 +156,7 @@ impl LanguageModel for CohereModel {
                     .and_then(|src| src.get("document"))
                     .and_then(|d| d.get("title"))
                     .and_then(|t| t.as_str())
+                    .filter(|title| !title.is_empty())
                     .map(std::string::ToString::to_string)
                     .unwrap_or_else(|| "Document".to_string());
 
@@ -161,7 +179,7 @@ impl LanguageModel for CohereModel {
                     cohere_meta.insert("citationType".to_string(), Value::String(t.to_string()));
                 }
                 content.push(GenerateContent::Source(Source {
-                    id: format!("citation-{i}"),
+                    id: (self.generate_id)(),
                     source_type: "document".to_string(),
                     url: None,
                     title: Some(title),
@@ -196,7 +214,7 @@ impl LanguageModel for CohereModel {
         }
 
         let finish_reason = parse_finish_reason(&data.finish_reason);
-        let usage = convert_usage(&data.usage.tokens);
+        let usage = convert_usage(&data.usage);
 
         Ok(GenerateResult {
             content,
@@ -216,309 +234,114 @@ impl LanguageModel for CohereModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let body_result = build_request_body(&self.model_id, options, true);
+        let body_result = build_request_body(&self.model_id, options, true)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body_result.body.clone());
         let endpoint = exchange.url("/chat");
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(endpoint.clone(), options),
             body.clone(),
-            aimux_provider_utils::create_event_source_response_handler::<StreamEvent>(),
+            aimux_provider_utils::create_event_source_response_handler::<Value>(),
             super::cohere_failed_response_handler(),
         )
         .await?;
 
         let response_headers = resp.response_headers;
-        let mut sse_stream = resp.value;
-        let first_event = match sse_stream.next().await {
-            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
-            first_event => first_event,
-        };
-        match first_event.as_ref() {
-            Some(Ok(event)) if event.event_type == "error" => {
-                return Err(cohere_stream_error(
-                    event,
-                    &endpoint,
-                    &body,
-                    &response_headers,
-                ));
-            }
-            _ => {}
-        }
-
+        let sse_stream = resp.value;
         let stream_warnings = body_result.warnings;
-        let stream_body = body.clone();
-        let stream_response_headers = response_headers.clone();
+        let include_raw_chunks = options.include_raw_chunks.unwrap_or(false);
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: stream_warnings });
-
             let mut final_usage = Usage::default();
-            let mut final_finish_reason: Option<FinishReason> = None;
+            let mut finish_reason = FinishReason { unified: FinishReasonUnified::Other, raw: None };
             let mut pending_tool_call: Option<PendingToolCall> = None;
             let mut is_reasoning = false;
-            let mut stream_errored = false;
-
-            let mut sse_iter = Box::pin(
-                futures::stream::iter(first_event.into_iter()).chain(sse_stream),
-            );
-
+            let mut sse_iter = sse_stream;
             while let Some(event) = sse_iter.next().await {
-                if stream_errored {
-                    break;
-                }
-
-                match event {
-                    Ok(parsed) => {
-                        match parsed.event_type.as_str() {
-                            "message-start" => {
-                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
-                                    id: parsed.id.clone(),
-                                    timestamp: None,
-                                    model_id: None,
-                                }));
-                            }
-
-                            "content-start" => {
-                                let idx = parsed.index.unwrap_or(0);
-                                let content_type = parsed
-                                    .delta
-                                    .as_ref()
-                                    .and_then(|d| d.message.as_ref())
-                                    .and_then(|m| m.content.as_ref())
-                                    .and_then(|c| c.get("type"))
-                                    .and_then(|t| t.as_str());
-
-                                if content_type == Some("thinking") {
-                                    is_reasoning = true;
-                                    yield Ok(StreamPart::ReasoningStart {
-                                        id: format!("reasoning-{idx}"),
-                                        provider_metadata: None,
-                                    });
-                                } else {
-                                    yield Ok(StreamPart::TextStart {
-                                        id: format!("{idx}"),
-                                        provider_metadata: None,
-                                    });
-                                }
-                            }
-
-                            "content-delta" => {
-                                let idx = parsed.index.unwrap_or(0);
-                                let content = parsed
-                                    .delta
-                                    .as_ref()
-                                    .and_then(|d| d.message.as_ref())
-                                    .and_then(|m| m.content.as_ref());
-
-                                if let Some(content) = content {
-                                    // Thinking delta.
-                                    if let Some(thinking) =
-                                        content.get("thinking").and_then(|t| t.as_str())
-                                    {
-                                        yield Ok(StreamPart::ReasoningDelta {
-                                            id: format!("reasoning-{idx}"),
-                                            delta: thinking.to_string(),
-                                            provider_metadata: None,
-                                        });
-                                    }
-                                    // Text delta.
-                                    else if let Some(text) =
-                                        content.get("text").and_then(|t| t.as_str())
-                                    {
-                                        yield Ok(StreamPart::TextDelta {
-                                            id: format!("{idx}"),
-                                            delta: text.to_string(),
-                                            provider_metadata: None,
-                                        });
-                                    }
-                                }
-                            }
-
-                            "content-end" => {
-                                let idx = parsed.index.unwrap_or(0);
-                                if is_reasoning {
-                                    yield Ok(StreamPart::ReasoningEnd {
-                                        id: format!("reasoning-{idx}"),
-                                        provider_metadata: None,
-                                    });
-                                    is_reasoning = false;
-                                } else {
-                                    yield Ok(StreamPart::TextEnd {
-                                        id: format!("{idx}"),
-                                        provider_metadata: None,
-                                    });
-                                }
-                            }
-
-                            "tool-plan-delta" => {
-                                // Tool plan deltas are not emitted as stream parts
-                                // (no corresponding variant). Silently consume.
-                            }
-
-                            "tool-call-start" => {
-                                let tc = parsed
-                                    .delta
-                                    .as_ref()
-                                    .and_then(|d| d.message.as_ref())
-                                    .and_then(|m| m.tool_calls.as_ref());
-
-                                if let Some(tc) = tc {
-                                    let id = tc
-                                        .get("id")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("")
-                                        .to_string();
-                                    let name = tc
-                                        .get("function")
-                                        .and_then(|f| f.get("name"))
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("")
-                                        .to_string();
-                                    let initial_args = tc
-                                        .get("function")
-                                        .and_then(|f| f.get("arguments"))
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("")
-                                        .to_string();
-
-                                    pending_tool_call = Some(PendingToolCall {
-                                        id: id.clone(),
-                                        name: name.clone(),
-                                        arguments: initial_args.clone(),
-                                    });
-
-                                    yield Ok(StreamPart::ToolInputStart {
-                                        id: id.clone(),
-                                        tool_name: name,
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        title: None,
-                                        provider_metadata: None,
-                                    });
-
-                                    if !initial_args.is_empty() {
-                                        yield Ok(StreamPart::ToolInputDelta {
-                                            id,
-                                            delta: initial_args,
-                                            provider_metadata: None,
-                                        });
-                                    }
-                                }
-                            }
-
-                            "tool-call-delta" => {
-                                if let Some(ptc) = &mut pending_tool_call {
-                                    let args_delta = parsed
-                                        .delta
-                                        .as_ref()
-                                        .and_then(|d| d.message.as_ref())
-                                        .and_then(|m| m.tool_calls.as_ref())
-                                        .and_then(|tc| tc.get("function"))
-                                        .and_then(|f| f.get("arguments"))
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("");
-
-                                    if !args_delta.is_empty() {
-                                        ptc.arguments.push_str(args_delta);
-                                        yield Ok(StreamPart::ToolInputDelta {
-                                            id: ptc.id.clone(),
-                                            delta: args_delta.to_string(),
-                                            provider_metadata: None,
-                                        });
-                                    }
-                                }
-                            }
-
-                            "tool-call-end" => {
-                                if let Some(ptc) = pending_tool_call.take() {
-                                    yield Ok(StreamPart::ToolInputEnd {
-                                        id: ptc.id.clone(),
-                                        provider_metadata: None,
-                                    });
-
-                                    // Providers never parse tool input — Core
-                                    // owns JSON parsing, schema validation,
-                                    // and repair (aimux-core::parse_tool_call).
-                                    // Trim the accumulated text and default
-                                    // empty to "{}" to match the TS
-                                    // provider's convention; forward it
-                                    // verbatim otherwise, malformed JSON
-                                    // included, so a bad call surfaces as a
-                                    // retained `invalid: true` tool call
-                                    // instead of a terminal stream error.
-                                    let trimmed = ptc.arguments.trim();
-                                    let text = if trimmed.is_empty() { "{}" } else { trimmed };
-                                    let input = text.to_string();
-                                    yield Ok(StreamPart::ToolCall(RawToolCall {
-                                        tool_call_id: ptc.id,
-                                        tool_name: ptc.name,
-                                        input,
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        thought_signature: None,
-                                        provider_metadata: None,
-                                    }));
-                                }
-                            }
-
-                            "message-end" => {
-                                if let Some(delta) = &parsed.delta {
-                                    if let Some(reason) = &delta.finish_reason {
-                                        final_finish_reason = Some(parse_finish_reason(reason));
-                                    }
-                                    if let Some(usage) = &delta.usage {
-                                        final_usage = convert_usage(&usage.tokens);
-                                    }
-                                }
-                            }
-
-                            "error" => {
-                                yield Ok(StreamPart::Error {
-                                    error: cohere_stream_error(
-                                        &parsed,
-                                        &endpoint,
-                                        &stream_body,
-                                        &stream_response_headers,
-                                    ),
-                                });
-                                stream_errored = true;
-                                break;
-                            }
-
-                            // citation-start, citation-end, and any unknown
-                            // event types are silently consumed.
-                            _ => {}
-                        }
-                    }
+                let raw = match event {
+                    Ok(raw) => raw,
                     Err(error) => {
-                        let recoverable = error.is_recoverable_stream_error();
-                        yield Err(error);
-                        if !recoverable {
-                            return;
+                        if !error.is_recoverable_stream_error() { yield Err(error); return; }
+                        if include_raw_chunks { yield Ok(StreamPart::Raw { raw_value: Value::Null }); }
+                        finish_reason = FinishReason { unified: FinishReasonUnified::Error, raw: None };
+                        yield Ok(StreamPart::Error { error });
+                        continue;
+                    }
+                };
+                if include_raw_chunks { yield Ok(StreamPart::Raw { raw_value: raw.clone() }); }
+                let parsed = match StreamEvent::parse(raw) {
+                    Ok(parsed) => parsed,
+                    Err(error) => {
+                        finish_reason = FinishReason { unified: FinishReasonUnified::Error, raw: None };
+                        yield Ok(StreamPart::Error { error });
+                        continue;
+                    }
+                };
+                let id = parsed.index.map(|index| index.to_string()).unwrap_or_default();
+                match parsed.event_type.as_str() {
+                    "message-start" => yield Ok(StreamPart::ResponseMetadata(ResponseMetadata { id: parsed.id, timestamp: None, model_id: None })),
+                    "content-start" => {
+                        let content = parsed.delta.as_ref().and_then(|delta| delta.message.as_ref()).and_then(|message| message.content.as_ref()).unwrap();
+                        if content["type"] == "thinking" {
+                            is_reasoning = true;
+                            yield Ok(StreamPart::ReasoningStart { id, provider_metadata: None });
+                        } else {
+                            yield Ok(StreamPart::TextStart { id, provider_metadata: None });
                         }
                     }
+                    "content-delta" => {
+                        let content = parsed.delta.as_ref().and_then(|delta| delta.message.as_ref()).and_then(|message| message.content.as_ref()).unwrap();
+                        if let Some(text) = content.get("text").and_then(Value::as_str) {
+                            yield Ok(StreamPart::TextDelta { id, delta: text.into(), provider_metadata: None });
+                        } else {
+                            yield Ok(StreamPart::ReasoningDelta { id, delta: content["thinking"].as_str().unwrap().into(), provider_metadata: None });
+                        }
+                    }
+                    "content-end" => {
+                        if is_reasoning {
+                            yield Ok(StreamPart::ReasoningEnd { id, provider_metadata: None });
+                            is_reasoning = false;
+                        } else {
+                            yield Ok(StreamPart::TextEnd { id, provider_metadata: None });
+                        }
+                    }
+                    "tool-call-start" => {
+                        let tool = parsed.delta.as_ref().and_then(|delta| delta.message.as_ref()).and_then(|message| message.tool_calls.as_ref()).unwrap();
+                        let id = tool["id"].as_str().unwrap().to_string();
+                        let name = tool["function"]["name"].as_str().unwrap().to_string();
+                        let arguments = tool["function"]["arguments"].as_str().unwrap().to_string();
+                        pending_tool_call = Some(PendingToolCall { id: id.clone(), name: name.clone(), arguments: arguments.clone() });
+                        yield Ok(StreamPart::ToolInputStart { id: id.clone(), tool_name: name, provider_executed: None, dynamic: None, title: None, provider_metadata: None });
+                        if !arguments.is_empty() { yield Ok(StreamPart::ToolInputDelta { id, delta: arguments, provider_metadata: None }); }
+                    }
+                    "tool-call-delta" => {
+                        if let Some(tool) = &mut pending_tool_call {
+                            let delta = parsed.delta.as_ref().and_then(|delta| delta.message.as_ref()).and_then(|message| message.tool_calls.as_ref()).unwrap()["function"]["arguments"].as_str().unwrap().to_string();
+                            tool.arguments.push_str(&delta);
+                            yield Ok(StreamPart::ToolInputDelta { id: tool.id.clone(), delta, provider_metadata: None });
+                        }
+                    }
+                    "tool-call-end" => {
+                        if let Some(tool) = pending_tool_call.take() {
+                            yield Ok(StreamPart::ToolInputEnd { id: tool.id.clone(), provider_metadata: None });
+                            let text = tool.arguments.trim();
+                            let input = match serde_json::from_str::<Value>(if text.is_empty() { "{}" } else { text }) {
+                                Ok(value) if !contains_prototype_key(&value) => value.to_string(),
+                                Ok(_) => { yield Err(AiMuxError::InvalidResponseData("Object contains forbidden prototype property".into())); return; }
+                                Err(error) => { yield Err(AiMuxError::JsonParse(error.to_string())); return; }
+                            };
+                            yield Ok(StreamPart::ToolCall(RawToolCall { tool_call_id: tool.id, tool_name: tool.name, input, provider_executed: None, dynamic: None, thought_signature: None, provider_metadata: None }));
+                        }
+                    }
+                    "message-end" => {
+                        let delta = parsed.delta.unwrap();
+                        finish_reason = parse_finish_reason(delta.finish_reason.as_ref().unwrap());
+                        final_usage = convert_usage(delta.usage.as_ref().unwrap());
+                    }
+                    _ => {}
                 }
             }
-
-            yield Ok(StreamPart::Finish {
-                finish_reason: if stream_errored {
-                    FinishReason {
-                        unified: FinishReasonUnified::Error,
-                        raw: None,
-                    }
-                } else {
-                    final_finish_reason.unwrap_or(FinishReason {
-                        unified: FinishReasonUnified::Stop,
-                        raw: None,
-                    })
-                },
-                usage: if stream_errored {
-                    Usage::default()
-                } else {
-                    final_usage
-                },
-                provider_metadata: Some(super::options::cohere_metadata(serde_json::json!({}))),
-            });
+            yield Ok(StreamPart::Finish { finish_reason, usage: final_usage, provider_metadata: None });
         };
 
         Ok(StreamResult {
@@ -531,32 +354,14 @@ impl LanguageModel for CohereModel {
     }
 }
 
-fn cohere_stream_error(
-    event: &StreamEvent,
-    url: &str,
-    request_body: &Value,
-    response_headers: &std::collections::HashMap<String, String>,
-) -> AiMuxError {
-    let status = event.status_code;
-    let provider_code = event.code.as_ref().and_then(|value| match value {
-        Value::String(value) => Some(value.clone()),
-        Value::Number(value) => Some(value.to_string()),
-        _ => None,
-    });
-    AiMuxError::ApiCall(Box::new(aimux_core::ApiCallError {
-        status_code: status,
-        provider_code,
-        response_body: serde_json::to_string(event).ok(),
-        response_headers: Some(response_headers.clone()),
-        data: serde_json::to_value(event).ok(),
-        is_retryable: status.is_some_and(aimux_core::error::is_retryable_status),
-        ..aimux_core::ApiCallError::new(
-            event
-                .message
-                .clone()
-                .unwrap_or_else(|| "Cohere stream error".to_string()),
-            url,
-            aimux_provider_utils::logging::redact_error_context(request_body.clone()),
-        )
-    }))
+fn contains_prototype_key(value: &Value) -> bool {
+    match value {
+        Value::Object(object) => object.iter().any(|(key, value)| {
+            key == "__proto__"
+                || (key == "constructor" && value.is_object() && value.get("prototype").is_some())
+                || contains_prototype_key(value)
+        }),
+        Value::Array(values) => values.iter().any(contains_prototype_key),
+        _ => false,
+    }
 }

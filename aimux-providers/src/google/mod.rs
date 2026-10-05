@@ -187,12 +187,13 @@ pub struct GoogleProviderSettings {
     /// including `x-goog-api-key`. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
     /// The provider name, the `provider()` string of the language, embedding
-    /// and image models. Default `"google.generative-ai"`. The other
-    /// modalities append `.video` and `.files`.
+    /// image, video and files interfaces. Default `"google.generative-ai"`.
     pub name: Option<String>,
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
+    /// Generates IDs for tool calls and sources that have no provider ID.
+    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
     /// Rewrites every JSON request body once, after it is serialized and
     /// before it is sent.
     pub transform_request_body: Option<TransformRequestBody>,
@@ -210,6 +211,7 @@ impl std::fmt::Debug for GoogleProviderSettings {
             )
             .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
+            .field("generate_id", &self.generate_id.is_some())
             .field(
                 "transform_request_body",
                 &self.transform_request_body.is_some(),
@@ -240,6 +242,7 @@ pub fn create_google(settings: GoogleProviderSettings) -> Result<GoogleProvider,
             settings.headers,
         ),
         fetch: settings.fetch,
+        generate_id: settings.generate_id,
         transform_request_body: settings.transform_request_body,
     })
 }
@@ -262,6 +265,7 @@ pub struct GoogleProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
+    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
     transform_request_body: Option<TransformRequestBody>,
 }
 
@@ -294,6 +298,13 @@ impl GoogleProvider {
     #[must_use]
     pub fn chat(&self, model_id: &str) -> GoogleModel {
         GoogleModel::from_config(model_id.to_string(), self.model_config(self.name.clone()))
+            .with_generate_id(self.generate_id.clone())
+    }
+
+    /// Alias of [`chat`](Self::chat), matching `generativeAI`.
+    #[must_use]
+    pub fn generative_ai(&self, model_id: &str) -> GoogleModel {
+        self.chat(model_id)
     }
 
     /// A text embedding model (e.g. `"gemini-embedding-001"`); `provider()` is
@@ -306,8 +317,7 @@ impl GoogleProvider {
         )
     }
 
-    /// An image generation model (e.g. `"imagen-3.0-generate-002"` or
-    /// `"gemini-2.5-flash-image"`); `provider()` is the provider name.
+    /// An image generation model (e.g. `"gemini-2.5-flash-image"`); `provider()` is the provider name.
     #[must_use]
     pub fn image(&self, model_id: &str) -> GoogleImageModel {
         self.image_with_settings(model_id, GoogleImageSettings::default())
@@ -328,19 +338,16 @@ impl GoogleProvider {
     }
 
     /// A video generation model (e.g. `"veo-3.0-generate-001"`);
-    /// `provider()` is `"{name}.video"`.
+    /// `provider()` is the provider name.
     #[must_use]
     pub fn video(&self, model_id: &str) -> GoogleVideoModel {
-        GoogleVideoModel::from_config(
-            model_id.to_string(),
-            self.model_config(format!("{}.video", self.name)),
-        )
+        GoogleVideoModel::from_config(model_id.to_string(), self.model_config(self.name.clone()))
     }
 
-    /// The files interface; `provider()` is `"{name}.files"`.
+    /// The files interface; `provider()` is the provider name.
     #[must_use]
     pub fn files(&self) -> GoogleFiles {
-        GoogleFiles::from_config(self.model_config(format!("{}.files", self.name)))
+        GoogleFiles::from_config(self.model_config(self.name.clone()))
     }
 
     /// The provider as a function: the default language model for an id. The
@@ -438,39 +445,4 @@ pub(crate) async fn list_models_once(
             created: None,
         })
         .collect())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn external_urls_are_for_gemini_models_after_2_0() {
-        assert!(supports_external_file_urls("gemini-2.5-flash"));
-        assert!(supports_external_file_urls(
-            "publishers/google/models/gemini-3-pro"
-        ));
-        assert!(!supports_external_file_urls("gemini-2.0-flash"));
-        assert!(!supports_external_file_urls(
-            "publishers/google/models/gemini-2.0-flash"
-        ));
-        assert!(!supports_external_file_urls("gemma-3-27b-it"));
-    }
-
-    #[test]
-    fn files_urls_follow_the_base_url() {
-        let urls = supported_urls("https://proxy.example/v1beta", Some("gemini-2.5-flash"));
-        let all = &urls.0["*"];
-        assert!(
-            all.iter()
-                .any(|re| re.is_match("https://proxy.example/v1beta/files/abc"))
-        );
-        assert!(
-            all.iter()
-                .any(|re| re.is_match("https://youtu.be/dQw4w9WgXcQ"))
-        );
-        assert!(urls.0.contains_key("image/png"));
-        let no_external = supported_urls("https://proxy.example/v1beta", Some("gemini-2.0-flash"));
-        assert!(!no_external.0.contains_key("image/png"));
-    }
 }

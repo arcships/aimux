@@ -114,6 +114,7 @@ pub fn create_provider(
     macro_rules! package {
         ($module:ident, $create:ident, $settings:ident) => {
             Ok(Arc::new(crate::$module::$create(
+                #[allow(clippy::needless_update)]
                 crate::$module::$settings {
                     api_key,
                     base_url,
@@ -155,7 +156,9 @@ pub fn create_provider(
         "google" => package!(google, create_google, GoogleProviderSettings),
         "groq" => package!(groq, create_groq, GroqProviderSettings),
         "huggingface" => package!(huggingface, create_huggingface, HuggingFaceProviderSettings),
-        "mistral" => package!(mistral, create_mistral, MistralProviderSettings),
+        "mistral" => {
+            package_without_transform!(mistral, create_mistral, MistralProviderSettings, api_key)
+        }
         "openai" => package!(openai, create_openai, OpenAIProviderSettings),
         "voyage" => package!(voyage, create_voyage, VoyageProviderSettings),
         "xai" => package!(xai, create_xai, XAIProviderSettings),

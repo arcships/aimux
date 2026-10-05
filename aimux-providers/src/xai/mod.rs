@@ -1,7 +1,7 @@
 //! xAI (Grok) provider.
 //!
 //! [`create_xai`] is the Rust form of the AI SDK's `createXai`: it takes
-//! [`XAIProviderSettings`], validates the base URL, fixes the provider name and
+//! [`XAIProviderSettings`], removes a trailing slash, fixes the provider name and
 //! returns an [`XAIProvider`]. The API key is not read there; it is loaded in
 //! the request headers of every call, from the setting or from
 //! `XAI_API_KEY`. [`xai()`] is the default instance.
@@ -31,13 +31,12 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable};
 
 use crate::shared::{Credential, EndpointConfig, provider_headers};
 
 const DEFAULT_BASE_URL: &str = "https://api.x.ai/v1";
 const API_KEY_ENV_VAR: &str = "XAI_API_KEY";
-const DEFAULT_NAME: &str = "xai";
 
 pub(crate) fn xai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -53,8 +52,8 @@ pub(crate) fn xai_failed_response_handler() -> aimux_provider_utils::ResponseHan
         let error = data.get("error").unwrap_or(data);
         aimux_provider_utils::ProviderErrorParts {
             message: error
-                .get("message")
-                .and_then(Value::as_str)
+                .as_str()
+                .or_else(|| error.get("message").and_then(Value::as_str))
                 .unwrap_or_default()
                 .to_owned(),
             provider_code: error
@@ -75,7 +74,14 @@ pub(crate) fn xai_stream_error(
     request_body_values: Value,
     response_headers: std::collections::HashMap<String, String>,
 ) -> AiMuxError {
-    let error = event.get("error").unwrap_or(event);
+    let error = event
+        .get("error")
+        .or_else(|| {
+            event
+                .get("response")
+                .and_then(|response| response.get("error"))
+        })
+        .unwrap_or(event);
     let message = error
         .as_str()
         .or_else(|| error.get("message").and_then(Value::as_str))
@@ -86,8 +92,15 @@ pub(crate) fn xai_stream_error(
         .or_else(|| event.get("code"))
         .or_else(|| error.get("status"))
         .or_else(|| error.get("code"))
-        .and_then(Value::as_u64)
-        .and_then(|status| u16::try_from(status).ok())
+        .and_then(|value| match value {
+            Value::String(value)
+                if value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_digit()) =>
+            {
+                value.parse::<u16>().ok()
+            }
+            Value::Number(value) => value.as_u64().and_then(|status| u16::try_from(status).ok()),
+            _ => None,
+        })
         .filter(|status| (400..=599).contains(status));
     let provider_code = event
         .get("code")
@@ -98,7 +111,19 @@ pub(crate) fn xai_stream_error(
             Value::Number(value) => Some(value.to_string()),
             _ => None,
         });
-    aimux_provider_utils::stream_error_api_call(
+    let status_code = status_code.or(match provider_code.as_deref() {
+        Some("rate_limit_exceeded" | "rate_limit_error" | "insufficient_quota") => Some(429),
+        Some("api_error" | "internal_server_error" | "server_error") => Some(500),
+        Some("overloaded_error" | "service_unavailable") => Some(503),
+        Some("timeout" | "timeout_error") => Some(504),
+        Some("authentication_error" | "invalid_api_key") => Some(401),
+        Some("permission_error") => Some(403),
+        Some("not_found_error" | "model_not_found") => Some(404),
+        Some("bad_request" | "context_length_exceeded" | "invalid_request_error") => Some(400),
+        _ => None,
+    });
+    let insufficient_quota = provider_code.as_deref() == Some("insufficient_quota");
+    let mut result = aimux_provider_utils::stream_error_api_call(
         message,
         provider_code,
         status_code,
@@ -106,7 +131,11 @@ pub(crate) fn xai_stream_error(
         url,
         request_body_values,
         response_headers,
-    )
+    );
+    if insufficient_quota && let AiMuxError::ApiCall(error) = &mut result {
+        error.is_retryable = false;
+    }
+    result
 }
 
 pub(crate) fn xai_successful_response_handler<T>() -> aimux_provider_utils::ResponseHandler<T>
@@ -227,7 +256,7 @@ where
 /// Settings of [`create_xai`] (the AI SDK's `XaiProviderSettings`).
 ///
 /// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are
+/// created except `base_url`; `api_key` and `headers` are
 /// evaluated on every request.
 #[derive(Clone, Default)]
 pub struct XAIProviderSettings {
@@ -243,10 +272,6 @@ pub struct XAIProviderSettings {
     /// Extra headers on every request. A `None` value removes the header,
     /// including `Authorization`. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of the `provider()` strings
-    /// (`"{name}.responses"`). Default `"xai"`. The providerOptions key stays
-    /// `xai`.
-    pub name: Option<String>,
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
@@ -265,7 +290,6 @@ impl std::fmt::Debug for XAIProviderSettings {
                 "headers",
                 &self.headers.as_ref().map(std::collections::HashMap::len),
             )
-            .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
             .field(
                 "transform_request_body",
@@ -279,16 +303,14 @@ impl std::fmt::Debug for XAIProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
-/// request, not here.
+/// Creation does not validate the URL or load the API key; request errors
+/// surface when the model is called.
 pub fn create_xai(settings: XAIProviderSettings) -> Result<XAIProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
+    let base_url = settings
+        .base_url
+        .unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
+    let base_url = base_url.strip_suffix('/').unwrap_or(&base_url).to_string();
     Ok(XAIProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
         headers: provider_headers(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "xAI API key"),
@@ -313,7 +335,6 @@ pub fn xai() -> &'static XAIProvider {
 /// An xAI provider (the AI SDK's `XaiProvider`). Cheap to clone the models out
 /// of; it holds no HTTP client.
 pub struct XAIProvider {
-    name: String,
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
@@ -323,7 +344,7 @@ pub struct XAIProvider {
 impl XAIProvider {
     fn model_config(&self, method: &str) -> EndpointConfig {
         EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
+            format!("xai.{method}"),
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
@@ -332,7 +353,7 @@ impl XAIProvider {
     }
 
     /// A Responses model (e.g. `"grok-4"`); `provider()` is
-    /// `"{name}.responses"`.
+    /// `"xai.responses"`.
     ///
     /// Uses the xAI `/responses` endpoint with the Responses API wire format
     /// (input items, reasoning objects, provider-executed tools, etc.).

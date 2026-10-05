@@ -23,6 +23,121 @@ use super::convert_common::{ModelCapabilities, get_model_capabilities};
 // `ModelCapabilities` / `SystemMessageMode` / `get_model_capabilities` live in
 // `super::convert_common` and are shared with the Responses converter (M10).
 
+/// Apply the upstream structured-output compatibility rules only at schema positions.
+pub(crate) fn normalize_json_schema(
+    schema: &Value,
+    warnings: &mut Vec<Warning>,
+) -> Result<Value, AiMuxError> {
+    fn walk(value: &mut Value, removed: &mut [bool; 2]) -> Result<(), AiMuxError> {
+        let Some(obj) = value.as_object_mut() else {
+            return Ok(());
+        };
+        if let Some(names) = obj.get("propertyNames").filter(|v| !v.is_null()) {
+            if names.get("type").and_then(Value::as_str) != Some("string") {
+                return Err(AiMuxError::UnsupportedFunctionality(
+                    "JSON Schema propertyNames that does not use a string schema".into(),
+                ));
+            }
+            obj.remove("propertyNames");
+            removed[0] = true;
+        }
+        if obj
+            .get("pattern")
+            .and_then(Value::as_str)
+            .is_some_and(contains_lookaround)
+        {
+            obj.remove("pattern");
+            removed[1] = true;
+        }
+        for key in [
+            "properties",
+            "patternProperties",
+            "definitions",
+            "$defs",
+            "dependencies",
+        ] {
+            if let Some(Value::Object(record)) = obj.get_mut(key) {
+                for child in record.values_mut().filter(|v| !v.is_array()) {
+                    walk(child, removed)?;
+                }
+            }
+        }
+        for key in [
+            "additionalProperties",
+            "additionalItems",
+            "items",
+            "contains",
+            "not",
+            "allOf",
+            "anyOf",
+            "oneOf",
+            "if",
+            "then",
+            "else",
+        ] {
+            if let Some(child) = obj.get_mut(key) {
+                if let Value::Array(children) = child {
+                    for child in children {
+                        walk(child, removed)?;
+                    }
+                } else {
+                    walk(child, removed)?;
+                }
+            }
+        }
+        Ok(())
+    }
+    let mut result = schema.clone();
+    let mut removed = [false; 2];
+    walk(&mut result, &mut removed)?;
+    for (index, feature, details) in [
+        (
+            0,
+            "JSON Schema propertyNames",
+            "OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.",
+        ),
+        (
+            1,
+            "JSON Schema pattern with regex lookaround",
+            "OpenAI does not support regex lookaround in JSON Schema patterns. The pattern was removed before sending the schema, so OpenAI will not enforce that constraint.",
+        ),
+    ] {
+        if removed[index] {
+            warnings.push(Warning::Compatibility {
+                feature: feature.into(),
+                details: Some(details.into()),
+            });
+        }
+    }
+    Ok(result)
+}
+
+fn contains_lookaround(pattern: &str) -> bool {
+    let bytes = pattern.as_bytes();
+    let (mut escaped, mut in_class) = (false, false);
+    for (i, &byte) in bytes.iter().enumerate() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match byte {
+            b'\\' => escaped = true,
+            b'[' => in_class = true,
+            b']' => in_class = false,
+            b'(' if !in_class
+                && bytes.get(i + 1) == Some(&b'?')
+                && (matches!(bytes.get(i + 2), Some(b'=' | b'!'))
+                    || (bytes.get(i + 2) == Some(&b'<')
+                        && matches!(bytes.get(i + 3), Some(b'=' | b'!')))) =>
+            {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 // ── Prepared tools ──────────────────────────────────────────────────────────
 
 /// A warning emitted while preparing tools (mirrors the V4 `SharedV4Warning`
@@ -222,13 +337,13 @@ fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Val
             ));
         }
         FileData::Url { url } => (None, Some(url.as_str())),
-        FileData::Data { data } => {
-            let b64 = match data {
+        FileData::Data { data } => (
+            Some(match data {
                 FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
                 FileBytes::Base64(data) => data.clone(),
-            };
-            (Some(b64), None)
-        }
+            }),
+            None,
+        ),
     };
     let data_b64 = data_b64.as_deref();
     let filename = filename.as_deref();
@@ -352,11 +467,12 @@ fn convert_message_to_openai(
                 .iter()
                 .map(|part| {
                     let ToolPart::ToolResult(result) = part;
-                    json!({
-                        "role": "tool",
-                        "content": tool_result_to_content(&result.result),
-                        "tool_call_id": result.tool_call_id,
-                    })
+                    let mut content = tool_result_to_content(&result.result);
+                    let breakpoint = result.result.get("providerOptions").and_then(|v| v.get("openai")).and_then(|v| v.get("promptCacheBreakpoint")).cloned().or_else(|| get_prompt_cache_breakpoint(&result.provider_options));
+                    if let Some(breakpoint) = breakpoint {
+                        content = json!([{ "type": "text", "text": content, "prompt_cache_breakpoint": breakpoint }]);
+                    }
+                    json!({ "role": "tool", "content": content, "tool_call_id": result.tool_call_id })
                 })
                 .collect());
         }
@@ -403,14 +519,13 @@ fn convert_message_to_openai(
                     AssistantPart::Text(part) => text.push_str(&part.text),
                     AssistantPart::Reasoning(part) => reasoning.push_str(&part.text),
                     AssistantPart::ToolCall(part) => {
-                        let arguments = if part.input.is_null() {
+                        let arguments = if !part.input.is_object() {
                             "{}".to_string()
                         } else {
                             part.input.to_string()
                         };
                         tool_calls.push(json!({
-                            "type": "function",
-                            "id": part.tool_call_id,
+                            "type": "function", "id": part.tool_call_id,
                             "function": { "name": part.tool_name, "arguments": arguments },
                         }));
                     }
@@ -418,50 +533,43 @@ fn convert_message_to_openai(
                 }
             }
             let mut message = if !tool_calls.is_empty() {
-                let content = if text.is_empty() {
+                let value = if text.is_empty() {
                     Value::Null
                 } else {
                     json!(text)
                 };
-                json!({ "role": "assistant", "content": content, "tool_calls": tool_calls })
+                json!({ "role": "assistant", "content": value, "tool_calls": tool_calls })
             } else {
-                let parts: Vec<_> = content
-                    .iter()
-                    .filter(|part| {
-                        !matches!(
-                            part,
-                            AssistantPart::Reasoning(_) | AssistantPart::ToolResult(_)
-                        )
-                    })
-                    .collect();
-                let all_plain_text = parts.iter().all(|part| {
+                let all_plain_text = content.iter().all(|part| {
                     matches!(
                         part,
                         AssistantPart::Text(TextPart {
                             provider_options: None,
                             ..
-                        })
+                        }) | AssistantPart::Reasoning(_)
+                            | AssistantPart::ToolResult(_)
                     )
                 });
-                let content = if all_plain_text {
+                let value = if all_plain_text {
                     json!(text)
                 } else {
-                    json!(
-                        parts
-                            .iter()
-                            .enumerate()
-                            .map(|(index, part)| match part {
-                                AssistantPart::Text(text) => Ok(convert_text_part_to_openai(text)),
-                                AssistantPart::File(file) =>
-                                    convert_file_part_to_openai(file, index),
-                                _ => unreachable!(
-                                    "only text and file parts remain without tool calls"
-                                ),
-                            })
-                            .collect::<Result<Vec<_>, _>>()?
-                    )
+                    let mut parts = Vec::new();
+                    for part in content {
+                        match part {
+                            AssistantPart::Text(text) => {
+                                parts.push(convert_text_part_to_openai(text))
+                            }
+                            AssistantPart::File(file) => {
+                                parts.push(convert_file_part_to_openai(file, parts.len())?)
+                            }
+                            AssistantPart::Reasoning(_)
+                            | AssistantPart::ToolResult(_)
+                            | AssistantPart::ToolCall(_) => {}
+                        }
+                    }
+                    json!(parts)
                 };
-                json!({ "role": "assistant", "content": content })
+                json!({ "role": "assistant", "content": value })
             };
             if !reasoning.is_empty() {
                 message["reasoning_content"] = json!(reasoning);
@@ -475,13 +583,26 @@ fn convert_message_to_openai(
 /// Serialize a tool-result `output` value into the OpenAI tool message
 /// `content` string.
 fn tool_result_to_content(output: &Value) -> Value {
+    let output = match output.get("type").and_then(Value::as_str) {
+        Some("text" | "error-text" | "json" | "error-json" | "content") => {
+            output.get("value").unwrap_or(output)
+        }
+        Some("execution-denied") => {
+            return json!(
+                output
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Tool call execution denied.")
+            );
+        }
+        _ => output,
+    };
     match output {
         Value::String(s) => Value::String(s.clone()),
         other => Value::String(other.to_string()),
     }
 }
 
-/// Convert a text part to the OpenAI format.
 fn convert_text_part_to_openai(part: &TextPart) -> Value {
     let mut value = json!({ "type": "text", "text": part.text });
     if let Some(bpt) = get_prompt_cache_breakpoint(&part.provider_options) {
@@ -701,9 +822,13 @@ fn insert_sampling_params(body: &mut Value, params: &SamplingParams, options: &C
 
 /// `response_format` → body: a schema is sent as `json_schema` (strict), a
 /// bare JSON request as `json_object`.
-fn apply_response_format(body: &mut Value, options: &CallOptions) {
+fn apply_response_format(
+    body: &mut Value,
+    options: &CallOptions,
+    warnings: &mut Vec<Warning>,
+) -> Result<(), AiMuxError> {
     let Some(ref rf) = options.response_format else {
-        return;
+        return Ok(());
     };
     match rf {
         ResponseFormat::Text => {}
@@ -714,12 +839,13 @@ fn apply_response_format(body: &mut Value, options: &CallOptions) {
         } => {
             if let Some(schema) = schema {
                 let mut schema_obj = json!({});
-                schema_obj["schema"] = schema.clone();
+                schema_obj["schema"] = normalize_json_schema(schema, warnings)?;
                 schema_obj["name"] = json!(name.clone().unwrap_or_else(|| "response".to_string()));
                 if let Some(d) = description {
                     schema_obj["description"] = json!(d);
                 }
-                schema_obj["strict"] = json!(true);
+                schema_obj["strict"] = openai_option(&options.provider_options, "strictJsonSchema")
+                    .unwrap_or(json!(true));
                 body["response_format"] = json!({
                     "type": "json_schema",
                     "json_schema": schema_obj,
@@ -729,6 +855,92 @@ fn apply_response_format(body: &mut Value, options: &CallOptions) {
             }
         }
     }
+    Ok(())
+}
+
+fn validate_chat_options(options: &Option<SharedProviderOptions>) -> Result<(), AiMuxError> {
+    let invalid =
+        |key: &str| AiMuxError::InvalidArgument(format!("invalid openai provider option: {key}"));
+    for key in [
+        "parallelToolCalls",
+        "store",
+        "strictJsonSchema",
+        "forceReasoning",
+    ] {
+        if let Some(value) = openai_option(options, key)
+            && !value.is_boolean()
+        {
+            return Err(invalid(key));
+        }
+    }
+    for key in ["user", "promptCacheKey", "safetyIdentifier"] {
+        if let Some(value) = openai_option(options, key)
+            && !value.is_string()
+        {
+            return Err(invalid(key));
+        }
+    }
+    for (key, allowed) in [
+        (
+            "reasoningEffort",
+            &["none", "minimal", "low", "medium", "high", "xhigh", "max"][..],
+        ),
+        (
+            "serviceTier",
+            &["auto", "flex", "priority", "fast", "ultrafast", "default"][..],
+        ),
+        ("textVerbosity", &["low", "medium", "high"][..]),
+        ("promptCacheRetention", &["in_memory", "24h"][..]),
+        ("systemMessageMode", &["system", "developer", "remove"][..]),
+    ] {
+        if let Some(value) = openai_option(options, key)
+            && !value.as_str().is_some_and(|v| allowed.contains(&v))
+        {
+            return Err(invalid(key));
+        }
+    }
+    if let Some(value) = openai_option(options, "logprobs")
+        && !value.is_boolean()
+        && !value.is_number()
+    {
+        return Err(invalid("logprobs"));
+    }
+    if let Some(value) = openai_option(options, "maxCompletionTokens")
+        && !value.is_number()
+    {
+        return Err(invalid("maxCompletionTokens"));
+    }
+    for key in ["metadata", "prediction", "logitBias", "promptCacheOptions"] {
+        let Some(value) = openai_option(options, key) else {
+            continue;
+        };
+        let Some(obj) = value.as_object() else {
+            return Err(invalid(key));
+        };
+        if key == "metadata"
+            && obj.iter().any(|(k, v)| {
+                k.chars().count() > 64 || !v.as_str().is_some_and(|v| v.chars().count() <= 512)
+            })
+        {
+            return Err(invalid(key));
+        }
+        if key == "logitBias"
+            && obj
+                .iter()
+                .any(|(k, v)| k.parse::<f64>().is_err() || !v.is_number())
+        {
+            return Err(invalid(key));
+        }
+        if key == "promptCacheOptions"
+            && (obj
+                .get("mode")
+                .is_some_and(|v| !matches!(v.as_str(), Some("implicit" | "explicit")))
+                || obj.get("ttl").is_some_and(|v| v != "30m"))
+        {
+            return Err(invalid(key));
+        }
+    }
+    Ok(())
 }
 
 /// Pass through the simple provider-specific options that map 1:1 to a body
@@ -753,12 +965,16 @@ fn apply_provider_option_passthrough(
     set("promptCacheRetention", "prompt_cache_retention");
     set("promptCacheOptions", "prompt_cache_options");
     set("safetyIdentifier", "safety_identifier");
-    // M3 (RFC-0016): logprobs request support. Previously `logprobs` /
-    // `topLogprobs` were silently dropped by the provider_options whitelist —
-    // the only option that "quietly did nothing". Pass-through as-is (OpenAI
-    // expects `logprobs: bool` and `top_logprobs: int`).
-    set("logprobs", "logprobs");
-    set("topLogprobs", "top_logprobs");
+    if let Some(logprobs) = openai_option(provider_opts, "logprobs")
+        && (logprobs == true || logprobs.is_number())
+    {
+        body["logprobs"] = json!(true);
+        body["top_logprobs"] = if logprobs.is_number() {
+            logprobs
+        } else {
+            json!(0)
+        };
+    }
 }
 
 /// `service_tier` with model-capability validation.
@@ -785,7 +1001,7 @@ fn apply_service_tier(
                     });
                 }
             }
-            "priority" => {
+            "priority" | "fast" => {
                 if caps.supports_priority_processing {
                     body["service_tier"] = json!(st);
                 } else {
@@ -805,7 +1021,11 @@ fn apply_service_tier(
 }
 
 /// Function tools → `tools` / `tool_choice`.
-fn apply_tools(body: &mut Value, options: &CallOptions) {
+fn apply_tools(
+    body: &mut Value,
+    options: &CallOptions,
+    warnings: &mut Vec<Warning>,
+) -> Result<(), AiMuxError> {
     let function_tools: Option<Vec<FunctionTool>> = options.tools.as_ref().map(|tools| {
         tools
             .iter()
@@ -816,6 +1036,26 @@ fn apply_tools(body: &mut Value, options: &CallOptions) {
             .collect()
     });
 
+    let mut function_tools = function_tools;
+    for tool in function_tools.iter_mut().flatten() {
+        tool.input_schema = normalize_json_schema(&tool.input_schema, warnings)?;
+    }
+    for tool in options.tools.iter().flatten() {
+        if matches!(tool, Tool::Provider(_)) {
+            warnings.push(Warning::Unsupported {
+                feature: "tool type: provider".into(),
+                details: None,
+            });
+        }
+    }
+    if options
+        .tools
+        .as_ref()
+        .is_some_and(|tools| !tools.is_empty())
+        && function_tools.as_ref().is_some_and(Vec::is_empty)
+    {
+        body["tools"] = json!([]);
+    }
     let prepared = prepare_tools(&function_tools, Some(&options.tool_choice));
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);
@@ -823,6 +1063,7 @@ fn apply_tools(body: &mut Value, options: &CallOptions) {
             body["tool_choice"] = tc;
         }
     }
+    Ok(())
 }
 
 /// Convert `CallOptions` to an OpenAI request body, returning warnings.
@@ -844,7 +1085,21 @@ pub fn build_request_body_with_warnings(
     let caps = get_model_capabilities(model_id);
     let provider_opts = &options.provider_options;
 
-    let resolved_reasoning_effort = resolve_reasoning_effort(provider_opts, &options.reasoning);
+    validate_chat_options(provider_opts)?;
+    let mut resolved_reasoning_effort = resolve_reasoning_effort(provider_opts, &options.reasoning);
+    if let (Some(effort), Some(supported)) =
+        (&resolved_reasoning_effort, caps.supported_reasoning_efforts)
+        && !supported.contains(&effort.as_str())
+    {
+        warnings.push(Warning::Unsupported {
+            feature: "reasoningEffort".into(),
+            details: Some(format!(
+                "{model_id} only supports the following reasoning efforts: {}",
+                supported.join(", ")
+            )),
+        });
+        resolved_reasoning_effort = None;
+    }
     let is_reasoning_model = resolve_is_reasoning_model(provider_opts, &caps);
     let system_message_mode = resolve_system_message_mode(provider_opts, is_reasoning_model, &caps);
 
@@ -856,6 +1111,17 @@ pub fn build_request_body_with_warnings(
         });
     }
 
+    if system_message_mode == SystemMessageMode::Remove {
+        for _ in options
+            .prompt
+            .iter()
+            .filter(|m| matches!(m, LanguageModelMessage::System { .. }))
+        {
+            warnings.push(Warning::Other {
+                message: "system messages are removed for this model".into(),
+            });
+        }
+    }
     let messages =
         convert_prompt_to_openai_messages_with_mode_fallible(&options.prompt, system_message_mode)?;
 
@@ -881,16 +1147,41 @@ pub fn build_request_body_with_warnings(
     );
     insert_sampling_params(&mut body, &sampling, options);
 
-    apply_response_format(&mut body, options);
+    apply_response_format(&mut body, options, &mut warnings)?;
     apply_provider_option_passthrough(&mut body, provider_opts);
 
-    // Reasoning effort (v3 passthrough: no built-in vendor normalization).
+    if caps.supported_reasoning_efforts.is_some() && body.get("prompt_cache_retention").is_some() {
+        body.as_object_mut()
+            .unwrap()
+            .remove("prompt_cache_retention");
+        warnings.push(Warning::Unsupported { feature: "promptCacheRetention".into(), details: Some("promptCacheRetention is not supported by sixth-generation and later models; use promptCacheOptions instead".into()) });
+    }
+    if is_reasoning_model {
+        let allow_logprobs = resolved_reasoning_effort.as_deref() == Some("none")
+            && caps.supports_non_reasoning_parameters;
+        for (key, feature) in [
+            ("logprobs", "logprobs"),
+            ("logit_bias", "logitBias"),
+            ("top_logprobs", "topLogprobs"),
+        ] {
+            if key == "logprobs" && allow_logprobs {
+                continue;
+            }
+            if body.as_object_mut().unwrap().remove(key).is_some() {
+                warnings.push(Warning::Other {
+                    message: format!("{feature} is not supported for reasoning models"),
+                });
+            }
+        }
+    }
+
+    // Provider reasoning takes precedence over the standardized setting.
     if let Some(ref effort) = resolved_reasoning_effort {
         body["reasoning_effort"] = json!(effort);
     }
 
     apply_service_tier(&mut body, provider_opts, &caps, &mut warnings);
-    apply_tools(&mut body, options);
+    apply_tools(&mut body, options, &mut warnings)?;
 
     Ok(RequestBodyResult { body, warnings })
 }

@@ -6,18 +6,23 @@
 //! and hands the result to the shared [`super::stream`] core, which sends it
 //! and parses the response or the SSE stream.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
+use futures::StreamExt;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::stream_part::StreamPart;
 use aimux_core::types::Warning;
 use aimux_provider_utils::HttpRequest;
 
 use super::config::AnthropicModelConfig;
 use super::convert::build_request_body_for;
+use super::options::CANONICAL;
 use super::stream::{anthropic_generate_core, anthropic_stream_core};
 use super::tool_name_mapping::ToolNameMapping;
 
@@ -26,6 +31,7 @@ struct PreparedCall {
     http: HttpRequest,
     body: Value,
     warnings: Vec<Warning>,
+    uses_json_response_tool: bool,
 }
 
 /// An Anthropic Messages model (e.g. `claude-sonnet-4-20250514`), created by
@@ -33,12 +39,36 @@ struct PreparedCall {
 pub struct AnthropicMessagesModel {
     model_id: String,
     config: AnthropicModelConfig,
+    generate_id: Arc<dyn Fn() -> String + Send + Sync>,
 }
 
 impl AnthropicMessagesModel {
     /// A model of the host the config describes.
     pub(crate) fn with_config(model_id: String, config: AnthropicModelConfig) -> Self {
-        Self { model_id, config }
+        Self {
+            model_id,
+            config,
+            generate_id: Arc::new(aimux_provider_utils::generate_id),
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn with_generate_id(
+        mut self,
+        generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    ) -> Self {
+        if let Some(generate_id) = generate_id {
+            self.generate_id = generate_id;
+        }
+        self
+    }
+
+    fn uses_custom_options(&self, options: &CallOptions) -> bool {
+        self.config.provider_options_name != CANONICAL
+            && options
+                .provider_options
+                .as_ref()
+                .is_some_and(|value| value.contains_key(&self.config.provider_options_name))
     }
 
     /// Build the request for one call: the body (host preparation and the
@@ -65,6 +95,7 @@ impl AnthropicMessagesModel {
             http,
             body,
             warnings: built.warnings,
+            uses_json_response_tool: built.uses_json_response_tool,
         })
     }
 }
@@ -86,25 +117,45 @@ impl LanguageModel for AnthropicMessagesModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let call = self.prepare(options, false).await?;
-        anthropic_generate_core(
+        let mut result = anthropic_generate_core(
             call.http,
             call.body,
             call.warnings,
             &self.config,
             &ToolNameMapping::new(options.tools.as_deref()),
+            self.uses_custom_options(options),
+            call.uses_json_response_tool,
         )
-        .await
+        .await?;
+        for content in &mut result.content {
+            if let GenerateContent::Source(source) = content {
+                source.id = (self.generate_id)();
+            }
+        }
+        Ok(result)
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let call = self.prepare(options, true).await?;
-        anthropic_stream_core(
+        let mut result = anthropic_stream_core(
             call.http,
             call.body,
             call.warnings,
             &self.config,
             ToolNameMapping::new(options.tools.as_deref()),
+            self.uses_custom_options(options),
+            call.uses_json_response_tool,
         )
-        .await
+        .await?;
+        let generate_id = self.generate_id.clone();
+        result.stream = Box::pin(result.stream.map(move |part| {
+            part.map(|mut part| {
+                if let StreamPart::Source(source) = &mut part {
+                    source.id = generate_id();
+                }
+                part
+            })
+        }));
+        Ok(result)
     }
 }

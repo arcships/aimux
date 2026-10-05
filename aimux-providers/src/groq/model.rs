@@ -341,12 +341,11 @@ impl LanguageModel for GroqChatLanguageModel {
             usage: convert_groq_usage(response.usage.as_ref()),
             warnings,
             provider_metadata: None,
-            request: Some(RequestInfo { body: Some(body) }),
             response: Some(ResponseInfo {
                 headers: Some(response_headers),
-                body: resp.raw_value,
                 ..response_metadata(response.id, response.created, response.model).into()
             }),
+            request: Some(RequestInfo { body: Some(body) }),
         })
     }
 

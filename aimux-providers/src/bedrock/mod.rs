@@ -39,15 +39,13 @@ mod types;
 use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
-use futures::future::BoxFuture;
 use serde_json::Value;
 
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
-use aimux_core::model_catalogue::RuntimeModel;
-use aimux_core::provider::{Provider, ProviderDiscovery};
+use aimux_core::provider::Provider;
 use aimux_core::reranking_model::RerankingModel;
 use aimux_provider_utils::{
     AwsCredentials, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
@@ -76,6 +74,32 @@ const SESSION_TOKEN_ENV_VAR: &str = "AWS_SESSION_TOKEN";
 const RUNTIME_ENDPOINT_ENV_VAR: &str = "AWS_ENDPOINT_URL_BEDROCK_RUNTIME";
 const AGENT_RUNTIME_ENDPOINT_ENV_VAR: &str = "AWS_ENDPOINT_URL_BEDROCK_AGENT_RUNTIME";
 
+pub(crate) fn encode_model_id(model_id: &str) -> String {
+    const SAFE: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+        .remove(b'-')
+        .remove(b'_')
+        .remove(b'.')
+        .remove(b'!')
+        .remove(b'~')
+        .remove(b'*')
+        .remove(b'\'')
+        .remove(b'(')
+        .remove(b')');
+    percent_encoding::utf8_percent_encode(model_id, SAFE).to_string()
+}
+
+/// Optional family override for opaque inference-profile IDs.
+#[derive(Clone, Debug, Default)]
+pub struct AmazonBedrockChatModelSettings {
+    pub model_family: Option<String>,
+}
+
+/// Optional embedding family override for opaque inference-profile IDs.
+#[derive(Clone, Debug, Default)]
+pub struct AmazonBedrockEmbeddingModelSettings {
+    pub model_family: Option<String>,
+}
+
 pub(crate) fn bedrock_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -83,11 +107,17 @@ pub(crate) fn bedrock_failed_response_handler() -> aimux_provider_utils::Respons
         // as `{ "error": { ... } }` by compatible gateways.
         let error = data.get("error").unwrap_or(data);
         aimux_provider_utils::ProviderErrorParts {
-            message: error
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
+            message: {
+                let message = error
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
+                match error.get("type").and_then(Value::as_str) {
+                    Some(kind) => format!("{kind}: {message}"),
+                    None => message,
+                }
+            },
             provider_code: error
                 .get("type")
                 .or_else(|| error.get("__type"))
@@ -286,10 +316,24 @@ impl Auth {
         if let Some(url) = explicit {
             return Ok(url.to_string());
         }
-        if let Some(url) = load_optional_setting(None, endpoint_env_var) {
+        if let Some(url) = load_optional_setting(None, endpoint_env_var)
+            .or_else(|| load_optional_setting(None, "AWS_ENDPOINT_URL"))
+        {
             return validate_base_url(&url);
         }
-        Ok(format!("https://{service}.{}.amazonaws.com", region()?))
+        let region = region()?;
+        let suffix = [
+            ("cn-", "amazonaws.com.cn"),
+            ("us-iso-", "c2s.ic.gov"),
+            ("us-isob-", "sc2s.sgov.gov"),
+            ("eu-isoe-", "cloud.adc-e.uk"),
+            ("us-isof-", "csp.hci.ic.gov"),
+            ("eusc-", "amazonaws.eu"),
+        ]
+        .iter()
+        .find(|(prefix, _)| region.starts_with(prefix))
+        .map_or("amazonaws.com", |(_, suffix)| *suffix);
+        Ok(format!("https://{service}.{region}.{suffix}"))
     }
 }
 
@@ -339,7 +383,13 @@ pub fn create_amazon_bedrock(
     let header_auth = auth.clone();
     let headers: HeadersFn = Resolvable::from_async_fn(move || {
         let auth = header_auth.clone();
-        let user = user_headers.clone().unwrap_or_default();
+        let mut user = combine_headers(&[&user_headers.clone().unwrap_or_default()]);
+        let suffix = concat!("ai-sdk-amazon-bedrock/", env!("CARGO_PKG_VERSION"));
+        let agent = user
+            .get("user-agent")
+            .and_then(|value| value.as_deref())
+            .map_or_else(|| suffix.to_string(), |value| format!("{value} {suffix}"));
+        user.insert("user-agent".into(), Some(agent));
         async move {
             match auth.bearer().await? {
                 Some(key) => {
@@ -449,11 +499,40 @@ impl AmazonBedrockProvider {
         BedrockModel::from_config(model_id.to_string(), self.runtime_config())
     }
 
+    #[must_use]
+    pub fn chat_with_settings(
+        &self,
+        model_id: &str,
+        settings: &AmazonBedrockChatModelSettings,
+    ) -> BedrockModel {
+        self.chat(model_id)
+            .with_model_family(settings.model_family.clone())
+    }
+
     /// An embedding model (e.g. `"amazon.titan-embed-text-v2:0"`);
     /// `provider()` is `"amazon-bedrock"`.
     #[must_use]
     pub fn embedding(&self, model_id: &str) -> BedrockEmbeddingModel {
         BedrockEmbeddingModel::from_config(model_id.to_string(), self.runtime_config())
+    }
+
+    #[must_use]
+    pub fn embedding_with_settings(
+        &self,
+        model_id: &str,
+        settings: &AmazonBedrockEmbeddingModelSettings,
+    ) -> BedrockEmbeddingModel {
+        self.embedding(model_id)
+            .with_model_family(settings.model_family.clone())
+    }
+
+    #[must_use]
+    pub fn call_with_settings(
+        &self,
+        model_id: &str,
+        settings: &AmazonBedrockChatModelSettings,
+    ) -> Arc<dyn LanguageModel> {
+        Arc::new(self.chat_with_settings(model_id, settings))
     }
 
     /// An image generation model (e.g. `"amazon.titan-image-generator-v1"` or
@@ -484,10 +563,6 @@ impl AmazonBedrockProvider {
 }
 
 impl Provider for AmazonBedrockProvider {
-    fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
-        Some(self)
-    }
-
     fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
         Ok(self.call(model_id))
     }
@@ -505,65 +580,5 @@ impl Provider for AmazonBedrockProvider {
         model_id: &str,
     ) -> Option<Result<Arc<dyn RerankingModel>, AiMuxError>> {
         Some(Ok(Arc::new(self.reranking(model_id))))
-    }
-}
-
-impl ProviderDiscovery for AmazonBedrockProvider {
-    /// `GET /foundation-models` (the Bedrock `ListFoundationModels` API): one
-    /// exchange, no retry, authenticated like any other request.
-    fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
-        let auth = self.auth.clone();
-        let base_url = self.base_url.clone();
-        let config = self.runtime_config();
-        Box::pin(async move {
-            // `ListFoundationModels` is on the control plane, whose host is
-            // `bedrock.{region}.amazonaws.com` (the runtime is
-            // `bedrock-runtime.{region}.amazonaws.com`); an explicit base URL
-            // replaces it.
-            let url = match &base_url {
-                Some(base) => format!("{base}/foundation-models"),
-                None => format!(
-                    "https://bedrock.{}.amazonaws.com/foundation-models",
-                    auth.region()?
-                ),
-            };
-            let exchange = config.exchange(None).await?;
-            let mut headers = exchange.headers();
-            headers.push(("Accept".to_string(), "application/json".to_string()));
-            let resp = aimux_provider_utils::get_from_api(
-                exchange.with_transport(aimux_provider_utils::HttpRequest {
-                    url,
-                    headers,
-                    ..Default::default()
-                }),
-                aimux_provider_utils::create_json_response_handler(),
-                bedrock_failed_response_handler(),
-            )
-            .await?;
-
-            // AWS response: { modelSummaries: [{ modelId, modelName, ... }] }
-            #[derive(serde::Deserialize)]
-            struct Resp {
-                #[serde(default, rename = "modelSummaries")]
-                summaries: Vec<Entry>,
-            }
-            #[derive(serde::Deserialize)]
-            struct Entry {
-                #[serde(rename = "modelId")]
-                id: String,
-                #[serde(default, rename = "modelName")]
-                name: Option<String>,
-            }
-            let parsed: Resp = resp.value;
-            Ok(parsed
-                .summaries
-                .into_iter()
-                .map(|entry| RuntimeModel {
-                    id: entry.id,
-                    owned_by: entry.name.or(Some("amazon".to_string())),
-                    created: None,
-                })
-                .collect())
-        })
     }
 }

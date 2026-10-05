@@ -31,15 +31,10 @@ pub fn get_gpt_version(model_id: &str) -> Option<GptVersion> {
             .map(|i| (&stripped[..i], &stripped[i..]))
             .unwrap_or((stripped, ""));
         if minor_str.is_empty() {
-            return Some(GptVersion {
-                major,
-                minor: None,
-                variant: if remainder.is_empty() {
-                    None
-                } else {
-                    Some(remainder.trim_start_matches('-').to_string())
-                },
-            });
+            return None;
+        }
+        if !after.is_empty() && (!after.starts_with('-') || after.len() == 1) {
+            return None;
         }
         (
             minor_str.parse::<u32>().ok(),
@@ -50,6 +45,9 @@ pub fn get_gpt_version(model_id: &str) -> Option<GptVersion> {
             },
         )
     } else {
+        if !remainder.is_empty() && (!remainder.starts_with('-') || remainder.len() == 1) {
+            return None;
+        }
         (
             None,
             if remainder.is_empty() {
@@ -70,10 +68,13 @@ pub fn get_gpt_version(model_id: &str) -> Option<GptVersion> {
 /// Extract o-series version (e.g. `o3-mini` → 3). Mirrors TS `getOSeriesVersion`.
 pub fn get_o_series_version(model_id: &str) -> Option<u32> {
     let rest = model_id.strip_prefix('o')?;
-    let (digits, _) = rest
+    let (digits, remainder) = rest
         .find(|c: char| !c.is_ascii_digit())
         .map(|i| (&rest[..i], &rest[i..]))
         .unwrap_or((rest, ""));
+    if !remainder.is_empty() && !remainder.starts_with('-') {
+        return None;
+    }
     if digits.is_empty() {
         return None;
     }
@@ -87,6 +88,8 @@ pub struct ModelCapabilities {
     pub supports_flex_processing: bool,
     pub supports_priority_processing: bool,
     pub supports_non_reasoning_parameters: bool,
+    pub supports_configuration_update: bool,
+    pub supported_reasoning_efforts: Option<&'static [&'static str]>,
 }
 
 /// How system messages are mapped.
@@ -125,7 +128,16 @@ pub fn get_model_capabilities(model_id: &str) -> ModelCapabilities {
 
     let supports_non_reasoning_parameters = gpt_version
         .as_ref()
-        .is_some_and(|v| v.major > 5 || (v.major == 5 && v.minor.unwrap_or(0) >= 1));
+        .is_some_and(|v| v.major == 5 && v.minor.unwrap_or(0) >= 1);
+
+    let supported_reasoning_efforts = gpt_version.as_ref().filter(|v| v.major >= 6).map(|v| {
+        if v.major == 6 && v.minor.is_none() && matches!(v.variant.as_deref(), Some("sol" | "luna"))
+        {
+            &["none", "low", "medium", "high", "xhigh", "max"][..]
+        } else {
+            &["low", "medium", "high", "xhigh", "max"][..]
+        }
+    });
 
     let system_message_mode = if is_reasoning_model {
         SystemMessageMode::Developer
@@ -139,5 +151,7 @@ pub fn get_model_capabilities(model_id: &str) -> ModelCapabilities {
         supports_flex_processing,
         supports_priority_processing,
         supports_non_reasoning_parameters,
+        supported_reasoning_efforts,
+        supports_configuration_update: gpt_version.as_ref().is_some_and(|v| v.major >= 6),
     }
 }

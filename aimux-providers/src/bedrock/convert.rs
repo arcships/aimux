@@ -17,12 +17,13 @@
 use super::options;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, UserPart,
+    ToolCallPart, ToolPart, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
+use aimux_provider_utils::is_full_media_type;
 use base64::Engine;
 use serde_json::{Value, json};
 
@@ -39,6 +40,10 @@ use serde_json::{Value, json};
 /// assistant text is dropped unless the message also carries reasoning.
 #[must_use]
 pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, Vec<Value>) {
+    convert_prompt(prompt, false)
+}
+
+fn convert_prompt(prompt: &LanguageModelPrompt, is_mistral: bool) -> (Vec<Value>, Vec<Value>) {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Blk {
         System,
@@ -79,7 +84,7 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
                         unreachable!()
                     };
                     system.push(json!({ "text": content }));
-                    if let Some(cp) = cache_point(provider_options) {
+                    if let Some(cp) = cache_point(provider_options.as_ref()) {
                         system.push(cp);
                     }
                 }
@@ -87,53 +92,67 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
             Blk::User => {
                 let mut content: Vec<Value> = Vec::new();
                 for &i in idxs {
-                    match &prompt[i] {
-                        LanguageModelMessage::User { content: parts, .. } => {
+                    let provider_options = match &prompt[i] {
+                        LanguageModelMessage::User {
+                            content: parts,
+                            provider_options,
+                        } => {
                             for part in parts {
-                                let provider_options = match part {
+                                let po = match part {
                                     UserPart::Text(part) => {
-                                        content.push(json!({ "text": part.text }));
+                                        push_user_text(part, &mut content);
                                         &part.provider_options
                                     }
                                     UserPart::File(file) => {
-                                        if !push_file_part(
-                                            file,
-                                            &mut content,
-                                            &mut document_counter,
-                                        ) {
+                                        if matches!(file.data, FileData::Reference { .. }) {
                                             continue;
                                         }
+                                        push_file_part(file, &mut content, &mut document_counter);
                                         &file.provider_options
                                     }
                                 };
-                                if let Some(cp) = cache_point(provider_options) {
+                                if let Some(cp) = cache_point(po.as_ref()) {
                                     content.push(cp);
                                 }
                             }
+                            provider_options
                         }
-                        LanguageModelMessage::Tool { content: parts, .. } => {
+                        LanguageModelMessage::Tool {
+                            content: parts,
+                            provider_options,
+                        } => {
                             for ToolPart::ToolResult(part) in parts {
-                                let result_content =
-                                    resolve_tool_result_output(&part.result, &mut document_counter);
-                                content.push(json!({
-                                    "toolResult": {
-                                        "toolUseId": part.tool_call_id,
-                                        "content": result_content,
-                                    }
-                                }));
+                                push_tool_result(
+                                    part,
+                                    &mut content,
+                                    &mut document_counter,
+                                    is_mistral,
+                                );
+                                if let Some(cp) = cache_point(part.provider_options.as_ref()) {
+                                    content.push(cp);
+                                }
                             }
+                            provider_options
                         }
                         _ => unreachable!(),
+                    };
+                    if let Some(cp) = cache_point(provider_options.as_ref()) {
+                        content.push(cp);
                     }
                 }
-                messages.push(json!({ "role": "user", "content": content }));
+                append_user_message(&mut messages, content);
             }
             Blk::Assistant => {
                 let mut content: Vec<Value> = Vec::new();
+                let mut results: Vec<Value> = Vec::new();
                 let num_msgs = idxs.len();
                 for (mj, &i) in idxs.iter().enumerate() {
                     let is_last_message = mj == num_msgs - 1;
-                    let LanguageModelMessage::Assistant { content: parts, .. } = &prompt[i] else {
+                    let LanguageModelMessage::Assistant {
+                        content: parts,
+                        provider_options,
+                    } = &prompt[i]
+                    else {
                         unreachable!()
                     };
                     let has_reasoning = parts
@@ -142,6 +161,9 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
                     let num_parts = parts.len();
                     for (kj, p) in parts.iter().enumerate() {
                         let is_last_content_part = kj == num_parts - 1;
+                        if !matches!(p, AssistantPart::ToolResult(_)) && !results.is_empty() {
+                            append_user_message(&mut messages, std::mem::take(&mut results));
+                        }
                         match p {
                             AssistantPart::Text(TextPart { text, .. }) => {
                                 // Skip empty text unless the message has reasoning.
@@ -158,19 +180,36 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
                             }
                             AssistantPart::Reasoning(ReasoningPart {
                                 text,
-                                signature: Some(sig),
-                                ..
+                                signature,
+                                provider_options,
                             }) => {
-                                // Only signed reasoning is replayed; unsigned
-                                // reasoning is intentionally omitted.
-                                content.push(json!({
-                                    "reasoningContent": {
-                                        "reasoningText": {
-                                            "text": text,
-                                            "signature": sig
-                                        }
-                                    }
-                                }));
+                                let metadata = options::read(provider_options.as_ref());
+                                if let Some(sig) = metadata
+                                    .and_then(|v| v.get("signature"))
+                                    .and_then(Value::as_str)
+                                    .or(signature.as_deref())
+                                {
+                                    content.push(json!({"reasoningContent":{"reasoningText":{"text":text,"signature":sig}}}));
+                                } else if let Some(redacted) =
+                                    metadata.and_then(|v| v.get("redactedContent"))
+                                {
+                                    content.push(
+                                        json!({"reasoningContent":{"redactedContent":redacted}}),
+                                    );
+                                } else if let Some(data) =
+                                    metadata.and_then(|v| v.get("redactedData"))
+                                {
+                                    content.push(json!({"reasoningContent":{"redactedReasoning":{"data":data}}}));
+                                }
+                            }
+                            AssistantPart::ToolResult(part) => {
+                                flush_assistant(&mut messages, &mut content);
+                                push_tool_result(
+                                    part,
+                                    &mut results,
+                                    &mut document_counter,
+                                    is_mistral,
+                                );
                             }
                             AssistantPart::ToolCall(ToolCallPart {
                                 tool_call_id,
@@ -185,7 +224,7 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
                                 };
                                 content.push(json!({
                                     "toolUse": {
-                                        "toolUseId": tool_call_id,
+                                        "toolUseId": normalize_tool_call_id(tool_call_id, is_mistral),
                                         "name": sanitize_tool_name(tool_name),
                                         "input": input_val,
                                     }
@@ -193,24 +232,26 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
                             }
                             _ => {}
                         }
-                        let provider_options = match p {
-                            AssistantPart::Text(part) => &part.provider_options,
-                            AssistantPart::File(part)
-                                if matches!(
-                                    part.data,
-                                    FileData::Data { .. } | FileData::Text { .. }
-                                ) =>
-                            {
-                                &part.provider_options
+                        if let Some(cp) = assistant_cache_point(p) {
+                            if matches!(p, AssistantPart::ToolResult(_)) {
+                                results.push(cp);
+                            } else {
+                                content.push(cp);
                             }
-                            _ => continue,
-                        };
-                        if let Some(cp) = cache_point(provider_options) {
+                        }
+                    }
+                    if let Some(cp) = cache_point(provider_options.as_ref()) {
+                        if matches!(parts.last(), Some(AssistantPart::ToolResult(_))) {
+                            results.push(cp);
+                        } else {
                             content.push(cp);
                         }
                     }
                 }
-                messages.push(json!({ "role": "assistant", "content": content }));
+                if !results.is_empty() {
+                    append_user_message(&mut messages, results);
+                }
+                flush_assistant(&mut messages, &mut content);
             }
         }
     }
@@ -218,8 +259,39 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
     (system, messages)
 }
 
-/// Push a supported file into a Bedrock content array.
-fn push_file_part(file: &FilePart, content: &mut Vec<Value>, doc_counter: &mut u32) -> bool {
+fn push_user_text(part: &TextPart, content: &mut Vec<Value>) {
+    let opts = options::read(part.provider_options.as_ref());
+    if opts
+        .and_then(|v| v.get("guardContent"))
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        let mut block = json!({"text":part.text});
+        if let Some(q) = opts.and_then(|v| v.get("guardContentQualifiers")) {
+            block["qualifiers"] = q.clone();
+        }
+        content.push(json!({"guardContent":{"text":block}}));
+    } else {
+        content.push(json!({ "text": part.text }));
+    }
+}
+
+fn push_tool_result(
+    part: &ToolResultPart,
+    content: &mut Vec<Value>,
+    doc_counter: &mut u32,
+    is_mistral: bool,
+) {
+    let result_content = resolve_tool_result_output(&part.result, doc_counter);
+    content.push(json!({
+        "toolResult": {
+            "toolUseId": normalize_tool_call_id(&part.tool_call_id, is_mistral),
+            "content": result_content,
+        }
+    }));
+}
+
+fn push_file_part(file: &FilePart, content: &mut Vec<Value>, doc_counter: &mut u32) {
     let b64 = match &file.data {
         FileData::Data {
             data: FileBytes::Binary(bytes),
@@ -228,29 +300,38 @@ fn push_file_part(file: &FilePart, content: &mut Vec<Value>, doc_counter: &mut u
             data: FileBytes::Base64(data),
         } => data.clone(),
         FileData::Text { text } => base64::engine::general_purpose::STANDARD.encode(text),
-        FileData::Url { .. } | FileData::Reference { .. } => return false,
+        FileData::Url { .. } => String::new(),
+        FileData::Reference { .. } => return,
     };
-    let is_text = matches!(file.data, FileData::Text { .. });
-    let media_type = if is_text
-        && !file
-            .media_type
-            .split_once('/')
-            .is_some_and(|(_, subtype)| !subtype.is_empty() && subtype != "*")
-    {
-        "text/plain"
-    } else {
-        &file.media_type
-    };
+    let media_type =
+        if matches!(file.data, FileData::Text { .. }) && !is_full_media_type(&file.media_type) {
+            "text/plain"
+        } else {
+            &file.media_type
+        };
     push_file_block(
         &b64,
         media_type,
         file.filename.as_deref(),
         &file.provider_options,
-        is_text,
         content,
         doc_counter,
     );
-    true
+    if let FileData::Url { url } = &file.data
+        && let Some(block) = content.last_mut()
+    {
+        let inner = if block.get("guardContent").is_some() {
+            &mut block["guardContent"]
+        } else {
+            block
+        };
+        let key = if media_type.starts_with("video/") {
+            "video"
+        } else {
+            "image"
+        };
+        inner[key]["source"] = json!({"s3Location":{"uri":url}});
+    }
 }
 
 /// Build a Bedrock `image` or `document` block from an already-base64 `bytes`
@@ -263,21 +344,31 @@ fn push_file_block(
     media_type: &str,
     filename: Option<&str>,
     provider_options: &Option<SharedProviderOptions>,
-    is_text: bool,
     content: &mut Vec<Value>,
     doc_counter: &mut u32,
 ) {
     let top_level = media_type.split('/').next().unwrap_or("");
-    if top_level == "image" && !is_text {
+    if top_level == "image" {
         let format = mime_to_image_format(media_type);
-        content.push(json!({
-            "image": { "format": format, "source": { "bytes": b64 } }
-        }));
+        let block = json!({ "image": { "format": format, "source": { "bytes": b64 } } });
+        if options::read(provider_options.as_ref())
+            .and_then(|v| v.get("guardContent"))
+            .and_then(Value::as_bool)
+            == Some(true)
+        {
+            content.push(json!({"guardContent":block}));
+        } else {
+            content.push(block);
+        }
+    } else if top_level == "video" {
+        content.push(
+            json!({"video":{"format":mime_to_video_format(media_type),"source":{"bytes":b64}}}),
+        );
     } else {
         let format = mime_to_document_format(media_type);
         let name = match filename {
-            Some(f) => strip_file_extension(f),
-            None => {
+            Some(f) if !sanitize_document_name(f).is_empty() => sanitize_document_name(f),
+            _ => {
                 *doc_counter += 1;
                 format!("document-{}", *doc_counter)
             }
@@ -295,9 +386,18 @@ fn push_file_block(
 
 /// Extract a `{ cachePoint: {...} }` block from a part's `providerOptions`
 /// (`amazonBedrock.cachePoint`), if present.
-fn cache_point(provider_options: &Option<SharedProviderOptions>) -> Option<Value> {
-    let cp = options::read(provider_options.as_ref())?.get("cachePoint")?;
-    Some(json!({ "cachePoint": cp.clone() }))
+fn assistant_cache_point(part: &AssistantPart) -> Option<Value> {
+    let po = match part {
+        AssistantPart::Text(part) => &part.provider_options,
+        AssistantPart::File(part) if !matches!(part.data, FileData::Reference { .. }) => {
+            &part.provider_options
+        }
+        AssistantPart::Reasoning(part) => &part.provider_options,
+        AssistantPart::ToolCall(part) => &part.provider_options,
+        AssistantPart::ToolResult(part) => &part.provider_options,
+        _ => return None,
+    };
+    cache_point(po.as_ref())
 }
 
 /// Whether `citations.enabled` is set on a part's `amazonBedrock` provider
@@ -313,6 +413,11 @@ fn citations_enabled(provider_options: &Option<SharedProviderOptions>) -> bool {
 /// Resolve a tool result `output` value into Bedrock's `toolResult.content`
 /// array, mirroring the TS SDK.
 fn resolve_tool_result_output(output: &Value, doc_counter: &mut u32) -> Vec<Value> {
+    if output.get("type").and_then(Value::as_str) == Some("execution-denied") {
+        return vec![
+            json!({"text":output.get("reason").and_then(Value::as_str).unwrap_or("Tool call execution denied.")}),
+        ];
+    }
     let (t, v) = match (
         output.get("type").and_then(|x| x.as_str()),
         output.get("value"),
@@ -324,7 +429,10 @@ fn resolve_tool_result_output(output: &Value, doc_counter: &mut u32) -> Vec<Valu
         "json" | "error-json" => vec![json!({ "text": v.to_string() })],
         "text" | "error" | "error-text" => vec![json!({ "text": v })],
         "execution-denied" => {
-            let reason = v.as_str().unwrap_or("Tool call execution denied.");
+            let reason = output
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("Tool call execution denied.");
             vec![json!({ "text": reason })]
         }
         "content" => {
@@ -359,15 +467,22 @@ fn convert_tool_result_content_part(part: &Value, content: &mut Vec<Value>, doc_
                 .and_then(|d| d.as_str())
                 .unwrap_or("");
             let filename = part.get("filename").and_then(|f| f.as_str());
-            push_file_block(
-                b64,
-                media_type,
-                filename,
-                &None,
-                false,
-                content,
-                doc_counter,
-            );
+            let po = part
+                .get("providerOptions")
+                .and_then(|v| serde_json::from_value(v.clone()).ok());
+            let mut blocks = Vec::new();
+            push_file_block(b64, media_type, filename, &po, &mut blocks, doc_counter);
+            if part["data"]["type"] == "url" {
+                for block in &mut blocks {
+                    let key = if media_type.starts_with("video/") {
+                        "video"
+                    } else {
+                        "image"
+                    };
+                    block[key]["source"] = json!({"s3Location":{"uri":part["data"]["url"]}});
+                }
+            }
+            content.extend(blocks);
         }
         _ => {
             content.push(json!({ "text": part.to_string() }));
@@ -378,7 +493,7 @@ fn convert_tool_result_content_part(part: &Value, content: &mut Vec<Value>, doc_
 fn sanitize_tool_name(name: &str) -> String {
     let sanitized: String = name
         .chars()
-        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
         .collect();
     if sanitized.is_empty() {
         "_".to_string()
@@ -389,7 +504,7 @@ fn sanitize_tool_name(name: &str) -> String {
 
 fn strip_file_extension(name: &str) -> String {
     match name.rfind('.') {
-        Some(i) if i > 0 => name[..i].to_string(),
+        Some(i) => name[..i].to_string(),
         _ => name.to_string(),
     }
 }
@@ -417,6 +532,320 @@ fn mime_to_document_format(media_type: &str) -> &'static str {
         "text/markdown" => "md",
         _ => "txt",
     }
+}
+
+fn cache_point(provider_options: Option<&SharedProviderOptions>) -> Option<Value> {
+    Some(json!({"cachePoint": options::read(provider_options)?.get("cachePoint")?}))
+}
+
+fn append_user_message(messages: &mut Vec<Value>, content: Vec<Value>) {
+    if let Some(last) = messages.last_mut()
+        && last["role"] == "user"
+        && last["content"]
+            .as_array()
+            .is_some_and(|blocks| blocks.iter().any(|b| b.get("toolResult").is_some()))
+    {
+        last["content"].as_array_mut().unwrap().extend(content);
+    } else {
+        messages.push(json!({"role":"user","content":content}));
+    }
+}
+
+fn flush_assistant(messages: &mut Vec<Value>, content: &mut Vec<Value>) {
+    if content.iter().any(|v| v.get("cachePoint").is_none()) {
+        messages.push(json!({"role":"assistant","content":std::mem::take(content)}));
+    } else {
+        content.clear();
+    }
+}
+
+#[must_use]
+pub fn normalize_tool_call_id(id: &str, is_mistral: bool) -> String {
+    if !is_mistral || (id.len() == 9 && id.bytes().all(|c| c.is_ascii_alphanumeric())) {
+        return id.to_owned();
+    }
+    let mut hash = 14_695_981_039_346_656_037_u64;
+    for unit in id.encode_utf16() {
+        hash = (hash ^ u64::from(unit)).wrapping_mul(1_099_511_628_211);
+    }
+    let mut value = hash % 62_u64.pow(9);
+    let mut bytes = [b'0'; 9];
+    let alphabet = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    for byte in bytes.iter_mut().rev() {
+        *byte = alphabet[(value % 62) as usize];
+        value /= 62;
+    }
+    String::from_utf8(bytes.to_vec()).unwrap()
+}
+
+fn sanitize_document_name(name: &str) -> String {
+    strip_file_extension(name)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || " ()[]-".contains(*c))
+        .collect::<String>()
+        .trim()
+        .chars()
+        .take(200)
+        .collect::<String>()
+        .trim()
+        .to_owned()
+}
+
+fn mime_to_video_format(media_type: &str) -> Option<&'static str> {
+    match media_type {
+        "video/x-matroska" => Some("mkv"),
+        "video/quicktime" => Some("mov"),
+        "video/mp4" => Some("mp4"),
+        "video/webm" => Some("webm"),
+        "video/x-flv" => Some("flv"),
+        "video/mpeg" => Some("mpeg"),
+        "video/mpg" => Some("mpg"),
+        "video/wmv" | "video/x-ms-wmv" => Some("wmv"),
+        "video/3gpp" => Some("three_gp"),
+        _ => None,
+    }
+}
+
+fn is_strict_schema_compatible(schema: &Value) -> bool {
+    let Some(object) = schema.as_object() else {
+        return true;
+    };
+    let is_object = schema["type"] == "object"
+        || schema["type"]
+            .as_array()
+            .is_some_and(|a| a.iter().any(|v| v == "object"));
+    if is_object && schema["additionalProperties"] != false {
+        return false;
+    }
+    for key in [
+        "properties",
+        "patternProperties",
+        "definitions",
+        "$defs",
+        "dependencies",
+    ] {
+        if let Some(map) = object.get(key).and_then(Value::as_object)
+            && map.values().any(|v| !is_strict_schema_compatible(v))
+        {
+            return false;
+        }
+    }
+    for key in [
+        "propertyNames",
+        "contains",
+        "not",
+        "if",
+        "then",
+        "else",
+        "items",
+        "anyOf",
+        "allOf",
+        "oneOf",
+    ] {
+        if let Some(value) = object.get(key) {
+            if let Some(array) = value.as_array() {
+                if array.iter().any(|v| !is_strict_schema_compatible(v)) {
+                    return false;
+                }
+            } else if !is_strict_schema_compatible(value) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn validate_media_type(
+    media_type: &str,
+    is_url: bool,
+    url: Option<&str>,
+) -> Result<(), aimux_core::AiMuxError> {
+    let supported = match media_type.split('/').next() {
+        Some("image") => matches!(
+            media_type,
+            "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+        ),
+        Some("video") => mime_to_video_format(media_type).is_some(),
+        _ => matches!(
+            media_type,
+            "application/pdf"
+                | "text/csv"
+                | "application/msword"
+                | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                | "application/vnd.ms-excel"
+                | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                | "text/html"
+                | "text/plain"
+                | "text/markdown"
+        ),
+    };
+    if !supported
+        || (is_url
+            && (!url.is_some_and(|u| u.starts_with("s3://"))
+                || !(media_type.starts_with("image/") || media_type.starts_with("video/"))))
+    {
+        return Err(aimux_core::AiMuxError::UnsupportedFunctionality(format!(
+            "file media type or data: {media_type}"
+        )));
+    }
+    Ok(())
+}
+
+/// Reject prompts the Converse API cannot express.
+///
+/// # Errors
+///
+/// An unsupported message arrangement.
+pub fn validate_prompt(prompt: &LanguageModelPrompt) -> Result<(), aimux_core::AiMuxError> {
+    let mut saw_non_system = false;
+    for message in prompt {
+        match message {
+            LanguageModelMessage::System { .. } => {
+                if saw_non_system {
+                    return Err(aimux_core::AiMuxError::UnsupportedFunctionality(
+                        "Multiple system messages that are separated by user/assistant messages"
+                            .into(),
+                    ));
+                }
+            }
+            LanguageModelMessage::User { content, .. } => {
+                saw_non_system = true;
+                for part in content {
+                    match part {
+                        UserPart::Text(part) => {
+                            validate_part_options(part.provider_options.as_ref(), false)?
+                        }
+                        UserPart::File(file) => validate_file(file)?,
+                    }
+                }
+            }
+            LanguageModelMessage::Assistant { content, .. } => {
+                saw_non_system = true;
+                for part in content {
+                    match part {
+                        AssistantPart::Text(part) => {
+                            validate_part_options(part.provider_options.as_ref(), false)?
+                        }
+                        AssistantPart::File(file) => validate_file(file)?,
+                        AssistantPart::Reasoning(part) => {
+                            validate_part_options(part.provider_options.as_ref(), true)?
+                        }
+                        AssistantPart::ToolResult(part) => validate_tool_result(&part.result)?,
+                        AssistantPart::ToolCall(_) => {}
+                    }
+                }
+            }
+            LanguageModelMessage::Tool { content, .. } => {
+                saw_non_system = true;
+                for ToolPart::ToolResult(part) in content {
+                    validate_tool_result(&part.result)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_part_options(
+    provider_options: Option<&SharedProviderOptions>,
+    reasoning: bool,
+) -> Result<(), aimux_core::AiMuxError> {
+    if let Some(options) = options::read(provider_options) {
+        if let Some(value) = options.get("guardContent")
+            && !value.is_boolean()
+        {
+            return Err(aimux_core::AiMuxError::InvalidArgument(
+                "Invalid Bedrock guardContent".into(),
+            ));
+        }
+        if let Some(value) = options.get("guardContentQualifiers")
+            && !value.as_array().is_some_and(|a| {
+                a.iter().all(|v| {
+                    matches!(
+                        v.as_str(),
+                        Some("grounding_source" | "query" | "guard_content")
+                    )
+                })
+            })
+        {
+            return Err(aimux_core::AiMuxError::InvalidArgument(
+                "Invalid Bedrock guardContentQualifiers".into(),
+            ));
+        }
+        if let Some(value) = options.get("citations")
+            && (!value.is_object() || value.get("enabled").is_some_and(|v| !v.is_boolean()))
+        {
+            return Err(aimux_core::AiMuxError::InvalidArgument(
+                "Invalid Bedrock citations".into(),
+            ));
+        }
+        if reasoning {
+            for key in ["signature", "redactedContent", "redactedData"] {
+                if let Some(value) = options.get(key)
+                    && !value.is_string()
+                    && !value.is_null()
+                {
+                    return Err(aimux_core::AiMuxError::InvalidArgument(format!(
+                        "Invalid Bedrock {key}"
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
+    if !matches!(file.data, FileData::Reference { .. }) {
+        validate_part_options(file.provider_options.as_ref(), false)?;
+    }
+    match &file.data {
+        FileData::Reference { .. } => Err(aimux_core::AiMuxError::UnsupportedFunctionality(
+            "File reference data".into(),
+        )),
+        FileData::Url { url } => validate_media_type(&file.media_type, true, Some(url)),
+        FileData::Text { .. } => {
+            let media_type = if is_full_media_type(&file.media_type) {
+                &file.media_type
+            } else {
+                "text/plain"
+            };
+            if media_type.starts_with("image/") || media_type.starts_with("video/") {
+                return Err(aimux_core::AiMuxError::UnsupportedFunctionality(format!(
+                    "file media type or data: {media_type}"
+                )));
+            }
+            validate_media_type(media_type, false, None)
+        }
+        FileData::Data { .. } => validate_media_type(&file.media_type, false, None),
+    }
+}
+
+fn validate_tool_result(result: &Value) -> Result<(), aimux_core::AiMuxError> {
+    if result["type"] == "content"
+        && let Some(parts) = result["value"].as_array()
+    {
+        for part in parts {
+            if part["type"] == "file" {
+                let mt = part["mediaType"].as_str().unwrap_or("");
+                let kind = part["data"]["type"].as_str().unwrap_or("");
+                if !matches!(kind, "data" | "url") {
+                    return Err(aimux_core::AiMuxError::UnsupportedFunctionality(
+                        "tool result file data".into(),
+                    ));
+                }
+                validate_media_type(mt, kind == "url", part["data"]["url"].as_str())?;
+            } else if part["type"] != "text" {
+                return Err(aimux_core::AiMuxError::UnsupportedFunctionality(
+                    "unsupported tool content part".into(),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 // ── Tools ───────────────────────────────────────────────────────────────────
@@ -485,6 +914,7 @@ pub fn prepare_tools(
             }
             if let Some(strict) = t.strict
                 && supports_strict
+                && (!strict || is_strict_schema_compatible(&t.input_schema))
             {
                 spec.insert("strict".to_string(), json!(strict));
             }
@@ -509,107 +939,569 @@ pub fn prepare_tools(
 
 // ── Request body ────────────────────────────────────────────────────────────
 
-/// Build the Bedrock Converse request body.
-///
-/// When `providerOptions.bedrock.reasoningConfig = { type: 'enabled',
-/// budgetTokens: N }` is present, it is translated into
-/// `additionalModelRequestFields.thinking = { type: 'enabled', budget_tokens: N }`
-/// and `inferenceConfig.maxTokens` is bumped by `budgetTokens`. The
-/// `reasoningConfig` key never appears in the request body. User-supplied
-/// `additionalModelRequestFields` are merged with the derived `thinking` field.
-#[must_use]
-pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
-    let (system, messages) = convert_prompt_to_bedrock(&options.prompt);
-
-    // Extract Bedrock-specific provider options.
-    let bedrock_opts = options::read(options.provider_options.as_ref());
-    let reasoning_config = bedrock_opts.and_then(|bo| bo.get("reasoningConfig"));
-    let user_amrf = bedrock_opts.and_then(|bo| bo.get("additionalModelRequestFields"));
-
-    // Derive the thinking config and budget_tokens from reasoningConfig.
-    let mut thinking: Option<Value> = None;
-    let mut budget_tokens: Option<u64> = None;
-    if let Some(rc) = reasoning_config
-        && rc.get("type").and_then(|v| v.as_str()) == Some("enabled")
-        && let Some(bt) = rc.get("budgetTokens").and_then(serde_json::Value::as_u64)
+// The request capabilities come from Anthropic's getModelCapabilities, not
+// Bedrock's separate strict-tool support list. Unknown newer model IDs assume
+// adaptive thinking and reject sampling; legacy IDs retain their defaults.
+fn reasoning_capabilities(model_id: &str) -> (f64, bool, bool) {
+    let Some((_, model)) = model_id.split_once("claude-") else {
+        return (4096.0, false, false);
+    };
+    if ["opus-5", "fable-5", "sonnet-5", "opus-4-8", "opus-4-7"]
+        .iter()
+        .any(|id| model.starts_with(id))
     {
-        thinking = Some(json!({ "type": "enabled", "budget_tokens": bt }));
-        budget_tokens = Some(bt);
-    }
-
-    let mut inference_config = serde_json::Map::new();
-    if let Some(max) = options.max_output_tokens {
-        // When thinking is enabled, maxTokens is bumped by budgetTokens so the
-        // model has room for both reasoning and the visible response.
-        let max_tokens = budget_tokens.map(|bt| max + bt as u32).unwrap_or(max);
-        inference_config.insert("maxTokens".to_string(), json!(max_tokens));
-    }
-    if let Some(temp) = options.temperature {
-        inference_config.insert("temperature".to_string(), json!(temp));
-    }
-    if let Some(top_p) = options.top_p {
-        inference_config.insert("topP".to_string(), json!(top_p));
-    }
-    if let Some(top_k) = options.top_k {
-        inference_config.insert("topK".to_string(), json!(top_k));
-    }
-    if let Some(ref stop) = options.stop_sequences {
-        inference_config.insert("stopSequences".to_string(), json!(stop));
-    }
-
-    // Build additionalModelRequestFields: merge user-supplied fields with the
-    // derived thinking config (thinking takes precedence on conflict).
-    let mut amrf = serde_json::Map::new();
-    if let Some(user_amrf) = user_amrf
-        && let Some(obj) = user_amrf.as_object()
+        (128000.0, true, true)
+    } else if ["sonnet-4-6", "opus-4-6"]
+        .iter()
+        .any(|id| model.starts_with(id))
     {
-        for (k, v) in obj {
-            amrf.insert(k.clone(), v.clone());
+        (128000.0, true, false)
+    } else if ["sonnet-4-5", "opus-4-5", "haiku-4-5"]
+        .iter()
+        .any(|id| model.starts_with(id))
+    {
+        (64000.0, false, false)
+    } else if model.starts_with("opus-4-1") {
+        (32000.0, false, false)
+    } else if model.starts_with("sonnet-4-") || model.starts_with("sonnet-4@") {
+        (64000.0, false, false)
+    } else if model.starts_with("opus-4-") || model.starts_with("opus-4@") {
+        (32000.0, false, false)
+    } else {
+        let two = model.strip_prefix('v').unwrap_or(model);
+        let legacy = model == "instant"
+            || model.starts_with("instant-")
+            || two == "2"
+            || two.starts_with("2-")
+            || two.starts_with("2.")
+            || two.starts_with("2:")
+            || model == "3"
+            || model.starts_with("3-")
+            || model.starts_with("3.");
+        if legacy {
+            (4096.0, false, false)
+        } else {
+            (128000.0, true, true)
         }
     }
-    if let Some(thinking) = thinking {
-        amrf.insert("thinking".to_string(), thinking);
-    }
+}
 
-    let mut body = serde_json::Map::new();
-    body.insert("messages".to_string(), Value::Array(messages));
+/// Build the Bedrock Converse request body.
+#[must_use]
+pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
+    build_request_body_checked(model_id, options, None)
+        .expect("valid Bedrock request")
+        .0
+}
 
-    if !system.is_empty() {
-        body.insert("system".to_string(), Value::Array(system));
+/// Build a checked Converse request, preserving upstream warnings.
+///
+/// # Errors
+///
+/// A prompt or tool definition the Converse API cannot express.
+pub fn build_request_body_checked(
+    model_id: &str,
+    call: &CallOptions,
+    model_family: Option<&str>,
+) -> Result<(Value, Vec<aimux_core::types::Warning>), aimux_core::AiMuxError> {
+    use aimux_core::types::{ReasoningEffort, Warning};
+    let mut warnings = Vec::new();
+    let mut compatibility = Vec::new();
+    let mut warn = |feature: &str, details: Option<&str>| {
+        warnings.push(Warning::Unsupported {
+            feature: feature.into(),
+            details: details.map(str::to_owned),
+        })
+    };
+    let bedrock = options::read(call.provider_options.as_ref());
+    validate_options(bedrock)?;
+    let mut reasoning = bedrock
+        .and_then(|b| b.get("reasoningConfig"))
+        .cloned()
+        .unwrap_or(json!({}));
+    let anthropic = model_family == Some("anthropic")
+        || model_id.contains("anthropic")
+        || (model_id.contains(":application-inference-profile/")
+            && reasoning.get("budgetTokens").is_some());
+    let openai = model_id
+        .split('.')
+        .any(|p| p == options::OPENAI_MODEL_FAMILY);
+    let oss = openai && model_id.contains("-oss-");
+    let nova = model_id.contains("amazon.nova-2-lite-v1:0");
+    let (max_reasoning_tokens, adaptive, rejects_sampling) = reasoning_capabilities(model_id);
+    if let Some(effort) = &call.reasoning
+        && effort.is_custom()
+    {
+        if anthropic && matches!(effort, ReasoningEffort::None) {
+            reasoning = json!({"type":"disabled"});
+        } else if !matches!(effort, ReasoningEffort::None)
+            && (anthropic
+                || openai
+                || nova
+                || bedrock.is_some_and(|b| b.contains_key("reasoningConfig")))
+        {
+            let level = match effort {
+                ReasoningEffort::Minimal | ReasoningEffort::Low => "low",
+                ReasoningEffort::Medium => "medium",
+                ReasoningEffort::High => "high",
+                ReasoningEffort::Xhigh => "max",
+                _ => "low",
+            };
+            if (!anthropic || adaptive)
+                && matches!(effort, ReasoningEffort::Minimal | ReasoningEffort::Xhigh)
+            {
+                compatibility.push(Warning::Compatibility { feature: "reasoning".into(), details: Some(format!("reasoning \"{effort}\" is not directly supported by this model. mapped to effort \"{level}\".")) });
+            }
+            let mut derived = if anthropic && adaptive {
+                json!({"type":"adaptive","maxReasoningEffort":level})
+            } else if anthropic {
+                let percentage = match effort {
+                    ReasoningEffort::Minimal => 0.02,
+                    ReasoningEffort::Low => 0.1,
+                    ReasoningEffort::Medium => 0.3,
+                    ReasoningEffort::High => 0.6,
+                    _ => 0.9,
+                };
+                json!({"type":"enabled","budgetTokens":(max_reasoning_tokens * percentage).round().clamp(1024.0, max_reasoning_tokens) as u64})
+            } else {
+                json!({"maxReasoningEffort":level})
+            };
+            if nova {
+                derived["type"] = json!("enabled");
+            }
+            if let Some(explicit) = reasoning.as_object() {
+                derived.as_object_mut().unwrap().extend(explicit.clone());
+            }
+            reasoning = derived;
+        } else if !matches!(effort, ReasoningEffort::None) {
+            warn(
+                "reasoning",
+                Some(
+                    "Portable reasoning is not supported for this model and will be ignored. If the model supports a provider-specific reasoning configuration, use providerOptions.amazonBedrock.reasoningConfig.",
+                ),
+            );
+        }
+        if reasoning["type"] == "disabled" {
+            reasoning.as_object_mut().unwrap().remove("budgetTokens");
+            reasoning
+                .as_object_mut()
+                .unwrap()
+                .remove("maxReasoningEffort");
+        }
     }
-    if !inference_config.is_empty() {
-        body.insert(
-            "inferenceConfig".to_string(),
-            Value::Object(inference_config),
-        );
+    let thinking = anthropic && matches!(reasoning["type"].as_str(), Some("enabled" | "adaptive"));
+    let rejects_forced = model_id.contains("sonnet-5-5")
+        || model_id.contains("opus-5-5")
+        || model_id.contains("fable-5-1");
+    let mut inference = serde_json::Map::new();
+    if let Some(max) = call.max_output_tokens {
+        inference.insert("maxTokens".into(), json!(max));
     }
-    if !amrf.is_empty() {
-        body.insert(
-            "additionalModelRequestFields".to_string(),
-            Value::Object(amrf),
-        );
+    if let Some(temp) = call.temperature {
+        if rejects_sampling || thinking || (openai && !oss) {
+            let details = if rejects_sampling {
+                format!("temperature is not supported by {model_id} and will be ignored")
+            } else if thinking {
+                "temperature is not supported when thinking is enabled".into()
+            } else {
+                "temperature is not supported by this OpenAI model on the Converse API".into()
+            };
+            warn("temperature", Some(&details));
+        } else {
+            let temp = if !openai || oss {
+                if !(0.0..=1.0).contains(&temp) {
+                    warn(
+                        "temperature",
+                        Some("temperature clamped to the Bedrock range [0, 1]"),
+                    );
+                }
+                temp.clamp(0.0, 1.0)
+            } else {
+                temp
+            };
+            inference.insert("temperature".into(), json!(temp));
+        }
     }
-
-    // Tools
-    let function_tools: Option<Vec<FunctionTool>> = options.tools.as_ref().map(|tools| {
-        tools
-            .iter()
-            .filter_map(|t| match t {
-                Tool::Function(ft) => Some(ft.clone()),
-                Tool::Provider(_) => None,
+    if let Some(p) = call.top_p {
+        if rejects_sampling || thinking || (openai && !oss) {
+            let details = if rejects_sampling {
+                format!("topP is not supported by {model_id} and will be ignored")
+            } else if thinking {
+                "topP is not supported when thinking is enabled".into()
+            } else {
+                "topP is not supported by this OpenAI model on the Converse API".into()
+            };
+            warn("topP", Some(&details));
+        } else {
+            inference.insert("topP".into(), json!(p));
+        }
+    }
+    if let Some(k) = call.top_k {
+        if rejects_sampling || thinking {
+            let details = if rejects_sampling {
+                format!("topK is not supported by {model_id} and will be ignored")
+            } else {
+                "topK is not supported when thinking is enabled".into()
+            };
+            warn("topK", Some(&details));
+        } else {
+            inference.insert("topK".into(), json!(k));
+        }
+    }
+    if let Some(stop) = &call.stop_sequences {
+        if openai {
+            warn(
+                "stopSequences",
+                Some("stopSequences is not supported by this OpenAI model on the Converse API"),
+            );
+        } else {
+            inference.insert("stopSequences".into(), json!(stop));
+        }
+    }
+    for (feature, present) in [
+        ("frequencyPenalty", call.frequency_penalty.is_some()),
+        ("presencePenalty", call.presence_penalty.is_some()),
+        ("seed", call.seed.is_some()),
+    ] {
+        if present {
+            warn(feature, None);
+        }
+    }
+    let mut fields = bedrock
+        .and_then(|b| b.get("additionalModelRequestFields"))
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if thinking && reasoning["type"] == "enabled" {
+        if let Some(budget) = reasoning["budgetTokens"].as_u64() {
+            let max = inference
+                .get("maxTokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(4096);
+            inference.insert("maxTokens".into(), json!(max.saturating_add(budget)));
+            fields.insert(
+                "thinking".into(),
+                json!({"type":"enabled","budget_tokens":budget}),
+            );
+        }
+    } else if thinking && reasoning["type"] == "adaptive" {
+        let mut config = json!({"type":"adaptive"});
+        if let Some(display) = reasoning.get("display") {
+            config["display"] = display.clone();
+        }
+        fields.insert("thinking".into(), config);
+    } else if !anthropic {
+        if reasoning.get("budgetTokens").is_some() {
+            warn(
+                "budgetTokens",
+                Some(
+                    "budgetTokens applies only to Anthropic models on Bedrock and will be ignored for this model.",
+                ),
+            );
+        }
+        if reasoning["type"] == "adaptive" {
+            warn(
+                "adaptive thinking",
+                Some("adaptive thinking type applies only to Anthropic models on Bedrock."),
+            );
+        }
+    }
+    if let Some(effort) = reasoning.get("maxReasoningEffort") {
+        let key = if anthropic {
+            "output_config"
+        } else if openai && !oss {
+            "reasoning"
+        } else {
+            "reasoningConfig"
+        };
+        if oss {
+            fields.insert("reasoning_effort".into(), effort.clone());
+        } else {
+            let mut config = fields
+                .get(key)
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            config.insert(
+                if anthropic || openai {
+                    "effort"
+                } else {
+                    "maxReasoningEffort"
+                }
+                .into(),
+                effort.clone(),
+            );
+            if !anthropic && !openai {
+                if let Some(kind) = reasoning.get("type").filter(|t| *t != "adaptive") {
+                    config.insert("type".into(), kind.clone());
+                }
+                if let Some(budget) = reasoning
+                    .get("budgetTokens")
+                    .filter(|_| reasoning["type"] == "enabled")
+                {
+                    config.insert("budgetTokens".into(), budget.clone());
+                }
+            }
+            fields.insert(key.into(), Value::Object(config));
+        }
+        if nova
+            && reasoning["type"] == "enabled"
+            && matches!(effort.as_str(), Some("high" | "xhigh" | "max"))
+            && inference.remove("maxTokens").is_some()
+        {
+            warn(
+                "maxOutputTokens",
+                Some(
+                    "maxOutputTokens is not supported when high reasoning is enabled and will be ignored",
+                ),
+            );
+        }
+    }
+    if let Some(betas) = bedrock.and_then(|b| b.get("anthropicBeta")) {
+        fields.insert("anthropic_beta".into(), betas.clone());
+    }
+    if let Some(tools) = &call.tools {
+        for tool in tools {
+            if let Tool::Provider(tool) = tool {
+                if matches!(
+                    tool.id.as_str(),
+                    "anthropic.web_search_20250305"
+                        | "anthropic.web_search_20260318"
+                        | "anthropic.web_fetch_20260318"
+                ) {
+                    let kind = tool.id.strip_prefix("anthropic.").unwrap();
+                    warn(
+                        &format!("{kind} tool"),
+                        Some(&format!(
+                            "The {kind} tool is not supported on Amazon Bedrock."
+                        )),
+                    );
+                } else if !anthropic {
+                    warn(&format!("tool {}", tool.id), None);
+                }
+            }
+        }
+    }
+    let tools: Option<Vec<FunctionTool>> = call.tools.as_ref().map(|t| {
+        t.iter()
+            .filter_map(|t| {
+                if let Tool::Function(f) = t {
+                    Some(f.clone())
+                } else {
+                    None
+                }
             })
             .collect()
     });
-    let tool_config = prepare_tools(&function_tools, &options.tool_choice, model_id);
-    if tool_config
-        .as_object()
-        .map(|o| !o.is_empty())
-        .unwrap_or(false)
-    {
-        body.insert("toolConfig".to_string(), tool_config);
+    let mut tool_config = prepare_tools(&tools, &call.tool_choice, model_id);
+    if let Some(tools) = &tools {
+        for tool in tools {
+            if let Some(strict) = tool.strict
+                && !supports_strict_tools(model_id)
+            {
+                warn(
+                    "strict",
+                    Some(&format!(
+                        "Tool '{}' has strict: {}, but strict mode is not supported by this model on Amazon Bedrock. The strict property will be ignored.",
+                        tool.name, strict
+                    )),
+                );
+            } else if tool.strict == Some(true) && !is_strict_schema_compatible(&tool.input_schema)
+            {
+                warn(
+                    "strict",
+                    Some(&format!(
+                        "Tool '{}' has strict: true, but Amazon Bedrock requires every object in a strict tool schema to set additionalProperties: false. The strict property will be ignored.",
+                        tool.name
+                    )),
+                );
+            }
+        }
     }
+    if rejects_forced
+        && matches!(
+            call.tool_choice,
+            ToolChoice::Required | ToolChoice::Tool { .. }
+        )
+        && tool_config.get("tools").is_some()
+    {
+        tool_config["toolChoice"] = json!({"auto":{}});
+        let details = match &call.tool_choice {
+            ToolChoice::Tool {tool_name} => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
+            _ => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".into(),
+        };
+        warn("toolChoice", Some(&details));
+    }
+    let disable_parallel = call
+        .provider_options
+        .as_ref()
+        .and_then(|p| p.get("anthropic"))
+        .and_then(|p| p.get("disableParallelToolUse"))
+        .and_then(Value::as_bool)
+        == Some(true);
+    if anthropic && disable_parallel && tool_config.get("tools").is_some() {
+        let choice = if rejects_forced {
+            json!({"type":"auto","disable_parallel_tool_use":true})
+        } else {
+            match &call.tool_choice {
+                ToolChoice::Required => json!({"type":"any","disable_parallel_tool_use":true}),
+                ToolChoice::Tool { tool_name } => {
+                    json!({"type":"tool","name":tool_name,"disable_parallel_tool_use":true})
+                }
+                _ => json!({"type":"auto","disable_parallel_tool_use":true}),
+            }
+        };
+        fields.insert("tool_choice".into(), choice);
+        tool_config.as_object_mut().unwrap().remove("toolChoice");
+    }
+    let mut prompt = call.prompt.clone();
+    if tool_config.get("tools").is_none() {
+        let has_tools = prompt.iter().any(|message| match message {
+            LanguageModelMessage::Assistant { content, .. } => content.iter().any(|part| {
+                matches!(
+                    part,
+                    AssistantPart::ToolCall(_) | AssistantPart::ToolResult(_)
+                )
+            }),
+            LanguageModelMessage::Tool { content, .. } => !content.is_empty(),
+            _ => false,
+        });
+        if has_tools {
+            for message in &mut prompt {
+                match message {
+                    LanguageModelMessage::Assistant { content, .. } => content.retain(|part| {
+                        !matches!(
+                            part,
+                            AssistantPart::ToolCall(_) | AssistantPart::ToolResult(_)
+                        )
+                    }),
+                    LanguageModelMessage::Tool { content, .. } => content.clear(),
+                    _ => {}
+                }
+            }
+            prompt.retain(|message| match message {
+                LanguageModelMessage::System { .. } => true,
+                LanguageModelMessage::User { content, .. } => !content.is_empty(),
+                LanguageModelMessage::Assistant { content, .. } => !content.is_empty(),
+                LanguageModelMessage::Tool { content, .. } => !content.is_empty(),
+            });
+            warn(
+                "toolContent",
+                Some(
+                    "Tool calls and results removed from conversation because Bedrock does not support tool content without active tools.",
+                ),
+            );
+        }
+    }
+    validate_prompt(&prompt)?;
+    let (system, messages) = convert_prompt(&prompt, model_id.contains("mistral."));
+    let mut body = json!({"messages":messages});
+    if !system.is_empty() {
+        body["system"] = json!(system);
+    }
+    if !inference.is_empty() {
+        body["inferenceConfig"] = Value::Object(inference);
+    }
+    if !fields.is_empty() {
+        body["additionalModelRequestFields"] = Value::Object(fields);
+    }
+    if anthropic {
+        body["additionalModelResponseFieldPaths"] = json!(["/delta/stop_sequence"]);
+    }
+    if let Some(tier) = bedrock.and_then(|b| b.get("serviceTier")) {
+        body["serviceTier"] = json!({"type":tier});
+    }
+    if let Some(bedrock) = bedrock {
+        for (key, value) in bedrock {
+            if !matches!(
+                key.as_str(),
+                "reasoningConfig"
+                    | "additionalModelRequestFields"
+                    | "serviceTier"
+                    | "structuredOutputMode"
+            ) {
+                body[key] = value.clone();
+            }
+        }
+    }
+    if tool_config.get("tools").is_some() {
+        body["toolConfig"] = tool_config;
+    }
+    warnings.extend(compatibility);
+    Ok((body, warnings))
+}
 
-    Value::Object(body)
+fn validate_options(
+    options: Option<&aimux_core::shared::JsonObject>,
+) -> Result<(), aimux_core::AiMuxError> {
+    let Some(options) = options else {
+        return Ok(());
+    };
+    for (key, choices) in [
+        (
+            "structuredOutputMode",
+            &["outputFormat", "jsonTool", "auto"][..],
+        ),
+        (
+            "serviceTier",
+            &["reserved", "priority", "default", "flex"][..],
+        ),
+    ] {
+        if let Some(value) = options.get(key)
+            && !value.as_str().is_some_and(|v| choices.contains(&v))
+        {
+            return Err(aimux_core::AiMuxError::InvalidArgument(format!(
+                "Invalid Bedrock {key}"
+            )));
+        }
+    }
+    if let Some(value) = options.get("additionalModelRequestFields")
+        && !value.is_object()
+    {
+        return Err(aimux_core::AiMuxError::InvalidArgument(
+            "Invalid Bedrock additionalModelRequestFields".into(),
+        ));
+    }
+    if let Some(value) = options.get("anthropicBeta")
+        && !value
+            .as_array()
+            .is_some_and(|a| a.iter().all(Value::is_string))
+    {
+        return Err(aimux_core::AiMuxError::InvalidArgument(
+            "Invalid Bedrock anthropicBeta".into(),
+        ));
+    }
+    if let Some(reasoning) = options.get("reasoningConfig") {
+        if !reasoning.is_object() {
+            return Err(aimux_core::AiMuxError::InvalidArgument(
+                "Invalid Bedrock reasoningConfig".into(),
+            ));
+        }
+        for (key, choices) in [
+            ("type", &["enabled", "disabled", "adaptive"][..]),
+            ("display", &["omitted", "summarized"][..]),
+            (
+                "maxReasoningEffort",
+                &["low", "medium", "high", "xhigh", "max"][..],
+            ),
+        ] {
+            if let Some(value) = reasoning.get(key)
+                && !value.as_str().is_some_and(|v| choices.contains(&v))
+            {
+                return Err(aimux_core::AiMuxError::InvalidArgument(format!(
+                    "Invalid Bedrock reasoningConfig.{key}"
+                )));
+            }
+        }
+        if let Some(budget) = reasoning.get("budgetTokens")
+            && !budget.is_number()
+        {
+            return Err(aimux_core::AiMuxError::InvalidArgument(
+                "Invalid Bedrock reasoningConfig.budgetTokens".into(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Map a Bedrock `stopReason` to the unified `FinishReason`.

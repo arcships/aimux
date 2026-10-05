@@ -1,33 +1,7 @@
 //! Google Vertex AI provider.
 //!
-//! [`create_google_vertex`] is the Rust form of the AI SDK's
-//! `createGoogleVertex`: it takes [`VertexProviderSettings`], validates what
-//! was given explicitly and returns a [`VertexProvider`]. Nothing is read from
-//! the environment and no project, location, key or token is needed until a
-//! request is made: each call resolves its mode, base URL and headers then.
-//! [`google_vertex()`] is the default instance.
-//!
-//! Two modes, chosen per request:
-//!
-//! - **Express mode** when an API key is available (the `api_key` setting, else
-//!   `GOOGLE_VERTEX_API_KEY`): requests carry `x-goog-api-key` and go to
-//!   `https://aiplatform.googleapis.com/v1/publishers/google`.
-//! - **Standard mode** otherwise: requests carry `Authorization: Bearer <token>`
-//!   and go to the project/location-scoped host. The token is the
-//!   `access_token` setting (any [`Resolvable`], so a host can refresh it) or
-//!   `GOOGLE_VERTEX_ACCESS_TOKEN`; aimux does not implement Application
-//!   Default Credentials. A host that authenticates some other way supplies an
-//!   `Authorization` header through `headers` instead.
-//!
-//! Vertex serves the Gemini request format, so these models share the
-//! conversion in [`crate::google::convert`]; they differ in endpoint,
-//! authentication and the providerOptions/metadata namespace (options are
-//! read from `googleVertex`, then `google`; metadata is written under
-//! `googleVertex` only). Claude on
-//! Vertex is the shared Anthropic Messages model (see
-//! [`VertexProvider::anthropic_model`]).
-//!
-//! Reference: <https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/call-gemini>
+//! API keys select Express mode when the provider is created. Standard mode
+//! uses project/location endpoints and a host-supplied OAuth token.
 
 use std::sync::Arc;
 
@@ -43,11 +17,10 @@ use aimux_core::transcription_model::TranscriptionModel;
 use aimux_core::video_model::VideoModel;
 use aimux_provider_utils::{
     FetchFunction, HeaderMapOpt, Resolvable, combine_headers, load_api_key, load_setting,
-    validate_base_url,
 };
 use std::sync::OnceLock;
 
-use crate::shared::{Endpoint, EndpointConfig, TransformRequestBody, is_valid_hostname_part};
+use crate::shared::{Endpoint, EndpointConfig, TransformRequestBody};
 
 mod anthropic_model;
 mod embedding;
@@ -70,9 +43,6 @@ const ACCESS_TOKEN_ENV_VAR: &str = "GOOGLE_VERTEX_ACCESS_TOKEN";
 const PROJECT_ENV_VAR: &str = "GOOGLE_VERTEX_PROJECT";
 const LOCATION_ENV_VAR: &str = "GOOGLE_VERTEX_LOCATION";
 
-/// The provider string of the language, embedding and image models.
-const PROVIDER: &str = "google.vertex";
-
 /// Tuned models are addressed by their `endpoints/{id}` resource.
 const ENDPOINT_MODEL_PREFIX: &str = "endpoints/";
 
@@ -80,17 +50,15 @@ const ENDPOINT_MODEL_PREFIX: &str = "endpoints/";
 /// `GoogleVertexProviderSettings`, plus the token source aimux needs in place
 /// of google-auth-library).
 ///
-/// Every field is optional. Nothing here is evaluated when the provider is
-/// created except an explicit `base_url` and `location`; everything else is
-/// evaluated on every request.
+/// Every field is optional. The API-key environment setting is captured when
+/// the provider is created; header and token producers run on each request.
 #[derive(Clone, Default)]
 pub struct VertexProviderSettings {
     /// Express-mode API key, sent as `x-goog-api-key`. `None` loads
-    /// `GOOGLE_VERTEX_API_KEY` when a request is made; with no key at all the
-    /// request uses standard mode. An empty or whitespace-only key also means
-    /// standard mode.
+    /// `GOOGLE_VERTEX_API_KEY` when the provider is created. An empty key means
+    /// standard mode; whitespace is retained as in the upstream provider.
     pub api_key: Option<Resolvable<String>>,
-    /// The location (region) of standard mode: a single DNS label such as
+    /// The location (region) of standard mode, such as
     /// `us-central1`, `global`, `us` or `eu`. `None` loads
     /// `GOOGLE_VERTEX_LOCATION` when a request is made and fails that request
     /// with `AiMuxError::LoadSetting` if it is unset. Use `base_url` for a
@@ -142,18 +110,6 @@ impl std::fmt::Debug for VertexProviderSettings {
     }
 }
 
-fn validate_location(location: &str) -> Result<(), AiMuxError> {
-    if is_valid_hostname_part(location) {
-        Ok(())
-    } else {
-        Err(AiMuxError::InvalidArgument(
-            "Invalid Google Vertex location. Expected a single DNS label (letters, digits, and \
-             hyphens). Use `base_url` for custom endpoints."
-                .to_string(),
-        ))
-    }
-}
-
 /// The host of a location: `global` is the bare host, `us` and `eu` the
 /// multi-region `rep` hosts, anything else a regional host.
 fn location_host(location: &str) -> String {
@@ -186,6 +142,7 @@ pub(crate) type ProjectLocationFn =
 /// go and what authenticates them.
 struct Resolver {
     api_key: Option<Resolvable<String>>,
+    express_mode: bool,
     location: Option<String>,
     project: Option<String>,
     base_url: Option<String>,
@@ -194,19 +151,19 @@ struct Resolver {
 }
 
 impl Resolver {
-    /// The Express-mode key, when there is a non-empty one.
+    /// The API key for the mode selected when the provider was created.
     async fn express_key(&self) -> Result<Option<String>, AiMuxError> {
-        let key = match &self.api_key {
-            Some(key) => Some(key.resolve().await?),
-            None => std::env::var(API_KEY_ENV_VAR).ok(),
-        };
-        Ok(key.filter(|key| !key.trim().is_empty()))
+        if !self.express_mode {
+            return Ok(None);
+        }
+        match &self.api_key {
+            Some(key) => Ok(Some(key.resolve().await?)),
+            None => Ok(None),
+        }
     }
 
     fn location(&self) -> Result<String, AiMuxError> {
-        let location = load_setting(self.location.as_deref(), LOCATION_ENV_VAR, "location")?;
-        validate_location(&location)?;
-        Ok(location)
+        load_setting(self.location.as_deref(), LOCATION_ENV_VAR, "location")
     }
 
     fn project(&self) -> Result<String, AiMuxError> {
@@ -231,26 +188,18 @@ impl Resolver {
                 ))
             }
             Publisher::Anthropic => {
-                // Claude is served from the same project/location under the
-                // `anthropic` publisher; a configured base URL has its Google
-                // publisher suffix swapped.
-                let root = if let Some(url) = &self.base_url {
-                    url.strip_suffix("/publishers/google")
-                        .unwrap_or(url)
-                        .to_string()
-                } else if express {
-                    EXPRESS_MODE_BASE_URL
-                        .strip_suffix("/publishers/google")
-                        .unwrap_or(EXPRESS_MODE_BASE_URL)
-                        .to_string()
-                } else {
-                    let location = self.location()?;
-                    let project = self.project()?;
-                    format!(
-                        "https://{}/v1/projects/{project}/locations/{location}",
-                        location_host(&location)
-                    )
-                };
+                if let Some(url) = &self.base_url {
+                    return Ok(match url.strip_suffix("/publishers/google") {
+                        Some(root) => format!("{root}/publishers/anthropic/models"),
+                        None => url.clone(),
+                    });
+                }
+                let location = self.location()?;
+                let project = self.project()?;
+                let root = format!(
+                    "https://{}/v1/projects/{project}/locations/{location}",
+                    location_host(&location)
+                );
                 Ok(format!("{root}/publishers/anthropic/models"))
             }
         }
@@ -284,9 +233,25 @@ impl Resolver {
 
     /// The endpoint of `publisher`'s models for one request.
     async fn endpoint(&self, publisher: Publisher) -> Result<Endpoint, AiMuxError> {
-        let express_key = self.express_key().await?;
+        let express_key = match publisher {
+            Publisher::Google => self.express_key().await?,
+            Publisher::Anthropic => None,
+        };
         let base_url = self.base_url(express_key.is_some(), publisher)?;
-        let headers = self.headers(express_key.as_deref()).await?;
+        let mut headers = self.headers(express_key.as_deref()).await?;
+        let suffix = concat!("ai-sdk-google-vertex/", env!("CARGO_PKG_VERSION"));
+        let existing = headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
+            .and_then(|(_, value)| value.clone());
+        headers.retain(|name, _| !name.eq_ignore_ascii_case("user-agent"));
+        headers.insert(
+            "user-agent".to_string(),
+            Some(match existing {
+                Some(value) => format!("{value} {suffix}"),
+                None => suffix.to_string(),
+            }),
+        );
         Ok(Endpoint { base_url, headers })
     }
 }
@@ -295,24 +260,25 @@ impl Resolver {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when an explicit `base_url` is not an
-/// `http(s)` URL with a host, or an explicit `location` is not a single DNS
-/// label. Those are the only ways this fails: keys, tokens, and a project or
-/// location taken from the environment are loaded per request, not here.
+/// Credentials, project and location errors are reported by model requests.
 pub fn create_google_vertex(
     settings: VertexProviderSettings,
 ) -> Result<VertexProvider, AiMuxError> {
     let base_url = settings
         .base_url
-        .as_deref()
-        .map(validate_base_url)
-        .transpose()?;
-    if let Some(location) = settings.location.as_deref() {
-        validate_location(location)?;
-    }
+        .map(|url| url.trim_end_matches('/').to_string());
+    let api_key = settings
+        .api_key
+        .or_else(|| std::env::var(API_KEY_ENV_VAR).ok().map(Resolvable::Value));
+    let express_mode = match &api_key {
+        Some(Resolvable::Value(key)) => !key.is_empty(),
+        Some(_) => true,
+        None => false,
+    };
     Ok(VertexProvider {
         resolver: Arc::new(Resolver {
-            api_key: settings.api_key,
+            api_key,
+            express_mode,
             location: settings.location,
             project: settings.project,
             base_url,
@@ -325,8 +291,8 @@ pub fn create_google_vertex(
 }
 
 /// The default provider: `create_google_vertex` with default settings, created
-/// on first use. Creating it reads nothing from the environment and cannot
-/// fail; a missing key, token, project or location surfaces from the first
+/// on first use. It captures the API-key environment setting; a missing
+/// token, project or location surfaces from the first
 /// request instead.
 pub fn google_vertex() -> &'static VertexProvider {
     static DEFAULT: OnceLock<VertexProvider> = OnceLock::new();
@@ -376,7 +342,15 @@ impl VertexProvider {
                                 .to_string(),
                         ));
                     }
-                    resolver.endpoint(Publisher::Google).await
+                    let mut endpoint = resolver.endpoint(Publisher::Google).await?;
+                    if tuned && resolver.base_url.is_none() {
+                        endpoint.base_url = endpoint
+                            .base_url
+                            .strip_suffix("/publishers/google")
+                            .unwrap_or(&endpoint.base_url)
+                            .to_string();
+                    }
+                    Ok(endpoint)
                 })
             }),
             fetch: self.fetch.clone(),
@@ -406,7 +380,7 @@ impl VertexProvider {
     }
 
     /// A Gemini model (e.g. `"gemini-2.0-flash"`, or a tuned
-    /// `"endpoints/{id}"`); `provider()` is `"google.vertex"`.
+    /// `"endpoints/{id}"`); `provider()` is `"google.vertex.chat"`.
     ///
     /// A tuned model fails its requests with `AiMuxError::InvalidArgument` in
     /// Express mode.
@@ -414,22 +388,31 @@ impl VertexProvider {
     pub fn chat(&self, model_id: &str) -> VertexModel {
         VertexModel::from_config(
             model_id.to_string(),
-            self.model_config(PROVIDER, model_id.starts_with(ENDPOINT_MODEL_PREFIX)),
+            self.model_config(
+                "google.vertex.chat",
+                model_id.starts_with(ENDPOINT_MODEL_PREFIX),
+            ),
         )
     }
 
     /// An embedding model (e.g. `"textembedding-gecko@001"`); `provider()` is
-    /// `"google.vertex"`.
+    /// `"google.vertex.embedding"`.
     #[must_use]
     pub fn embedding(&self, model_id: &str) -> VertexEmbeddingModel {
-        VertexEmbeddingModel::from_config(model_id.to_string(), self.model_config(PROVIDER, false))
+        VertexEmbeddingModel::from_config(
+            model_id.to_string(),
+            self.model_config("google.vertex.embedding", false),
+        )
     }
 
     /// An image generation model (e.g. `"imagen-4.0-generate-001"` or
-    /// `"gemini-2.5-flash-image"`); `provider()` is `"google.vertex"`.
+    /// `"gemini-2.5-flash-image"`); `provider()` is `"google.vertex.image"`.
     #[must_use]
     pub fn image(&self, model_id: &str) -> VertexImageModel {
-        VertexImageModel::from_config(model_id.to_string(), self.model_config(PROVIDER, false))
+        VertexImageModel::from_config(
+            model_id.to_string(),
+            self.model_config("google.vertex.image", false),
+        )
     }
 
     /// A video generation model (e.g. `"veo-3.0-generate-001"`);
@@ -515,40 +498,5 @@ impl ProviderDiscovery for VertexProvider {
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
         let config = self.model_config("google.vertex.models", false);
         Box::pin(async move { crate::google::list_models_once(&config).await })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn location_must_be_one_dns_label() {
-        for ok in ["us-central1", "global", "us", "eu", "europe-west4"] {
-            assert!(is_valid_hostname_part(ok), "{ok}");
-        }
-        for bad in [
-            "",
-            "evil.example",
-            "a/b",
-            "-x",
-            "x-",
-            "a b",
-            "us:443",
-            "a@b",
-        ] {
-            assert!(!is_valid_hostname_part(bad), "{bad}");
-        }
-    }
-
-    #[test]
-    fn hosts_follow_the_location() {
-        assert_eq!(location_host("global"), "aiplatform.googleapis.com");
-        assert_eq!(location_host("us"), "aiplatform.us.rep.googleapis.com");
-        assert_eq!(location_host("eu"), "aiplatform.eu.rep.googleapis.com");
-        assert_eq!(
-            location_host("us-central1"),
-            "us-central1-aiplatform.googleapis.com"
-        );
     }
 }

@@ -3,6 +3,7 @@
 //! Mirrors the TS `convert-to-cohere-chat-prompt.ts`,
 //! `cohere-prepare-tools.ts`, and `map-cohere-finish-reason.ts`.
 
+use aimux_core::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart, ToolPart,
     ToolResultPart, UserPart,
@@ -11,6 +12,7 @@ use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
+use aimux_provider_utils::resolve_full_media_type;
 use serde_json::{Value, json};
 
 // ── Prepared tools ──────────────────────────────────────────────────────────
@@ -64,11 +66,7 @@ pub fn prepare_tools(tools: &Option<Vec<Tool>>, tool_choice: Option<&ToolChoice>
                     }
                 }
             }
-            if cohere_tools.is_empty() {
-                None
-            } else {
-                Some(cohere_tools)
-            }
+            Some(cohere_tools)
         }
     };
 
@@ -120,8 +118,12 @@ pub struct ConvertedPrompt {
 /// - Non-image file parts are extracted as `documents` (RAG), not in the message.
 /// - Assistant content is a plain string; with tool calls, `content` is omitted.
 /// - Tool messages are flat `{role:"tool", content, tool_call_id}`.
-#[must_use]
-pub fn convert_prompt_to_cohere(prompt: &LanguageModelPrompt) -> ConvertedPrompt {
+///
+/// # Errors
+/// Rejects provider references, non-image file URLs and invalid image options.
+pub fn convert_prompt_to_cohere(
+    prompt: &LanguageModelPrompt,
+) -> Result<ConvertedPrompt, AiMuxError> {
     let mut messages = Vec::new();
     let mut documents = Vec::new();
 
@@ -142,10 +144,10 @@ pub fn convert_prompt_to_cohere(prompt: &LanguageModelPrompt) -> ConvertedPrompt
                             }
                         }
                         UserPart::File(file) => {
-                            use base64::Engine;
-                            if file.media_type.starts_with("image/") {
+                            if file.media_type.split('/').next() == Some("image") {
                                 let url = match &file.data {
                                     FileData::Data { data } => {
+                                        use base64::Engine;
                                         let b64 = match data {
                                             FileBytes::Binary(bytes) => {
                                                 base64::engine::general_purpose::STANDARD
@@ -153,15 +155,26 @@ pub fn convert_prompt_to_cohere(prompt: &LanguageModelPrompt) -> ConvertedPrompt
                                             }
                                             FileBytes::Base64(data) => data.clone(),
                                         };
-                                        format!("data:{};base64,{}", file.media_type, b64)
+                                        format!(
+                                            "data:{};base64,{}",
+                                            resolve_full_media_type(file)?,
+                                            b64
+                                        )
                                     }
                                     FileData::Url { url } => url.clone(),
-                                    FileData::Reference { .. } | FileData::Text { .. } => continue,
+                                    FileData::Reference { .. } => {
+                                        return Err(AiMuxError::UnsupportedFunctionality(
+                                            "image file parts with provider references".into(),
+                                        ));
+                                    }
+                                    FileData::Text { .. } => {
+                                        return Err(AiMuxError::UnsupportedFunctionality(
+                                            "image file parts with text data".into(),
+                                        ));
+                                    }
                                 };
                                 has_image = true;
-                                parts.push(
-                                    json!({ "type": "image_url", "image_url": { "url": url } }),
-                                );
+                                parts.push(image_part(url, &file.provider_options)?);
                             } else {
                                 let text = match &file.data {
                                     FileData::Data {
@@ -171,7 +184,16 @@ pub fn convert_prompt_to_cohere(prompt: &LanguageModelPrompt) -> ConvertedPrompt
                                         data: FileBytes::Base64(data),
                                     } => data.clone(),
                                     FileData::Text { text } => text.clone(),
-                                    FileData::Url { .. } | FileData::Reference { .. } => continue,
+                                    FileData::Url { .. } => {
+                                        return Err(AiMuxError::UnsupportedFunctionality(
+                                            "File URL data".into(),
+                                        ));
+                                    }
+                                    FileData::Reference { .. } => {
+                                        return Err(AiMuxError::UnsupportedFunctionality(
+                                            "file parts with provider references".into(),
+                                        ));
+                                    }
                                 };
                                 let mut doc_data = json!({ "text": text });
                                 if let Some(filename) = &file.filename {
@@ -218,11 +240,7 @@ pub fn convert_prompt_to_cohere(prompt: &LanguageModelPrompt) -> ConvertedPrompt
                                 input,
                                 ..
                             }) => {
-                                let arguments = if input.is_null() {
-                                    "{}".to_string()
-                                } else {
-                                    input.to_string()
-                                };
+                                let arguments = input.to_string();
                                 Some(json!({
                                     "id": tool_call_id,
                                     "type": "function",
@@ -261,10 +279,28 @@ pub fn convert_prompt_to_cohere(prompt: &LanguageModelPrompt) -> ConvertedPrompt
         }
     }
 
-    ConvertedPrompt {
+    Ok(ConvertedPrompt {
         messages,
         documents,
+    })
+}
+
+fn image_part(
+    url: String,
+    provider_options: &Option<SharedProviderOptions>,
+) -> Result<Value, AiMuxError> {
+    let mut image = json!({ "url": url });
+    if let Some(detail) = super::options::cohere_options(provider_options.as_ref())
+        .and_then(|options| options.get("detail"))
+    {
+        if !matches!(detail.as_str(), Some("auto" | "low" | "high")) {
+            return Err(AiMuxError::InvalidArgument(
+                "cohere.detail must be auto, low or high".into(),
+            ));
+        }
+        image["detail"] = detail.clone();
     }
+    Ok(json!({ "type": "image_url", "image_url": image }))
 }
 
 fn join_text_parts(content: &[AssistantPart]) -> String {
@@ -300,13 +336,15 @@ pub struct RequestBodyResult {
 /// Mirrors the TS `getArgs` in `cohere-chat-language-model.ts`: assembles the
 /// model id, messages, documents, sampling settings, response format, tools,
 /// and the `thinking` config resolved from `reasoning` / provider options.
-#[must_use]
+///
+/// # Errors
+/// Rejects unsupported prompt files and invalid provider options.
 pub fn build_request_body(
     model_id: &str,
     options: &CallOptions,
     stream: bool,
-) -> RequestBodyResult {
-    let converted = convert_prompt_to_cohere(&options.prompt);
+) -> Result<RequestBodyResult, AiMuxError> {
+    let converted = convert_prompt_to_cohere(&options.prompt)?;
     let mut warnings: Vec<Warning> = Vec::new();
 
     let mut body = json!({
@@ -352,10 +390,11 @@ pub fn build_request_body(
         match rf {
             ResponseFormat::Text => {}
             ResponseFormat::Json { schema, .. } => {
-                body["response_format"] = json!({
-                    "type": "json_object",
-                    "json_schema": schema,
-                });
+                let mut format = json!({ "type": "json_object" });
+                if let Some(schema) = schema {
+                    format["json_schema"] = schema.clone();
+                }
+                body["response_format"] = format;
             }
         }
     }
@@ -371,11 +410,11 @@ pub fn build_request_body(
     }
 
     // Reasoning / thinking.
-    if let Some(thinking) = resolve_cohere_thinking(options.reasoning, &options.provider_options) {
+    if let Some(thinking) = resolve_cohere_thinking(options.reasoning, &options.provider_options)? {
         body["thinking"] = thinking;
     }
 
-    RequestBodyResult { body, warnings }
+    Ok(RequestBodyResult { body, warnings })
 }
 
 // ── Reasoning / thinking ────────────────────────────────────────────────────
@@ -405,43 +444,62 @@ fn reasoning_budget_percentage(reasoning: ReasoningEffort) -> Option<f64> {
 /// - `reasoning: None` (not specified) → no `thinking` field.
 /// - `reasoning: "none"` → `{ type: "disabled" }`.
 /// - other reasoning levels → `{ type: "enabled", token_budget: <n> }`.
-#[must_use]
+///
+/// # Errors
+/// Rejects non-object thinking options, unknown types and nonnumeric budgets.
 pub fn resolve_cohere_thinking(
     reasoning: Option<ReasoningEffort>,
     provider_options: &Option<SharedProviderOptions>,
-) -> Option<Value> {
+) -> Result<Option<Value>, AiMuxError> {
     // Provider options take precedence.
     if let Some(cohere) = super::options::cohere_options(provider_options.as_ref())
         && let Some(thinking) = cohere.get("thinking")
     {
-        let t_type = thinking
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or("enabled")
-            .to_string();
-        let mut obj = json!({ "type": t_type });
-        if let Some(budget) = thinking
-            .get("tokenBudget")
-            .and_then(serde_json::Value::as_u64)
-        {
-            obj["token_budget"] = json!(budget);
+        if !thinking.is_object() {
+            return Err(AiMuxError::InvalidArgument(
+                "cohere.thinking must be an object".into(),
+            ));
         }
-        return Some(obj);
+        let t_type = match thinking.get("type") {
+            None => "enabled",
+            Some(value) => match value.as_str() {
+                Some(value @ ("enabled" | "disabled")) => value,
+                _ => {
+                    return Err(AiMuxError::InvalidArgument(
+                        "cohere.thinking.type must be enabled or disabled".into(),
+                    ));
+                }
+            },
+        };
+        let mut obj = json!({ "type": t_type });
+        if let Some(budget) = thinking.get("tokenBudget") {
+            if !budget.is_number() {
+                return Err(AiMuxError::InvalidArgument(
+                    "cohere.thinking.tokenBudget must be a number".into(),
+                ));
+            }
+            obj["token_budget"] = budget.clone();
+        }
+        return Ok(Some(obj));
     }
 
-    let reasoning = reasoning?;
+    let Some(reasoning) = reasoning else {
+        return Ok(None);
+    };
     if reasoning == ReasoningEffort::ProviderDefault {
-        return None;
+        return Ok(None);
     }
     if reasoning == ReasoningEffort::None {
-        return Some(json!({ "type": "disabled" }));
+        return Ok(Some(json!({ "type": "disabled" })));
     }
 
-    let pct = reasoning_budget_percentage(reasoning)?;
+    let Some(pct) = reasoning_budget_percentage(reasoning) else {
+        return Ok(None);
+    };
     let max_tokens = DEFAULT_REASONING_MAX_TOKENS;
     let raw = (max_tokens as f64 * pct).round() as u32;
     let budget = max_tokens.min(1024.max(raw));
-    Some(json!({ "type": "enabled", "token_budget": budget }))
+    Ok(Some(json!({ "type": "enabled", "token_budget": budget })))
 }
 
 /// Parse Cohere finish reason string into `FinishReason`.

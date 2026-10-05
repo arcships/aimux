@@ -93,6 +93,7 @@ pub(crate) struct ResponsesProfile {
     pub(crate) namespace: ResponsesNamespace,
     /// Empty: no file part is treated as a file id.
     pub(crate) file_id_prefixes: Vec<&'static str>,
+    pub(crate) explicit_message_item_type: bool,
 }
 
 /// Get a value from the host namespace's options (`openai.<key>` for OpenAI).
@@ -138,34 +139,72 @@ pub fn convert_to_responses_input(
     store: bool,
     has_previous_response_id: bool,
 ) -> ResponsesInputResult {
+    convert_responses_input_with_conversation(
+        ns,
+        prompt,
+        system_message_mode,
+        store,
+        has_previous_response_id,
+        false,
+    )
+}
+
+fn convert_responses_input_with_conversation(
+    ns: ResponsesNamespace,
+    prompt: &LanguageModelPrompt,
+    system_message_mode: SystemMessageMode,
+    store: bool,
+    has_previous_response_id: bool,
+    has_conversation: bool,
+) -> ResponsesInputResult {
     let mut input: Vec<Value> = Vec::new();
     let mut warnings: Vec<Warning> = Vec::new();
 
     for msg in prompt {
         match msg {
-            LanguageModelMessage::System { content, .. } => match system_message_mode {
-                SystemMessageMode::System => {
-                    input.push(json!({
-                        "role": "system",
-                        "content": content,
-                    }));
+            LanguageModelMessage::System {
+                content,
+                provider_options,
+            } => {
+                if let Some(effort) =
+                    openai_sub_option(ns, provider_options, "reasoningEffortUpdate")
+                {
+                    input.push(json!({ "type": "configuration_update", "reasoning": { "effort": effort } }));
+                    continue;
                 }
-                SystemMessageMode::Developer => {
-                    input.push(json!({
-                        "role": "developer",
-                        "content": content,
-                    }));
+                match system_message_mode {
+                    SystemMessageMode::System => {
+                        input.push(json!({
+                            "role": "system",
+                            "content": system_content(ns, content, provider_options),
+                        }));
+                    }
+                    SystemMessageMode::Developer => {
+                        input.push(json!({
+                            "role": "developer",
+                            "content": system_content(ns, content, provider_options),
+                        }));
+                    }
+                    SystemMessageMode::Remove => {
+                        warnings.push(Warning::Other {
+                            message: "system messages are removed for this model".to_string(),
+                        });
+                    }
                 }
-                SystemMessageMode::Remove => {
-                    warnings.push(Warning::Other {
-                        message: "system messages are removed for this model".to_string(),
-                    });
-                }
-            },
+            }
             LanguageModelMessage::User { content, .. } => {
                 let content: Vec<Value> = content
                     .iter()
-                    .map(|part| convert_user_part(ns, part))
+                    .enumerate()
+                    .map(|(index, part)| {
+                        let mut value = convert_user_part(ns, part, index);
+                        if let Some(breakpoint) =
+                            openai_sub_option(ns, user_part_options(part), "promptCacheBreakpoint")
+                        {
+                            value["prompt_cache_breakpoint"] = breakpoint;
+                        }
+                        value
+                    })
                     .collect();
                 input.push(json!({ "role": "user", "content": content }));
             }
@@ -177,7 +216,7 @@ pub fn convert_to_responses_input(
                             provider_options,
                         }) => {
                             let id = item_id(ns, provider_options);
-                            if has_previous_response_id && id.is_some() {
+                            if has_conversation && id.is_some() {
                                 continue;
                             }
                             if store && let Some(ref id) = id {
@@ -187,11 +226,8 @@ pub fn convert_to_responses_input(
                             let phase = phase_from_provider_options(ns, provider_options);
                             let mut item = json!({
                                 "role": "assistant",
-                                "content": [{ "type": "output_text", "text": text }],
+                                "content": text,
                             });
-                            if let Some(ref id) = id {
-                                item["id"] = json!(id);
-                            }
                             if let Some(phase) = phase {
                                 item["phase"] = json!(phase);
                             }
@@ -205,7 +241,7 @@ pub fn convert_to_responses_input(
                             ..
                         }) => {
                             let id = item_id(ns, provider_options);
-                            if has_previous_response_id && id.is_some() {
+                            if has_conversation && id.is_some() {
                                 continue;
                             }
                             let namespace = namespace_from_provider_options(ns, provider_options);
@@ -218,6 +254,9 @@ pub fn convert_to_responses_input(
                             if let Some(ref namespace) = namespace {
                                 item["namespace"] = json!(namespace);
                             }
+                            if let Some(value) = openai_sub_option(ns, provider_options, "async") {
+                                item["async"] = value;
+                            }
                             input.push(item);
                         }
                         AssistantPart::Reasoning(ReasoningPart {
@@ -226,7 +265,9 @@ pub fn convert_to_responses_input(
                             ..
                         }) => {
                             let reasoning_id = openai_sub_option(ns, provider_options, "itemId");
-                            if has_previous_response_id && reasoning_id.is_some() {
+                            if (has_previous_response_id || has_conversation)
+                                && reasoning_id.is_some()
+                            {
                                 continue;
                             }
                             if let Some(ref rid) = reasoning_id {
@@ -323,53 +364,94 @@ pub fn convert_to_responses_input(
     ResponsesInputResult { input, warnings }
 }
 
+fn user_part_options(part: &UserPart) -> &Option<SharedProviderOptions> {
+    match part {
+        UserPart::Text(part) => &part.provider_options,
+        UserPart::File(part) => &part.provider_options,
+    }
+}
+
+fn system_content(
+    ns: ResponsesNamespace,
+    text: &str,
+    provider_options: &Option<SharedProviderOptions>,
+) -> Value {
+    match openai_sub_option(ns, provider_options, "promptCacheBreakpoint") {
+        Some(value) => {
+            json!([{ "type": "input_text", "text": text, "prompt_cache_breakpoint": value }])
+        }
+        None => json!(text),
+    }
+}
+
 /// Convert a single user-message content part into the Responses input shape.
-fn convert_user_part(ns: ResponsesNamespace, part: &UserPart) -> Value {
+fn convert_user_part(ns: ResponsesNamespace, part: &UserPart, index: usize) -> Value {
     match part {
         UserPart::Text(part) => json!({ "type": "input_text", "text": part.text }),
         UserPart::File(file) => match &file.data {
             FileData::Data { data } => {
+                use base64::Engine;
                 let b64 = match data {
                     FileBytes::Binary(bytes) => {
-                        use base64::Engine;
                         base64::engine::general_purpose::STANDARD.encode(bytes)
                     }
                     FileBytes::Base64(data) => data.clone(),
                 };
-                if file.media_type.starts_with("image") {
-                    let mut img = json!({
-                        "type": "input_image",
-                        "image_url": format!("data:{};base64,{}", file.media_type, b64),
-                    });
+                inline_file(
+                    ns,
+                    &aimux_provider_utils::resolve_full_media_type(file)
+                        .unwrap_or_else(|_| file.media_type.clone()),
+                    file.filename.as_deref(),
+                    &b64,
+                    &file.provider_options,
+                    index,
+                )
+            }
+            FileData::Reference { reference } => {
+                let file_id = reference.get(ns.write_key());
+                let mut part = json!({ "type": if file.media_type.split('/').next() == Some("image") { "input_image" } else { "input_file" }, "file_id": file_id });
+                if part["type"] == "input_image"
+                    && let Some(detail) =
+                        openai_sub_option(ns, &file.provider_options, "imageDetail")
+                {
+                    part["detail"] = detail;
+                }
+                part
+            }
+            FileData::Url { url } => {
+                if file.media_type.split('/').next() == Some("image") {
+                    let mut part = json!({ "type": "input_image", "image_url": url });
                     if let Some(detail) =
                         openai_sub_option(ns, &file.provider_options, "imageDetail")
                     {
-                        img["detail"] = detail;
+                        part["detail"] = detail;
                     }
-                    img
-                } else {
-                    let fname = file
-                        .filename
-                        .clone()
-                        .unwrap_or_else(|| "part.pdf".to_string());
-                    json!({
-                        "type": "input_file",
-                        "filename": fname,
-                        "file_data": format!("data:{};base64,{}", file.media_type, b64),
-                    })
-                }
-            }
-            FileData::Url { url } => {
-                if file.media_type.starts_with("image") {
-                    json!({ "type": "input_image", "image_url": url })
+                    part
                 } else {
                     json!({ "type": "input_file", "file_url": url })
                 }
             }
-            FileData::Reference { .. } | FileData::Text { .. } => {
-                json!({ "type": "input_text", "text": "" })
-            }
+            FileData::Text { .. } => unreachable!("text file parts are rejected before conversion"),
         },
+    }
+}
+
+fn inline_file(
+    ns: ResponsesNamespace,
+    media_type: &str,
+    filename: Option<&str>,
+    data: &str,
+    provider_options: &Option<SharedProviderOptions>,
+    index: usize,
+) -> Value {
+    if media_type.split('/').next() == Some("image") {
+        let mut part = json!({ "type": "input_image", "image_url": format!("data:{media_type};base64,{data}") });
+        if let Some(detail) = openai_sub_option(ns, provider_options, "imageDetail") {
+            part["detail"] = detail;
+        }
+        part
+    } else {
+        json!({ "type": "input_file", "filename": filename.map(str::to_owned).unwrap_or_else(|| if media_type == "application/pdf" { format!("part-{index}.pdf") } else { format!("part-{index}") }), "file_data": format!("data:{media_type};base64,{data}") })
     }
 }
 
@@ -464,7 +546,14 @@ pub fn prepare_responses_tools(
             for t in tools {
                 match t {
                     Tool::Function(ft) => {
-                        openai_tools.push(function_tool_to_json(ft));
+                        let mut tool = function_tool_to_json(ft);
+                        if let Ok(schema) = crate::openai::convert::normalize_json_schema(
+                            &ft.input_schema,
+                            &mut tool_warnings,
+                        ) {
+                            tool["parameters"] = schema;
+                        }
+                        openai_tools.push(tool);
                     }
                     Tool::Provider(pt) => {
                         tool_warnings.push(Warning::Unsupported {
@@ -512,9 +601,7 @@ fn function_tool_to_json(t: &FunctionTool) -> Value {
     if let Some(ref desc) = t.description {
         func["description"] = json!(desc);
     }
-    if let Some(strict) = t.strict {
-        func["strict"] = json!(strict);
-    }
+    func["strict"] = json!(t.strict.unwrap_or(false));
     func
 }
 
@@ -583,23 +670,13 @@ fn resolve_responses_reasoning(
                 }
             });
 
-    let resolved_reasoning_summary: Option<String> =
-        openai_option(ns, provider_opts, "reasoningSummary")
-            .map(|v| {
-                v.as_str()
-                    .map(std::string::ToString::to_string)
-                    .unwrap_or_else(|| v.to_string())
-            })
-            .or_else(|| {
-                if resolved_reasoning_effort
-                    .as_deref()
-                    .is_some_and(|e| e != "none")
-                {
-                    Some("detailed".to_string())
-                } else {
-                    None
-                }
-            });
+    let resolved_reasoning_summary = match openai_option(ns, provider_opts, "reasoningSummary") {
+        Some(value) => value.as_str().map(str::to_owned),
+        None => resolved_reasoning_effort
+            .as_deref()
+            .filter(|effort| *effort != "none")
+            .map(|_| "detailed".to_string()),
+    };
 
     let is_reasoning_model = openai_option(ns, provider_opts, "forceReasoning")
         .map(|v| v.as_bool().unwrap_or(false))
@@ -713,6 +790,7 @@ fn apply_responses_text_format(
     body: &mut Value,
     options: &CallOptions,
     provider_opts: &Option<SharedProviderOptions>,
+    warnings: &mut Vec<Warning>,
 ) {
     if let Some(ref rf) = options.response_format {
         match rf {
@@ -732,9 +810,11 @@ fn apply_responses_text_format(
                             "type": "json_schema",
                             "strict": strict_json,
                             "name": name.clone().unwrap_or_else(|| "response".to_string()),
-                            "description": description,
-                            "schema": schema,
+                            "schema": crate::openai::convert::normalize_json_schema(schema, warnings).unwrap_or_else(|_| schema.clone()),
                         });
+                        if let Some(description) = description {
+                            text["format"]["description"] = json!(description);
+                        }
                     }
                     None => {
                         text["format"] = json!({ "type": "json_object" });
@@ -786,6 +866,11 @@ fn resolve_responses_include(
         add_include("reasoning.encrypted_content", &mut include);
     }
 
+    let top_logprobs = openai_option(ns, provider_opts, "logprobs")
+        .and_then(|v| if v == true { Some(20) } else { v.as_u64() });
+    if top_logprobs.is_some_and(|value| value > 0) {
+        add_include("message.output_text.logprobs", &mut include);
+    }
     include
 }
 
@@ -813,6 +898,31 @@ fn apply_responses_provider_options(
     set("promptCacheRetention", "prompt_cache_retention");
     set("safetyIdentifier", "safety_identifier");
     set("truncation", "truncation");
+    if let Some(value) = openai_option(ns, provider_opts, "logprobs").and_then(|v| {
+        if v == true {
+            Some(json!(20))
+        } else {
+            v.as_u64().map(|n| json!(n))
+        }
+    }) {
+        body["top_logprobs"] = value;
+    }
+    if let Some(values) =
+        openai_option(ns, provider_opts, "contextManagement").and_then(|v| v.as_array().cloned())
+    {
+        body["context_management"] = json!(
+            values
+                .into_iter()
+                .map(|v| {
+                    let mut entry = json!({ "type": v["type"] });
+                    if let Some(threshold) = v.get("compactThreshold") {
+                        entry["compact_threshold"] = threshold.clone();
+                    }
+                    entry
+                })
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 /// `service_tier` with model-capability validation.
@@ -836,7 +946,7 @@ fn apply_responses_service_tier(
                     ),
                 });
             }
-            "priority" if !caps.supports_priority_processing => {
+            "priority" | "fast" if !caps.supports_priority_processing => {
                 warnings.push(Warning::Unsupported {
                     feature: "serviceTier".to_string(),
                     details: Some("priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported".to_string()),
@@ -916,8 +1026,24 @@ pub fn build_responses_request_body_for(
     push_unsupported_call_option_warnings(options, &mut warnings);
 
     // -- Reasoning resolution --
-    let (resolved_reasoning_effort, resolved_reasoning_summary, is_reasoning_model) =
+    let (mut resolved_reasoning_effort, mut resolved_reasoning_summary, is_reasoning_model) =
         resolve_responses_reasoning(ns, provider_opts, options, &caps);
+    if let Some(efforts) = caps.supported_reasoning_efforts
+        && resolved_reasoning_effort
+            .as_deref()
+            .is_some_and(|effort| !efforts.contains(&effort))
+    {
+        warnings.push(Warning::Unsupported {
+            feature: "reasoningEffort".to_string(),
+            details: Some(format!(
+                "{model_id} only supports the following reasoning efforts: {}",
+                efforts.join(", ")
+            )),
+        });
+        resolved_reasoning_effort = None;
+        resolved_reasoning_summary = openai_option(ns, provider_opts, "reasoningSummary")
+            .and_then(|v| v.as_str().map(str::to_owned));
+    }
 
     // -- conversation + previousResponseId conflict --
     warn_conversation_conflict(ns, provider_opts, &mut warnings);
@@ -931,13 +1057,53 @@ pub fn build_responses_request_body_for(
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
     let has_previous_response_id = openai_option(ns, provider_opts, "previousResponseId").is_some();
-    let input_result = convert_to_responses_input(
+    let mut input_result = convert_responses_input_with_conversation(
         ns,
         &options.prompt,
         system_message_mode,
         store_bool,
         has_previous_response_id,
+        openai_option(ns, provider_opts, "conversation").is_some(),
     );
+    if let Some(effort) = openai_option(ns, provider_opts, "reasoningEffortUpdate")
+        .and_then(|v| v.as_str().map(str::to_owned))
+    {
+        let reason = if !caps.supports_configuration_update {
+            Some("reasoningEffortUpdate is only supported by GPT-6 and later models".to_string())
+        } else if openai_option(ns, provider_opts, "reasoningMode") == Some(json!("pro"))
+            || openai_option(ns, provider_opts, "contextManagement").is_some()
+            || openai_option(ns, provider_opts, "truncation") == Some(json!("auto"))
+        {
+            Some("reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation".to_string())
+        } else if caps
+            .supported_reasoning_efforts
+            .is_some_and(|values| !values.contains(&effort.as_str()))
+        {
+            Some(format!(
+                "{model_id} does not support reasoning effort {effort}"
+            ))
+        } else {
+            None
+        };
+        if let Some(details) = reason {
+            warnings.push(Warning::Unsupported {
+                feature: "reasoningEffortUpdate".to_string(),
+                details: Some(details),
+            });
+        } else if input_result.input.first().is_none_or(|item| {
+            item["type"] != "configuration_update" || item["reasoning"]["effort"] != effort
+        }) {
+            input_result.input.insert(
+                0,
+                json!({ "type": "configuration_update", "reasoning": { "effort": effort } }),
+            );
+        }
+    }
+    if openai_option(ns, provider_opts, "compactionTrigger") == Some(json!(true)) {
+        input_result
+            .input
+            .push(json!({ "type": "compaction_trigger" }));
+    }
     warnings.extend(input_result.warnings);
 
     // -- Base body --
@@ -966,7 +1132,7 @@ pub fn build_responses_request_body_for(
     );
 
     // -- Response format (text.format) + verbosity --
-    apply_responses_text_format(ns, &mut body, options, provider_opts);
+    apply_responses_text_format(ns, &mut body, options, provider_opts, &mut warnings);
 
     // -- include (computed) --
     let include = resolve_responses_include(ns, provider_opts, is_reasoning_model);
@@ -981,6 +1147,47 @@ pub fn build_responses_request_body_for(
 
     // -- Other provider options (only sent when set) --
     apply_responses_provider_options(ns, &mut body, provider_opts);
+    if caps.supports_configuration_update && body.get("prompt_cache_retention").is_some() {
+        body.as_object_mut()
+            .expect("request body is an object")
+            .remove("prompt_cache_retention");
+        warnings.push(Warning::Unsupported {
+            feature: "promptCacheRetention".to_string(),
+            details: Some("promptCacheRetention is not supported by GPT-6 and later models; use promptCacheOptions instead".to_string()),
+        });
+    }
+
+    if is_reasoning_model
+        && caps.supported_reasoning_efforts.is_some()
+        && !(resolved_reasoning_effort.as_deref() == Some("none")
+            && caps.supports_non_reasoning_parameters)
+    {
+        let mut removed = body
+            .as_object_mut()
+            .expect("request body is an object")
+            .remove("top_logprobs")
+            .is_some();
+        if let Some(include) = body.get_mut("include").and_then(Value::as_array_mut) {
+            let len = include.len();
+            include.retain(|value| value.as_str() != Some("message.output_text.logprobs"));
+            removed |= include.len() != len;
+        }
+        if body
+            .get("include")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+        {
+            body.as_object_mut()
+                .expect("request body is an object")
+                .remove("include");
+        }
+        if removed {
+            warnings.push(Warning::Unsupported {
+                feature: "logprobs".to_string(),
+                details: Some("logprobs is not supported for reasoning models".to_string()),
+            });
+        }
+    }
 
     // -- service_tier (with capability validation) --
     apply_responses_service_tier(ns, &mut body, provider_opts, &caps, &mut warnings);

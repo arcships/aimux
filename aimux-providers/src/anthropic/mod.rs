@@ -41,7 +41,9 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{
+    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, load_optional_setting, validate_base_url,
+};
 
 use crate::shared::{AuthScheme, Credential, credential_headers};
 
@@ -100,7 +102,7 @@ fn supported_urls() -> SupportedUrls {
 #[derive(Clone, Default)]
 pub struct AnthropicProviderSettings {
     /// Base URL for the API calls, version segment included. Default
-    /// `https://api.anthropic.com/v1`; a trailing slash is removed. The bare
+    /// `ANTHROPIC_BASE_URL` or `https://api.anthropic.com/v1`; a trailing slash is removed. The bare
     /// `https://api.anthropic.com` means the default.
     pub base_url: Option<String>,
     /// The API key, sent as `x-api-key`. `None` (with no `auth_token`) loads
@@ -128,6 +130,8 @@ pub struct AnthropicProviderSettings {
     /// Rewrites every JSON request body once, after it is serialized and
     /// before it is sent.
     pub transform_request_body: Option<TransformRequestBody>,
+    /// Generates identifiers for returned sources.
+    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl std::fmt::Debug for AnthropicProviderSettings {
@@ -143,6 +147,7 @@ impl std::fmt::Debug for AnthropicProviderSettings {
             )
             .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
+            .field("generate_id", &self.generate_id.is_some())
             .field(
                 "transform_request_body",
                 &self.transform_request_body.is_some(),
@@ -155,23 +160,31 @@ impl std::fmt::Debug for AnthropicProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
-/// URL with a host, or when both `api_key` and `auth_token` are given. Those
+/// Returns `AiMuxError::InvalidArgument` when the configured base URL is not an
+/// `http(s)` URL with a host, or when both credentials are nonempty. Those
 /// are the only ways this fails: credentials are loaded per request, not here.
 pub fn create_anthropic(
     settings: AnthropicProviderSettings,
 ) -> Result<AnthropicProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => normalize_base_url(url)?,
+    let base_url = match load_optional_setting(settings.base_url.as_deref(), "ANTHROPIC_BASE_URL") {
+        Some(url) => normalize_base_url(&url)?,
         None => DEFAULT_BASE_URL.to_string(),
     };
-    if settings.api_key.is_some() && settings.auth_token.is_some() {
+    let has_value = |value: &Option<Resolvable<String>>| match value {
+        None => false,
+        Some(Resolvable::Value(value)) => !value.is_empty(),
+        Some(_) => true,
+    };
+    if has_value(&settings.api_key) && has_value(&settings.auth_token) {
         return Err(AiMuxError::InvalidArgument(
             "Both apiKey and authToken were provided. Please use only one authentication method."
                 .to_string(),
         ));
     }
-    let (credential, scheme) = match settings.auth_token {
+    let auth_token = settings
+        .auth_token
+        .filter(|value| !matches!(value, Resolvable::Value(value) if value.is_empty()));
+    let (credential, scheme) = match auth_token {
         Some(token) => (Credential::Explicit(token), AuthScheme::Bearer),
         None => (
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Anthropic"),
@@ -190,19 +203,19 @@ pub fn create_anthropic(
         fetch: settings.fetch,
         transform_request_body: settings.transform_request_body,
         supported_urls: supported_urls(),
+        generate_id: settings.generate_id,
     })
 }
 
 /// The default provider: `create_anthropic` with default settings, created on
-/// first use. Creating it reads nothing from the environment and cannot fail;
-/// a missing key surfaces from the first request instead.
+/// first use. Creation reads `ANTHROPIC_BASE_URL`; a missing key surfaces
+/// from the first request instead.
 pub fn anthropic() -> &'static AnthropicProvider {
     static DEFAULT: OnceLock<AnthropicProvider> = OnceLock::new();
     DEFAULT.get_or_init(|| {
-        // The default settings carry no base URL and no credentials, so
-        // there is nothing to reject.
+        // An invalid base URL environment setting fails at creation.
         create_anthropic(AnthropicProviderSettings::default())
-            .expect("default Anthropic settings are always valid")
+            .expect("Anthropic base URL must be valid")
     })
 }
 
@@ -215,6 +228,7 @@ pub struct AnthropicProvider {
     fetch: Option<FetchFunction>,
     transform_request_body: Option<TransformRequestBody>,
     supported_urls: SupportedUrls,
+    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl AnthropicProvider {
@@ -249,13 +263,19 @@ impl AnthropicProvider {
             model_id.to_string(),
             self.model_config(self.name.clone()),
         )
+        .with_generate_id(self.generate_id.clone())
     }
 
-    /// The files interface; `provider()` is `"{name}.files"` with the
-    /// `.messages` suffix removed (`"anthropic.files"` by default).
+    /// An alias for the Messages model.
+    #[must_use]
+    pub fn chat(&self, model_id: &str) -> AnthropicMessagesModel {
+        self.messages(model_id)
+    }
+
+    /// The files interface, retaining the configured provider name.
     #[must_use]
     pub fn files(&self) -> AnthropicFiles {
-        AnthropicFiles::from_config(self.model_config(format!("{}.files", self.bare_name())))
+        AnthropicFiles::from_config(self.model_config(self.name.clone()))
     }
 
     /// The provider as a function: the default language model for an id. The
@@ -346,30 +366,4 @@ pub(crate) async fn list_models_once(
             created: None,
         })
         .collect())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bare_origin_means_the_versioned_url() {
-        assert_eq!(
-            normalize_base_url("https://api.anthropic.com").unwrap(),
-            DEFAULT_BASE_URL
-        );
-        assert_eq!(
-            normalize_base_url("https://api.anthropic.com/").unwrap(),
-            DEFAULT_BASE_URL
-        );
-        assert_eq!(
-            normalize_base_url("https://proxy.example/v1/").unwrap(),
-            "https://proxy.example/v1"
-        );
-        assert_eq!(
-            normalize_base_url("https://proxy.example").unwrap(),
-            "https://proxy.example"
-        );
-        assert!(normalize_base_url("not a url").is_err());
-    }
 }

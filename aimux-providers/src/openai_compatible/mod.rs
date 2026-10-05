@@ -2,7 +2,7 @@
 //!
 //! [`create_openai_compatible`] is the Rust form of the AI SDK's
 //! `createOpenAICompatible`: it takes [`OpenAICompatibleProviderSettings`],
-//! validates the name and base URL and returns an [`OpenAICompatibleProvider`]
+//! validates the base URL and returns an [`OpenAICompatibleProvider`]
 //! whose models speak the chat-completions, embeddings and image endpoints of
 //! any OpenAI-compatible server.
 //!
@@ -12,7 +12,7 @@
 //!   `fetch`, the capability flags, `transform_request_body`) are fixed in the
 //!   factory.
 //! - `api_key` is evaluated on every request, as a [`Resolvable`]: a plain
-//!   value is used as given (`""` included), a future is awaited once, an async
+//!   non-empty value produces a bearer header, a future is awaited once, an async
 //!   function on every request. `None` sends no `Authorization` header at all,
 //!   which is what a local server wants.
 //!
@@ -35,7 +35,7 @@ pub mod image;
 mod types;
 
 pub use chat::OpenAICompatibleChatModel;
-pub use config::{MetadataExtractor, StreamMetadataExtractor, TransformRequestBody};
+pub use config::{ConvertUsage, MetadataExtractor, StreamMetadataExtractor, TransformRequestBody};
 pub use convert::RequestBodyResult;
 pub use embedding::OpenAICompatibleEmbeddingModel;
 pub use image::OpenAICompatibleImageModel;
@@ -51,7 +51,9 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{
+    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, validate_base_url,
+};
 
 use crate::shared::{Credential, provider_headers};
 use config::{BaseUrl, ChatDialect, ChatSettings, CompatModelConfig};
@@ -61,13 +63,13 @@ use config::{BaseUrl, ChatDialect, ChatSettings, CompatModelConfig};
 #[derive(Clone, Default)]
 pub struct OpenAICompatibleProviderSettings {
     /// The provider name: the first segment of every model's `provider()`
-    /// string and the providerOptions namespace. Required, non-empty, no `.`.
+    /// string and the providerOptions namespace. Preserved as supplied.
     pub name: String,
     /// Base URL for the API calls. Required, `http(s)` with a host; a trailing
     /// slash is removed.
     pub base_url: String,
     /// The API key. `None` sends no `Authorization` header (a local server);
-    /// an explicit value, `""` included, is sent as `Bearer <value>`. A
+    /// a non-empty explicit value is sent as `Bearer <value>`. A
     /// [`Resolvable::Future`] is awaited once, an [`Resolvable::AsyncFn`] on
     /// every request.
     pub api_key: Option<Resolvable<String>>,
@@ -86,9 +88,15 @@ pub struct OpenAICompatibleProviderSettings {
     pub supports_structured_outputs: Option<bool>,
     /// Whether tool results may carry structured (array) content.
     pub supports_multi_part_tool_content: Option<bool>,
-    /// Rewrites every JSON request body once, after it is serialized and
+    /// Rewrites each chat JSON request body once, after it is serialized and
     /// before it is sent.
     pub transform_request_body: Option<TransformRequestBody>,
+    /// Extracts metadata from chat responses and streaming chunks.
+    pub metadata_extractor: Option<Arc<dyn MetadataExtractor>>,
+    /// URL patterns supported by chat models, evaluated when requested.
+    pub supported_urls: Option<Arc<dyn Fn() -> SupportedUrls + Send + Sync>>,
+    /// Custom chat token accounting.
+    pub convert_usage: Option<ConvertUsage>,
 }
 
 impl std::fmt::Debug for OpenAICompatibleProviderSettings {
@@ -125,14 +133,19 @@ impl std::fmt::Debug for OpenAICompatibleProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `name` is empty or contains `.`,
-/// or when `base_url` is not an `http(s)` URL with a host. The key is not read
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. The key is not read
 /// here.
 pub fn create_openai_compatible(
     settings: OpenAICompatibleProviderSettings,
 ) -> Result<OpenAICompatibleProvider, AiMuxError> {
     let base_url = validate_base_url(&settings.base_url)?;
-    OpenAICompatibleProvider::assemble(Assembly {
+    let credential = settings
+        .api_key
+        .clone()
+        .map_or(Credential::None, Credential::Explicit);
+    let user_headers = settings.headers.clone();
+    let mut provider = OpenAICompatibleProvider::assemble(Assembly {
         name: settings.name,
         base_url: BaseUrl::Fixed(base_url),
         credential: match settings.api_key {
@@ -152,7 +165,27 @@ pub fn create_openai_compatible(
                 .unwrap_or(false),
             dialect: ChatDialect::baseline(),
         },
-    })
+    })?;
+    let dialect = Arc::make_mut(&mut provider.chat.dialect);
+    dialect.metadata_extractor = settings.metadata_extractor;
+    dialect.supported_urls = settings.supported_urls;
+    dialect.convert_usage = settings.convert_usage;
+    let headers = compatible_headers(credential, user_headers);
+    provider.headers = Resolvable::from_async_fn(move || {
+        let headers = headers.clone();
+        async move {
+            let mut headers = headers.resolve().await?;
+            let suffix = concat!("ai-sdk-openai-compatible/", env!("CARGO_PKG_VERSION"));
+            let user_agent = headers
+                .get("user-agent")
+                .and_then(Option::as_deref)
+                .filter(|value| !value.is_empty())
+                .map_or_else(|| suffix.to_string(), |value| format!("{value} {suffix}"));
+            headers.insert("user-agent".into(), Some(user_agent));
+            Ok(headers)
+        }
+    });
+    Ok(provider)
 }
 
 /// The chat-endpoint behavior of a compatible vendor: the capability flags the
@@ -194,20 +227,26 @@ pub struct OpenAICompatibleProvider {
     chat: ChatSettings,
 }
 
+fn compatible_headers(credential: Credential, user: Option<HeaderMapOpt>) -> HeadersFn {
+    Resolvable::from_async_fn(move || {
+        let credential = credential.clone();
+        let user = user.clone();
+        async move {
+            let mut headers = HeaderMapOpt::new();
+            if let Some(key) = credential.secret().await?.filter(|key| !key.is_empty()) {
+                headers.insert("Authorization".into(), Some(format!("Bearer {key}")));
+            }
+            Ok(match user {
+                Some(user) => combine_headers(&[&headers, &user]),
+                None => headers,
+            })
+        }
+    })
+}
+
 impl OpenAICompatibleProvider {
     pub(crate) fn assemble(assembly: Assembly) -> Result<Self, AiMuxError> {
-        let name = assembly.name.trim().to_string();
-        if name.is_empty() {
-            return Err(AiMuxError::InvalidArgument(
-                "OpenAI-compatible provider `name` must not be empty".to_string(),
-            ));
-        }
-        if name.contains('.') {
-            return Err(AiMuxError::InvalidArgument(format!(
-                "OpenAI-compatible provider name {name:?} must not contain `.`: it is the first \
-                 segment of the provider string and the providerOptions namespace"
-            )));
-        }
+        let name = assembly.name;
         let query_params = assembly.query_params.map(|params| {
             let mut pairs: Vec<(String, String)> = params.into_iter().collect();
             pairs.sort();

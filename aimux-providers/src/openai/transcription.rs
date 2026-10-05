@@ -266,8 +266,13 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         let is_gpt4o_transcribe_model =
             self.model_id == "gpt-4o-transcribe" || self.model_id == "gpt-4o-mini-transcribe";
 
-        // For non-whisper models, set response_format based on model type.
-        if self.model_id != "whisper-1" {
+        let has_openai_options = options
+            .provider_options
+            .as_ref()
+            .is_some_and(|options| options.contains_key("openai"));
+
+        // Upstream only selects a non-default format when its options exist.
+        if self.model_id != "whisper-1" && has_openai_options {
             let response_format = if is_gpt4o_transcribe_model {
                 "json"
             } else {
@@ -298,7 +303,10 @@ impl TranscriptionModel for OpenAITranscriptionModel {
 
         // Temperature default is 0 when provider options are present (matching
         // the TS schema's `.default(0)`).
-        if options.provider_options.is_some() && openai_options.temperature.is_none() {
+        if has_openai_options && openai_options.timestamp_granularities.is_none() {
+            form.text("timestamp_granularities[]", "segment")?;
+        }
+        if has_openai_options && openai_options.temperature.is_none() {
             form.text("temperature", "0")?;
         }
 

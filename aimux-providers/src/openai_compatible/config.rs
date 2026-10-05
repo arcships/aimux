@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use aimux_core::types::ProviderMetadata;
+use aimux_core::types::{ProviderMetadata, Usage};
 use serde_json::Value;
 
 use aimux_core::AiMuxError;
@@ -20,6 +20,9 @@ use aimux_provider_utils::{
 };
 
 pub use crate::shared::TransformRequestBody;
+
+/// Converts the raw optional token usage of a chat response.
+pub type ConvertUsage = Arc<dyn Fn(Option<&Value>) -> Usage + Send + Sync>;
 
 /// Where the base URL comes from.
 ///
@@ -82,6 +85,8 @@ pub(crate) struct ChatDialect {
     /// Streaming usage rides in `chunk[key].usage` instead of `chunk.usage`.
     pub stream_usage_key: Option<String>,
     pub metadata_extractor: Option<Arc<dyn MetadataExtractor>>,
+    pub supported_urls: Option<Arc<dyn Fn() -> SupportedUrls + Send + Sync>>,
+    pub convert_usage: Option<ConvertUsage>,
     pub error_structure: ErrorStructure,
 }
 
@@ -95,6 +100,8 @@ impl ChatDialect {
             max_tokens_key: None,
             stream_usage_key: None,
             metadata_extractor: None,
+            supported_urls: None,
+            convert_usage: None,
             error_structure: Arc::new(default_error_structure),
         }
     }

@@ -209,15 +209,17 @@ pub(crate) async fn execute_generate(
     let response_value = resp.raw_value.unwrap_or(Value::Null);
     let data = resp.value;
 
-    let choice = data
-        .choices
-        .into_iter()
-        .next()
-        .ok_or_else(|| AiMuxError::InvalidResponseData("no choices in response".to_string()))?;
+    let choice = data.choices.into_iter().next().ok_or_else(|| {
+        AiMuxError::InvalidResponseData("Response did not contain any choices.".to_string())
+    })?;
 
     // Build content array.
     let mut content = Vec::new();
-    if let Some(text) = choice.message.content
+    if let Some(text) = choice
+        .message
+        .content
+        .filter(|text| !text.is_empty())
+        .or_else(|| choice.message.audio.and_then(|audio| audio.transcript))
         && !text.is_empty()
     {
         content.push(GenerateContent::Text {
@@ -285,7 +287,10 @@ pub(crate) async fn execute_generate(
             raw: None,
         });
 
-    let usage = convert_usage(&data.usage, response_value.get("usage"));
+    let usage = data.usage.as_ref().map_or_else(Usage::default, |usage| {
+        convert_usage(usage, response_value.get("usage"))
+    });
+    let raw_usage = data.usage.unwrap_or_default();
 
     // Build provider metadata: logprobs + prediction tokens.
     let mut pm_openai = serde_json::json!({});
@@ -295,7 +300,7 @@ pub(crate) async fn execute_generate(
         pm_openai["logprobs"] = content_lp.clone();
     }
     // Accepted/rejected prediction tokens from completion_tokens_details.
-    if let Some(ref details) = data.usage.completion_tokens_details {
+    if let Some(ref details) = raw_usage.completion_tokens_details {
         if let Some(apt) = details.accepted_prediction_tokens {
             pm_openai["acceptedPredictionTokens"] = json!(apt);
         }
@@ -312,12 +317,13 @@ pub(crate) async fn execute_generate(
         warnings: request_result.warnings,
         provider_metadata,
         response: Some(aimux_core::shared::ResponseInfo {
-            id: Some(data.id),
+            id: data.id,
             timestamp: data
                 .created
+                .filter(|created| *created != 0)
                 .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
                 .map(|dt| dt.to_rfc3339()),
-            model_id: Some(data.model),
+            model_id: data.model,
             headers: Some(response_headers),
             body: Some(response_value),
         }),
@@ -415,10 +421,6 @@ pub(crate) async fn execute_stream(
         let mut stream_errored = false;
 
         while let Some(event) = event_iter.next().await {
-            if stream_errored {
-                break;
-            }
-
             match event {
                 Ok(parsed) => {
 
@@ -442,7 +444,7 @@ pub(crate) async fn execute_stream(
                             ),
                         });
                         stream_errored = true;
-                        break;
+                        continue;
                     }
 
                     // The chunk's top-level `usage`, taken from the raw JSON before
@@ -457,20 +459,22 @@ pub(crate) async fn execute_stream(
                     let chunk: StreamChunk = match serde_json::from_value(parsed) {
                         Ok(c) => c,
                         Err(e) => {
-                            yield Err(e.into());
+                            stream_errored = true;
+                            yield Ok(StreamPart::Error { error: e.into() });
                             continue;
                         }
                     };
 
                     // Emit ResponseMetadata from the first valid chunk.
                     if !response_metadata_emitted
-                        && (chunk.id.is_some() || chunk.model.is_some())
+                        && (chunk.id.as_ref().is_some_and(|id| !id.is_empty()) || chunk.model.as_ref().is_some_and(|model| !model.is_empty()) || chunk.created.is_some_and(|created| created != 0))
                     {
                         response_metadata_emitted = true;
                         yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                             id: chunk.id.clone(),
                             timestamp: chunk
                                 .created
+                                .filter(|created| *created != 0)
                                 .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
                                 .map(|dt| dt.to_rfc3339()),
                             model_id: chunk.model.clone(),
@@ -611,22 +615,15 @@ pub(crate) async fn execute_stream(
                                 reasoning_started = false;
                             }
 
-                            // Close any open text segment.
-                            if text_started {
-                                yield Ok(StreamPart::TextEnd {
-                                    id: format!("{text_id}"),
-                                    provider_metadata: None,
-                                });
-                                text_started = false;
-                            }
-
+                            stream_errored = false;
                             final_finish_reason = Some(parse_finish_reason(&reason));
                         }
                     }
                 }
                 Err(error) => {
                     let recoverable = error.is_recoverable_stream_error();
-                    yield Err(error);
+                    stream_errored = true;
+                    yield Ok(StreamPart::Error { error });
                     if !recoverable {
                         return;
                     }
@@ -682,15 +679,11 @@ pub(crate) async fn execute_stream(
                 }
             } else {
                 final_finish_reason.unwrap_or(FinishReason {
-                    unified: FinishReasonUnified::Stop,
+                    unified: FinishReasonUnified::Other,
                     raw: None,
                 })
             },
-            usage: if stream_errored {
-                Usage::default()
-            } else {
-                final_usage
-            },
+            usage: final_usage,
             provider_metadata: Some(provider_metadata),
         });
     };

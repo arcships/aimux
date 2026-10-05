@@ -69,14 +69,14 @@ fn convert_image_part(part: &FilePart, provider_options_name: &str) -> Result<Va
         }
         FileData::Data { data } => {
             let media_type = resolve_deepseek_image_media_type(part)?;
+            let data = match data {
+                FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
+                FileBytes::Base64(data) => data.clone(),
+            };
             let media_type = if media_type == "image/jpg" {
                 "image/jpeg"
             } else {
                 &media_type
-            };
-            let data = match data {
-                FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
-                FileBytes::Base64(data) => data.clone(),
             };
             let data_url = format!("data:{media_type};base64,{data}");
             if options.file_data != Some(true) {
@@ -93,9 +93,7 @@ fn convert_image_part(part: &FilePart, provider_options_name: &str) -> Result<Va
             }
             Ok(file)
         }
-        FileData::Text { .. } => Err(AiMuxError::UnsupportedFunctionality(
-            "text file parts".to_string(),
-        )),
+        FileData::Text { .. } => unreachable!("inline text is not an image input"),
     }
 }
 
@@ -103,16 +101,6 @@ fn convert_image_part(part: &FilePart, provider_options_name: &str) -> Result<Va
 pub(crate) struct ConvertedMessages {
     pub messages: Vec<Value>,
     pub warnings: Vec<Warning>,
-}
-
-fn join_text(content: &[UserPart]) -> String {
-    content
-        .iter()
-        .filter_map(|part| match part {
-            UserPart::Text(TextPart { text, .. }) => Some(text.as_str()),
-            _ => None,
-        })
-        .collect()
 }
 
 /// The `messages` of the request body.
@@ -198,22 +186,24 @@ pub(crate) fn convert_to_deepseek_chat_messages(
             }
 
             LanguageModelMessage::User { content: parts, .. } => {
-                let has_image_part = parts.iter().any(|part| {
-                    matches!(part,
-                        UserPart::File(file) if file.media_type.split('/').next() == Some("image")
-                            && !matches!(file.data, FileData::Text { .. })
-                    )
-                });
+                let is_image = |file: &FilePart| {
+                    file.media_type.split('/').next() == Some("image")
+                        && !matches!(file.data, FileData::Text { .. })
+                };
+                let has_image_part = parts
+                    .iter()
+                    .any(|part| matches!(part, UserPart::File(file) if is_image(file)));
                 let mut content = Vec::new();
+                let mut text = String::new();
                 for part in parts {
                     match part {
-                        UserPart::Text(TextPart { text, .. }) => {
-                            content.push(json!({ "type": "text", "text": text }));
+                        UserPart::Text(TextPart {
+                            text: part_text, ..
+                        }) => {
+                            text.push_str(part_text);
+                            content.push(json!({ "type": "text", "text": part_text }));
                         }
-                        UserPart::File(file)
-                            if file.media_type.split('/').next() == Some("image")
-                                && !matches!(file.data, FileData::Text { .. }) =>
-                        {
+                        UserPart::File(file) if is_image(file) => {
                             content.push(convert_image_part(file, provider_options_name)?);
                         }
                         UserPart::File(_) => warnings.push(Warning::Unsupported {
@@ -229,7 +219,7 @@ pub(crate) fn convert_to_deepseek_chat_messages(
                     if has_image_part {
                         Value::Array(content)
                     } else {
-                        json!(join_text(parts))
+                        json!(text)
                     },
                 );
                 name(&mut wire);

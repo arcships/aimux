@@ -2,7 +2,7 @@
 //!
 //! The Rust form of `OpenAICompatibleEmbeddingModel`: `POST {base_url}/embeddings`
 //! with `encoding_format: "float"`, the `dimensions` and `user` options read
-//! from the `openaiCompatible` namespace and then the provider's own.
+//! from the compatible namespaces and then the provider's own.
 
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
@@ -11,6 +11,8 @@ use aimux_core::embedding_model::{
     EmbeddingCallOptions, EmbeddingModel, EmbeddingResponse, EmbeddingResult, EmbeddingUsage,
 };
 use aimux_core::error::AiMuxError;
+
+use aimux_core::shared::Warning;
 
 use super::config::CompatModelConfig;
 use super::convert::to_camel_case;
@@ -27,13 +29,14 @@ impl OpenAICompatibleEmbeddingModel {
     }
 }
 
-/// `dimensions` and `user` from the generic namespace, then the provider's
-/// own (later wins).
-fn embedding_options(options: &EmbeddingCallOptions, name: &str) -> (Option<u64>, Option<String>) {
-    let camel = to_camel_case(name);
-    let mut dimensions = None;
-    let mut user = None;
-    for key in ["openaiCompatible", name, camel.as_str()] {
+/// Validate each namespace before merging, as upstream's provider-options schema does.
+fn embedding_options(
+    options: &EmbeddingCallOptions,
+    name: &str,
+    warnings: &mut Vec<Warning>,
+) -> Result<Map<String, Value>, AiMuxError> {
+    let mut merged = Map::new();
+    for key in ["openai-compatible", "openaiCompatible", name] {
         let Some(object) = options
             .provider_options
             .as_ref()
@@ -41,14 +44,43 @@ fn embedding_options(options: &EmbeddingCallOptions, name: &str) -> (Option<u64>
         else {
             continue;
         };
-        if let Some(value) = object.get("dimensions").and_then(Value::as_u64) {
-            dimensions = Some(value);
-        }
-        if let Some(value) = object.get("user").and_then(Value::as_str) {
-            user = Some(value.to_string());
+        for (setting, valid) in [
+            ("dimensions", Value::is_number as fn(&Value) -> bool),
+            ("user", Value::is_string),
+        ] {
+            if let Some(value) = object.get(setting) {
+                if !valid(value) {
+                    return Err(AiMuxError::InvalidArgument(format!(
+                        "invalid providerOptions.{key}.{setting}"
+                    )));
+                }
+                merged.insert(setting.to_string(), value.clone());
+            }
         }
     }
-    (dimensions, user)
+    if options
+        .provider_options
+        .as_ref()
+        .is_some_and(|all| all.contains_key("openai-compatible"))
+    {
+        warnings.push(Warning::Deprecated {
+            setting: "providerOptions key 'openai-compatible'".into(),
+            message: "Use 'openaiCompatible' instead.".into(),
+        });
+    }
+    let camel = to_camel_case(name);
+    if camel != name
+        && options
+            .provider_options
+            .as_ref()
+            .is_some_and(|all| all.contains_key(name))
+    {
+        warnings.push(Warning::Deprecated {
+            setting: format!("providerOptions key '{name}'"),
+            message: format!("Use '{camel}' instead."),
+        });
+    }
+    Ok(merged)
 }
 
 #[async_trait]
@@ -73,19 +105,24 @@ impl EmbeddingModel for OpenAICompatibleEmbeddingModel {
         &self,
         options: &EmbeddingCallOptions,
     ) -> Result<EmbeddingResult, AiMuxError> {
-        let (dimensions, user) = embedding_options(options, self.config.provider_options_name());
+        let mut warnings = Vec::new();
+        let compatible_options =
+            embedding_options(options, self.config.provider_options_name(), &mut warnings)?;
+        if options.values.len() > self.max_embeddings_per_call().unwrap_or(2048) as usize {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "Too many embedding values for {} / {}: maximum 2048, received {}",
+                self.provider(),
+                self.model_id(),
+                options.values.len()
+            )));
+        }
 
         let mut body = Map::new();
         body.insert("model".to_string(), json!(self.model_id));
         body.insert("input".to_string(), json!(options.values));
         body.insert("encoding_format".to_string(), json!("float"));
-        if let Some(dimensions) = dimensions {
-            body.insert("dimensions".to_string(), json!(dimensions));
-        }
-        if let Some(user) = user {
-            body.insert("user".to_string(), json!(user));
-        }
-        let body = self.config.transform_body(Value::Object(body));
+        body.extend(compatible_options);
+        let body = Value::Object(body);
 
         let headers = self
             .config
@@ -131,12 +168,16 @@ impl EmbeddingModel for OpenAICompatibleEmbeddingModel {
         Ok(EmbeddingResult {
             embeddings,
             usage,
-            provider_metadata: None,
+            provider_metadata: raw_value
+                .get("providerMetadata")
+                .map(|metadata| serde_json::from_value(metadata.clone()))
+                .transpose()
+                .map_err(|error| AiMuxError::InvalidResponseData(error.to_string()))?,
             response: Some(EmbeddingResponse {
                 headers: Some(response_headers),
                 body: Some(raw_value),
             }),
-            warnings: Vec::new(),
+            warnings,
         })
     }
 }

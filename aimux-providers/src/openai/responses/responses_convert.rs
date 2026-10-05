@@ -26,7 +26,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Sourc
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage, Warning,
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Warning,
 };
 
 use super::convert::{convert_responses_usage, map_responses_finish_reason, parse_usage};
@@ -128,6 +128,7 @@ pub fn build_responses_generate_result(
 
     let mut content: Vec<GenerateContent> = Vec::new();
     let mut has_function_call = false;
+    let mut logprobs = Vec::new();
 
     for part in output {
         match part.get("type").and_then(|v| v.as_str()) {
@@ -140,14 +141,23 @@ pub fn build_responses_generate_result(
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string();
-                            if !text.is_empty() {
+                            if body
+                                .get("top_logprobs")
+                                .and_then(Value::as_u64)
+                                .is_some_and(|n| n > 0)
+                                && let Some(value) = cp.get("logprobs")
+                            {
+                                logprobs.push(value.clone());
+                            }
+                            {
                                 content.push(GenerateContent::Text {
                                     text,
                                     provider_metadata: Some(provider_namespace(
                                         &provider_key,
-                                        json!({
-                                            "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                                        }),
+                                        text_metadata(
+                                            part,
+                                            cp.get("annotations").and_then(Value::as_array),
+                                        ),
                                     )),
                                 });
                             }
@@ -155,22 +165,9 @@ pub fn build_responses_generate_result(
                         // Annotations (url_citation → Source).
                         if let Some(annotations) = cp.get("annotations").and_then(|v| v.as_array())
                         {
-                            for (i, ann) in annotations.iter().enumerate() {
-                                if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation")
-                                {
-                                    content.push(GenerateContent::Source(Source {
-                                        id: format!("annotation-{i}"),
-                                        source_type: "url".to_string(),
-                                        url: ann
-                                            .get("url")
-                                            .and_then(|v| v.as_str())
-                                            .map(std::string::ToString::to_string),
-                                        title: ann
-                                            .get("title")
-                                            .and_then(|v| v.as_str())
-                                            .map(std::string::ToString::to_string),
-                                        provider_metadata: None,
-                                    }));
+                            for ann in annotations {
+                                if let Some(source) = annotation_source(ann, &provider_key) {
+                                    content.push(GenerateContent::Source(source));
                                 }
                             }
                         }
@@ -202,12 +199,7 @@ pub fn build_responses_generate_result(
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
-                    provider_metadata: Some(provider_namespace(
-                        &provider_key,
-                        json!({
-                            "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                        }),
-                    )),
+                    provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(part))),
                 }));
             }
             Some("custom_tool_call") => {
@@ -232,12 +224,7 @@ pub fn build_responses_generate_result(
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
-                    provider_metadata: Some(provider_namespace(
-                        &provider_key,
-                        json!({
-                            "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                        }),
-                    )),
+                    provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(part))),
                 }));
             }
             Some("reasoning") => {
@@ -294,6 +281,9 @@ pub fn build_responses_generate_result(
     }
     if let Some(st) = data.get("service_tier").and_then(|v| v.as_str()) {
         pm["serviceTier"] = json!(st);
+    }
+    if !logprobs.is_empty() {
+        pm["logprobs"] = json!(logprobs);
     }
     let provider_metadata = Some(provider_namespace(&provider_key, pm));
 
@@ -359,11 +349,68 @@ fn reasoning_stream_metadata(
     item_id: &str,
     encrypted_content: Option<&str>,
 ) -> ProviderMetadata {
-    let mut inner = json!({ "itemId": item_id });
-    if let Some(enc) = encrypted_content {
-        inner["reasoningEncryptedContent"] = json!(enc);
-    }
+    let inner = json!({ "itemId": item_id, "reasoningEncryptedContent": encrypted_content });
     provider_namespace(provider_key, inner)
+}
+
+fn tool_metadata(item: &Value) -> Value {
+    let mut metadata = json!({ "itemId": item.get("id").cloned().unwrap_or(Value::Null) });
+    for key in ["async", "namespace"] {
+        if let Some(value) = item.get(key).filter(|v| !v.is_null()) {
+            metadata[key] = value.clone();
+        }
+    }
+    metadata
+}
+
+fn text_metadata(item: &Value, annotations: Option<&Vec<Value>>) -> Value {
+    let mut metadata = json!({ "itemId": item.get("id").cloned().unwrap_or(Value::Null) });
+    if let Some(phase) = item.get("phase").filter(|v| !v.is_null()) {
+        metadata["phase"] = phase.clone();
+    }
+    if let Some(annotations) = annotations.filter(|v| !v.is_empty()) {
+        metadata["annotations"] = json!(annotations);
+    }
+    metadata
+}
+
+fn annotation_source(annotation: &Value, provider_key: &str) -> Option<Source> {
+    let kind = annotation.get("type")?.as_str()?;
+    let url = kind == "url_citation";
+    if !url
+        && !matches!(
+            kind,
+            "file_citation" | "container_file_citation" | "file_path"
+        )
+    {
+        return None;
+    }
+    let mut metadata = json!({ "type": kind, "fileId": annotation["file_id"] });
+    if let Some(index) = annotation.get("index") {
+        metadata["index"] = index.clone();
+    }
+    if let Some(container) = annotation.get("container_id") {
+        metadata["containerId"] = container.clone();
+    }
+    Some(Source {
+        id: generate_source_id(),
+        source_type: if url { "url" } else { "document" }.to_string(),
+        url: annotation
+            .get("url")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        title: annotation
+            .get(if url {
+                "title"
+            } else if kind == "file_path" {
+                "file_id"
+            } else {
+                "filename"
+            })
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        provider_metadata: (!url).then(|| provider_namespace(provider_key, metadata)),
+    })
 }
 
 /// Generate a unique source ID for streaming annotation sources.
@@ -411,46 +458,41 @@ pub fn build_responses_event_stream<S>(
 where
     S: Stream<Item = Result<Value, AiMuxError>> + Unpin + Send + 'static,
 {
+    build_responses_event_stream_with_raw(
+        first_event,
+        sse_stream,
+        provider_key,
+        warnings,
+        store_flag,
+        request_url,
+        request_body,
+        response_headers,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_responses_event_stream_with_raw<S>(
+    first_event: Option<Result<Value, AiMuxError>>,
+    sse_stream: S,
+    provider_key: String,
+    warnings: Vec<Warning>,
+    store_flag: bool,
+    request_url: String,
+    request_body: Value,
+    response_headers: HashMap<String, String>,
+    include_raw_chunks: bool,
+) -> Result<ResponsesEventStream, AiMuxError>
+where
+    S: Stream<Item = Result<Value, AiMuxError>> + Unpin + Send + 'static,
+{
     // Peek at the first SSE event to detect early errors (before any output).
     if let Some(Ok(ref val)) = first_event {
         let etype = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
         if etype == "error" || etype == "response.failed" {
-            let error_value = val
-                .get("response")
-                .and_then(|response| response.get("error"))
-                .or_else(|| val.get("error"));
-            let message = val
-                .get("response")
-                .and_then(|r| r.get("error"))
-                .and_then(|e| e.get("message"))
-                .and_then(|v| v.as_str())
-                .or_else(|| {
-                    val.get("error")
-                        .and_then(|e| e.get("message"))
-                        .and_then(|v| v.as_str())
-                })
-                .unwrap_or("Responses API stream error");
-            let status_code = val
-                .get("status")
-                .or_else(|| val.get("status_code"))
-                .or_else(|| error_value.and_then(|error| error.get("status")))
-                .or_else(|| error_value.and_then(|error| error.get("code")))
-                .and_then(Value::as_u64)
-                .and_then(|status| u16::try_from(status).ok())
-                .filter(|status| (400..=599).contains(status));
-            let provider_code = val
-                .get("response")
-                .and_then(|r| r.get("error"))
-                .or_else(|| val.get("error"))
-                .and_then(|e| e.get("type").or_else(|| e.get("code")))
-                .and_then(|v| v.as_str())
-                .map(std::string::ToString::to_string);
-            return Err(aimux_provider_utils::stream_error_api_call(
-                message,
-                provider_code,
-                status_code,
+            return Err(super::super::openai_stream_error(
                 val,
-                request_url.clone(),
+                &request_url,
                 request_body.clone(),
                 response_headers.clone(),
             ));
@@ -474,6 +516,10 @@ where
         let mut final_finish_reason: Option<FinishReason> = None;
         let mut response_id: Option<String> = None;
         let mut stream_errored = false;
+        let mut text_states: HashMap<String, Value> = HashMap::new();
+        let mut output_ids: HashMap<usize, String> = HashMap::new();
+        let mut text_annotations: HashMap<String, Vec<Value>> = HashMap::new();
+        let mut logprobs = Vec::new();
 
         let mut event_iter =
             futures::stream::iter(first_event.into_iter()).chain(sse_stream);
@@ -481,6 +527,7 @@ where
         while let Some(event) = event_iter.next().await {
             match event {
                 Ok(parsed) => {
+                    if include_raw_chunks { yield Ok(StreamPart::Raw { raw_value: parsed.clone() }); }
                     let etype = parsed
                         .get("type")
                         .and_then(|v| v.as_str())
@@ -532,7 +579,9 @@ where
                                             .and_then(|v| v.as_str())
                                             .unwrap_or("")
                                             .to_string();
-                                        yield Ok(StreamPart::TextStart { id, provider_metadata: None});
+                                        output_ids.insert(output_index, id.clone());
+                                        text_states.insert(id.clone(), item.clone());
+                                        yield Ok(StreamPart::TextStart { id, provider_metadata: Some(provider_namespace(&provider_key, text_metadata(item, None)))});
                                     }
                                     "function_call" => {
                                         let call_id = item
@@ -627,11 +676,13 @@ where
 
                         // ── response.output_text.delta → TextDelta ────────────────
                         "response.output_text.delta" => {
-                            let id = parsed
+                            if request_body.get("top_logprobs").and_then(Value::as_u64).is_some_and(|n| n > 0) && let Some(value) = parsed.get("logprobs") { logprobs.push(value.clone()); }
+                            let mut id = parsed
                                 .get("item_id")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string();
+                            if let Some(index) = parsed.get("output_index").and_then(Value::as_u64) && let Some(original_id) = output_ids.get(&(index as usize)) { id = original_id.clone(); }
                             let delta = parsed
                                 .get("delta")
                                 .and_then(|v| v.as_str())
@@ -773,12 +824,19 @@ where
                                     .unwrap_or("");
                                 match item_type {
                                     "message" => {
-                                        let id = item
+                                        let mut id = item
                                             .get("id")
                                             .and_then(|v| v.as_str())
                                             .unwrap_or("")
                                             .to_string();
-                                        yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
+                                        if let Some(original_id) = output_ids.remove(&output_index) { id = original_id; }
+                                        let mut metadata_item = item.clone();
+                                        metadata_item["id"] = json!(id);
+                                        if metadata_item.get("phase").is_none() && let Some(phase) = text_states.get(&id).and_then(|v| v.get("phase")) {
+                                            metadata_item["phase"] = phase.clone();
+                                        }
+                                        let annotations = text_annotations.remove(&id);
+                                        yield Ok(StreamPart::TextEnd { id, provider_metadata: Some(provider_namespace(&provider_key, text_metadata(&metadata_item, annotations.as_ref())))});
                                     }
                                     "function_call" => {
                                         has_function_call = true;
@@ -855,6 +913,7 @@ where
                                             .unwrap_or("")
                                             .to_string();
                                         if let Some(state) = active_reasoning.get_mut(&id) {
+                                            state.encrypted_content = item.get("encrypted_content").and_then(Value::as_str).map(str::to_owned);
                                             let meta = reasoning_stream_metadata(
                                                 &provider_key,
                                                 &id,
@@ -889,23 +948,10 @@ where
 
                         // ── response.output_text.annotation.added → Source ─────────
                         "response.output_text.annotation.added" => {
-                            if let Some(ann) = parsed.get("annotation")
-                                && ann.get("type").and_then(|v| v.as_str())
-                                    == Some("url_citation")
-                            {
-                                yield Ok(StreamPart::Source(Source {
-                                    id: generate_source_id(),
-                                    source_type: "url".to_string(),
-                                    url: ann
-                                        .get("url")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string),
-                                    title: ann
-                                        .get("title")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string),
-                                    provider_metadata: None,
-                                }));
+                            if let Some(ann) = parsed.get("annotation") {
+                                let id = parsed.get("item_id").and_then(Value::as_str).unwrap_or_default().to_string();
+                                text_annotations.entry(id).or_default().push(ann.clone());
+                                if let Some(source) = annotation_source(ann, &provider_key) { yield Ok(StreamPart::Source(source)); }
                             }
                         }
 
@@ -916,10 +962,9 @@ where
                                     .get("incomplete_details")
                                     .and_then(|d| d.get("reason"))
                                     .and_then(|v| v.as_str());
-                                final_finish_reason = Some(map_responses_finish_reason(
-                                    reason,
-                                    has_function_call,
-                                ));
+                                if !stream_errored {
+                                    final_finish_reason = Some(map_responses_finish_reason(reason, has_function_call));
+                                }
                                 final_usage =
                                     resp_obj.get("usage").and_then(parse_usage);
                                 // Keep the raw wire usage object for `usage.raw`
@@ -971,32 +1016,8 @@ where
                                     && resp_obj.get("error").is_some()
                                 {
                                     stream_errored = true;
-                                    let message = resp_obj
-                                        .get("error")
-                                        .and_then(|e| e.get("message"))
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("Responses API stream failed");
-                                    // In-band failure inside the SSE stream: the shared
-                                    // helper redacts the raw request context.
-                                    yield Ok(StreamPart::Error {
-                                        error: aimux_provider_utils::stream_error_api_call(
-                                            message,
-                                            resp_obj
-                                                .get("error")
-                                                .and_then(|e| e.get("type").or_else(|| e.get("code")))
-                                                .and_then(|v| v.as_str())
-                                                .map(std::string::ToString::to_string),
-                                            Some(200),
-                                            &parsed,
-                                            request_url.clone(),
-                                            request_body.clone(),
-                                            response_headers.clone(),
-                                        ),
-                                    });
-                                    // A terminal error ends this stream; waiting
-                                    // for more events can hang on a source that
-                                    // keeps the connection open.
-                                    break;
+                                    yield Ok(StreamPart::Error { error: super::super::openai_stream_error(&parsed, &request_url, request_body.clone(), response_headers.clone()) });
+
                                 }
                             }
                         }
@@ -1008,27 +1029,7 @@ where
                                 unified: FinishReasonUnified::Error,
                                 raw: Some("error".to_string()),
                             });
-                            let message = parsed
-                                .get("error")
-                                .and_then(|e| e.get("message"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("Responses API stream error");
-                            yield Ok(StreamPart::Error {
-                                error: aimux_provider_utils::stream_error_api_call(
-                                    message,
-                                    parsed
-                                        .get("error")
-                                        .and_then(|e| e.get("type").or_else(|| e.get("code")))
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string),
-                                    Some(200),
-                                    &parsed,
-                                    request_url.clone(),
-                                    request_body.clone(),
-                                    response_headers.clone(),
-                                ),
-                            });
-                            break;
+                            yield Ok(StreamPart::Error { error: super::super::openai_stream_error(&parsed, &request_url, request_body.clone(), response_headers.clone()) });
                         }
 
                         _ => {
@@ -1040,11 +1041,9 @@ where
                     }
                 }
                 Err(error) => {
-                    let recoverable = error.is_recoverable_stream_error();
-                    yield Err(error);
-                    if !recoverable {
-                        return;
-                    }
+                    stream_errored = true;
+                    final_finish_reason = Some(FinishReason { unified: FinishReasonUnified::Error, raw: None });
+                    yield Ok(StreamPart::Error { error });
                 }
             }
         }
@@ -1060,29 +1059,14 @@ where
         if let Some(ctx) = final_reasoning_context {
             pm["reasoningContext"] = ctx;
         }
+        if !logprobs.is_empty() { pm["logprobs"] = json!(logprobs); }
         let provider_metadata = Some(provider_namespace(&provider_key, pm));
 
         yield Ok(StreamPart::Finish {
-            finish_reason: if stream_errored {
-                FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                }
-            } else {
-                final_finish_reason.unwrap_or(FinishReason {
-                    unified: if has_function_call {
-                        FinishReasonUnified::ToolCalls
-                    } else {
-                        FinishReasonUnified::Stop
-                    },
-                    raw: None,
-                })
-            },
-            usage: if stream_errored {
-                Usage::default()
-            } else {
-                convert_responses_usage(final_usage.as_ref(), final_raw_usage)
-            },
+            finish_reason: final_finish_reason.unwrap_or(FinishReason {
+                unified: FinishReasonUnified::Other, raw: None,
+            }),
+            usage: convert_responses_usage(final_usage.as_ref(), final_raw_usage),
             provider_metadata,
         });
     };

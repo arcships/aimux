@@ -13,21 +13,25 @@ use serde_json::{Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, Source, StreamResult};
+use aimux_core::result::{
+    GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
+};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage, Warning,
 };
 
 use crate::google::convert::{
-    build_vertex_request_body, code_execution_tool_name, convert_usage, extract_sources,
-    parse_finish_reason,
+    build_vertex_request_body, code_execution_tool_name, extract_sources, parse_finish_reason,
+    prepare_all_tools, validate_call_options,
 };
 use crate::google::types::{Candidate, GenerateContentResponse, GoogleStreamEvent};
+use crate::google::utils::{GoogleJsonAccumulator, PartialArg};
 
-use crate::google::options::Namespace;
+use crate::google::options::{GOOGLE, Namespace};
 use crate::shared::EndpointConfig;
 use aimux_core::language_model::SupportedUrls;
+use aimux_core::shared::{FileBytes, FileData};
 
 /// A Google Vertex AI language model.
 ///
@@ -43,19 +47,6 @@ impl VertexModel {
         Self { model_id, config }
     }
 
-    /// The effective base URL for this model. Tuned models addressed via
-    /// `endpoints/{id}` are served from `…/locations/{region}/endpoints/{id}`
-    /// (no `/publishers/google` suffix), so the suffix is stripped from the
-    /// resolved base URL. Mirrors the TS `loadBaseURL({ endpoint: true })`.
-    fn effective_base_url<'a>(&self, base_url: &'a str) -> &'a str {
-        if self.model_id.starts_with("endpoints/")
-            && let Some(stripped) = base_url.strip_suffix("/publishers/google")
-        {
-            return stripped;
-        }
-        base_url
-    }
-
     fn model_path(&self) -> String {
         if self.model_id.contains('/') {
             self.model_id.clone()
@@ -66,18 +57,14 @@ impl VertexModel {
 
     /// `…/models/{model}:generateContent`
     fn generate_endpoint(&self, base_url: &str) -> String {
-        format!(
-            "{}/{}:generateContent",
-            self.effective_base_url(base_url),
-            self.model_path()
-        )
+        format!("{}/{}:generateContent", base_url, self.model_path())
     }
 
     /// `…/models/{model}:streamGenerateContent?alt=sse`
     fn stream_endpoint(&self, base_url: &str) -> String {
         format!(
             "{}/{}:streamGenerateContent?alt=sse",
-            self.effective_base_url(base_url),
+            base_url,
             self.model_path()
         )
     }
@@ -98,8 +85,10 @@ impl LanguageModel for VertexModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        let options = vertex_call_options(options)?;
+        let options = &options;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let body = build_vertex_request_body(&self.model_id, options);
+        let (body, warnings) = vertex_request_body(&self.model_id, options, false);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
         let resp = aimux_provider_utils::post_json_to_api(
@@ -112,38 +101,50 @@ impl LanguageModel for VertexModel {
 
         let response_headers = resp.response_headers;
 
-        let response_body = resp.raw_value;
+        let raw: Value = resp.value;
+        let mut parsed_response = raw.clone();
+        if parsed_response
+            .get("candidates")
+            .is_some_and(Value::is_null)
+        {
+            parsed_response["candidates"] = json!([]);
+        }
+        let data: GenerateContentResponse = serde_json::from_value(parsed_response)
+            .map_err(|error| AiMuxError::InvalidResponseData(error.to_string()))?;
 
-        let data: GenerateContentResponse = resp.value;
-
-        let candidate = data.candidates.into_iter().next().ok_or_else(|| {
-            AiMuxError::InvalidResponseData("no candidates in response".to_string())
-        })?;
-
+        let candidate = data.candidates.into_iter().next().unwrap_or(Candidate {
+            content: None,
+            finish_reason: None,
+            finish_message: None,
+            safety_ratings: None,
+            grounding_metadata: None,
+            url_context_metadata: None,
+            index: None,
+        });
         let (content, has_tool_calls) =
             extract_content_from_candidate(&candidate, &code_execution_tool_name);
-
+        let block_reason = confirmed_block_reason(data.prompt_feedback.as_ref());
         let finish_reason = candidate
             .finish_reason
             .as_deref()
             .map(|r| parse_finish_reason(r, has_tool_calls))
             .unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
+                unified: if block_reason.is_some() {
+                    FinishReasonUnified::ContentFilter
+                } else {
+                    FinishReasonUnified::Other
+                },
+                raw: block_reason,
             });
-
-        let usage = data
-            .usage_metadata
-            .as_ref()
-            .map(convert_usage)
-            .unwrap_or_default();
+        let usage = vertex_usage(raw.get("usageMetadata"));
 
         let provider_metadata = Some(vertex_provider_metadata(json!({
             "promptFeedback": data.prompt_feedback,
             "groundingMetadata": candidate.grounding_metadata,
             "urlContextMetadata": candidate.url_context_metadata,
             "safetyRatings": candidate.safety_ratings,
-            "usageMetadata": data.usage_metadata,
+            "usageMetadata": raw.get("usageMetadata"),
+            "serviceTier": raw.pointer("/usageMetadata/serviceTier"),
             "finishMessage": candidate.finish_message,
         })));
 
@@ -151,65 +152,54 @@ impl LanguageModel for VertexModel {
             content,
             finish_reason,
             usage,
-            warnings: Vec::new(),
+            warnings,
             provider_metadata,
             response: Some(aimux_core::shared::ResponseInfo {
                 id: data.response_id,
-                // Gemini responses carry no timestamp field; use the response
-                // `Date` header (RFC1123) like Bedrock does.
-                timestamp: response_headers.get("date").cloned(),
-                model_id: data.model_version,
+                timestamp: None,
+                model_id: None,
                 headers: Some(response_headers),
-                body: response_body,
+                body: Some(raw),
             }),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        let options = vertex_call_options(options)?;
+        let options = &options;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let body = build_vertex_request_body(&self.model_id, options);
+        let (body, warnings) = vertex_request_body(&self.model_id, options, true);
+        let include_raw_chunks = options.include_raw_chunks == Some(true);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
         let endpoint = self.stream_endpoint(exchange.base_url());
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(endpoint.clone(), options),
             body.clone(),
-            aimux_provider_utils::create_event_source_response_handler::<GoogleStreamEvent>(),
+            aimux_provider_utils::create_event_source_response_handler::<Value>(),
             crate::google::google_failed_response_handler(),
         )
         .await?;
 
         let response_headers = resp.response_headers;
-        // Same source as the non-stream path: the response `Date` header.
-        let response_timestamp = response_headers.get("date").cloned();
-
-        let mut sse_stream = resp.value;
-        let first_event = match sse_stream.next().await {
-            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
-            first_event => first_event,
-        };
-        if let Some(Ok(GoogleStreamEvent::Error(error))) = first_event.as_ref() {
-            return Err(crate::google::google_stream_error(
-                &error.error,
-                &endpoint,
-                body.clone(),
-                response_headers,
-            ));
-        }
+        let sse_stream = resp.value;
         let stream_error_url = endpoint;
         let stream_request_body = body.clone();
         let stream_error_headers = response_headers.clone();
 
         let stream = async_stream::stream! {
-            yield Ok(StreamPart::StreamStart { warnings: vec![] });
+            yield Ok(StreamPart::StreamStart { warnings });
 
-            let mut sse_stream = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
+            let mut sse_stream = sse_stream;
             let mut text_id: Option<String> = None;
+            let mut reasoning_id: Option<String> = None;
+            let mut prompt_blocked = false;
             let mut block_counter = 0usize;
             let mut final_usage: Usage = Usage::default();
             let mut final_finish_reason: Option<FinishReason> = None;
             let mut has_tool_calls = false;
+            let mut active_tool_calls: Vec<(RawToolCall, GoogleJsonAccumulator)> = Vec::new();
             let mut response_metadata_emitted = false;
             let mut stream_errored = false;
 
@@ -237,6 +227,18 @@ impl LanguageModel for VertexModel {
                 if stream_errored {
                     break;
                 }
+                let event = match event {
+                    Ok(raw) => {
+                        if include_raw_chunks { yield Ok(StreamPart::Raw { raw_value: raw.clone() }); }
+                        if let Some(usage) = raw.get("usageMetadata") {
+                            final_usage = vertex_usage(Some(usage));
+                            last_usage_metadata_value = Some(usage.clone());
+                        }
+                        serde_json::from_value::<GoogleStreamEvent>(raw)
+                            .map_err(|error| AiMuxError::InvalidResponseData(error.to_string()))
+                    }
+                    Err(error) => Err(error),
+                };
                 match event {
                     Ok(GoogleStreamEvent::Chunk(chunk)) => {
 
@@ -245,17 +247,17 @@ impl LanguageModel for VertexModel {
                                 response_metadata_emitted = true;
                                 yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                     id: Some(id.clone()),
-                                    timestamp: response_timestamp.clone(),
-                                    model_id: chunk.model_version.clone(),
+                                    timestamp: None,
+                                    model_id: None,
                                 }));
                             }
 
-                        if let Some(usage) = &chunk.usage_metadata {
-                            final_usage = convert_usage(usage);
-                            last_usage_metadata_value = serde_json::to_value(usage).ok();
-                        }
-                        if let Some(pf) = &chunk.prompt_feedback {
+                        if !prompt_blocked && let Some(pf) = &chunk.prompt_feedback {
                             last_prompt_feedback = Some(pf.clone());
+                            if let Some(reason) = confirmed_block_reason(Some(pf)) {
+                                prompt_blocked = true;
+                                final_finish_reason = Some(FinishReason { unified: FinishReasonUnified::ContentFilter, raw: Some(reason) });
+                            }
                         }
 
                         let Some(candidates) = chunk.candidates else {
@@ -271,6 +273,15 @@ impl LanguageModel for VertexModel {
                         if let Some(ucm) = &candidate.url_context_metadata {
                             last_url_context_metadata = Some(ucm.clone());
                         }
+
+                        if let Some(sr) = &candidate.safety_ratings {
+                            last_safety_ratings = serde_json::to_value(sr).ok();
+                        }
+                        if let Some(fm) = &candidate.finish_message {
+                            last_finish_message = Some(json!(fm));
+                        }
+
+                        if prompt_blocked { continue; }
 
                         // Extract url sources from this chunk's grounding metadata
                         // (deduplicated across chunks; document sources are not
@@ -299,56 +310,103 @@ impl LanguageModel for VertexModel {
                         if let Some(parts) =
                             candidate.content.as_ref().and_then(|c| c.parts.as_ref())
                         {
-                            for part in parts {
-                                if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                                    if !text.is_empty() {
-                                        let text_metadata = part
-                                            .get("thoughtSignature")
-                                            .and_then(|v| v.as_str())
-                                            .map(|signature| {
-                                                vertex_provider_metadata(json!({
-                                                    "thoughtSignature": signature,
-                                                }))
-                                            });
+                            for part in parts.iter().filter(|part| part.get("functionCall").is_none())
+                                .chain(parts.iter().filter(|part| part.get("functionCall").is_some())) {
+                                if let Some(text) = part.get("text").and_then(Value::as_str) {
+                                    let metadata = thought_metadata(part);
+                                    if text.is_empty() {
+                                        if metadata.is_some() && let Some(id) = &text_id {
+                                            yield Ok(StreamPart::TextDelta { id: id.clone(), delta: String::new(), provider_metadata: metadata });
+                                        }
+                                    } else if part.get("thought") == Some(&Value::Bool(true)) {
+                                        if let Some(id) = text_id.take() { yield Ok(StreamPart::TextEnd { id, provider_metadata: None }); }
+                                        if reasoning_id.is_none() {
+                                            let id = format!("{block_counter}"); block_counter += 1;
+                                            reasoning_id = Some(id.clone());
+                                            yield Ok(StreamPart::ReasoningStart { id, provider_metadata: metadata.clone() });
+                                        }
+                                        yield Ok(StreamPart::ReasoningDelta { id: reasoning_id.clone().unwrap(), delta: text.to_string(), provider_metadata: metadata });
+                                    } else {
+                                        if let Some(id) = reasoning_id.take() { yield Ok(StreamPart::ReasoningEnd { id, provider_metadata: None }); }
                                         if text_id.is_none() {
-                                            let id = format!("{block_counter}");
-                                            block_counter += 1;
+                                            let id = format!("{block_counter}"); block_counter += 1;
                                             text_id = Some(id.clone());
-                                            yield Ok(StreamPart::TextStart {
-                                                id,
-                                                provider_metadata: text_metadata.clone(),
-                                            });
+                                            yield Ok(StreamPart::TextStart { id, provider_metadata: metadata.clone() });
                                         }
-                                        if let Some(id) = &text_id {
-                                            yield Ok(StreamPart::TextDelta {
-                                                id: id.clone(),
-                                                delta: text.to_string(),
-                                                provider_metadata: text_metadata,
-                                            });
-                                        }
+                                        yield Ok(StreamPart::TextDelta { id: text_id.clone().unwrap(), delta: text.to_string(), provider_metadata: metadata });
                                     }
+                                } else if let Some(file) = inline_file(part) {
+                                    if let Some(id) = text_id.take() { yield Ok(StreamPart::TextEnd { id, provider_metadata: None }); }
+                                    if let Some(id) = reasoning_id.take() { yield Ok(StreamPart::ReasoningEnd { id, provider_metadata: None }); }
+                                    yield Ok(StreamPart::File(file));
                                 } else if let Some(fc) = part.get("functionCall") {
-                                    let name = fc
-                                        .get("name")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("");
-                                    let id = fc
-                                        .get("id")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string)
-                                        .unwrap_or_else(|| format!("call-{block_counter}"));
-                                    block_counter += 1;
-                                    let args = fc.get("args").cloned().unwrap_or(json!({}));
-                                    let thought_signature = part
-                                        .get("thoughtSignature")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string);
+                                    let name = fc.get("name").and_then(Value::as_str);
+                                    let args = fc.get("args").filter(|value| !value.is_null());
+                                    let partial_args = fc.get("partialArgs").filter(|value| !value.is_null());
+                                    let will_continue = fc.get("willContinue").and_then(Value::as_bool) == Some(true);
+                                    let thought_signature = part.get("thoughtSignature")
+                                        .and_then(Value::as_str).filter(|signature| !signature.is_empty())
+                                        .map(str::to_owned);
                                     let tool_metadata = thought_signature.as_deref().map(|signature| {
-                                        vertex_provider_metadata(json!({
-                                            "thoughtSignature": signature,
-                                        }))
+                                        vertex_provider_metadata(json!({ "thoughtSignature": signature }))
                                     });
-
+                                    if partial_args.is_some() || (name.is_some() && will_continue) {
+                                        if let Some(name) = name {
+                                            let id = fc.get("id").and_then(Value::as_str)
+                                                .filter(|id| !id.is_empty()).map(str::to_owned)
+                                                .unwrap_or_else(aimux_provider_utils::generate_id);
+                                            yield Ok(StreamPart::ToolInputStart {
+                                                id: id.clone(), tool_name: name.to_owned(),
+                                                provider_executed: None, dynamic: None, title: None,
+                                                provider_metadata: tool_metadata.clone(),
+                                            });
+                                            active_tool_calls.push((RawToolCall {
+                                                tool_call_id: id, tool_name: name.to_owned(), input: String::new(),
+                                                provider_executed: None, dynamic: None, thought_signature,
+                                                provider_metadata: tool_metadata.clone(),
+                                            }, GoogleJsonAccumulator::new()));
+                                        }
+                                        if let Some(partial_args) = partial_args.and_then(Value::as_array)
+                                            && let Some((call, accumulator)) = active_tool_calls.last_mut() {
+                                            let partial_args: Vec<PartialArg> = partial_args.iter().map(|arg| PartialArg {
+                                                json_path: arg.get("jsonPath").and_then(Value::as_str).unwrap_or_default().to_owned(),
+                                                string_value: arg.get("stringValue").and_then(Value::as_str).map(str::to_owned),
+                                                number_value: arg.get("numberValue").and_then(Value::as_f64),
+                                                bool_value: arg.get("boolValue").and_then(Value::as_bool),
+                                                null_value: arg.get("nullValue").map(|_| ()),
+                                                will_continue: arg.get("willContinue").and_then(Value::as_bool),
+                                            }).collect();
+                                            match accumulator.process_partial_args(&partial_args) {
+                                                Ok(result) => {
+                                                    if !result.text_delta.is_empty() {
+                                                        yield Ok(StreamPart::ToolInputDelta {
+                                                            id: call.tool_call_id.clone(), delta: result.text_delta,
+                                                            provider_metadata: tool_metadata,
+                                                        });
+                                                    }
+                                                }
+                                                Err(error) => { yield Ok(StreamPart::Error { error }); return; }
+                                            }
+                                            if !will_continue && partial_args.iter().all(|arg| arg.will_continue != Some(true)) {
+                                                for event in finish_streaming_tool_call(&mut active_tool_calls) { yield Ok(event); }
+                                                has_tool_calls = true;
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                    if name.is_none() && args.is_none() && partial_args.is_none()
+                                        && fc.get("willContinue").is_none_or(Value::is_null) {
+                                        if !active_tool_calls.is_empty() {
+                                            for event in finish_streaming_tool_call(&mut active_tool_calls) { yield Ok(event); }
+                                            has_tool_calls = true;
+                                        }
+                                        continue;
+                                    }
+                                    let Some(name) = name else { continue; };
+                                    let id = fc.get("id").and_then(Value::as_str)
+                                        .filter(|id| !id.is_empty()).map(str::to_owned)
+                                        .unwrap_or_else(aimux_provider_utils::generate_id);
+                                    let args = args.cloned().unwrap_or(json!({}));
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
                                         tool_name: name.to_string(),
@@ -357,12 +415,13 @@ impl LanguageModel for VertexModel {
                                         title: None,
                                         provider_metadata: tool_metadata.clone(),
                                     });
-                                    let args_str = args.to_string();
-                                    yield Ok(StreamPart::ToolInputDelta {
+                                    let args_str = args.as_str().map(str::to_string).unwrap_or_else(|| args.to_string());
+                                    if fc.get("args").is_some_and(|value| !value.is_null()) { yield Ok(StreamPart::ToolInputDelta {
                                         id: id.clone(),
-                                        delta: args_str,
+                                        delta: args_str.clone(),
                                         provider_metadata: tool_metadata.clone(),
                                     });
+                                    }
                                     yield Ok(StreamPart::ToolInputEnd {
                                         id: id.clone(),
                                         provider_metadata: tool_metadata.clone(),
@@ -370,7 +429,7 @@ impl LanguageModel for VertexModel {
                                     yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: id,
                                         tool_name: name.to_string(),
-                                        input: args.to_string(),
+                                        input: args_str,
                                         provider_executed: None,
                                         dynamic: None,
                                         thought_signature,
@@ -441,8 +500,9 @@ impl LanguageModel for VertexModel {
                                     let id = tc
                                         .get("id")
                                         .and_then(|v| v.as_str())
+                                        .filter(|id| !id.is_empty())
                                         .map(std::string::ToString::to_string)
-                                        .unwrap_or_else(|| format!("call-{block_counter}"));
+                                        .unwrap_or_else(aimux_provider_utils::generate_id);
                                     block_counter += 1;
                                     last_server_tool_call_id = Some(id.clone());
                                     let args = tc.get("args").cloned().unwrap_or(json!({}));
@@ -501,17 +561,6 @@ impl LanguageModel for VertexModel {
                         }
 
                         if let Some(reason) = candidate.finish_reason.as_deref() {
-                            if let Some(id) = text_id.take() {
-                                yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
-                            }
-                            // Snapshot the finishReason-chunk metadata.
-                            if let Some(sr) = &candidate.safety_ratings {
-                                last_safety_ratings =
-                                    Some(serde_json::to_value(sr).unwrap_or(Value::Null));
-                            }
-                            if let Some(fm) = &candidate.finish_message {
-                                last_finish_message = Some(json!(fm));
-                            }
                             final_finish_reason =
                                 Some(parse_finish_reason(reason, has_tool_calls));
                         }
@@ -530,7 +579,7 @@ impl LanguageModel for VertexModel {
                     }
                     Err(error) => {
                         let recoverable = error.is_recoverable_stream_error();
-                        yield Err(error);
+                        yield Ok(StreamPart::Error { error });
                         if !recoverable {
                             return;
                         }
@@ -542,11 +591,15 @@ impl LanguageModel for VertexModel {
                 yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
             }
 
+            if let Some(id) = reasoning_id.take() {
+                yield Ok(StreamPart::ReasoningEnd { id, provider_metadata: None });
+            }
             let provider_metadata = Some(vertex_provider_metadata(json!({
                 "promptFeedback": last_prompt_feedback,
                 "groundingMetadata": last_grounding_metadata,
                 "urlContextMetadata": last_url_context_metadata,
                 "safetyRatings": last_safety_ratings,
+                "serviceTier": last_usage_metadata_value.as_ref().and_then(|usage| usage.get("serviceTier")),
                 "usageMetadata": last_usage_metadata_value,
                 "finishMessage": last_finish_message,
             })));
@@ -559,7 +612,7 @@ impl LanguageModel for VertexModel {
                     }
                 } else {
                     final_finish_reason.unwrap_or(FinishReason {
-                        unified: FinishReasonUnified::Stop,
+                        unified: FinishReasonUnified::Other,
                         raw: None,
                     })
                 },
@@ -580,7 +633,36 @@ impl LanguageModel for VertexModel {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn vertex_provider_metadata(payload: Value) -> ProviderMetadata {
+fn finish_streaming_tool_call(
+    active_tool_calls: &mut Vec<(RawToolCall, GoogleJsonAccumulator)>,
+) -> Vec<StreamPart> {
+    let Some((mut call, accumulator)) = active_tool_calls.pop() else {
+        return Vec::new();
+    };
+    let result = accumulator.finalize();
+    let mut events = Vec::new();
+    if !result.closing_delta.is_empty() {
+        events.push(StreamPart::ToolInputDelta {
+            id: call.tool_call_id.clone(),
+            delta: result.closing_delta,
+            provider_metadata: call.provider_metadata.clone(),
+        });
+    }
+    events.push(StreamPart::ToolInputEnd {
+        id: call.tool_call_id.clone(),
+        provider_metadata: call.provider_metadata.clone(),
+    });
+    call.input = result.final_json;
+    events.push(StreamPart::ToolCall(call));
+    events
+}
+
+fn vertex_provider_metadata(mut payload: Value) -> ProviderMetadata {
+    if let Some(object) = payload.as_object_mut()
+        && object.get("serviceTier").is_some_and(Value::is_null)
+    {
+        object.remove("serviceTier");
+    }
     Namespace::Vertex.metadata(payload)
 }
 
@@ -659,19 +741,47 @@ fn extract_content_from_candidate(
                     }));
                 }
             } else if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
+                let provider_metadata = thought_metadata(part);
                 if !text.is_empty() {
-                    let provider_metadata = part
-                        .get("thoughtSignature")
-                        .and_then(|v| v.as_str())
-                        .map(|signature| {
-                            vertex_provider_metadata(json!({ "thoughtSignature": signature }))
-                        });
-                    content.push(GenerateContent::Text {
-                        text: text.to_string(),
-                        provider_metadata,
+                    content.push(if part.get("thought") == Some(&Value::Bool(true)) {
+                        GenerateContent::Reasoning(ReasoningOutput {
+                            text: text.to_string(),
+                            provider_metadata,
+                        })
+                    } else {
+                        GenerateContent::Text {
+                            text: text.to_string(),
+                            provider_metadata,
+                        }
                     });
+                } else if provider_metadata.is_some()
+                    && let Some(last) = content.last_mut()
+                {
+                    match last {
+                        GenerateContent::Text {
+                            provider_metadata: metadata,
+                            ..
+                        } => *metadata = provider_metadata,
+                        GenerateContent::Reasoning(reasoning) => {
+                            reasoning.provider_metadata = provider_metadata
+                        }
+                        GenerateContent::File(file) => file.provider_metadata = provider_metadata,
+                        GenerateContent::ToolCall(call) => {
+                            call.provider_metadata = provider_metadata
+                        }
+                        GenerateContent::ToolResult(result) => {
+                            result.provider_metadata = provider_metadata
+                        }
+                        GenerateContent::Source(source) => {
+                            source.provider_metadata = provider_metadata
+                        }
+                    }
                 }
-            } else if let Some(fc) = part.get("functionCall") {
+            } else if let Some(file) = inline_file(part) {
+                content.push(GenerateContent::File(file));
+            } else if let Some(fc) = part.get("functionCall")
+                && fc.get("name").is_some_and(|name| !name.is_null())
+            {
                 let name = fc
                     .get("name")
                     .and_then(|v| v.as_str())
@@ -680,9 +790,14 @@ fn extract_content_from_candidate(
                 let id = fc
                     .get("id")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let input = fc.get("args").cloned().unwrap_or(json!({}));
+                    .filter(|id| !id.is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(aimux_provider_utils::generate_id);
+                let input = fc
+                    .get("args")
+                    .filter(|value| !value.is_null())
+                    .cloned()
+                    .unwrap_or(json!({}));
                 let thought_signature = part
                     .get("thoughtSignature")
                     .and_then(|v| v.as_str())
@@ -758,4 +873,141 @@ fn extract_content_from_candidate(
     content.append(&mut sources);
 
     (content, has_tool_calls)
+}
+
+fn thought_metadata(part: &Value) -> Option<ProviderMetadata> {
+    part.get("thoughtSignature")
+        .and_then(Value::as_str)
+        .filter(|signature| !signature.is_empty())
+        .map(|signature| vertex_provider_metadata(json!({ "thoughtSignature": signature })))
+}
+
+fn inline_file(part: &Value) -> Option<GeneratedFile> {
+    let inline = part.get("inlineData")?;
+    Some(GeneratedFile {
+        media_type: inline.get("mimeType")?.as_str()?.to_string(),
+        data: FileData::Data {
+            data: FileBytes::Base64(inline.get("data")?.as_str()?.to_string()),
+        },
+        provider_metadata: thought_metadata(part),
+    })
+}
+
+fn confirmed_block_reason(feedback: Option<&Value>) -> Option<String> {
+    feedback?
+        .get("blockReason")?
+        .as_str()
+        .filter(|reason| {
+            !matches!(
+                *reason,
+                "" | "BLOCK_REASON_UNSPECIFIED" | "BLOCKED_REASON_UNSPECIFIED"
+            )
+        })
+        .map(str::to_string)
+}
+
+fn vertex_usage(raw: Option<&Value>) -> Usage {
+    use aimux_core::types::TokenUsage;
+    let Some(raw) = raw.filter(|value| !value.is_null()) else {
+        return Usage::default();
+    };
+    let count = |key: &str| raw.get(key).and_then(Value::as_u64).unwrap_or(0) as u32;
+    let input = count("promptTokenCount") + count("toolUsePromptTokenCount");
+    let cached = count("cachedContentTokenCount");
+    let text = count("candidatesTokenCount");
+    let reasoning = count("thoughtsTokenCount");
+    Usage {
+        input_tokens: TokenUsage {
+            total: Some(input),
+            no_cache: Some(input.saturating_sub(cached)),
+            cache_read: Some(cached),
+            ..Default::default()
+        },
+        output_tokens: TokenUsage {
+            total: Some(text + reasoning),
+            text: Some(text),
+            reasoning: Some(reasoning),
+            ..Default::default()
+        },
+        raw: Some(raw.clone()),
+    }
+}
+
+fn vertex_call_options(options: &CallOptions) -> Result<CallOptions, AiMuxError> {
+    let mut options = options.clone();
+    // The shared validator reads the Google key; validate the effective Vertex options.
+    if let Some(effective) = Namespace::Vertex
+        .read(options.provider_options.as_ref())
+        .cloned()
+    {
+        options
+            .provider_options
+            .as_mut()
+            .unwrap()
+            .insert(GOOGLE.into(), effective);
+    }
+    validate_call_options(&options)?;
+    if let Some(provider_options) = Namespace::Vertex.read(options.provider_options.as_ref()) {
+        let mut headers = options.headers.clone().unwrap_or_default();
+        for (option, header) in [
+            ("sharedRequestType", "X-Vertex-AI-LLM-Shared-Request-Type"),
+            ("requestType", "X-Vertex-AI-LLM-Request-Type"),
+        ] {
+            if let Some(value) = provider_options.get(option).and_then(Value::as_str) {
+                headers.retain(|name, _| !name.eq_ignore_ascii_case(header));
+                headers.insert(header.to_string(), value.to_string());
+            }
+        }
+        options.headers = Some(headers);
+    }
+    Ok(options)
+}
+
+fn vertex_request_body(
+    model_id: &str,
+    options: &CallOptions,
+    streaming: bool,
+) -> (Value, Vec<Warning>) {
+    let mut body = build_vertex_request_body(model_id, options);
+    let mut warnings = prepare_all_tools(&options.tools, &options.tool_choice, model_id).warnings;
+    body.as_object_mut().unwrap().remove("serviceTier");
+    if Namespace::Vertex
+        .read(options.provider_options.as_ref())
+        .and_then(|options| options.get("serviceTier"))
+        .is_some_and(|value| !value.is_null())
+    {
+        warnings.push(Warning::Other { message: "'serviceTier' is a Gemini API option and is not supported on Vertex AI. Use 'sharedRequestType' (and optionally 'requestType') instead. See https://docs.cloud.google.com/vertex-ai/generative-ai/docs/priority-paygo".to_string() });
+    }
+    if let Some(contents) = body.get_mut("contents").and_then(Value::as_array_mut) {
+        for content in contents {
+            if let Some(parts) = content.get_mut("parts").and_then(Value::as_array_mut) {
+                for part in parts {
+                    for key in ["functionCall", "functionResponse"] {
+                        if let Some(call) = part.get_mut(key).and_then(Value::as_object_mut) {
+                            call.remove("id");
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if streaming
+        && Namespace::Vertex
+            .read(options.provider_options.as_ref())
+            .and_then(|options| options.get("streamFunctionCallArguments"))
+            == Some(&Value::Bool(true))
+    {
+        let config = body
+            .as_object_mut()
+            .unwrap()
+            .entry("toolConfig")
+            .or_insert_with(|| json!({}));
+        let function_config = config
+            .as_object_mut()
+            .unwrap()
+            .entry("functionCallingConfig")
+            .or_insert_with(|| json!({}));
+        function_config["streamFunctionCallArguments"] = json!(true);
+    }
+    (body, warnings)
 }
