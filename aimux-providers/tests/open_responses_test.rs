@@ -21,7 +21,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart,
     ToolPart, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, Tool};
+use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, ReasoningOutput};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
@@ -158,6 +158,40 @@ fn lmstudio_basic_json() -> Value {
             },
             "output_tokens_details": {
                 "reasoning_tokens": 2456
+            }
+        }
+    })
+}
+
+/// The `lmstudio-tool-call.1.json` fixture.
+fn lmstudio_tool_call_json() -> Value {
+    json!({
+        "id": "resp_930de53bd4b5933673481fa630f3dc5f58027a2c67598a2a",
+        "object": "response",
+        "created_at": 1769005553,
+        "status": "completed",
+        "incomplete_details": null,
+        "model": "mistralai/ministral-3-14b-reasoning",
+        "output": [
+            {
+                "id": "fc_ru0kcno9erlzp8573yub",
+                "call_id": "call_2866856768160095",
+                "type": "function_call",
+                "name": "weather",
+                "arguments": "{\"location\":\"San Francisco\"}",
+                "status": "completed"
+            }
+        ],
+        "error": null,
+        "usage": {
+            "input_tokens": 1189,
+            "output_tokens": 11,
+            "total_tokens": 1200,
+            "input_tokens_details": {
+                "cached_tokens": 891
+            },
+            "output_tokens_details": {
+                "reasoning_tokens": 0
             }
         }
     })
@@ -1365,7 +1399,278 @@ mod do_generate_tests {
 
     // -- ProviderOptions reasoning tests --
 
+    fn lmstudio_opts(value: Value) -> Option<aimux_core::shared::SharedProviderOptions> {
+        Some(aimux_core::shared::provider_namespace("lmstudio", value).unwrap())
+    }
+
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:594`
+    #[tokio::test]
+    async fn provider_options_reasoning_summary_detailed() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            provider_options: lmstudio_opts(json!({"reasoningSummary": "detailed"})),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["reasoning"], json!({"summary": "detailed"}));
+    }
+
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:623`
+    #[tokio::test]
+    async fn provider_options_combines_effort_with_summary() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            reasoning: Some(ReasoningEffort::High),
+            provider_options: lmstudio_opts(json!({"reasoningSummary": "auto"})),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(
+            body["reasoning"],
+            json!({"effort": "high", "summary": "auto"})
+        );
+    }
+
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:655`
+    #[tokio::test]
+    async fn provider_options_reasoning_summary_concise() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            provider_options: lmstudio_opts(json!({"reasoningSummary": "concise"})),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["reasoning"], json!({"summary": "concise"}));
+    }
+
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:685`
+    #[tokio::test]
+    async fn provider_options_no_reasoning_fields() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            provider_options: lmstudio_opts(json!({})),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert!(body.get("reasoning").is_none());
+    }
+
     // -- Tool call parsing tests --
+
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:742`
+    #[tokio::test]
+    async fn parse_tool_call_from_response() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_tool_call_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![Tool::from(
+                FunctionTool::new(
+                    "weather",
+                    json!({
+                        "type": "object",
+                        "properties": {
+                            "location": {"type": "string", "description": "The location to get the weather for"}
+                        },
+                        "required": ["location"]
+                    }),
+                )
+                .with_description("Get the weather in a location"),
+            )]),
+            tool_choice: Some(ToolChoice::Required),
+            ..CallOptions::new(test_prompt())
+        };
+        let result = model.do_generate(&options).await.unwrap();
+
+        assert_eq!(result.content.len(), 1);
+        match &result.content[0] {
+            GenerateContent::ToolCall(RawToolCall {
+                tool_call_id,
+                tool_name,
+                input,
+                ..
+            }) => {
+                assert_eq!(tool_call_id, "call_2866856768160095");
+                assert_eq!(tool_name, "weather");
+                assert_eq!(
+                    input,
+                    &Value::String(r#"{"location":"San Francisco"}"#.into())
+                );
+            }
+            other => panic!("expected ToolCall, got {other:?}"),
+        }
+    }
+
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:746`
+    #[tokio::test]
+    async fn tool_call_finish_reason() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_tool_call_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![Tool::from(
+                FunctionTool::new("weather", json!({"type": "object"}))
+                    .with_description("Get the weather in a location"),
+            )]),
+            tool_choice: Some(ToolChoice::Required),
+            ..CallOptions::new(test_prompt())
+        };
+        let result = model.do_generate(&options).await.unwrap();
+
+        assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
+        assert_eq!(result.finish_reason.raw, None);
+    }
+
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:753`
+    #[tokio::test]
+    async fn tool_call_usage() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_tool_call_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![Tool::from(
+                FunctionTool::new("weather", json!({"type": "object"}))
+                    .with_description("Get the weather in a location"),
+            )]),
+            tool_choice: Some(ToolChoice::Required),
+            ..CallOptions::new(test_prompt())
+        };
+        let result = model.do_generate(&options).await.unwrap();
+
+        assert_eq!(result.usage.input_tokens.total, Some(1189));
+        assert_eq!(result.usage.input_tokens.cache_read, Some(891));
+        assert_eq!(result.usage.input_tokens.no_cache, Some(298));
+        assert_eq!(result.usage.output_tokens.total, Some(11));
+        assert_eq!(result.usage.output_tokens.reasoning, Some(0));
+        assert_eq!(result.usage.output_tokens.text, Some(11));
+    }
+
+    // -- Tool choice tests --
+
+    fn test_tool() -> Tool {
+        Tool::from(
+            FunctionTool::new(
+                "get_weather",
+                json!({
+                    "type": "object",
+                    "properties": {"location": {"type": "string"}},
+                    "required": ["location"]
+                }),
+            )
+            .with_description("Get the current weather"),
+        )
+    }
+
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:772`
+    #[tokio::test]
+    async fn tool_choice_auto() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![test_tool()]),
+            tool_choice: Some(ToolChoice::Auto),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["tool_choice"], json!("auto"));
+        assert!(body.get("tools").is_some());
+    }
+
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:784`
+    #[tokio::test]
+    async fn tool_choice_none() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![test_tool()]),
+            tool_choice: Some(ToolChoice::None),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["tool_choice"], json!("none"));
+    }
+
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:796`
+    #[tokio::test]
+    async fn tool_choice_required() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![test_tool()]),
+            tool_choice: Some(ToolChoice::Required),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["tool_choice"], json!("required"));
+    }
+
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:808`
+    #[tokio::test]
+    async fn tool_choice_specific_tool() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tools: Some(vec![test_tool()]),
+            tool_choice: Some(ToolChoice::Tool {
+                tool_name: "get_weather".to_string(),
+            }),
+            ..CallOptions::new(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(
+            body["tool_choice"],
+            json!({"type": "function", "name": "get_weather"})
+        );
+    }
+
+    // -- System messages tests --
 
     #[tokio::test]
     async fn system_message_instructions() {

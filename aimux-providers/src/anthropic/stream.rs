@@ -516,22 +516,60 @@ fn citation_metadata(citations: &[Value]) -> Option<ProviderMetadata> {
     })
 }
 
-fn citation_source(citation: &Value) -> Option<Source> {
-    (citation["type"] == "web_search_result_location").then(|| Source {
-        id: generate_source_id(),
-        source_type: "url".to_string(),
-        url: str_field(citation, "url"),
-        title: str_field(citation, "title"),
-        provider_metadata: Some(
-            provider_namespace(
-                CANONICAL,
+fn citation_source(citation: &Value, documents: &[String]) -> Option<Source> {
+    let (source_type, url, title, metadata) = match citation["type"].as_str()? {
+        "web_search_result_location" => (
+            "url",
+            str_field(citation, "url"),
+            str_field(citation, "title"),
+            json!({
+                "citedText": citation["cited_text"],
+                "encryptedIndex": citation["encrypted_index"],
+            }),
+        ),
+        kind @ ("page_location" | "char_location") => {
+            let index = usize::try_from(citation["document_index"].as_u64()?).ok()?;
+            let document_title = documents.get(index)?;
+            let metadata = if kind == "page_location" {
                 json!({
                     "citedText": citation["cited_text"],
-                    "encryptedIndex": citation["encrypted_index"],
-                }),
+                    "startPageNumber": citation["start_page_number"],
+                    "endPageNumber": citation["end_page_number"],
+                })
+            } else {
+                json!({
+                    "citedText": citation["cited_text"],
+                    "startCharIndex": citation["start_char_index"],
+                    "endCharIndex": citation["end_char_index"],
+                })
+            };
+            (
+                "document",
+                None,
+                Some(
+                    str_field(citation, "document_title").unwrap_or_else(|| document_title.clone()),
+                ),
+                metadata,
             )
-            .expect("provider metadata must be an object"),
+        }
+        _ => return None,
+    };
+    Some(Source {
+        id: generate_source_id(),
+        source_type: source_type.to_string(),
+        url,
+        title,
+        provider_metadata: Some(
+            provider_namespace(CANONICAL, metadata).expect("provider metadata must be an object"),
         ),
+    })
+}
+
+fn web_fetch_document_title(payload: &Value) -> Option<String> {
+    (payload["type"] == "web_fetch_result").then(|| {
+        str_field(&payload["content"], "title")
+            .or_else(|| str_field(payload, "url"))
+            .unwrap_or_default()
     })
 }
 
@@ -557,6 +595,7 @@ pub(crate) fn parse_anthropic_content(
     blocks: &[ContentBlock],
     names: &ToolNameMapping,
     uses_json_response_tool: bool,
+    mut citation_documents: Vec<String>,
 ) -> Vec<GenerateContent> {
     let options_name = CANONICAL;
     let mut content = Vec::new();
@@ -601,7 +640,7 @@ pub(crate) fn parse_anthropic_content(
                 content.extend(
                     citations
                         .iter()
-                        .filter_map(citation_source)
+                        .filter_map(|citation| citation_source(citation, &citation_documents))
                         .map(GenerateContent::Source),
                 );
             }
@@ -773,6 +812,9 @@ pub(crate) fn parse_anthropic_content(
                 content: payload,
                 caller,
             } => {
+                if let Some(title) = web_fetch_document_title(payload) {
+                    citation_documents.push(title);
+                }
                 let (result, is_error) = map_web_fetch_result(payload);
                 content.push(GenerateContent::ToolResult(ToolResult {
                     tool_call_id: tool_use_id.clone(),
@@ -893,6 +935,7 @@ pub(crate) fn parse_anthropic_content(
 /// full version, so every host reports the same detailed token accounting.
 /// `config` supplies the providerOptions key the metadata is written under and
 /// the host's error shape.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn anthropic_generate_core(
     request: HttpRequest,
     body: serde_json::Value,
@@ -901,6 +944,7 @@ pub(crate) async fn anthropic_generate_core(
     tool_names: &ToolNameMapping,
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
+    citation_documents: Vec<String>,
 ) -> Result<GenerateResult, AiMuxError> {
     let resp = aimux_provider_utils::post_json_to_api(
         request,
@@ -923,6 +967,7 @@ pub(crate) async fn anthropic_generate_core(
         &data.content,
         tool_names,
         uses_json_response_tool,
+        citation_documents,
     );
 
     let mut finish_reason = data
@@ -1004,6 +1049,7 @@ enum BlockState {
 /// resolved by the model), then runs the Anthropic SSE event loop to produce a
 /// `StreamResult`. `config` supplies the providerOptions key the metadata is
 /// written under and the host's error shape.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn anthropic_stream_core(
     request: HttpRequest,
     body: serde_json::Value,
@@ -1012,6 +1058,7 @@ pub(crate) async fn anthropic_stream_core(
     tool_names: ToolNameMapping,
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
+    mut citation_documents: Vec<String>,
 ) -> Result<StreamResult, AiMuxError> {
     let endpoint = request.url.clone();
     let options_name = config.provider_options_name.clone();
@@ -1247,6 +1294,10 @@ pub(crate) async fn anthropic_stream_core(
                                 // mirrors its `doGenerate` switch here too
                                 // (anthropic-language-model.ts:1901-2178).
                                 other => {
+                                    if let ContentBlock::WebFetchToolResult { content, .. } = &other
+                                        && let Some(title) = web_fetch_document_title(content) {
+                                        citation_documents.push(title);
+                                    }
                                     for part in stream_parts_for_result_block(
                                         CANONICAL,
                                         &other,
@@ -1274,7 +1325,7 @@ pub(crate) async fn anthropic_stream_core(
                                 if let Some(BlockState::Text { citations }) = blocks.get_mut(&index) {
                                     citations.push(citation.clone());
                                 }
-                                if let Some(source) = citation_source(&citation) {
+                                if let Some(source) = citation_source(&citation, &citation_documents) {
                                     yield Ok(StreamPart::Source(source));
                                 }
                             }

@@ -81,9 +81,21 @@ impl VertexImageModel {
             for file in files {
                 match file {
                     ImageFile::Url { url } => {
-                        return Err(AiMuxError::UnsupportedFunctionality(format!(
-                            "URL-based input images with media type \"image/*\" are not passed as inline bytes. URL: {url}"
-                        )));
+                        let file = FilePart {
+                            data: FileData::Url {
+                                url: url::Url::parse(url)
+                                    .map_err(|error| {
+                                        AiMuxError::InvalidArgument(error.to_string())
+                                    })?
+                                    .to_string(),
+                                original_url: None,
+                            },
+                            media_type: "image/*".into(),
+                            filename: None,
+                            provider_options: None,
+                        };
+                        aimux_provider_utils::resolve_full_media_type(&file)?;
+                        parts.push(UserPart::File(file));
                     }
                     ImageFile::File { media_type, data } => {
                         parts.push(UserPart::File(FilePart {

@@ -231,7 +231,7 @@ impl LanguageModel for BedrockModel {
                 timestamp: response_headers.get("date").cloned(),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
-                body: raw_data,
+                body: None,
             }),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })

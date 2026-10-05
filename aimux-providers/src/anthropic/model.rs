@@ -14,6 +14,7 @@ use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
+use aimux_core::language_model_message::{LanguageModelMessage, UserPart};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
@@ -61,6 +62,38 @@ impl AnthropicMessagesModel {
             self.generate_id = generate_id;
         }
         self
+    }
+
+    fn citation_documents(options: &CallOptions) -> Vec<String> {
+        options
+            .prompt
+            .iter()
+            .filter_map(|message| match message {
+                LanguageModelMessage::User { content, .. } => Some(content),
+                _ => None,
+            })
+            .flatten()
+            .filter_map(|part| match part {
+                UserPart::File(file)
+                    if matches!(file.media_type.as_str(), "application/pdf" | "text/plain")
+                        && file
+                            .provider_options
+                            .as_ref()
+                            .and_then(|options| options.get(CANONICAL))
+                            .and_then(|options| options.get("citations"))
+                            .and_then(|citations| citations.get("enabled"))
+                            .and_then(Value::as_bool)
+                            == Some(true) =>
+                {
+                    Some(
+                        file.filename
+                            .clone()
+                            .unwrap_or_else(|| "Untitled Document".to_string()),
+                    )
+                }
+                _ => None,
+            })
+            .collect()
     }
 
     fn uses_custom_options(&self, options: &CallOptions) -> bool {
@@ -125,6 +158,7 @@ impl LanguageModel for AnthropicMessagesModel {
             &ToolNameMapping::new(options.tools.as_deref()),
             self.uses_custom_options(options),
             call.uses_json_response_tool,
+            Self::citation_documents(options),
         )
         .await?;
         for content in &mut result.content {
@@ -145,6 +179,7 @@ impl LanguageModel for AnthropicMessagesModel {
             ToolNameMapping::new(options.tools.as_deref()),
             self.uses_custom_options(options),
             call.uses_json_response_tool,
+            Self::citation_documents(options),
         )
         .await?;
         let generate_id = self.generate_id.clone();

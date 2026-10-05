@@ -18,6 +18,7 @@
 //! HTTP is a local `wiremock` server; every model is built with
 //! `create_deepseek(..).chat(..)`.
 
+use aimux_core::error::AiMuxError;
 use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -239,6 +240,24 @@ fn warning_values(warnings: &[Warning]) -> Vec<Value> {
         .collect()
 }
 
+fn deprecated(setting: &str) -> Warning {
+    Warning::Deprecated {
+        setting: setting.to_string(),
+        message: format!(
+            "{setting} is deprecated by DeepSeek and has been omitted. Remove {setting} from the request."
+        ),
+    }
+}
+
+fn thinking_unsupported(feature: &str) -> Warning {
+    Warning::Unsupported {
+        feature: feature.to_string(),
+        details: Some(format!(
+            "{feature} has no effect when DeepSeek thinking is enabled. Set providerOptions.deepseek.thinking.type to 'disabled' to use {feature}."
+        )),
+    }
+}
+
 fn compatibility(feature: &str, details: &str) -> Warning {
     Warning::Compatibility {
         feature: feature.to_string(),
@@ -310,6 +329,103 @@ fn logprob(token: &str, logprob: f64, bytes: Value) -> Value {
         "token": token, "logprob": logprob, "bytes": bytes,
         "top_logprobs": [{ "token": token, "logprob": logprob, "bytes": bytes }]
     })
+}
+
+#[tokio::test]
+async fn should_forward_the_model_id() {
+    for model_id in ["deepseek-v4-flash", "deepseek-v4-pro"] {
+        assert_eq!(generate_body(model_id, &options()).await["model"], model_id);
+    }
+}
+
+#[tokio::test]
+async fn should_natively_support_http_image_urls() {
+    let server = MockServer::start().await;
+    let urls = chat(&server, "deepseek-chat").supported_urls();
+    let patterns = &urls.0["image/*"];
+    assert_eq!(patterns.len(), 1);
+    assert!(patterns[0].is_match("https://example.com/a.png"));
+    assert!(patterns[0].is_match("http://example.com/a.png"));
+    assert!(!patterns[0].is_match("data:image/png;base64,AAAA"));
+}
+
+#[tokio::test]
+async fn text_should_send_correct_request_body() {
+    let mut options = options_for(vec![
+        LanguageModelMessage::System {
+            content: ("You are a helpful assistant.").into(),
+            provider_options: None,
+        },
+        LanguageModelMessage::user_text("Hello"),
+    ]);
+    options.temperature = Some(0.5);
+    options.top_p = Some(0.3);
+    assert_eq!(
+        generate_body("deepseek-chat", &options).await,
+        json!({
+            "messages": [
+                { "content": "You are a helpful assistant.", "role": "system" },
+                { "content": "Hello", "role": "user" }
+            ],
+            "model": "deepseek-chat",
+            "temperature": 0.5,
+            "top_p": 0.3
+        })
+    );
+}
+
+#[tokio::test]
+async fn text_should_omit_deprecated_and_ineffective_sampling_options_in_default_v4_thinking_mode()
+{
+    let mut options = options();
+    options.temperature = Some(0.2);
+    options.top_p = Some(0.4);
+    options.frequency_penalty = Some(0.5);
+    options.presence_penalty = Some(0.6);
+    let result = generate_result("deepseek-v4-flash", &options).await;
+    assert_eq!(
+        result.request.and_then(|r| r.body).unwrap(),
+        json!({ "model": "deepseek-v4-flash", "messages": [{ "role": "user", "content": "Hello" }] })
+    );
+    assert_eq!(
+        warning_values(&result.warnings),
+        warning_values(&[
+            deprecated("frequencyPenalty"),
+            deprecated("presencePenalty"),
+            thinking_unsupported("temperature"),
+            thinking_unsupported("topP"),
+        ])
+    );
+}
+
+#[tokio::test]
+async fn text_should_preserve_supported_sampling_options_when_v4_thinking_is_disabled() {
+    let mut options = with_provider_options(
+        options(),
+        json!({ "deepseek": { "thinking": { "type": "disabled" } } }),
+    );
+    options.temperature = Some(0.2);
+    options.top_p = Some(0.4);
+    options.frequency_penalty = Some(0.5);
+    options.presence_penalty = Some(0.6);
+    let result = generate_result("deepseek-v4-flash", &options).await;
+    assert_eq!(
+        result.request.and_then(|r| r.body).unwrap(),
+        json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{ "role": "user", "content": "Hello" }],
+            "temperature": 0.2,
+            "top_p": 0.4,
+            "thinking": { "type": "disabled" }
+        })
+    );
+    assert_eq!(
+        warning_values(&result.warnings),
+        warning_values(&[
+            deprecated("frequencyPenalty"),
+            deprecated("presencePenalty")
+        ])
+    );
 }
 
 #[tokio::test]
@@ -1205,6 +1321,62 @@ async fn prefix_should_reject_prefix_completion_with_the_default_base_url() {
     );
 }
 
+// Upstream emits provider error envelopes as error parts, including the first event.
+async fn stream_error(data: &Value) -> aimux_core::error::ApiCallError {
+    let server = sse_server(vec![data_event(data)]).await;
+    let result = chat(&server, "deepseek-chat")
+        .do_stream(&options())
+        .await
+        .unwrap();
+    collect(result)
+        .await
+        .into_iter()
+        .find_map(|part| match part {
+            StreamPart::Error {
+                error: AiMuxError::ApiCall(error),
+            } => Some(*error),
+            _ => None,
+        })
+        .expect("expected a provider error part")
+}
+
+#[tokio::test]
+async fn stream_should_preserve_a_provider_error_envelope_in_stream_errors() {
+    let data = json!({ "error": {
+        "message": "Rate limit reached", "type": "rate_limit_error", "code": "rate_limit_exceeded"
+    } });
+    let error = stream_error(&data).await;
+    assert_eq!(error.message, "Rate limit reached");
+    assert_eq!(error.provider_code.as_deref(), Some("rate_limit_exceeded"));
+    assert_eq!(error.status_code, Some(429));
+    assert!(error.is_retryable);
+    // upstream: `data` is the whole error envelope.
+    let envelope: Value = serde_json::from_str(error.response_body.as_deref().unwrap()).unwrap();
+    assert_eq!(envelope, data);
+}
+
+#[tokio::test]
+async fn stream_should_classify_insufficient_quota_as_non_retryable() {
+    let data = json!({ "error": {
+        "message": "You exceeded your current quota.", "type": "rate_limit_error",
+        "code": "insufficient_quota"
+    } });
+    let error = stream_error(&data).await;
+    assert_eq!(error.status_code, Some(429));
+    assert!(!error.is_retryable);
+}
+
+#[tokio::test]
+async fn stream_should_preserve_the_provider_type_when_code_is_an_http_status() {
+    let data = json!({ "error": {
+        "message": "Rate limit reached", "type": "rate_limit_error", "code": "429"
+    } });
+    let error = stream_error(&data).await;
+    assert_eq!(error.provider_code.as_deref(), Some("429"));
+    assert_eq!(error.status_code, Some(429));
+    assert!(error.is_retryable);
+}
+
 async fn stream_parts(
     model_id: &str,
     options: &CallOptions,
@@ -1214,6 +1386,140 @@ async fn stream_parts(
     let result = chat(&server, model_id).do_stream(options).await.unwrap();
     let body = result.request.clone().and_then(|r| r.body).unwrap();
     (body, collect(result).await)
+}
+
+#[tokio::test]
+async fn stream_text_should_send_model_id_settings_and_input() {
+    let mut options = options_for(vec![
+        LanguageModelMessage::System {
+            content: ("You are a helpful assistant.").into(),
+            provider_options: None,
+        },
+        LanguageModelMessage::user_text("Hello"),
+    ]);
+    options.temperature = Some(0.5);
+    options.top_p = Some(0.3);
+    let (body, _) = stream_parts("deepseek-chat", &options, text_chunks()).await;
+    assert_eq!(
+        body,
+        json!({
+            "messages": [
+                { "content": "You are a helpful assistant.", "role": "system" },
+                { "content": "Hello", "role": "user" }
+            ],
+            "model": "deepseek-chat",
+            "stream": true,
+            "stream_options": { "include_usage": true },
+            "temperature": 0.5,
+            "top_p": 0.3
+        })
+    );
+}
+
+#[tokio::test]
+async fn stream_text_should_omit_deprecated_and_ineffective_sampling_options_in_default_v4_thinking_mode()
+ {
+    let mut options = options();
+    options.temperature = Some(0.2);
+    options.top_p = Some(0.4);
+    options.frequency_penalty = Some(0.5);
+    options.presence_penalty = Some(0.6);
+    let (body, parts) = stream_parts("deepseek-v4-flash", &options, text_chunks()).await;
+    assert_eq!(
+        body,
+        json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{ "role": "user", "content": "Hello" }],
+            "stream": true,
+            "stream_options": { "include_usage": true }
+        })
+    );
+    assert_eq!(
+        stream_start_warnings(&parts),
+        warning_values(&[
+            deprecated("frequencyPenalty"),
+            deprecated("presencePenalty"),
+            thinking_unsupported("temperature"),
+            thinking_unsupported("topP"),
+        ])
+    );
+}
+
+#[tokio::test]
+async fn stream_text_should_preserve_supported_sampling_options_when_v4_thinking_is_disabled() {
+    let mut options = with_provider_options(
+        options(),
+        json!({ "deepseek": { "thinking": { "type": "disabled" } } }),
+    );
+    options.temperature = Some(0.2);
+    options.top_p = Some(0.4);
+    options.frequency_penalty = Some(0.5);
+    options.presence_penalty = Some(0.6);
+    let (body, parts) = stream_parts("deepseek-v4-flash", &options, text_chunks()).await;
+    assert_eq!(
+        body,
+        json!({
+            "model": "deepseek-v4-flash",
+            "messages": [{ "role": "user", "content": "Hello" }],
+            "temperature": 0.2,
+            "top_p": 0.4,
+            "thinking": { "type": "disabled" },
+            "stream": true,
+            "stream_options": { "include_usage": true }
+        })
+    );
+    assert_eq!(
+        stream_start_warnings(&parts),
+        warning_values(&[
+            deprecated("frequencyPenalty"),
+            deprecated("presencePenalty")
+        ])
+    );
+}
+
+#[tokio::test]
+async fn stream_text_should_send_message_names() {
+    let name = |value: &str| json!({ "deepseek": { "name": value } });
+    let options = options_for(vec![
+        with_options(
+            LanguageModelMessage::System {
+                content: ("You are a helpful assistant.").into(),
+                provider_options: None,
+            },
+            name("guide"),
+        ),
+        with_options(LanguageModelMessage::user_text("Hello"), name("alice")),
+        with_options(
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::Text(TextPart {
+                    text: ("Hello, Alice.").into(),
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
+            name("assistant"),
+        ),
+    ]);
+    let (body, _) = stream_parts("deepseek-chat", &options, text_chunks()).await;
+    assert_eq!(
+        body["messages"],
+        json!([
+            { "content": "You are a helpful assistant.", "name": "guide", "role": "system" },
+            { "content": "Hello", "name": "alice", "role": "user" },
+            { "content": "Hello, Alice.", "name": "assistant", "role": "assistant" }
+        ])
+    );
+}
+
+#[tokio::test]
+async fn stream_text_should_pass_provider_options_user_id_as_user_id() {
+    let options = with_provider_options(
+        options(),
+        json!({ "deepseek": { "userId": "tenant_123-user" } }),
+    );
+    let (body, _) = stream_parts("deepseek-chat", &options, text_chunks()).await;
+    assert_eq!(body["user_id"], "tenant_123-user");
+    assert_eq!(body["stream"], true);
 }
 
 #[tokio::test]

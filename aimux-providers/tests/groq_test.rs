@@ -736,6 +736,34 @@ mod prepare_tools {
         assert_eq!(body["tools"][0]["function"]["parameters"]["type"], "object");
     }
 
+    /// TS: "should add warnings for unsupported provider-defined tools"
+    #[tokio::test]
+    async fn unsupported_provider_tool_warning() {
+        let server = MockServer::start().await;
+        mock_json(&server, text_completion_body()).await;
+
+        let model = make_provider(&server);
+
+        let tool = Tool::Provider(aimux_core::tool::ProviderTool {
+            id: "some.unsupported_tool".to_string(),
+            name: "unsupported_tool".to_string(),
+            args: serde_json::Map::new(),
+        });
+        let options = CallOptions {
+            tools: Some(vec![tool]),
+            ..default_options(test_prompt())
+        };
+        let result = model.do_generate(&options).await.unwrap();
+
+        // The unsupported tool should produce a warning.
+        assert!(result.warnings.iter().any(|w| match w {
+            aimux_core::types::Warning::Unsupported { feature, .. } => {
+                feature.contains("some.unsupported_tool")
+            }
+            _ => false,
+        }));
+    }
+
     /// TS: "should pass through strict mode when strict is true"
     #[tokio::test]
     async fn strict_mode_true() {
@@ -1219,6 +1247,26 @@ mod do_generate {
         )));
     }
 
+    /// TS: "should prefer providerOptions reasoningEffort over top-level reasoning"
+    #[tokio::test]
+    async fn provider_option_reasoning_effort_preferred() {
+        let server = MockServer::start().await;
+        mock_json(&server, groq_text_body()).await;
+
+        let model = make_provider(&server);
+
+        let provider_opts = provider_namespace("groq", json!({"reasoningEffort": "high"})).unwrap();
+        let options = CallOptions {
+            reasoning: Some(ReasoningEffort::Medium),
+            provider_options: Some(provider_opts),
+            ..default_options(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let body = first_request_body(&server).await;
+        assert_eq!(body["reasoning_effort"], "high");
+    }
+
     /// TS: "should extract usage"
     #[tokio::test]
     async fn extracts_usage() {
@@ -1355,6 +1403,107 @@ mod do_generate {
 
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::Other);
         assert_eq!(result.finish_reason.raw.as_deref(), Some("eos"));
+    }
+
+    /// TS: "should pass provider options" (reasoningFormat, user, parallelToolCalls)
+    #[tokio::test]
+    async fn pass_provider_options() {
+        let server = MockServer::start().await;
+        mock_json(&server, groq_text_body()).await;
+
+        let model = make_provider(&server);
+
+        let provider_opts = provider_namespace(
+            "groq",
+            json!({
+                "reasoningFormat": "hidden",
+                "user": "test-user-id",
+                "parallelToolCalls": false
+            }),
+        )
+        .unwrap();
+        let options = CallOptions {
+            provider_options: Some(provider_opts),
+            ..default_options(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let body = first_request_body(&server).await;
+        assert_eq!(body["reasoning_format"], "hidden");
+        assert_eq!(body["user"], "test-user-id");
+        assert_eq!(body["parallel_tool_calls"], false);
+    }
+
+    /// TS: "should pass serviceTier provider option"
+    #[tokio::test]
+    async fn pass_service_tier_flex() {
+        let server = MockServer::start().await;
+        mock_json(&server, groq_text_body()).await;
+
+        let model = make_provider(&server);
+
+        let provider_opts = provider_namespace("groq", json!({"serviceTier": "flex"})).unwrap();
+        let options = CallOptions {
+            provider_options: Some(provider_opts),
+            ..default_options(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let body = first_request_body(&server).await;
+        assert_eq!(body["service_tier"], "flex");
+    }
+
+    /// TS: "should pass performance serviceTier provider option"
+    #[tokio::test]
+    async fn pass_service_tier_performance() {
+        let server = MockServer::start().await;
+        mock_json(&server, groq_text_body()).await;
+
+        let model = make_provider(&server);
+
+        let provider_opts =
+            provider_namespace("groq", json!({"serviceTier": "performance"})).unwrap();
+        let options = CallOptions {
+            provider_options: Some(provider_opts),
+            ..default_options(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let body = first_request_body(&server).await;
+        assert_eq!(body["service_tier"], "performance");
+    }
+
+    /// TS: "should pass tools and toolChoice"
+    #[tokio::test]
+    async fn pass_tools_and_tool_choice() {
+        let server = MockServer::start().await;
+        mock_json(&server, groq_text_body()).await;
+
+        let model = make_provider(&server);
+
+        let tool = FunctionTool::new(
+            "test-tool",
+            json!({
+                "type": "object",
+                "properties": { "value": { "type": "string" } },
+                "required": ["value"],
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+            }),
+        );
+        let options = CallOptions {
+            tools: Some(vec![Tool::from(tool)]),
+            tool_choice: Some(ToolChoice::Tool {
+                tool_name: "test-tool".to_string(),
+            }),
+            ..default_options(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let body = first_request_body(&server).await;
+        assert_eq!(body["tool_choice"]["type"], "function");
+        assert_eq!(body["tool_choice"]["function"]["name"], "test-tool");
+        assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
     }
 
     /// TS: "should pass response format information as json_schema when
