@@ -166,7 +166,6 @@ data class ToolCall(
     val input: JsonElement = JsonObject(emptyMap()),
     @SerialName("provider_executed") val providerExecuted: Boolean? = null,
     @SerialName("dynamic") val dynamic: Boolean? = null,
-    @SerialName("thought_signature") val thoughtSignature: String? = null,
     @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     val invalid: Boolean? = null,
     val error: JsonElement? = null,
@@ -394,7 +393,6 @@ sealed interface ContentPart {
         @SerialName("tool_call_id") val toolCallId: String = "",
         @SerialName("tool_name") val toolName: String = "",
         val input: JsonElement = JsonObject(emptyMap()),
-        @SerialName("thought_signature") val thoughtSignature: String? = null,
         @SerialName("provider_options") val providerOptions: JsonElement? = null,
         @SerialName("provider_executed") val providerExecuted: Boolean? = null,
     ) : ContentPart
@@ -810,7 +808,6 @@ sealed interface GenerateContent {
         val input: JsonElement = JsonObject(emptyMap()),
         @SerialName("provider_executed") val providerExecuted: Boolean? = null,
         @SerialName("dynamic") val dynamic: Boolean? = null,
-        @SerialName("thought_signature") val thoughtSignature: String? = null,
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     ) : GenerateContent
 
@@ -1102,7 +1099,6 @@ sealed interface StreamPart {
         val input: JsonElement = JsonObject(emptyMap()),
         @SerialName("provider_executed") val providerExecuted: Boolean? = null,
         @SerialName("dynamic") val dynamic: Boolean? = null,
-        @SerialName("thought_signature") val thoughtSignature: String? = null,
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
         val invalid: Boolean? = null,
         val error: JsonElement? = null,

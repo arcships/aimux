@@ -140,7 +140,6 @@ impl LanguageModel for XaiResponsesModel {
                     input: String::new(),
                     provider_executed: Some(true),
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
 
@@ -197,7 +196,6 @@ impl LanguageModel for XaiResponsesModel {
                     input: tool_input,
                     provider_executed: Some(true),
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
                 continue;
@@ -254,7 +252,6 @@ impl LanguageModel for XaiResponsesModel {
                         input,
                         provider_executed: None,
                         dynamic: None,
-                        thought_signature: None,
                         provider_metadata: None,
                     }));
                 }
@@ -717,7 +714,6 @@ impl LanguageModel for XaiResponsesModel {
                                         input: String::new(),
                                         provider_executed: Some(true),
                                         dynamic: None,
-                                        thought_signature: None,
                                         provider_metadata: None,
                                     }));
                                 }
@@ -788,7 +784,6 @@ impl LanguageModel for XaiResponsesModel {
                                         input: tool_input,
                                         provider_executed: Some(true),
                                         dynamic: None,
-                                        thought_signature: None,
                                         provider_metadata: None,
                                     }));
                                 }
@@ -879,7 +874,6 @@ impl LanguageModel for XaiResponsesModel {
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
-                                        thought_signature: None,
                                         provider_metadata: None,
                                     }));
                                 }

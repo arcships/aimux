@@ -583,7 +583,6 @@ pub(crate) fn parse_anthropic_content(
                     input: input.to_string(),
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: tool_call_caller_metadata(caller.as_ref()),
                 }));
             }
@@ -610,7 +609,6 @@ pub(crate) fn parse_anthropic_content(
                     dynamic: (provider_name == "code_execution"
                         && names.mark_code_execution_dynamic())
                     .then_some(true),
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
             }
@@ -627,7 +625,6 @@ pub(crate) fn parse_anthropic_content(
                     input: input.to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature: None,
                     provider_metadata: Some(json!({
                         "anthropic": { "type": "mcp-tool-use", "serverName": server_name }
                     })),
@@ -1096,7 +1093,6 @@ pub(crate) async fn anthropic_stream_core(
                                         input: input.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
-                                        thought_signature: None,
                                         provider_metadata: Some(json!({
                                             "anthropic": {
                                                 "type": "mcp-tool-use",
@@ -1310,7 +1306,6 @@ pub(crate) async fn anthropic_stream_core(
                                             input,
                                             provider_executed,
                                             dynamic,
-                                            thought_signature: None,
                                             provider_metadata,
                                         }));
                                     }

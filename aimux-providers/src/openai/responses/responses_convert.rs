@@ -197,7 +197,6 @@ pub fn build_responses_generate_result(
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: Some(json!({
                         (provider_key.clone()): {
                             "itemId": part.get("id").cloned().unwrap_or(Value::Null),
@@ -226,7 +225,6 @@ pub fn build_responses_generate_result(
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: Some(json!({
                         (provider_key.clone()): {
                             "itemId": part.get("id").cloned().unwrap_or(Value::Null),
@@ -801,7 +799,6 @@ where
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
-                                            thought_signature: None,
                                             provider_metadata: None,
                                         }));
                                     }
@@ -836,7 +833,6 @@ where
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
-                                            thought_signature: None,
                                             provider_metadata: None,
                                         }));
                                     }

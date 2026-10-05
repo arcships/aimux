@@ -45,7 +45,6 @@ impl LanguageModel for RichModel {
                     input: r#"{"q":"test"}"#.to_string(),
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 }),
                 GenerateContent::Source {

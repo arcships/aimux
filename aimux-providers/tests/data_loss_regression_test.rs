@@ -198,14 +198,13 @@ fn reasonings(content: &[GenerateContent]) -> Vec<(&str, Option<&Value>)> {
         .collect()
 }
 
-/// `(tool_call_id, tool_name, input, provider_executed, dynamic, thought_signature, metadata)`
+/// `(tool_call_id, tool_name, input, provider_executed, dynamic, metadata)`
 type ToolCallView<'a> = (
     &'a str,
     &'a str,
     Value,
     Option<bool>,
     Option<bool>,
-    Option<&'a str>,
     Option<&'a Value>,
 );
 
@@ -219,7 +218,6 @@ fn tool_calls(content: &[GenerateContent]) -> Vec<ToolCallView<'_>> {
                 input,
                 provider_executed,
                 dynamic,
-                thought_signature,
                 provider_metadata,
             }) => {
                 // Provider results intentionally carry the exact wire string;
@@ -233,7 +231,6 @@ fn tool_calls(content: &[GenerateContent]) -> Vec<ToolCallView<'_>> {
                     parsed_input,
                     *provider_executed,
                     *dynamic,
-                    thought_signature.as_deref(),
                     provider_metadata.as_ref(),
                 ))
             }
@@ -548,7 +545,7 @@ async fn finding_5_gemini_thought_signature_reaches_provider_metadata() {
 }
 
 /// `thoughtSignature` on a `functionCall` part must reach
-/// `ToolCall.thought_signature` — that is the field the follow-up turn echoes.
+/// `providerMetadata.google.thoughtSignature` for use in follow-up provider options.
 #[tokio::test]
 async fn finding_5_gemini_function_call_thought_signature_round_trips() {
     let c = cassette("gemini/two_arg_rewrites_chain_blocking_0.json");
@@ -566,12 +563,7 @@ async fn finding_5_gemini_function_call_thought_signature_round_trips() {
     assert_eq!(calls[0].1, "add");
     assert_eq!(calls[0].2, json!({ "x": 1, "y": 1 }));
     assert_eq!(
-        calls[0].5,
-        Some("signature_REDACTED_1"),
-        "the functionCall thoughtSignature must land on ToolCall.thought_signature"
-    );
-    assert_eq!(
-        calls[0].6.expect("providerMetadata")["google"]["thoughtSignature"],
+        calls[0].5.expect("providerMetadata")["google"]["thoughtSignature"],
         json!("signature_REDACTED_1")
     );
 }
@@ -1035,7 +1027,7 @@ async fn finding_2_anthropic_mcp_tool_use_and_result_are_dynamic_and_named() {
     // mcp_tool_use → provider-executed + dynamic + serverName metadata.
     let calls = tool_calls(&result.content);
     assert_eq!(calls.len(), 1);
-    let (id, name, ref input, provider_executed, dynamic, _, meta) = calls[0];
+    let (id, name, ref input, provider_executed, dynamic, meta) = calls[0];
     assert_eq!(id, "mcptoolu_01SAss3KEwASziHZoMR6HcZU");
     assert_eq!(name, "ask_question");
     assert_eq!(input["repoName"], json!("pydantic/pydantic-ai"));

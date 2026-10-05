@@ -1128,7 +1128,6 @@ mod tests {
                 input: r#"{"city":"Tokyo"}"#.to_string(),
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
                 provider_metadata: None,
             }),
         ]);
@@ -1163,7 +1162,6 @@ mod tests {
             input: r#"{"city":"Tokyo"}"#.to_string(),
             provider_executed: None,
             dynamic: None,
-            thought_signature: None,
             provider_metadata: None,
         })]);
 
@@ -1194,7 +1192,6 @@ mod tests {
             input: "  ".to_string(),
             provider_executed: None,
             dynamic: None,
-            thought_signature: None,
             provider_metadata: None,
         })]);
         assert_eq!(
@@ -1251,7 +1248,6 @@ mod tests {
                     input: raw_input.to_string(),
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 },
                 Some(&tools),
@@ -1269,7 +1265,6 @@ mod tests {
                     input: parsed.input,
                     provider_executed: parsed.provider_executed,
                     dynamic: parsed.dynamic,
-                    thought_signature: parsed.thought_signature,
                     invalid: parsed.invalid,
                     error: parsed.error,
                     provider_metadata: parsed.provider_metadata,
@@ -1308,7 +1303,6 @@ mod tests {
             input: r#"{"city":"Tokyo"}"#.to_string(),
             provider_executed: None,
             dynamic: None,
-            thought_signature: None,
             provider_metadata: None,
         })]);
         let completion = to_chat_completion(&result, "gpt-4o");
@@ -1495,7 +1489,6 @@ mod tests {
                 input: json!({ "city": "Tokyo" }),
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
                 invalid: None,
                 error: None,
                 provider_metadata: None,
@@ -1586,7 +1579,6 @@ mod tests {
                 input: json!({ "url": "https://example.com" }),
                 provider_executed: Some(true),
                 dynamic: None,
-                thought_signature: None,
                 invalid: None,
                 error: None,
                 provider_metadata: None,

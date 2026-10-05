@@ -145,7 +145,6 @@ impl ResponseMessageBuilder {
             tool_name: call.tool_name.clone(),
             input: response_tool_call_input(&call.input, call.invalid),
             provider_executed: call.provider_executed,
-            thought_signature: call.thought_signature.clone(),
             provider_options: call.provider_metadata.clone(),
         });
     }

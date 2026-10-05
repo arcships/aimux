@@ -178,7 +178,6 @@ impl LanguageModel for XaiModel {
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
             }
@@ -511,7 +510,6 @@ impl LanguageModel for XaiModel {
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
-                                            thought_signature: None,
                                             provider_metadata: None,
                                         }));
                                     }
@@ -563,7 +561,6 @@ impl LanguageModel for XaiModel {
                         input,
                         provider_executed: None,
                         dynamic: None,
-                        thought_signature: None,
                         provider_metadata: None,
                     }));
                 }

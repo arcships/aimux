@@ -28,7 +28,6 @@ fn raw(name: &str, input: &str) -> RawToolCall {
         input: input.into(),
         provider_executed: None,
         dynamic: None,
-        thought_signature: None,
         provider_metadata: None,
     }
 }
@@ -351,7 +350,6 @@ impl LanguageModel for RawToolModel {
                 input: self.input.to_string(),
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
                 provider_metadata: None,
             })],
             finish_reason: FinishReason {
@@ -404,7 +402,6 @@ impl LanguageModel for RawToolModel {
                 input: self.input.to_string(),
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
                 provider_metadata: None,
             })),
             Ok(StreamPart::Finish {

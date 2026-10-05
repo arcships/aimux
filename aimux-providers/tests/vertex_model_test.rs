@@ -333,17 +333,12 @@ async fn vertex_generate_tool_call_with_thought_signature() {
             tool_call_id,
             tool_name,
             input,
-            thought_signature,
             provider_metadata,
             ..
         }) => {
             assert_eq!(tool_call_id, "call_1");
             assert_eq!(tool_name, "getWeather");
             assert_eq!(input, r#"{"location":"Tokyo"}"#);
-            assert_eq!(
-                thought_signature.as_deref(),
-                Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
-            );
             let metadata = provider_metadata.as_ref().expect("thought metadata");
             assert_eq!(
                 metadata["googleVertex"]["thoughtSignature"],

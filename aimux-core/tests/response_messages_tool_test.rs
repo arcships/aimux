@@ -42,7 +42,6 @@ impl LanguageModel for ProviderTranscriptModel {
                     input: r#"{"query":"Rust"}"#.to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature: None,
                     provider_metadata: Some(json!({
                         "mock": { "serverCallId": "wire-1" }
                     })),
@@ -98,7 +97,6 @@ impl LanguageModel for ProviderTranscriptModel {
                 input: r#"{"query":"Rust"}"#.to_string(),
                 provider_executed: Some(true),
                 dynamic: Some(true),
-                thought_signature: None,
                 provider_metadata: Some(json!({
                     "mock": { "serverCallId": "wire-1" }
                 })),
@@ -243,7 +241,6 @@ impl LanguageModel for InvalidToolInputModel {
                 input: "{".to_string(),
                 provider_executed: Some(true),
                 dynamic: Some(true),
-                thought_signature: None,
                 provider_metadata: None,
             })],
             finish_reason: finish_reason(),

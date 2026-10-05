@@ -33,7 +33,6 @@ public struct RawToolCall: Codable, Equatable {
     public var input: String
     public var providerExecuted: Bool?
     public var dynamic: Bool?
-    public var thoughtSignature: String?
     public var providerMetadata: JSONValue?
 
     enum CodingKeys: String, CodingKey {
@@ -42,16 +41,15 @@ public struct RawToolCall: Codable, Equatable {
         case input
         case providerExecuted = "provider_executed"
         case dynamic
-        case thoughtSignature = "thought_signature"
         case providerMetadata = "provider_metadata"
     }
 
     public init(toolCallId: String, toolName: String, input: String,
                 providerExecuted: Bool? = nil, dynamic: Bool? = nil,
-                thoughtSignature: String? = nil, providerMetadata: JSONValue? = nil) {
+                providerMetadata: JSONValue? = nil) {
         self.toolCallId = toolCallId; self.toolName = toolName; self.input = input
         self.providerExecuted = providerExecuted; self.dynamic = dynamic
-        self.thoughtSignature = thoughtSignature; self.providerMetadata = providerMetadata
+        self.providerMetadata = providerMetadata
     }
 }
 

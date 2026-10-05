@@ -2096,7 +2096,6 @@ mod convert_input {
                 tool_name: "web_search".to_string(),
                 input: json!({ "query": "weather" }),
                 provider_executed: Some(true),
-                thought_signature: None,
                 provider_options: None,
             }],
             ..Default::default()
@@ -2117,7 +2116,6 @@ mod convert_input {
                 tool_name: "weather".to_string(),
                 input: json!({ "city": "Singapore" }),
                 provider_executed: Some(false),
-                thought_signature: None,
                 provider_options: Some(json!({
                     "xai": { "providerExecuted": true }
                 })),

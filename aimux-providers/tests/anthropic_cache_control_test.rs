@@ -238,7 +238,6 @@ mod assistant_message {
                     tool_name: "test-tool".to_string(),
                     input: json!({ "some": "arg" }),
                     provider_executed: None,
-                    thought_signature: None,
                     provider_options: Some(cache_control_opts(json!({ "type": "ephemeral" }))),
                 }],
             ),

@@ -403,7 +403,6 @@ impl LanguageModel for OpenResponsesModel {
                             input,
                             provider_executed: None,
                             dynamic: None,
-                            thought_signature: None,
                             provider_metadata: None,
                         }));
                     }
@@ -689,7 +688,6 @@ impl LanguageModel for OpenResponsesModel {
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
-                                                thought_signature: None,
                                                 provider_metadata: None,
                                             }));
                                             has_tool_calls = true;
