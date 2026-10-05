@@ -178,7 +178,6 @@ impl LanguageModel for XaiModel {
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
             }
@@ -187,10 +186,9 @@ impl LanguageModel for XaiModel {
         // Extract citations
         if let Some(citations) = &data.citations {
             for url in citations {
-                content.push(GenerateContent::Source(Source {
+                content.push(GenerateContent::Source(Source::Url {
                     id: generate_source_id(),
-                    source_type: "url".to_string(),
-                    url: Some(url.clone()),
+                    url: url.clone(),
                     title: None,
                     provider_metadata: None,
                 }));
@@ -349,10 +347,9 @@ impl LanguageModel for XaiModel {
                         // Emit citations as sources.
                         if let Some(citations) = &chunk.citations {
                             for url in citations {
-                                yield Ok(StreamPart::Source(Source {
+                                yield Ok(StreamPart::Source(Source::Url {
                                     id: generate_source_id(),
-                                    source_type: "url".to_string(),
-                                    url: Some(url.clone()),
+                                    url: url.clone(),
                                     title: None,
                                     provider_metadata: None,
                                 }));
@@ -510,7 +507,6 @@ impl LanguageModel for XaiModel {
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
-                                            thought_signature: None,
                                             provider_metadata: None,
                                         }));
                                     }
@@ -562,7 +558,6 @@ impl LanguageModel for XaiModel {
                         input,
                         provider_executed: None,
                         dynamic: None,
-                        thought_signature: None,
                         provider_metadata: None,
                     }));
                 }

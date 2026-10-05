@@ -499,7 +499,6 @@ impl LanguageModel for BedrockModel {
                                 input,
                                 provider_executed: None,
                                 dynamic: None,
-                                thought_signature: None,
                                 provider_metadata: None,
                             }));
                         } else if reasoning_id.is_some() {
@@ -665,7 +664,6 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
             input: tool_use.input.to_string(),
             provider_executed: None,
             dynamic: None,
-            thought_signature: None,
             provider_metadata: None,
         }));
     }

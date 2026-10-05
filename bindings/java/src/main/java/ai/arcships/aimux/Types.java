@@ -400,7 +400,6 @@ public final class Types {
         @JsonProperty("input") private JsonNode input = emptyObject();
         @JsonProperty("provider_executed") private Boolean providerExecuted;
         @JsonProperty("dynamic") private Boolean dynamic;
-        @JsonProperty("thought_signature") private String thoughtSignature;
         @JsonProperty("provider_metadata") private JsonNode providerMetadata;
         @JsonProperty("invalid") private Boolean invalid;
         @JsonProperty("error") private JsonNode error;
@@ -409,13 +408,12 @@ public final class Types {
         ToolCall() {}
 
         private ToolCall(String toolCallId, String toolName, JsonNode input, Boolean providerExecuted, Boolean dynamic,
-                         String thoughtSignature, JsonNode providerMetadata, Boolean invalid, JsonNode error) {
+                         JsonNode providerMetadata, Boolean invalid, JsonNode error) {
             this.toolCallId = toolCallId;
             this.toolName = toolName;
             this.input = input;
             this.providerExecuted = providerExecuted;
             this.dynamic = dynamic;
-            this.thoughtSignature = thoughtSignature;
             this.providerMetadata = providerMetadata;
             this.invalid = invalid;
             this.error = error;
@@ -426,7 +424,6 @@ public final class Types {
         public JsonNode getInput() { return input; }
         public Boolean getProviderExecuted() { return providerExecuted; }
         public Boolean getDynamic() { return dynamic; }
-        public String getThoughtSignature() { return thoughtSignature; }
         public JsonNode getProviderMetadata() { return providerMetadata; }
         /** Set by Core when the tool call stays invalid after optional repair. */
         public Boolean getInvalid() { return invalid; }
@@ -441,7 +438,6 @@ public final class Types {
             private JsonNode input = emptyObject();
             private Boolean providerExecuted;
             private Boolean dynamic;
-            private String thoughtSignature;
             private JsonNode providerMetadata;
             private Boolean invalid;
             private JsonNode error;
@@ -451,13 +447,12 @@ public final class Types {
             public Builder input(JsonNode v) { this.input = v; return this; }
             public Builder providerExecuted(Boolean v) { this.providerExecuted = v; return this; }
             public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
-            public Builder thoughtSignature(String v) { this.thoughtSignature = v; return this; }
             public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
             public Builder invalid(Boolean v) { this.invalid = v; return this; }
             public Builder error(JsonNode v) { this.error = v; return this; }
 
             public ToolCall build() {
-                return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, thoughtSignature, providerMetadata,
+                return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata,
                     invalid, error);
             }
         }
@@ -472,7 +467,6 @@ public final class Types {
                 && Objects.equals(input, that.input)
                 && Objects.equals(providerExecuted, that.providerExecuted)
                 && Objects.equals(dynamic, that.dynamic)
-                && Objects.equals(thoughtSignature, that.thoughtSignature)
                 && Objects.equals(providerMetadata, that.providerMetadata)
                 && Objects.equals(invalid, that.invalid)
                 && Objects.equals(error, that.error);
@@ -480,7 +474,7 @@ public final class Types {
 
         @Override
         public int hashCode() {
-            return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic, thoughtSignature, providerMetadata,
+            return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata,
                 invalid, error);
         }
     }
@@ -1282,19 +1276,17 @@ public final class Types {
             @JsonProperty("tool_name") private String toolName = "";
             @JsonProperty("input") private JsonNode input = emptyObject();
             @JsonProperty("provider_executed") private Boolean providerExecuted;
-            @JsonProperty("thought_signature") private String thoughtSignature;
             @JsonProperty("provider_options") private JsonNode providerOptions;
 
             @JsonCreator
             ToolCall() {}
 
             private ToolCall(String toolCallId, String toolName, JsonNode input,
-                             Boolean providerExecuted, String thoughtSignature, JsonNode providerOptions) {
+                             Boolean providerExecuted, JsonNode providerOptions) {
                 this.toolCallId = toolCallId;
                 this.toolName = toolName;
                 this.input = input;
                 this.providerExecuted = providerExecuted;
-                this.thoughtSignature = thoughtSignature;
                 this.providerOptions = providerOptions;
             }
 
@@ -1302,7 +1294,6 @@ public final class Types {
             public String getToolName() { return toolName; }
             public JsonNode getInput() { return input; }
             public Boolean getProviderExecuted() { return providerExecuted; }
-            public String getThoughtSignature() { return thoughtSignature; }
             public JsonNode getProviderOptions() { return providerOptions; }
 
             public static Builder builder() { return new Builder(); }
@@ -1312,18 +1303,16 @@ public final class Types {
                 private String toolName = "";
                 private JsonNode input = emptyObject();
                 private Boolean providerExecuted;
-                private String thoughtSignature;
                 private JsonNode providerOptions;
 
                 public Builder toolCallId(String v) { this.toolCallId = v; return this; }
                 public Builder toolName(String v) { this.toolName = v; return this; }
                 public Builder input(JsonNode v) { this.input = v; return this; }
                 public Builder providerExecuted(Boolean v) { this.providerExecuted = v; return this; }
-                public Builder thoughtSignature(String v) { this.thoughtSignature = v; return this; }
                 public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
 
                 public ToolCall build() {
-                    return new ToolCall(toolCallId, toolName, input, providerExecuted, thoughtSignature, providerOptions);
+                    return new ToolCall(toolCallId, toolName, input, providerExecuted, providerOptions);
                 }
             }
 
@@ -1336,13 +1325,12 @@ public final class Types {
                     && Objects.equals(toolName, that.toolName)
                     && Objects.equals(input, that.input)
                     && Objects.equals(providerExecuted, that.providerExecuted)
-                    && Objects.equals(thoughtSignature, that.thoughtSignature)
                     && Objects.equals(providerOptions, that.providerOptions);
             }
 
             @Override
             public int hashCode() {
-                return Objects.hash(toolCallId, toolName, input, providerExecuted, thoughtSignature, providerOptions);
+                return Objects.hash(toolCallId, toolName, input, providerExecuted, providerOptions);
             }
         }
 
@@ -1844,20 +1832,18 @@ public final class Types {
         @JsonProperty("input") private String input = "";
         @JsonProperty("provider_executed") private Boolean providerExecuted;
         @JsonProperty("dynamic") private Boolean dynamic;
-        @JsonProperty("thought_signature") private String thoughtSignature;
         @JsonProperty("provider_metadata") private JsonNode providerMetadata;
 
         @JsonCreator
         RawToolCall() {}
 
         private RawToolCall(String toolCallId, String toolName, String input, Boolean providerExecuted,
-                            Boolean dynamic, String thoughtSignature, JsonNode providerMetadata) {
+                            Boolean dynamic, JsonNode providerMetadata) {
             this.toolCallId = toolCallId;
             this.toolName = toolName;
             this.input = input;
             this.providerExecuted = providerExecuted;
             this.dynamic = dynamic;
-            this.thoughtSignature = thoughtSignature;
             this.providerMetadata = providerMetadata;
         }
 
@@ -1867,7 +1853,6 @@ public final class Types {
         public String getInput() { return input; }
         public Boolean getProviderExecuted() { return providerExecuted; }
         public Boolean getDynamic() { return dynamic; }
-        public String getThoughtSignature() { return thoughtSignature; }
         public JsonNode getProviderMetadata() { return providerMetadata; }
 
         public static Builder builder() { return new Builder(); }
@@ -1878,7 +1863,6 @@ public final class Types {
             private String input = "";
             private Boolean providerExecuted;
             private Boolean dynamic;
-            private String thoughtSignature;
             private JsonNode providerMetadata;
 
             public Builder toolCallId(String v) { this.toolCallId = v; return this; }
@@ -1886,12 +1870,11 @@ public final class Types {
             public Builder input(String v) { this.input = v; return this; }
             public Builder providerExecuted(Boolean v) { this.providerExecuted = v; return this; }
             public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
-            public Builder thoughtSignature(String v) { this.thoughtSignature = v; return this; }
             public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
 
             public RawToolCall build() {
                 return new RawToolCall(toolCallId, toolName, input, providerExecuted, dynamic,
-                    thoughtSignature, providerMetadata);
+                    providerMetadata);
             }
         }
     }
@@ -2495,6 +2478,82 @@ public final class Types {
     // for forward compatibility (mirroring StreamPart).
     // ─────────────────────────────────────────────────────────────────────────────
 
+    /** A URL or document used as a source for the response. */
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "source_type")
+    @JsonSubTypes({
+        @JsonSubTypes.Type(value = Source.Url.class, name = "url"),
+        @JsonSubTypes.Type(value = Source.Document.class, name = "document")
+    })
+    public abstract static class Source {
+        @JsonProperty("id") private final String id;
+        @JsonProperty("provider_metadata") private final JsonNode providerMetadata;
+
+        protected Source(String id, JsonNode providerMetadata) {
+            this.id = Objects.requireNonNull(id, "id");
+            this.providerMetadata = providerMetadata;
+        }
+
+        public String getId() { return id; }
+        public JsonNode getProviderMetadata() { return providerMetadata; }
+
+        public static final class Url extends Source {
+            @JsonProperty("url") private final String url;
+            @JsonProperty("title") private final String title;
+
+            @JsonCreator
+            public Url(@JsonProperty("id") String id, @JsonProperty("url") String url,
+                       @JsonProperty("title") String title,
+                       @JsonProperty("provider_metadata") JsonNode providerMetadata) {
+                super(id, providerMetadata);
+                this.url = Objects.requireNonNull(url, "url");
+                this.title = title;
+            }
+
+            public String getUrl() { return url; }
+            public String getTitle() { return title; }
+
+            @Override public boolean equals(Object o) {
+                if (!(o instanceof Url)) return false;
+                Url that = (Url) o;
+                return Objects.equals(getId(), that.getId()) && Objects.equals(url, that.url)
+                    && Objects.equals(title, that.title)
+                    && Objects.equals(getProviderMetadata(), that.getProviderMetadata());
+            }
+            @Override public int hashCode() { return Objects.hash(getId(), url, title, getProviderMetadata()); }
+        }
+
+        public static final class Document extends Source {
+            @JsonProperty("media_type") private final String mediaType;
+            @JsonProperty("title") private final String title;
+            @JsonProperty("filename") private final String filename;
+
+            @JsonCreator
+            public Document(@JsonProperty("id") String id, @JsonProperty("media_type") String mediaType,
+                            @JsonProperty("title") String title, @JsonProperty("filename") String filename,
+                            @JsonProperty("provider_metadata") JsonNode providerMetadata) {
+                super(id, providerMetadata);
+                this.mediaType = Objects.requireNonNull(mediaType, "media_type");
+                this.title = Objects.requireNonNull(title, "title");
+                this.filename = filename;
+            }
+
+            public String getMediaType() { return mediaType; }
+            public String getTitle() { return title; }
+            public String getFilename() { return filename; }
+
+            @Override public boolean equals(Object o) {
+                if (!(o instanceof Document)) return false;
+                Document that = (Document) o;
+                return Objects.equals(getId(), that.getId()) && Objects.equals(mediaType, that.mediaType)
+                    && Objects.equals(title, that.title) && Objects.equals(filename, that.filename)
+                    && Objects.equals(getProviderMetadata(), that.getProviderMetadata());
+            }
+            @Override public int hashCode() {
+                return Objects.hash(getId(), mediaType, title, filename, getProviderMetadata());
+            }
+        }
+    }
+
     /**
      * A content item in the generation result.
      *
@@ -2550,20 +2609,18 @@ public final class Types {
             @JsonProperty("input") private JsonNode input = emptyObject();
             @JsonProperty("provider_executed") private Boolean providerExecuted;
             @JsonProperty("dynamic") private Boolean dynamic;
-            @JsonProperty("thought_signature") private String thoughtSignature;
             @JsonProperty("provider_metadata") private JsonNode providerMetadata;
 
             @JsonCreator
             ToolCall() {}
 
             private ToolCall(String toolCallId, String toolName, JsonNode input, Boolean providerExecuted,
-                             Boolean dynamic, String thoughtSignature, JsonNode providerMetadata) {
+                             Boolean dynamic, JsonNode providerMetadata) {
                 this.toolCallId = toolCallId;
                 this.toolName = toolName;
                 this.input = input;
                 this.providerExecuted = providerExecuted;
                 this.dynamic = dynamic;
-                this.thoughtSignature = thoughtSignature;
                 this.providerMetadata = providerMetadata;
             }
 
@@ -2572,7 +2629,6 @@ public final class Types {
             public JsonNode getInput() { return input; }
             public Boolean getProviderExecuted() { return providerExecuted; }
             public Boolean getDynamic() { return dynamic; }
-            public String getThoughtSignature() { return thoughtSignature; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
 
             public static Builder builder() { return new Builder(); }
@@ -2583,7 +2639,6 @@ public final class Types {
                 private JsonNode input = emptyObject();
                 private Boolean providerExecuted;
                 private Boolean dynamic;
-                private String thoughtSignature;
                 private JsonNode providerMetadata;
 
                 public Builder toolCallId(String v) { this.toolCallId = v; return this; }
@@ -2591,11 +2646,10 @@ public final class Types {
                 public Builder input(JsonNode v) { this.input = v; return this; }
                 public Builder providerExecuted(Boolean v) { this.providerExecuted = v; return this; }
                 public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
-                public Builder thoughtSignature(String v) { this.thoughtSignature = v; return this; }
                 public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
 
                 public ToolCall build() {
-                    return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, thoughtSignature,
+                    return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic,
                         providerMetadata);
                 }
             }
@@ -2610,73 +2664,26 @@ public final class Types {
                     && Objects.equals(input, that.input)
                     && Objects.equals(providerExecuted, that.providerExecuted)
                     && Objects.equals(dynamic, that.dynamic)
-                    && Objects.equals(thoughtSignature, that.thoughtSignature)
                     && Objects.equals(providerMetadata, that.providerMetadata);
             }
 
             @Override
             public int hashCode() {
-                return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic, thoughtSignature,
+                return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic,
                     providerMetadata);
             }
         }
 
         public static class Source extends GenerateContent {
-            @JsonProperty("id") private String id = "";
-            @JsonProperty("source_type") private String sourceType = "";
-            @JsonProperty("url") private String url;
-            @JsonProperty("title") private String title;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            private final Types.Source source;
 
-            @JsonCreator
-            Source() {}
+            public Source(Types.Source source) { this.source = Objects.requireNonNull(source, "source"); }
+            public Types.Source getSource() { return source; }
 
-            private Source(String id, String sourceType, String url, String title, JsonNode providerMetadata) {
-                this.id = id;
-                this.sourceType = sourceType;
-                this.url = url;
-                this.title = title;
-                this.providerMetadata = providerMetadata;
+            @Override public boolean equals(Object o) {
+                return o instanceof Source && Objects.equals(source, ((Source) o).source);
             }
-
-            public String getId() { return id; }
-            public String getSourceType() { return sourceType; }
-            public String getUrl() { return url; }
-            public String getTitle() { return title; }
-            public JsonNode getProviderMetadata() { return providerMetadata; }
-
-            public static Builder builder() { return new Builder(); }
-
-            public static class Builder {
-                private String id = "";
-                private String sourceType = "";
-                private String url;
-                private String title;
-                private JsonNode providerMetadata;
-
-                public Builder id(String v) { this.id = v; return this; }
-                public Builder sourceType(String v) { this.sourceType = v; return this; }
-                public Builder url(String v) { this.url = v; return this; }
-                public Builder title(String v) { this.title = v; return this; }
-                public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
-
-                public Source build() { return new Source(id, sourceType, url, title, providerMetadata); }
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) return true;
-                if (!(o instanceof Source)) return false;
-                Source that = (Source) o;
-                return Objects.equals(id, that.id)
-                    && Objects.equals(sourceType, that.sourceType)
-                    && Objects.equals(url, that.url)
-                    && Objects.equals(title, that.title)
-                    && Objects.equals(providerMetadata, that.providerMetadata);
-            }
-
-            @Override
-            public int hashCode() { return Objects.hash(id, sourceType, url, title, providerMetadata); }
+            @Override public int hashCode() { return Objects.hash(source); }
         }
 
         public static class Reasoning extends GenerateContent {
@@ -2979,7 +2986,8 @@ public final class Types {
                 gen.writeTree(out);
                 return;
             }
-            ObjectNode node = (ObjectNode) AimuxJson.INNER_MAPPER.valueToTree(value);
+            ObjectNode node = (ObjectNode) AimuxJson.INNER_MAPPER.valueToTree(
+                value instanceof GenerateContent.Source ? ((GenerateContent.Source) value).getSource() : value);
             ObjectNode out = JsonNodeFactory.instance.objectNode();
             out.set(tag, node);
             gen.writeTree(out);
@@ -3000,7 +3008,7 @@ public final class Types {
             switch (tag) {
                 case "Text": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.Text.class);
                 case "ToolCall": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.ToolCall.class);
-                case "Source": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.Source.class);
+                case "Source": return new GenerateContent.Source(AimuxJson.MAPPER.treeToValue(innerObj, Types.Source.class));
                 case "Reasoning": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.Reasoning.class);
                 case "File": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.File.class);
                 case "ToolResult": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.ToolResult.class);
@@ -3208,7 +3216,7 @@ public final class Types {
         @JsonProperty("raw") private GenerateResult raw = new GenerateResult();
         @JsonProperty("reasoning") private List<JsonNode> reasoning = new ArrayList<>();
         @JsonProperty("reasoning_text") private String reasoningText = "";
-        @JsonProperty("sources") private List<JsonNode> sources = new ArrayList<>();
+        @JsonProperty("sources") private List<Source> sources = new ArrayList<>();
         @JsonProperty("files") private List<JsonNode> files = new ArrayList<>();
         @JsonProperty("response_messages") private List<ModelMessage> responseMessages = new ArrayList<>();
         @JsonProperty("raw_finish_reason") private String rawFinishReason;
@@ -3222,7 +3230,7 @@ public final class Types {
         private GenerateTextResult(String text, List<ToolCall> toolCalls, FinishReason finishReason, Usage usage,
                                    List<JsonNode> warnings, GenerateResult raw,
                                    List<JsonNode> reasoning, String reasoningText,
-                                   List<JsonNode> sources, List<JsonNode> files,
+                                   List<Source> sources, List<JsonNode> files,
                                    List<ModelMessage> responseMessages, String rawFinishReason,
                                    JsonNode providerMetadata, ResponseMetadata response, Usage totalUsage) {
             this.text = text;
@@ -3251,7 +3259,7 @@ public final class Types {
         public GenerateResult getRaw() { return raw; }
         public List<JsonNode> getReasoning() { return reasoning; }
         public String getReasoningText() { return reasoningText; }
-        public List<JsonNode> getSources() { return sources; }
+        public List<Source> getSources() { return sources; }
         public List<JsonNode> getFiles() { return files; }
         public List<ModelMessage> getResponseMessages() { return responseMessages; }
         public String getRawFinishReason() { return rawFinishReason; }
@@ -3270,7 +3278,7 @@ public final class Types {
             private GenerateResult raw = new GenerateResult();
             private List<JsonNode> reasoning = new ArrayList<>();
             private String reasoningText = "";
-            private List<JsonNode> sources = new ArrayList<>();
+            private List<Source> sources = new ArrayList<>();
             private List<JsonNode> files = new ArrayList<>();
             private List<ModelMessage> responseMessages = new ArrayList<>();
             private String rawFinishReason;
@@ -3286,7 +3294,7 @@ public final class Types {
             public Builder raw(GenerateResult v) { this.raw = v; return this; }
             public Builder reasoning(List<JsonNode> v) { this.reasoning = v; return this; }
             public Builder reasoningText(String v) { this.reasoningText = v; return this; }
-            public Builder sources(List<JsonNode> v) { this.sources = v; return this; }
+            public Builder sources(List<Source> v) { this.sources = v; return this; }
             public Builder files(List<JsonNode> v) { this.files = v; return this; }
             public Builder responseMessages(List<ModelMessage> v) { this.responseMessages = v; return this; }
             public Builder rawFinishReason(String v) { this.rawFinishReason = v; return this; }
@@ -3444,7 +3452,7 @@ public final class Types {
         @JsonProperty("reasoning") private List<JsonNode> reasoning = new ArrayList<>();
         @JsonProperty("reasoning_text") private String reasoningText = "";
         @JsonProperty("tool_calls") private List<ToolCall> toolCalls = new ArrayList<>();
-        @JsonProperty("sources") private List<JsonNode> sources = new ArrayList<>();
+        @JsonProperty("sources") private List<Source> sources = new ArrayList<>();
         @JsonProperty("files") private List<JsonNode> files = new ArrayList<>();
         @JsonProperty("finish_reason") private FinishReason finishReason = new FinishReason();
         @JsonProperty("raw_finish_reason") private String rawFinishReason;
@@ -3459,7 +3467,7 @@ public final class Types {
         StreamTextResultAggregated() {}
 
         private StreamTextResultAggregated(String text, List<JsonNode> reasoning, String reasoningText,
-                                           List<ToolCall> toolCalls, List<JsonNode> sources, List<JsonNode> files,
+                                           List<ToolCall> toolCalls, List<Source> sources, List<JsonNode> files,
                                            FinishReason finishReason, String rawFinishReason, Usage usage,
                                            Usage totalUsage, List<JsonNode> warnings, JsonNode providerMetadata,
                                            ResponseMetadata response, List<ModelMessage> responseMessages) {
@@ -3484,7 +3492,7 @@ public final class Types {
         public List<JsonNode> getReasoning() { return reasoning; }
         public String getReasoningText() { return reasoningText; }
         public List<ToolCall> getToolCalls() { return toolCalls; }
-        public List<JsonNode> getSources() { return sources; }
+        public List<Source> getSources() { return sources; }
         public List<JsonNode> getFiles() { return files; }
         public FinishReason getFinishReason() { return finishReason; }
         public String getRawFinishReason() { return rawFinishReason; }
@@ -3502,7 +3510,7 @@ public final class Types {
             private List<JsonNode> reasoning = new ArrayList<>();
             private String reasoningText = "";
             private List<ToolCall> toolCalls = new ArrayList<>();
-            private List<JsonNode> sources = new ArrayList<>();
+            private List<Source> sources = new ArrayList<>();
             private List<JsonNode> files = new ArrayList<>();
             private FinishReason finishReason = new FinishReason();
             private String rawFinishReason;
@@ -3517,7 +3525,7 @@ public final class Types {
             public Builder reasoning(List<JsonNode> v) { this.reasoning = v; return this; }
             public Builder reasoningText(String v) { this.reasoningText = v; return this; }
             public Builder toolCalls(List<ToolCall> v) { this.toolCalls = v; return this; }
-            public Builder sources(List<JsonNode> v) { this.sources = v; return this; }
+            public Builder sources(List<Source> v) { this.sources = v; return this; }
             public Builder files(List<JsonNode> v) { this.files = v; return this; }
             public Builder finishReason(FinishReason v) { this.finishReason = v; return this; }
             public Builder rawFinishReason(String v) { this.rawFinishReason = v; return this; }
@@ -3941,7 +3949,6 @@ public final class Types {
             @JsonProperty("input") private JsonNode input = emptyObject();
             @JsonProperty("provider_executed") private Boolean providerExecuted;
             @JsonProperty("dynamic") private Boolean dynamic;
-            @JsonProperty("thought_signature") private String thoughtSignature;
             @JsonProperty("provider_metadata") private JsonNode providerMetadata;
             @JsonProperty("invalid") private Boolean invalid;
             @JsonProperty("error") private JsonNode error;
@@ -3950,14 +3957,13 @@ public final class Types {
             ToolCall() {}
 
             private ToolCall(String toolCallId, String toolName, JsonNode input, Boolean providerExecuted,
-                             Boolean dynamic, String thoughtSignature, JsonNode providerMetadata, Boolean invalid,
+                             Boolean dynamic, JsonNode providerMetadata, Boolean invalid,
                              JsonNode error) {
                 this.toolCallId = toolCallId;
                 this.toolName = toolName;
                 this.input = input;
                 this.providerExecuted = providerExecuted;
                 this.dynamic = dynamic;
-                this.thoughtSignature = thoughtSignature;
                 this.providerMetadata = providerMetadata;
                 this.invalid = invalid;
                 this.error = error;
@@ -3968,7 +3974,6 @@ public final class Types {
             public JsonNode getInput() { return input; }
             public Boolean getProviderExecuted() { return providerExecuted; }
             public Boolean getDynamic() { return dynamic; }
-            public String getThoughtSignature() { return thoughtSignature; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
             /** Set by Core when the tool call stays invalid after optional repair. */
             public Boolean getInvalid() { return invalid; }
@@ -3983,7 +3988,6 @@ public final class Types {
                 private JsonNode input = emptyObject();
                 private Boolean providerExecuted;
                 private Boolean dynamic;
-                private String thoughtSignature;
                 private JsonNode providerMetadata;
                 private Boolean invalid;
                 private JsonNode error;
@@ -3993,13 +3997,12 @@ public final class Types {
                 public Builder input(JsonNode v) { this.input = v; return this; }
                 public Builder providerExecuted(Boolean v) { this.providerExecuted = v; return this; }
                 public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
-                public Builder thoughtSignature(String v) { this.thoughtSignature = v; return this; }
                 public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
                 public Builder invalid(Boolean v) { this.invalid = v; return this; }
                 public Builder error(JsonNode v) { this.error = v; return this; }
 
                 public ToolCall build() {
-                    return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, thoughtSignature,
+                    return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic,
                         providerMetadata, invalid, error);
                 }
             }
@@ -4014,7 +4017,6 @@ public final class Types {
                     && Objects.equals(input, that.input)
                     && Objects.equals(providerExecuted, that.providerExecuted)
                     && Objects.equals(dynamic, that.dynamic)
-                    && Objects.equals(thoughtSignature, that.thoughtSignature)
                     && Objects.equals(providerMetadata, that.providerMetadata)
                     && Objects.equals(invalid, that.invalid)
                     && Objects.equals(error, that.error);
@@ -4022,7 +4024,7 @@ public final class Types {
 
             @Override
             public int hashCode() {
-                return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic, thoughtSignature,
+                return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic,
                     providerMetadata, invalid, error);
             }
         }
@@ -4320,61 +4322,15 @@ public final class Types {
         }
 
         public static class Source extends StreamPart {
-            @JsonProperty("id") private String id = "";
-            @JsonProperty("source_type") private String sourceType = "";
-            @JsonProperty("url") private String url;
-            @JsonProperty("title") private String title;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            private final Types.Source source;
 
-            @JsonCreator
-            Source() {}
+            public Source(Types.Source source) { this.source = Objects.requireNonNull(source, "source"); }
+            public Types.Source getSource() { return source; }
 
-            private Source(String id, String sourceType, String url, String title, JsonNode providerMetadata) {
-                this.id = id;
-                this.sourceType = sourceType;
-                this.url = url;
-                this.title = title;
-                this.providerMetadata = providerMetadata;
+            @Override public boolean equals(Object o) {
+                return o instanceof Source && Objects.equals(source, ((Source) o).source);
             }
-
-            public String getId() { return id; }
-            public String getSourceType() { return sourceType; }
-            public String getUrl() { return url; }
-            public String getTitle() { return title; }
-            public JsonNode getProviderMetadata() { return providerMetadata; }
-
-            public static Builder builder() { return new Builder(); }
-
-            public static class Builder {
-                private String id = "";
-                private String sourceType = "";
-                private String url;
-                private String title;
-                private JsonNode providerMetadata;
-
-                public Builder id(String v) { this.id = v; return this; }
-                public Builder sourceType(String v) { this.sourceType = v; return this; }
-                public Builder url(String v) { this.url = v; return this; }
-                public Builder title(String v) { this.title = v; return this; }
-                public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
-
-                public Source build() { return new Source(id, sourceType, url, title, providerMetadata); }
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) return true;
-                if (!(o instanceof Source)) return false;
-                Source that = (Source) o;
-                return Objects.equals(id, that.id)
-                    && Objects.equals(sourceType, that.sourceType)
-                    && Objects.equals(url, that.url)
-                    && Objects.equals(title, that.title)
-                    && Objects.equals(providerMetadata, that.providerMetadata);
-            }
-
-            @Override
-            public int hashCode() { return Objects.hash(id, sourceType, url, title, providerMetadata); }
+            @Override public int hashCode() { return Objects.hash(source); }
         }
 
         public static class Raw extends StreamPart {
@@ -4606,7 +4562,8 @@ public final class Types {
                 gen.writeTree(out);
                 return;
             }
-            ObjectNode node = (ObjectNode) AimuxJson.INNER_MAPPER.valueToTree(value);
+            ObjectNode node = (ObjectNode) AimuxJson.INNER_MAPPER.valueToTree(
+                value instanceof StreamPart.Source ? ((StreamPart.Source) value).getSource() : value);
             ObjectNode out = JsonNodeFactory.instance.objectNode();
             out.set(tag, node);
             gen.writeTree(out);
@@ -4640,7 +4597,7 @@ public final class Types {
                 case "ReasoningDelta": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ReasoningDelta.class);
                 case "ReasoningEnd": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ReasoningEnd.class);
                 case "ResponseMetadata": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ResponseMetadata.class);
-                case "Source": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Source.class);
+                case "Source": return new StreamPart.Source(AimuxJson.MAPPER.treeToValue(innerObj, Types.Source.class));
                 case "Raw": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Raw.class);
                 case "Error": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Error.class);
                 case "Custom": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Custom.class);

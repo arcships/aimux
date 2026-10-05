@@ -432,7 +432,6 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
-                                                thought_signature: None,
                                                 provider_metadata: None,
                                             }));
 
@@ -1087,10 +1086,9 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                         for ann in annotations {
                             let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
                             let title = ann.get("title").and_then(|v| v.as_str());
-                            content.push(GenerateContent::Source(Source {
+                            content.push(GenerateContent::Source(Source::Url {
                                 id: format!("id-{source_id_counter}"),
-                                source_type: "url".to_string(),
-                                url: Some(url.to_string()),
+                                url: url.to_string(),
                                 title: title.map(std::string::ToString::to_string),
                                 provider_metadata: None,
                             }));
@@ -1132,7 +1130,6 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
             }
@@ -1151,7 +1148,6 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     input,
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
 
@@ -1177,7 +1173,6 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     input: json!({ "server_label": server_label }).to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
 

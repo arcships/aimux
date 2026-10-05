@@ -449,10 +449,9 @@ pub(crate) fn stream_parts_for_result_block(
                 tool_use_id,
             )];
             parts.extend(results.iter().map(|result| {
-                StreamPart::Source(Source {
+                StreamPart::Source(Source::Url {
                     id: generate_source_id(),
-                    source_type: "url".to_string(),
-                    url: str_field(result, "url"),
+                    url: str_field(result, "url").unwrap_or_default(),
                     title: str_field(result, "title"),
                     provider_metadata: Some(
                         provider_namespace(
@@ -597,7 +596,6 @@ pub(crate) fn parse_anthropic_content(
                     input: input.to_string(),
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: tool_call_caller_metadata(caller.as_ref()),
                 }));
             }
@@ -625,7 +623,6 @@ pub(crate) fn parse_anthropic_content(
                     dynamic: (provider_name == "code_execution"
                         && names.mark_code_execution_dynamic())
                     .then_some(true),
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
             }
@@ -642,7 +639,6 @@ pub(crate) fn parse_anthropic_content(
                     input: input.to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature: None,
                     provider_metadata: Some(
                         provider_namespace(
                             "anthropic",
@@ -689,10 +685,9 @@ pub(crate) fn parse_anthropic_content(
                         // Each result also becomes a `Source` — that is how the
                         // URLs and titles reach `result.sources`.
                         for result in results {
-                            content.push(GenerateContent::Source(Source {
+                            content.push(GenerateContent::Source(Source::Url {
                                 id: generate_source_id(),
-                                source_type: "url".to_string(),
-                                url: str_field(result, "url"),
+                                url: str_field(result, "url").unwrap_or_default(),
                                 title: str_field(result, "title"),
                                 provider_metadata: Some(
                                     provider_namespace(
@@ -1126,7 +1121,6 @@ pub(crate) async fn anthropic_stream_core(
                                         input: input.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
-                                        thought_signature: None,
                                         provider_metadata: Some(provider_namespace("anthropic", json!({
                                             "type": "mcp-tool-use",
                                             "serverName": server_name,
@@ -1336,7 +1330,6 @@ pub(crate) async fn anthropic_stream_core(
                                             input,
                                             provider_executed,
                                             dynamic,
-                                            thought_signature: None,
                                             provider_metadata,
                                         }));
                                     }

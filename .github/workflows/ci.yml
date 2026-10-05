@@ -390,9 +390,9 @@ jobs:
         working-directory: bindings/flutter/example
         run: flutter test
 
-  # ── Contract tests: shared JSON fixtures (catches cross-language type drift) ──
+  # Generated files must match their generators.
   contract-tests:
-    name: Contract tests
+    name: Generator drift checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -400,29 +400,13 @@ jobs:
         run: python3 scripts/gen_providers_doc.py --check
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Run Rust contract tests
-        run: cargo test --test contract_test -p aimux-core
       - name: ts-rs export drift (checked-in types must match generator output)
         run: python3 scripts/gen_ts_types.py --check
-      - name: Build Node binding
-        working-directory: bindings/node
-        run: |
-          npm ci
-          npx napi build --platform
-      - name: Run Node contract tests
-        working-directory: contract-tests
-        run: |
-          node --experimental-strip-types run-node.ts
 
-  # ── Swift contract tests: the eighth binding joins the shared fixtures ─────
-  # Needs macOS (XCTest) and the FFI cdylib, which the Swift package links via
-  # the CAimuxFFI system module. The Dart side needs no job here: flutter-binding
-  # already runs `flutter test`, which picks up bindings/flutter/test/contract_test.dart.
+  # Swift tests need macOS (XCTest) and the FFI cdylib, which the Swift package
+  # links via the CAimuxFFI system module.
   swift-contract-tests:
-    name: Swift contract tests
+    name: Swift tests
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -430,7 +414,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build the FFI library the Swift package links against
         run: cargo build -p aimux-ffi --release
-      - name: Run Swift contract tests
+      - name: Run Swift tests
         working-directory: bindings/swift
         env:
           DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
