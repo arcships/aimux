@@ -18,6 +18,7 @@ use crate::language_model::LanguageModel;
 use crate::model_catalogue::RuntimeModel;
 use crate::reranking_model::RerankingModel;
 use crate::search_model::SearchModel;
+use crate::skills_model::Skills;
 use crate::speech_model::SpeechModel;
 use crate::transcription_model::TranscriptionModel;
 use crate::video_model::VideoModel;
@@ -97,6 +98,11 @@ pub trait Provider: Send + Sync {
         None
     }
 
+    /// The vendor's skill-management interface; `None` when not offered.
+    fn skills(&self) -> Option<Arc<dyn Skills>> {
+        None
+    }
+
     /// Create a video-generation model; `None` when not offered.
     ///
     /// aimux extension — not a member of AI SDK `ProviderV4`.
@@ -163,6 +169,9 @@ impl<P: Provider + ?Sized> Provider for &P {
     }
     fn files(&self) -> Option<Arc<dyn Files>> {
         (**self).files()
+    }
+    fn skills(&self) -> Option<Arc<dyn Skills>> {
+        (**self).skills()
     }
     fn video_model(&self, id: &str) -> Option<Result<Arc<dyn VideoModel>, AiMuxError>> {
         (**self).video_model(id)

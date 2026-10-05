@@ -13,24 +13,29 @@ use crate::error::AiMuxError;
 use crate::files_model::Files;
 use crate::image_model::ImageModel;
 use crate::language_model::LanguageModel;
+use crate::language_model_middleware::{LanguageModelMiddleware, wrap_language_model};
 use crate::provider::Provider;
 use crate::reranking_model::RerankingModel;
 use crate::search_model::SearchModel;
+use crate::skills_model::Skills;
 use crate::speech_model::SpeechModel;
 use crate::transcription_model::TranscriptionModel;
 use crate::video_model::VideoModel;
 
 /// Options of [`create_provider_registry`].
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ProviderRegistryOptions {
     /// Separates the provider id from the model id. Defaults to `":"`.
     pub separator: String,
+    /// Middleware applied to each language model in input order.
+    pub language_model_middleware: Vec<Arc<dyn LanguageModelMiddleware>>,
 }
 
 impl Default for ProviderRegistryOptions {
     fn default() -> Self {
         Self {
             separator: ":".to_string(),
+            language_model_middleware: Vec::new(),
         }
     }
 }
@@ -39,6 +44,7 @@ impl Default for ProviderRegistryOptions {
 pub struct ProviderRegistry {
     providers: BTreeMap<String, Arc<dyn Provider>>,
     separator: String,
+    language_model_middleware: Vec<Arc<dyn LanguageModelMiddleware>>,
 }
 
 /// Create a registry over `providers` (the AI SDK's `createProviderRegistry`).
@@ -50,6 +56,7 @@ pub fn create_provider_registry(
     ProviderRegistry {
         providers,
         separator: options.separator,
+        language_model_middleware: options.language_model_middleware,
     }
 }
 
@@ -93,7 +100,10 @@ impl ProviderRegistry {
     /// whatever the provider returns for the model id.
     pub fn language_model(&self, id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
         let (provider, model_id) = self.resolve(id, "languageModel")?;
-        provider.language_model(model_id)
+        Ok(wrap_language_model(
+            provider.language_model(model_id)?,
+            &self.language_model_middleware,
+        ))
     }
 
     /// The embedding model for a combined id; errors as [`Self::language_model`].
@@ -173,6 +183,18 @@ impl ProviderRegistry {
     pub fn search_model(&self, id: &str) -> Result<Arc<dyn SearchModel>, AiMuxError> {
         let (provider, model_id) = self.resolve(id, "searchModel")?;
         offered(provider.search_model(model_id), id, "searchModel")
+    }
+
+    /// The skills interface of a registered provider.
+    ///
+    /// # Errors
+    /// Returns an unknown provider or unsupported functionality error.
+    pub fn skills(&self, provider_id: &str) -> Result<Arc<dyn Skills>, AiMuxError> {
+        self.provider(provider_id)?.skills().ok_or_else(|| {
+            AiMuxError::UnsupportedFunctionality(format!(
+                "provider '{provider_id}' does not expose skills"
+            ))
+        })
     }
 
     /// The files interface of the provider `provider_id`.

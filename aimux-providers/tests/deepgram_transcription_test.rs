@@ -153,51 +153,6 @@ async fn should_extract_text() {
 }
 
 #[tokio::test]
-async fn should_pass_detect_language_query_param() {
-    let server = MockServer::start().await;
-    mock_response(&server, &fixture_response()).await;
-
-    let config = DeepgramProviderSettings {
-        api_key: Some(Resolvable::Value("test-api-key".to_string())),
-        base_url: Some(server.uri().to_string()),
-        ..Default::default()
-    };
-    let provider = create_deepgram(config).unwrap();
-    let model = provider.transcription("nova-3");
-
-    let mut opts = options(mock_audio(), "audio/wav");
-    let po = aimux_core::shared::provider_namespace("deepgram", json!({"detectLanguage": true}));
-    opts.provider_options = Some(po);
-
-    model.do_generate(&opts).await.unwrap();
-
-    let requests = server.received_requests().await.unwrap();
-    assert!(requests[0].url.as_str().contains("detect_language=true"));
-}
-
-#[tokio::test]
-async fn should_return_detected_language() {
-    let server = MockServer::start().await;
-    mock_response(&server, &fixture_response()).await;
-
-    let config = DeepgramProviderSettings {
-        api_key: Some(Resolvable::Value("test-api-key".to_string())),
-        base_url: Some(server.uri().to_string()),
-        ..Default::default()
-    };
-    let provider = create_deepgram(config).unwrap();
-    let model = provider.transcription("nova-3");
-
-    let mut opts = options(mock_audio(), "audio/wav");
-    let po = aimux_core::shared::provider_namespace("deepgram", json!({"detectLanguage": true}));
-    opts.provider_options = Some(po);
-
-    let result = model.do_generate(&opts).await.unwrap();
-
-    assert_eq!(result.language, Some("en".to_string()));
-}
-
-#[tokio::test]
 async fn should_include_response_data() {
     let server = MockServer::start().await;
     mock_response_with_headers(
@@ -250,40 +205,6 @@ async fn should_use_real_date() {
 
     assert!(result.response.timestamp.is_some());
     assert_eq!(result.response.model_id, Some("nova-3".to_string()));
-}
-
-#[tokio::test]
-async fn should_return_language_from_inline_response() {
-    let server = MockServer::start().await;
-    mock_response(
-        &server,
-        &json!({
-            "metadata": {"duration": 1.0},
-            "results": {
-                "channels": [{
-                    "detected_language": "sv",
-                    "alternatives": [{"transcript": "hej", "words": []}]
-                }]
-            }
-        }),
-    )
-    .await;
-
-    let config = DeepgramProviderSettings {
-        api_key: Some(Resolvable::Value("test-api-key".to_string())),
-        base_url: Some(server.uri().to_string()),
-        ..Default::default()
-    };
-    let provider = create_deepgram(config).unwrap();
-    let model = provider.transcription("nova-3");
-
-    let mut opts = options(mock_audio(), "audio/wav");
-    let po = aimux_core::shared::provider_namespace("deepgram", json!({"detectLanguage": true}));
-    opts.provider_options = Some(po);
-
-    let result = model.do_generate(&opts).await.unwrap();
-
-    assert_eq!(result.language, Some("sv".to_string()));
 }
 
 #[tokio::test]

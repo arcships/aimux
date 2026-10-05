@@ -11,7 +11,7 @@ use ts_rs::TS;
 use crate::AbortSignal;
 use crate::language_model_message::LanguageModelPrompt;
 use crate::shared::SharedProviderOptions;
-pub use crate::tool::{FunctionTool, ProviderTool, Tool, ToolChoice};
+pub use crate::tool::{FunctionTool, FunctionToolInputExample, ProviderTool, Tool, ToolChoice};
 use crate::types::ReasoningEffort;
 
 /// How the model should format its response.
@@ -103,7 +103,7 @@ pub struct CallOptions {
     pub tools: Option<Vec<Tool>>,
 
     /// How the model should choose tools.
-    pub tool_choice: ToolChoice,
+    pub tool_choice: Option<ToolChoice>,
 
     /// Extra HTTP headers.
     pub headers: Option<HashMap<String, String>>,
@@ -199,7 +199,7 @@ impl CallOptions {
             response_format: None,
             seed: None,
             tools: None,
-            tool_choice: ToolChoice::default(),
+            tool_choice: None,
             headers: None,
             provider_options: None,
             reasoning: None,

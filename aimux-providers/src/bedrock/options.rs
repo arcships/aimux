@@ -21,5 +21,5 @@ pub(crate) fn read(provider_options: Option<&SharedProviderOptions>) -> Option<&
 
 /// Wrap `payload` as response metadata under the namespace key.
 pub(crate) fn metadata(payload: Value) -> ProviderMetadata {
-    provider_namespace(AMAZON_BEDROCK, payload)
+    provider_namespace(AMAZON_BEDROCK, payload).expect("provider metadata must be an object")
 }

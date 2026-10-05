@@ -93,7 +93,8 @@ mod tests {
 
     #[test]
     fn either_namespace_alone_is_read() {
-        let only_custom = aimux_core::shared::provider_namespace("proxy", json!({ "x": true }));
+        let only_custom = aimux_core::shared::provider_namespace("proxy", json!({ "x": true }))
+            .expect("provider metadata must be an object");
         assert_eq!(
             anthropic_options(Some(&only_custom), "proxy"),
             Some(serde_json::from_value(json!({ "x": true })).unwrap())

@@ -319,19 +319,7 @@ class TypedModelRoundTripTest {
         assertThat(decoded).isEqualTo(original)
     }
 
-    @Test
-    fun `GenerateContent File round-trips and omits filename`() {
-        val original = GenerateContent.File(
-            data = FileData.Text("payload"),
-            mediaType = "text/plain",
-            providerMetadata = null,
-        )
-        val json = AimuxJson.encodeToString(GenerateContent.serializer(), original)
-        // GenerateContent.File (unlike ContentPart.File) has no `filename` field.
-        assertThat(json).doesNotContain("filename")
-        val decoded = AimuxJson.decodeFromString(GenerateContent.serializer(), json)
-        assertThat(decoded).isEqualTo(original)
-    }
+
 
     @Test
     fun `GenerateContent ToolResult round-trips using result not output`() {

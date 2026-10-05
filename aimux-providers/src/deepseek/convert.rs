@@ -53,7 +53,7 @@ fn convert_image_part(part: &FilePart, provider_options_name: &str) -> Result<Va
             })?;
             Ok(json!({ "type": "file", "file_id": file_id }))
         }
-        FileData::Url { url } => {
+        FileData::Url { url, .. } => {
             resolve_deepseek_image_media_type(part)?;
             if url.len() > 8192 {
                 return Err(AiMuxError::InvalidPrompt(

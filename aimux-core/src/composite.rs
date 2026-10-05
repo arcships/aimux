@@ -21,7 +21,7 @@ use std::sync::Arc;
 use crate::language_model::LanguageModel;
 use crate::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use crate::result::GenerateContent;
-use crate::types::{TokenUsage, Usage};
+use crate::types::{InputTokenUsage, OutputTokenUsage, Usage};
 
 /// Composite-model child handle. `Arc` (not `Box`) so children are `Clone`,
 /// match the FFI/Node registry shape, and stay alive after a child handle is
@@ -31,25 +31,23 @@ pub type ChildModel = Arc<dyn LanguageModel>;
 /// Add two `Usage` values field-by-field. `Usage::raw` (provider-opaque) is
 /// dropped — summing raw maps across providers is meaningless.
 ///
-/// Each `TokenUsage` field is `Option<u32>`; `None` is treated as zero so a
+/// Each usage detail field is `Option<u32>`; `None` is treated as zero so a
 /// child that doesn't report a breakdown doesn't erase the other child's data.
 #[must_use]
 pub(crate) fn add_usage(a: Usage, b: &Usage) -> Usage {
     Usage {
-        input_tokens: add_token_usage(a.input_tokens, &b.input_tokens),
-        output_tokens: add_token_usage(a.output_tokens, &b.output_tokens),
+        input_tokens: InputTokenUsage {
+            total: opt_add(a.input_tokens.total, b.input_tokens.total),
+            no_cache: opt_add(a.input_tokens.no_cache, b.input_tokens.no_cache),
+            cache_read: opt_add(a.input_tokens.cache_read, b.input_tokens.cache_read),
+            cache_write: opt_add(a.input_tokens.cache_write, b.input_tokens.cache_write),
+        },
+        output_tokens: OutputTokenUsage {
+            total: opt_add(a.output_tokens.total, b.output_tokens.total),
+            text: opt_add(a.output_tokens.text, b.output_tokens.text),
+            reasoning: opt_add(a.output_tokens.reasoning, b.output_tokens.reasoning),
+        },
         raw: None,
-    }
-}
-
-fn add_token_usage(a: TokenUsage, b: &TokenUsage) -> TokenUsage {
-    TokenUsage {
-        total: opt_add(a.total, b.total),
-        no_cache: opt_add(a.no_cache, b.no_cache),
-        cache_read: opt_add(a.cache_read, b.cache_read),
-        cache_write: opt_add(a.cache_write, b.cache_write),
-        text: opt_add(a.text, b.text),
-        reasoning: opt_add(a.reasoning, b.reasoning),
     }
 }
 

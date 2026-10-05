@@ -98,6 +98,33 @@ impl LanguageModel for VertexModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        if options
+            .prompt
+            .iter()
+            .filter_map(|message| match message {
+                aimux_core::language_model_message::LanguageModelMessage::Assistant {
+                    content,
+                    ..
+                } => Some(content),
+                _ => None,
+            })
+            .flatten()
+            .any(|part| {
+                matches!(
+                    part,
+                    aimux_core::language_model_message::AssistantPart::ReasoningFile(
+                        aimux_core::language_model_message::ReasoningFilePart {
+                            data: aimux_core::shared::GeneratedFileData::Url { .. },
+                            ..
+                        }
+                    )
+                )
+            })
+        {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "File data URLs in assistant messages are not supported".to_string(),
+            ));
+        }
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let body = build_vertex_request_body(&self.model_id, options);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
@@ -110,9 +137,8 @@ impl LanguageModel for VertexModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers;
-
         let response_body = resp.raw_value;
+        let response_headers = resp.response_headers;
 
         let data: GenerateContentResponse = resp.value;
 
@@ -167,6 +193,33 @@ impl LanguageModel for VertexModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        if options
+            .prompt
+            .iter()
+            .filter_map(|message| match message {
+                aimux_core::language_model_message::LanguageModelMessage::Assistant {
+                    content,
+                    ..
+                } => Some(content),
+                _ => None,
+            })
+            .flatten()
+            .any(|part| {
+                matches!(
+                    part,
+                    aimux_core::language_model_message::AssistantPart::ReasoningFile(
+                        aimux_core::language_model_message::ReasoningFilePart {
+                            data: aimux_core::shared::GeneratedFileData::Url { .. },
+                            ..
+                        }
+                    )
+                )
+            })
+        {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "File data URLs in assistant messages are not supported".to_string(),
+            ));
+        }
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let body = build_vertex_request_body(&self.model_id, options);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;

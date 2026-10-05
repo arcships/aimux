@@ -46,18 +46,24 @@ pub type JsonObject = serde_json::Map<String, Value>;
 /// Build a one-namespace [`SharedProviderMetadata`] / [`SharedProviderOptions`]
 /// (they are the same type) from a JSON object literal.
 ///
-/// `provider_namespace("openai", json!({ "itemId": "x" }))` is
+/// `provider_namespace("openai", json!({ "itemId": "x" }))?` is
 /// `{ "openai": { "itemId": "x" } }`.
 ///
-/// A value that is not a JSON object yields an empty namespace. Several
-/// namespaces: `extend` one map with another.
-#[must_use]
-pub fn provider_namespace(namespace: &str, object: Value) -> SharedProviderMetadata {
-    let object = match object {
-        Value::Object(object) => object,
-        _ => JsonObject::new(),
+/// Several namespaces: `extend` one map with another.
+///
+/// # Errors
+///
+/// Returns an invalid argument error when the value is not a JSON object.
+pub fn provider_namespace(
+    namespace: &str,
+    object: Value,
+) -> Result<SharedProviderMetadata, crate::AiMuxError> {
+    let Value::Object(object) = object else {
+        return Err(crate::AiMuxError::InvalidArgument(format!(
+            "invalid {namespace} provider options: expected a JSON object"
+        )));
     };
-    HashMap::from([(namespace.to_string(), object)])
+    Ok(HashMap::from([(namespace.to_string(), object)]))
 }
 
 /// A mapping of provider names to provider-specific file identifiers.
@@ -93,11 +99,29 @@ pub enum FileData {
     /// Raw bytes (`Uint8Array`) or a base64-encoded string.
     Data { data: FileBytes },
     /// A URL that points to the file.
-    Url { url: String },
+    Url {
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original_url: Option<String>,
+    },
     /// A provider reference (`{ [provider]: id }`).
     Reference { reference: SharedProviderReference },
     /// Inline text content (e.g. an inline text document).
     Text { text: String },
+}
+
+/// Data or a URL returned for a generated file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub enum GeneratedFileData {
+    Data {
+        data: FileBytes,
+    },
+    Url {
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original_url: Option<String>,
+    },
 }
 
 /// Image/video size in `{width}x{height}` format (e.g. `"1024x1024"`).
@@ -284,6 +308,16 @@ impl From<crate::types::ResponseMetadata> for ResponseInfo {
             timestamp: metadata.timestamp,
             model_id: metadata.model_id,
             ..Self::default()
+        }
+    }
+}
+
+impl From<ResponseInfo> for crate::types::ResponseMetadata {
+    fn from(response: ResponseInfo) -> Self {
+        Self {
+            id: response.id,
+            timestamp: response.timestamp,
+            model_id: response.model_id,
         }
     }
 }

@@ -221,7 +221,7 @@ fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Val
                 "text file parts".into(),
             ));
         }
-        FileData::Url { url } => (None, Some(url.as_str())),
+        FileData::Url { url, .. } => (None, Some(url.as_str())),
         FileData::Data { data } => {
             let b64 = match data {
                 FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
@@ -414,7 +414,10 @@ fn convert_message_to_openai(
                             "function": { "name": part.tool_name, "arguments": arguments },
                         }));
                     }
-                    AssistantPart::File(_) | AssistantPart::ToolResult(_) => {}
+                    AssistantPart::File(_)
+                    | AssistantPart::ToolResult(_)
+                    | AssistantPart::Custom(_)
+                    | AssistantPart::ReasoningFile(_) => {}
                 }
             }
             let mut message = if !tool_calls.is_empty() {
@@ -430,7 +433,10 @@ fn convert_message_to_openai(
                     .filter(|part| {
                         !matches!(
                             part,
-                            AssistantPart::Reasoning(_) | AssistantPart::ToolResult(_)
+                            AssistantPart::Reasoning(_)
+                                | AssistantPart::ToolResult(_)
+                                | AssistantPart::Custom(_)
+                                | AssistantPart::ReasoningFile(_)
                         )
                     })
                     .collect();
@@ -816,7 +822,7 @@ fn apply_tools(body: &mut Value, options: &CallOptions) {
             .collect()
     });
 
-    let prepared = prepare_tools(&function_tools, Some(&options.tool_choice));
+    let prepared = prepare_tools(&function_tools, options.tool_choice.as_ref());
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);
         if let Some(tc) = prepared.tool_choice {

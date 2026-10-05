@@ -93,23 +93,21 @@ fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
     let text_tokens = completion_tokens.saturating_sub(reasoning_tokens);
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(prompt_tokens),
             no_cache: Some(no_cache),
             cache_read: Some(cached),
             cache_write,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(completion_tokens),
             text: Some(text_tokens),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
         // M10 (RFC-0016): keep the provider's original usage JSON verbatim —
         // vendor-specific fields (e.g. Moonshot `cached_tokens`, prompt-cache
         // `prompt_cache_hit_tokens`) are otherwise lost for audit/billing.
-        raw: usage_raw.cloned(),
+        raw: usage_raw.and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -303,7 +301,8 @@ pub(crate) async fn execute_generate(
             pm_openai["rejectedPredictionTokens"] = json!(rpt);
         }
     }
-    let provider_metadata = Some(provider_namespace("openai", pm_openai));
+    let provider_metadata =
+        Some(provider_namespace("openai", pm_openai).expect("provider metadata must be an object"));
 
     Ok(GenerateResult {
         content,
@@ -671,7 +670,7 @@ pub(crate) async fn execute_stream(
                     pm_openai["rejectedPredictionTokens"] = json!(rpt);
                 }
             }
-        let provider_metadata = provider_namespace("openai", pm_openai);
+        let provider_metadata = provider_namespace("openai", pm_openai).expect("provider metadata must be an object");
 
         // Final part: Finish.
         yield Ok(StreamPart::Finish {

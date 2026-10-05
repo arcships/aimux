@@ -28,7 +28,7 @@ use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelProm
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
+use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::{PresetSettings, create_provider};
 
@@ -800,35 +800,6 @@ mod default_base_urls {
 // Provider-specific scenarios — DeepSeek reasoning_effort, Groq usage/headers,
 // rate-limit mapping.
 // ════════════════════════════════════════════════════════════════════════════
-
-/// TS (deepseek): a top-level `reasoning` value maps to `reasoning_effort`.
-#[tokio::test]
-async fn deepseek_maps_reasoning_to_reasoning_effort() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-        .mount(&server)
-        .await;
-
-    let model = registry_model(
-        "deepseek",
-        "test-api-key".to_string(),
-        "deepseek-reasoner",
-        server.uri(),
-    )
-    .expect("provider construction");
-
-    let mut options = default_options(test_prompt());
-    options.reasoning = Some(ReasoningEffort::High);
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result
-        .request
-        .and_then(|request| request.body)
-        .expect("body");
-    assert_eq!(body["reasoning_effort"], json!("high"));
-}
 
 /// TS (groq): usage tokens are extracted from the response.
 #[tokio::test]

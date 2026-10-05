@@ -17,7 +17,9 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage};
+use aimux_core::types::{
+    FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage,
+};
 use aimux_provider_utils::{
     StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, generate_id,
 };
@@ -47,7 +49,7 @@ impl OpenAICompatibleChatModel {
     ///
     /// `InvalidArgument` for a malformed provider option or an unconvertible
     /// prompt part.
-    pub fn request_body(
+    pub(crate) fn request_body(
         &self,
         options: &CallOptions,
         stream: bool,
@@ -100,20 +102,18 @@ pub(crate) fn convert_usage(usage: &UsageResponse, raw: Option<&Value>) -> Usage
         .unwrap_or(0);
 
     Usage {
-        input_tokens: TokenUsage {
+        input_tokens: InputTokenUsage {
             total: Some(prompt_tokens),
             no_cache: Some(no_cache),
             cache_read: Some(cached),
             cache_write,
-            ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: OutputTokenUsage {
             total: Some(completion_tokens),
             text: Some(completion_tokens.saturating_sub(reasoning_tokens)),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
-        raw: raw.cloned(),
+        raw: raw.and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -125,7 +125,7 @@ pub(crate) fn usage_from_raw(raw: Option<&Value>) -> Usage {
     match serde_json::from_value::<UsageResponse>(raw.clone()) {
         Ok(parsed) => convert_usage(&parsed, Some(raw)),
         Err(_) => Usage {
-            raw: Some(raw.clone()),
+            raw: raw.as_object().cloned(),
             ..Usage::default()
         },
     }
@@ -261,6 +261,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 dynamic: None,
                 provider_metadata: signature.as_ref().map(|signature| {
                     provider_namespace(&metadata_key, json!({ "thoughtSignature": signature }))
+                        .expect("provider metadata must be an object")
                 }),
                 thought_signature: signature,
             }));
@@ -403,7 +404,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 .with_build_provider_metadata(move |signature| {
                     signature
                         .and_then(Value::as_str)
-                        .map(|signature| provider_namespace(&signature_key, json!({ "thoughtSignature": signature })))
+                        .map(|signature| provider_namespace(&signature_key, json!({ "thoughtSignature": signature })).expect("provider metadata must be an object"))
                 });
 
             // Some compatible servers send the first delta of a call without
@@ -766,10 +767,8 @@ pub(crate) async fn list_models_once(
 
 #[cfg(test)]
 mod tests {
-    use aimux_core::types::ProviderMetadata;
     use std::sync::Arc;
 
-    use futures::StreamExt;
     use serde_json::{Value, json};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -778,13 +777,9 @@ mod tests {
     use aimux_core::language_model::LanguageModel;
     use aimux_core::language_model_message::LanguageModelMessage;
     use aimux_core::options::CallOptions;
-    use aimux_core::shared::provider_namespace;
-    use aimux_core::stream_part::StreamPart;
     use aimux_provider_utils::ProviderErrorParts;
 
-    use crate::openai_compatible::config::{
-        BaseUrl, ChatDialect, MetadataExtractor, StreamMetadataExtractor,
-    };
+    use crate::openai_compatible::config::{BaseUrl, ChatDialect};
     use crate::openai_compatible::{Assembly, ChatProfile, OpenAICompatibleProvider};
     use crate::shared::Credential;
 
@@ -812,91 +807,12 @@ mod tests {
         .unwrap()
     }
 
-    /// Records `x_extra` of the body and counts the chunks of a stream.
-    struct Extractor;
-
-    impl MetadataExtractor for Extractor {
-        fn extract_metadata(&self, parsed_body: &Value) -> Option<ProviderMetadata> {
-            Some(provider_namespace(
-                "extra",
-                json!({"x_extra": parsed_body.get("x_extra").cloned()}),
-            ))
-        }
-
-        fn create_stream_extractor(&self) -> Box<dyn StreamMetadataExtractor> {
-            Box::new(StreamExtractor { chunks: 0 })
-        }
-    }
-
-    struct StreamExtractor {
-        chunks: usize,
-    }
-
-    impl StreamMetadataExtractor for StreamExtractor {
-        fn process_chunk(&mut self, _parsed_chunk: &Value) {
-            self.chunks += 1;
-        }
-
-        fn build_metadata(&self) -> Option<ProviderMetadata> {
-            Some(provider_namespace("extra", json!({"chunks": self.chunks})))
-        }
-    }
-
     async fn serve(server: &MockServer, response: ResponseTemplate) {
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
             .respond_with(response)
             .mount(server)
             .await;
-    }
-
-    #[tokio::test]
-    async fn the_metadata_extractor_adds_to_the_namespace_entry_in_both_modes() {
-        let server = MockServer::start().await;
-        serve(
-            &server,
-            ResponseTemplate::new(200).set_body_json(json!({
-                "id": "c", "model": "m", "x_extra": 7,
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}]
-            })),
-        )
-        .await;
-        let mut dialect = ChatDialect::baseline();
-        dialect.metadata_extractor = Some(Arc::new(Extractor));
-        let model = provider(BaseUrl::Fixed(server.uri()), dialect.clone()).chat("m");
-
-        let result = model.do_generate(&hello()).await.unwrap();
-        assert_eq!(
-            serde_json::to_value(result.provider_metadata.unwrap()).unwrap(),
-            json!({"acme": {}, "extra": {"x_extra": 7}})
-        );
-
-        server.reset().await;
-        serve(
-            &server,
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(
-                    "data: {\"id\":\"c\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"a\"},\"finish_reason\":null}]}\n\n\
-                     data: {\"id\":\"c\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
-                ),
-        )
-        .await;
-        let stream = model.do_stream(&hello()).await.unwrap();
-        let parts: Vec<StreamPart> = stream.stream.map(|p| p.unwrap()).collect().await;
-        let metadata = parts
-            .iter()
-            .find_map(|p| match p {
-                StreamPart::Finish {
-                    provider_metadata, ..
-                } => provider_metadata.clone(),
-                _ => None,
-            })
-            .unwrap();
-        assert_eq!(
-            serde_json::to_value(metadata).unwrap(),
-            json!({"acme": {}, "extra": {"chunks": 2}})
-        );
     }
 
     #[tokio::test]

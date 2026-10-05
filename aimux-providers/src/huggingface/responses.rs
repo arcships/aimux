@@ -34,9 +34,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Sourc
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::Tool;
-use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage, Warning,
-};
+use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
 
 use aimux_provider_utils::{
     MediaTypeData, detect_media_type, get_top_level_media_type, is_full_media_type,
@@ -605,7 +603,7 @@ pub fn build_request_body_with_warnings(
 
     // Prepare tools.
     let (tools, tool_choice, tool_warnings) =
-        prepare_responses_tools(&options.tools, &options.tool_choice);
+        prepare_responses_tools(&options.tools, options.tool_choice.as_ref());
     warnings.extend(tool_warnings);
 
     // Assemble the body. Key insertion order follows the TS `baseArgs` object
@@ -718,7 +716,7 @@ pub fn convert_to_huggingface_responses_messages(
                                 FileData::Data {
                                     data: FileBytes::Base64(data),
                                 } => convert_file_part_base64(&file.media_type, data)?,
-                                FileData::Url { url } => {
+                                FileData::Url { url, .. } => {
                                     convert_file_part_url(&file.media_type, url)?
                                 }
                                 FileData::Reference { .. } => {
@@ -757,7 +755,9 @@ pub fn convert_to_huggingface_responses_messages(
                         // Responses API — skip (no warning, matching TS).
                         AssistantPart::ToolCall(_)
                         | AssistantPart::ToolResult(_)
-                        | AssistantPart::File(_) => {}
+                        | AssistantPart::File(_)
+                        | AssistantPart::Custom(_)
+                        | AssistantPart::ReasoningFile(_) => {}
                     }
                 }
             }
@@ -842,7 +842,7 @@ fn resolve_full_media_type_base64(media_type: &str, data: &str) -> Result<String
 #[must_use]
 pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
-    tool_choice: &ToolChoice,
+    tool_choice: Option<&ToolChoice>,
 ) -> (Option<Vec<Value>>, Option<Value>, Vec<Warning>) {
     let tools = match tools {
         Some(t) if !t.is_empty() => t,
@@ -874,10 +874,10 @@ pub fn prepare_responses_tools(
     }
 
     let mapped_tool_choice = match tool_choice {
-        ToolChoice::Auto => Some(json!("auto")),
-        ToolChoice::Required => Some(json!("required")),
-        ToolChoice::None => None, // not supported, ignore
-        ToolChoice::Tool { tool_name } => Some(json!({
+        Some(ToolChoice::Auto) => Some(json!("auto")),
+        Some(ToolChoice::Required) => Some(json!("required")),
+        None | Some(ToolChoice::None) => None, // not supported, ignore
+        Some(ToolChoice::Tool { tool_name }) => Some(json!({
             "type": "function",
             "function": { "name": tool_name }
         })),
@@ -1098,21 +1098,19 @@ fn convert_usage(usage: Option<&Value>) -> Usage {
         .unwrap_or(0) as u32;
 
     Usage {
-        input_tokens: TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input_tokens),
             no_cache: Some(input_tokens - cached_tokens),
             cache_read: Some(cached_tokens),
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(output_tokens),
             text: Some(output_tokens - reasoning_tokens),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(u.clone()),
+        raw: u.as_object().cloned(),
     }
 }
 

@@ -109,6 +109,23 @@ pub struct ToolResultPart {
     pub provider_options: Option<SharedProviderOptions>,
 }
 
+/// Provider-specific custom content.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CustomPart {
+    pub kind: String,
+    pub provider_options: Option<SharedProviderOptions>,
+}
+
+/// A file produced during reasoning.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ReasoningFilePart {
+    pub data: crate::shared::GeneratedFileData,
+    pub media_type: String,
+    pub provider_options: Option<SharedProviderOptions>,
+}
+
 /// Parts allowed in a user message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -126,6 +143,8 @@ pub enum AssistantPart {
     Text(TextPart),
     File(FilePart),
     Reasoning(ReasoningPart),
+    Custom(CustomPart),
+    ReasoningFile(ReasoningFilePart),
     ToolCall(ToolCallPart),
     ToolResult(ToolResultPart),
 }
@@ -164,6 +183,27 @@ fn to_assistant_part(part: &ContentPart) -> Result<AssistantPart, AiMuxError> {
         })
     };
     Ok(match part {
+        ContentPart::Custom {
+            kind,
+            provider_options,
+        } => AssistantPart::Custom(CustomPart {
+            kind: kind.clone(),
+            provider_options: provider_options.clone(),
+        }),
+        ContentPart::ReasoningFile {
+            data,
+            media_type,
+            provider_options,
+        } => AssistantPart::ReasoningFile(ReasoningFilePart {
+            data: data.clone(),
+            media_type: media_type.clone(),
+            provider_options: provider_options.clone(),
+        }),
+        ContentPart::ToolApprovalRequest { .. } => {
+            return Err(AiMuxError::InvalidPrompt(
+                "approval requests are not provider prompt parts".into(),
+            ));
+        }
         ContentPart::Text {
             text,
             provider_options,
@@ -214,7 +254,10 @@ fn to_assistant_part(part: &ContentPart) -> Result<AssistantPart, AiMuxError> {
             media_type,
             provider_options,
         } => file(
-            FileData::Url { url: url.clone() },
+            FileData::Url {
+                url: url.clone(),
+                original_url: None,
+            },
             media_type,
             &None,
             provider_options,
@@ -319,6 +362,10 @@ pub fn convert_to_language_model_prompt(
         };
         let parts = parts
             .iter()
+            .filter(|part| {
+                msg.role != Role::Assistant
+                    || !matches!(part, ContentPart::ToolApprovalRequest { .. })
+            })
             .filter(|part| {
                 !matches!(&msg.content, MessageContent::Parts(_))
                     || !matches!(part, ContentPart::Text { text, provider_options }

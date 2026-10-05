@@ -270,9 +270,14 @@ fn call_options_from(input: &Value) -> CallOptions {
         );
     }
     options.tool_choice = match input.get("toolChoice").and_then(Value::as_str) {
-        Some("required") => ToolChoice::Required,
-        Some("none") => ToolChoice::None,
-        Some("auto") | None => ToolChoice::Auto,
+        Some("required") => Some(ToolChoice::Required),
+        Some("none") => Some(ToolChoice::None),
+        Some("auto") => Some(ToolChoice::Auto),
+        None => options
+            .tools
+            .as_ref()
+            .filter(|tools| !tools.is_empty())
+            .map(|_| ToolChoice::Auto),
         Some(other) => panic!("unmapped toolChoice {other}"),
     };
     options.provider_options = input
@@ -417,10 +422,7 @@ async fn messages_provider_options_use_the_canonical_namespace() {
     assert_eq!(reasoning.0, "17 * 23 = 391.");
     assert_eq!(
         reasoning.1,
-        Some(provider_namespace(
-            "anthropic",
-            json!({ "signature": "sig_fixture" })
-        ))
+        Some(provider_namespace("anthropic", json!({ "signature": "sig_fixture" })).unwrap())
     );
 }
 
@@ -527,7 +529,7 @@ async fn messages_stream_basic() {
         serde_json::to_value(metadata).unwrap(),
         finish_step["providerMetadata"]
     );
-    assert_eq!(usage.raw.as_ref(), Some(&finish_step["usage"]["raw"]));
+    assert_eq!(usage.raw.as_ref(), finish_step["usage"]["raw"].as_object());
     assert_eq!(reason.unified, FinishReasonUnified::Stop);
     assert_eq!(reason.raw.as_deref(), Some("end_turn"));
     assert_eq!(usage.input_tokens.total, Some(12));

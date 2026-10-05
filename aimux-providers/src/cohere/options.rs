@@ -20,5 +20,5 @@ pub(crate) fn cohere_options(
 
 /// `{ "cohere": payload }`.
 pub(crate) fn cohere_metadata(payload: Value) -> ProviderMetadata {
-    provider_namespace(NAMESPACE, payload)
+    provider_namespace(NAMESPACE, payload).expect("provider metadata must be an object")
 }

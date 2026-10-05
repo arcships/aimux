@@ -453,7 +453,7 @@ pub fn supports_strict_tools(model_id: &str) -> bool {
 #[must_use]
 pub fn prepare_tools(
     tools: &Option<Vec<FunctionTool>>,
-    tool_choice: &ToolChoice,
+    tool_choice: Option<&ToolChoice>,
     model_id: &str,
 ) -> Value {
     let non_empty = tools.as_ref().filter(|t| !t.is_empty());
@@ -462,13 +462,15 @@ pub fn prepare_tools(
     };
 
     // `toolChoice: none` clears tools entirely (matches TS).
-    if matches!(tool_choice, ToolChoice::None) {
+    if matches!(tool_choice, Some(ToolChoice::None)) {
         return json!({});
     }
 
     // `toolChoice: tool` filters function tools to the named one.
     let filtered: Vec<&FunctionTool> = match tool_choice {
-        ToolChoice::Tool { tool_name } => tools.iter().filter(|t| &t.name == tool_name).collect(),
+        Some(ToolChoice::Tool { tool_name }) => {
+            tools.iter().filter(|t| &t.name == tool_name).collect()
+        }
         _ => tools.iter().collect(),
     };
 
@@ -498,10 +500,11 @@ pub fn prepare_tools(
     }
 
     let tool_choice_val = match tool_choice {
-        ToolChoice::Auto => json!({ "auto": {} }),
-        ToolChoice::Required => json!({ "any": {} }),
-        ToolChoice::Tool { tool_name } => json!({ "tool": { "name": tool_name } }),
-        ToolChoice::None => unreachable!(),
+        Some(ToolChoice::Auto) => json!({ "auto": {} }),
+        Some(ToolChoice::Required) => json!({ "any": {} }),
+        Some(ToolChoice::Tool { tool_name }) => json!({ "tool": { "name": tool_name } }),
+        Some(ToolChoice::None) => unreachable!(),
+        None => return json!({ "tools": tool_specs }),
     };
 
     json!({ "tools": tool_specs, "toolChoice": tool_choice_val })
@@ -600,7 +603,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
             })
             .collect()
     });
-    let tool_config = prepare_tools(&function_tools, &options.tool_choice, model_id);
+    let tool_config = prepare_tools(&function_tools, options.tool_choice.as_ref(), model_id);
     if tool_config
         .as_object()
         .map(|o| !o.is_empty())
@@ -639,7 +642,7 @@ pub fn map_finish_reason(reason: &str) -> FinishReason {
 /// cases); `outputTokens.text` mirrors the TS `outputTokens.text` field.
 #[must_use]
 pub fn convert_usage(usage: Option<&BedrockUsage>) -> aimux_core::types::Usage {
-    use aimux_core::types::{TokenUsage, Usage};
+    use aimux_core::types::Usage;
 
     let Some(usage) = usage else {
         return Usage::default();
@@ -651,20 +654,21 @@ pub fn convert_usage(usage: Option<&BedrockUsage>) -> aimux_core::types::Usage {
     let cache_write = usage.cache_write_input_tokens.unwrap_or(0);
 
     Usage {
-        input_tokens: TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input + cache_read + cache_write),
             no_cache: Some(input),
             cache_read: Some(cache_read),
             cache_write: Some(cache_write),
-            ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(output),
             text: Some(output),
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 

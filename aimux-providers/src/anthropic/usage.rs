@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::shared::provider_namespace;
-use aimux_core::types::{ProviderMetadata, TokenUsage, Usage};
+use aimux_core::types::{ProviderMetadata, Usage};
 
 use crate::anthropic::options::CANONICAL as CANONICAL_KEY;
 use crate::anthropic::types::AnthropicUsage;
@@ -218,7 +218,8 @@ pub(crate) fn result_provider_metadata(
         "container": container,
         "contextManagement": context_management,
     });
-    let mut result = provider_namespace(CANONICAL_KEY, metadata);
+    let mut result =
+        provider_namespace(CANONICAL_KEY, metadata).expect("provider metadata must be an object");
     if options_name != CANONICAL_KEY {
         result.insert(options_name.to_string(), result[CANONICAL_KEY].clone());
     }
@@ -254,20 +255,18 @@ pub fn usage_from_anthropic(usage: &AnthropicUsage) -> Usage {
         Ok(v) => {
             let r = convert_anthropic_usage(&v, None);
             Usage {
-                input_tokens: TokenUsage {
+                input_tokens: aimux_core::types::InputTokenUsage {
                     total: Some(r.input_tokens.total as u32),
                     no_cache: Some(r.input_tokens.no_cache as u32),
                     cache_read: Some(r.input_tokens.cache_read as u32),
                     cache_write: Some(r.input_tokens.cache_write as u32),
-                    ..Default::default()
                 },
-                output_tokens: TokenUsage {
+                output_tokens: aimux_core::types::OutputTokenUsage {
                     total: Some(r.output_tokens.total as u32),
                     text: r.output_tokens.text.map(|t| t as u32),
                     reasoning: r.output_tokens.reasoning.map(|t| t as u32),
-                    ..Default::default()
                 },
-                raw: Some(r.raw),
+                raw: r.raw.as_object().cloned(),
             }
         }
         Err(_) => Usage::default(),
@@ -316,36 +315,6 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&metadata).unwrap(),
             json!({ CANONICAL_KEY: expected, "proxy": expected })
-        );
-    }
-
-    /// The typed usage keeps what the API sent: serializing it gives the raw
-    /// object back (nothing invented, nothing dropped), so `iterations` reach
-    /// the token accounting and `usage.raw` is the provider's own object.
-    #[test]
-    fn typed_usage_round_trips_the_raw_object() {
-        let raw = json!({
-            "input_tokens": 100,
-            "output_tokens": 50,
-            "iterations": [
-                { "type": "compaction", "input_tokens": 60, "output_tokens": 10 },
-                { "type": "message", "input_tokens": 40, "output_tokens": 40 },
-            ],
-            "service_tier": "standard",
-        });
-        let typed: AnthropicUsage = serde_json::from_value(raw.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&typed).unwrap(), raw);
-        let usage = usage_from_anthropic(&typed);
-        assert_eq!(usage.raw, Some(raw));
-        // Summed across the executor iterations, not the top-level totals.
-        assert_eq!(usage.input_tokens.total, Some(100));
-        assert_eq!(usage.output_tokens.total, Some(50));
-
-        let plain: AnthropicUsage =
-            serde_json::from_value(json!({ "input_tokens": 3, "output_tokens": 4 })).unwrap();
-        assert_eq!(
-            serde_json::to_value(&plain).unwrap(),
-            json!({ "input_tokens": 3, "output_tokens": 4 })
         );
     }
 

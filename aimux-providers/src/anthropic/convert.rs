@@ -415,7 +415,7 @@ fn convert_file_part(
             };
             route_file_base64(&full, data, &bytes, filename.as_deref(), betas)?
         }
-        FileData::Url { url } => route_file_url(media_type, url, betas)?,
+        FileData::Url { url, .. } => route_file_url(media_type, url, betas)?,
         FileData::Reference { reference } => {
             let file_id = resolve_anthropic_reference(reference)?;
             betas.insert(BETA_FILES_API.to_string());
@@ -679,6 +679,7 @@ fn convert_assistant_part(
             apply_cc(block, cc)
         }
 
+        AssistantPart::Custom(_) | AssistantPart::ReasoningFile(_) => return Ok(None),
         AssistantPart::ToolResult(_) => unreachable!(),
     }))
 }
@@ -1895,7 +1896,7 @@ fn apply_anthropic_tools(
         } else {
             None
         },
-        Some(&options.tool_choice),
+        options.tool_choice.as_ref(),
         disable_parallel_tool_use,
         caps.supports_structured_output && profile.supports_native_structured_output,
         caps.supports_structured_output && profile.supports_strict_tools,
@@ -2235,7 +2236,10 @@ mod tests {
 
     fn opts_with_anthropic_thinking(thinking: serde_json::Value) -> CallOptions {
         CallOptions {
-            provider_options: Some(aimux_core::shared::provider_namespace(CANONICAL, thinking)),
+            provider_options: Some(
+                aimux_core::shared::provider_namespace(CANONICAL, thinking)
+                    .expect("provider metadata must be an object"),
+            ),
             ..CallOptions::new(LanguageModelPrompt::default())
         }
     }

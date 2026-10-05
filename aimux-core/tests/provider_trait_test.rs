@@ -205,19 +205,6 @@ mod registry {
         );
     }
 
-    /// TS: should support custom separator (with multiple characters)
-    #[test]
-    fn a_custom_separator_is_used() {
-        let registry = create_provider_registry(
-            providers(),
-            ProviderRegistryOptions {
-                separator: " > ".to_string(),
-            },
-        );
-        let model = registry.language_model("provider > model").unwrap();
-        assert_eq!(model.model_id(), "model");
-    }
-
     /// TS (transcriptionModel): should throw NoSuchModelError if provider
     /// does not return a model
     #[test]

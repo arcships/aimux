@@ -134,9 +134,8 @@ impl LanguageModel for BedrockModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers;
-
         let response_body = resp.raw_value;
+        let response_headers = resp.response_headers;
 
         let data: BedrockConverseResponse = resp.value;
 

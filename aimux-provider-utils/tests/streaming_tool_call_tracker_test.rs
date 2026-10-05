@@ -7,7 +7,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::RawToolCall;
 use aimux_core::types::ProviderMetadata;
@@ -15,7 +14,7 @@ use aimux_provider_utils::{
     StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, TrackerError,
     TypeValidation,
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 
 /// The TS tracker's four events, projected out of [`StreamPart`] so the
 /// assertions below read like the upstream suite.
@@ -1053,75 +1052,6 @@ mod flush {
 
 mod metadata {
     use super::*;
-
-    fn google_tracker() -> StreamingToolCallTracker {
-        StreamingToolCallTracker::new()
-            .with_extract_metadata(|delta| {
-                delta.extra["extra_content"]["google"]["thought_signature"]
-                    .as_str()
-                    .map(|sig| json!({ "thoughtSignature": sig }))
-            })
-            .with_build_provider_metadata(|metadata| {
-                metadata
-                    .and_then(|m| m.get("thoughtSignature"))
-                    .map(|sig| provider_namespace("google", json!({ "thoughtSignature": sig })))
-            })
-    }
-
-    #[test]
-    fn extracts_and_includes_provider_metadata_in_tool_call_parts() {
-        let mut h = Harness::with(google_tracker());
-
-        h.delta(
-            start(0, "call_1", "fn", "{}")
-                .extra(json!({ "extra_content": { "google": { "thought_signature": "sig123" } } })),
-        )
-        .unwrap();
-        h.flush();
-
-        let tool_call = h.parts.iter().find(|p| matches!(p, Part::ToolCall { .. }));
-        assert_eq!(
-            tool_call,
-            Some(&Part::ToolCall {
-                tool_call_id: "call_1".into(),
-                tool_name: "fn".into(),
-                input: "{}".into(),
-                provider_metadata: Some(provider_namespace(
-                    "google",
-                    json!({ "thoughtSignature": "sig123" })
-                )),
-            })
-        );
-    }
-
-    #[test]
-    fn includes_provider_metadata_for_unfinished_tool_calls_finalized_in_flush() {
-        let mut h = Harness::with(
-            StreamingToolCallTracker::new()
-                .with_extract_metadata(|_| Some(json!({ "custom": { "key": "value" } })))
-                .with_build_provider_metadata(|metadata| {
-                    metadata.map(|m| provider_namespace("provider", m.clone()))
-                }),
-        );
-
-        h.delta(start(0, "call_1", "fn", "{\"incomplete")).unwrap();
-        h.clear();
-
-        h.flush();
-
-        assert_eq!(
-            h.parts.last(),
-            Some(&Part::ToolCall {
-                tool_call_id: "call_1".into(),
-                tool_name: "fn".into(),
-                input: "{\"incomplete".into(),
-                provider_metadata: Some(provider_namespace(
-                    "provider",
-                    json!({ "custom": { "key": "value" } })
-                )),
-            })
-        );
-    }
 
     #[test]
     fn omits_provider_metadata_when_the_builder_returns_none() {

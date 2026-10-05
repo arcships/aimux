@@ -87,7 +87,7 @@ pub(crate) fn prepare_function_tools(options: &CallOptions) -> PreparedTools {
     }
     if !wire.is_empty() {
         prepared.tools = Some(wire);
-        prepared.tool_choice = Some(tool_choice_value(&options.tool_choice));
+        prepared.tool_choice = options.tool_choice.as_ref().map(tool_choice_value);
     }
     prepared
 }
@@ -122,7 +122,7 @@ pub(crate) struct ChatBodySpec<'a> {
 
 /// A request body and what building it produced.
 #[derive(Debug, Clone)]
-pub struct RequestBodyResult {
+pub(crate) struct RequestBodyResult {
     /// The JSON body, before the provider's `transform_request_body`.
     pub body: Value,
     /// Warnings raised while building it.
@@ -528,7 +528,7 @@ fn file_part(part: &FilePart, key: &str) -> Result<Value, AiMuxError> {
     match get_top_level_media_type(media_type) {
         kind @ ("image" | "video") => {
             let url = match &part.data {
-                FileData::Url { url } => url.to_string(),
+                FileData::Url { url, .. } => url.to_string(),
                 _ => format!(
                     "data:{};base64,{}",
                     resolve_full_media_type(part)?,

@@ -23,7 +23,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage};
+use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 use aimux_core::types::{ProviderMetadata, Warning};
 use aimux_provider_utils::HttpRequest;
 use serde_json::{Value, json};
@@ -308,10 +308,10 @@ pub(crate) fn tool_call_caller_metadata(
         }),
         ToolCallCaller::Direct => json!({ "type": "direct" }),
     };
-    Some(provider_namespace(
-        options_name,
-        json!({ "caller": caller }),
-    ))
+    Some(
+        provider_namespace(options_name, json!({ "caller": caller }))
+            .expect("provider metadata must be an object"),
+    )
 }
 
 fn is_tool_search_provider_name(name: &str) -> bool {
@@ -401,12 +401,15 @@ pub(crate) fn stream_parts_for_result_block(
                     source_type: "url".to_string(),
                     url: str_field(result, "url"),
                     title: str_field(result, "title"),
-                    provider_metadata: Some(provider_namespace(
-                        options_name,
-                        json!({
-                            "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
-                        }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace(
+                            options_name,
+                            json!({
+                                "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
+                            }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
                 })
             }));
             parts
@@ -478,6 +481,7 @@ pub(crate) fn stream_parts_for_result_block(
                         options_name,
                         json!({ "type": "mcp-tool-use", "serverName": server }),
                     )
+                    .expect("provider metadata must be an object")
                 }),
             })]
         }
@@ -551,10 +555,10 @@ pub(crate) fn parse_anthropic_content(
             } => {
                 content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: thinking.clone(),
-                    provider_metadata: Some(provider_namespace(
-                        options_name,
-                        json!({ "signature": signature }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace(options_name, json!({ "signature": signature }))
+                            .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             // Provider-executed (server-side) tool calls are surfaced as tool
@@ -587,20 +591,23 @@ pub(crate) fn parse_anthropic_content(
                     provider_executed: Some(true),
                     dynamic: Some(true),
                     thought_signature: None,
-                    provider_metadata: Some(provider_namespace(
-                        options_name,
-                        json!({ "type": "mcp-tool-use", "serverName": server_name }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace(
+                            options_name,
+                            json!({ "type": "mcp-tool-use", "serverName": server_name }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             // Redacted thinking — upstream emits as reasoning with redactedData
             ContentBlock::RedactedThinking { data } => {
                 content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: String::new(),
-                    provider_metadata: Some(provider_namespace(
-                        options_name,
-                        json!({ "redactedData": data }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace(options_name, json!({ "redactedData": data }))
+                            .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             // ── Server-tool result blocks → GenerateContent::ToolResult ──
@@ -635,13 +642,16 @@ pub(crate) fn parse_anthropic_content(
                                 source_type: "url".to_string(),
                                 url: str_field(result, "url"),
                                 title: str_field(result, "title"),
-                                provider_metadata: Some(provider_namespace(
-                                    options_name,
-                                    json!({
-                                        "pageAge": result.get("page_age").cloned()
-                                            .unwrap_or(Value::Null),
-                                    }),
-                                )),
+                                provider_metadata: Some(
+                                    provider_namespace(
+                                        options_name,
+                                        json!({
+                                            "pageAge": result.get("page_age").cloned()
+                                                .unwrap_or(Value::Null),
+                                        }),
+                                    )
+                                    .expect("provider metadata must be an object"),
+                                ),
                             }));
                         }
                     }
@@ -766,6 +776,7 @@ pub(crate) fn parse_anthropic_content(
                             options_name,
                             json!({ "type": "mcp-tool-use", "serverName": server }),
                         )
+                        .expect("provider metadata must be an object")
                     }),
                 }));
             }
@@ -1059,7 +1070,7 @@ pub(crate) async fn anthropic_stream_core(
                                         provider_metadata: Some(provider_namespace(options_name.as_str(), json!({
                                                 "type": "mcp-tool-use",
                                                 "serverName": server_name,
-                                            }))),
+                                            })).expect("provider metadata must be an object")),
                                     }));
                                 }
                                 // Redacted thinking — emit as ReasoningStart.
@@ -1067,7 +1078,7 @@ pub(crate) async fn anthropic_stream_core(
                                     let id = index.to_string();
                                     yield Ok(StreamPart::ReasoningStart {
                                         id: id.clone(),
-                                        provider_metadata: Some(provider_namespace(options_name.as_str(), json!({ "redactedData": data }))),
+                                        provider_metadata: Some(provider_namespace(options_name.as_str(), json!({ "redactedData": data })).expect("provider metadata must be an object")),
                                     });
                                     blocks.insert(
                                         index,
@@ -1233,7 +1244,7 @@ pub(crate) async fn anthropic_stream_core(
                                         yield Ok(StreamPart::ReasoningEnd {
                                             id: index.to_string(),
                                             provider_metadata: signature.map(|s| {
-                                                provider_namespace(options_name.as_str(), json!({ "signature": s }))
+                                                provider_namespace(options_name.as_str(), json!({ "signature": s })).expect("provider metadata must be an object")
                                             }),
                                         });
                                     }
@@ -1287,7 +1298,7 @@ pub(crate) async fn anthropic_stream_core(
                                 {
                                     raw.extend(update);
                                 }
-                                final_usage.raw = Some(raw_usage.clone());
+                                final_usage.raw = raw_usage.as_object().cloned();
                                 let reasoning_tokens = u
                                     .output_tokens_details
                                     .as_ref()
@@ -1296,11 +1307,10 @@ pub(crate) async fn anthropic_stream_core(
                                 let text_tokens = reasoning_tokens
                                     .zip(output_total)
                                     .map(|(r, t)| t.saturating_sub(r));
-                                final_usage.output_tokens = TokenUsage {
+                                final_usage.output_tokens = aimux_core::types::OutputTokenUsage {
                                     total: output_total,
                                     text: text_tokens,
                                     reasoning: reasoning_tokens,
-                                    ..Default::default()
                                 };
                             }
                         }

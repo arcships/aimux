@@ -893,15 +893,12 @@ fn build_request_body(
         })
         .unwrap_or_default();
 
-    // Convert tool choice.
-    // Only emit when not the default (Auto) — Rust's ToolChoice::Auto is the
-    // default and indistinguishable from "not set", matching the TS behavior
-    // where undefined toolChoice is omitted from the body.
     let converted_tool_choice: Option<Value> = match &options.tool_choice {
-        ToolChoice::Auto => None,
-        ToolChoice::None => Some(json!("none")),
-        ToolChoice::Required => Some(json!("required")),
-        ToolChoice::Tool { tool_name } => Some(json!({
+        None => None,
+        Some(ToolChoice::Auto) => Some(json!("auto")),
+        Some(ToolChoice::None) => Some(json!("none")),
+        Some(ToolChoice::Required) => Some(json!("required")),
+        Some(ToolChoice::Tool { tool_name }) => Some(json!({
             "type": "function",
             "name": tool_name,
         })),
@@ -1150,7 +1147,7 @@ fn convert_user_content(content: &[UserPart], warnings: &mut Vec<Warning>) -> Va
                             })
                         });
                     }
-                    FileData::Url { url } => {
+                    FileData::Url { url, .. } => {
                         parts.push(if image {
                             json!({ "type": "input_image", "image_url": url })
                         } else {
@@ -1300,20 +1297,18 @@ fn extract_usage_from_value(usage: &Value) -> Usage {
         .map(|n| n as u32);
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: input_tokens,
             no_cache: Some(input_tokens.unwrap_or(0) - cached_input_tokens.unwrap_or(0)),
             cache_read: cached_input_tokens,
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: output_tokens,
             text: Some(output_tokens.unwrap_or(0) - reasoning_tokens.unwrap_or(0)),
             reasoning: reasoning_tokens,
-            ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(usage.clone()),
+        raw: usage.as_object().cloned(),
     }
 }

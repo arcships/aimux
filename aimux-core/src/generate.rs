@@ -23,8 +23,8 @@ use crate::message::{ModelMessage, ModelPrompt};
 use crate::options::{CallOptions, ResponseFormat, ToolChoice};
 use crate::parse_tool_call::{ToolCallRepair, parse_tool_call};
 use crate::result::{
-    GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
-    StreamTextResultAggregated,
+    GenerateContent, GenerateResult, GeneratedFile, ReasoningFileOutput, ReasoningPart, Source,
+    StreamResult, StreamTextResultAggregated, TextContent, ToolApprovalRequestOutput,
 };
 use crate::shared::SharedProviderOptions;
 use crate::stream_part::{StreamPart, TextStreamPart};
@@ -53,14 +53,24 @@ fn response_metadata_defaults(
 
 /// Matches the AI SDK's `isOutputChunk`: only chunks containing model output
 /// start or reset the first/chunk output timers.
-fn is_output_chunk<C>(part: &StreamPart<C>) -> bool {
+fn is_output_chunk<C, A, R>(part: &StreamPart<C, A, R>) -> bool {
     match part {
         StreamPart::TextDelta { delta, .. }
         | StreamPart::ReasoningDelta { delta, .. }
         | StreamPart::ToolInputDelta { delta, .. } => !delta.is_empty(),
-        StreamPart::ToolCall(_) | StreamPart::File(_) => true,
+        StreamPart::ToolCall(_) | StreamPart::File(_) | StreamPart::ReasoningFile(_) => true,
         _ => false,
     }
+}
+
+async fn resolve_file(
+    mut file: GeneratedFile,
+    abort_signal: Option<&AbortSignal>,
+) -> Result<GeneratedFile, AiMuxError> {
+    file.data = crate::shared::GeneratedFileData::Data {
+        data: crate::download::resolve_generated_file_data(&file.data, abort_signal).await?,
+    };
+    Ok(file)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,7 +147,7 @@ impl GenerateTextOptions {
             response_format: self.response_format,
             seed: self.seed,
             tools: self.tools,
-            tool_choice: self.tool_choice.unwrap_or_default(),
+            tool_choice: self.tool_choice,
             headers: self.headers,
             provider_options: self.provider_options,
             reasoning: self.reasoning,
@@ -160,6 +170,9 @@ impl GenerateTextOptions {
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct GenerateTextResult {
+    /// Ordered generated content with parsed tool calls.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub content: Vec<TextContent>,
     /// The generated text (concatenated from all text content parts).
     pub text: String,
     /// Tool calls requested by the model.
@@ -179,7 +192,7 @@ pub struct GenerateTextResult {
     // ── M7: top-level aggregation (extracted from `raw.content`) ──
     /// Reasoning / thinking segments from the model.
     #[serde(default)]
-    pub reasoning: Vec<ReasoningOutput>,
+    pub reasoning: Vec<ReasoningPart>,
     /// Concatenated reasoning text (convenience for `reasoning.iter().map(text).join("")`).
     #[serde(default)]
     pub reasoning_text: String,
@@ -437,37 +450,53 @@ impl StreamTextResult {
             }
             match part {
                 StreamPart::TextStart {
-                    provider_metadata, ..
-                } => rm.text_start(provider_metadata),
+                    id,
+                    provider_metadata,
+                } => rm.text_start(id, provider_metadata),
                 StreamPart::TextDelta {
+                    id,
                     delta,
                     provider_metadata,
-                    ..
                 } => {
                     text.push_str(&delta);
-                    rm.text_delta(&delta, provider_metadata);
+                    rm.text_delta(id, &delta, provider_metadata);
                 }
                 StreamPart::TextEnd {
-                    provider_metadata, ..
-                } => rm.text_end(provider_metadata),
+                    id,
+                    provider_metadata,
+                } => rm.text_end(id, provider_metadata),
                 StreamPart::ReasoningStart {
-                    provider_metadata, ..
-                } => rm.reasoning_start(provider_metadata),
+                    id,
+                    provider_metadata,
+                } => rm.reasoning_start(id, provider_metadata),
                 StreamPart::ReasoningDelta {
+                    id,
                     delta,
                     provider_metadata,
-                    ..
-                } => rm.reasoning_delta(&delta, provider_metadata),
+                } => rm.reasoning_delta(id, &delta, provider_metadata),
                 StreamPart::ReasoningEnd {
-                    provider_metadata, ..
-                } => rm.reasoning_end(provider_metadata),
+                    id,
+                    provider_metadata,
+                } => rm.reasoning_end(id, provider_metadata),
                 StreamPart::ToolCall(call) => {
                     rm.tool_call(&call);
                     tool_calls.push(call);
                 }
                 StreamPart::ToolResult(result) => rm.tool_result(result),
-                StreamPart::Source(source) => sources.push(source),
-                StreamPart::File(file) => files.push(file),
+                StreamPart::Source(source) => {
+                    rm.source(source.clone());
+                    sources.push(source);
+                }
+                StreamPart::File(file) => {
+                    rm.file(&file, false);
+                    files.push(file);
+                }
+                StreamPart::ReasoningFile(output) => rm.file(&output.file, true),
+                StreamPart::Custom {
+                    kind,
+                    provider_metadata,
+                } => rm.custom(kind, provider_metadata),
+                StreamPart::ToolApprovalRequest(approval) => rm.approval(&approval),
                 StreamPart::StreamStart { warnings: w, .. } => {
                     warnings = w;
                 }
@@ -514,16 +543,21 @@ impl StreamTextResult {
 
         let crate::response_messages::ResponseMessages {
             messages: response_messages,
+            content,
             reasoning,
         } = rm.finish();
 
         let reasoning_text = reasoning
             .iter()
-            .map(|r| r.text.as_str())
+            .filter_map(|r| match r {
+                ReasoningPart::Text(r) => Some(r.text.as_str()),
+                ReasoningPart::File(_) => None,
+            })
             .collect::<Vec<_>>()
             .join("");
 
         Ok(StreamTextResultAggregated {
+            content,
             text,
             reasoning,
             reasoning_text,
@@ -682,6 +716,20 @@ pub async fn generate_text(
     // Build the assistant response message content parts in parallel.
     let mut rm = crate::response_messages::ResponseMessageBuilder::new();
     for content in &result.content {
+        if let GenerateContent::ToolCall(call) = content {
+            tool_calls.push(
+                parse_tool_call(
+                    call.clone(),
+                    tools.as_deref(),
+                    repair_tool_call.as_ref(),
+                    &messages,
+                    operation_instructions.as_deref(),
+                )
+                .await,
+            );
+        }
+    }
+    for content in &result.content {
         match content {
             GenerateContent::Text {
                 text: t,
@@ -691,33 +739,71 @@ pub async fn generate_text(
                 rm.text(t, provider_metadata.as_ref());
             }
             GenerateContent::ToolCall(call) => {
-                let parsed = parse_tool_call(
-                    call.clone(),
-                    tools.as_deref(),
-                    repair_tool_call.as_ref(),
-                    &messages,
-                    operation_instructions.as_deref(),
-                )
-                .await;
-                rm.tool_call(&parsed);
-                tool_calls.push(parsed);
+                let parsed = tool_calls
+                    .iter()
+                    .find(|parsed| parsed.tool_call_id == call.tool_call_id)
+                    .expect("every tool call was parsed above");
+                rm.tool_call(parsed);
             }
             GenerateContent::Reasoning(reasoning) => rm.reasoning(reasoning),
-            GenerateContent::Source(source) => sources.push(source.clone()),
-            GenerateContent::File(file) => files.push(file.clone()),
-            // Provider-executed results stay in the assistant message so the
-            // provider can replay its own server-tool transcript next turn.
+            GenerateContent::Source(source) => {
+                rm.source(source.clone());
+                sources.push(source.clone());
+            }
+            GenerateContent::File(file) => {
+                let file = timeout::run(
+                    resolve_file(file.clone(), abort_signal.as_ref()),
+                    abort_signal.as_ref(),
+                    operation_timeout,
+                )
+                .await?;
+                rm.file(&file, false);
+                files.push(file);
+            }
+            GenerateContent::ReasoningFile(file) => {
+                let file = timeout::run(
+                    resolve_file(file.clone(), abort_signal.as_ref()),
+                    abort_signal.as_ref(),
+                    operation_timeout,
+                )
+                .await?;
+                rm.file(&file, true);
+            }
+            GenerateContent::Custom {
+                kind,
+                provider_metadata,
+            } => rm.custom(kind.clone(), provider_metadata.clone()),
+            GenerateContent::ToolApprovalRequest(approval) => {
+                let call = tool_calls
+                    .iter()
+                    .find(|call| call.tool_call_id == approval.tool_call_id)
+                    .ok_or_else(|| AiMuxError::ToolCallNotFoundForApproval {
+                        tool_call_id: approval.tool_call_id.clone(),
+                        approval_id: approval.approval_id.clone(),
+                    })?;
+                rm.approval(&ToolApprovalRequestOutput {
+                    approval_id: approval.approval_id.clone(),
+                    tool_call: call.clone(),
+                    reason: None,
+                    is_automatic: None,
+                    signature: None,
+                });
+            }
             GenerateContent::ToolResult(result) => rm.tool_result(result.clone()),
         }
     }
 
     let crate::response_messages::ResponseMessages {
         messages: response_messages,
+        content,
         reasoning,
     } = rm.finish();
     let reasoning_text = reasoning
         .iter()
-        .map(|r| r.text.as_str())
+        .filter_map(|r| match r {
+            ReasoningPart::Text(r) => Some(r.text.as_str()),
+            ReasoningPart::File(_) => None,
+        })
         .collect::<Vec<_>>()
         .join("");
 
@@ -737,6 +823,7 @@ pub async fn generate_text(
     let usage = result.usage.clone();
 
     Ok(GenerateTextResult {
+        content,
         text,
         tool_calls,
         finish_reason: result.finish_reason.clone(),
@@ -991,6 +1078,7 @@ pub async fn stream_text(
     // the stream's terminal fuse — `Finish` and non-recoverable errors must
     // end the stream under every configuration, or a provider that keeps the
     // connection open after `Finish` hangs a consumer reading to end-of-stream.
+    let file_abort_signal = abort_signal.clone();
     let stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>> = {
         let mut stream = stream;
         let chunk_ms = stream_timeout.chunk_ms;
@@ -1075,6 +1163,7 @@ pub async fn stream_text(
     let stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>> = Box::pin(
         async_stream::stream! {
             let mut sent_response_metadata = false;
+            let mut tool_calls = HashMap::new();
             while let Some(item) = stream.next().await {
                 match item {
                     Ok(StreamPart::ResponseMetadata(metadata)) => {
@@ -1089,7 +1178,7 @@ pub async fn stream_text(
                             sent_response_metadata = true;
                             yield Ok(StreamPart::ResponseMetadata(response_metadata.clone()));
                         }
-                        yield Ok(part.map_tool_call(|_| unreachable!("finish has no tool call")));
+                        yield Ok(part.map_payloads(|_| unreachable!("finish has no tool call"), |_| unreachable!("finish has no approval")).map_reasoning_file(|_| unreachable!("finish has no file")));
                     }
                     Ok(StreamPart::ToolCall(raw)) => {
                         let parsed = parse_tool_call(
@@ -1099,9 +1188,37 @@ pub async fn stream_text(
                             &messages,
                             operation_instructions.as_deref(),
                         ).await;
+                        tool_calls.insert(parsed.tool_call_id.clone(), parsed.clone());
                         yield Ok(StreamPart::ToolCall(parsed));
                     }
-                    Ok(part) => yield Ok(part.map_tool_call(|_| unreachable!("matched above"))),
+                    Ok(StreamPart::File(file)) => {
+                        match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
+                            Ok(file) => yield Ok(StreamPart::File(file)),
+                            Err(error) => yield Ok(StreamPart::Error { error }),
+                        }
+                    }
+                    Ok(StreamPart::ReasoningFile(file)) => {
+                        match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
+                            Ok(file) => yield Ok(StreamPart::ReasoningFile(ReasoningFileOutput {
+                                provider_metadata: file.provider_metadata.clone(), file,
+                            })),
+                            Err(error) => yield Ok(StreamPart::Error { error }),
+                        }
+                    }
+                    Ok(StreamPart::ToolApprovalRequest(approval)) => {
+                        if let Some(call) = tool_calls.get(&approval.tool_call_id) {
+                            yield Ok(StreamPart::ToolApprovalRequest(ToolApprovalRequestOutput {
+                                approval_id: approval.approval_id, tool_call: call.clone(),
+                                reason: None, is_automatic: None, signature: None,
+                            }));
+                        } else {
+                            yield Ok(StreamPart::Error { error: AiMuxError::ToolCallNotFoundForApproval {
+                                tool_call_id: approval.tool_call_id, approval_id: approval.approval_id,
+                            }});
+                        }
+                    }
+                    Ok(part) => yield Ok(part.map_payloads(|_| unreachable!("matched above"), |_| unreachable!("matched above"))
+                        .map_reasoning_file(|file| ReasoningFileOutput { provider_metadata: file.provider_metadata.clone(), file })),
                     Err(error) => {
                         let terminal = !error.is_recoverable_stream_error();
                         yield Err(error);

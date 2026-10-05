@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 use aimux_core::tool::FunctionTool;
 use aimux_core::tool::ToolChoice;
 use aimux_core::types::Warning;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use super::options::{CANONICAL, anthropic_options_in};
 
@@ -124,13 +124,13 @@ pub enum AnthropicTool {
     Provider {
         id: String,
         name: String,
-        args: Value,
+        args: Map<String, Value>,
     },
 }
 
 /// Read a camelCase arg from the `args` object, returning `Value::Null` when
 /// absent (mirroring the TS `undefined`-when-absent field behaviour).
-fn arg(args: &Value, key: &str) -> Value {
+fn arg(args: &Map<String, Value>, key: &str) -> Value {
     args.get(key).cloned().unwrap_or(Value::Null)
 }
 
@@ -329,10 +329,7 @@ fn prepare_function_tool(
         def["allowed_callers"] = ac.clone();
     }
     if let Some(ref examples) = tool.input_examples {
-        let inputs: Vec<Value> = examples
-            .iter()
-            .map(|e| e.get("input").cloned().unwrap_or(e.clone()))
-            .collect();
+        let inputs: Vec<&Map<String, Value>> = examples.iter().map(|e| &e.input).collect();
         def["input_examples"] = json!(inputs);
     }
 
@@ -350,7 +347,7 @@ fn prepare_function_tool(
 /// `None` (so the caller emits an "unsupported" warning) when the id is unknown.
 pub(crate) fn prepare_provider_tool(
     id: &str,
-    args: &Value,
+    args: &Map<String, Value>,
     betas: &mut BTreeSet<String>,
 ) -> Option<Value> {
     Some(match id {

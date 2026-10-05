@@ -176,9 +176,14 @@ fn call_options_from(input: &Value) -> CallOptions {
         );
     }
     options.tool_choice = match input.get("toolChoice").and_then(Value::as_str) {
-        Some("required") => ToolChoice::Required,
-        Some("none") => ToolChoice::None,
-        Some("auto") | None => ToolChoice::Auto,
+        Some("required") => Some(ToolChoice::Required),
+        Some("none") => Some(ToolChoice::None),
+        Some("auto") => Some(ToolChoice::Auto),
+        None => options
+            .tools
+            .as_ref()
+            .filter(|tools| !tools.is_empty())
+            .map(|_| ToolChoice::Auto),
         Some(other) => panic!("unmapped toolChoice {other}"),
     };
     options.provider_options = input

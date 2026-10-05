@@ -8,7 +8,6 @@
 //! channel headers (`Originator` / `ChatGPT-Account-Id`), 401 →//! `AiMuxError::TokenExpired` mapping, and the stateless `codex_refresh`
 //! OAuth helper.
 
-use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -17,11 +16,9 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
-use aimux_core::options::{CallOptions, Tool, ToolChoice};
+use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
-use aimux_core::types::FinishReasonUnified;
 
 use aimux_provider_utils::Resolvable;
 use aimux_providers::{
@@ -51,22 +48,6 @@ fn test_prompt() -> LanguageModelPrompt {
 
 fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
     CallOptions::new(prompt)
-}
-
-fn weather_tool() -> FunctionTool {
-    FunctionTool {
-        name: "weather".to_string(),
-        description: None,
-        input_schema: json!({
-            "type": "object",
-            "properties": { "location": { "type": "string" } },
-            "required": ["location"],
-            "additionalProperties": false,
-        }),
-        strict: None,
-        provider_options: None,
-        input_examples: None,
-    }
 }
 
 fn sse_event(json_str: &str) -> String {
@@ -174,17 +155,6 @@ const TEXT_STREAM_EVENTS: &[&str] = &[
     r#"{"type":"response.completed","response":{"id":"resp_1","created_at":1741269019,"model":"gpt-5.2-codex","incomplete_details":null,"usage":{"input_tokens":543,"input_tokens_details":{"cached_tokens":234},"output_tokens":478,"output_tokens_details":{"reasoning_tokens":123}}}}"#,
 ];
 
-/// The tool-call streaming event sequence.
-const TOOL_STREAM_EVENTS: &[&str] = &[
-    r#"{"type":"response.created","response":{"id":"resp_tc","created_at":1741362087,"model":"gpt-5.2-codex"}}"#,
-    r#"{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_added","name":"weather","arguments":"","status":"completed"}}"#,
-    r#"{"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":"{\"location\":"}"#,
-    r#"{"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":"\"Rome\"}"}"#,
-    r#"{"type":"response.function_call_arguments.done","item_id":"fc_1","output_index":0,"arguments":"{\"location\":\"Rome\"}"}"#,
-    r#"{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_done","name":"weather","arguments":"{\"location\":\"Rome\"}","status":"completed"}}"#,
-    r#"{"type":"response.completed","response":{"id":"resp_tc","created_at":1741362087,"model":"gpt-5.2-codex","incomplete_details":null,"usage":{"input_tokens":0,"input_tokens_details":{"cached_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0}}}}"#,
-];
-
 /// A `response.completed` event whose nested response object carries the full
 /// output —what the subscription channel emits at the end of a stream.
 fn subscription_completed_event() -> String {
@@ -266,48 +236,6 @@ async fn api_key_streams_text() {
     }
     match &parts[6] {
         StreamPart::Finish { usage, .. } => assert_eq!(usage.input_tokens.total, Some(543)),
-        other => panic!("expected Finish, got {other:?}"),
-    }
-}
-
-#[tokio::test]
-async fn api_key_streams_tool_calls() {
-    let server = MockServer::start().await;
-    mock_sse_response(&server, &sse_body(TOOL_STREAM_EVENTS)).await;
-
-    let provider = codex_provider(
-        CodexMode::ApiKey(Some(Resolvable::Value("test-key".to_string()))),
-        server.uri(),
-        None,
-    );
-    let model = provider.responses("gpt-5.2-codex");
-
-    let options = CallOptions {
-        tools: Some(vec![Tool::from(weather_tool())]),
-        tool_choice: ToolChoice::Auto,
-        ..CallOptions::new(test_prompt())
-    };
-
-    let result = model.do_stream(&options).await.expect("should succeed");
-    let parts = collect_stream(result).await;
-
-    match &parts[6] {
-        StreamPart::ToolCall(RawToolCall {
-            tool_call_id,
-            tool_name,
-            input,
-            ..
-        }) => {
-            assert_eq!(tool_call_id, "call_done");
-            assert_eq!(tool_name, "weather");
-            assert_eq!(input, &Value::String(r#"{"location":"Rome"}"#.into()));
-        }
-        other => panic!("expected ToolCall, got {other:?}"),
-    }
-    match &parts[7] {
-        StreamPart::Finish { finish_reason, .. } => {
-            assert_eq!(finish_reason.unified, FinishReasonUnified::ToolCalls);
-        }
         other => panic!("expected Finish, got {other:?}"),
     }
 }

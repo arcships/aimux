@@ -43,7 +43,7 @@ fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
                 ));
             }
             _ if !is_image(&file.media_type) => return Err(non_image()),
-            FileData::Url { url } => json!({
+            FileData::Url { url, .. } => json!({
                 "type": "image_url", "image_url": { "url": url },
             }),
             FileData::Data { data } => {

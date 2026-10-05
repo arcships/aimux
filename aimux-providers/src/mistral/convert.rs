@@ -232,7 +232,7 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
                     };
                     format!("data:{};base64,{}", resolve_full_media_type(file)?, b64)
                 }
-                FileData::Url { url } => url.clone(),
+                FileData::Url { url, .. } => url.clone(),
                 FileData::Reference { .. } => return Ok(Value::Null),
                 FileData::Text { .. } => {
                     return Err(AiMuxError::UnsupportedFunctionality(
@@ -334,7 +334,7 @@ pub fn build_request_body(
             })
             .collect()
     });
-    let prepared = prepare_tools(&function_tools, Some(&options.tool_choice));
+    let prepared = prepare_tools(&function_tools, options.tool_choice.as_ref());
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);
         if let Some(tc) = prepared.tool_choice {

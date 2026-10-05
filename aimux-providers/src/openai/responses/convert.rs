@@ -363,7 +363,7 @@ fn convert_user_part(ns: ResponsesNamespace, part: &UserPart) -> Result<Value, A
                     })
                 }
             }
-            FileData::Url { url } => {
+            FileData::Url { url, .. } => {
                 if get_top_level_media_type(&file.media_type) == "image" {
                     json!({ "type": "input_image", "image_url": url })
                 } else {
@@ -1009,7 +1009,7 @@ pub fn build_responses_request_body_for(
     );
 
     // -- Tools --
-    let prepared = prepare_responses_tools(&options.tools, Some(&options.tool_choice));
+    let prepared = prepare_responses_tools(&options.tools, options.tool_choice.as_ref());
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);
         if let Some(tc) = prepared.tool_choice {
@@ -1125,7 +1125,7 @@ fn extract_base64_data(data_url: &str) -> Option<&str> {
 pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value>) -> Usage {
     let Some(usage) = usage else {
         return Usage {
-            raw,
+            raw: raw.and_then(|value| value.as_object().cloned()),
             ..Default::default()
         };
     };
@@ -1152,20 +1152,18 @@ pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value
     let text_tokens = output_tokens - reasoning_tokens;
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input_tokens),
             no_cache: Some(no_cache),
             cache_read: Some(cached_tokens),
             cache_write,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(output_tokens),
             text: Some(text_tokens),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
-        raw,
+        raw: raw.and_then(|value| value.as_object().cloned()),
     }
 }
 

@@ -200,7 +200,7 @@ impl DeepSeekChatLanguageModel {
 
         let prepared = prepare_tools(
             options.tools.as_ref(),
-            &options.tool_choice,
+            options.tool_choice.as_ref(),
             self.config.supports_strict_tool_calls,
         )?;
 
@@ -467,10 +467,10 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             },
             usage: convert_deepseek_usage(raw.get("usage")),
             warnings: built.warnings,
-            provider_metadata: Some(provider_namespace(
-                self.provider_options_name(),
-                Value::Object(metadata),
-            )),
+            provider_metadata: Some(
+                provider_namespace(self.provider_options_name(), Value::Object(metadata))
+                    .expect("provider metadata must be an object"),
+            ),
             request: Some(RequestInfo { body: Some(body) }),
             response: Some(ResponseInfo {
                 id: data.id,
@@ -785,7 +785,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             yield Ok(StreamPart::Finish {
                 finish_reason,
                 usage: convert_deepseek_usage(usage.as_ref()),
-                provider_metadata: Some(provider_namespace(&provider_options_name, Value::Object(metadata))),
+                provider_metadata: Some(provider_namespace(&provider_options_name, Value::Object(metadata)).expect("provider metadata must be an object")),
             });
         };
 

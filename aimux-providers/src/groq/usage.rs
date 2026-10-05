@@ -1,6 +1,6 @@
 //! Mirrors `convert-groq-usage.ts`.
 
-use aimux_core::types::{TokenUsage, Usage};
+use aimux_core::types::{InputTokenUsage, OutputTokenUsage, Usage};
 
 use super::types::GroqUsage;
 
@@ -27,7 +27,7 @@ pub(crate) fn convert_groq_usage(usage: Option<&GroqUsage>) -> Usage {
     };
 
     Usage {
-        input_tokens: TokenUsage {
+        input_tokens: InputTokenUsage {
             total: Some(prompt_tokens),
             no_cache: Some(match cache_read_tokens {
                 Some(cached) => prompt_tokens.saturating_sub(cached),
@@ -35,14 +35,14 @@ pub(crate) fn convert_groq_usage(usage: Option<&GroqUsage>) -> Usage {
             }),
             cache_read: cache_read_tokens,
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: OutputTokenUsage {
             total: Some(completion_tokens),
             text: Some(text_tokens),
             reasoning: reasoning_tokens,
-            ..Default::default()
         },
-        raw: serde_json::to_value(usage).ok(),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }

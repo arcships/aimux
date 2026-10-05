@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use aimux_core::types::{TokenUsage, Usage};
+use aimux_core::types::{InputTokenUsage, OutputTokenUsage, Usage};
 
 fn count(usage: &Value, pointer: &str) -> u32 {
     usage
@@ -23,19 +23,17 @@ pub(crate) fn convert_deepseek_usage(usage: Option<&Value>) -> Usage {
     let reasoning_tokens = count(usage, "/completion_tokens_details/reasoning_tokens");
 
     Usage {
-        input_tokens: TokenUsage {
+        input_tokens: InputTokenUsage {
             total: Some(prompt_tokens),
             no_cache: Some(prompt_tokens.saturating_sub(cache_read_tokens)),
             cache_read: Some(cache_read_tokens),
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: OutputTokenUsage {
             total: Some(completion_tokens),
             text: Some(completion_tokens.saturating_sub(reasoning_tokens)),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
-        raw: Some(usage.clone()),
+        raw: usage.as_object().cloned(),
     }
 }

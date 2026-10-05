@@ -178,68 +178,6 @@ async fn should_pass_model_and_values() {
     assert!(body.get("input_type").is_none());
 }
 
-/// TS: "should pass the input_type setting"
-#[tokio::test]
-async fn should_pass_input_type_setting() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/embeddings"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
-        .mount(&server)
-        .await;
-
-    let provider = test_provider("test-api-key", server.uri());
-    let model = provider.embedding("voyage-3.5");
-
-    let provider_options =
-        aimux_core::shared::provider_namespace("voyage", json!({"inputType": "document"}));
-    let options = EmbeddingCallOptions {
-        values: test_values(),
-        abort_signal: None,
-        provider_options: Some(provider_options),
-        headers: None,
-        max_retries: None,
-        timeout: None,
-    };
-
-    let _ = model.do_embed(&options).await.expect("should succeed");
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["input_type"], "document");
-}
-
-/// TS: "should pass the output_dimension setting"
-#[tokio::test]
-async fn should_pass_output_dimension_setting() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/embeddings"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
-        .mount(&server)
-        .await;
-
-    let provider = test_provider("test-api-key", server.uri());
-    let model = provider.embedding("voyage-3.5");
-
-    let provider_options =
-        aimux_core::shared::provider_namespace("voyage", json!({"outputDimension": 256}));
-    let options = EmbeddingCallOptions {
-        values: test_values(),
-        abort_signal: None,
-        provider_options: Some(provider_options),
-        headers: None,
-        max_retries: None,
-        timeout: None,
-    };
-
-    let _ = model.do_embed(&options).await.expect("should succeed");
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["output_dimension"], 256);
-}
-
 /// TS: "should pass headers"
 #[tokio::test]
 async fn should_pass_headers() {

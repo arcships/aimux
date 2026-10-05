@@ -878,18 +878,16 @@ impl LanguageModel for XaiResponsesModel {
             yield Ok(StreamPart::Finish {
                 finish_reason: final_finish_reason,
                 usage: final_usage.unwrap_or(Usage {
-                    input_tokens: aimux_core::types::TokenUsage {
+                    input_tokens: aimux_core::types::InputTokenUsage {
                         total: Some(0),
                         no_cache: Some(0),
                         cache_read: Some(0),
                         cache_write: Some(0),
-                        ..Default::default()
                     },
-                    output_tokens: aimux_core::types::TokenUsage {
+                    output_tokens: aimux_core::types::OutputTokenUsage {
                         total: Some(0),
                         text: Some(0),
                         reasoning: Some(0),
-                        ..Default::default()
                     },
                     raw: None,
                 }),

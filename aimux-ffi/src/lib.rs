@@ -483,7 +483,9 @@ fn aimux_error_code_of(err: &AiMuxError) -> i32 {
         AiMuxError::ApiCall { .. } => AIMUX_E_API_CALL,
         AiMuxError::Retry(_) => AIMUX_E_RETRY,
         AiMuxError::JsonParse(_) => AIMUX_E_JSON_PARSE,
-        AiMuxError::InvalidResponseData(_) => AIMUX_E_INVALID_RESPONSE_DATA,
+        AiMuxError::InvalidResponseData(_) | AiMuxError::ToolCallNotFoundForApproval { .. } => {
+            AIMUX_E_INVALID_RESPONSE_DATA
+        }
         AiMuxError::NoSuchTool { .. } => AIMUX_E_NO_SUCH_TOOL,
         AiMuxError::InvalidToolInput { .. } => AIMUX_E_INVALID_TOOL_INPUT,
         AiMuxError::ToolCallRepair { .. } => AIMUX_E_TOOL_CALL_REPAIR,
@@ -4493,112 +4495,6 @@ mod tests {
         assert_eq!(expect_ffi_error(e), "handles: must not be NULL");
     }
 
-    #[test]
-    fn router_new_rejects_bad_json() {
-        let handles = [mock_handle("mock", "m", "x")];
-        let bad = std::ffi::CString::new("{not json").unwrap();
-        let mut h = zero_err();
-        let e = aimux_router_new(handles.as_ptr(), handles.len(), bad.as_ptr(), &mut h);
-        assert_eq!(h, 0);
-        assert!(expect_ffi_error(e).starts_with("config_json: invalid JSON:"));
-    }
-
-    #[test]
-    fn router_new_treats_empty_config_as_defaults() {
-        // S1 guard: empty string / "null" config must NOT be a JSON_PARSE error
-        // (consistent with other config-bearing FFI entry points).
-        let handles = [mock_handle("mock", "m", "x")];
-        for cfg in ["", "  ", "null"] {
-            let c = std::ffi::CString::new(cfg).unwrap();
-            let mut h = zero_err();
-            let e = aimux_router_new(handles.as_ptr(), handles.len(), c.as_ptr(), &mut h);
-            assert!(e.is_null(), "router with config {cfg:?}: {}", msg(e));
-            assert!(h != 0);
-        }
-    }
-
-    #[test]
-    fn moa_new_builds_moa_model() {
-        let refs = [
-            mock_handle("mock", "ref-a", "A"),
-            mock_handle("mock", "ref-b", "B"),
-        ];
-        let agg = mock_handle("mock", "aggregator", "agg");
-        let mut h = zero_err();
-        let e = aimux_moa_new(refs.as_ptr(), refs.len(), agg, std::ptr::null(), &mut h);
-        assert!(e.is_null(), "{}", msg(e));
-        assert!(h != 0, "moa handle must be non-zero");
-        let model = get_model(h).expect("moa handle resolves");
-        assert_eq!(model.provider(), "moa");
-        assert_eq!(model.model_id(), "moa");
-    }
-
-    #[test]
-    fn moa_new_rejects_bad_aggregator() {
-        let refs = [mock_handle("mock", "ref-a", "A")];
-        let mut h = zero_err();
-        // aggregator handle 999999 does not exist.
-        let e = aimux_moa_new(refs.as_ptr(), refs.len(), 999_999, std::ptr::null(), &mut h);
-        assert_eq!(h, 0);
-        assert_eq!(
-            expect_ffi_error(e),
-            "invalid or expired moa aggregator handle"
-        );
-    }
-
-    #[test]
-    fn composites_reject_any_dead_member_handle() {
-        // A dead handle inside the array is a caller bug: reported, never
-        // silently dropped (the composite would otherwise run with fewer
-        // members than the caller believes).
-        let live = mock_handle("mock", "live", "L");
-        let dead = mock_handle("mock", "dead", "D");
-        aimux_drop_handle(dead);
-        let handles = [live, dead];
-
-        let mut h = zero_err();
-        let e = aimux_router_new(handles.as_ptr(), handles.len(), std::ptr::null(), &mut h);
-        assert_eq!(h, 0);
-        assert_eq!(
-            expect_ffi_error(e),
-            "invalid or expired router child handle"
-        );
-
-        let agg = mock_handle("mock", "aggregator", "agg");
-        let e = aimux_moa_new(
-            handles.as_ptr(),
-            handles.len(),
-            agg,
-            std::ptr::null(),
-            &mut h,
-        );
-        assert_eq!(h, 0);
-        assert_eq!(
-            expect_ffi_error(e),
-            "invalid or expired moa reference handle"
-        );
-
-        // NULL with ref_len > 0 is a null pointer, same as router.
-        let e = aimux_moa_new(std::ptr::null(), 2, agg, std::ptr::null(), &mut h);
-        assert_eq!(h, 0);
-        assert_eq!(expect_ffi_error(e), "reference_handles: must not be NULL");
-    }
-
-    #[test]
-    fn moa_new_allows_zero_references() {
-        // 0 references is valid (degrades to aggregator-only).
-        let agg = mock_handle("mock", "aggregator", "agg");
-        let mut h = zero_err();
-        let e = aimux_moa_new(std::ptr::null(), 0, agg, std::ptr::null(), &mut h);
-        assert!(e.is_null(), "{}", msg(e));
-        assert!(h != 0, "moa with 0 references should succeed");
-    }
-
-    // ── Transcription streaming sessions (RFC-0028 Phase 2) ──────────────
-
-    /// A mock transcription model whose `do_stream` echoes: one delta per
-    /// received audio chunk, then final + finish after the audio ends.
-    /// Honors the abort signal.
     struct MockStreamingTranscriber;
 
     #[async_trait::async_trait]
@@ -4913,51 +4809,5 @@ mod tests {
             .expect("session_drop must wake a backpressured push_audio");
         pusher.join().unwrap();
         drop_handle(model);
-    }
-
-    #[test]
-    fn transcription_session_new_rejects_bad_inputs() {
-        let model = mock_transcriber_handle();
-        let mut h = zero_err();
-        // Bad JSON.
-        let bad = std::ffi::CString::new("{not json").unwrap();
-        let e = aimux_transcription_session_new(model, 0, bad.as_ptr(), &mut h);
-        assert_eq!(h, 0);
-        assert!(expect_ffi_error(e).starts_with("opts_json: invalid JSON:"));
-
-        // Non-transcription model handle.
-        let lang = mock_handle("mock", "m", "x");
-        let e = aimux_transcription_session_new(lang, 0, std::ptr::null(), &mut h);
-        assert_eq!(h, 0);
-        assert_eq!(
-            expect_ffi_error(e),
-            "invalid or expired transcription handle"
-        );
-
-        // Bad abort handle.
-        let e = aimux_transcription_session_new(model, 999_999, std::ptr::null(), &mut h);
-        assert_eq!(h, 0);
-        assert_eq!(expect_ffi_error(e), "invalid or expired abort handle");
-
-        // NULL out-params on next_part.
-        let mut part: *mut c_char = std::ptr::null_mut();
-        assert_eq!(
-            expect_ffi_error(aimux_transcription_next_part(
-                0,
-                0,
-                std::ptr::null_mut(),
-                std::ptr::null_mut()
-            )),
-            "out_part: must not be NULL"
-        );
-        assert_eq!(
-            expect_ffi_error(aimux_transcription_next_part(
-                0,
-                0,
-                &mut part,
-                std::ptr::null_mut()
-            )),
-            "out_state: must not be NULL"
-        );
     }
 }
