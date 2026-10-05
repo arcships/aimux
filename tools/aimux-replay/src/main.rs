@@ -17,6 +17,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use tokio::runtime::Runtime;
 
+use aimux_core::language_model_message::{AssistantPart, LanguageModelMessage, UserPart};
 use aimux_core::recording::Recording;
 use aimux_core::replay::{ReplayOverrides, replay_with_model};
 use aimux_providers::rebuild_provider;
@@ -116,12 +117,18 @@ fn run_dry(rec: &Recording) -> Result<()> {
 }
 
 /// 取消息首个文本内容(截断展示用)。
-fn prompt_text(
-    m: &aimux_core::language_model_message::LanguageModelPromptMessage,
-) -> Option<String> {
-    match m.content.first() {
-        Some(aimux_core::content::ContentPart::Text { text, .. }) => Some(text.clone()),
-        _ => None,
+fn prompt_text(m: &LanguageModelMessage) -> Option<String> {
+    match m {
+        LanguageModelMessage::System { content, .. } => Some(content.clone()),
+        LanguageModelMessage::User { content, .. } => match content.first() {
+            Some(UserPart::Text(part)) => Some(part.text.clone()),
+            _ => None,
+        },
+        LanguageModelMessage::Assistant { content, .. } => match content.first() {
+            Some(AssistantPart::Text(part)) => Some(part.text.clone()),
+            _ => None,
+        },
+        LanguageModelMessage::Tool { .. } => None,
     }
 }
 
@@ -131,13 +138,7 @@ fn run_replay(rec: &Recording, api_key: Option<&str>, prompt: Option<&str>) -> R
         .with_context(|| format!("rebuild provider for '{}'", rec.provider.provider))?;
 
     let overrides = prompt.map(|text| ReplayOverrides {
-        prompt: Some(vec![
-            aimux_core::language_model_message::LanguageModelPromptMessage {
-                role: aimux_core::message::Role::User,
-                content: vec![aimux_core::content::ContentPart::text(text)],
-                provider_options: None,
-            },
-        ]),
+        prompt: Some(vec![LanguageModelMessage::user_text(text)]),
         ..Default::default()
     });
 

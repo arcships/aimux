@@ -31,11 +31,12 @@ use serial_test::serial;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, ToolCallPart, ToolPart,
+    ToolResultPart,
+};
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
@@ -47,11 +48,7 @@ use aimux_providers::{ProviderOptions, provider, provider_from_env};
 
 /// TS `TEST_PROMPT`: a single user text message "Hello".
 fn test_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("Hello")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
@@ -299,21 +296,19 @@ async fn converts_tool_call_and_tool_result_messages() {
     let model = make_provider(&server);
 
     let prompt: LanguageModelPrompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::ToolCall {
+        LanguageModelMessage::Assistant {
+            content: vec![AssistantPart::ToolCall(ToolCallPart {
                 tool_call_id: "call-1".to_string(),
                 tool_name: "get_weather".to_string(),
                 input: json!({"location": "SF"}),
                 provider_executed: None,
                 thought_signature: None,
                 provider_options: None,
-            }],
-            ..Default::default()
+            })],
+            provider_options: None,
         },
-        LanguageModelPromptMessage {
-            role: Role::Tool,
-            content: vec![ContentPart::ToolResult {
+        LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call-1".to_string(),
                 result: json!({"temp": 72}),
                 tool_name: None,
@@ -321,8 +316,8 @@ async fn converts_tool_call_and_tool_result_messages() {
                 preliminary: None,
                 dynamic: None,
                 provider_options: None,
-            }],
-            ..Default::default()
+            })],
+            provider_options: None,
         },
     ];
     let _ = model.do_generate(&default_options(prompt)).await.unwrap();

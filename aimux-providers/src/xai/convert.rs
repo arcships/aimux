@@ -5,12 +5,13 @@
 //! `supports-reasoning-effort.ts`, `map-xai-finish-reason.ts`, and
 //! `remove-additional-properties.ts`.
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model_message::LanguageModelPrompt;
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart, ToolPart,
+    ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::shared::SharedProviderOptions;
+use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
 
@@ -258,17 +259,14 @@ pub fn resolve_full_media_type(media_type: &str, b64_data: &str) -> String {
 ///
 /// Returns a `String` listing the available providers when the requested key
 /// is absent.
-pub fn resolve_provider_reference(reference: &Value, provider: &str) -> Result<String, String> {
-    if let Some(val) = reference.get(provider) {
-        if let Some(s) = val.as_str() {
-            return Ok(s.to_string());
-        }
-        return Ok(val.to_string());
+pub fn resolve_provider_reference(
+    reference: &std::collections::HashMap<String, String>,
+    provider: &str,
+) -> Result<String, String> {
+    if let Some(value) = reference.get(provider) {
+        return Ok(value.clone());
     }
-    let available: Vec<String> = reference
-        .as_object()
-        .map(|m| m.keys().cloned().collect())
-        .unwrap_or_default();
+    let available: Vec<String> = reference.keys().cloned().collect();
     Err(format!(
         "No provider reference found for provider '{}'. Available providers: {}",
         provider,
@@ -291,44 +289,35 @@ pub fn convert_to_xai_messages(
     let warnings: Vec<Warning> = Vec::new();
 
     for msg in prompt {
-        match msg.role {
-            Role::System => {
-                let content: String = msg
-                    .content
-                    .iter()
-                    .filter_map(|p| match p {
-                        ContentPart::Text { text, .. } => Some(text.as_str()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("");
+        match msg {
+            LanguageModelMessage::System { content, .. } => {
                 messages.push(json!({ "role": "system", "content": content }));
             }
-            Role::User => {
-                if msg.content.len() == 1
-                    && let ContentPart::Text { text, .. } = &msg.content[0]
+            LanguageModelMessage::User { content, .. } => {
+                if content.len() == 1
+                    && let UserPart::Text(TextPart { text, .. }) = &content[0]
                 {
                     messages.push(json!({ "role": "user", "content": text }));
                     continue;
                 }
                 let mut user_content = Vec::new();
-                for (i, part) in msg.content.iter().enumerate() {
+                for (i, part) in content.iter().enumerate() {
                     user_content.push(convert_user_part(part, i)?);
                 }
                 messages.push(json!({ "role": "user", "content": user_content }));
             }
-            Role::Assistant => {
+            LanguageModelMessage::Assistant { content, .. } => {
                 let mut text = String::new();
                 let mut tool_calls: Vec<Value> = Vec::new();
-                for part in &msg.content {
+                for part in content {
                     match part {
-                        ContentPart::Text { text: t, .. } => text.push_str(t),
-                        ContentPart::ToolCall {
+                        AssistantPart::Text(TextPart { text: t, .. }) => text.push_str(t),
+                        AssistantPart::ToolCall(ToolCallPart {
                             tool_call_id,
                             tool_name,
                             input,
                             ..
-                        } => {
+                        }) => {
                             let arguments = if input.is_null() {
                                 "{}".to_string()
                             } else {
@@ -345,20 +334,20 @@ pub fn convert_to_xai_messages(
                 }
                 messages.push(msg_obj);
             }
-            Role::Tool => {
-                for part in &msg.content {
-                    if let ContentPart::ToolResult {
+            LanguageModelMessage::Tool { content, .. } => {
+                for part in content {
+                    let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
                         result,
                         ..
-                    } = part
-                    {
-                        let content = match result {
-                            Value::String(s) => s.clone(),
-                            other => other.to_string(),
-                        };
-                        messages.push(json!({ "role": "tool", "tool_call_id": tool_call_id, "content": content }));
-                    }
+                    }) = part;
+                    let content = match result {
+                        Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    messages.push(
+                        json!({ "role": "tool", "tool_call_id": tool_call_id, "content": content }),
+                    );
                 }
             }
         }
@@ -366,52 +355,32 @@ pub fn convert_to_xai_messages(
     Ok((messages, warnings))
 }
 
-fn convert_user_part(part: &ContentPart, _index: usize) -> Result<Value, AiMuxError> {
+fn convert_user_part(part: &UserPart, _index: usize) -> Result<Value, AiMuxError> {
     match part {
-        ContentPart::Text { text, .. } => Ok(json!({ "type": "text", "text": text })),
-        ContentPart::Image {
-            image,
-            media_type,
-            provider_options,
-        } => {
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-            convert_image_part(media_type, Some(&b64), None, provider_options)
-        }
-        ContentPart::File {
-            data,
-            media_type,
-            provider_options,
-            ..
-        } => {
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(data);
-            convert_image_part(media_type, Some(&b64), None, provider_options)
-        }
-        ContentPart::FileBase64 {
-            data,
-            media_type,
-            provider_options,
-            ..
-        } => convert_image_part(media_type, Some(data), None, provider_options),
-        ContentPart::FileUrl {
-            url,
-            media_type,
-            provider_options,
-        } => convert_image_part(media_type, None, Some(url), provider_options),
-        ContentPart::FileReference {
-            media_type,
-            reference,
-            provider_options,
-            ..
-        } => {
-            let _ = media_type;
-            let _ = provider_options;
-            let file_id = resolve_provider_reference(reference, "xai")
-                .map_err(AiMuxError::InvalidArgument)?;
-            Ok(json!({ "type": "file", "file": { "file_id": file_id } }))
-        }
-        _ => Ok(Value::Null),
+        UserPart::Text(TextPart { text, .. }) => Ok(json!({ "type": "text", "text": text })),
+        UserPart::File(file) => match &file.data {
+            FileData::Data {
+                data: FileBytes::Binary(bytes),
+            } => {
+                use base64::Engine;
+                let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+                convert_image_part(&file.media_type, Some(&b64), None, &file.provider_options)
+            }
+            FileData::Data {
+                data: FileBytes::Base64(data),
+            } => convert_image_part(&file.media_type, Some(data), None, &file.provider_options),
+            FileData::Url { url } => {
+                convert_image_part(&file.media_type, None, Some(url), &file.provider_options)
+            }
+            FileData::Reference { reference } => {
+                let file_id = resolve_provider_reference(reference, "xai")
+                    .map_err(AiMuxError::InvalidArgument)?;
+                Ok(json!({ "type": "file", "file": { "file_id": file_id } }))
+            }
+            FileData::Text { .. } => Err(AiMuxError::UnsupportedFunctionality(
+                "text file parts".into(),
+            )),
+        },
     }
 }
 

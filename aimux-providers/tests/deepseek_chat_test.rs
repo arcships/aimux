@@ -34,12 +34,14 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart,
+    ToolPart, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, Tool};
 use aimux_core::result::GenerateContent;
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
@@ -54,11 +56,7 @@ use aimux_providers::{ProviderOptions, provider};
 
 /// The TS `TEST_PROMPT`: a single user text message "Hello".
 fn test_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("Hello")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 /// `CallOptions` with only `prompt` set (everything else default/None).
@@ -273,16 +271,11 @@ async fn should_send_correct_text_request_body() {
     let model = make_provider(&server, "deepseek-chat");
 
     let prompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::System,
-            content: vec![ContentPart::text("You are a helpful assistant.")],
-            ..Default::default()
+        LanguageModelMessage::System {
+            content: "You are a helpful assistant.".into(),
+            provider_options: None,
         },
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Hello")],
-            ..Default::default()
-        },
+        LanguageModelMessage::user_text("Hello"),
     ];
     let mut options = default_options(prompt);
     options.temperature = Some(0.5);
@@ -574,16 +567,11 @@ async fn should_send_correct_stream_request_body() {
     let model = make_provider(&server, "deepseek-chat");
 
     let prompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::System,
-            content: vec![ContentPart::text("You are a helpful assistant.")],
-            ..Default::default()
+        LanguageModelMessage::System {
+            content: "You are a helpful assistant.".into(),
+            provider_options: None,
         },
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Hello")],
-            ..Default::default()
-        },
+        LanguageModelMessage::user_text("Hello"),
     ];
     let mut options = default_options(prompt);
     options.temperature = Some(0.5);
@@ -804,13 +792,22 @@ async fn should_convert_user_text_part_to_string_content() {
 /// TS: file parts with image media type are converted to image_url (OpenAI format).
 #[tokio::test]
 async fn should_convert_image_file_parts_to_image_url() {
-    let prompt = vec![LanguageModelPromptMessage {
-        role: Role::User,
+    let prompt = vec![LanguageModelMessage::User {
         content: vec![
-            ContentPart::text("Hello"),
-            ContentPart::file_base64("AAECAw==", "image/png"),
+            UserPart::Text(TextPart {
+                text: "Hello".into(),
+                provider_options: None,
+            }),
+            UserPart::File(FilePart {
+                data: FileData::Data {
+                    data: FileBytes::Base64("AAECAw==".into()),
+                },
+                media_type: "image/png".into(),
+                filename: None,
+                provider_options: None,
+            }),
         ],
-        ..Default::default()
+        provider_options: None,
     }];
     let options = default_options(prompt);
     let result = build_request_body_with_warnings(
@@ -842,13 +839,22 @@ async fn should_convert_image_file_parts_to_image_url() {
 /// NOT include any image/mediaType data in the output.
 #[tokio::test]
 async fn should_accept_top_level_only_mediatype_without_error() {
-    let prompt = vec![LanguageModelPromptMessage {
-        role: Role::User,
+    let prompt = vec![LanguageModelMessage::User {
         content: vec![
-            ContentPart::text("Hello"),
-            ContentPart::file_base64("AAECAw==", "image"),
+            UserPart::Text(TextPart {
+                text: "Hello".into(),
+                provider_options: None,
+            }),
+            UserPart::File(FilePart {
+                data: FileData::Data {
+                    data: FileBytes::Base64("AAECAw==".into()),
+                },
+                media_type: "image".into(),
+                filename: None,
+                provider_options: None,
+            }),
         ],
-        ..Default::default()
+        provider_options: None,
     }];
     let options = default_options(prompt);
     let result = build_request_body_with_warnings(
@@ -877,19 +883,28 @@ async fn should_accept_top_level_only_mediatype_without_error() {
 #[tokio::test]
 async fn should_stringify_arguments_to_tool_calls() {
     let prompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::tool_call(
-                "quux",
-                "thwomp",
-                json!({ "foo": "bar123" }),
-            )],
-            ..Default::default()
+        LanguageModelMessage::Assistant {
+            content: vec![AssistantPart::ToolCall(ToolCallPart {
+                tool_call_id: "quux".into(),
+                tool_name: "thwomp".into(),
+                input: json!({ "foo": "bar123" }),
+                provider_executed: None,
+                thought_signature: None,
+                provider_options: None,
+            })],
+            provider_options: None,
         },
-        LanguageModelPromptMessage {
-            role: Role::Tool,
-            content: vec![ContentPart::tool_result("quux", json!({ "oof": "321rab" }))],
-            ..Default::default()
+        LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
+                tool_call_id: "quux".into(),
+                result: json!({ "oof": "321rab" }),
+                tool_name: None,
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
+                provider_options: None,
+            })],
+            provider_options: None,
         },
     ];
     let options = default_options(prompt);
@@ -936,22 +951,28 @@ async fn should_stringify_arguments_to_tool_calls() {
 #[tokio::test]
 async fn should_handle_text_output_type_in_tool_results() {
     let prompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::tool_call(
-                "call-1",
-                "getWeather",
-                json!({ "query": "weather" }),
-            )],
-            ..Default::default()
+        LanguageModelMessage::Assistant {
+            content: vec![AssistantPart::ToolCall(ToolCallPart {
+                tool_call_id: "call-1".into(),
+                tool_name: "getWeather".into(),
+                input: json!({ "query": "weather" }),
+                provider_executed: None,
+                thought_signature: None,
+                provider_options: None,
+            })],
+            provider_options: None,
         },
-        LanguageModelPromptMessage {
-            role: Role::Tool,
-            content: vec![ContentPart::tool_result(
-                "call-1",
-                json!("It is sunny today"),
-            )],
-            ..Default::default()
+        LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
+                tool_call_id: "call-1".into(),
+                result: json!("It is sunny today"),
+                tool_name: None,
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
+                provider_options: None,
+            })],
+            provider_options: None,
         },
     ];
     let options = default_options(prompt);

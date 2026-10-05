@@ -24,13 +24,14 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, ReasoningOutput};
-use aimux_core::shared::provider_namespace;
+use aimux_core::shared::{FileBytes, FileData, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
@@ -41,11 +42,7 @@ use aimux_providers::{ProviderOptions, provider};
 
 /// The TS `TEST_PROMPT`: a single user text message "Hello".
 fn test_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("Hello")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 /// `CallOptions` with only `prompt` set.
@@ -237,13 +234,22 @@ mod convert_messages {
 
         let model = make_provider(&server);
 
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::User,
+        let prompt: LanguageModelPrompt = vec![LanguageModelMessage::User {
             content: vec![
-                ContentPart::text("Hello"),
-                ContentPart::file_base64("AAECAw==", "image/png"),
+                UserPart::Text(TextPart {
+                    text: "Hello".into(),
+                    provider_options: None,
+                }),
+                UserPart::File(FilePart {
+                    data: FileData::Data {
+                        data: FileBytes::Base64("AAECAw==".into()),
+                    },
+                    media_type: "image/png".into(),
+                    filename: None,
+                    provider_options: None,
+                }),
             ],
-            ..Default::default()
+            provider_options: None,
         }];
         model.do_generate(&default_options(prompt)).await.unwrap();
 
@@ -288,19 +294,28 @@ mod convert_messages {
         let model = make_provider(&server);
 
         let prompt: LanguageModelPrompt = vec![
-            LanguageModelPromptMessage {
-                role: Role::Assistant,
-                content: vec![ContentPart::tool_call(
-                    "quux",
-                    "thwomp",
-                    json!({"foo":"bar123"}),
-                )],
-                ..Default::default()
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "quux".into(),
+                    tool_name: "thwomp".into(),
+                    input: json!({"foo":"bar123"}),
+                    provider_executed: None,
+                    thought_signature: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
             },
-            LanguageModelPromptMessage {
-                role: Role::Tool,
-                content: vec![ContentPart::tool_result("quux", json!({"oof":"321rab"}))],
-                ..Default::default()
+            LanguageModelMessage::Tool {
+                content: vec![ToolPart::ToolResult(ToolResultPart {
+                    tool_call_id: "quux".into(),
+                    result: json!({"oof":"321rab"}),
+                    tool_name: None,
+                    is_error: None,
+                    preliminary: None,
+                    dynamic: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
             },
         ];
         model.do_generate(&default_options(prompt)).await.unwrap();
@@ -333,13 +348,23 @@ mod convert_messages {
 
         let model = make_provider(&server);
 
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::Assistant,
+        let prompt: LanguageModelPrompt = vec![LanguageModelMessage::Assistant {
             content: vec![
-                ContentPart::reasoning("I think the tool will return the correct value."),
-                ContentPart::tool_call("quux", "thwomp", json!({"foo":"bar123"})),
+                AssistantPart::Reasoning(ReasoningPart {
+                    text: "I think the tool will return the correct value.".into(),
+                    signature: None,
+                    provider_options: None,
+                }),
+                AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "quux".into(),
+                    tool_name: "thwomp".into(),
+                    input: json!({"foo":"bar123"}),
+                    provider_executed: None,
+                    thought_signature: None,
+                    provider_options: None,
+                }),
             ],
-            ..Default::default()
+            provider_options: None,
         }];
         model.do_generate(&default_options(prompt)).await.unwrap();
 
@@ -362,10 +387,12 @@ mod convert_messages {
 
         let model = make_provider(&server);
 
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::text("Hello, how can I help you?")],
-            ..Default::default()
+        let prompt: LanguageModelPrompt = vec![LanguageModelMessage::Assistant {
+            content: vec![AssistantPart::Text(TextPart {
+                text: "Hello, how can I help you?".into(),
+                provider_options: None,
+            })],
+            provider_options: None,
         }];
         model.do_generate(&default_options(prompt)).await.unwrap();
 
@@ -385,13 +412,16 @@ mod convert_messages {
 
         let model = make_provider(&server);
 
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::file_reference(
-                "image/png",
-                json!({"groq": "file-ref-123"}),
-            )],
-            ..Default::default()
+        let prompt: LanguageModelPrompt = vec![LanguageModelMessage::User {
+            content: vec![UserPart::File(FilePart {
+                data: FileData::Reference {
+                    reference: [("groq".into(), "file-ref-123".into())].into(),
+                },
+                media_type: "image/png".into(),
+                filename: None,
+                provider_options: None,
+            })],
+            provider_options: None,
         }];
         // Groq references don't contain an "openai" key, so the converter
         // returns an InvalidArgument error instead of panicking.

@@ -14,11 +14,12 @@
 //! - Consecutive same-role messages are merged into a single message (matching
 //!   the TS `groupIntoBlocks` behaviour).
 
-use aimux_core::content::ContentPart;
-use aimux_core::language_model_message::LanguageModelPrompt;
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ToolChoice};
-use aimux_core::shared::SharedProviderOptions;
+use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
 use base64::Engine;
@@ -47,10 +48,10 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
     // Group consecutive same-block messages (user+tool fold into User).
     let mut blocks: Vec<(Blk, Vec<usize>)> = Vec::new();
     for (i, msg) in prompt.iter().enumerate() {
-        let b = match msg.role {
-            Role::System => Blk::System,
-            Role::User | Role::Tool => Blk::User,
-            Role::Assistant => Blk::Assistant,
+        let b = match msg {
+            LanguageModelMessage::System { .. } => Blk::System,
+            LanguageModelMessage::User { .. } | LanguageModelMessage::Tool { .. } => Blk::User,
+            LanguageModelMessage::Assistant { .. } => Blk::Assistant,
         };
         if blocks.last().map(|(lb, _)| *lb) == Some(b) {
             blocks.last_mut().unwrap().1.push(i);
@@ -69,26 +70,59 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
         match blk {
             Blk::System => {
                 for &i in idxs {
-                    let msg = &prompt[i];
-                    for p in &msg.content {
-                        if let ContentPart::Text { text, .. } = p {
-                            system.push(json!({ "text": text }));
-                        }
-                        if let Some(cp) = part_cache_point(p) {
-                            system.push(cp);
-                        }
+                    let LanguageModelMessage::System {
+                        content,
+                        provider_options,
+                    } = &prompt[i]
+                    else {
+                        unreachable!()
+                    };
+                    system.push(json!({ "text": content }));
+                    if let Some(cp) = cache_point(provider_options) {
+                        system.push(cp);
                     }
                 }
             }
             Blk::User => {
                 let mut content: Vec<Value> = Vec::new();
                 for &i in idxs {
-                    let msg = &prompt[i];
-                    for p in &msg.content {
-                        push_user_part(p, &mut content, &mut document_counter);
-                        if let Some(cp) = part_cache_point(p) {
-                            content.push(cp);
+                    match &prompt[i] {
+                        LanguageModelMessage::User { content: parts, .. } => {
+                            for part in parts {
+                                let provider_options = match part {
+                                    UserPart::Text(part) => {
+                                        content.push(json!({ "text": part.text }));
+                                        &part.provider_options
+                                    }
+                                    UserPart::File(file) => {
+                                        if !push_file_part(
+                                            file,
+                                            &mut content,
+                                            &mut document_counter,
+                                        ) {
+                                            continue;
+                                        }
+                                        &file.provider_options
+                                    }
+                                };
+                                if let Some(cp) = cache_point(provider_options) {
+                                    content.push(cp);
+                                }
+                            }
                         }
+                        LanguageModelMessage::Tool { content: parts, .. } => {
+                            for ToolPart::ToolResult(part) in parts {
+                                let result_content =
+                                    resolve_tool_result_output(&part.result, &mut document_counter);
+                                content.push(json!({
+                                    "toolResult": {
+                                        "toolUseId": part.tool_call_id,
+                                        "content": result_content,
+                                    }
+                                }));
+                            }
+                        }
+                        _ => unreachable!(),
                     }
                 }
                 messages.push(json!({ "role": "user", "content": content }));
@@ -98,20 +132,19 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
                 let num_msgs = idxs.len();
                 for (mj, &i) in idxs.iter().enumerate() {
                     let is_last_message = mj == num_msgs - 1;
-                    let msg = &prompt[i];
-                    let has_reasoning = msg
-                        .content
+                    let LanguageModelMessage::Assistant { content: parts, .. } = &prompt[i] else {
+                        unreachable!()
+                    };
+                    let has_reasoning = parts
                         .iter()
-                        .any(|p| matches!(p, ContentPart::Reasoning { .. }));
-                    let num_parts = msg.content.len();
-                    for (kj, p) in msg.content.iter().enumerate() {
+                        .any(|p| matches!(p, AssistantPart::Reasoning(_)));
+                    let num_parts = parts.len();
+                    for (kj, p) in parts.iter().enumerate() {
                         let is_last_content_part = kj == num_parts - 1;
                         match p {
-                            ContentPart::Text { text, .. } => {
+                            AssistantPart::Text(TextPart { text, .. }) => {
                                 // Skip empty text unless the message has reasoning.
-                                if text.trim().is_empty() && !has_reasoning {
-                                    // skipped
-                                } else {
+                                if !text.trim().is_empty() || has_reasoning {
                                     let t =
                                         if is_last_block && is_last_message && is_last_content_part
                                         {
@@ -122,11 +155,11 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
                                     content.push(json!({ "text": t }));
                                 }
                             }
-                            ContentPart::Reasoning {
+                            AssistantPart::Reasoning(ReasoningPart {
                                 text,
                                 signature: Some(sig),
                                 ..
-                            } => {
+                            }) => {
                                 // Only signed reasoning is replayed; unsigned
                                 // reasoning is intentionally omitted.
                                 content.push(json!({
@@ -138,13 +171,12 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
                                     }
                                 }));
                             }
-                            ContentPart::Reasoning { .. } => {}
-                            ContentPart::ToolCall {
+                            AssistantPart::ToolCall(ToolCallPart {
                                 tool_call_id,
                                 tool_name,
                                 input,
                                 ..
-                            } => {
+                            }) => {
                                 let input_val = if input.is_object() {
                                     input.clone()
                                 } else {
@@ -160,7 +192,19 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
                             }
                             _ => {}
                         }
-                        if let Some(cp) = part_cache_point(p) {
+                        let provider_options = match p {
+                            AssistantPart::Text(part) => &part.provider_options,
+                            AssistantPart::File(part)
+                                if matches!(
+                                    part.data,
+                                    FileData::Data { .. } | FileData::Text { .. }
+                                ) =>
+                            {
+                                &part.provider_options
+                            }
+                            _ => continue,
+                        };
+                        if let Some(cp) = cache_point(provider_options) {
                             content.push(cp);
                         }
                     }
@@ -173,66 +217,39 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
     (system, messages)
 }
 
-/// Push a single user/tool content part into a Bedrock content array.
-fn push_user_part(part: &ContentPart, content: &mut Vec<Value>, doc_counter: &mut u32) {
-    match part {
-        ContentPart::Text { text, .. } => {
-            content.push(json!({ "text": text }));
-        }
-        ContentPart::Image {
-            image, media_type, ..
-        } => {
-            let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-            push_file_block(&b64, media_type, None, &None, content, doc_counter);
-        }
-        ContentPart::File {
-            data,
-            media_type,
-            filename,
-            provider_options,
-        } => {
-            let b64 = base64::engine::general_purpose::STANDARD.encode(data);
-            push_file_block(
-                &b64,
-                media_type,
-                filename.as_deref(),
-                provider_options,
-                content,
-                doc_counter,
-            );
-        }
-        ContentPart::FileBase64 {
-            data,
-            media_type,
-            filename,
-            provider_options,
-        } => {
-            // `data` is already a base64 string — use verbatim as `bytes`.
-            push_file_block(
-                data,
-                media_type,
-                filename.as_deref(),
-                provider_options,
-                content,
-                doc_counter,
-            );
-        }
-        ContentPart::ToolResult {
-            tool_call_id,
-            result,
-            ..
-        } => {
-            let result_content = resolve_tool_result_output(result, doc_counter);
-            content.push(json!({
-                "toolResult": {
-                    "toolUseId": tool_call_id,
-                    "content": result_content,
-                }
-            }));
-        }
-        // Variants not yet modelled for Bedrock; no test exercises these paths.
-        _ => {}
-    }
+/// Push a supported file into a Bedrock content array.
+fn push_file_part(file: &FilePart, content: &mut Vec<Value>, doc_counter: &mut u32) -> bool {
+    let b64 = match &file.data {
+        FileData::Data {
+            data: FileBytes::Binary(bytes),
+        } => base64::engine::general_purpose::STANDARD.encode(bytes),
+        FileData::Data {
+            data: FileBytes::Base64(data),
+        } => data.clone(),
+        FileData::Text { text } => base64::engine::general_purpose::STANDARD.encode(text),
+        FileData::Url { .. } | FileData::Reference { .. } => return false,
+    };
+    let is_text = matches!(file.data, FileData::Text { .. });
+    let media_type = if is_text
+        && !file
+            .media_type
+            .split_once('/')
+            .is_some_and(|(_, subtype)| !subtype.is_empty() && subtype != "*")
+    {
+        "text/plain"
+    } else {
+        &file.media_type
+    };
+    push_file_block(
+        &b64,
+        media_type,
+        file.filename.as_deref(),
+        &file.provider_options,
+        is_text,
+        content,
+        doc_counter,
+    );
+    true
 }
 
 /// Build a Bedrock `image` or `document` block from an already-base64 `bytes`
@@ -245,11 +262,12 @@ fn push_file_block(
     media_type: &str,
     filename: Option<&str>,
     provider_options: &Option<SharedProviderOptions>,
+    is_text: bool,
     content: &mut Vec<Value>,
     doc_counter: &mut u32,
 ) {
     let top_level = media_type.split('/').next().unwrap_or("");
-    if top_level == "image" {
+    if top_level == "image" && !is_text {
         let format = mime_to_image_format(media_type);
         content.push(json!({
             "image": { "format": format, "source": { "bytes": b64 } }
@@ -276,22 +294,8 @@ fn push_file_block(
 
 /// Extract a `{ cachePoint: {...} }` block from a part's `providerOptions`
 /// (`bedrock.cachePoint` or `amazonBedrock.cachePoint`), if present.
-fn part_cache_point(part: &ContentPart) -> Option<Value> {
-    let po = match part {
-        ContentPart::Text {
-            provider_options, ..
-        }
-        | ContentPart::Image {
-            provider_options, ..
-        }
-        | ContentPart::File {
-            provider_options, ..
-        }
-        | ContentPart::FileBase64 {
-            provider_options, ..
-        } => provider_options.as_ref()?,
-        _ => return None,
-    };
+fn cache_point(provider_options: &Option<SharedProviderOptions>) -> Option<Value> {
+    let po = provider_options.as_ref()?;
     for key in ["bedrock", "amazonBedrock"] {
         if let Some(cp) = po.get(key).and_then(|v| v.get("cachePoint")) {
             return Some(json!({ "cachePoint": cp.clone() }));
@@ -368,7 +372,15 @@ fn convert_tool_result_content_part(part: &Value, content: &mut Vec<Value>, doc_
                 .and_then(|d| d.as_str())
                 .unwrap_or("");
             let filename = part.get("filename").and_then(|f| f.as_str());
-            push_file_block(b64, media_type, filename, &None, content, doc_counter);
+            push_file_block(
+                b64,
+                media_type,
+                filename,
+                &None,
+                false,
+                content,
+                doc_counter,
+            );
         }
         _ => {
             content.push(json!({ "text": part.to_string() }));

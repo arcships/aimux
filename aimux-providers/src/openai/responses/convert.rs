@@ -12,11 +12,12 @@
 
 use serde_json::{Value, json};
 
-use aimux_core::content::ContentPart;
-use aimux_core::language_model_message::LanguageModelPrompt;
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::shared::SharedProviderOptions;
+use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Usage, Warning};
 
@@ -79,18 +80,18 @@ pub fn convert_to_responses_input(
     let mut warnings: Vec<Warning> = Vec::new();
 
     for msg in prompt {
-        match msg.role {
-            Role::System => match system_message_mode {
+        match msg {
+            LanguageModelMessage::System { content, .. } => match system_message_mode {
                 SystemMessageMode::System => {
                     input.push(json!({
                         "role": "system",
-                        "content": join_text_parts(&msg.content),
+                        "content": content,
                     }));
                 }
                 SystemMessageMode::Developer => {
                     input.push(json!({
                         "role": "developer",
-                        "content": join_text_parts(&msg.content),
+                        "content": content,
                     }));
                 }
                 SystemMessageMode::Remove => {
@@ -99,17 +100,17 @@ pub fn convert_to_responses_input(
                     });
                 }
             },
-            Role::User => {
-                let content: Vec<Value> = msg.content.iter().map(convert_user_part).collect();
+            LanguageModelMessage::User { content, .. } => {
+                let content: Vec<Value> = content.iter().map(convert_user_part).collect();
                 input.push(json!({ "role": "user", "content": content }));
             }
-            Role::Assistant => {
-                for part in &msg.content {
+            LanguageModelMessage::Assistant { content, .. } => {
+                for part in content {
                     match part {
-                        ContentPart::Text {
+                        AssistantPart::Text(TextPart {
                             text,
                             provider_options,
-                        } => {
+                        }) => {
                             let id = item_id(provider_options);
                             if has_previous_response_id && id.is_some() {
                                 continue;
@@ -131,13 +132,13 @@ pub fn convert_to_responses_input(
                             }
                             input.push(item);
                         }
-                        ContentPart::ToolCall {
+                        AssistantPart::ToolCall(ToolCallPart {
                             tool_call_id,
                             tool_name,
                             input: tool_input,
                             provider_options,
                             ..
-                        } => {
+                        }) => {
                             let id = item_id(provider_options);
                             if has_previous_response_id && id.is_some() {
                                 continue;
@@ -154,11 +155,11 @@ pub fn convert_to_responses_input(
                             }
                             input.push(item);
                         }
-                        ContentPart::Reasoning {
+                        AssistantPart::Reasoning(ReasoningPart {
                             text,
                             provider_options,
                             ..
-                        } => {
+                        }) => {
                             let reasoning_id = openai_sub_option(provider_options, "itemId");
                             if has_previous_response_id && reasoning_id.is_some() {
                                 continue;
@@ -213,24 +214,22 @@ pub fn convert_to_responses_input(
                     }
                 }
             }
-            Role::Tool => {
-                for part in &msg.content {
-                    if let ContentPart::ToolResult {
+            LanguageModelMessage::Tool { content, .. } => {
+                for part in content {
+                    let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
                         result,
                         ..
-                    } = part
-                    {
-                        let content_value = match result {
-                            Value::String(s) => Value::String(s.clone()),
-                            other => Value::String(other.to_string()),
-                        };
-                        input.push(json!({
-                            "type": "function_call_output",
-                            "call_id": tool_call_id,
-                            "output": content_value,
-                        }));
-                    }
+                    }) = part;
+                    let content_value = match result {
+                        Value::String(s) => Value::String(s.clone()),
+                        other => Value::String(other.to_string()),
+                    };
+                    input.push(json!({
+                        "type": "function_call_output",
+                        "call_id": tool_call_id,
+                        "output": content_value,
+                    }));
                 }
             }
         }
@@ -257,81 +256,56 @@ pub fn convert_to_responses_input(
     ResponsesInputResult { input, warnings }
 }
 
-/// Join all text parts of a message into a single string (for system messages).
-fn join_text_parts(parts: &[ContentPart]) -> String {
-    parts
-        .iter()
-        .filter_map(|p| match p {
-            ContentPart::Text { text, .. } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("")
-}
-
 /// Convert a single user-message content part into the Responses input shape.
-fn convert_user_part(part: &ContentPart) -> Value {
+fn convert_user_part(part: &UserPart) -> Value {
     match part {
-        ContentPart::Text { text, .. } => json!({ "type": "input_text", "text": text }),
-        ContentPart::Image {
-            image,
+        UserPart::Text(TextPart { text, .. }) => json!({ "type": "input_text", "text": text }),
+        UserPart::File(FilePart {
+            data,
             media_type,
+            filename,
             provider_options,
-        } => {
-            let b64 = {
-                use base64::Engine;
-                base64::engine::general_purpose::STANDARD.encode(image)
+        }) => {
+            let is_image = media_type.starts_with("image");
+            let mut item = match data {
+                FileData::Data { data } => {
+                    let b64 = match data {
+                        FileBytes::Binary(bytes) => {
+                            use base64::Engine;
+                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                        }
+                        FileBytes::Base64(data) => data.clone(),
+                    };
+                    let data_url = format!("data:{media_type};base64,{b64}");
+                    if is_image {
+                        json!({ "type": "input_image", "image_url": data_url })
+                    } else {
+                        json!({
+                            "type": "input_file",
+                            "filename": filename.as_deref().unwrap_or("part.pdf"),
+                            "file_data": data_url,
+                        })
+                    }
+                }
+                FileData::Url { url } => {
+                    if is_image {
+                        json!({ "type": "input_image", "image_url": url })
+                    } else {
+                        json!({ "type": "input_file", "file_url": url })
+                    }
+                }
+                FileData::Reference { .. } | FileData::Text { .. } => {
+                    json!({ "type": "input_text", "text": "" })
+                }
             };
-            let detail = openai_sub_option(provider_options, "imageDetail");
-            let mut img = json!({
-                "type": "input_image",
-                "image_url": format!("data:{};base64,{}", media_type, b64),
-            });
-            if let Some(d) = detail {
-                img["detail"] = d;
+            if item["type"] == "input_image"
+                && matches!(data, FileData::Data { .. })
+                && let Some(detail) = openai_sub_option(provider_options, "imageDetail")
+            {
+                item["detail"] = detail;
             }
-            img
+            item
         }
-        ContentPart::File {
-            data,
-            media_type,
-            filename,
-            ..
-        } => {
-            let b64 = {
-                use base64::Engine;
-                base64::engine::general_purpose::STANDARD.encode(data)
-            };
-            let fname = filename.clone().unwrap_or_else(|| "part.pdf".to_string());
-            json!({
-                "type": "input_file",
-                "filename": fname,
-                "file_data": format!("data:{};base64,{}", media_type, b64),
-            })
-        }
-        ContentPart::FileBase64 {
-            data,
-            media_type,
-            filename,
-            ..
-        } => {
-            let fname = filename.clone().unwrap_or_else(|| "part.pdf".to_string());
-            json!({
-                "type": "input_file",
-                "filename": fname,
-                "file_data": format!("data:{};base64,{}", media_type, data),
-            })
-        }
-        ContentPart::FileUrl {
-            url, media_type, ..
-        } => {
-            if media_type.starts_with("image") {
-                json!({ "type": "input_image", "image_url": url })
-            } else {
-                json!({ "type": "input_file", "file_url": url })
-            }
-        }
-        _ => json!({ "type": "input_text", "text": "" }),
     }
 }
 
