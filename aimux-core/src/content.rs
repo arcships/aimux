@@ -135,11 +135,6 @@ pub enum ContentPart {
         /// need it to replay server tool calls on a later turn.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_executed: Option<bool>,
-        /// Provider-assigned thought signature (e.g. Google Gemini
-        /// `thoughtSignature`). Must be echoed back verbatim on the follow-up
-        /// turn when the tool result is sent.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        thought_signature: Option<String>,
         /// Provider-specific options for this part (e.g.
         /// `anthropic.cacheControl`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -198,7 +193,6 @@ impl ContentPart {
             tool_name: tool_name.into(),
             input,
             provider_executed: None,
-            thought_signature: None,
             provider_options: None,
         }
     }

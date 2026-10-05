@@ -189,6 +189,7 @@ impl LanguageModel for CohereModel {
                     .and_then(|src| src.get("document"))
                     .and_then(|d| d.get("title"))
                     .and_then(|t| t.as_str())
+                    .filter(|s| !s.is_empty())
                     .map(std::string::ToString::to_string)
                     .unwrap_or_else(|| "Document".to_string());
 
@@ -210,11 +211,11 @@ impl LanguageModel for CohereModel {
                 {
                     cohere_meta.insert("citationType".to_string(), Value::String(t.to_string()));
                 }
-                content.push(GenerateContent::Source(Source {
+                content.push(GenerateContent::Source(Source::Document {
                     id: format!("citation-{i}"),
-                    source_type: "document".to_string(),
-                    url: None,
-                    title: Some(title),
+                    media_type: "text/plain".to_string(),
+                    title,
+                    filename: None,
                     provider_metadata: Some(HashMap::from([("cohere".to_string(), cohere_meta)])),
                 }));
             }
@@ -237,7 +238,6 @@ impl LanguageModel for CohereModel {
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
                 }));
             }
@@ -512,7 +512,6 @@ impl LanguageModel for CohereModel {
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
-                                        thought_signature: None,
                                         provider_metadata: None,
                                     }));
                                 }

@@ -120,25 +120,6 @@ void main() {
       expect(tc.isDynamic, false);
     });
 
-    test('Source variant', () {
-      final original = GenerateContentSource(
-        id: 'src_1',
-        sourceType: 'url',
-        url: 'https://example.com',
-        title: 'Example',
-        providerMetadata: null,
-      );
-      final decoded = GenerateContent.fromJson(original.toJson());
-
-      expect(decoded, isA<GenerateContentSource>());
-      expect(decoded.tag, 'Source');
-      final s = decoded as GenerateContentSource;
-      expect(s.id, 'src_1');
-      expect(s.sourceType, 'url');
-      expect(s.url, 'https://example.com');
-      expect(s.title, 'Example');
-    });
-
     test('Reasoning variant', () {
       final original =
           GenerateContentReasoning(text: 'thinking...', providerMetadata: null);
@@ -421,25 +402,6 @@ void main() {
       expect(m.id, 'resp_1');
       expect(m.timestamp, '2024-01-01T00:00:00Z');
       expect(m.modelId, 'gpt-4o');
-    });
-
-    test('Source variant', () {
-      final original = StreamPartSource(
-        id: 'src_1',
-        sourceType: 'url',
-        url: 'https://example.com',
-        title: 'Example',
-        providerMetadata: null,
-      );
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartSource>());
-      expect(decoded.type, 'Source');
-      final s = decoded as StreamPartSource;
-      expect(s.id, 'src_1');
-      expect(s.sourceType, 'url');
-      expect(s.url, 'https://example.com');
-      expect(s.title, 'Example');
     });
 
     test('Raw variant', () {

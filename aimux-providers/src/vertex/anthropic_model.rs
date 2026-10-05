@@ -400,7 +400,6 @@ impl LanguageModel for VertexAnthropicModel {
                                             input: input.to_string(),
                                             provider_executed: Some(true),
                                             dynamic: Some(true),
-                                            thought_signature: None,
                                             provider_metadata: Some(provider_namespace("anthropic", json!({
                                                 "type": "mcp-tool-use",
                                                 "serverName": server_name,
@@ -550,7 +549,6 @@ impl LanguageModel for VertexAnthropicModel {
                                                 input,
                                                 provider_executed,
                                                 dynamic,
-                                                thought_signature: None,
                                                 provider_metadata,
                                             }));
                                         }

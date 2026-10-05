@@ -101,9 +101,8 @@ fn read_provider_options(
 ///   as a string (JSON-stringified for non-string outputs, matching the TS
 ///   `output.type === 'json'` path).
 ///
-/// Thought signatures: `ContentPart::ToolCall.thought_signature` is echoed
-/// back as a `thoughtSignature` sibling of the `functionCall` part (required
-/// by Gemini thinking models on follow-up turns).
+/// Thought signatures from per-part provider options are echoed as a
+/// `thoughtSignature` sibling of the `functionCall` part.
 #[must_use]
 pub fn convert_to_google_messages(prompt: &LanguageModelPrompt) -> GooglePrompt {
     convert_to_google_messages_for_namespace(prompt, ProviderMetadataNamespace::Google)
@@ -282,7 +281,6 @@ fn convert_assistant_parts(
                 tool_call_id,
                 tool_name,
                 input,
-                thought_signature,
                 provider_options,
                 ..
             } => {
@@ -293,11 +291,9 @@ fn convert_assistant_parts(
                 let server_tool_type = google_options
                     .and_then(|options| options.get("serverToolType"))
                     .and_then(|value| value.as_str());
-                let signature = thought_signature.as_deref().or_else(|| {
-                    google_options
-                        .and_then(|options| options.get("thoughtSignature"))
-                        .and_then(|value| value.as_str())
-                });
+                let signature = google_options
+                    .and_then(|options| options.get("thoughtSignature"))
+                    .and_then(|value| value.as_str());
 
                 let mut part_value = if let (Some(server_id), Some(server_type)) =
                     (server_tool_call_id, server_tool_type)
@@ -1238,13 +1234,13 @@ pub fn extract_sources(
 
     for chunk in chunks {
         if let Some(web) = chunk.get("web") {
-            sources.push(GenerateContent::Source(Source {
+            sources.push(GenerateContent::Source(Source::Url {
                 id: next_id(id_counter),
-                source_type: "url".to_string(),
                 url: web
                     .get("uri")
                     .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string),
+                    .unwrap_or_default()
+                    .to_string(),
                 title: web
                     .get("title")
                     .and_then(|v| v.as_str())
@@ -1252,13 +1248,13 @@ pub fn extract_sources(
                 provider_metadata: None,
             }));
         } else if let Some(image) = chunk.get("image") {
-            sources.push(GenerateContent::Source(Source {
+            sources.push(GenerateContent::Source(Source::Url {
                 id: next_id(id_counter),
-                source_type: "url".to_string(),
                 url: image
                     .get("sourceUri")
                     .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string),
+                    .unwrap_or_default()
+                    .to_string(),
                 title: image
                     .get("title")
                     .and_then(|v| v.as_str())
@@ -1266,35 +1262,53 @@ pub fn extract_sources(
                 provider_metadata: None,
             }));
         } else if let Some(rc) = chunk.get("retrievedContext") {
-            let uri = rc.get("uri").and_then(|v| v.as_str());
-            let file_search_store = rc.get("fileSearchStore").and_then(|v| v.as_str());
+            let uri = rc
+                .get("uri")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty());
+            let file_search_store = rc
+                .get("fileSearchStore")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty());
             let title = rc.get("title").and_then(|v| v.as_str());
             if let Some(uri) = uri {
                 if uri.starts_with("http://") || uri.starts_with("https://") {
-                    sources.push(GenerateContent::Source(Source {
+                    sources.push(GenerateContent::Source(Source::Url {
                         id: next_id(id_counter),
-                        source_type: "url".to_string(),
-                        url: Some(uri.to_string()),
+                        url: uri.to_string(),
                         title: title.map(std::string::ToString::to_string),
                         provider_metadata: None,
                     }));
                 } else {
                     // Document with a file path (gs://, etc.).
-                    sources.push(GenerateContent::Source(Source {
+                    let media_type = if uri.ends_with(".pdf") {
+                        "application/pdf"
+                    } else if uri.ends_with(".txt") {
+                        "text/plain"
+                    } else if uri.ends_with(".docx") {
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    } else if uri.ends_with(".doc") {
+                        "application/msword"
+                    } else if uri.ends_with(".md") || uri.ends_with(".markdown") {
+                        "text/markdown"
+                    } else {
+                        "application/octet-stream"
+                    };
+                    sources.push(GenerateContent::Source(Source::Document {
                         id: next_id(id_counter),
-                        source_type: "document".to_string(),
-                        url: None,
-                        title: Some(title.unwrap_or("Unknown Document").to_string()),
+                        media_type: media_type.to_string(),
+                        title: title.unwrap_or("Unknown Document").to_string(),
+                        filename: uri.rsplit('/').next().map(str::to_string),
                         provider_metadata: None,
                     }));
                 }
-            } else if file_search_store.is_some() {
+            } else if let Some(file_search_store) = file_search_store {
                 // New File Search format (no uri, has fileSearchStore).
-                sources.push(GenerateContent::Source(Source {
+                sources.push(GenerateContent::Source(Source::Document {
                     id: next_id(id_counter),
-                    source_type: "document".to_string(),
-                    url: None,
-                    title: Some(title.unwrap_or("Unknown Document").to_string()),
+                    media_type: "application/octet-stream".to_string(),
+                    title: title.unwrap_or("Unknown Document").to_string(),
+                    filename: file_search_store.rsplit('/').next().map(str::to_string),
                     provider_metadata: None,
                 }));
             }
@@ -1302,10 +1316,9 @@ pub fn extract_sources(
         } else if let Some(maps) = chunk.get("maps")
             && let Some(uri) = maps.get("uri").and_then(|v| v.as_str())
         {
-            sources.push(GenerateContent::Source(Source {
+            sources.push(GenerateContent::Source(Source::Url {
                 id: next_id(id_counter),
-                source_type: "url".to_string(),
-                url: Some(uri.to_string()),
+                url: uri.to_string(),
                 title: maps
                     .get("title")
                     .and_then(|v| v.as_str())

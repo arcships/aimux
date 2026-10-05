@@ -28,13 +28,6 @@ provider_executed?: boolean | null,
  */
 dynamic?: boolean | null, 
 /**
- * Provider-assigned thought signature (e.g. Google Gemini
- * `thoughtSignature`). Must be echoed back verbatim on the follow-up turn
- * when the tool result is sent; thinking models reject the request
- * otherwise.
- */
-thought_signature?: string | null, 
-/**
  * Additional provider-specific metadata associated with this call.
  */
 provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, 
