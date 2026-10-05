@@ -19,7 +19,7 @@
 use std::sync::Arc;
 
 use crate::language_model::LanguageModel;
-use crate::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
+use crate::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use crate::result::GenerateContent;
 use crate::types::{TokenUsage, Usage};
 
@@ -119,10 +119,6 @@ pub fn build_aggregator_prompt(
         body.push('\n');
     }
 
-    out.push(LanguageModelPromptMessage {
-        role: crate::message::Role::User,
-        content: vec![crate::content::ContentPart::text(body)],
-        provider_options: None,
-    });
+    out.push(LanguageModelMessage::user_text(body));
     out
 }

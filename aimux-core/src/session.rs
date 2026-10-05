@@ -452,22 +452,13 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content::ContentPart;
-    use crate::language_model_message::LanguageModelPromptMessage;
-    use crate::message::Role;
+    use crate::language_model_message::LanguageModelMessage;
 
-    fn msg(text: &str) -> LanguageModelPromptMessage {
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::Text {
-                text: text.to_string(),
-                provider_options: None,
-            }],
-            provider_options: None,
-        }
+    fn msg(text: &str) -> LanguageModelMessage {
+        LanguageModelMessage::user_text(text)
     }
 
-    fn prompt(messages: Vec<LanguageModelPromptMessage>) -> LanguageModelPrompt {
+    fn prompt(messages: Vec<LanguageModelMessage>) -> LanguageModelPrompt {
         messages
     }
 

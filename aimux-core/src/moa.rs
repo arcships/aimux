@@ -310,9 +310,7 @@ impl LanguageModel for MoaModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content::ContentPart;
-    use crate::language_model_message::LanguageModelPromptMessage;
-    use crate::message::Role;
+    use crate::language_model_message::LanguageModelMessage;
     use crate::result::{GenerateContent, Source};
     use crate::stream_part::StreamPart;
     use crate::tool::RawToolCall;
@@ -459,11 +457,7 @@ mod tests {
 
     fn opts_with_prompt() -> CallOptions {
         CallOptions {
-            prompt: vec![LanguageModelPromptMessage {
-                role: Role::User,
-                content: vec![ContentPart::text("What is Rust?")],
-                provider_options: None,
-            }],
+            prompt: vec![LanguageModelMessage::user_text("What is Rust?")],
             ..Default::default()
         }
     }
@@ -648,19 +642,11 @@ mod tests {
     async fn no_references_does_not_inject_empty_heading() {
         // S4 regression guard: with 0 references the aggregator prompt is the
         // original prompt verbatim — no "# Reference model responses" heading.
-        let prompt = vec![LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("hello")],
-            provider_options: None,
-        }];
+        let prompt = vec![LanguageModelMessage::user_text("hello")];
         let built = build_aggregator_prompt(&prompt, None, &[]);
         // Still just the single original message; nothing appended.
         assert_eq!(built.len(), 1);
-        // Heading must NOT appear.
-        assert!(!built[0].content.iter().any(|p| matches!(
-            p,
-            ContentPart::Text { text, .. } if text.contains("Reference model responses")
-        )));
+        assert_eq!(built, prompt);
     }
 
     /// A mock aggregator whose stream yields TextDelta then a transport Err,
