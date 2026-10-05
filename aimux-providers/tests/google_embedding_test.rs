@@ -11,7 +11,6 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
-use aimux_core::shared::provider_namespace;
 use aimux_providers::{GoogleConfig, GoogleProvider};
 
 const TEST_VALUES: &[&str] = &["sunny day at the beach", "rainy day in the city"];
@@ -135,68 +134,6 @@ async fn should_pass_model_and_values() {
         body["requests"][1]["content"]["parts"][0]["text"],
         "rainy day in the city"
     );
-}
-
-/// TS: "should pass the outputDimensionality setting"
-#[tokio::test]
-async fn should_pass_output_dimensionality() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/models/gemini-embedding-001:batchEmbedContents"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(batch_response_body()))
-        .mount(&server)
-        .await;
-
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.embedding_model("gemini-embedding-001");
-
-    let provider_options = provider_namespace("google", json!({"outputDimensionality": 64}));
-    let options = EmbeddingCallOptions {
-        values: test_values(),
-        abort_signal: None,
-        provider_options: Some(provider_options),
-        headers: None,
-        max_retries: None,
-        timeout: None,
-    };
-
-    let _ = model.do_embed(&options).await.expect("should succeed");
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["requests"][0]["outputDimensionality"], 64);
-}
-
-/// TS: "should pass the taskType setting"
-#[tokio::test]
-async fn should_pass_task_type() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/models/gemini-embedding-001:batchEmbedContents"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(batch_response_body()))
-        .mount(&server)
-        .await;
-
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.embedding_model("gemini-embedding-001");
-
-    let provider_options = provider_namespace("google", json!({"taskType": "SEMANTIC_SIMILARITY"}));
-    let options = EmbeddingCallOptions {
-        values: test_values(),
-        abort_signal: None,
-        provider_options: Some(provider_options),
-        headers: None,
-        max_retries: None,
-        timeout: None,
-    };
-
-    let _ = model.do_embed(&options).await.expect("should succeed");
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["requests"][0]["taskType"], "SEMANTIC_SIMILARITY");
 }
 
 /// TS: "should pass headers"

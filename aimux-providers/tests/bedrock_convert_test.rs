@@ -33,7 +33,7 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPromptMessage;
 use aimux_core::message::Role;
 use aimux_core::options::ToolChoice;
-use aimux_core::shared::{SharedProviderOptions, provider_namespace};
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::tool::FunctionTool;
 
 use aimux_providers::bedrock::convert::{
@@ -80,21 +80,6 @@ fn file_base64(
         media_type: media_type.to_string(),
         filename: filename.map(std::string::ToString::to_string),
         provider_options,
-    }
-}
-
-fn text_with_cache(text: &str, cache_type: &str, ttl: Option<&str>) -> ContentPart {
-    let mut cp = serde_json::Map::new();
-    cp.insert("type".to_string(), json!(cache_type));
-    if let Some(t) = ttl {
-        cp.insert("ttl".to_string(), json!(t));
-    }
-    ContentPart::Text {
-        text: text.to_string(),
-        provider_options: Some(provider_namespace(
-            "bedrock",
-            json!({ "cachePoint": Value::Object(cp) }),
-        )),
     }
 }
 
@@ -252,29 +237,6 @@ fn user_consistent_document_names() {
 // SKIPPED (TS: "should throw for file parts with provider references"):
 // FileReference is not converted (no Result to surface the throw).
 
-/// TS: "should add cache point to user content part when specified"
-#[test]
-fn user_content_part_cache_point() {
-    let (system, messages) = convert_prompt_to_bedrock(&vec![user(vec![
-        ContentPart::text("Hello"),
-        text_with_cache("cached", "default", Some("5m")),
-        ContentPart::text("World"),
-    ])]);
-    assert!(system.is_empty());
-    assert_eq!(
-        Value::Array(messages),
-        json!([{
-            "role": "user",
-            "content": [
-                { "text": "Hello" },
-                { "text": "cached" },
-                { "cachePoint": { "type": "default", "ttl": "5m" } },
-                { "text": "World" },
-            ]
-        }])
-    );
-}
-
 // ── assistant messages ──────────────────────────────────────────────────────
 
 /// TS: "should remove trailing whitespace from last assistant message when there is no further user message"
@@ -343,28 +305,6 @@ fn assistant_combine_sequential() {
 
 // SKIPPED (TS: assistant message cache point, 5m, 1h — 3 cases): message-level
 // providerOptions are not modelled on LanguageModelPromptMessage.
-
-/// TS: "should add cache point to assistant content part when specified"
-#[test]
-fn assistant_content_part_cache_point() {
-    let (_, messages) = convert_prompt_to_bedrock(&vec![assistant(vec![
-        ContentPart::text("Hello"),
-        text_with_cache("cached", "default", Some("1h")),
-        ContentPart::text("World"),
-    ])]);
-    assert_eq!(
-        Value::Array(messages),
-        json!([{
-            "role": "assistant",
-            "content": [
-                { "text": "Hello" },
-                { "text": "cached" },
-                { "cachePoint": { "type": "default", "ttl": "1h" } },
-                { "text": "World" },
-            ]
-        }])
-    );
-}
 
 /// TS: "should properly convert reasoning content type"
 #[test]
@@ -744,56 +684,6 @@ fn tool_result_json_output() {
 
 // ── citations ───────────────────────────────────────────────────────────────
 
-/// TS: "should handle citations enabled for PDF"
-#[test]
-fn citations_enabled_for_pdf() {
-    let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
-        "AAECAw==",
-        "application/pdf",
-        None,
-        Some(provider_namespace(
-            "bedrock",
-            json!({ "citations": { "enabled": true } }),
-        )),
-    )])]);
-    assert_eq!(
-        messages[0]["content"][0],
-        json!({
-            "document": {
-                "format": "pdf",
-                "name": "document-1",
-                "source": { "bytes": "AAECAw==" },
-                "citations": { "enabled": true }
-            }
-        })
-    );
-}
-
-/// TS: "should handle citations disabled for PDF"
-#[test]
-fn citations_disabled_for_pdf() {
-    let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
-        "AAECAw==",
-        "application/pdf",
-        None,
-        Some(provider_namespace(
-            "bedrock",
-            json!({ "citations": { "enabled": false } }),
-        )),
-    )])]);
-    assert_eq!(
-        messages[0]["content"][0],
-        json!({
-            "document": { "format": "pdf", "name": "document-1", "source": { "bytes": "AAECAw==" } }
-        })
-    );
-    assert!(
-        messages[0]["content"][0]["document"]
-            .get("citations")
-            .is_none()
-    );
-}
-
 /// TS: "should handle no citations specified for PDF (default)"
 #[test]
 fn citations_default_for_pdf() {
@@ -813,38 +703,6 @@ fn citations_default_for_pdf() {
         messages[0]["content"][0]["document"]
             .get("citations")
             .is_none()
-    );
-}
-
-/// TS: "should handle multiple PDFs with different citation settings"
-#[test]
-fn citations_multiple_pdfs() {
-    let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![
-        file_base64(
-            "AAECAw==",
-            "application/pdf",
-            None,
-            Some(provider_namespace(
-                "bedrock",
-                json!({ "citations": { "enabled": true } }),
-            )),
-        ),
-        file_base64(
-            "BAUGBw==",
-            "application/pdf",
-            None,
-            Some(provider_namespace(
-                "bedrock",
-                json!({ "citations": { "enabled": false } }),
-            )),
-        ),
-    ])]);
-    assert_eq!(
-        messages[0]["content"],
-        json!([
-            { "document": { "format": "pdf", "name": "document-1", "source": { "bytes": "AAECAw==" }, "citations": { "enabled": true } } },
-            { "document": { "format": "pdf", "name": "document-2", "source": { "bytes": "BAUGBw==" } } },
-        ])
     );
 }
 

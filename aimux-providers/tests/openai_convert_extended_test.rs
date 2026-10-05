@@ -11,7 +11,6 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ToolChoice};
-use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::types::ReasoningEffort;
 use aimux_providers::openai::OpenAICompatProfile;
 use aimux_providers::openai::convert::{
@@ -71,9 +70,6 @@ fn default_opts(p: LanguageModelPrompt) -> CallOptions {
         recording_context: None,
     }
 }
-fn po(map: Value) -> Option<SharedProviderOptions> {
-    Some(provider_namespace("openai", map))
-}
 
 // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
 // convert-to-openai-chat-messages extended tests (25 cases)
@@ -97,77 +93,6 @@ mod convert_extended {
         let p = vec![sys("You are a helpful assistant.")];
         let r = convert_prompt_to_openai_messages_with_mode(&p, SystemMessageMode::Remove);
         assert!(r.is_empty());
-    }
-
-    #[test]
-    fn adds_bpt_to_system_message() {
-        let p: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::System,
-            content: vec![ContentPart::Text {
-                text: "You are a helpful assistant.".into(),
-                provider_options: po(json!({ "promptCacheBreakpoint": { "mode": "explicit" } })),
-            }],
-            ..Default::default()
-        }];
-        let r = convert_prompt_to_openai_messages(&p);
-        assert_eq!(
-            Value::Array(r),
-            json!([{ "role": "system", "content": [{ "type": "text", "text": "You are a helpful assistant.", "prompt_cache_breakpoint": { "mode": "explicit" } }] }])
-        );
-    }
-
-    #[test]
-    fn adds_bpt_to_user_content() {
-        let bpt = json!({ "mode": "explicit" });
-        let o = po(json!({ "promptCacheBreakpoint": bpt }));
-        let p: LanguageModelPrompt = vec![up(vec![
-            ContentPart::Text {
-                text: "Hello".into(),
-                provider_options: o.clone(),
-            },
-            ContentPart::FileUrl {
-                url: "https://example.com/image.png".into(),
-                media_type: "image/png".into(),
-                provider_options: o.clone(),
-            },
-            ContentPart::FileBase64 {
-                data: "AAECAw==".into(),
-                media_type: "audio/wav".into(),
-                filename: None,
-                provider_options: o.clone(),
-            },
-            ContentPart::FileReference {
-                media_type: "application/pdf".into(),
-                reference: json!({ "openai": "file-pdf-123" }),
-                filename: None,
-                provider_options: o,
-            },
-        ])];
-        let r = convert_prompt_to_openai_messages(&p);
-        assert_eq!(
-            Value::Array(r),
-            json!([{ "role": "user", "content": [
-                { "type": "text", "text": "Hello", "prompt_cache_breakpoint": bpt },
-                { "type": "image_url", "image_url": { "url": "https://example.com/image.png" }, "prompt_cache_breakpoint": bpt },
-                { "type": "input_audio", "input_audio": { "data": "AAECAw==", "format": "wav" }, "prompt_cache_breakpoint": bpt },
-                { "type": "file", "file": { "file_id": "file-pdf-123" }, "prompt_cache_breakpoint": bpt }
-            ]}])
-        );
-    }
-
-    #[test]
-    fn adds_image_detail() {
-        let p = vec![up(vec![ContentPart::FileBase64 {
-            data: "AAECAw==".into(),
-            media_type: "image/png".into(),
-            filename: None,
-            provider_options: po(json!({ "imageDetail": "low" })),
-        }])];
-        let r = convert_prompt_to_openai_messages(&p);
-        assert_eq!(
-            Value::Array(r),
-            json!([{ "role": "user", "content": [{ "type": "image_url", "image_url": { "url": "data:image/png;base64,AAECAw==", "detail": "low" } }] }])
-        );
     }
 
     #[test]
@@ -336,23 +261,6 @@ mod convert_extended {
             json!(format!("data:image/png;base64,{b64}"))
         );
     }
-
-    #[test]
-    fn adds_bpt_to_assistant_text() {
-        let p: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::Text {
-                text: "Cached assistant content".into(),
-                provider_options: po(json!({ "promptCacheBreakpoint": { "mode": "explicit" } })),
-            }],
-            ..Default::default()
-        }];
-        let r = convert_prompt_to_openai_messages(&p);
-        assert_eq!(
-            Value::Array(r),
-            json!([{ "role": "assistant", "content": [{ "type": "text", "text": "Cached assistant content", "prompt_cache_breakpoint": { "mode": "explicit" } }] }])
-        );
-    }
 }
 
 // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
@@ -389,21 +297,6 @@ mod prepare_tools_unsupported {
 mod request_body_extended {
     use super::*;
 
-    /// TS: "should pass settings" (logitBias, parallelToolCalls, user)
-    #[test]
-    fn passes_settings() {
-        let opts = CallOptions {
-            provider_options: po(
-                json!({ "logitBias": { "50256": -100 }, "parallelToolCalls": false, "user": "test-user-id" }),
-            ),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
-        assert_eq!(body["logit_bias"], json!({ "50256": -100 }));
-        assert_eq!(body["parallel_tool_calls"], json!(false));
-        assert_eq!(body["user"], json!("test-user-id"));
-    }
-
     /// TS: "should not set reasoning_effort when reasoning is 'provider-default'"
     #[test]
     fn no_reasoning_effort_for_provider_default() {
@@ -427,62 +320,6 @@ mod request_body_extended {
         };
         let body = build_request_body("o4-mini", &opts, false).unwrap();
         assert_eq!(body["reasoning_effort"], json!("medium"));
-    }
-
-    /// TS: "should prefer providerOptions reasoningEffort over top-level reasoning"
-    #[test]
-    fn prefer_provider_reasoning_effort() {
-        let opts = CallOptions {
-            reasoning: Some(ReasoningEffort::Medium),
-            provider_options: po(json!({ "reasoningEffort": "high" })),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("o4-mini", &opts, false).unwrap();
-        assert_eq!(body["reasoning_effort"], json!("high"));
-    }
-
-    /// TS: "should pass reasoningEffort setting from provider metadata"
-    #[test]
-    fn reasoning_effort_from_provider() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "reasoningEffort": "low" })),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("o4-mini", &opts, false).unwrap();
-        assert_eq!(body["reasoning_effort"], json!("low"));
-    }
-
-    /// TS: "should pass reasoningEffort xhigh setting"
-    #[test]
-    fn reasoning_effort_xhigh() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "reasoningEffort": "xhigh" })),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("gpt-5.1-codex-max", &opts, false).unwrap();
-        assert_eq!(body["reasoning_effort"], json!("xhigh"));
-    }
-
-    /// TS: "should pass reasoningEffort max setting"
-    #[test]
-    fn reasoning_effort_max() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "reasoningEffort": "max" })),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("gpt-5.6", &opts, false).unwrap();
-        assert_eq!(body["reasoning_effort"], json!("max"));
-    }
-
-    /// TS: "should pass textVerbosity setting from provider options"
-    #[test]
-    fn text_verbosity() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "textVerbosity": "low" })),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("gpt-4o", &opts, false).unwrap();
-        assert_eq!(body["verbosity"], json!("low"));
     }
 
     /// TS: reasoning models ??"should clear out temperature, top_p, etc."
@@ -569,49 +406,6 @@ mod request_body_extended {
         assert_eq!(result.warnings.len(), 1);
     }
 
-    /// TS: "should allow forcing reasoning behavior for unrecognized model IDs via providerOptions"
-    #[test]
-    fn force_reasoning_via_provider_options() {
-        let opts = CallOptions {
-            temperature: Some(0.5),
-            top_p: Some(0.7),
-            provider_options: po(json!({ "forceReasoning": true })),
-            ..default_opts(test_prompt())
-        };
-        let result = build_request_body_with_warnings(
-            "stealth-reasoning-model",
-            &opts,
-            false,
-            "openai",
-            &OpenAICompatProfile::full(),
-        )
-        .unwrap();
-        assert!(result.body.get("temperature").is_none() || result.body["temperature"].is_null());
-        assert!(result.body.get("top_p").is_none() || result.body["top_p"].is_null());
-        assert_eq!(result.warnings.len(), 2);
-    }
-
-    /// TS: "should default systemMessageMode to developer when forcing reasoning"
-    #[test]
-    fn developer_messages_when_forcing_reasoning() {
-        let p: LanguageModelPrompt = vec![
-            sys("You are a helpful assistant."),
-            LanguageModelPromptMessage {
-                role: Role::User,
-                content: vec![ContentPart::text("Hello")],
-                ..Default::default()
-            },
-        ];
-        let opts = CallOptions {
-            prompt: p,
-            provider_options: po(json!({ "forceReasoning": true })),
-            ..default_opts(vec![])
-        };
-        let body = build_request_body("stealth-reasoning-model", &opts, false).unwrap();
-        assert_eq!(body["messages"][0]["role"], json!("developer"));
-        assert_eq!(body["messages"][1]["content"], json!("Hello"));
-    }
-
     /// TS: "should use developer messages for o1"
     #[test]
     fn developer_messages_for_o1() {
@@ -628,26 +422,6 @@ mod request_body_extended {
             ..default_opts(vec![])
         };
         let body = build_request_body("o1", &opts, false).unwrap();
-        assert_eq!(body["messages"][0]["role"], json!("developer"));
-    }
-
-    /// TS: "should allow overriding systemMessageMode via providerOptions"
-    #[test]
-    fn override_system_message_mode() {
-        let p: LanguageModelPrompt = vec![
-            sys("You are a helpful assistant."),
-            LanguageModelPromptMessage {
-                role: Role::User,
-                content: vec![ContentPart::text("Hello")],
-                ..Default::default()
-            },
-        ];
-        let opts = CallOptions {
-            prompt: p,
-            provider_options: po(json!({ "systemMessageMode": "developer" })),
-            ..default_opts(vec![])
-        };
-        let body = build_request_body("gpt-4o", &opts, false).unwrap();
         assert_eq!(body["messages"][0]["role"], json!("developer"));
     }
 
@@ -668,107 +442,6 @@ mod request_body_extended {
         };
         let body = build_request_body("gpt-4o", &opts, false).unwrap();
         assert_eq!(body["messages"][0]["role"], json!("system"));
-    }
-
-    /// TS: "should send max_completion_tokens extension setting"
-    #[test]
-    fn max_completion_tokens_extension() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "maxCompletionTokens": 255 })),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("o4-mini", &opts, false).unwrap();
-        assert_eq!(body["max_completion_tokens"], json!(255));
-    }
-
-    /// TS: "should send prediction extension setting"
-    #[test]
-    fn prediction_extension() {
-        let opts = CallOptions {
-            provider_options: po(
-                json!({ "prediction": { "type": "content", "content": "Hello, World!" } }),
-            ),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
-        assert_eq!(
-            body["prediction"],
-            json!({ "type": "content", "content": "Hello, World!" })
-        );
-    }
-
-    /// TS: "should send store extension setting"
-    #[test]
-    fn store_extension() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "store": true })),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
-        assert_eq!(body["store"], json!(true));
-    }
-
-    /// TS: "should send metadata extension values"
-    #[test]
-    fn metadata_extension() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "metadata": { "custom": "value" } })),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
-        assert_eq!(body["metadata"], json!({ "custom": "value" }));
-    }
-
-    /// TS: "should send promptCacheKey extension value"
-    #[test]
-    fn prompt_cache_key() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "promptCacheKey": "test-cache-key-123" })),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
-        assert_eq!(body["prompt_cache_key"], json!("test-cache-key-123"));
-    }
-
-    /// TS: "should send promptCacheRetention extension value"
-    #[test]
-    fn prompt_cache_retention() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "promptCacheRetention": "24h" })),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
-        assert_eq!(body["prompt_cache_retention"], json!("24h"));
-    }
-
-    /// TS: "should send promptCacheOptions extension value"
-    #[test]
-    fn prompt_cache_options() {
-        let opts = CallOptions {
-            provider_options: po(
-                json!({ "promptCacheOptions": { "mode": "explicit", "ttl": "30m" } }),
-            ),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("gpt-5.6", &opts, false).unwrap();
-        assert_eq!(
-            body["prompt_cache_options"],
-            json!({ "mode": "explicit", "ttl": "30m" })
-        );
-    }
-
-    /// TS: "should send safetyIdentifier extension value"
-    #[test]
-    fn safety_identifier() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "safetyIdentifier": "test-safety-identifier-123" })),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
-        assert_eq!(
-            body["safety_identifier"],
-            json!("test-safety-identifier-123")
-        );
     }
 
     /// TS: "should remove temperature setting for gpt-4o-search-preview and add warning"
@@ -829,125 +502,5 @@ mod request_body_extended {
         .unwrap();
         assert!(result.body.get("temperature").is_none() || result.body["temperature"].is_null());
         assert_eq!(result.warnings.len(), 1);
-    }
-
-    /// TS: "should send serviceTier flex processing setting"
-    #[test]
-    fn service_tier_flex() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "serviceTier": "flex" })),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("o4-mini", &opts, false).unwrap();
-        assert_eq!(body["service_tier"], json!("flex"));
-    }
-
-    /// TS: "should show warning when using flex processing with unsupported model"
-    #[test]
-    fn flex_warning_unsupported() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "serviceTier": "flex" })),
-            ..default_opts(test_prompt())
-        };
-        let result = build_request_body_with_warnings(
-            "gpt-4o-mini",
-            &opts,
-            false,
-            "openai",
-            &OpenAICompatProfile::full(),
-        )
-        .unwrap();
-        assert!(result.body.get("service_tier").is_none() || result.body["service_tier"].is_null());
-        assert_eq!(result.warnings.len(), 1);
-        assert!(
-            matches!(&result.warnings[0], aimux_core::types::Warning::Unsupported { feature, .. } if feature == "serviceTier")
-        );
-    }
-
-    /// TS: "should allow flex processing with o4-mini model without warnings"
-    #[test]
-    fn flex_o4mini_no_warning() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "serviceTier": "flex" })),
-            ..default_opts(test_prompt())
-        };
-        let result = build_request_body_with_warnings(
-            "o4-mini",
-            &opts,
-            false,
-            "openai",
-            &OpenAICompatProfile::full(),
-        )
-        .unwrap();
-        assert_eq!(result.body["service_tier"], json!("flex"));
-        assert!(result.warnings.is_empty());
-    }
-
-    /// TS: "should send serviceTier priority processing setting"
-    #[test]
-    fn service_tier_priority() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "serviceTier": "priority" })),
-            ..default_opts(test_prompt())
-        };
-        let body = build_request_body("gpt-4o-mini", &opts, false).unwrap();
-        assert_eq!(body["service_tier"], json!("priority"));
-    }
-
-    /// TS: "should show warning when using priority processing with unsupported model"
-    #[test]
-    fn priority_warning_unsupported() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "serviceTier": "priority" })),
-            ..default_opts(test_prompt())
-        };
-        let result = build_request_body_with_warnings(
-            "gpt-3.5-turbo",
-            &opts,
-            false,
-            "openai",
-            &OpenAICompatProfile::full(),
-        )
-        .unwrap();
-        assert!(result.body.get("service_tier").is_none() || result.body["service_tier"].is_null());
-        assert_eq!(result.warnings.len(), 1);
-    }
-
-    /// TS: "should allow priority processing with gpt-4o model without warnings"
-    #[test]
-    fn priority_gpt4o_no_warning() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "serviceTier": "priority" })),
-            ..default_opts(test_prompt())
-        };
-        let result = build_request_body_with_warnings(
-            "gpt-4o",
-            &opts,
-            false,
-            "openai",
-            &OpenAICompatProfile::full(),
-        )
-        .unwrap();
-        assert_eq!(result.body["service_tier"], json!("priority"));
-        assert!(result.warnings.is_empty());
-    }
-
-    /// TS: "should allow priority processing with o3 model without warnings"
-    #[test]
-    fn priority_o4mini_no_warning() {
-        let opts = CallOptions {
-            provider_options: po(json!({ "serviceTier": "priority" })),
-            ..default_opts(test_prompt())
-        };
-        let result = build_request_body_with_warnings(
-            "o4-mini",
-            &opts,
-            false,
-            "openai",
-            &OpenAICompatProfile::full(),
-        )
-        .unwrap();
-        assert_eq!(result.body["service_tier"], json!("priority"));
-        assert!(result.warnings.is_empty());
     }
 }

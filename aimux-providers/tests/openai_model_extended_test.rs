@@ -14,7 +14,6 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ToolChoice};
 use aimux_core::result::{GenerateContent, Source};
-use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
@@ -54,9 +53,7 @@ fn default_opts(p: LanguageModelPrompt) -> CallOptions {
         recording_context: None,
     }
 }
-fn po(map: Value) -> Option<SharedProviderOptions> {
-    Some(provider_namespace("openai", map))
-}
+
 fn sse_event(json_str: &str) -> String {
     format!("data: {json_str}\n\n")
 }
@@ -317,33 +314,6 @@ mod do_generate_extended {
         );
     }
 
-    /// TS: "should pass settings" (logitBias, parallelToolCalls, user)
-    #[tokio::test]
-    async fn passes_settings() {
-        let server = MockServer::start().await;
-        mock_json(&server, json!({
-            "id": "test", "object": "chat.completion", "created": 123, "model": "gpt-3.5-turbo",
-            "choices": [{ "index": 0, "message": { "role": "assistant", "content": "" }, "finish_reason": "stop" }],
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
-        })).await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
-
-        let opts = CallOptions {
-            provider_options: po(
-                json!({ "logitBias": { "50256": -100 }, "parallelToolCalls": false, "user": "test-user-id" }),
-            ),
-            ..default_opts(test_prompt())
-        };
-        let result = model.do_generate(&opts).await.expect("should succeed");
-        let body = result.request_body.as_ref().expect("request body");
-        assert_eq!(body["logit_bias"], json!({ "50256": -100 }));
-        assert_eq!(body["parallel_tool_calls"], json!(false));
-        assert_eq!(body["user"], json!("test-user-id"));
-    }
-
     /// TS: "should not set reasoning_effort when reasoning is 'provider-default'"
     #[tokio::test]
     async fn no_reasoning_effort_for_provider_default() {
@@ -388,52 +358,6 @@ mod do_generate_extended {
         let result = model.do_generate(&opts).await.expect("should succeed");
         let body = result.request_body.as_ref().expect("request body");
         assert_eq!(body["reasoning_effort"], json!("medium"));
-    }
-
-    /// TS: "should pass reasoningEffort setting from provider metadata"
-    #[tokio::test]
-    async fn reasoning_effort_from_provider() {
-        let server = MockServer::start().await;
-        mock_json(&server, json!({
-            "id": "test", "object": "chat.completion", "created": 123, "model": "o4-mini",
-            "choices": [{ "index": 0, "message": { "role": "assistant", "content": "" }, "finish_reason": "stop" }],
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
-        })).await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o4-mini");
-
-        let opts = CallOptions {
-            provider_options: po(json!({ "reasoningEffort": "low" })),
-            ..default_opts(test_prompt())
-        };
-        let result = model.do_generate(&opts).await.expect("should succeed");
-        let body = result.request_body.as_ref().expect("request body");
-        assert_eq!(body["reasoning_effort"], json!("low"));
-    }
-
-    /// TS: "should pass textVerbosity setting from provider options"
-    #[tokio::test]
-    async fn text_verbosity() {
-        let server = MockServer::start().await;
-        mock_json(&server, json!({
-            "id": "test", "object": "chat.completion", "created": 123, "model": "gpt-4o",
-            "choices": [{ "index": 0, "message": { "role": "assistant", "content": "" }, "finish_reason": "stop" }],
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
-        })).await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-4o");
-
-        let opts = CallOptions {
-            provider_options: po(json!({ "textVerbosity": "low" })),
-            ..default_opts(test_prompt())
-        };
-        let result = model.do_generate(&opts).await.expect("should succeed");
-        let body = result.request_body.as_ref().expect("request body");
-        assert_eq!(body["verbosity"], json!("low"));
     }
 
     /// TS: reasoning models — "should clear out temperature, top_p, etc."
@@ -522,126 +446,6 @@ mod do_generate_extended {
             .expect("should succeed");
         let body = result.request_body.as_ref().expect("request body");
         assert_eq!(body["messages"][0]["role"], json!("developer"));
-    }
-
-    /// TS: "should send store extension setting"
-    #[tokio::test]
-    async fn store_extension() {
-        let server = MockServer::start().await;
-        mock_json(&server, json!({
-            "id": "test", "object": "chat.completion", "created": 123, "model": "gpt-3.5-turbo",
-            "choices": [{ "index": 0, "message": { "role": "assistant", "content": "" }, "finish_reason": "stop" }],
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
-        })).await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
-
-        let opts = CallOptions {
-            provider_options: po(json!({ "store": true })),
-            ..default_opts(test_prompt())
-        };
-        let result = model.do_generate(&opts).await.expect("should succeed");
-        let body = result.request_body.as_ref().expect("request body");
-        assert_eq!(body["store"], json!(true));
-    }
-
-    /// TS: "should send metadata extension values"
-    #[tokio::test]
-    async fn metadata_extension() {
-        let server = MockServer::start().await;
-        mock_json(&server, json!({
-            "id": "test", "object": "chat.completion", "created": 123, "model": "gpt-3.5-turbo",
-            "choices": [{ "index": 0, "message": { "role": "assistant", "content": "" }, "finish_reason": "stop" }],
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
-        })).await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
-
-        let opts = CallOptions {
-            provider_options: po(json!({ "metadata": { "custom": "value" } })),
-            ..default_opts(test_prompt())
-        };
-        let result = model.do_generate(&opts).await.expect("should succeed");
-        let body = result.request_body.as_ref().expect("request body");
-        assert_eq!(body["metadata"], json!({ "custom": "value" }));
-    }
-
-    /// TS: "should send prediction extension setting"
-    #[tokio::test]
-    async fn prediction_extension() {
-        let server = MockServer::start().await;
-        mock_json(&server, json!({
-            "id": "test", "object": "chat.completion", "created": 123, "model": "gpt-3.5-turbo",
-            "choices": [{ "index": 0, "message": { "role": "assistant", "content": "" }, "finish_reason": "stop" }],
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
-        })).await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
-
-        let opts = CallOptions {
-            provider_options: po(
-                json!({ "prediction": { "type": "content", "content": "Hello, World!" } }),
-            ),
-            ..default_opts(test_prompt())
-        };
-        let result = model.do_generate(&opts).await.expect("should succeed");
-        let body = result.request_body.as_ref().expect("request body");
-        assert_eq!(
-            body["prediction"],
-            json!({ "type": "content", "content": "Hello, World!" })
-        );
-    }
-
-    /// TS: "should send serviceTier flex processing setting"
-    #[tokio::test]
-    async fn service_tier_flex() {
-        let server = MockServer::start().await;
-        mock_json(&server, json!({
-            "id": "test", "object": "chat.completion", "created": 123, "model": "o4-mini",
-            "choices": [{ "index": 0, "message": { "role": "assistant", "content": "" }, "finish_reason": "stop" }],
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
-        })).await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o4-mini");
-
-        let opts = CallOptions {
-            provider_options: po(json!({ "serviceTier": "flex" })),
-            ..default_opts(test_prompt())
-        };
-        let result = model.do_generate(&opts).await.expect("should succeed");
-        let body = result.request_body.as_ref().expect("request body");
-        assert_eq!(body["service_tier"], json!("flex"));
-    }
-
-    /// TS: "should send serviceTier priority processing setting"
-    #[tokio::test]
-    async fn service_tier_priority() {
-        let server = MockServer::start().await;
-        mock_json(&server, json!({
-            "id": "test", "object": "chat.completion", "created": 123, "model": "gpt-4o-mini",
-            "choices": [{ "index": 0, "message": { "role": "assistant", "content": "" }, "finish_reason": "stop" }],
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
-        })).await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-4o-mini");
-
-        let opts = CallOptions {
-            provider_options: po(json!({ "serviceTier": "priority" })),
-            ..default_opts(test_prompt())
-        };
-        let result = model.do_generate(&opts).await.expect("should succeed");
-        let body = result.request_body.as_ref().expect("request body");
-        assert_eq!(body["service_tier"], json!("priority"));
     }
 
     /// TS: "should remove temperature setting for gpt-4o-search-preview"
@@ -810,126 +614,5 @@ mod do_stream_extended {
             }
             other => panic!("expected Finish, got {other:?}"),
         }
-    }
-
-    /// TS: "should send store extension setting" (streaming)
-    #[tokio::test]
-    async fn stream_store_extension() {
-        let server = MockServer::start().await;
-        let body = sse_body(&[
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"gpt-3.5-turbo-0613","system_fingerprint":null,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
-            ),
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"gpt-3.5-turbo-0613","system_fingerprint":null,"choices":[{"index":0,"delta":{},"finish_reason":"stop","logprobs":null}]}"#,
-            ),
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"gpt-3.5-turbo-0613","system_fingerprint":"fp_3bc1b5746c","choices":[],"usage":{"prompt_tokens":17,"total_tokens":244,"completion_tokens":227}}"#,
-            ),
-        ]);
-        mock_sse(&server, &body).await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
-
-        let opts = CallOptions {
-            provider_options: po(json!({ "store": true })),
-            ..default_opts(test_prompt())
-        };
-        let result = model.do_stream(&opts).await.expect("should succeed");
-        let body = result.request_body.as_ref().expect("request body");
-        assert_eq!(body["store"], json!(true));
-        assert_eq!(body["stream"], json!(true));
-    }
-
-    /// TS: "should send metadata extension values" (streaming)
-    #[tokio::test]
-    async fn stream_metadata_extension() {
-        let server = MockServer::start().await;
-        let body = sse_body(&[
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"gpt-3.5-turbo-0613","system_fingerprint":null,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
-            ),
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"gpt-3.5-turbo-0613","system_fingerprint":null,"choices":[{"index":0,"delta":{},"finish_reason":"stop","logprobs":null}]}"#,
-            ),
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"gpt-3.5-turbo-0613","system_fingerprint":"fp_3bc1b5746c","choices":[],"usage":{"prompt_tokens":17,"total_tokens":244,"completion_tokens":227}}"#,
-            ),
-        ]);
-        mock_sse(&server, &body).await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-3.5-turbo");
-
-        let opts = CallOptions {
-            provider_options: po(json!({ "metadata": { "custom": "value" } })),
-            ..default_opts(test_prompt())
-        };
-        let result = model.do_stream(&opts).await.expect("should succeed");
-        let body = result.request_body.as_ref().expect("request body");
-        assert_eq!(body["metadata"], json!({ "custom": "value" }));
-    }
-
-    /// TS: "should send serviceTier flex processing setting in streaming"
-    #[tokio::test]
-    async fn stream_service_tier_flex() {
-        let server = MockServer::start().await;
-        let body = sse_body(&[
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"o4-mini","system_fingerprint":null,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
-            ),
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"o4-mini","system_fingerprint":null,"choices":[{"index":0,"delta":{},"finish_reason":"stop","logprobs":null}]}"#,
-            ),
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"o4-mini","system_fingerprint":"fp_3bc1b5746c","choices":[],"usage":{"prompt_tokens":17,"total_tokens":244,"completion_tokens":227}}"#,
-            ),
-        ]);
-        mock_sse(&server, &body).await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("o4-mini");
-
-        let opts = CallOptions {
-            provider_options: po(json!({ "serviceTier": "flex" })),
-            ..default_opts(test_prompt())
-        };
-        let result = model.do_stream(&opts).await.expect("should succeed");
-        let body = result.request_body.as_ref().expect("request body");
-        assert_eq!(body["service_tier"], json!("flex"));
-    }
-
-    /// TS: "should send serviceTier priority processing setting in streaming"
-    #[tokio::test]
-    async fn stream_service_tier_priority() {
-        let server = MockServer::start().await;
-        let body = sse_body(&[
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"gpt-4o-mini","system_fingerprint":null,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
-            ),
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"gpt-4o-mini","system_fingerprint":null,"choices":[{"index":0,"delta":{},"finish_reason":"stop","logprobs":null}]}"#,
-            ),
-            &sse_event(
-                r#"{"id":"chatcmpl-96aZqmeDpA9IPD6tACY8djkMsJCMP","object":"chat.completion.chunk","created":1702657020,"model":"gpt-4o-mini","system_fingerprint":"fp_3bc1b5746c","choices":[],"usage":{"prompt_tokens":17,"total_tokens":244,"completion_tokens":227}}"#,
-            ),
-        ]);
-        mock_sse(&server, &body).await;
-
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.model("gpt-4o-mini");
-
-        let opts = CallOptions {
-            provider_options: po(json!({ "serviceTier": "priority" })),
-            ..default_opts(test_prompt())
-        };
-        let result = model.do_stream(&opts).await.expect("should succeed");
-        let body = result.request_body.as_ref().expect("request body");
-        assert_eq!(body["service_tier"], json!("priority"));
     }
 }

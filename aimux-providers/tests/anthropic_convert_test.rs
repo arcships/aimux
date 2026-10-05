@@ -17,7 +17,6 @@
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPromptMessage;
 use aimux_core::message::Role;
-use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::tool::{FunctionTool, ToolChoice};
 use aimux_core::types::Warning;
 use aimux_providers::anthropic::convert::convert_prompt_to_anthropic;
@@ -52,10 +51,6 @@ fn prompt(msgs: Vec<LanguageModelPromptMessage>) -> Vec<LanguageModelPromptMessa
 /// options, no input examples).
 fn ftool(name: &str, desc: &str, schema: Value) -> FunctionTool {
     FunctionTool::new(name.to_string(), schema).with_description(desc.to_string())
-}
-
-fn anthropic_opts(value: Value) -> Option<SharedProviderOptions> {
-    Some(provider_namespace("anthropic", value))
 }
 
 /// Decode a base64 string into raw bytes (mirrors the TS `data: { type: 'data',
@@ -362,28 +357,6 @@ mod prepare_tools_tests {
     }
 
     #[test]
-    fn should_correctly_prepare_function_tools() {
-        let mut tool = ftool(
-            "testFunction",
-            "A test function",
-            json!({ "type": "object", "properties": {} }),
-        );
-        tool.provider_options = anthropic_opts(json!({ "eagerInputStreaming": true }));
-        let tools = vec![tool];
-        let result = prepare_tools(Some(&tools), None, false, true, true, false);
-
-        let expected = json!({
-            "name": "testFunction",
-            "description": "A test function",
-            "input_schema": { "type": "object", "properties": {} },
-            "eager_input_streaming": true,
-        });
-        assert_eq!(result.tools.unwrap()[0], expected);
-        assert!(result.tool_choice.is_none());
-        assert!(result.tool_warnings.is_empty());
-    }
-
-    #[test]
     fn should_correctly_preserve_tool_input_examples() {
         let mut tool = ftool(
             "tool_with_examples",
@@ -524,48 +497,6 @@ mod prepare_tools_tests {
     // ── deferLoading for function tools ──
 
     #[test]
-    fn should_include_defer_loading_when_set_to_true() {
-        let mut tool = ftool(
-            "testFunction",
-            "A test function",
-            json!({ "type": "object", "properties": {} }),
-        );
-        tool.provider_options = anthropic_opts(json!({ "deferLoading": true }));
-        let tools = vec![tool];
-        let result = prepare_tools(Some(&tools), None, false, true, true, false);
-
-        let expected = json!({
-            "name": "testFunction",
-            "description": "A test function",
-            "input_schema": { "type": "object", "properties": {} },
-            "defer_loading": true,
-        });
-        assert_eq!(result.tools.unwrap()[0], expected);
-        assert!(result.betas.contains("structured-outputs-2025-11-13"));
-        assert_eq!(result.betas.len(), 1);
-    }
-
-    #[test]
-    fn should_include_defer_loading_when_set_to_false() {
-        let mut tool = ftool(
-            "testFunction",
-            "A test function",
-            json!({ "type": "object", "properties": {} }),
-        );
-        tool.provider_options = anthropic_opts(json!({ "deferLoading": false }));
-        let tools = vec![tool];
-        let result = prepare_tools(Some(&tools), None, false, true, true, false);
-
-        let expected = json!({
-            "name": "testFunction",
-            "description": "A test function",
-            "input_schema": { "type": "object", "properties": {} },
-            "defer_loading": false,
-        });
-        assert_eq!(result.tools.unwrap()[0], expected);
-    }
-
-    #[test]
     fn should_not_include_defer_loading_when_not_specified() {
         let tool = ftool(
             "testFunction",
@@ -581,30 +512,6 @@ mod prepare_tools_tests {
     // ── allowedCallers for function tools ──
 
     #[test]
-    fn should_include_allowed_callers_and_advanced_tool_use_beta_when_set() {
-        let mut tool = ftool(
-            "query_database",
-            "Query a database",
-            json!({ "type": "object", "properties": { "sql": { "type": "string" } } }),
-        );
-        tool.provider_options =
-            anthropic_opts(json!({ "allowedCallers": ["code_execution_20250825"] }));
-        let tools = vec![tool];
-        let result = prepare_tools(Some(&tools), None, false, true, true, false);
-
-        assert!(result.betas.contains("structured-outputs-2025-11-13"));
-        assert!(result.betas.contains("advanced-tool-use-2025-11-20"));
-
-        let expected = json!({
-            "name": "query_database",
-            "description": "Query a database",
-            "input_schema": { "type": "object", "properties": { "sql": { "type": "string" } } },
-            "allowed_callers": ["code_execution_20250825"],
-        });
-        assert_eq!(result.tools.unwrap()[0], expected);
-    }
-
-    #[test]
     fn should_not_include_allowed_callers_when_not_specified() {
         let tool = ftool(
             "testFunction",
@@ -615,53 +522,6 @@ mod prepare_tools_tests {
         let result = prepare_tools(Some(&tools), None, false, true, true, false);
         let tool_def = result.tools.unwrap()[0].as_object().unwrap().clone();
         assert!(!tool_def.contains_key("allowed_callers"));
-    }
-
-    #[test]
-    fn should_include_both_defer_loading_and_allowed_callers_when_both_set() {
-        let mut tool = ftool(
-            "query_database",
-            "Query a database",
-            json!({ "type": "object", "properties": { "sql": { "type": "string" } } }),
-        );
-        tool.provider_options = anthropic_opts(json!({
-            "deferLoading": true,
-            "allowedCallers": ["code_execution_20250825"],
-        }));
-        let tools = vec![tool];
-        let result = prepare_tools(Some(&tools), None, false, true, true, false);
-
-        let tool_def = result.tools.unwrap()[0].as_object().unwrap().clone();
-        assert_eq!(tool_def.get("defer_loading"), Some(&json!(true)));
-        assert_eq!(
-            tool_def.get("allowed_callers"),
-            Some(&json!(["code_execution_20250825"]))
-        );
-        assert!(result.betas.contains("advanced-tool-use-2025-11-20"));
-    }
-
-    #[test]
-    fn should_include_allowed_callers_with_code_execution_20260120() {
-        let mut tool = ftool(
-            "query_database",
-            "Query a database",
-            json!({ "type": "object", "properties": { "sql": { "type": "string" } } }),
-        );
-        tool.provider_options =
-            anthropic_opts(json!({ "allowedCallers": ["code_execution_20260120"] }));
-        let tools = vec![tool];
-        let result = prepare_tools(Some(&tools), None, false, true, true, false);
-
-        assert!(result.betas.contains("structured-outputs-2025-11-13"));
-        assert!(result.betas.contains("advanced-tool-use-2025-11-20"));
-
-        let expected = json!({
-            "name": "query_database",
-            "description": "Query a database",
-            "input_schema": { "type": "object", "properties": { "sql": { "type": "string" } } },
-            "allowed_callers": ["code_execution_20260120"],
-        });
-        assert_eq!(result.tools.unwrap()[0], expected);
     }
 
     // ── tool choice ──

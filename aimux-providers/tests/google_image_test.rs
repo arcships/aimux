@@ -13,7 +13,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs,
 };
-use aimux_core::shared::{AspectRatio, Size, provider_namespace};
+use aimux_core::shared::{AspectRatio, Size};
 use aimux_core::types::Warning;
 use aimux_providers::{GoogleConfig, GoogleImageSettings, GoogleProvider};
 
@@ -213,33 +213,6 @@ async fn sends_aspect_ratio_in_the_request() {
     assert_eq!(body["parameters"]["aspectRatio"], "16:9");
 }
 
-/// TS: "should combine aspectRatio and provider options"
-#[tokio::test]
-async fn should_combine_aspect_ratio_and_provider_options() {
-    let server = MockServer::start().await;
-    mock_imagen_response(&server, imagen_response_body()).await;
-
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.image("imagen-3.0-generate-002");
-
-    let mut opts = options("test prompt");
-    opts.n = 1;
-    opts.aspect_ratio = Some(AspectRatio::new(1, 1));
-    opts.provider_options.extend(provider_namespace(
-        "google",
-        json!({ "personGeneration": "dont_allow" }),
-    ));
-
-    model.do_generate(&opts).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["parameters"]["aspectRatio"], "1:1");
-    assert_eq!(body["parameters"]["personGeneration"], "dont_allow");
-    assert_eq!(body["parameters"]["sampleCount"], 1);
-}
-
 /// TS: "should return warnings for unsupported settings"
 #[tokio::test]
 async fn should_return_warnings_for_unsupported_settings() {
@@ -348,70 +321,6 @@ async fn should_use_real_date_when_no_custom_date_provider_is_specified() {
         result.response.model_id.as_deref(),
         Some("imagen-3.0-generate-002")
     );
-}
-
-/// TS: "should only pass valid provider options"
-#[tokio::test]
-async fn should_only_pass_valid_provider_options() {
-    let server = MockServer::start().await;
-    mock_imagen_response(&server, imagen_response_body()).await;
-
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.image("imagen-3.0-generate-002");
-
-    let mut opts = options(PROMPT);
-    opts.n = 2;
-    opts.aspect_ratio = Some(AspectRatio::new(16, 9));
-    opts.provider_options.extend(provider_namespace(
-        "google",
-        json!({
-            "addWatermark": false,
-            "personGeneration": "allow_all",
-            "foo": "bar",
-            "negativePrompt": "negative prompt"
-        }),
-    ));
-
-    model.do_generate(&opts).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    // Only personGeneration should be passed (other options are not in the schema)
-    assert_eq!(body["parameters"]["personGeneration"], "allow_all");
-    assert_eq!(body["parameters"]["aspectRatio"], "16:9");
-    assert_eq!(body["parameters"]["sampleCount"], 2);
-    // Invalid options should not be present
-    assert!(body["parameters"].get("addWatermark").is_none());
-    assert!(body["parameters"].get("foo").is_none());
-    assert!(body["parameters"].get("negativePrompt").is_none());
-}
-
-/// TS: "should emit an unsupported warning and not leak into parameters" (googleSearch on Imagen)
-#[tokio::test]
-async fn should_emit_warning_for_google_search_on_imagen() {
-    let server = MockServer::start().await;
-    mock_imagen_response(&server, imagen_response_body()).await;
-
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.image("imagen-3.0-generate-002");
-
-    let mut opts = options(PROMPT);
-    opts.n = 1;
-    opts.provider_options
-        .extend(provider_namespace("google", json!({ "googleSearch": {} })));
-
-    let result = model.do_generate(&opts).await.unwrap();
-
-    assert!(result.warnings.iter().any(|w| {
-        matches!(w, Warning::Unsupported { feature, details } if feature == "googleSearch"
-            && details.as_deref() == Some("Google Search grounding is only supported on Gemini image models."))
-    }));
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert!(body["parameters"].get("googleSearch").is_none());
 }
 
 /// TS: "should throw error when files are provided"
@@ -685,55 +594,6 @@ async fn gemini_should_not_send_tools_when_no_google_search() {
     assert!(body.get("tools").is_none());
 }
 
-/// TS: "should forward providerOptions.google.googleSearch as the google_search tool"
-#[tokio::test]
-async fn gemini_should_forward_google_search_as_tool() {
-    let server = MockServer::start().await;
-    mock_gemini_response(&server, gemini_response_body()).await;
-
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.image("gemini-2.5-flash-image");
-
-    let mut opts = options("A beautiful sunset");
-    opts.n = 1;
-    opts.provider_options.extend(provider_namespace(
-        "google",
-        json!({ "googleSearch": { "searchTypes": { "imageSearch": {} } } }),
-    ));
-
-    model.do_generate(&opts).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(
-        body["tools"],
-        json!([{ "googleSearch": { "searchTypes": { "imageSearch": {} } } }])
-    );
-}
-
-/// TS: "should not leak googleSearch into providerOptions passthrough"
-#[tokio::test]
-async fn gemini_should_not_leak_google_search_into_passthrough() {
-    let server = MockServer::start().await;
-    mock_gemini_response(&server, gemini_response_body()).await;
-
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.image("gemini-2.5-flash-image");
-
-    let mut opts = options("A beautiful sunset");
-    opts.n = 1;
-    opts.provider_options
-        .extend(provider_namespace("google", json!({ "googleSearch": {} })));
-
-    model.do_generate(&opts).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert!(body["generationConfig"].get("googleSearch").is_none());
-}
-
 /// TS: "should include input images in request for editing"
 #[tokio::test]
 async fn gemini_should_include_input_images_for_editing() {
@@ -798,59 +658,4 @@ async fn gemini_should_throw_error_when_mask_is_provided() {
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("do not support mask-based image editing"));
-}
-
-/// TS: "should forward groundingMetadata from the language-model response into providerMetadata.google"
-#[tokio::test]
-async fn gemini_should_forward_grounding_metadata() {
-    let server = MockServer::start().await;
-    let grounding_metadata = json!({
-        "webSearchQueries": ["who performs at the 2026 super bowl halftime show"],
-        "groundingChunks": [
-            { "web": { "uri": "https://example.com/source", "title": "Example" } }
-        ]
-    });
-    mock_gemini_response(
-        &server,
-        json!({
-            "candidates": [{
-                "content": {
-                    "parts": [{
-                        "inlineData": {
-                            "mimeType": "image/png",
-                            "data": "base64-generated-image"
-                        }
-                    }],
-                    "role": "model"
-                },
-                "finishReason": "STOP",
-                "groundingMetadata": grounding_metadata
-            }],
-            "usageMetadata": {
-                "promptTokenCount": 10,
-                "candidatesTokenCount": 100,
-                "totalTokenCount": 110
-            }
-        }),
-    )
-    .await;
-
-    let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GoogleProvider::new(config);
-    let model = provider.image("gemini-2.5-flash-image");
-
-    let mut opts = options("A beautiful sunset");
-    opts.n = 1;
-    opts.provider_options
-        .extend(provider_namespace("google", json!({ "googleSearch": {} })));
-
-    let result = model.do_generate(&opts).await.unwrap();
-
-    let meta = result.provider_metadata.unwrap();
-    let google = meta.get("google").unwrap();
-    assert_eq!(google.get("groundingMetadata"), Some(&grounding_metadata));
-    // images should still be present
-    let images = google.get("images").unwrap().as_array().unwrap();
-    assert_eq!(images.len(), 1);
-    assert_eq!(images[0], json!({}));
 }

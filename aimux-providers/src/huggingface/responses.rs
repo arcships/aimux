@@ -223,10 +223,10 @@ impl LanguageModel for HuggingFaceResponsesModel {
             finish_reason,
             usage,
             warnings: request.warnings,
-            provider_metadata: Some(provider_namespace(
-                "huggingface",
-                json!({ "responseId": response_id }),
-            )),
+            provider_metadata: Some(
+                provider_namespace("huggingface", json!({ "responseId": response_id }))
+                    .expect("provider metadata must be an object"),
+            ),
             response: ResponseMetadata {
                 id: response_id,
                 timestamp: format_timestamp(created_at),
@@ -343,7 +343,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                     .to_string();
                                                 yield Ok(StreamPart::TextStart {
                                                     id: id.clone(),
-                                                    provider_metadata: Some(provider_namespace("huggingface", json!({ "itemId": id }))),
+                                                    provider_metadata: Some(provider_namespace("huggingface", json!({ "itemId": id })).expect("provider metadata must be an object")),
                                                 });
                                             }
                                         }
@@ -375,7 +375,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 .to_string();
                                             yield Ok(StreamPart::ReasoningStart {
                                                 id: id.clone(),
-                                                provider_metadata: Some(provider_namespace("huggingface", json!({ "itemId": id }))),
+                                                provider_metadata: Some(provider_namespace("huggingface", json!({ "itemId": id })).expect("provider metadata must be an object")),
                                             });
                                         }
                                         _ => {}
@@ -545,7 +545,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
             yield Ok(StreamPart::Finish {
                 finish_reason,
                 usage,
-                provider_metadata: Some(provider_namespace("huggingface", json!({ "responseId": response_id }))),
+                provider_metadata: Some(provider_namespace("huggingface", json!({ "responseId": response_id })).expect("provider metadata must be an object")),
             });
         };
 
@@ -1088,10 +1088,10 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Text {
                         text: text.to_string(),
-                        provider_metadata: Some(provider_namespace(
-                            "huggingface",
-                            json!({ "itemId": item_id }),
-                        )),
+                        provider_metadata: Some(
+                            provider_namespace("huggingface", json!({ "itemId": item_id }))
+                                .expect("provider metadata must be an object"),
+                        ),
                     });
 
                     // Process annotations → source parts.
@@ -1122,10 +1122,10 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Reasoning(ReasoningOutput {
                         text: text.to_string(),
-                        provider_metadata: Some(provider_namespace(
-                            "huggingface",
-                            json!({ "itemId": item_id }),
-                        )),
+                        provider_metadata: Some(
+                            provider_namespace("huggingface", json!({ "itemId": item_id }))
+                                .expect("provider metadata must be an object"),
+                        ),
                     }));
                 }
             }

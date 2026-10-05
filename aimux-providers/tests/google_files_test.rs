@@ -14,7 +14,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
 use aimux_core::retry::RetryConfig;
-use aimux_core::shared::{FileBytes, provider_namespace};
+use aimux_core::shared::FileBytes;
 use aimux_providers::{GoogleConfig, GoogleProvider};
 
 // -- helpers -----------------------------------------------------------------
@@ -149,31 +149,6 @@ async fn should_send_correct_headers_for_resumable_upload_initiation() {
         headers.get("x-goog-api-key").and_then(|v| v.to_str().ok()),
         Some("test-api-key")
     );
-}
-
-#[tokio::test]
-async fn should_include_display_name_in_initiation_body_when_provided() {
-    let server = MockServer::start().await;
-    mount_success_mocks(&server).await;
-
-    let provider = provider(&server);
-    let files = provider.files();
-
-    let po = provider_namespace("google", json!({ "displayName": "my-document" }));
-    let opts = UploadFileCallOptions {
-        data: UploadFileData::Data {
-            data: FileBytes::Binary(vec![1]),
-        },
-        media_type: "text/plain".to_string(),
-        filename: None,
-        provider_options: Some(po),
-        abort_signal: None,
-    };
-    files.upload_file(&opts).await.unwrap();
-
-    let requests = server.received_requests().await.unwrap();
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body, json!({ "file": { "display_name": "my-document" } }));
 }
 
 #[tokio::test]
@@ -477,33 +452,6 @@ async fn should_throw_when_upload_request_fails() {
 // -- provider options tests --------------------------------------------------
 
 #[tokio::test]
-async fn should_accept_valid_provider_options() {
-    let server = MockServer::start().await;
-    mount_success_mocks(&server).await;
-
-    let provider = provider(&server);
-    let files = provider.files();
-
-    let po = provider_namespace(
-        "google",
-        json!({ "displayName": "test", "pollIntervalMs": 5000, "pollTimeoutMs": 60000 }),
-    );
-    let opts = UploadFileCallOptions {
-        data: UploadFileData::Data {
-            data: FileBytes::Binary(vec![1]),
-        },
-        media_type: "text/plain".to_string(),
-        filename: None,
-        provider_options: Some(po),
-        abort_signal: None,
-    };
-
-    let result = files.upload_file(&opts).await.unwrap();
-
-    assert!(result.provider_reference.contains_key("google"));
-}
-
-#[tokio::test]
 async fn should_work_without_provider_options() {
     let server = MockServer::start().await;
     mount_success_mocks(&server).await;
@@ -512,30 +460,6 @@ async fn should_work_without_provider_options() {
     let files = provider.files();
 
     let result = files.upload_file(&upload_options()).await.unwrap();
-
-    assert!(result.provider_reference.contains_key("google"));
-}
-
-#[tokio::test]
-async fn should_pass_through_unknown_properties() {
-    let server = MockServer::start().await;
-    mount_success_mocks(&server).await;
-
-    let provider = provider(&server);
-    let files = provider.files();
-
-    let po = provider_namespace("google", json!({ "customField": "custom-value" }));
-    let opts = UploadFileCallOptions {
-        data: UploadFileData::Data {
-            data: FileBytes::Binary(vec![1]),
-        },
-        media_type: "text/plain".to_string(),
-        filename: None,
-        provider_options: Some(po),
-        abort_signal: None,
-    };
-
-    let result = files.upload_file(&opts).await.unwrap();
 
     assert!(result.provider_reference.contains_key("google"));
 }

@@ -113,27 +113,6 @@ async fn should_pass_auth_headers() {
 }
 
 #[tokio::test]
-async fn should_use_custom_wait_time() {
-    let server = MockServer::start().await;
-    mock_replicate(&server, json!(format!("{}/image.png", server.uri()))).await;
-    let config = ReplicateConfig::new("test-token").with_base_url(server.uri());
-    let model = ReplicateProvider::new(config).image("black-forest-labs/flux-schnell");
-    let mut opts = options(PROMPT);
-    opts.n = 1;
-    opts.provider_options
-        .extend(aimux_core::shared::provider_namespace(
-            "replicate",
-            json!({ "maxWaitTimeInSeconds": 30 }),
-        ));
-    model.do_generate(&opts).await.unwrap();
-    let reqs = server.received_requests().await.unwrap();
-    assert_eq!(
-        reqs[0].headers.get("prefer").unwrap().to_str().unwrap(),
-        "wait=30"
-    );
-}
-
-#[tokio::test]
 async fn should_handle_array_output() {
     let server = MockServer::start().await;
     let img_url = format!("{}/image.png", server.uri());

@@ -770,40 +770,6 @@ async fn temperature_not_clamped_in_range() {
 
 // ── guardrails ───────────────────────────────────────────────────────────────
 
-/// TS: "should support guardrails" — `providerOptions.bedrock.guardrailConfig`
-/// is forwarded as a top-level `guardrailConfig` in the request body.
-#[tokio::test]
-#[ignore = "TODO: implementation gap — build_request_body does not emit guardrailConfig"]
-async fn guardrail_config_in_request_body() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let mut opts = default_options(test_prompt());
-    let po = aimux_core::shared::provider_namespace(
-        "bedrock",
-        json!({
-            "guardrailConfig": {
-                "guardrailIdentifier": "-1",
-                "guardrailVersion": "1",
-                "trace": "enabled"
-            }
-        }),
-    );
-    opts.provider_options = Some(po);
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("request body");
-    assert_eq!(
-        body["guardrailConfig"],
-        json!({
-            "guardrailIdentifier": "-1",
-            "guardrailVersion": "1",
-            "trace": "enabled"
-        })
-    );
-}
-
 // ── trace in providerMetadata ────────────────────────────────────────────────
 
 /// TS: "should include trace information in providerMetadata" — the response

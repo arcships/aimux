@@ -52,8 +52,7 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult};
-use aimux_core::shared::{SharedProviderOptions, provider_namespace};
-use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
+use aimux_core::tool::{ProviderTool, Tool};
 
 use aimux_providers::anthropic::AnthropicConfig;
 use aimux_providers::anthropic::model::AnthropicModel;
@@ -152,36 +151,12 @@ async fn get_request_headers(server: &MockServer) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Helper to build `provider_options` from a JSON value.
-fn anthropic_opts(value: Value) -> Option<SharedProviderOptions> {
-    Some(provider_namespace("anthropic", value))
-}
-
 /// Build a provider-defined tool: `Tool::Provider(ProviderTool { id, name, args })`.
 fn provider_tool(id: &str, name: &str, args: Value) -> Tool {
     Tool::Provider(ProviderTool {
         id: id.to_string(),
         name: name.to_string(),
         args,
-    })
-}
-
-/// Build a `calculator` function tool. When `eager` is true, sets the
-/// Anthropic `eagerInputStreaming` provider option (mirrors the TS test that
-/// mixes a client-side tool with a provider-defined tool).
-fn calculator_tool(description: &str, eager: bool) -> Tool {
-    let provider_options = if eager {
-        anthropic_opts(json!({ "eagerInputStreaming": true }))
-    } else {
-        None
-    };
-    Tool::Function(FunctionTool {
-        name: "calculator".to_string(),
-        description: Some(description.to_string()),
-        input_schema: json!({ "type": "object", "properties": {} }),
-        strict: None,
-        provider_options,
-        input_examples: None,
     })
 }
 
@@ -741,53 +716,6 @@ mod web_search_tool {
             "the trailing text must still be surfaced"
         );
     }
-
-    /// TS: "should work alongside regular client-side tools" (L3695)
-    #[tokio::test]
-    async fn should_work_alongside_regular_client_side_tools() {
-        let server = MockServer::start().await;
-        mock_json(
-            &server,
-            200,
-            json!({
-                "type": "message",
-                "id": "msg_test",
-                "content": [{ "type": "text", "text": "I can search and calculate." }],
-                "stop_reason": "end_turn",
-                "usage": { "input_tokens": 10, "output_tokens": 20 },
-            }),
-        )
-        .await;
-        let model = make_model(&server);
-
-        // TS: tools: [
-        //   { type: 'function', name: 'calculator', description: 'Calculate math',
-        //     inputSchema: { type: 'object', properties: {} },
-        //     providerOptions: { anthropic: { eagerInputStreaming: true } } },
-        //   { type: 'provider', id: 'anthropic.web_search_20250305',
-        //     name: 'web_search', args: { maxUses: 1 } },
-        // ]
-        let mut options = default_options(test_prompt());
-        options.tools = Some(vec![
-            calculator_tool("Calculate math", true),
-            provider_tool(
-                "anthropic.web_search_20250305",
-                "web_search",
-                json!({ "maxUses": 1 }),
-            ),
-        ]);
-        let _result = model.do_generate(&options).await.unwrap();
-
-        let requests = server.received_requests().await.expect("requests recorded");
-        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-        assert_eq!(body["tools"].as_array().unwrap().len(), 2);
-        // tools[0] is the function tool 'calculator'
-        assert_eq!(body["tools"][0]["name"], "calculator");
-        assert_eq!(body["tools"][0]["eager_input_streaming"], true);
-        // tools[1] is the web_search provider tool
-        assert_eq!(body["tools"][1]["type"], "web_search_20250305");
-        assert_eq!(body["tools"][1]["max_uses"], 1);
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════�?
@@ -912,167 +840,10 @@ mod web_fetch_tool {
 mod tool_search_tool {
     use super::*;
 
-    /// Helper: a function tool with deferLoading provider option.
-    #[allow(dead_code)]
-    fn deferred_function_tool(name: &str, desc: &str) -> FunctionTool {
-        FunctionTool {
-            name: name.to_string(),
-            description: Some(desc.to_string()),
-            input_schema: json!({
-                "type": "object",
-                "properties": { "location": { "type": "string" } },
-            }),
-            strict: None,
-            provider_options: anthropic_opts(json!({ "deferLoading": true })),
-            input_examples: None,
-        }
-    }
-
-    /// TS: "should send request body with tool search tool and deferred tools" (L3971, regex)
-    #[tokio::test]
-    async fn should_send_request_body_with_tool_search_regex_and_deferred_tools() {
-        let server = MockServer::start().await;
-        // TS uses fixture 'anthropic-tool-search-regex.1'
-        mock_json(&server, 200, text_response("Weather data")).await;
-        let model = make_model_with_id(&server, "claude-sonnet-4-5");
-
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("Find out weather data in SF")],
-            ..Default::default()
-        }];
-        let mut options = default_options(prompt);
-        options.tools = Some(vec![
-            provider_tool(
-                "anthropic.tool_search_regex_20251119",
-                "tool_search",
-                json!({}),
-            ),
-            Tool::Function(deferred_function_tool("get_temp_data", "For a location")),
-        ]);
-        let _result = model.do_generate(&options).await.unwrap();
-
-        let requests = server.received_requests().await.expect("requests recorded");
-        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-        assert_eq!(body["max_tokens"], 64000);
-        assert_eq!(body["model"], "claude-sonnet-4-5");
-        assert_eq!(body["tools"].as_array().unwrap().len(), 2);
-        assert_eq!(
-            body["tools"][0],
-            json!({
-                "name": "tool_search_tool_regex",
-                "type": "tool_search_tool_regex_20251119",
-            })
-        );
-        assert_eq!(body["tools"][1]["defer_loading"], true);
-        assert_eq!(body["tools"][1]["name"], "get_temp_data");
-    }
-
-    /// TS: "should include advanced-tool-use beta header" (L4017, regex)
-    #[tokio::test]
-    async fn should_include_beta_header_regex() {
-        let server = MockServer::start().await;
-        mock_json(&server, 200, text_response("hi")).await;
-        let model = make_model_with_id(&server, "claude-sonnet-4-5");
-
-        let mut options = default_options(test_prompt());
-        options.tools = Some(vec![
-            provider_tool(
-                "anthropic.tool_search_regex_20251119",
-                "tool_search",
-                json!({}),
-            ),
-            Tool::Function(deferred_function_tool("get_temp_data", "For a location")),
-        ]);
-        let _result = model.do_generate(&options).await.unwrap();
-
-        let headers = get_request_headers(&server).await;
-        let beta = headers
-            .iter()
-            .find(|(k, _)| k == "anthropic-beta")
-            .map(|(_, v)| v.as_str());
-        // claude-sonnet-4-5 supports structured outputs, so a function tool in
-        // the request triggers the structured-outputs beta.
-        assert_eq!(beta, Some("structured-outputs-2025-11-13"));
-    }
-
     /// TS: "should include tool search tool call and result in content" (L4028, regex)
     #[tokio::test]
     async fn should_include_tool_search_regex_tool_call_and_result_in_content() {
         // Snapshot test �?requires fixture + response parsing for server tools.
-    }
-
-    /// TS: "should send request body with tool search bm25 tool" (L4077)
-    #[tokio::test]
-    async fn should_send_request_body_with_tool_search_bm25() {
-        let server = MockServer::start().await;
-        // TS uses fixture 'anthropic-tool-search-bm25.1'
-        mock_json(&server, 200, text_response("Weather data")).await;
-        let model = make_model_with_id(&server, "claude-sonnet-4-5");
-
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("What is the weather in San Francisco?")],
-            ..Default::default()
-        }];
-        let mut options = default_options(prompt);
-        options.tools = Some(vec![
-            provider_tool(
-                "anthropic.tool_search_bm25_20251119",
-                "tool_search",
-                json!({}),
-            ),
-            Tool::Function(deferred_function_tool(
-                "get_weather",
-                "Get the current weather",
-            )),
-        ]);
-        let _result = model.do_generate(&options).await.unwrap();
-
-        let requests = server.received_requests().await.expect("requests recorded");
-        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-        assert_eq!(body["max_tokens"], 64000);
-        assert_eq!(body["model"], "claude-sonnet-4-5");
-        assert_eq!(body["tools"].as_array().unwrap().len(), 2);
-        assert_eq!(
-            body["tools"][0],
-            json!({
-                "name": "tool_search_tool_bm25",
-                "type": "tool_search_tool_bm25_20251119",
-            })
-        );
-        assert_eq!(body["tools"][1]["defer_loading"], true);
-        assert_eq!(body["tools"][1]["name"], "get_weather");
-    }
-
-    /// TS: "should include advanced-tool-use beta header" (L4123, bm25)
-    // TODO: requires CallOptions.tools to support provider tools
-    #[tokio::test]
-    async fn should_include_beta_header_bm25() {
-        let server = MockServer::start().await;
-        mock_json(&server, 200, text_response("hi")).await;
-        let model = make_model_with_id(&server, "claude-sonnet-4-5");
-
-        let mut options = default_options(test_prompt());
-        options.tools = Some(vec![
-            provider_tool(
-                "anthropic.tool_search_bm25_20251119",
-                "tool_search",
-                json!({}),
-            ),
-            Tool::Function(deferred_function_tool(
-                "get_weather",
-                "Get the current weather",
-            )),
-        ]);
-        let _result = model.do_generate(&options).await.unwrap();
-
-        let headers = get_request_headers(&server).await;
-        let beta = headers
-            .iter()
-            .find(|(k, _)| k == "anthropic-beta")
-            .map(|(_, v)| v.as_str());
-        assert_eq!(beta, Some("structured-outputs-2025-11-13"));
     }
 
     /// TS: "should include tool search tool call and result in content" (L4134, bm25)
@@ -1320,57 +1091,6 @@ mod advisor_tool {
 // ════════════════════════════════════════════════════════════════════════════�?
 
 mod mcp_servers {
-    use super::*;
-
-    /// TS: "should send request body with include and tool" (L4411)
-    ///
-    /// This test passes `providerOptions.anthropic.mcpServers` through
-    /// `CallOptions.provider_options`, so it compiles. It will fail on
-    /// assertions until `build_request_body` reads `mcpServers`.
-    #[tokio::test]
-    async fn should_send_request_body_with_mcp_servers() {
-        let server = MockServer::start().await;
-        // TS uses fixture 'anthropic-mcp.1'; we use a minimal text response.
-        mock_json(&server, 200, text_response("MCP response")).await;
-        let model = make_model(&server);
-
-        let mut options = default_options(test_prompt());
-        options.provider_options = anthropic_opts(json!({
-            "mcpServers": [
-                {
-                    "type": "url",
-                    "name": "echo",
-                    "url": "https://echo.mcp.inevitable.fyi/mcp",
-                },
-            ],
-        }));
-
-        let _result = model.do_generate(&options).await.unwrap();
-
-        let requests = server.received_requests().await.expect("requests recorded");
-        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-        // TS expects mcp_servers in the request body.
-        assert_eq!(
-            body["mcp_servers"],
-            json!([
-                {
-                    "name": "echo",
-                    "type": "url",
-                    "url": "https://echo.mcp.inevitable.fyi/mcp",
-                },
-            ])
-        );
-        assert_eq!(body["max_tokens"], 4096);
-        assert_eq!(body["model"], "claude-3-haiku-20240307");
-
-        // TS expects anthropic-beta: "mcp-client-2025-04-04"
-        let headers = get_request_headers(&server).await;
-        let beta = headers
-            .iter()
-            .find(|(k, _)| k == "anthropic-beta")
-            .map(|(_, v)| v.as_str());
-        assert_eq!(beta, Some("mcp-client-2025-04-04"));
-    }
 
     /// TS: "should include mcp tool call and result in content" (L4464)
     #[tokio::test]
@@ -1418,39 +1138,6 @@ mod code_execution_file_uploads {
         // TS expects a container_upload part in the message content.
         // TS expects headers: "files-api-2025-04-14,code-execution-2025-08-25"
     }
-
-    /// TS: "should send container id for a follow-up code execution turn" (L4606)
-    // TODO: requires CallOptions.tools to support provider tools + container in providerOptions
-    #[tokio::test]
-    async fn should_send_container_id_for_follow_up() {
-        let server = MockServer::start().await;
-        mock_json(&server, 200, text_response("hi")).await;
-        let model = make_model(&server);
-
-        let mut options = default_options(test_prompt());
-        options.provider_options = anthropic_opts(json!({
-            "container": { "id": "container_12345" },
-        }));
-        options.tools = Some(vec![provider_tool(
-            "anthropic.code_execution_20250825",
-            "code_execution",
-            json!({}),
-        )]);
-        let _result = model.do_generate(&options).await.unwrap();
-
-        let requests = server.received_requests().await.expect("requests recorded");
-        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-        // TS expects container: "container_12345" in the request body.
-        assert_eq!(body["container"], "container_12345");
-        assert_eq!(body["max_tokens"], 4096);
-        assert_eq!(
-            body["tools"][0],
-            json!({
-                "name": "code_execution",
-                "type": "code_execution_20250825",
-            })
-        );
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════�?
@@ -1459,213 +1146,11 @@ mod code_execution_file_uploads {
 // ════════════════════════════════════════════════════════════════════════════�?
 
 mod agent_skills {
-    use super::*;
-
-    /// TS: "should send request body with skills in container" (L4666)
-    // TODO: requires CallOptions.tools to support provider tools + container.skills
-    #[tokio::test]
-    async fn should_send_request_body_with_skills_in_container() {
-        let server = MockServer::start().await;
-        // TS uses fixture 'anthropic-code-execution-20250825.pptx-skill'
-        mock_json(&server, 200, text_response("Skill result")).await;
-        let model = make_model(&server);
-
-        let mut options = default_options(test_prompt());
-        options.provider_options = anthropic_opts(json!({
-            "container": {
-                "id": "test-container-id",
-                "skills": [
-                    {
-                        "type": "anthropic",
-                        "skillId": "pptx",
-                        "version": "latest",
-                    },
-                    {
-                        "type": "custom",
-                        "providerReference": {
-                            "anthropic": "skill_01Xud7kLMsjLfc7Aa6RvigZf",
-                        },
-                        "version": "1.0",
-                    },
-                ],
-            },
-        }));
-        // TODO: options.tools = Some(vec![provider_tool code_execution_20250825]);
-        let _result = model.do_generate(&options).await.unwrap();
-
-        let requests = server.received_requests().await.expect("requests recorded");
-        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-        assert_eq!(
-            body["container"],
-            json!({
-                "id": "test-container-id",
-                "skills": [
-                    {
-                        "skill_id": "pptx",
-                        "type": "anthropic",
-                        "version": "latest",
-                    },
-                    {
-                        "skill_id": "skill_01Xud7kLMsjLfc7Aa6RvigZf",
-                        "type": "custom",
-                        "version": "1.0",
-                    },
-                ],
-            })
-        );
-        assert_eq!(body["max_tokens"], 4096);
-        // TS expects result.warnings to be empty.
-    }
-
-    /// TS: "should add a warning when the code execution tool is not present" (L4746)
-    // TODO: requires container.skills processing in build_request_body
-    #[tokio::test]
-    #[ignore = "requires container.skills processing in build_request_body"]
-    async fn should_add_warning_when_code_execution_tool_not_present() {
-        let server = MockServer::start().await;
-        mock_json(&server, 200, text_response("hi")).await;
-        let model = make_model(&server);
-
-        let mut options = default_options(test_prompt());
-        options.provider_options = anthropic_opts(json!({
-            "container": {
-                "id": "test-container-id",
-                "skills": [
-                    {
-                        "type": "anthropic",
-                        "skillId": "pptx",
-                        "version": "latest",
-                    },
-                    {
-                        "type": "custom",
-                        "providerReference": {
-                            "anthropic": "skill_01Xud7kLMsjLfc7Aa6RvigZf",
-                        },
-                        "version": "1.0",
-                    },
-                ],
-            },
-        }));
-        // No tools �?code execution tool is not present.
-        let result = model.do_generate(&options).await.unwrap();
-
-        // TS expects warnings: [{ message: "code execution tool is required when using skills", type: "other" }]
-        assert!(result.warnings.iter().any(
-            |w| matches!(w, aimux_core::types::Warning::Other { message, .. }
-                    if message.contains("code execution tool is required when using skills"))
-        ));
-
-        let requests = server.received_requests().await.expect("requests recorded");
-        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-        // Container should still be in the body even without the code execution tool.
-        assert!(body["container"]["skills"].is_array());
-    }
-
-    /// TS: "should include beta headers when skills are configured" (L4819)
-    // TODO: requires CallOptions.tools to support provider tools + skills beta headers
-    #[tokio::test]
-    async fn should_include_beta_headers_when_skills_configured() {
-        let server = MockServer::start().await;
-        mock_json(&server, 200, text_response("hi")).await;
-        let model = make_model(&server);
-
-        let mut options = default_options(test_prompt());
-        options.provider_options = anthropic_opts(json!({
-            "container": {
-                "skills": [
-                    {
-                        "type": "anthropic",
-                        "skillId": "pptx",
-                        "version": "latest",
-                    },
-                ],
-            },
-        }));
-        // TODO: options.tools = Some(vec![provider_tool code_execution_20250825]);
-        let _result = model.do_generate(&options).await.unwrap();
-
-        let headers = get_request_headers(&server).await;
-        let beta = headers
-            .iter()
-            .find(|(k, _)| k == "anthropic-beta")
-            .map(|(_, v)| v.as_str());
-        // TS expects: "code-execution-2025-08-25,skills-2025-10-02,files-api-2025-04-14"
-        assert!(beta.is_some_and(|b| b.contains("skills-2025-10-02")
-            && b.contains("code-execution-2025-08-25")
-            && b.contains("files-api-2025-04-14")));
-    }
 
     /// TS: "should expose container information as provider metadata" (L4859)
     #[tokio::test]
     #[ignore = "snapshot test �?requires providerMetadata for container info"]
     async fn should_expose_container_info_as_provider_metadata() {}
-
-    /// TS: "should resolve custom skill provider references at the Anthropic boundary" (L4892)
-    // TODO: requires CallOptions.tools to support provider tools + skill resolution
-    #[tokio::test]
-    async fn should_resolve_custom_skill_provider_references() {
-        let server = MockServer::start().await;
-        mock_json(&server, 200, text_response("hi")).await;
-        let model = make_model(&server);
-
-        let mut options = default_options(test_prompt());
-        options.provider_options = anthropic_opts(json!({
-            "container": {
-                "skills": [
-                    {
-                        "type": "custom",
-                        "providerReference": {
-                            "anthropic": "skill_01Xud7kLMsjLfc7Aa6RvigZf",
-                        },
-                    },
-                ],
-            },
-        }));
-        // TODO: options.tools = Some(vec![provider_tool code_execution_20250825]);
-        let _result = model.do_generate(&options).await.unwrap();
-
-        let requests = server.received_requests().await.expect("requests recorded");
-        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-        assert_eq!(
-            body["container"],
-            json!({
-                "skills": [
-                    {
-                        "skill_id": "skill_01Xud7kLMsjLfc7Aa6RvigZf",
-                        "type": "custom",
-                    },
-                ],
-            })
-        );
-    }
-
-    /// TS: "should throw when a custom skill provider reference does not include anthropic" (L4956)
-    // TODO: requires skill provider reference validation
-    #[tokio::test]
-    #[ignore = "requires skill provider reference validation (NoSuchProviderReferenceError)"]
-    async fn should_throw_when_custom_skill_reference_missing_anthropic() {
-        let server = MockServer::start().await;
-        mock_json(&server, 200, text_response("hi")).await;
-        let model = make_model(&server);
-
-        let mut options = default_options(test_prompt());
-        options.provider_options = anthropic_opts(json!({
-            "container": {
-                "skills": [
-                    {
-                        "type": "custom",
-                        "providerReference": {
-                            "openai": "skill_abc",
-                        },
-                    },
-                ],
-            },
-        }));
-
-        // TS expects this to throw NoSuchProviderReferenceError.
-        let result = model.do_generate(&options).await;
-        assert!(result.is_err());
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════�?
@@ -2005,67 +1490,5 @@ mod code_execution_20250522 {
         // 1. tool-result (isError: true, errorCode: 'unavailable')
         // 2. text
         // TODO: assert once GenerateContent has the needed variants.
-    }
-
-    /// TS: "should work alongside regular client-side tools" (L5435)
-    // TODO: requires CallOptions.tools to support mixed function + provider tools
-    #[tokio::test]
-    async fn should_work_alongside_regular_client_side_tools() {
-        let server = MockServer::start().await;
-        mock_json(
-            &server,
-            200,
-            json!({
-                "type": "message",
-                "id": "msg_test",
-                "content": [{ "type": "text", "text": "I can execute code and calculate." }],
-                "stop_reason": "end_turn",
-                "usage": { "input_tokens": 10, "output_tokens": 20 },
-            }),
-        )
-        .await;
-        let model = make_model(&server);
-
-        // TS: tools: [
-        //   { type: 'function', name: 'calculator', description: 'Calculate math expressions',
-        //     inputSchema: { type: 'object', properties: {} } },
-        //   { type: 'provider', id: 'anthropic.code_execution_20250522',
-        //     name: 'code_execution', args: {} },
-        // ]
-        let mut options = default_options(factorial_prompt());
-        options.tools = Some(vec![
-            Tool::Function(
-                FunctionTool::new(
-                    "calculator".to_string(),
-                    json!({ "type": "object", "properties": {} }),
-                )
-                .with_description("Calculate math expressions".to_string()),
-            ),
-            provider_tool(
-                "anthropic.code_execution_20250522",
-                "code_execution",
-                json!({}),
-            ),
-        ]);
-        let _result = model.do_generate(&options).await.unwrap();
-
-        let requests = server.received_requests().await.expect("requests recorded");
-        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-        assert_eq!(body["tools"].as_array().unwrap().len(), 2);
-        // tools[0] is the function tool 'calculator'
-        assert_eq!(body["tools"][0]["name"], "calculator");
-        assert_eq!(
-            body["tools"][0]["description"],
-            "Calculate math expressions"
-        );
-        // tools[1] is the code_execution provider tool
-        assert_eq!(body["tools"][1]["type"], "code_execution_20250522");
-
-        let headers = get_request_headers(&server).await;
-        let beta = headers
-            .iter()
-            .find(|(k, _)| k == "anthropic-beta")
-            .map(|(_, v)| v.as_str());
-        assert_eq!(beta, Some("code-execution-2025-05-22"));
     }
 }

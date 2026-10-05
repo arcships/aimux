@@ -166,17 +166,20 @@ impl LanguageModel for GoogleModel {
 
         // Provider metadata: wrap the raw Google metadata under a `google`
         // key (matching the TS `wrapProviderMetadata`).
-        let provider_metadata = Some(provider_namespace(
-            "google",
-            json!({
-                "promptFeedback": data.prompt_feedback,
-                "groundingMetadata": candidate.grounding_metadata,
-                "urlContextMetadata": candidate.url_context_metadata,
-                "safetyRatings": candidate.safety_ratings,
-                "usageMetadata": data.usage_metadata,
-                "finishMessage": candidate.finish_message,
-            }),
-        ));
+        let provider_metadata = Some(
+            provider_namespace(
+                "google",
+                json!({
+                    "promptFeedback": data.prompt_feedback,
+                    "groundingMetadata": candidate.grounding_metadata,
+                    "urlContextMetadata": candidate.url_context_metadata,
+                    "safetyRatings": candidate.safety_ratings,
+                    "usageMetadata": data.usage_metadata,
+                    "finishMessage": candidate.finish_message,
+                }),
+            )
+            .expect("provider metadata must be an object"),
+        );
 
         Ok(GenerateResult {
             content,
@@ -332,7 +335,7 @@ impl LanguageModel for GoogleModel {
                                 let thought_sig_meta: Option<ProviderMetadata> = part
                                     .get("thoughtSignature")
                                     .and_then(|v| v.as_str())
-                                    .map(|s| provider_namespace("google", json!({ "thoughtSignature": s })));
+                                    .map(|s| provider_namespace("google", json!({ "thoughtSignature": s })).expect("provider metadata must be an object"));
 
                                 // text part
                                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
@@ -641,7 +644,7 @@ impl LanguageModel for GoogleModel {
                 "safetyRatings": last_safety_ratings,
                 "usageMetadata": last_usage_metadata_value,
                 "finishMessage": last_finish_message,
-            })));
+            })).expect("provider metadata must be an object"));
 
             yield Ok(StreamPart::Finish {
                 finish_reason: if stream_errored {
@@ -682,7 +685,7 @@ fn server_tool_metadata(
     if let Some(signature) = thought_signature {
         payload["thoughtSignature"] = json!(signature);
     }
-    provider_namespace("google", payload)
+    provider_namespace("google", payload).expect("provider metadata must be an object")
 }
 
 /// Extract `GenerateContent` items from a non-streaming candidate.
@@ -716,7 +719,10 @@ fn extract_content_from_candidate(
             let thought_sig_meta: Option<ProviderMetadata> = part
                 .get("thoughtSignature")
                 .and_then(|v| v.as_str())
-                .map(|s| provider_namespace("google", json!({ "thoughtSignature": s })));
+                .map(|s| {
+                    provider_namespace("google", json!({ "thoughtSignature": s }))
+                        .expect("provider metadata must be an object")
+                });
 
             // Branch order matches upstream (google-language-model.ts:420-534):
             // executableCode → codeExecutionResult → text → functionCall

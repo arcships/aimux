@@ -650,8 +650,11 @@ impl LanguageModel for VertexModel {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn vertex_provider_metadata(payload: Value) -> ProviderMetadata {
-    let mut metadata = provider_namespace("googleVertex", payload.clone());
-    metadata.extend(provider_namespace("vertex", payload));
+    let mut metadata = provider_namespace("googleVertex", payload.clone())
+        .expect("provider metadata must be an object");
+    metadata.extend(
+        provider_namespace("vertex", payload).expect("provider metadata must be an object"),
+    );
     metadata
 }
 

@@ -569,7 +569,7 @@ impl LanguageModel for CohereModel {
                 } else {
                     final_usage
                 },
-                provider_metadata: Some(provider_namespace("cohere", json!({}))),
+                provider_metadata: Some(provider_namespace("cohere", json!({})).expect("provider metadata must be an object")),
             });
         };
 

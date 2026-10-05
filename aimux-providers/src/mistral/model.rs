@@ -600,7 +600,7 @@ impl LanguageModel for MistralModel {
                 } else {
                     final_usage
                 },
-                provider_metadata: Some(provider_namespace("mistral", serde_json::json!({}))),
+                provider_metadata: Some(provider_namespace("mistral", serde_json::json!({})).expect("provider metadata must be an object")),
             });
         };
 

@@ -148,7 +148,7 @@ pub fn build_responses_generate_result(
                                         json!({
                                             "itemId": part.get("id").cloned().unwrap_or(Value::Null),
                                         }),
-                                    )),
+                                    ).expect("provider metadata must be an object")),
                                 });
                             }
                         }
@@ -202,12 +202,15 @@ pub fn build_responses_generate_result(
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
-                    provider_metadata: Some(provider_namespace(
-                        &provider_key,
-                        json!({
-                            "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                        }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace(
+                            &provider_key,
+                            json!({
+                                "itemId": part.get("id").cloned().unwrap_or(Value::Null),
+                            }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             Some("custom_tool_call") => {
@@ -232,12 +235,15 @@ pub fn build_responses_generate_result(
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
-                    provider_metadata: Some(provider_namespace(
-                        &provider_key,
-                        json!({
-                            "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                        }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace(
+                            &provider_key,
+                            json!({
+                                "itemId": part.get("id").cloned().unwrap_or(Value::Null),
+                            }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             Some("reasoning") => {
@@ -249,7 +255,7 @@ pub fn build_responses_generate_result(
                         "itemId": part.get("id").cloned().unwrap_or(Value::Null),
                         "reasoningEncryptedContent": part.get("encrypted_content").cloned().unwrap_or(Value::Null),
                     }),
-                ));
+                ).expect("provider metadata must be an object"));
                 if parts.is_empty() {
                     content.push(GenerateContent::Reasoning(ReasoningOutput {
                         text: String::new(),
@@ -295,7 +301,8 @@ pub fn build_responses_generate_result(
     if let Some(st) = data.get("service_tier").and_then(|v| v.as_str()) {
         pm["serviceTier"] = json!(st);
     }
-    let provider_metadata = Some(provider_namespace(&provider_key, pm));
+    let provider_metadata =
+        Some(provider_namespace(&provider_key, pm).expect("provider metadata must be an object"));
 
     let response_id = data
         .get("id")
@@ -362,7 +369,7 @@ fn reasoning_stream_metadata(
     if let Some(enc) = encrypted_content {
         inner["reasoningEncryptedContent"] = json!(enc);
     }
-    provider_namespace(provider_key, inner)
+    provider_namespace(provider_key, inner).expect("provider metadata must be an object")
 }
 
 /// Generate a unique source ID for streaming annotation sources.
@@ -1059,7 +1066,7 @@ where
         if let Some(ctx) = final_reasoning_context {
             pm["reasoningContext"] = ctx;
         }
-        let provider_metadata = Some(provider_namespace(&provider_key, pm));
+        let provider_metadata = Some(provider_namespace(&provider_key, pm).expect("provider metadata must be an object"));
 
         yield Ok(StreamPart::Finish {
             finish_reason: if stream_errored {

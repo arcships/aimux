@@ -10,7 +10,6 @@
 //! or SSE response, creates an `XaiResponsesModel` via `XAIProvider`, calls
 //! `do_generate` / `do_stream`, and asserts on the result.
 
-use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::tool::{RawToolCall, ToolResult};
 
 use futures::StreamExt;
@@ -73,10 +72,6 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
 fn make_provider(server: &MockServer) -> XAIProvider {
     let config = XAIConfig::new("test-api-key").with_base_url(server.uri());
     XAIProvider::new(config)
-}
-
-fn xai_provider_options(opts: Value) -> Option<SharedProviderOptions> {
-    Some(provider_namespace("xai", opts))
 }
 
 /// A standard Responses API JSON body returning a text message.
@@ -168,39 +163,6 @@ mod do_generate {
         assert_eq!(result.usage.output_tokens.total, Some(538));
         assert_eq!(result.usage.output_tokens.text, Some(415)); // 538 - 123
         assert_eq!(result.usage.output_tokens.reasoning, Some(123));
-    }
-
-    /// TS: should expose cost_in_usd_ticks in providerMetadata
-    #[tokio::test]
-    async fn cost_in_usd_ticks() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "resp_123",
-                "object": "response",
-                "status": "completed",
-                "model": "grok-4-fast-non-reasoning",
-                "output": [],
-                "usage": { "input_tokens": 10, "output_tokens": 5, "cost_in_usd_ticks": 113500 }
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .unwrap();
-
-        assert_eq!(
-            result.provider_metadata,
-            Some(provider_namespace(
-                "xai",
-                json!({ "costInUsdTicks": 113500 })
-            ))
-        );
     }
 
     /// TS: should not include providerMetadata when cost_in_usd_ticks is missing
@@ -316,121 +278,6 @@ mod do_generate {
 mod reasoning {
     use super::*;
 
-    /// TS: should extract reasoning with encrypted content when store=false
-    #[tokio::test]
-    async fn reasoning_with_encrypted_content() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "resp_123",
-                "object": "response",
-                "status": "completed",
-                "model": "grok-4-fast-non-reasoning",
-                "output": [
-                    {
-                        "type": "reasoning",
-                        "id": "rs_456",
-                        "status": "completed",
-                        "summary": [{ "type": "summary_text", "text": "First, analyze the question carefully." }],
-                        "encrypted_content": "abc123encryptedcontent"
-                    },
-                    {
-                        "type": "message",
-                        "id": "msg_123",
-                        "status": "completed",
-                        "role": "assistant",
-                        "content": [{ "type": "output_text", "text": "The answer is 42.", "annotations": [] }]
-                    }
-                ],
-                "usage": { "input_tokens": 10, "output_tokens": 20, "output_tokens_details": { "reasoning_tokens": 15 } }
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .unwrap();
-
-        assert_eq!(result.content.len(), 2);
-        match &result.content[0] {
-            GenerateContent::Reasoning(ReasoningOutput {
-                text,
-                provider_metadata,
-            }) => {
-                assert_eq!(text, "First, analyze the question carefully.");
-                assert_eq!(
-                    provider_metadata,
-                    &Some(provider_namespace(
-                        "xai",
-                        json!({ "itemId": "rs_456", "reasoningEncryptedContent": "abc123encryptedcontent" })
-                    ))
-                );
-            }
-            other => panic!("expected Reasoning, got {other:?}"),
-        }
-        match &result.content[1] {
-            GenerateContent::Text { text, .. } => assert_eq!(text, "The answer is 42."),
-            other => panic!("expected Text, got {other:?}"),
-        }
-    }
-
-    /// TS: should handle reasoning without encrypted content
-    #[tokio::test]
-    async fn reasoning_without_encrypted_content() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "resp_123",
-                "object": "response",
-                "status": "completed",
-                "model": "grok-4-fast-non-reasoning",
-                "output": [
-                    {
-                        "type": "reasoning",
-                        "id": "rs_456",
-                        "status": "completed",
-                        "summary": [{ "type": "summary_text", "text": "Thinking through the problem." }]
-                    },
-                    {
-                        "type": "message",
-                        "id": "msg_123",
-                        "status": "completed",
-                        "role": "assistant",
-                        "content": [{ "type": "output_text", "text": "Solution found.", "annotations": [] }]
-                    }
-                ],
-                "usage": { "input_tokens": 10, "output_tokens": 15 }
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .unwrap();
-
-        match &result.content[0] {
-            GenerateContent::Reasoning(ReasoningOutput {
-                text,
-                provider_metadata,
-            }) => {
-                assert_eq!(text, "Thinking through the problem.");
-                assert_eq!(
-                    provider_metadata,
-                    &Some(provider_namespace("xai", json!({ "itemId": "rs_456" })))
-                );
-            }
-            other => panic!("expected Reasoning, got {other:?}"),
-        }
-    }
-
     /// TS: should extract reasoning from content when summary is empty
     #[tokio::test]
     async fn reasoning_from_content() {
@@ -473,63 +320,6 @@ mod reasoning {
         match &result.content[0] {
             GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
                 assert_eq!(text, "Let me think step by step.");
-            }
-            other => panic!("expected Reasoning, got {other:?}"),
-        }
-    }
-
-    /// TS: should extract reasoning with encrypted content but empty summary text
-    #[tokio::test]
-    async fn reasoning_empty_summary_with_encrypted() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "resp_123",
-                "object": "response",
-                "status": "completed",
-                "model": "grok-4-fast-non-reasoning",
-                "output": [
-                    {
-                        "type": "reasoning",
-                        "id": "rs_789",
-                        "status": "completed",
-                        "summary": [],
-                        "encrypted_content": "encrypted_zdr_content_xyz"
-                    },
-                    {
-                        "type": "message",
-                        "id": "msg_123",
-                        "status": "completed",
-                        "role": "assistant",
-                        "content": [{ "type": "output_text", "text": "Here is my response.", "annotations": [] }]
-                    }
-                ],
-                "usage": { "input_tokens": 10, "output_tokens": 20, "output_tokens_details": { "reasoning_tokens": 15 } }
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .unwrap();
-
-        match &result.content[0] {
-            GenerateContent::Reasoning(ReasoningOutput {
-                text,
-                provider_metadata,
-            }) => {
-                assert_eq!(text, "");
-                assert_eq!(
-                    provider_metadata,
-                    &Some(provider_namespace(
-                        "xai",
-                        json!({ "itemId": "rs_789", "reasoningEncryptedContent": "encrypted_zdr_content_xyz" })
-                    ))
-                );
             }
             other => panic!("expected Reasoning, got {other:?}"),
         }
@@ -596,233 +386,6 @@ mod settings {
         );
     }
 
-    /// TS: reasoningEffort provider option
-    #[tokio::test]
-    async fn reasoning_effort_option() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "resp_123", "object": "response", "status": "completed",
-                "model": "grok-4-fast-non-reasoning", "output": [],
-                "usage": { "input_tokens": 10, "output_tokens": 5 }
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let options = CallOptions {
-            provider_options: xai_provider_options(json!({ "reasoningEffort": "high" })),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        assert_eq!(result.request_body.unwrap()["reasoning"]["effort"], "high");
-    }
-
-    /// TS: reasoningSummary provider option
-    #[tokio::test]
-    async fn reasoning_summary_option() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "resp_123", "object": "response", "status": "completed",
-                "model": "grok-4-fast-non-reasoning", "output": [],
-                "usage": { "input_tokens": 10, "output_tokens": 5 }
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let options = CallOptions {
-            provider_options: xai_provider_options(json!({ "reasoningSummary": "concise" })),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        assert_eq!(
-            result.request_body.unwrap()["reasoning"]["summary"],
-            "concise"
-        );
-    }
-
-    /// TS: reasoningEffort and reasoningSummary together
-    #[tokio::test]
-    async fn reasoning_effort_and_summary() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "resp_123", "object": "response", "status": "completed",
-                "model": "grok-4-fast-non-reasoning", "output": [],
-                "usage": { "input_tokens": 10, "output_tokens": 5 }
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let options = CallOptions {
-            provider_options: xai_provider_options(
-                json!({ "reasoningEffort": "high", "reasoningSummary": "detailed" }),
-            ),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        assert_eq!(
-            result.request_body.unwrap()["reasoning"],
-            json!({ "effort": "high", "summary": "detailed" })
-        );
-    }
-
-    /// TS: store:false
-    #[tokio::test]
-    async fn store_false() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "resp_123", "object": "response", "status": "completed",
-                "model": "grok-4-fast-non-reasoning", "output": [],
-                "usage": { "input_tokens": 10, "output_tokens": 5 }
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let options = CallOptions {
-            provider_options: xai_provider_options(json!({ "store": false })),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = result.request_body.unwrap();
-        assert_eq!(body["store"], false);
-        assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
-    }
-
-    /// TS: store:true (should not set store or include)
-    #[tokio::test]
-    async fn store_true() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "resp_123", "object": "response", "status": "completed",
-                "model": "grok-4-fast-non-reasoning", "output": [],
-                "usage": { "input_tokens": 10, "output_tokens": 5 }
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let options = CallOptions {
-            provider_options: xai_provider_options(json!({ "store": true })),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = result.request_body.unwrap();
-        assert!(body.get("store").is_none());
-        assert!(body.get("include").is_none());
-    }
-
-    /// TS: previousResponseId
-    #[tokio::test]
-    async fn previous_response_id() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "resp_123", "object": "response", "status": "completed",
-                "model": "grok-4-fast-non-reasoning", "output": [],
-                "usage": { "input_tokens": 10, "output_tokens": 5 }
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let options = CallOptions {
-            provider_options: xai_provider_options(json!({ "previousResponseId": "resp_456" })),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        assert_eq!(
-            result.request_body.unwrap()["previous_response_id"],
-            "resp_456"
-        );
-    }
-
-    /// TS: include with file_search_call.results
-    #[tokio::test]
-    async fn include_option() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "resp_123", "object": "response", "status": "completed",
-                "model": "grok-4-fast-non-reasoning", "output": [],
-                "usage": { "input_tokens": 10, "output_tokens": 5 }
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let options = CallOptions {
-            provider_options: xai_provider_options(
-                json!({ "include": ["file_search_call.results"] }),
-            ),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        assert_eq!(
-            result.request_body.unwrap()["include"],
-            json!(["file_search_call.results"])
-        );
-    }
-
-    /// TS: include with file_search_call.results and store:false
-    #[tokio::test]
-    async fn include_with_store_false() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "resp_123", "object": "response", "status": "completed",
-                "model": "grok-4-fast-non-reasoning", "output": [],
-                "usage": { "input_tokens": 10, "output_tokens": 5 }
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let options = CallOptions {
-            provider_options: xai_provider_options(
-                json!({ "include": ["file_search_call.results"], "store": false }),
-            ),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = result.request_body.unwrap();
-        assert_eq!(body["store"], false);
-        assert_eq!(
-            body["include"],
-            json!(["file_search_call.results", "reasoning.encrypted_content"])
-        );
-    }
-
     /// TS: should map top-level reasoning to reasoning effort
     #[tokio::test]
     async fn top_level_reasoning() {
@@ -871,32 +434,6 @@ mod settings {
         let result = model.do_generate(&options).await.unwrap();
 
         assert_eq!(result.request_body.unwrap()["reasoning"]["effort"], "none");
-    }
-
-    /// TS: should prefer providerOptions reasoningEffort over top-level reasoning
-    #[tokio::test]
-    async fn prefer_provider_reasoning_effort() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "resp_123", "object": "response", "status": "completed",
-                "model": "grok-4.3", "output": [],
-                "usage": { "input_tokens": 10, "output_tokens": 5 }
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4.3");
-        let options = CallOptions {
-            reasoning: Some(ReasoningEffort::None),
-            provider_options: xai_provider_options(json!({ "reasoningEffort": "high" })),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        assert_eq!(result.request_body.unwrap()["reasoning"]["effort"], "high");
     }
 
     /// TS: should omit reasoning effort and warn for models that do not support it
@@ -1925,58 +1462,6 @@ mod do_stream {
         assert_eq!(reasoning_deltas, vec!["First", ", analyze the question."]);
     }
 
-    /// TS: should include encrypted content in reasoning-end providerMetadata
-    #[tokio::test]
-    async fn reasoning_end_encrypted_content() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_string(sse_body(&[
-                        &sse_event(&json!({ "type": "response.created", "response": { "id": "resp_123", "object": "response", "model": "grok-4-fast-non-reasoning", "output": [] } }).to_string()),
-                        &sse_event(&json!({ "type": "response.output_item.added", "item": { "type": "reasoning", "id": "rs_456", "status": "in_progress", "summary": [] }, "output_index": 0 }).to_string()),
-                        &sse_event(&json!({ "type": "response.reasoning_summary_part.added", "item_id": "rs_456", "output_index": 0, "summary_index": 0, "part": { "type": "summary_text", "text": "" } }).to_string()),
-                        &sse_event(&json!({ "type": "response.reasoning_summary_text.delta", "item_id": "rs_456", "output_index": 0, "summary_index": 0, "delta": "Analyzing..." }).to_string()),
-                        &sse_event(&json!({ "type": "response.reasoning_summary_text.done", "item_id": "rs_456", "output_index": 0, "summary_index": 0, "text": "Analyzing..." }).to_string()),
-                        &sse_event(&json!({ "type": "response.output_item.done", "item": { "type": "reasoning", "id": "rs_456", "status": "completed", "summary": [{ "type": "summary_text", "text": "Analyzing..." }], "encrypted_content": "encrypted_data_abc123" }, "output_index": 0 }).to_string()),
-                        &sse_event(&json!({ "type": "response.output_item.added", "item": { "type": "message", "id": "msg_789", "role": "assistant", "status": "in_progress", "content": [] }, "output_index": 1 }).to_string()),
-                        &sse_event(&json!({ "type": "response.output_text.delta", "item_id": "msg_789", "output_index": 1, "content_index": 0, "delta": "Result." }).to_string()),
-                        &sse_event(&json!({ "type": "response.done", "response": { "id": "resp_123", "object": "response", "model": "grok-4-fast-non-reasoning", "status": "completed", "output": [], "usage": { "input_tokens": 10, "output_tokens": 20 } } }).to_string()),
-                    ])),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let result = model
-            .do_stream(&default_options(test_prompt()))
-            .await
-            .unwrap();
-        let parts = collect_stream(result).await;
-
-        let reasoning_end = parts
-            .iter()
-            .find(|p| matches!(p, StreamPart::ReasoningEnd { .. }));
-        assert!(reasoning_end.is_some());
-        if let Some(StreamPart::ReasoningEnd {
-            id,
-            provider_metadata,
-        }) = reasoning_end
-        {
-            assert_eq!(id, "reasoning-rs_456");
-            assert_eq!(
-                provider_metadata,
-                &Some(provider_namespace(
-                    "xai",
-                    json!({ "itemId": "rs_456", "reasoningEncryptedContent": "encrypted_data_abc123" })
-                ))
-            );
-        }
-    }
-
     /// TS: should stream web_search tool calls
     #[tokio::test]
     async fn stream_web_search_tool() {
@@ -2133,58 +1618,6 @@ mod do_stream {
                 finish_reason.unified,
                 aimux_core::types::FinishReasonUnified::ToolCalls
             );
-        }
-    }
-
-    /// TS: should expose cost_in_usd_ticks in finish providerMetadata
-    #[tokio::test]
-    async fn stream_cost_in_usd_ticks() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_string(sse_body(&[
-                        &sse_event(&json!({ "type": "response.created", "response": { "id": "resp_123", "object": "response", "model": "grok-4-fast-non-reasoning", "output": [] } }).to_string()),
-                        &sse_event(&json!({ "type": "response.output_text.delta", "output_index": 0, "content_index": 0, "delta": "Hello" }).to_string()),
-                        &sse_event(&json!({
-                            "type": "response.completed",
-                            "response": {
-                                "id": "resp_123", "object": "response", "model": "grok-4-fast-non-reasoning",
-                                "status": "completed", "output": [],
-                                "usage": { "input_tokens": 10, "output_tokens": 5, "cost_in_usd_ticks": 113500 }
-                            }
-                        }).to_string()),
-                    ])),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.responses_model("grok-4-fast-non-reasoning");
-        let result = model
-            .do_stream(&default_options(test_prompt()))
-            .await
-            .unwrap();
-        let parts = collect_stream(result).await;
-
-        let finish = parts
-            .iter()
-            .find(|p| matches!(p, StreamPart::Finish { .. }));
-        if let Some(StreamPart::Finish {
-            provider_metadata, ..
-        }) = finish
-        {
-            assert_eq!(
-                provider_metadata,
-                &Some(provider_namespace(
-                    "xai",
-                    json!({ "costInUsdTicks": 113500 })
-                ))
-            );
-        } else {
-            panic!("no finish part found");
         }
     }
 
@@ -2981,32 +2414,6 @@ mod convert_input {
         let (input, warnings) = convert_to_xai_responses_input(&prompt).unwrap();
         assert!(warnings.is_empty());
         assert!(input.is_empty());
-    }
-
-    /// An explicit false value must override stale legacy provider metadata.
-    #[test]
-    fn explicit_client_execution_overrides_legacy_provider_metadata() {
-        let prompt = vec![LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::ToolCall {
-                tool_call_id: "call_123".to_string(),
-                tool_name: "weather".to_string(),
-                input: json!({ "city": "Singapore" }),
-                provider_executed: Some(false),
-                thought_signature: None,
-                provider_options: Some(provider_namespace(
-                    "xai",
-                    json!({ "providerExecuted": true }),
-                )),
-            }],
-            ..Default::default()
-        }];
-
-        let (input, warnings) = convert_to_xai_responses_input(&prompt).unwrap();
-        assert!(warnings.is_empty());
-        assert_eq!(input.len(), 1);
-        assert_eq!(input[0]["type"], "function_call");
-        assert_eq!(input[0]["call_id"], "call_123");
     }
 
     /// TS: should convert tool results

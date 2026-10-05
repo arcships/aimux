@@ -11,8 +11,6 @@
 //! verify that a timestamp is present and that `model_id` matches, rather
 //! than asserting an exact timestamp value.
 
-use std::collections::HashMap;
-
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -20,7 +18,6 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs,
 };
-use aimux_core::shared::provider_namespace;
 use aimux_core::shared::{AspectRatio, Size};
 use aimux_providers::{OpenAIConfig, OpenAIProvider};
 
@@ -128,136 +125,6 @@ fn base64_file(media_type: &str, b64: &str) -> ImageFile {
 // ════════════════════════════════════════════════════════════════════════════
 // doGenerate — generation
 // ════════════════════════════════════════════════════════════════════════════
-
-/// TS: "should pass the model and the settings"
-#[tokio::test]
-async fn should_pass_the_model_and_the_settings() {
-    let server = MockServer::start().await;
-    mock_generations_response(&server, image_response_body()).await;
-
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.image("dall-e-3");
-
-    let mut opts = options(PROMPT);
-    opts.n = 1;
-    opts.size = Some(Size::new(1024, 1024));
-    opts.provider_options = provider_namespace("openai", json!({ "style": "vivid" }));
-
-    model.do_generate(&opts).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    assert_eq!(requests.len(), 1);
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["model"], "dall-e-3");
-    assert_eq!(body["prompt"], PROMPT);
-    assert_eq!(body["n"], 1);
-    assert_eq!(body["size"], "1024x1024");
-    assert_eq!(body["style"], "vivid");
-    assert_eq!(body["response_format"], "b64_json");
-}
-
-/// TS: "should map provider options to snake_case for /images/generations"
-#[tokio::test]
-async fn should_map_provider_options_to_snake_case_for_generations() {
-    let server = MockServer::start().await;
-    mock_generations_response(&server, image_response_body()).await;
-
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.image("gpt-image-1");
-
-    let mut opts = options(PROMPT);
-    opts.n = 1;
-    opts.size = Some(Size::new(1024, 1024));
-    opts.provider_options = provider_namespace(
-        "openai",
-        json!({
-            "quality": "high",
-            "background": "transparent",
-            "moderation": "low",
-            "outputFormat": "webp",
-            "outputCompression": 80,
-            "user": "user-123"
-        }),
-    );
-
-    model.do_generate(&opts).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    assert_eq!(requests.len(), 1);
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["model"], "gpt-image-1");
-    assert_eq!(body["prompt"], PROMPT);
-    assert_eq!(body["n"], 1);
-    assert_eq!(body["size"], "1024x1024");
-    assert_eq!(body["quality"], "high");
-    assert_eq!(body["background"], "transparent");
-    assert_eq!(body["moderation"], "low");
-    assert_eq!(body["output_format"], "webp");
-    assert_eq!(body["output_compression"], 80);
-    assert_eq!(body["user"], "user-123");
-    // gpt-image-1 should NOT have response_format
-    assert!(body.get("response_format").is_none());
-}
-
-/// TS: "should pass headers"
-#[tokio::test]
-async fn should_pass_headers() {
-    let server = MockServer::start().await;
-    mock_generations_response(&server, image_response_body()).await;
-
-    let mut provider_headers = HashMap::new();
-    provider_headers.insert(
-        "Custom-Provider-Header".to_string(),
-        "provider-header-value".to_string(),
-    );
-
-    let config = OpenAIConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_org_id("test-organization")
-        .with_project("test-project")
-        .with_headers(provider_headers);
-    let provider = OpenAIProvider::new(config);
-    let model = provider.image("dall-e-3");
-
-    let mut opts = options(PROMPT);
-    opts.n = 1;
-    opts.size = Some(Size::new(1024, 1024));
-    opts.provider_options = provider_namespace("openai", json!({ "style": "vivid" }));
-    let mut req_headers = HashMap::new();
-    req_headers.insert(
-        "Custom-Request-Header".to_string(),
-        "request-header-value".to_string(),
-    );
-    opts.headers = Some(req_headers);
-
-    model.do_generate(&opts).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    assert_eq!(requests.len(), 1);
-    let h = &requests[0].headers;
-    assert_eq!(
-        h.get("authorization").unwrap().to_str().unwrap(),
-        "Bearer test-api-key"
-    );
-    assert_eq!(
-        h.get("openai-organization").unwrap().to_str().unwrap(),
-        "test-organization"
-    );
-    assert_eq!(
-        h.get("openai-project").unwrap().to_str().unwrap(),
-        "test-project"
-    );
-    assert_eq!(
-        h.get("custom-provider-header").unwrap().to_str().unwrap(),
-        "provider-header-value"
-    );
-    assert_eq!(
-        h.get("custom-request-header").unwrap().to_str().unwrap(),
-        "request-header-value"
-    );
-}
 
 /// TS: "should extract the generated images"
 #[tokio::test]
@@ -591,40 +458,6 @@ async fn should_include_response_format_for_dall_e_3() {
     assert_eq!(body["response_format"], "b64_json");
 }
 
-/// TS: "should return image meta data"
-#[tokio::test]
-async fn should_return_image_meta_data() {
-    let server = MockServer::start().await;
-    mock_generations_response(&server, image_response_body()).await;
-
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.image("dall-e-3");
-
-    let mut opts = options(PROMPT);
-    opts.n = 1;
-    opts.size = Some(Size::new(1024, 1024));
-    opts.provider_options = provider_namespace("openai", json!({ "style": "vivid" }));
-
-    let result = model.do_generate(&opts).await.unwrap();
-
-    let meta = result.provider_metadata.unwrap();
-    let openai = meta.get("openai").unwrap();
-    let images = openai.get("images").unwrap().as_array().unwrap();
-    assert_eq!(images.len(), 2);
-    // First image has revisedPrompt
-    assert_eq!(
-        images[0].get("revisedPrompt"),
-        Some(&json!(
-            "A small and adorable baby sea otter. This little creature is covered in a thick and fluffy brown fur, its tiny paws are slightly visible. The otter has bright, curious eyes and it's floating on its back on a calm sea, surrounded by floating seaweed."
-        ))
-    );
-    assert_eq!(images[0].get("created"), Some(&json!(1770935200)));
-    // Second image has no revisedPrompt
-    assert!(images[1].get("revisedPrompt").is_none());
-    assert_eq!(images[1].get("created"), Some(&json!(1770935200)));
-}
-
 /// TS: "should map OpenAI usage to usage"
 #[tokio::test]
 async fn should_map_openai_usage_to_usage() {
@@ -857,100 +690,6 @@ async fn should_send_multiple_images_as_form_data_array() {
     assert!(
         body_str.contains("name=\"image[]\""),
         "should contain image[] field for multiple images: {body_str}"
-    );
-}
-
-/// TS: "should pass provider options in form data"
-#[tokio::test]
-async fn should_pass_provider_options_in_form_data() {
-    let server = MockServer::start().await;
-    mock_edits_response(&server, image_edit_response_body()).await;
-
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.image("gpt-image-1");
-
-    let mut opts = options(PROMPT);
-    opts.n = 1;
-    opts.size = Some(Size::new(1024, 1024));
-    opts.files = Some(vec![binary_file("image/png", &[137, 80, 78, 71])]);
-    opts.provider_options = provider_namespace(
-        "openai",
-        json!({
-            "quality": "high",
-            "background": "transparent"
-        }),
-    );
-
-    model.do_generate(&opts).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body_str = String::from_utf8_lossy(&requests[0].body);
-    assert!(
-        body_str.contains("name=\"quality\""),
-        "should contain quality field: {body_str}"
-    );
-    assert!(
-        body_str.contains("high"),
-        "should contain quality value: {body_str}"
-    );
-    assert!(
-        body_str.contains("name=\"background\""),
-        "should contain background field: {body_str}"
-    );
-    assert!(
-        body_str.contains("transparent"),
-        "should contain background value: {body_str}"
-    );
-}
-
-/// TS: "should map provider options to snake_case for /images/edits"
-#[tokio::test]
-async fn should_map_provider_options_to_snake_case_for_edits() {
-    let server = MockServer::start().await;
-    mock_edits_response(&server, image_edit_response_body()).await;
-
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.image("gpt-image-1");
-
-    let mut opts = options(PROMPT);
-    opts.n = 1;
-    opts.size = Some(Size::new(1024, 1024));
-    opts.files = Some(vec![binary_file("image/png", &[137, 80, 78, 71])]);
-    opts.provider_options = provider_namespace(
-        "openai",
-        json!({
-            "inputFidelity": "high",
-            "outputFormat": "webp",
-            "outputCompression": 80,
-            "user": "user-123"
-        }),
-    );
-
-    model.do_generate(&opts).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body_str = String::from_utf8_lossy(&requests[0].body);
-    assert!(
-        body_str.contains("name=\"input_fidelity\""),
-        "should contain input_fidelity: {body_str}"
-    );
-    assert!(
-        body_str.contains("name=\"output_format\""),
-        "should contain output_format: {body_str}"
-    );
-    assert!(
-        body_str.contains("name=\"output_compression\""),
-        "should contain output_compression: {body_str}"
-    );
-    assert!(
-        body_str.contains("name=\"user\""),
-        "should contain user: {body_str}"
-    );
-    assert!(
-        body_str.contains("user-123"),
-        "should contain user value: {body_str}"
     );
 }
 

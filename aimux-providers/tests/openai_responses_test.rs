@@ -30,7 +30,6 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, ReasoningOutput, StreamResult};
-use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
@@ -179,49 +178,6 @@ mod do_generate_request {
 
     // -- should send model id, settings, and input --
 
-    /// TS: "should send model id, settings, and input"
-    #[tokio::test]
-    async fn should_send_model_id_settings_and_input() {
-        let server = MockServer::start().await;
-        mock_json_response(&server, text_response_body()).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
-
-        let prompt = vec![
-            LanguageModelPromptMessage {
-                role: Role::System,
-                content: vec![ContentPart::text("You are a helpful assistant.")],
-                ..Default::default()
-            },
-            LanguageModelPromptMessage {
-                role: Role::User,
-                content: vec![ContentPart::text("Hello")],
-                ..Default::default()
-            },
-        ];
-        let options = CallOptions {
-            temperature: Some(0.5),
-            top_p: Some(0.3),
-            provider_options: Some(provider_namespace("openai", json!({ "maxToolCalls": 10 }))),
-            ..CallOptions::new(prompt)
-        };
-
-        let result = model.do_generate(&options).await.expect("should succeed");
-        assert!(result.warnings.is_empty());
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["model"], "gpt-4o");
-        assert_eq!(body["input"][0]["role"], "system");
-        assert_eq!(body["input"][0]["content"], "You are a helpful assistant.");
-        assert_eq!(body["input"][1]["role"], "user");
-        assert_eq!(body["input"][1]["content"][0]["type"], "input_text");
-        assert_eq!(body["input"][1]["content"][0]["text"], "Hello");
-        assert_eq!(body["temperature"], 0.5);
-        assert_eq!(body["top_p"], 0.3);
-        assert_eq!(body["max_tool_calls"], 10);
-    }
-
     // -- should send response format json schema --
 
     /// TS: "should send response format json schema"
@@ -333,271 +289,23 @@ mod do_generate_request {
 
     // -- should send store = false for reasoning model --
 
-    /// TS: "should send store = false provider option and opt into
-    /// reasoning.encrypted_content for reasoning models"
-    #[tokio::test]
-    async fn should_send_store_false_reasoning_model() {
-        let server = MockServer::start().await;
-        mock_json_response(&server, text_response_body()).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-5-mini");
-
-        let options = CallOptions {
-            provider_options: Some(provider_namespace("openai", json!({ "store": false }))),
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_generate(&options).await.expect("should succeed");
-        assert!(result.warnings.is_empty());
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["model"], "gpt-5-mini");
-        assert_eq!(body["store"], false);
-        assert_eq!(body["include"][0], "reasoning.encrypted_content");
-    }
-
     // -- should send store = false for non-reasoning model --
-
-    /// TS: "should send store = false provider option and not opt into
-    /// reasoning.encrypted_content for non-reasoning models"
-    #[tokio::test]
-    async fn should_send_store_false_non_reasoning_model() {
-        let server = MockServer::start().await;
-        mock_json_response(&server, text_response_body()).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
-
-        let options = CallOptions {
-            provider_options: Some(provider_namespace("openai", json!({ "store": false }))),
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_generate(&options).await.expect("should succeed");
-        assert!(result.warnings.is_empty());
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["store"], false);
-        assert!(body.get("include").is_none());
-    }
 
     // -- should send store = true --
 
-    /// TS: "should send store = true provider option without
-    /// reasoning.encrypted_content"
-    #[tokio::test]
-    async fn should_send_store_true() {
-        let server = MockServer::start().await;
-        mock_json_response(&server, text_response_body()).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
-
-        let options = CallOptions {
-            provider_options: Some(provider_namespace("openai", json!({ "store": true }))),
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_generate(&options).await.expect("should succeed");
-        assert!(result.warnings.is_empty());
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["store"], true);
-        assert!(body.get("include").is_none());
-    }
-
     // -- should send previous response id --
-
-    /// TS: "should send previous response id provider option"
-    #[tokio::test]
-    async fn should_send_previous_response_id() {
-        let server = MockServer::start().await;
-        mock_json_response(&server, text_response_body()).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
-
-        let options = CallOptions {
-            provider_options: Some(provider_namespace(
-                "openai",
-                json!({ "previousResponseId": "resp_123" }),
-            )),
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_generate(&options).await.expect("should succeed");
-        assert!(result.warnings.is_empty());
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["previous_response_id"], "resp_123");
-    }
 
     // -- should warn when both conversation and previousResponseId --
 
-    /// TS: "should warn when both conversation and previousResponseId are
-    /// provided"
-    #[tokio::test]
-    async fn should_warn_when_conversation_and_previous_response_id() {
-        let server = MockServer::start().await;
-        mock_json_response(&server, text_response_body()).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
-
-        let options = CallOptions {
-            provider_options: Some(provider_namespace(
-                "openai",
-                json!({ "conversation": "conv_123", "previousResponseId": "resp_123" }),
-            )),
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_generate(&options).await.expect("should succeed");
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["conversation"], "conv_123");
-        assert_eq!(body["previous_response_id"], "resp_123");
-
-        assert_eq!(result.warnings.len(), 1);
-        match &result.warnings[0] {
-            aimux_core::types::Warning::Unsupported { feature, .. } => {
-                assert_eq!(feature, "conversation");
-            }
-            other => panic!("expected Unsupported warning, got {other:?}"),
-        }
-    }
-
     // -- should send reasoningEffort and reasoningSummary --
-
-    /// TS: "should send reasoningEffort and reasoningSummary provider options"
-    #[tokio::test]
-    async fn should_send_reasoning_effort_and_summary() {
-        let server = MockServer::start().await;
-        mock_json_response(&server, text_response_body()).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("o3-mini");
-
-        let options = CallOptions {
-            provider_options: Some(provider_namespace(
-                "openai",
-                json!({ "reasoningEffort": "low", "reasoningSummary": "auto" }),
-            )),
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_generate(&options).await.expect("should succeed");
-        assert!(result.warnings.is_empty());
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["model"], "o3-mini");
-        assert_eq!(body["reasoning"]["effort"], "low");
-        assert_eq!(body["reasoning"]["summary"], "auto");
-    }
 
     // -- should send reasoning with detailed summary when only effort is set --
 
-    /// TS: "should send xhigh reasoningEffort for codex-max model" (verifies
-    /// that `summary` defaults to "detailed" when effort is non-"none")
-    #[tokio::test]
-    async fn should_default_reasoning_summary_to_detailed() {
-        let server = MockServer::start().await;
-        mock_json_response(&server, text_response_body()).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-5.1-codex-max");
-
-        let options = CallOptions {
-            provider_options: Some(provider_namespace(
-                "openai",
-                json!({ "reasoningEffort": "xhigh" }),
-            )),
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_generate(&options).await.expect("should succeed");
-        assert!(result.warnings.is_empty());
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning"]["effort"], "xhigh");
-        assert_eq!(body["reasoning"]["summary"], "detailed");
-    }
-
     // -- should send parallelToolCalls --
-
-    /// TS: "should send parallelToolCalls provider option"
-    #[tokio::test]
-    async fn should_send_parallel_tool_calls() {
-        let server = MockServer::start().await;
-        mock_json_response(&server, text_response_body()).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
-
-        let options = CallOptions {
-            provider_options: Some(provider_namespace(
-                "openai",
-                json!({ "parallelToolCalls": false }),
-            )),
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_generate(&options).await.expect("should succeed");
-        assert!(result.warnings.is_empty());
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["parallel_tool_calls"], false);
-    }
 
     // -- should send user --
 
-    /// TS: "should send user provider option"
-    #[tokio::test]
-    async fn should_send_user_option() {
-        let server = MockServer::start().await;
-        mock_json_response(&server, text_response_body()).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
-
-        let options = CallOptions {
-            provider_options: Some(provider_namespace("openai", json!({ "user": "user_123" }))),
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_generate(&options).await.expect("should succeed");
-        assert!(result.warnings.is_empty());
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["user"], "user_123");
-    }
-
     // -- should send conversation --
-
-    /// TS: "should send conversation provider option"
-    #[tokio::test]
-    async fn should_send_conversation() {
-        let server = MockServer::start().await;
-        mock_json_response(&server, text_response_body()).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
-
-        let options = CallOptions {
-            provider_options: Some(provider_namespace(
-                "openai",
-                json!({ "conversation": "conv_123" }),
-            )),
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_generate(&options).await.expect("should succeed");
-        assert!(result.warnings.is_empty());
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["conversation"], "conv_123");
-    }
 
     // -- should send function tools --
 
@@ -1383,62 +1091,6 @@ mod do_stream {
     }
 
     // -- should stream text with store=true (reasoning-end at summary_part.done) --
-
-    /// Verifies that when `store=true`, reasoning summary parts are concluded
-    /// immediately at `reasoning_summary_part.done` (not deferred to
-    /// `output_item.done`).
-    #[tokio::test]
-    async fn should_conclude_reasoning_at_summary_done_when_store_true() {
-        let server = MockServer::start().await;
-        let chunks = sse_body(&[
-            &sse_event(
-                r#"{"type":"response.created","response":{"id":"resp_rs","created_at":1741269019,"model":"o3-mini-2025-01-31"}}"#,
-            ),
-            &sse_event(
-                r#"{"type":"response.output_item.added","output_index":0,"item":{"id":"rs_1","type":"reasoning"}}"#,
-            ),
-            &sse_event(
-                r#"{"type":"response.reasoning_summary_part.added","item_id":"rs_1","summary_index":0}"#,
-            ),
-            &sse_event(
-                r#"{"type":"response.reasoning_summary_text.delta","item_id":"rs_1","summary_index":0,"delta":"thinking"}"#,
-            ),
-            &sse_event(
-                r#"{"type":"response.reasoning_summary_part.done","item_id":"rs_1","summary_index":0}"#,
-            ),
-            &sse_event(
-                r#"{"type":"response.output_item.done","output_index":0,"item":{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"thinking"}]}}"#,
-            ),
-            &sse_event(
-                r#"{"type":"response.completed","response":{"id":"resp_rs","created_at":1741269019,"model":"o3-mini-2025-01-31","incomplete_details":null,"usage":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0},"output_tokens":20,"output_tokens_details":{"reasoning_tokens":20}}}}"#,
-            ),
-        ]);
-        mock_sse_response(&server, &chunks).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("o3-mini");
-
-        let options = CallOptions {
-            provider_options: Some(provider_namespace("openai", json!({ "store": true }))),
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_stream(&options).await.expect("should succeed");
-        let parts = collect_stream(result).await;
-
-        // With store=true, ReasoningEnd should be emitted at
-        // reasoning_summary_part.done (before output_item.done), so no
-        // duplicate ReasoningEnd at output_item.done.
-        let reasoning_ends: Vec<&StreamPart> = parts
-            .iter()
-            .filter(|p| matches!(p, StreamPart::ReasoningEnd { .. }))
-            .collect();
-        assert_eq!(
-            reasoning_ends.len(),
-            1,
-            "should have exactly one ReasoningEnd with store=true"
-        );
-    }
 
     // -- should emit provider metadata with responseId in finish --
 

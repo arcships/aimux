@@ -625,8 +625,12 @@ impl LanguageModel for BedrockModel {
 /// so consumers reading either key see it.
 fn reasoning_signature_meta(sig: Option<String>) -> Option<ProviderMetadata> {
     sig.map(|s| {
-        let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": &s }));
-        metadata.extend(provider_namespace("bedrock", json!({ "signature": s })));
+        let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": &s }))
+            .expect("provider metadata must be an object");
+        metadata.extend(
+            provider_namespace("bedrock", json!({ "signature": s }))
+                .expect("provider metadata must be an object"),
+        );
         metadata
     })
 }
@@ -667,8 +671,12 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
                 .unwrap_or("")
                 .to_string();
             let provider_metadata = rt.get("signature").and_then(|v| v.as_str()).map(|sig| {
-                let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": sig }));
-                metadata.extend(provider_namespace("bedrock", json!({ "signature": sig })));
+                let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": sig }))
+                    .expect("provider metadata must be an object");
+                metadata.extend(
+                    provider_namespace("bedrock", json!({ "signature": sig }))
+                        .expect("provider metadata must be an object"),
+                );
                 metadata
             });
             content.push(GenerateContent::Reasoning(ReasoningOutput {
@@ -682,11 +690,12 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
                 .unwrap_or("")
                 .to_string();
             let mut metadata =
-                provider_namespace("amazonBedrock", json!({ "redactedData": &data }));
-            metadata.extend(provider_namespace(
-                "bedrock",
-                json!({ "redactedData": data }),
-            ));
+                provider_namespace("amazonBedrock", json!({ "redactedData": &data }))
+                    .expect("provider metadata must be an object");
+            metadata.extend(
+                provider_namespace("bedrock", json!({ "redactedData": data }))
+                    .expect("provider metadata must be an object"),
+            );
             let provider_metadata = Some(metadata);
             content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text: String::new(),

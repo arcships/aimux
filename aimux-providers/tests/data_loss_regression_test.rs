@@ -801,10 +801,13 @@ async fn finding_2_anthropic_web_search_result_mapped_and_sources_emitted() {
     ] {
         assert_eq!(
             by_url.get(url).copied(),
-            Some(&aimux_core::shared::provider_namespace(
-                "anthropic",
-                json!({ "pageAge": expected_page_age })
-            )),
+            Some(
+                &aimux_core::shared::provider_namespace(
+                    "anthropic",
+                    json!({ "pageAge": expected_page_age })
+                )
+                .unwrap()
+            ),
             "source {url}: providerMetadata must hold exactly anthropic.pageAge"
         );
     }

@@ -362,7 +362,10 @@ pub(crate) fn tool_call_caller_metadata(
         }),
         ToolCallCaller::Direct => json!({ "type": "direct" }),
     };
-    Some(provider_namespace("anthropic", json!({ "caller": caller })))
+    Some(
+        provider_namespace("anthropic", json!({ "caller": caller }))
+            .expect("provider metadata must be an object"),
+    )
 }
 
 fn is_tool_search_provider_name(name: &str) -> bool {
@@ -451,12 +454,15 @@ pub(crate) fn stream_parts_for_result_block(
                     source_type: "url".to_string(),
                     url: str_field(result, "url"),
                     title: str_field(result, "title"),
-                    provider_metadata: Some(provider_namespace(
-                        "anthropic",
-                        json!({
-                            "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
-                        }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace(
+                            "anthropic",
+                            json!({
+                                "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
+                            }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
                 })
             }));
             parts
@@ -528,6 +534,7 @@ pub(crate) fn stream_parts_for_result_block(
                         "anthropic",
                         json!({ "type": "mcp-tool-use", "serverName": server }),
                     )
+                    .expect("provider metadata must be an object")
                 }),
             })]
         }
@@ -600,10 +607,10 @@ pub(crate) fn parse_anthropic_content(
             } => {
                 content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: thinking.clone(),
-                    provider_metadata: Some(provider_namespace(
-                        "anthropic",
-                        json!({ "signature": signature }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace("anthropic", json!({ "signature": signature }))
+                            .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             // Provider-executed (server-side) tool calls are surfaced as tool
@@ -636,20 +643,23 @@ pub(crate) fn parse_anthropic_content(
                     provider_executed: Some(true),
                     dynamic: Some(true),
                     thought_signature: None,
-                    provider_metadata: Some(provider_namespace(
-                        "anthropic",
-                        json!({ "type": "mcp-tool-use", "serverName": server_name }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace(
+                            "anthropic",
+                            json!({ "type": "mcp-tool-use", "serverName": server_name }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             // Redacted thinking — upstream emits as reasoning with redactedData
             ContentBlock::RedactedThinking { data } => {
                 content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: String::new(),
-                    provider_metadata: Some(provider_namespace(
-                        "anthropic",
-                        json!({ "redactedData": data }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace("anthropic", json!({ "redactedData": data }))
+                            .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             // ── Server-tool result blocks → GenerateContent::ToolResult ──
@@ -684,13 +694,16 @@ pub(crate) fn parse_anthropic_content(
                                 source_type: "url".to_string(),
                                 url: str_field(result, "url"),
                                 title: str_field(result, "title"),
-                                provider_metadata: Some(provider_namespace(
-                                    "anthropic",
-                                    json!({
-                                        "pageAge": result.get("page_age").cloned()
-                                            .unwrap_or(Value::Null),
-                                    }),
-                                )),
+                                provider_metadata: Some(
+                                    provider_namespace(
+                                        "anthropic",
+                                        json!({
+                                            "pageAge": result.get("page_age").cloned()
+                                                .unwrap_or(Value::Null),
+                                        }),
+                                    )
+                                    .expect("provider metadata must be an object"),
+                                ),
                             }));
                         }
                     }
@@ -815,6 +828,7 @@ pub(crate) fn parse_anthropic_content(
                             "anthropic",
                             json!({ "type": "mcp-tool-use", "serverName": server }),
                         )
+                        .expect("provider metadata must be an object")
                     }),
                 }));
             }
@@ -1112,7 +1126,7 @@ pub(crate) async fn anthropic_stream_core(
                                         provider_metadata: Some(provider_namespace("anthropic", json!({
                                             "type": "mcp-tool-use",
                                             "serverName": server_name,
-                                        }))),
+                                        })).expect("provider metadata must be an object")),
                                     }));
                                 }
                                 // Redacted thinking — emit as ReasoningStart.
@@ -1120,7 +1134,7 @@ pub(crate) async fn anthropic_stream_core(
                                     let id = index.to_string();
                                     yield Ok(StreamPart::ReasoningStart {
                                         id: id.clone(),
-                                        provider_metadata: Some(provider_namespace("anthropic", json!({ "redactedData": data }))),
+                                        provider_metadata: Some(provider_namespace("anthropic", json!({ "redactedData": data })).expect("provider metadata must be an object")),
                                     });
                                     blocks.insert(
                                         index,
@@ -1285,7 +1299,7 @@ pub(crate) async fn anthropic_stream_core(
                                         yield Ok(StreamPart::ReasoningEnd {
                                             id: index.to_string(),
                                             provider_metadata: signature.map(|s| {
-                                                provider_namespace("anthropic", json!({ "signature": s }))
+                                                provider_namespace("anthropic", json!({ "signature": s })).expect("provider metadata must be an object")
                                             }),
                                         });
                                     }

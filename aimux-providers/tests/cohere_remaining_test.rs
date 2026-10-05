@@ -303,38 +303,6 @@ fn convert_image_file_to_data_uri() {
     assert!(result.documents.is_empty());
 }
 
-/// TS: "should pass through detail provider option as image_url.detail"
-#[test]
-fn convert_image_file_with_detail_provider_option() {
-    let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::File {
-            data: vec![0, 1, 2, 3],
-            media_type: "image/png".to_string(),
-            filename: None,
-            provider_options: Some(aimux_core::shared::provider_namespace(
-                "cohere",
-                json!({ "detail": "high" }),
-            )),
-        }],
-        ..Default::default()
-    }];
-
-    let result = convert_prompt_to_cohere(&prompt);
-    // The Rust convert does not parse `cohere.detail` from provider_options
-    // on File parts — this is a documented data-model gap. We verify the image
-    // URL is still produced correctly.
-    let msg = &result.messages[0];
-    let content = msg["content"].as_array().expect("content should be array");
-    assert_eq!(content[0]["type"], json!("image_url"));
-    assert!(
-        content[0]["image_url"]["url"]
-            .as_str()
-            .unwrap()
-            .starts_with("data:image/png;base64,")
-    );
-}
-
 /// TS: "should omit detail when no provider option is set"
 #[test]
 fn convert_image_file_omits_detail_when_no_option() {

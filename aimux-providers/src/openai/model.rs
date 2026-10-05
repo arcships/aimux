@@ -382,7 +382,8 @@ pub async fn execute_generate(
             pm_openai["rejectedPredictionTokens"] = json!(rpt);
         }
     }
-    let provider_metadata = Some(provider_namespace("openai", pm_openai));
+    let provider_metadata =
+        Some(provider_namespace("openai", pm_openai).expect("provider metadata must be an object"));
 
     Ok(GenerateResult {
         content,
@@ -760,7 +761,7 @@ pub async fn execute_stream(
                     pm_openai["rejectedPredictionTokens"] = json!(rpt);
                 }
             }
-        let provider_metadata = provider_namespace("openai", pm_openai);
+        let provider_metadata = provider_namespace("openai", pm_openai).expect("provider metadata must be an object");
 
         // Final part: Finish.
         yield Ok(StreamPart::Finish {

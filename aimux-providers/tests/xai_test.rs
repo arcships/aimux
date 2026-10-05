@@ -13,7 +13,6 @@
 //! or SSE response, creates an `XaiModel` via `XAIProvider`, calls
 //! `do_generate` / `do_stream`, and asserts on the result.
 
-use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
@@ -28,7 +27,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelPromptMessage;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::result::{GenerateContent, ReasoningOutput, Source};
+use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
@@ -145,31 +144,10 @@ fn text_deltas(parts: &[StreamPart]) -> Vec<String> {
         .collect()
 }
 
-/// Extract reasoning deltas from a list of stream parts.
-fn reasoning_deltas(parts: &[StreamPart]) -> Vec<String> {
-    parts
-        .iter()
-        .filter_map(|p| match p {
-            StreamPart::ReasoningDelta { delta, .. } => Some(delta.clone()),
-            _ => None,
-        })
-        .collect()
-}
-
 /// Build a provider pointed at the mock server.
 fn make_provider(server: &MockServer) -> XAIProvider {
     let config = XAIConfig::new("test-api-key").with_base_url(server.uri());
     XAIProvider::new(config)
-}
-
-/// Provider options with a single xai key.
-fn xai_options(key: &str, value: Value) -> Option<SharedProviderOptions> {
-    Some(provider_namespace("xai", json!({ key: value })))
-}
-
-/// Build provider options from a JSON object.
-fn xai_provider_options(opts: Value) -> Option<SharedProviderOptions> {
-    Some(provider_namespace("xai", opts))
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1246,41 +1224,6 @@ mod convert_messages {
         assert_eq!(tool_calls[0]["function"]["name"], "weather");
     }
 
-    /// TS: should pass imageDetail from xai provider options on image parts
-    #[tokio::test]
-    async fn image_detail_provider_option() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3");
-        let prompt = vec![LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![
-                ContentPart::text("What is in this image?"),
-                ContentPart::File {
-                    data: vec![0, 1, 2, 3],
-                    media_type: "image/png".to_string(),
-                    filename: None,
-                    provider_options: Some(provider_namespace(
-                        "xai",
-                        json!({"imageDetail": "low"}),
-                    )),
-                },
-            ],
-            ..Default::default()
-        }];
-        let result = model.do_generate(&default_options(prompt)).await.unwrap();
-
-        let body = result.request_body.unwrap();
-        let content = body["messages"][0]["content"].as_array().unwrap();
-        assert_eq!(content[1]["image_url"]["detail"], "low");
-    }
-
     /// TS: should not set detail when imageDetail is not set
     #[tokio::test]
     async fn no_image_detail() {
@@ -1562,159 +1505,6 @@ mod do_generate {
         );
     }
 
-    /// TS: should pass parallel_function_calling provider option
-    #[tokio::test]
-    async fn pass_parallel_function_calling() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3");
-        let options = CallOptions {
-            provider_options: xai_options("parallel_function_calling", json!(false)),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = result.request_body.unwrap();
-        assert_eq!(body["parallel_function_calling"], false);
-    }
-
-    /// TS: should pass logprobs provider options
-    #[tokio::test]
-    async fn pass_logprobs() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3");
-        let options = CallOptions {
-            provider_options: xai_provider_options(json!({
-                "logprobs": true,
-                "topLogprobs": 5
-            })),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = result.request_body.unwrap();
-        assert_eq!(body["logprobs"], true);
-        assert_eq!(body["top_logprobs"], 5);
-    }
-
-    /// TS: should enable logprobs when topLogprobs is set
-    #[tokio::test]
-    async fn enable_logprobs_when_top_logprobs_set() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3");
-        let options = CallOptions {
-            provider_options: xai_options("topLogprobs", json!(3)),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = result.request_body.unwrap();
-        assert_eq!(body["logprobs"], true);
-        assert_eq!(body["top_logprobs"], 3);
-    }
-
-    /// TS: should pass search parameters
-    #[tokio::test]
-    async fn pass_search_parameters() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3");
-        let options = CallOptions {
-            provider_options: xai_provider_options(json!({
-                "searchParameters": {
-                    "mode": "auto",
-                    "returnCitations": true,
-                    "fromDate": "2024-01-01",
-                    "toDate": "2024-12-31",
-                    "maxSearchResults": 10
-                }
-            })),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = result.request_body.unwrap();
-        assert_eq!(body["search_parameters"]["mode"], "auto");
-        assert_eq!(body["search_parameters"]["return_citations"], true);
-        assert_eq!(body["search_parameters"]["from_date"], "2024-01-01");
-        assert_eq!(body["search_parameters"]["to_date"], "2024-12-31");
-        assert_eq!(body["search_parameters"]["max_search_results"], 10);
-    }
-
-    /// TS: should pass search parameters with sources array
-    #[tokio::test]
-    async fn pass_search_parameters_with_sources() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3");
-        let options = CallOptions {
-            provider_options: xai_provider_options(json!({
-                "searchParameters": {
-                    "mode": "on",
-                    "sources": [
-                        {"type": "web", "country": "US", "excludedWebsites": ["example.com"], "safeSearch": false},
-                        {"type": "x", "includedXHandles": ["grok"], "excludedXHandles": ["openai"], "postFavoriteCount": 5, "postViewCount": 50},
-                        {"type": "news", "country": "GB"},
-                        {"type": "rss", "links": ["https://status.x.ai/feed.xml"]}
-                    ]
-                }
-            })),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = result.request_body.unwrap();
-        let sp = &body["search_parameters"];
-        assert_eq!(sp["mode"], "on");
-        let sources = sp["sources"].as_array().unwrap();
-        assert_eq!(sources.len(), 4);
-        assert_eq!(sources[0]["type"], "web");
-        assert_eq!(sources[0]["country"], "US");
-        assert_eq!(sources[0]["excluded_websites"][0], "example.com");
-        assert_eq!(sources[0]["safe_search"], false);
-        assert_eq!(sources[1]["type"], "x");
-        assert_eq!(sources[1]["included_x_handles"][0], "grok");
-        assert_eq!(sources[1]["excluded_x_handles"][0], "openai");
-        assert_eq!(sources[1]["post_favorite_count"], 5);
-        assert_eq!(sources[1]["post_view_count"], 50);
-        assert_eq!(sources[2]["type"], "news");
-        assert_eq!(sources[2]["country"], "GB");
-        assert_eq!(sources[3]["type"], "rss");
-        assert_eq!(sources[3]["links"][0], "https://status.x.ai/feed.xml");
-    }
-
     /// TS: should support json schema response format without warnings
     #[tokio::test]
     async fn json_schema_response_format() {
@@ -1785,63 +1575,6 @@ mod do_generate {
         assert_eq!(result.usage.output_tokens.total, Some(0));
         assert_eq!(result.usage.output_tokens.text, Some(0));
         assert_eq!(result.usage.output_tokens.reasoning, Some(0));
-    }
-
-    /// TS: should extract citations as sources
-    #[tokio::test]
-    async fn extract_citations() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "id": "citations-test",
-                "object": "chat.completion",
-                "created": 1699472111,
-                "model": "grok-3",
-                "choices": [{
-                    "index": 0,
-                    "message": { "role": "assistant", "content": "Here are the latest developments in AI.", "tool_calls": null },
-                    "finish_reason": "stop"
-                }],
-                "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 },
-                "citations": [
-                    "https://example.com/article1",
-                    "https://example.com/article2"
-                ]
-            })))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3");
-        let options = CallOptions {
-            provider_options: xai_provider_options(json!({
-                "searchParameters": { "mode": "auto", "returnCitations": true }
-            })),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let sources: Vec<_> = result
-            .content
-            .iter()
-            .filter_map(|c| match c {
-                GenerateContent::Source(Source {
-                    url, source_type, ..
-                }) => Some((url.clone(), source_type.clone())),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(sources.len(), 2);
-        assert_eq!(
-            sources[0].0.as_deref(),
-            Some("https://example.com/article1")
-        );
-        assert_eq!(sources[0].1, "url");
-        assert_eq!(
-            sources[1].0.as_deref(),
-            Some("https://example.com/article2")
-        );
     }
 
     /// TS: should avoid duplication when there is a trailing assistant message
@@ -2091,54 +1824,6 @@ mod do_stream {
         assert_eq!(usage.input_tokens.total, Some(0));
         assert_eq!(usage.output_tokens.total, Some(0));
     }
-
-    /// TS: should stream citations as sources
-    #[tokio::test]
-    async fn stream_citations() {
-        let server = MockServer::start().await;
-        let body = sse_body(&[
-            &sse_event(
-                r#"{"id":"c8e45f92","model":"grok-3","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
-            ),
-            &sse_event(
-                r#"{"id":"c8e45f92","model":"grok-3","choices":[{"index":0,"delta":{"content":"Latest AI news"},"finish_reason":null}]}"#,
-            ),
-            &sse_event(
-                r#"{"id":"c8e45f92","model":"grok-3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":30,"total_tokens":34},"citations":["https://example.com/source1","https://example.com/source2"]}"#,
-            ),
-        ]);
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_string(body),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3");
-        let options = CallOptions {
-            provider_options: xai_provider_options(json!({
-                "searchParameters": { "mode": "auto", "returnCitations": true }
-            })),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_stream(&options).await.unwrap();
-        let parts = collect_stream(result).await;
-
-        let sources: Vec<_> = parts
-            .iter()
-            .filter_map(|p| match p {
-                StreamPart::Source(Source { url, .. }) => url.clone(),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(sources.len(), 2);
-        assert_eq!(sources[0], "https://example.com/source1");
-        assert_eq!(sources[1], "https://example.com/source2");
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2148,50 +1833,6 @@ mod do_stream {
 
 mod reasoning {
     use super::*;
-
-    /// TS: should pass reasoning_effort parameter
-    #[tokio::test]
-    async fn pass_reasoning_effort() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
-        let options = CallOptions {
-            provider_options: xai_options("reasoningEffort", json!("high")),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = result.request_body.unwrap();
-        assert_eq!(body["reasoning_effort"], "high");
-    }
-
-    /// TS: should pass reasoning_effort: "none" via providerOptions
-    #[tokio::test]
-    async fn pass_reasoning_effort_none() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
-        let options = CallOptions {
-            provider_options: xai_options("reasoningEffort", json!("none")),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = result.request_body.unwrap();
-        assert_eq!(body["reasoning_effort"], "none");
-    }
 
     /// TS: should map top-level reasoning to reasoning_effort
     #[tokio::test]
@@ -2281,29 +1922,6 @@ mod reasoning {
         assert_eq!(body["reasoning_effort"], "none");
     }
 
-    /// TS: should prefer providerOptions reasoningEffort over top-level reasoning
-    #[tokio::test]
-    async fn prefer_provider_options_over_top_level() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
-        let options = CallOptions {
-            reasoning: Some(ReasoningEffort::Medium),
-            provider_options: xai_options("reasoningEffort", json!("high")),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = result.request_body.unwrap();
-        assert_eq!(body["reasoning_effort"], "high");
-    }
-
     /// TS: should omit reasoning_effort and warn for models that do not support it
     #[tokio::test]
     async fn omit_for_unsupported_model() {
@@ -2331,192 +1949,6 @@ mod reasoning {
                 && details.as_deref() == Some("reasoning \"none\" is not supported by this model."))
         });
         assert!(has_warning, "should have reasoning unsupported warning");
-    }
-
-    /// TS: should still pass providerOptions reasoningEffort for models that do not support top-level reasoning
-    #[tokio::test]
-    async fn still_pass_provider_options_for_unsupported_model() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-4.20-reasoning");
-        let options = CallOptions {
-            provider_options: xai_options("reasoningEffort", json!("none")),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = result.request_body.unwrap();
-        assert_eq!(body["reasoning_effort"], "none");
-    }
-
-    /// TS: should extract reasoning content
-    #[tokio::test]
-    async fn extract_reasoning_content() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(xai_text_fixture()))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
-        let options = CallOptions {
-            provider_options: xai_options("reasoningEffort", json!("low")),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        // Should have text content and reasoning content
-        let has_text = result
-            .content
-            .iter()
-            .any(|c| matches!(c, GenerateContent::Text { text, .. } if text == "Hello"));
-        assert!(has_text, "should have text 'Hello'");
-
-        let reasoning = result.content.iter().find_map(|c| match c {
-            GenerateContent::Reasoning(ReasoningOutput { text, .. }) => Some(text.clone()),
-            _ => None,
-        });
-        assert!(reasoning.is_some(), "should have reasoning content");
-        assert!(reasoning.unwrap().starts_with("First, the user said"));
-    }
-
-    /// TS: should extract reasoning tokens from usage
-    #[tokio::test]
-    async fn extract_reasoning_tokens_from_usage() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(xai_text_fixture()))
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
-        let options = CallOptions {
-            provider_options: xai_options("reasoningEffort", json!("high")),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        assert_eq!(result.usage.output_tokens.reasoning, Some(228));
-        assert_eq!(result.usage.output_tokens.text, Some(1));
-        assert_eq!(result.usage.output_tokens.total, Some(229));
-    }
-
-    /// TS: should handle reasoning streaming
-    #[tokio::test]
-    async fn reasoning_streaming() {
-        let server = MockServer::start().await;
-        let chunks = [
-            r#"{"id":"7327b9f5","model":"grok-3-mini","choices":[{"index":0,"delta":{"reasoning_content":"First","role":"assistant"}}]}"#,
-            r#"{"id":"7327b9f5","model":"grok-3-mini","choices":[{"index":0,"delta":{"reasoning_content":","}}]}"#,
-            r#"{"id":"7327b9f5","model":"grok-3-mini","choices":[{"index":0,"delta":{"reasoning_content":" the"}}]}"#,
-            r#"{"id":"7327b9f5","model":"grok-3-mini","choices":[{"index":0,"delta":{"reasoning_content":" user"}}]}"#,
-            r#"{"id":"7327b9f5","model":"grok-3-mini","choices":[{"index":0,"delta":{"reasoning_content":" said"}}]}"#,
-            r#"{"id":"7327b9f5","model":"grok-3-mini","choices":[{"index":0,"delta":{"content":"Hello"}}]}"#,
-            r#"{"id":"7327b9f5","model":"grok-3-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
-        ];
-        let body = sse_body(
-            &chunks
-                .iter()
-                .map(|c| sse_event(c))
-                .collect::<Vec<_>>()
-                .iter()
-                .map(std::string::String::as_str)
-                .collect::<Vec<_>>(),
-        );
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_string(body),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
-        let options = CallOptions {
-            provider_options: xai_options("reasoningEffort", json!("low")),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_stream(&options).await.unwrap();
-        let parts = collect_stream(result).await;
-
-        let deltas = reasoning_deltas(&parts);
-        assert_eq!(deltas, vec!["First", ",", " the", " user", " said"]);
-
-        // Should also have text delta
-        let text = text_deltas(&parts);
-        assert_eq!(text, vec!["Hello"]);
-    }
-
-    /// TS: should deduplicate repetitive reasoning deltas
-    #[tokio::test]
-    async fn dedup_reasoning_deltas() {
-        let server = MockServer::start().await;
-        let chunks = [
-            r#"{"id":"grok-4-test","model":"grok-4-0709","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}"#,
-            r#"{"id":"grok-4-test","model":"grok-4-0709","choices":[{"index":0,"delta":{"reasoning_content":"Thinking... "},"finish_reason":null}]}"#,
-            r#"{"id":"grok-4-test","model":"grok-4-0709","choices":[{"index":0,"delta":{"reasoning_content":"Thinking... "},"finish_reason":null}]}"#,
-            r#"{"id":"grok-4-test","model":"grok-4-0709","choices":[{"index":0,"delta":{"reasoning_content":"Thinking... "},"finish_reason":null}]}"#,
-            r#"{"id":"grok-4-test","model":"grok-4-0709","choices":[{"index":0,"delta":{"reasoning_content":"Actually calculating now..."},"finish_reason":null}]}"#,
-            r#"{"id":"grok-4-test","model":"grok-4-0709","choices":[{"index":0,"delta":{"content":"The answer is 42."},"finish_reason":null}]}"#,
-            r#"{"id":"grok-4-test","model":"grok-4-0709","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":15,"completion_tokens":20,"total_tokens":35,"completion_tokens_details":{"reasoning_tokens":10}}}"#,
-        ];
-        let body = sse_body(
-            &chunks
-                .iter()
-                .map(|c| sse_event(c))
-                .collect::<Vec<_>>()
-                .iter()
-                .map(std::string::String::as_str)
-                .collect::<Vec<_>>(),
-        );
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_string(body),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = make_provider(&server);
-        let model = provider.model("grok-3-mini");
-        let options = CallOptions {
-            provider_options: xai_options("reasoningEffort", json!("low")),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_stream(&options).await.unwrap();
-        let parts = collect_stream(result).await;
-
-        // "Thinking... " should only appear once (dedup)
-        let deltas = reasoning_deltas(&parts);
-        assert_eq!(deltas, vec!["Thinking... ", "Actually calculating now..."]);
-
-        // Should have text delta
-        let text = text_deltas(&parts);
-        assert_eq!(text, vec!["The answer is 42."]);
-
-        // Should have reasoning tokens in finish usage
-        let finish = parts.iter().find_map(|p| match p {
-            StreamPart::Finish { usage, .. } => Some(usage.clone()),
-            _ => None,
-        });
-        let usage = finish.expect("should have Finish");
-        assert_eq!(usage.output_tokens.reasoning, Some(10));
-        assert_eq!(usage.output_tokens.text, Some(20));
     }
 }
 

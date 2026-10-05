@@ -306,7 +306,10 @@ impl LanguageModel for XaiResponsesModel {
                         }
                         content.push(GenerateContent::Reasoning(ReasoningOutput {
                             text: reasoning_text,
-                            provider_metadata: Some(provider_namespace("xai", meta)),
+                            provider_metadata: Some(
+                                provider_namespace("xai", meta)
+                                    .expect("provider metadata must be an object"),
+                            ),
                         }));
                     }
                 }
@@ -328,10 +331,10 @@ impl LanguageModel for XaiResponsesModel {
 
         let (usage, provider_metadata) = if let Some(u) = &data.usage {
             let meta = if u.cost_in_usd_ticks.is_some() {
-                Some(provider_namespace(
-                    "xai",
-                    json!({ "costInUsdTicks": u.cost_in_usd_ticks }),
-                ))
+                Some(
+                    provider_namespace("xai", json!({ "costInUsdTicks": u.cost_in_usd_ticks }))
+                        .expect("provider metadata must be an object"),
+                )
             } else {
                 None
             };
@@ -448,7 +451,7 @@ impl LanguageModel for XaiResponsesModel {
                                 active_reasoning.insert(item_id.to_string(), ());
                                 yield Ok(StreamPart::ReasoningStart {
                                     id: block_id,
-                                    provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id }))),
+                                    provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
                                 });
                             }
                             continue;
@@ -462,7 +465,7 @@ impl LanguageModel for XaiResponsesModel {
                             yield Ok(StreamPart::ReasoningDelta {
                                 id: block_id,
                                 delta: delta.to_string(),
-                                provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id }))),
+                                provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
                             });
                             continue;
                         }
@@ -481,13 +484,13 @@ impl LanguageModel for XaiResponsesModel {
                                 active_reasoning.insert(item_id.to_string(), ());
                                 yield Ok(StreamPart::ReasoningStart {
                                     id: block_id.clone(),
-                                    provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id }))),
+                                    provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
                                 });
                             }
                             yield Ok(StreamPart::ReasoningDelta {
                                 id: block_id,
                                 delta: delta.to_string(),
-                                provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id }))),
+                                provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
                             });
                             continue;
                         }
@@ -672,7 +675,7 @@ impl LanguageModel for XaiResponsesModel {
                                         active_reasoning.insert(part_id.to_string(), ());
                                         yield Ok(StreamPart::ReasoningStart {
                                             id: block_id.clone(),
-                                            provider_metadata: Some(provider_namespace("xai", json!({ "itemId": part_id }))),
+                                            provider_metadata: Some(provider_namespace("xai", json!({ "itemId": part_id })).expect("provider metadata must be an object")),
                                         });
                                     }
 
@@ -682,7 +685,7 @@ impl LanguageModel for XaiResponsesModel {
                                     }
                                     yield Ok(StreamPart::ReasoningEnd {
                                         id: block_id,
-                                        provider_metadata: Some(provider_namespace("xai", meta)),
+                                        provider_metadata: Some(provider_namespace("xai", meta).expect("provider metadata must be an object")),
                                     });
                                     active_reasoning.remove(part_id);
                                 }
@@ -909,7 +912,7 @@ impl LanguageModel for XaiResponsesModel {
             }
 
             // Final part: Finish.
-            let provider_meta = cost_in_usd_ticks.map(|cost| provider_namespace("xai", json!({ "costInUsdTicks": cost })));
+            let provider_meta = cost_in_usd_ticks.map(|cost| provider_namespace("xai", json!({ "costInUsdTicks": cost })).expect("provider metadata must be an object"));
 
             yield Ok(StreamPart::Finish {
                 finish_reason: final_finish_reason,

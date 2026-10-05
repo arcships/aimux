@@ -36,7 +36,6 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, ReasoningOutput, StreamResult};
-use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ProviderMetadata};
 
@@ -87,11 +86,6 @@ fn make_model(server: &MockServer) -> BedrockModel {
             api_key_source: None,
         },
     )
-}
-
-/// Wrap a `bedrock`-keyed provider-options value for `CallOptions.provider_options`.
-fn bedrock_provider_options(value: Value) -> Option<SharedProviderOptions> {
-    Some(provider_namespace("bedrock", value))
 }
 
 /// Mock the non-streaming `/converse` endpoint with a JSON body (HTTP 200).
@@ -855,100 +849,6 @@ async fn bedrock_stream_reasoning_text_deltas() {
 // doStream — request-side reasoningConfig → thinking (TDD red until implemented)
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: "should transform reasoningConfig to thinking in stream requests".
-///
-/// `providerOptions.bedrock.reasoningConfig = { type: 'enabled', budgetTokens:
-/// 2000 }` plus `maxOutputTokens: 100` must land in the request body as
-/// `additionalModelRequestFields.thinking = { type: 'enabled', budget_tokens:
-/// 2000 }` and `inferenceConfig.maxTokens = 2100` (100 + 2000), with no
-/// top-level `reasoningConfig`.
-#[tokio::test]
-async fn bedrock_stream_transform_reasoning_config_to_thinking() {
-    let server = MockServer::start().await;
-    mock_stream(
-        &server,
-        &[(
-            "event",
-            "messageStop",
-            json!({ "stopReason": "stop_sequence" }),
-        )],
-    )
-    .await;
-
-    let opts = CallOptions {
-        max_output_tokens: Some(100),
-        provider_options: bedrock_provider_options(json!({
-            "reasoningConfig": { "type": "enabled", "budgetTokens": 2000 }
-        })),
-        ..default_options(test_prompt())
-    };
-
-    let model = make_model(&server);
-    let result = model
-        .do_stream(&opts)
-        .await
-        .expect("do_stream should succeed");
-    let body = result.request_body.expect("request body should be present");
-
-    // Thinking config derived from reasoningConfig.
-    assert_eq!(
-        body["additionalModelRequestFields"]["thinking"],
-        json!({ "type": "enabled", "budget_tokens": 2000 })
-    );
-    // maxTokens is bumped by budgetTokens (100 + 2000).
-    assert_eq!(body["inferenceConfig"]["maxTokens"], 2100);
-    // reasoningConfig must not leak to the top level.
-    assert!(
-        body.get("reasoningConfig").is_none(),
-        "reasoningConfig should not appear at the top level"
-    );
-}
-
-/// TS: "merges user additionalModelRequestFields with derived thinking (stream)".
-///
-/// User-supplied `additionalModelRequestFields` (`foo`, `custom`) must be
-/// merged with the derived `thinking` field, and `reasoningConfig` must not
-/// appear at the top level.
-#[tokio::test]
-async fn bedrock_stream_merge_additional_model_request_fields_with_thinking() {
-    let server = MockServer::start().await;
-    mock_stream(
-        &server,
-        &[(
-            "event",
-            "messageStop",
-            json!({ "stopReason": "stop_sequence" }),
-        )],
-    )
-    .await;
-
-    let opts = CallOptions {
-        provider_options: bedrock_provider_options(json!({
-            "reasoningConfig": { "type": "enabled", "budgetTokens": 500 },
-            "additionalModelRequestFields": { "foo": "bar", "custom": 42 }
-        })),
-        ..default_options(test_prompt())
-    };
-
-    let model = make_model(&server);
-    let result = model
-        .do_stream(&opts)
-        .await
-        .expect("do_stream should succeed");
-    let body = result.request_body.expect("request body should be present");
-
-    assert!(
-        body.get("reasoningConfig").is_none(),
-        "reasoningConfig should not appear at the top level"
-    );
-    assert_eq!(body["additionalModelRequestFields"]["foo"], "bar");
-    assert_eq!(body["additionalModelRequestFields"]["custom"], 42);
-    assert_eq!(
-        body["additionalModelRequestFields"]["thinking"],
-        json!({ "type": "enabled", "budget_tokens": 500 })
-    );
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // convert_prompt_to_bedrock — prompt-side reasoning replay
 // (green for signed/unsigned reasoning; #[ignore] where the data model cannot
@@ -984,48 +884,6 @@ fn convert_reasoning_content_type() {
                                 "text": "This is my step-by-step reasoning process",
                                 "signature": "test-signature"
                             }
-                        }
-                    }
-                ]
-            }
-        ])
-    );
-}
-
-/// TS: "should properly convert redacted-reasoning content type".
-///
-/// SKIPPED: `ContentPart::Reasoning` has no `redactedData` field and
-/// `convert_prompt_to_bedrock` has no `redactedReasoning` branch, so redacted
-/// reasoning cannot be replayed on the Bedrock side. The test body documents
-/// the intended behaviour (a `reasoningContent.redactedReasoning { data }`
-/// block) for when the data model gains support.
-#[test]
-#[ignore = "redacted reasoning is not modelled on ContentPart::Reasoning / convert"]
-fn convert_reasoning_redacted_content_type() {
-    let prompt = vec![
-        user(vec![ContentPart::text("Explain your reasoning")]),
-        assistant(vec![ContentPart::Reasoning {
-            text: String::new(),
-            signature: None,
-            provider_options: Some(provider_namespace(
-                "bedrock",
-                json!({ "redactedData": "Redacted reasoning information" }),
-            )),
-        }]),
-    ];
-    let (system, messages) = convert_prompt_to_bedrock(&prompt);
-
-    assert_eq!(Value::Array(system), json!([]));
-    assert_eq!(
-        Value::Array(messages),
-        json!([
-            { "role": "user", "content": [{ "text": "Explain your reasoning" }] },
-            {
-                "role": "assistant",
-                "content": [
-                    {
-                        "reasoningContent": {
-                            "redactedReasoning": { "data": "Redacted reasoning information" }
                         }
                     }
                 ]

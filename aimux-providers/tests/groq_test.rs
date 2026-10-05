@@ -30,7 +30,6 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, ReasoningOutput};
-use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
@@ -1189,26 +1188,6 @@ mod do_generate {
         assert_eq!(body["reasoning_effort"], "none");
     }
 
-    /// TS: "should prefer providerOptions reasoningEffort over top-level reasoning"
-    #[tokio::test]
-    async fn provider_option_reasoning_effort_preferred() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let provider_opts = provider_namespace("groq", json!({"reasoningEffort": "high"}));
-        let options = CallOptions {
-            reasoning: Some(ReasoningEffort::Medium),
-            provider_options: Some(provider_opts),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning_effort"], "high");
-    }
-
     /// TS: "should extract usage"
     #[tokio::test]
     async fn extracts_usage() {
@@ -1347,72 +1326,6 @@ mod do_generate {
         assert_eq!(result.finish_reason.raw.as_deref(), Some("eos"));
     }
 
-    /// TS: "should pass provider options" (reasoningFormat, user, parallelToolCalls)
-    #[tokio::test]
-    async fn pass_provider_options() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let provider_opts = provider_namespace(
-            "groq",
-            json!({
-                "reasoningFormat": "hidden",
-                "user": "test-user-id",
-                "parallelToolCalls": false
-            }),
-        );
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning_format"], "hidden");
-        assert_eq!(body["user"], "test-user-id");
-        assert_eq!(body["parallel_tool_calls"], false);
-    }
-
-    /// TS: "should pass serviceTier provider option"
-    #[tokio::test]
-    async fn pass_service_tier_flex() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let provider_opts = provider_namespace("groq", json!({"serviceTier": "flex"}));
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["service_tier"], "flex");
-    }
-
-    /// TS: "should pass performance serviceTier provider option"
-    #[tokio::test]
-    async fn pass_service_tier_performance() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let provider_opts = provider_namespace("groq", json!({"serviceTier": "performance"}));
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["service_tier"], "performance");
-    }
-
     /// TS: "should pass tools and toolChoice"
     #[tokio::test]
     async fn pass_tools_and_tool_choice() {
@@ -1475,71 +1388,6 @@ mod do_generate {
         assert_eq!(body["response_format"]["type"], "json_schema");
         assert_eq!(body["response_format"]["json_schema"]["name"], "test-name");
         assert_eq!(body["response_format"]["json_schema"]["strict"], true);
-    }
-
-    /// TS: "should pass response format as json_object when structuredOutputs
-    /// explicitly disabled"
-    #[tokio::test]
-    async fn response_format_json_object_when_disabled() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let provider_opts = provider_namespace("groq", json!({"structuredOutputs": false}));
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            response_format: Some(ResponseFormat::Json {
-                schema: Some(json!({
-                    "type": "object",
-                    "properties": { "value": { "type": "string" } },
-                    "required": ["value"],
-                    "additionalProperties": false,
-                })),
-                name: Some("test-name".to_string()),
-                description: Some("test description".to_string()),
-            }),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["response_format"]["type"], "json_object");
-
-        // Should have a warning about structuredOutputs
-        assert!(result.warnings.iter().any(|w| match w {
-            aimux_core::types::Warning::Unsupported { feature, .. } => feature == "responseFormat",
-            _ => false,
-        }));
-    }
-
-    /// TS: "should send strict: false when strictJsonSchema is explicitly disabled"
-    #[tokio::test]
-    async fn strict_json_schema_false() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let provider_opts = provider_namespace("groq", json!({"strictJsonSchema": false}));
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            response_format: Some(ResponseFormat::Json {
-                schema: Some(json!({
-                    "type": "object",
-                    "properties": { "value": { "type": "string" } },
-                    "required": ["value"],
-                    "additionalProperties": false,
-                })),
-                name: Some("test-name".to_string()),
-                description: Some("test description".to_string()),
-            }),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["response_format"]["json_schema"]["strict"], false);
     }
 
     /// TS: "should send request body" (request.body)

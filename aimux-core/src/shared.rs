@@ -46,18 +46,24 @@ pub type JsonObject = serde_json::Map<String, Value>;
 /// Build a one-namespace [`SharedProviderMetadata`] / [`SharedProviderOptions`]
 /// (they are the same type) from a JSON object literal.
 ///
-/// `provider_namespace("openai", json!({ "itemId": "x" }))` is
+/// `provider_namespace("openai", json!({ "itemId": "x" }))?` is
 /// `{ "openai": { "itemId": "x" } }`.
 ///
-/// A value that is not a JSON object yields an empty namespace. Several
-/// namespaces: `extend` one map with another.
-#[must_use]
-pub fn provider_namespace(namespace: &str, object: Value) -> SharedProviderMetadata {
-    let object = match object {
-        Value::Object(object) => object,
-        _ => JsonObject::new(),
+/// Several namespaces: `extend` one map with another.
+///
+/// # Errors
+///
+/// Returns an invalid argument error when the value is not a JSON object.
+pub fn provider_namespace(
+    namespace: &str,
+    object: Value,
+) -> Result<SharedProviderMetadata, crate::AiMuxError> {
+    let Value::Object(object) = object else {
+        return Err(crate::AiMuxError::InvalidArgument(format!(
+            "invalid {namespace} provider options: expected a JSON object"
+        )));
     };
-    HashMap::from([(namespace.to_string(), object)])
+    Ok(HashMap::from([(namespace.to_string(), object)]))
 }
 
 /// A mapping of provider names to provider-specific file identifiers.

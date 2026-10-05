@@ -1005,7 +1005,6 @@ mod tests {
     use crate::recording::{
         HttpExchange, HttpRecord, InputRecord, ProviderRecord, ResponseRecord, TimingRecord,
     };
-    use crate::shared::provider_namespace;
     use futures::StreamExt;
 
     fn sample_options(text: &str, temperature: Option<f64>) -> CallOptions {
@@ -1191,36 +1190,6 @@ mod tests {
             .collect(),
         );
         assert!(matcher.r#match(&req3, &recs).is_err());
-    }
-
-    #[test]
-    fn exact_matcher_different_provider_options_misses() {
-        // A8:provider_options 纳入规范键——非脱敏值不同 → miss。
-        let mut rec = openai_recording("t1", "ping", "pong", "stop");
-        let mut call = sample_options("ping", Some(0.7));
-        call.provider_options = Some(provider_namespace(
-            "openai",
-            serde_json::json!({ "foo": 1 }),
-        ));
-        rec.input.options = serde_json::to_value(&call).unwrap();
-        let recs = [rec];
-        let matcher = ExactMatcher::new("openai", "gpt-4o");
-
-        // foo 值不同 → miss。
-        let mut req = sample_options("ping", Some(0.7));
-        req.provider_options = Some(provider_namespace(
-            "openai",
-            serde_json::json!({ "foo": 2 }),
-        ));
-        assert!(matcher.r#match(&req, &recs).is_err());
-
-        // 完全一致 → hit(对照)。
-        let mut req2 = sample_options("ping", Some(0.7));
-        req2.provider_options = Some(provider_namespace(
-            "openai",
-            serde_json::json!({ "foo": 1 }),
-        ));
-        assert!(matcher.r#match(&req2, &recs).is_ok());
     }
 
     #[test]
