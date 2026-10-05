@@ -625,7 +625,6 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
                 input,
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
                 provider_metadata: None,
             }));
         }
@@ -810,7 +809,6 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                                     input: String::new(),
                                     provider_executed: None,
                                     dynamic: None,
-                                    thought_signature: None,
                                     provider_metadata: None,
                                 },
                             );
