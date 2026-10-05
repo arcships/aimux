@@ -425,14 +425,22 @@ class ResponseMetadata {
   Map<String, dynamic> toJson() => _$ResponseMetadataToJson(this);
 }
 
+class GenerateRequest {
+  final dynamic body;
+  GenerateRequest({this.body});
+  factory GenerateRequest.fromJson(Map<String, dynamic> json) => GenerateRequest(body: json['body']);
+  Map<String, dynamic> toJson() => {'body': body};
+}
+
 class GenerateResponse {
   final String? id;
   final String? timestamp;
   final String? modelId;
+  final Map<String, String>? headers;
   final dynamic body;
-  GenerateResponse({this.id, this.timestamp, this.modelId, this.body});
-  factory GenerateResponse.fromJson(Map<String, dynamic> json) => GenerateResponse(id: json['id'] as String?, timestamp: json['timestamp'] as String?, modelId: json['model_id'] as String?, body: json['body']);
-  Map<String, dynamic> toJson() => {'id': id, 'timestamp': timestamp, 'model_id': modelId, if (body != null) 'body': body};
+  GenerateResponse({this.id, this.timestamp, this.modelId, this.headers, this.body});
+  factory GenerateResponse.fromJson(Map<String, dynamic> json) => GenerateResponse(id: json['id'] as String?, timestamp: json['timestamp'] as String?, modelId: json['model_id'] as String?, headers: (json['headers'] as Map<String, dynamic>?)?.cast<String, String>(), body: json['body']);
+  Map<String, dynamic> toJson() => {if (id != null) 'id': id, 'timestamp': timestamp, 'model_id': modelId, 'headers': headers, 'body': body};
 }
 
 /// A content item in a `GenerateResult`. Mirrors `GenerateContent.ts`
@@ -759,9 +767,8 @@ class GenerateResult {
   final List<Map<String, dynamic>> warnings;
   final Map<String, dynamic>? providerMetadata;
   final GenerateResponse? response;
-  final Map<String, dynamic>? requestBody;
-  final Map<String, dynamic>? responseHeaders;
-  GenerateResult({required this.content, required this.finishReason, required this.usage, this.warnings = const [], this.providerMetadata, this.response, this.requestBody, this.responseHeaders});
+  final GenerateRequest? request;
+  GenerateResult({required this.content, required this.finishReason, required this.usage, this.warnings = const [], this.providerMetadata, this.response, this.request});
   factory GenerateResult.fromJson(Map<String, dynamic> json) => GenerateResult(
     content: (json['content'] as List<dynamic>? ?? []).map((e) => GenerateContent.fromJson(e as Map<String, dynamic>)).toList(),
     finishReason: FinishReason.fromJson(json['finish_reason'] as Map<String, dynamic>),
@@ -769,10 +776,9 @@ class GenerateResult {
     warnings: (json['warnings'] as List<dynamic>? ?? []).map((e) => e as Map<String, dynamic>).toList(),
     providerMetadata: json['provider_metadata'] as Map<String, dynamic>?,
     response: json['response'] == null ? null : GenerateResponse.fromJson(json['response'] as Map<String, dynamic>),
-    requestBody: json['request_body'] as Map<String, dynamic>?,
-    responseHeaders: json['response_headers'] as Map<String, dynamic>?,
+    request: json['request'] == null ? null : GenerateRequest.fromJson(json['request'] as Map<String, dynamic>),
   );
-  Map<String, dynamic> toJson() => {'content': content.map((c) => c.toJson()).toList(), 'finish_reason': finishReason.toJson(), 'usage': usage.toJson(), 'warnings': warnings, 'response': response?.toJson(), if (providerMetadata != null) 'provider_metadata': providerMetadata, if (requestBody != null) 'request_body': requestBody, if (responseHeaders != null) 'response_headers': responseHeaders};
+  Map<String, dynamic> toJson() => {'content': content.map((c) => c.toJson()).toList(), 'finish_reason': finishReason.toJson(), 'usage': usage.toJson(), 'warnings': warnings, 'response': response?.toJson(), if (providerMetadata != null) 'provider_metadata': providerMetadata, 'request': request?.toJson()};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

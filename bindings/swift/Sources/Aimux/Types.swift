@@ -979,16 +979,24 @@ public enum GenerateContent: Codable, Equatable {
     }
 }
 
+public struct GenerateRequest: Codable, Equatable {
+    public var body: JSONValue?
+    public init(body: JSONValue? = nil) { self.body = body }
+}
+
 public struct GenerateResponseMetadata: Codable, Equatable {
     public var id: String?
     public var timestamp: String?
     public var modelId: String?
+    public var headers: [String: String]?
     public var body: JSONValue?
     enum CodingKeys: String, CodingKey {
-        case id, timestamp, body, modelId = "model_id"
+        case id, timestamp, headers, body, modelId = "model_id"
     }
-    public init(id: String? = nil, timestamp: String? = nil, modelId: String? = nil, body: JSONValue? = nil) {
-        self.id = id; self.timestamp = timestamp; self.modelId = modelId; self.body = body
+    public init(id: String? = nil, timestamp: String? = nil, modelId: String? = nil,
+                headers: [String: String]? = nil, body: JSONValue? = nil) {
+        self.id = id; self.timestamp = timestamp; self.modelId = modelId
+        self.headers = headers; self.body = body
     }
 }
 
@@ -1000,8 +1008,7 @@ public struct GenerateResult: Codable, Equatable {
     public var warnings: [Warning]?
     public var providerMetadata: JSONValue?
     public var response: GenerateResponseMetadata?
-    public var requestBody: JSONValue?
-    public var responseHeaders: [String: String]?
+    public var request: GenerateRequest?
 
     enum CodingKeys: String, CodingKey {
         case content
@@ -1009,17 +1016,15 @@ public struct GenerateResult: Codable, Equatable {
         case usage, warnings
         case providerMetadata = "provider_metadata"
         case response
-        case requestBody = "request_body"
-        case responseHeaders = "response_headers"
+        case request
     }
 
     public init(content: [GenerateContent], finishReason: FinishReason? = nil, usage: Usage? = nil,
                 warnings: [Warning]? = nil, providerMetadata: JSONValue? = nil,
-                response: GenerateResponseMetadata? = nil, requestBody: JSONValue? = nil,
-                responseHeaders: [String: String]? = nil) {
+                response: GenerateResponseMetadata? = nil, request: GenerateRequest? = nil) {
         self.content = content; self.finishReason = finishReason; self.usage = usage
         self.warnings = warnings; self.providerMetadata = providerMetadata
-        self.response = response; self.requestBody = requestBody; self.responseHeaders = responseHeaders
+        self.response = response; self.request = request
     }
 }
 
