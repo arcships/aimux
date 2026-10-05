@@ -1,0 +1,104 @@
+{
+  "case": "chat-basic",
+  "model": {
+    "modelId": "gpt-4o",
+    "provider": "openai.chat"
+  },
+  "package": "@ai-sdk/openai",
+  "request": {
+    "body": {
+      "messages": [
+        {
+          "content": "Say hello.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4o"
+    },
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json",
+      "user-agent": "ai/7.0.127 ai-sdk-provider-utils/5.0.53 node.js/22"
+    },
+    "method": "POST",
+    "url": "https://api.openai.com/v1/chat/completions"
+  },
+  "response": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "content": "Hello! How can I help you today?",
+            "role": "assistant"
+          }
+        }
+      ],
+      "created": 1735689600,
+      "id": "chatcmpl-fixture-1",
+      "model": "gpt-4o-2024-08-06",
+      "object": "chat.completion",
+      "system_fingerprint": "fp_fixture",
+      "usage": {
+        "completion_tokens": 9,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "prompt_tokens": 12,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 21
+      }
+    },
+    "headers": {
+      "content-type": "application/json",
+      "x-request-id": "req_fixture_1"
+    },
+    "status": 200
+  },
+  "result": {
+    "content": [
+      {
+        "text": "Hello! How can I help you today?",
+        "type": "text"
+      }
+    ],
+    "finishReason": "stop",
+    "providerMetadata": {
+      "openai": {}
+    },
+    "rawFinishReason": "stop",
+    "response": {
+      "headers": {
+        "content-type": "application/json",
+        "x-request-id": "req_fixture_1"
+      },
+      "id": "chatcmpl-fixture-1",
+      "modelId": "gpt-4o-2024-08-06"
+    },
+    "text": "Hello! How can I help you today?",
+    "usage": {
+      "inputTokenDetails": {
+        "cacheReadTokens": 0,
+        "noCacheTokens": 12
+      },
+      "inputTokens": 12,
+      "outputTokenDetails": {
+        "reasoningTokens": 0,
+        "textTokens": 9
+      },
+      "outputTokens": 9,
+      "totalTokens": 21
+    },
+    "warnings": []
+  },
+  "sdk": {
+    "input": {
+      "prompt": "Say hello."
+    },
+    "operation": "generateText"
+  },
+  "version": "4.0.83"
+}
