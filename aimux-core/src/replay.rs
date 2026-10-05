@@ -20,7 +20,7 @@ use crate::generate::{GenerateTextOptions, GenerateTextResult, generate_text};
 use crate::language_model::LanguageModel;
 use crate::language_model_message::LanguageModelPrompt;
 use crate::message::{MessageContent, ModelMessage, ModelPrompt};
-use crate::options::{CallOptions, ToolChoice};
+use crate::options::CallOptions;
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
 use crate::stream_part::StreamPart;
@@ -109,8 +109,7 @@ fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {
     })
 }
 
-/// 从录制侧提取同样的规范键(向后兼容:缺失 Option 字段按 null,缺失
-/// `tool_choice` 按 `ToolChoice::default()`=Auto,与 `CallOptions` 缺省一致)。
+/// 从录制侧提取同样的规范键(缺失 Option 字段按 null)。
 fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
     let o = &rec.input.options;
     serde_json::json!({
@@ -120,10 +119,7 @@ fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
         "seed": o.get("seed").cloned().unwrap_or_default(),
         "response_format": o.get("response_format").cloned().unwrap_or_default(),
         "tools": o.get("tools").cloned().unwrap_or_default(),
-        "tool_choice": o
-            .get("tool_choice")
-            .cloned()
-            .unwrap_or_else(|| serde_json::to_value(ToolChoice::default()).unwrap_or_default()),
+        "tool_choice": o.get("tool_choice").cloned().unwrap_or_default(),
         "headers": o.get("headers").cloned().unwrap_or_default(),
         "provider_options": o.get("provider_options").cloned().unwrap_or_default(),
         "body_overrides": o.get("body_overrides").cloned().unwrap_or_default(),
@@ -974,11 +970,7 @@ fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
         response_format: o.response_format,
         seed: o.seed,
         tools: o.tools,
-        tool_choice: if o.tool_choice == crate::tool::ToolChoice::Auto {
-            None
-        } else {
-            Some(o.tool_choice)
-        },
+        tool_choice: o.tool_choice,
         headers: o.headers,
         provider_options: o.provider_options,
         reasoning: o.reasoning,

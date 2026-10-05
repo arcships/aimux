@@ -647,7 +647,7 @@ pub fn build_request_body_with_warnings(
 
     // Prepare tools.
     let (tools, tool_choice, tool_warnings) =
-        prepare_responses_tools(&options.tools, &options.tool_choice);
+        prepare_responses_tools(&options.tools, options.tool_choice.as_ref());
     warnings.extend(tool_warnings);
 
     // Assemble the body. Key insertion order follows the TS `baseArgs` object
@@ -1022,7 +1022,7 @@ fn detect_media_type_from_base64(data: &str, top_level: &str) -> Option<String> 
 #[must_use]
 pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
-    tool_choice: &ToolChoice,
+    tool_choice: Option<&ToolChoice>,
 ) -> (Option<Vec<Value>>, Option<Value>, Vec<Warning>) {
     let tools = match tools {
         Some(t) if !t.is_empty() => t,
@@ -1054,10 +1054,10 @@ pub fn prepare_responses_tools(
     }
 
     let mapped_tool_choice = match tool_choice {
-        ToolChoice::Auto => Some(json!("auto")),
-        ToolChoice::Required => Some(json!("required")),
-        ToolChoice::None => None, // not supported, ignore
-        ToolChoice::Tool { tool_name } => Some(json!({
+        Some(ToolChoice::Auto) => Some(json!("auto")),
+        Some(ToolChoice::Required) => Some(json!("required")),
+        None | Some(ToolChoice::None) => None, // not supported, ignore
+        Some(ToolChoice::Tool { tool_name }) => Some(json!({
             "type": "function",
             "function": { "name": tool_name }
         })),

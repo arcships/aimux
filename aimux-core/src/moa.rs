@@ -16,7 +16,7 @@ use serde::Deserialize;
 use crate::composite::{ChildModel, add_usage, build_aggregator_prompt, extract_text};
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
-use crate::options::{CallOptions, ToolChoice};
+use crate::options::CallOptions;
 use crate::result::{GenerateResult, StreamResult};
 use crate::retry;
 use crate::stream_part::StreamPart;
@@ -98,12 +98,12 @@ impl MoaModel {
 
     /// Build reference call options from the user's options. When
     /// `strip_reference_tools` is set, `tools` is cleared and `tool_choice` is
-    /// reset to `Auto` so references don't carry tool schemas.
+    /// cleared so references don't carry tool schemas.
     fn reference_options(&self, options: &CallOptions) -> CallOptions {
         let mut o = options.clone();
         if self.config.strip_reference_tools {
             o.tools = None;
-            o.tool_choice = ToolChoice::Auto;
+            o.tool_choice = None;
         }
         o
     }

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
@@ -31,7 +31,14 @@ pub struct FunctionTool {
     /// Example inputs for the tool (V4 `inputExamples`), used by some providers
     /// to emit `input_examples` in the request body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub input_examples: Option<Vec<Value>>,
+    pub input_examples: Option<Vec<FunctionToolInputExample>>,
+}
+
+/// An example input for a function tool.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct FunctionToolInputExample {
+    pub input: Map<String, Value>,
 }
 
 impl FunctionTool {
@@ -79,7 +86,7 @@ pub struct ProviderTool {
     pub name: String,
     /// The arguments for configuring the tool. Must match the expected
     /// arguments defined by the provider for this tool.
-    pub args: Value,
+    pub args: Map<String, Value>,
 }
 
 /// A tool that can be either a user-defined function tool or a

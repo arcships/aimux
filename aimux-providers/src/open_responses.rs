@@ -936,15 +936,12 @@ fn build_request_body(
         })
         .unwrap_or_default();
 
-    // Convert tool choice.
-    // Only emit when not the default (Auto) — Rust's ToolChoice::Auto is the
-    // default and indistinguishable from "not set", matching the TS behavior
-    // where undefined toolChoice is omitted from the body.
     let converted_tool_choice: Option<Value> = match &options.tool_choice {
-        ToolChoice::Auto => None,
-        ToolChoice::None => Some(json!("none")),
-        ToolChoice::Required => Some(json!("required")),
-        ToolChoice::Tool { tool_name } => Some(json!({
+        None => None,
+        Some(ToolChoice::Auto) => Some(json!("auto")),
+        Some(ToolChoice::None) => Some(json!("none")),
+        Some(ToolChoice::Required) => Some(json!("required")),
+        Some(ToolChoice::Tool { tool_name }) => Some(json!({
             "type": "function",
             "name": tool_name,
         })),

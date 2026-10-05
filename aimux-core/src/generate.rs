@@ -129,7 +129,7 @@ impl GenerateTextOptions {
             response_format: self.response_format,
             seed: self.seed,
             tools: self.tools,
-            tool_choice: self.tool_choice.unwrap_or_default(),
+            tool_choice: self.tool_choice,
             headers: self.headers,
             provider_options: self.provider_options,
             reasoning: self.reasoning,

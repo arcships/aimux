@@ -492,7 +492,7 @@ pub fn build_request_body_with_warnings(
     let (messages, message_warnings) = convert_to_xai_messages(&options.prompt)?;
     warnings.extend(message_warnings);
 
-    let prepared = prepare_tools(&options.tools, Some(&options.tool_choice));
+    let prepared = prepare_tools(&options.tools, options.tool_choice.as_ref());
     for tw in &prepared.tool_warnings {
         warnings.push(tw.clone());
     }

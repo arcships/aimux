@@ -322,6 +322,10 @@ type GenerateTextOptions struct {
 	RepairToolCall RepairToolCallFunc `json:"-"`
 }
 
+type FunctionToolInputExample struct {
+	Input map[string]json.RawMessage `json:"input"`
+}
+
 // Tool is a function tool definition (the "function" variant).
 // Mirrors Kotlin Tool.Function (Types.kt:209-230).
 type Tool struct {
@@ -331,7 +335,7 @@ type Tool struct {
 	InputSchema     json.RawMessage            `json:"input_schema,omitempty"`
 	Strict          *bool                      `json:"strict,omitempty"`
 	ProviderOptions map[string]json.RawMessage `json:"provider_options,omitempty"`
-	InputExamples   []json.RawMessage          `json:"input_examples,omitempty"`
+	InputExamples   []FunctionToolInputExample `json:"input_examples,omitempty"`
 }
 
 // MarshalOptions serializes GenerateTextOptions to JSON. Returns "" for nil opts.

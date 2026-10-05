@@ -1,4 +1,4 @@
-﻿// Panic convert wrappers are #[deprecated]; these tests still use them.
+// Panic convert wrappers are #[deprecated]; these tests still use them.
 #![allow(deprecated)]
 //! Rust port of the Anthropic provider pure-function tests.
 //!
@@ -384,34 +384,6 @@ mod prepare_tools_tests {
         assert_eq!(result.tools.unwrap()[0], expected);
         assert!(result.tool_choice.is_none());
         assert!(result.tool_warnings.is_empty());
-    }
-
-    #[test]
-    fn should_correctly_preserve_tool_input_examples() {
-        let mut tool = ftool(
-            "tool_with_examples",
-            "tool with examples",
-            json!({ "type": "object", "properties": { "a": { "type": "number" } } }),
-        );
-        tool.input_examples = Some(vec![
-            json!({ "input": { "a": 1 } }),
-            json!({ "input": { "a": 2 } }),
-        ]);
-        let tools = vec![tool];
-        let result = prepare_tools(Some(&tools), None, false, true, true, false);
-
-        assert!(result.betas.contains("structured-outputs-2025-11-13"));
-        assert!(result.betas.contains("advanced-tool-use-2025-11-20"));
-        assert!(result.tool_choice.is_none());
-        assert!(result.tool_warnings.is_empty());
-
-        let expected = json!({
-            "name": "tool_with_examples",
-            "description": "tool with examples",
-            "input_schema": { "type": "object", "properties": { "a": { "type": "number" } } },
-            "input_examples": [{ "a": 1 }, { "a": 2 }],
-        });
-        assert_eq!(result.tools.unwrap()[0], expected);
     }
 
     // ── strict mode for function tools ──

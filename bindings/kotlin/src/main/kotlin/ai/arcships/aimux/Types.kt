@@ -185,6 +185,9 @@ data class ToolCall(
 // the `"type"` discriminator — no custom serializer needed.
 // ─────────────────────────────────────────────────────────────────────────────
 
+@Serializable
+data class FunctionToolInputExample(val input: JsonObject)
+
 /**
  * A user-defined function tool.
  *
@@ -197,7 +200,7 @@ data class FunctionTool(
     @SerialName("input_schema") val inputSchema: JsonElement,
     val strict: Boolean? = null,
     @SerialName("provider_options") val providerOptions: Map<String, JsonElement>? = null,
-    @SerialName("input_examples") val inputExamples: List<JsonElement>? = null,
+    @SerialName("input_examples") val inputExamples: List<FunctionToolInputExample>? = null,
 )
 
 /**
@@ -209,7 +212,7 @@ data class FunctionTool(
 data class ProviderTool(
     val id: String,
     val name: String,
-    val args: JsonElement = JsonObject(emptyMap()),
+    val args: JsonObject = JsonObject(emptyMap()),
 )
 
 /**
@@ -228,7 +231,7 @@ sealed interface Tool {
         @SerialName("input_schema") val inputSchema: JsonElement,
         val strict: Boolean? = null,
         @SerialName("provider_options") val providerOptions: Map<String, JsonElement>? = null,
-        @SerialName("input_examples") val inputExamples: List<JsonElement>? = null,
+        @SerialName("input_examples") val inputExamples: List<FunctionToolInputExample>? = null,
     ) : Tool {
         companion object {
             /** Convenience constructor from a [FunctionTool]. */
@@ -248,7 +251,7 @@ sealed interface Tool {
     data class Provider(
         val id: String,
         val name: String,
-        val args: JsonElement = JsonObject(emptyMap()),
+        val args: JsonObject = JsonObject(emptyMap()),
     ) : Tool {
         companion object {
             fun from(tool: ProviderTool): Provider = Provider(tool.id, tool.name, tool.args)
