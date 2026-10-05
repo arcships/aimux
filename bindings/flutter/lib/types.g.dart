@@ -119,7 +119,7 @@ GenerateTextResult _$GenerateTextResultFromJson(Map<String, dynamic> json) =>
           const [],
       reasoningText: json['reasoning_text'] as String? ?? '',
       sources: (json['sources'] as List<dynamic>?)
-              ?.map((e) => e as Map<String, dynamic>)
+              ?.map((e) => Source.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
       files: (json['files'] as List<dynamic>?)
@@ -211,7 +211,7 @@ StreamTextResultAggregated _$StreamTextResultAggregatedFromJson(
               .toList() ??
           const [],
       sources: (json['sources'] as List<dynamic>?)
-              ?.map((e) => e as Map<String, dynamic>)
+              ?.map((e) => Source.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
       files: (json['files'] as List<dynamic>?)

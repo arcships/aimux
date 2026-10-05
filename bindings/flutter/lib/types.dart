@@ -556,45 +556,75 @@ final class GenerateContentToolCall extends GenerateContent {
       };
 }
 
-/// A source / citation (e.g. URL citation from search-preview models).
-final class GenerateContentSource extends GenerateContent {
+sealed class Source {
+  const Source();
+
+  factory Source.fromJson(Map<String, dynamic> json) => switch (json['source_type']) {
+    'url' => UrlSource(
+        id: json['id'] as String,
+        url: json['url'] as String,
+        title: json['title'] as String?,
+        providerMetadata: json['provider_metadata'] as Map<String, dynamic>?),
+    'document' => DocumentSource(
+        id: json['id'] as String,
+        mediaType: json['media_type'] as String,
+        title: json['title'] as String,
+        filename: json['filename'] as String?,
+        providerMetadata: json['provider_metadata'] as Map<String, dynamic>?),
+    _ => throw FormatException('invalid source type: ${json['source_type']}'),
+  };
+
+  Map<String, dynamic> toJson();
+}
+
+final class UrlSource extends Source {
   final String id;
-  final String sourceType;
-  final String? url;
+  final String url;
   final String? title;
   final Map<String, dynamic>? providerMetadata;
 
-  GenerateContentSource({
-    required this.id,
-    required this.sourceType,
-    this.url,
-    this.title,
-    this.providerMetadata,
-  });
+  const UrlSource({required this.id, required this.url, this.title, this.providerMetadata});
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'source_type': 'url', 'id': id, 'url': url,
+    if (title != null) 'title': title,
+    if (providerMetadata != null) 'provider_metadata': providerMetadata,
+  };
+}
+
+final class DocumentSource extends Source {
+  final String id;
+  final String mediaType;
+  final String title;
+  final String? filename;
+  final Map<String, dynamic>? providerMetadata;
+
+  const DocumentSource({required this.id, required this.mediaType, required this.title,
+      this.filename, this.providerMetadata});
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'source_type': 'document', 'id': id, 'media_type': mediaType, 'title': title,
+    if (filename != null) 'filename': filename,
+    if (providerMetadata != null) 'provider_metadata': providerMetadata,
+  };
+}
+
+/// A source / citation (e.g. URL citation from search-preview models).
+final class GenerateContentSource extends GenerateContent {
+  final Source source;
+
+  GenerateContentSource({required this.source});
 
   @override
   String get tag => 'Source';
 
   factory GenerateContentSource.fromJson(Map<String, dynamic> json) =>
-      GenerateContentSource(
-        id: json['id'] as String,
-        sourceType: json['source_type'] as String,
-        url: json['url'] as String?,
-        title: json['title'] as String?,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
+      GenerateContentSource(source: Source.fromJson(json));
 
   @override
-  Map<String, dynamic> toJson() => {
-        'Source': {
-          'id': id,
-          'source_type': sourceType,
-          if (url != null) 'url': url,
-          if (title != null) 'title': title,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
-      };
+  Map<String, dynamic> toJson() => {'Source': source.toJson()};
 }
 
 /// A reasoning / thinking segment produced by the model.
@@ -795,7 +825,7 @@ class GenerateTextResult {
   final List<Map<String, dynamic>> reasoning;
   @JsonKey(name: 'reasoning_text')
   final String reasoningText;
-  final List<Map<String, dynamic>> sources;
+  final List<Source> sources;
   final List<Map<String, dynamic>> files;
   @JsonKey(name: 'response_messages')
   final List<ModelMessage> responseMessages;
@@ -882,19 +912,19 @@ class GenerateObjectResult {
 /// `GenerateTextResult`'s user-facing fields (without `raw`, since streaming
 /// has no `GenerateResult` equivalent).
 ///
-/// Mirrors `StreamTextResultAggregated.ts`. reasoning/sources/files use weak
+/// Mirrors `StreamTextResultAggregated.ts`. reasoning/files use weak
 /// types (`Map<String, dynamic>`) — same strategy as `GenerateTextResult`.
 @JsonSerializable()
 class StreamTextResultAggregated {
   final String text;
   final List<Map<String, dynamic>> content;
-  // reasoning/sources/files use weak types — same strategy as GenerateTextResult.
+  // reasoning/files use weak types — same strategy as GenerateTextResult.
   final List<Map<String, dynamic>> reasoning;
   @JsonKey(name: 'reasoning_text')
   final String reasoningText;
   @JsonKey(name: 'tool_calls')
   final List<ToolCall> toolCalls;
-  final List<Map<String, dynamic>> sources;
+  final List<Source> sources;
   final List<Map<String, dynamic>> files;
   @JsonKey(name: 'finish_reason')
   final FinishReason finishReason;
@@ -1715,40 +1745,15 @@ final class StreamPartResponseMetadata extends StreamPart {
 
 /// A source / citation (e.g. URL citation from search-preview models).
 final class StreamPartSource extends StreamPart {
-  final String id;
-  final String sourceType;
-  final String? url;
-  final String? title;
-  final Map<String, dynamic>? providerMetadata;
+  final Source source;
 
-  StreamPartSource({
-    required this.id,
-    required this.sourceType,
-    this.url,
-    this.title,
-    this.providerMetadata,
-  });
+  StreamPartSource({required this.source});
 
   factory StreamPartSource.fromJson(Map<String, dynamic> json) =>
-      StreamPartSource(
-        id: json['id'] as String,
-        sourceType: json['source_type'] as String,
-        url: json['url'] as String?,
-        title: json['title'] as String?,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
+      StreamPartSource(source: Source.fromJson(json));
 
   @override
-  Map<String, dynamic> toJson() => {
-        'Source': {
-          'id': id,
-          'source_type': sourceType,
-          if (url != null) 'url': url,
-          if (title != null) 'title': title,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
-      };
+  Map<String, dynamic> toJson() => {'Source': source.toJson()};
 }
 
 /// A raw chunk from the provider (for debugging, when `include_raw_chunks`

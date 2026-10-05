@@ -443,10 +443,9 @@ pub(crate) fn stream_parts_for_result_block(
                 tool_use_id,
             )];
             parts.extend(results.iter().map(|result| {
-                StreamPart::Source(Source {
+                StreamPart::Source(Source::Url {
                     id: generate_source_id(),
-                    source_type: "url".to_string(),
-                    url: str_field(result, "url"),
+                    url: str_field(result, "url").unwrap_or_default(),
                     title: str_field(result, "title"),
                     provider_metadata: Some(json!({
                         "anthropic": {
@@ -671,10 +670,9 @@ pub(crate) fn parse_anthropic_content(
                         // Each result also becomes a `Source` — that is how the
                         // URLs and titles reach `result.sources`.
                         for result in results {
-                            content.push(GenerateContent::Source(Source {
+                            content.push(GenerateContent::Source(Source::Url {
                                 id: generate_source_id(),
-                                source_type: "url".to_string(),
-                                url: str_field(result, "url"),
+                                url: str_field(result, "url").unwrap_or_default(),
                                 title: str_field(result, "title"),
                                 provider_metadata: Some(json!({
                                     "anthropic": {

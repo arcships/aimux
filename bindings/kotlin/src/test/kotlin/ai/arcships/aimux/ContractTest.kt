@@ -125,14 +125,14 @@ class ContractTest {
             val json = obj["json"]!!.jsonPrimitive.content
             byName[name] = AimuxJson.decodeFromString<GenerateContent>(json)
         }
-        assertThat(byName).hasSize(8)
+        assertThat(byName).hasSize(7)
 
         assertThat(byName["generate_content_text"]).isInstanceOf(GenerateContent.Text::class.java)
         assertThat(byName["generate_content_reasoning_no_metadata"])
             .isInstanceOf(GenerateContent.Reasoning::class.java)
 
         // The shapes a parse-only check leaves invisible: the tool-call input,
-        // the nested file union, and Source's optionals.
+        // and the nested file union.
         val toolCall = byName["generate_content_tool_call"] as GenerateContent.ToolCall
         assertThat(toolCall.toolCallId).isEqualTo("call_1")
         assertThat(toolCall.input.jsonPrimitive.content).isEqualTo("{\"city\":\"Paris\"}")
@@ -141,10 +141,7 @@ class ContractTest {
         val file = byName["generate_content_file"] as GenerateContent.File
         assertThat(file.mediaType).isEqualTo("image/png")
 
-        val source =
-            byName["generate_content_source_unset_optionals"] as GenerateContent.Source
-        assertThat(source.url).isNull()
-        assertThat(source.title).isNull()
+
     }
 
     /// The regression lock for `topK`, which this binding declared as `Long`

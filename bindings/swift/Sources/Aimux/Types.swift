@@ -838,6 +838,49 @@ public struct GeneratedFile: Codable, Equatable {
     }
 }
 
+public enum Source: Codable, Equatable {
+    case url(id: String, url: String, title: String?, providerMetadata: JSONValue?)
+    case document(id: String, mediaType: String, title: String, filename: String?,
+                  providerMetadata: JSONValue?)
+
+    private enum Field: String, CodingKey {
+        case id, sourceType = "source_type", url, title, filename
+        case mediaType = "media_type", providerMetadata = "provider_metadata"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Field.self)
+        let id = try c.decode(String.self, forKey: .id)
+        let pm = try c.decodeIfPresent(JSONValue.self, forKey: .providerMetadata)
+        switch try c.decode(String.self, forKey: .sourceType) {
+        case "url":
+            self = .url(id: id, url: try c.decode(String.self, forKey: .url),
+                        title: try c.decodeIfPresent(String.self, forKey: .title), providerMetadata: pm)
+        case "document":
+            self = .document(id: id, mediaType: try c.decode(String.self, forKey: .mediaType),
+                             title: try c.decode(String.self, forKey: .title),
+                             filename: try c.decodeIfPresent(String.self, forKey: .filename),
+                             providerMetadata: pm)
+        default: throw aimuxDecodingError(c.codingPath, "invalid source type")
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Field.self)
+        switch self {
+        case .url(let id, let url, let title, let pm):
+            try c.encode("url", forKey: .sourceType); try c.encode(id, forKey: .id)
+            try c.encode(url, forKey: .url); try c.encodeIfPresent(title, forKey: .title)
+            try c.encodeIfPresent(pm, forKey: .providerMetadata)
+        case .document(let id, let mediaType, let title, let filename, let pm):
+            try c.encode("document", forKey: .sourceType); try c.encode(id, forKey: .id)
+            try c.encode(mediaType, forKey: .mediaType); try c.encode(title, forKey: .title)
+            try c.encodeIfPresent(filename, forKey: .filename)
+            try c.encodeIfPresent(pm, forKey: .providerMetadata)
+        }
+    }
+}
+
 /// A content item in the generation result.
 ///
 /// Wire: externally tagged — `{"Text":{...}}`, `{"ToolCall":{...}}`, …
@@ -846,8 +889,7 @@ public enum GenerateContent: Codable, Equatable {
     case toolCall(toolCallId: String, toolName: String, input: JSONValue,
                   providerExecuted: Bool?, dynamic: Bool?, thoughtSignature: String? = nil,
                   providerMetadata: JSONValue?)
-    case source(id: String, sourceType: String, url: String?, title: String?,
-                providerMetadata: JSONValue?)
+    case source(Source)
     case reasoning(text: String, providerMetadata: JSONValue?)
     case file(data: GeneratedFileData, mediaType: String, providerMetadata: JSONValue?)
     case toolResult(toolCallId: String, toolName: String, result: JSONValue,
@@ -887,11 +929,7 @@ public enum GenerateContent: Codable, Equatable {
                              thoughtSignature: try n.decodeIfPresent(String.self, forKey: .thoughtSignature),
                              providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata))
         case "Source":
-            self = .source(id: try n.decode(String.self, forKey: .id),
-                           sourceType: try n.decode(String.self, forKey: .sourceType),
-                           url: try n.decodeIfPresent(String.self, forKey: .url),
-                           title: try n.decodeIfPresent(String.self, forKey: .title),
-                           providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata))
+            self = .source(try Source(from: c.superDecoder(forKey: AnyCodingKey("Source"))))
         case "Reasoning":
             self = .reasoning(text: try n.decode(String.self, forKey: .text),
                              providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata))
@@ -939,13 +977,8 @@ public enum GenerateContent: Codable, Equatable {
             try n.encodeIfPresent(dyn, forKey: .dynamic)
             try n.encodeIfPresent(signature, forKey: .thoughtSignature)
             try n.encodeIfPresent(pm, forKey: .providerMetadata)
-        case .source(let id, let sourceType, let url, let title, let pm):
-            var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("Source"))
-            try n.encode(id, forKey: .id)
-            try n.encode(sourceType, forKey: .sourceType)
-            try n.encodeIfPresent(url, forKey: .url)
-            try n.encodeIfPresent(title, forKey: .title)
-            try n.encodeIfPresent(pm, forKey: .providerMetadata)
+        case .source(let source):
+            try source.encode(to: c.superEncoder(forKey: AnyCodingKey("Source")))
         case .reasoning(let text, let pm):
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("Reasoning"))
             try n.encode(text, forKey: .text)
@@ -1042,8 +1075,8 @@ public struct GenerateTextResult: Codable, Equatable {
     public var reasoning: [JSONValue]
     /// Concatenated reasoning text (M7).
     public var reasoningText: String
-    /// Sources / citations (M7). Weak type.
-    public var sources: [JSONValue]
+    /// Sources / citations (M7).
+    public var sources: [Source]
     /// Files generated by the model (M7). Weak type.
     public var files: [JSONValue]
     /// Assistant messages ready to append for the next turn (M7).
@@ -1078,7 +1111,7 @@ public struct GenerateTextResult: Codable, Equatable {
     public init(text: String, toolCalls: [ToolCall], finishReason: FinishReason,
                 usage: Usage, warnings: [Warning] = [], raw: GenerateResult,
                 reasoning: [JSONValue] = [], reasoningText: String = "",
-                sources: [JSONValue] = [], files: [JSONValue] = [],
+                sources: [Source] = [], files: [JSONValue] = [],
                 responseMessages: [ModelMessage] = [],
                 rawFinishReason: String? = nil,
                 providerMetadata: JSONValue? = nil,
@@ -1158,8 +1191,8 @@ public struct StreamTextResultAggregated: Codable, Equatable {
     public var reasoningText: String
     /// Tool calls requested by the model.
     public var toolCalls: [ToolCall]
-    /// Sources / citations. Weak type.
-    public var sources: [JSONValue]
+    /// Sources / citations.
+    public var sources: [Source]
     /// Files generated by the model. Weak type.
     public var files: [JSONValue]
     /// Why generation stopped.
@@ -1198,7 +1231,7 @@ public struct StreamTextResultAggregated: Codable, Equatable {
 
     public init(text: String = "", reasoning: [JSONValue] = [],
                 reasoningText: String = "", toolCalls: [ToolCall] = [],
-                sources: [JSONValue] = [], files: [JSONValue] = [],
+                sources: [Source] = [], files: [JSONValue] = [],
                 finishReason: FinishReason, rawFinishReason: String? = nil,
                 usage: Usage = Usage(inputTokens: InputTokenUsage(), outputTokens: OutputTokenUsage()),
                 totalUsage: Usage = Usage(inputTokens: InputTokenUsage(), outputTokens: OutputTokenUsage()),
@@ -1384,8 +1417,7 @@ public enum StreamPart: Codable, Equatable {
     case reasoningEnd(id: String, providerMetadata: JSONValue?)
     // P2: metadata
     case responseMetadata(id: String?, timestamp: String?, modelId: String?)
-    case source(id: String, sourceType: String, url: String?, title: String?,
-                providerMetadata: JSONValue?)
+    case source(Source)
     case raw(rawValue: JSONValue)
 
     case custom(kind: String, providerMetadata: JSONValue?)
@@ -1496,11 +1528,7 @@ public enum StreamPart: Codable, Equatable {
                                      timestamp: try n.decodeIfPresent(String.self, forKey: .timestamp),
                                      modelId: try n.decodeIfPresent(String.self, forKey: .modelId))
         case "Source":
-            self = .source(id: try n.decode(String.self, forKey: .id),
-                           sourceType: try n.decode(String.self, forKey: .sourceType),
-                           url: try n.decodeIfPresent(String.self, forKey: .url),
-                           title: try n.decodeIfPresent(String.self, forKey: .title),
-                           providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata))
+            self = .source(try Source(from: c.superDecoder(forKey: AnyCodingKey("Source"))))
         case "Raw":
             self = .raw(rawValue: try n.decode(JSONValue.self, forKey: .rawValue))
         default:
@@ -1589,11 +1617,8 @@ public enum StreamPart: Codable, Equatable {
             try n.encodeIfPresent(id, forKey: .id)
             try n.encodeIfPresent(timestamp, forKey: .timestamp)
             try n.encodeIfPresent(modelId, forKey: .modelId)
-        case .source(let id, let sourceType, let url, let title, let pm):
-            var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("Source"))
-            try n.encode(id, forKey: .id); try n.encode(sourceType, forKey: .sourceType)
-            try n.encodeIfPresent(url, forKey: .url); try n.encodeIfPresent(title, forKey: .title)
-            try n.encodeIfPresent(pm, forKey: .providerMetadata)
+        case .source(let source):
+            try source.encode(to: c.superEncoder(forKey: AnyCodingKey("Source")))
         case .raw(let rawValue):
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("Raw"))
             try n.encode(rawValue, forKey: .rawValue)

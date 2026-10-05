@@ -1106,10 +1106,9 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                         for ann in annotations {
                             let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
                             let title = ann.get("title").and_then(|v| v.as_str());
-                            content.push(GenerateContent::Source(Source {
+                            content.push(GenerateContent::Source(Source::Url {
                                 id: format!("id-{source_id_counter}"),
-                                source_type: "url".to_string(),
-                                url: Some(url.to_string()),
+                                url: url.to_string(),
                                 title: title.map(std::string::ToString::to_string),
                                 provider_metadata: None,
                             }));

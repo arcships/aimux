@@ -6,4 +6,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * payload of both `GenerateContent::Source` and `StreamPart::Source`, and the
  * element of the text results' `sources`.
  */
-export type Source = { id: string, source_type: string, url: string | null, title: string | null, provider_metadata?: JsonValue | null, };
+export type Source = { "source_type": "url", id: string, url: string, title?: string | null, provider_metadata?: JsonValue | null, } | { "source_type": "document", id: string, media_type: string, title: string, filename?: string | null, provider_metadata?: JsonValue | null, };

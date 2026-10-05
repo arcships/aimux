@@ -83,7 +83,7 @@ def test_generate_content_fixtures_decode_into_typed_variants():
     unnoticed.
     """
     fixtures = [f for f in _fixtures() if f["type"] == "GenerateContent"]
-    assert len(fixtures) == 8, f"expected 8 GenerateContent fixtures, saw {len(fixtures)}"
+    assert len(fixtures) == 7, f"expected 7 GenerateContent fixtures, saw {len(fixtures)}"
 
     by_name = {}
     for f in fixtures:
@@ -91,8 +91,7 @@ def test_generate_content_fixtures_decode_into_typed_variants():
         by_name[f["name"]] = content.root
 
     # Spot-check the shapes the maintainer flagged as invisible to a
-    # parse-only check: the tool-call input, the nested file union, and
-    # Source's optionals.
+    # parse-only check: the tool-call input and the nested file union.
     tool_call = by_name["generate_content_tool_call"]
     assert tool_call.tool_call_id == "call_1"
     assert tool_call.input == '{"city":"Paris"}'
@@ -100,10 +99,6 @@ def test_generate_content_fixtures_decode_into_typed_variants():
 
     file_part = by_name["generate_content_file"]
     assert file_part.media_type == "image/png"
-
-    source = by_name["generate_content_source_unset_optionals"]
-    assert source.url is None
-    assert source.title is None
 
 
 def test_provider_executed_tool_transcript_message_fixture_roundtrips():

@@ -154,13 +154,13 @@ pub fn build_responses_generate_result(
                             for (i, ann) in annotations.iter().enumerate() {
                                 if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation")
                                 {
-                                    content.push(GenerateContent::Source(Source {
+                                    content.push(GenerateContent::Source(Source::Url {
                                         id: format!("annotation-{i}"),
-                                        source_type: "url".to_string(),
                                         url: ann
                                             .get("url")
                                             .and_then(|v| v.as_str())
-                                            .map(std::string::ToString::to_string),
+                                            .unwrap_or_default()
+                                            .to_string(),
                                         title: ann
                                             .get("title")
                                             .and_then(|v| v.as_str())
@@ -954,13 +954,13 @@ where
                                 && ann.get("type").and_then(|v| v.as_str())
                                     == Some("url_citation")
                             {
-                                yield Ok(StreamPart::Source(Source {
+                                yield Ok(StreamPart::Source(Source::Url {
                                     id: generate_source_id(),
-                                    source_type: "url".to_string(),
                                     url: ann
                                         .get("url")
                                         .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string),
+                                        .unwrap_or_default()
+                                        .to_string(),
                                     title: ann
                                         .get("title")
                                         .and_then(|v| v.as_str())

@@ -281,7 +281,7 @@ class ContractTest {
                 f.get("name").asText(),
                 Types.AimuxJson.MAPPER.readValue(json, Types.GenerateContent.class));
         }
-        assertThat(byName).hasSize(8);
+        assertThat(byName).hasSize(7);
 
         assertThat(byName.get("generate_content_text"))
             .isInstanceOf(Types.GenerateContent.Text.class);
@@ -289,7 +289,7 @@ class ContractTest {
             .isInstanceOf(Types.GenerateContent.Reasoning.class);
 
         // The shapes a parse-only check leaves invisible: the tool-call input,
-        // the nested file union, and Source's optionals.
+        // and the nested file union.
         Types.GenerateContent.ToolCall toolCall =
             (Types.GenerateContent.ToolCall) byName.get("generate_content_tool_call");
         assertThat(toolCall.getToolCallId()).isEqualTo("call_1");
@@ -304,10 +304,7 @@ class ContractTest {
         assertThat(file.getMediaType()).isEqualTo("image/png");
         assertThat(file.getData()).isNotNull();
 
-        Types.GenerateContent.Source source =
-            (Types.GenerateContent.Source) byName.get("generate_content_source_unset_optionals");
-        assertThat(source.getUrl()).isNull();
-        assertThat(source.getTitle()).isNull();
+
     }
 
     /**

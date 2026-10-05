@@ -269,17 +269,28 @@ fn sources(content: &[GenerateContent]) -> Vec<SourceView<'_>> {
     content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::Source(Source {
+            GenerateContent::Source(Source::Url {
                 id,
-                source_type,
                 url,
                 title,
                 provider_metadata,
             }) => Some((
                 id.as_str(),
-                source_type.as_str(),
-                url.as_deref(),
+                "url",
+                Some(url.as_str()),
                 title.as_deref(),
+                provider_metadata.as_ref(),
+            )),
+            GenerateContent::Source(Source::Document {
+                id,
+                title,
+                provider_metadata,
+                ..
+            }) => Some((
+                id.as_str(),
+                "document",
+                None,
+                Some(title.as_str()),
                 provider_metadata.as_ref(),
             )),
             _ => None,
