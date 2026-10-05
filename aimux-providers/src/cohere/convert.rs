@@ -161,7 +161,7 @@ pub fn convert_prompt_to_cohere(
                                             b64
                                         )
                                     }
-                                    FileData::Url { url } => url.clone(),
+                                    FileData::Url { url, .. } => url.clone(),
                                     FileData::Reference { .. } => {
                                         return Err(AiMuxError::UnsupportedFunctionality(
                                             "image file parts with provider references".into(),
@@ -400,7 +400,7 @@ pub fn build_request_body(
     }
 
     // Tools.
-    let prepared = prepare_tools(&options.tools, Some(&options.tool_choice));
+    let prepared = prepare_tools(&options.tools, options.tool_choice.as_ref());
     warnings.extend(prepared.tool_warnings);
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);

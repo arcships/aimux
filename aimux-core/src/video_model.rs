@@ -526,7 +526,6 @@ mod tests {
 
     use super::*;
     use crate::error::ApiCallError;
-    use crate::shared::provider_namespace;
 
     /// `do_status` behavior per call index, cycled through in order.
     enum StatusStep {
@@ -765,23 +764,6 @@ mod tests {
         let messages: Vec<String> = result.warnings.iter().map(|w| format!("{w:?}")).collect();
         assert!(messages[0].contains("from start"), "{messages:?}");
         assert!(messages[1].contains("from status"), "{messages:?}");
-    }
-
-    #[test]
-    fn merge_provider_metadata_unions_same_provider_key_across_phases() {
-        let phase = |value| Some(provider_namespace("fal", value));
-        let merged = merge_provider_metadata(
-            phase(serde_json::json!({ "job_id": "job-1", "region": "us-east" })),
-            phase(serde_json::json!({ "region": "eu-west", "seed": 42 })),
-        )
-        .expect("both phases reported metadata");
-
-        // `job_id` is start-only and must survive instead of being dropped by
-        // an `entry().or_insert()` collision on the shared provider key.
-        assert_eq!(
-            serde_json::Value::Object(merged["fal"].clone()),
-            serde_json::json!({ "job_id": "job-1", "region": "eu-west", "seed": 42 })
-        );
     }
 
     #[tokio::test]

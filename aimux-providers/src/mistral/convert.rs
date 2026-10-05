@@ -212,7 +212,7 @@ fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
             };
             format!("data:{full};base64,{data}")
         }
-        FileData::Url { url } => url.clone(),
+        FileData::Url { url, .. } => url.clone(),
     };
     if get_top_level_media_type(&file.media_type) == "image" {
         Ok(json!({"type":"image_url", "image_url":url}))
@@ -375,14 +375,16 @@ pub fn build_request_body(
                 })
                 .collect(),
         );
-        let mut prepared = prepare_tools(&function_tools, Some(&options.tool_choice));
+        let mut prepared = prepare_tools(&function_tools, options.tool_choice.as_ref());
         if prepared.tools.is_none() {
             prepared.tools = Some(Vec::new());
-            prepared.tool_choice = Some(json!(match options.tool_choice {
-                ToolChoice::Auto => "auto",
-                ToolChoice::None => "none",
-                _ => "any",
-            }));
+            prepared.tool_choice = options.tool_choice.as_ref().map(|choice| {
+                json!(match choice {
+                    ToolChoice::Auto => "auto",
+                    ToolChoice::None => "none",
+                    _ => "any",
+                })
+            });
         }
         body["tools"] = json!(prepared.tools);
         if let Some(choice) = prepared.tool_choice {

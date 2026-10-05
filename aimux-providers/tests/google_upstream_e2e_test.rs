@@ -71,7 +71,7 @@ async fn generate_preserves_usage_and_metadata() {
     assert_eq!(result.usage.output_tokens.total, Some(160));
     assert_eq!(result.usage.output_tokens.text, Some(71));
     assert_eq!(result.usage.output_tokens.reasoning, Some(89));
-    assert_eq!(result.usage.raw, Some(usage.clone()));
+    assert_eq!(result.usage.raw, usage.as_object().cloned());
     let metadata = result.provider_metadata.unwrap();
     assert_eq!(metadata["google"]["usageMetadata"], usage);
     assert_eq!(metadata["google"]["serviceTier"], "standard");

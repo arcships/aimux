@@ -253,10 +253,10 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
                 headers: Some(response.response_headers),
                 body: response.raw_value,
             },
-            provider_metadata: response
-                .value
-                .usage_metadata
-                .map(|usage| provider_namespace("google", json!({"usageMetadata": usage}))),
+            provider_metadata: response.value.usage_metadata.map(|usage| {
+                provider_namespace("google", json!({"usageMetadata": usage}))
+                    .expect("provider metadata must be an object")
+            }),
         })
     }
 
@@ -447,7 +447,7 @@ impl VertexGeminiTranscriptionModel {
                 }
                 yield Ok(TranscriptionStreamPart::Finish {
                     text: full_text, segments: Vec::new(), language, duration_in_seconds: None,
-                    provider_metadata: usage_metadata.map(|usage| provider_namespace("google", json!({"usageMetadata": usage}))),
+                    provider_metadata: usage_metadata.map(|usage| provider_namespace("google", json!({"usageMetadata": usage})).expect("provider metadata must be an object")),
                 });
             }
             socket.close().await;

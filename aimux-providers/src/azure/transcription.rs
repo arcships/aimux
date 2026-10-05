@@ -349,7 +349,7 @@ impl TranscriptionModel for AzureTranscriptionModel {
             provider_metadata: Some(provider_namespace(
                 "azure",
                 json!({"phrases": metadata_phrases}),
-            )),
+            )?),
             response: TranscriptionResponse {
                 timestamp: Some(timestamp),
                 model_id: Some(self.model_id.clone()),

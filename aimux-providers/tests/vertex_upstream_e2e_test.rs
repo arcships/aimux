@@ -87,7 +87,10 @@ async fn language_generate_preserves_tool_schema_references() {
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
     assert_eq!(result.usage.input_tokens.total, Some(1));
     assert_eq!(result.usage.output_tokens.total, Some(1));
-    assert_eq!(result.usage.raw, Some(response["usageMetadata"].clone()));
+    assert_eq!(
+        result.usage.raw,
+        response["usageMetadata"].as_object().cloned()
+    );
     let metadata = serde_json::to_value(result.provider_metadata.unwrap()).unwrap();
     assert_eq!(
         metadata["googleVertex"]["usageMetadata"],
@@ -115,7 +118,7 @@ async fn embedding_request_and_result() {
         json!({
             "outputDimensionality": 768, "taskType": "SEMANTIC_SIMILARITY", "title": "test title", "autoTruncate": false
         }),
-    ));
+    ).expect("provider metadata must be an object"));
     let result = provider(&fetch)
         .embedding("textembedding-gecko@001")
         .do_embed(&options)
@@ -395,7 +398,7 @@ async fn gemini_transcription_generate_request_and_result() {
         json!({
             "customVocabulary": ["Gemini", "Kubernetes"], "languageCodes": ["es-ES"], "mode": "SMART",
         }),
-    ));
+    ).expect("provider metadata must be an object"));
     let result = provider
         .transcription("gemini-3.5-transcribe")
         .do_generate(&options)

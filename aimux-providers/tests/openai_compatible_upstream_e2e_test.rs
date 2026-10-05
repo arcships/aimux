@@ -83,10 +83,10 @@ async fn chat_generate_metadata_and_usage() {
         usage.clone(),
     ))]);
     let mut opts = options();
-    opts.provider_options = Some(provider_namespace(
-        "testProvider",
-        json!({"reasoningEffort":"high"}),
-    ));
+    opts.provider_options = Some(
+        provider_namespace("testProvider", json!({"reasoningEffort":"high"}))
+            .expect("provider metadata must be an object"),
+    );
     let result = provider(&fetch)
         .chat("test-model")
         .do_generate(&opts)
@@ -106,7 +106,7 @@ async fn chat_generate_metadata_and_usage() {
     assert_eq!(result.usage.output_tokens.total, Some(30));
     assert_eq!(result.usage.output_tokens.text, Some(20));
     assert_eq!(result.usage.output_tokens.reasoning, Some(10));
-    assert_eq!(result.usage.raw, Some(usage));
+    assert_eq!(result.usage.raw, usage.as_object().cloned());
     let metadata = result.provider_metadata.unwrap();
     assert_eq!(
         metadata,
@@ -114,6 +114,7 @@ async fn chat_generate_metadata_and_usage() {
             "testProvider",
             json!({"acceptedPredictionTokens":15,"rejectedPredictionTokens":5})
         )
+        .expect("provider metadata must be an object")
     );
     assert!(!metadata.contains_key("test-provider"));
     let response = result.response.unwrap();
@@ -195,11 +196,11 @@ async fn chat_stream_reasoning_before_text() {
     assert_eq!(
         provider_metadata.as_ref().unwrap(),
         &provider_namespace("test-provider", json!({}))
+            .expect("provider metadata must be an object")
     );
 }
 
 /// TS: "should parse thought signature from extra_content and include in providerMetadata" (openai-compatible/src/chat/openai-compatible-chat-language-model.test.ts)
-#[ignore = "CallOptions::tool_choice is not optional, so `tool_choice: \"auto\"` is always sent; upstream omits it when unset"]
 #[tokio::test]
 async fn chat_tool_call_preserves_arguments_and_signature() {
     let fetch = MockFetch::new(vec![Canned::json(&chat_response(
@@ -239,6 +240,7 @@ async fn chat_tool_call_preserves_arguments_and_signature() {
     assert_eq!(
         call.provider_metadata.as_ref().unwrap(),
         &provider_namespace("test-provider", json!({"thoughtSignature":"<Signature A>"}))
+            .expect("provider metadata must be an object")
     );
 }
 
@@ -283,6 +285,7 @@ async fn chat_stream_preserves_structured_error() {
     assert_eq!(
         provider_metadata.as_ref().unwrap(),
         &provider_namespace("test-provider", json!({}))
+            .expect("provider metadata must be an object")
     );
 }
 

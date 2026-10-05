@@ -16,8 +16,8 @@
 //! overridden with the mock server's root URI (no `/v1` suffix), so the
 //! resulting request path is `/responses`.
 
-use aimux_core::tool::RawToolCall;
 use aimux_core::tool::ToolResult;
+use aimux_core::tool::{FunctionTool, RawToolCall};
 use std::collections::HashMap;
 
 use futures::StreamExt;
@@ -36,7 +36,6 @@ use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, ReasoningOutput, Source};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_providers::huggingface::responses::convert_to_huggingface_responses_messages;
@@ -1477,10 +1476,13 @@ async fn should_handle_reasoning_content_in_responses() {
             assert_eq!(text, "Let me think about this problem step by step...");
             assert_eq!(
                 provider_metadata.as_ref(),
-                Some(&aimux_core::shared::provider_namespace(
-                    "huggingface",
-                    json!({ "itemId": "reasoning_1" })
-                ))
+                Some(
+                    &aimux_core::shared::provider_namespace(
+                        "huggingface",
+                        json!({ "itemId": "reasoning_1" })
+                    )
+                    .unwrap()
+                )
             );
         }
         other => panic!("expected Reasoning at [0], got {other:?}"),
@@ -1565,10 +1567,13 @@ async fn should_stream_reasoning_content() {
             assert_eq!(id, "reasoning_stream");
             assert_eq!(
                 provider_metadata.as_ref(),
-                Some(&aimux_core::shared::provider_namespace(
-                    "huggingface",
-                    json!({ "itemId": "reasoning_stream" })
-                ))
+                Some(
+                    &aimux_core::shared::provider_namespace(
+                        "huggingface",
+                        json!({ "itemId": "reasoning_stream" })
+                    )
+                    .unwrap()
+                )
             );
         }
         other => panic!("expected ReasoningStart, got {other:?}"),
@@ -1738,9 +1743,9 @@ async fn should_prepare_tools_correctly() {
         )
         .with_description("Get weather information"),
     )]);
-    options.tool_choice = ToolChoice::Tool {
+    options.tool_choice = Some(ToolChoice::Tool {
         tool_name: "getWeather".to_string(),
-    };
+    });
 
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result
@@ -1804,7 +1809,7 @@ async fn should_handle_auto_and_required_tool_choices() {
         "test",
         json!({ "type": "object" }),
     ))]);
-    options.tool_choice = ToolChoice::Auto;
+    options.tool_choice = Some(ToolChoice::Auto);
 
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result
@@ -1819,7 +1824,7 @@ async fn should_handle_auto_and_required_tool_choices() {
         "test",
         json!({ "type": "object" }),
     ))]);
-    options.tool_choice = ToolChoice::Required;
+    options.tool_choice = Some(ToolChoice::Required);
 
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result
@@ -1899,6 +1904,7 @@ fn passes_through_url_source_for_top_level_only_image() {
     let prompt = vec![LanguageModelMessage::User {
         content: vec![UserPart::File(FilePart {
             data: FileData::Url {
+                original_url: None,
                 url: "https://example.com/x.png".into(),
             },
             media_type: "image".into(),

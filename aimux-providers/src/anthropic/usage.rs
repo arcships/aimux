@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::shared::provider_namespace;
-use aimux_core::types::{ProviderMetadata, TokenUsage, Usage};
+use aimux_core::types::{ProviderMetadata, Usage};
 
 use crate::anthropic::options::CANONICAL as CANONICAL_KEY;
 use crate::anthropic::types::AnthropicUsage;
@@ -234,7 +234,8 @@ pub(crate) fn result_provider_metadata(
         "container": container,
         "contextManagement": context_management,
     });
-    let mut result = provider_namespace(CANONICAL_KEY, metadata);
+    let mut result =
+        provider_namespace(CANONICAL_KEY, metadata).expect("provider metadata must be an object");
     if used_custom_options_key && options_name != CANONICAL_KEY {
         result.insert(options_name.to_string(), result[CANONICAL_KEY].clone());
     }
@@ -299,20 +300,18 @@ pub fn usage_from_anthropic(usage: &AnthropicUsage) -> Usage {
         Ok(v) => {
             let r = convert_anthropic_usage(&v, None);
             Usage {
-                input_tokens: TokenUsage {
+                input_tokens: aimux_core::types::InputTokenUsage {
                     total: Some(r.input_tokens.total as u32),
                     no_cache: Some(r.input_tokens.no_cache as u32),
                     cache_read: Some(r.input_tokens.cache_read as u32),
                     cache_write: Some(r.input_tokens.cache_write as u32),
-                    ..Default::default()
                 },
-                output_tokens: TokenUsage {
+                output_tokens: aimux_core::types::OutputTokenUsage {
                     total: Some(r.output_tokens.total as u32),
                     text: r.output_tokens.text.map(|t| t as u32),
                     reasoning: r.output_tokens.reasoning.map(|t| t as u32),
-                    ..Default::default()
                 },
-                raw: Some(r.raw),
+                raw: r.raw.as_object().cloned(),
             }
         }
         Err(_) => Usage::default(),

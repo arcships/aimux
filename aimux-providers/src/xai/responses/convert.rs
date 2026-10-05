@@ -65,21 +65,21 @@ pub fn convert_xai_responses_usage(usage: &XaiResponsesUsage) -> aimux_core::typ
     };
 
     aimux_core::types::Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input_total as u32),
             no_cache: Some(input_no_cache as u32),
             cache_read: Some(cache_read as u32),
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(usage.output_tokens as u32),
             text: Some((usage.output_tokens - reasoning) as u32),
             reasoning: Some(reasoning as u32),
-            ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -371,9 +371,7 @@ fn validate_provider_tool(tool: &aimux_core::tool::ProviderTool) -> Result<(), A
     {
         return Ok(());
     }
-    let args = tool.args.as_object().ok_or_else(|| {
-        AiMuxError::InvalidArgument(format!("Invalid arguments for {}", tool.name))
-    })?;
+    let args = &tool.args;
     for (key, value) in args {
         validate_value(key, value, |value| match (id, key.as_str()) {
             ("xai.web_search", "allowedDomains" | "excludedDomains") => string_array(value, 5),
@@ -453,12 +451,12 @@ pub fn convert_to_xai_responses_input(
                                 FileData::Data {
                                     data: FileBytes::Base64(data),
                                 } => convert_image_part(file, Some(data), None)?,
-                                FileData::Url { url }
+                                FileData::Url { url, .. }
                                     if get_top_level_media_type(&file.media_type) == "image" =>
                                 {
                                     convert_image_part(file, None, Some(url))?
                                 }
-                                FileData::Url { url } => {
+                                FileData::Url { url, .. } => {
                                     json!({ "type": "input_file", "file_url": url })
                                 }
                                 FileData::Reference { reference } => {
@@ -760,7 +758,7 @@ pub fn build_responses_request_body(
     let (input, input_warnings) = convert_to_xai_responses_input(&options.prompt)?;
     warnings.extend(input_warnings);
 
-    let prepared = prepare_responses_tools(&options.tools, Some(&options.tool_choice))?;
+    let prepared = prepare_responses_tools(&options.tools, options.tool_choice.as_ref())?;
     for tw in &prepared.tool_warnings {
         warnings.push(tw.clone());
     }

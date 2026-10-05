@@ -20,5 +20,5 @@ pub(crate) fn xai_options(provider_options: Option<&SharedProviderOptions>) -> O
 
 /// `{ "xai": payload }`.
 pub(crate) fn xai_metadata(payload: Value) -> ProviderMetadata {
-    provider_namespace(NAMESPACE, payload)
+    provider_namespace(NAMESPACE, payload).expect("metadata payload is an object")
 }

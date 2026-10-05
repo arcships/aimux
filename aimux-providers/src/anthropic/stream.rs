@@ -312,10 +312,10 @@ pub(crate) fn tool_call_caller_metadata(
         }),
         ToolCallCaller::Direct => json!({ "type": "direct" }),
     };
-    Some(provider_namespace(
-        options_name,
-        json!({ "caller": caller }),
-    ))
+    Some(
+        provider_namespace(options_name, json!({ "caller": caller }))
+            .expect("provider metadata must be an object"),
+    )
 }
 
 fn is_tool_search_provider_name(name: &str) -> bool {
@@ -411,12 +411,15 @@ pub(crate) fn stream_parts_for_result_block(
                     source_type: "url".to_string(),
                     url: str_field(result, "url"),
                     title: str_field(result, "title"),
-                    provider_metadata: Some(provider_namespace(
-                        options_name,
-                        json!({
-                            "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
-                        }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace(
+                            options_name,
+                            json!({
+                                "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
+                            }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
                 })
             }));
             parts
@@ -493,6 +496,7 @@ pub(crate) fn stream_parts_for_result_block(
                         options_name,
                         json!({ "type": "mcp-tool-use", "serverName": server }),
                     )
+                    .expect("provider metadata must be an object")
                 }),
             })]
         }
@@ -506,8 +510,10 @@ fn citation_metadata(citations: &[Value]) -> Option<ProviderMetadata> {
         .filter(|citation| citation["type"] == "web_search_result_location")
         .cloned()
         .collect();
-    (!citations.is_empty())
-        .then(|| provider_namespace(CANONICAL, json!({ "citations": citations })))
+    (!citations.is_empty()).then(|| {
+        provider_namespace(CANONICAL, json!({ "citations": citations }))
+            .expect("provider metadata must be an object")
+    })
 }
 
 fn citation_source(citation: &Value) -> Option<Source> {
@@ -516,13 +522,16 @@ fn citation_source(citation: &Value) -> Option<Source> {
         source_type: "url".to_string(),
         url: str_field(citation, "url"),
         title: str_field(citation, "title"),
-        provider_metadata: Some(provider_namespace(
-            CANONICAL,
-            json!({
-                "citedText": citation["cited_text"],
-                "encryptedIndex": citation["encrypted_index"],
-            }),
-        )),
+        provider_metadata: Some(
+            provider_namespace(
+                CANONICAL,
+                json!({
+                    "citedText": citation["cited_text"],
+                    "encryptedIndex": citation["encrypted_index"],
+                }),
+            )
+            .expect("provider metadata must be an object"),
+        ),
     })
 }
 
@@ -531,7 +540,7 @@ fn compaction_metadata(signature: Option<&str>) -> ProviderMetadata {
     if let Some(signature) = signature {
         metadata["signature"] = json!(signature);
     }
-    provider_namespace(CANONICAL, metadata)
+    provider_namespace(CANONICAL, metadata).expect("provider metadata must be an object")
 }
 
 /// Map Anthropic response content blocks into `GenerateContent` items.
@@ -574,6 +583,15 @@ pub(crate) fn parse_anthropic_content(
 
     for block in blocks {
         match block {
+            ContentBlock::ContainerUpload { file_id } => {
+                content.push(GenerateContent::Custom {
+                    kind: "anthropic.container_upload".to_string(),
+                    provider_metadata: Some(
+                        provider_namespace(CANONICAL, json!({ "fileId": file_id }))
+                            .expect("provider metadata must be an object"),
+                    ),
+                });
+            }
             ContentBlock::Text { .. } if uses_json_response_tool => {}
             ContentBlock::Text { text, citations } => {
                 content.push(GenerateContent::Text {
@@ -626,10 +644,10 @@ pub(crate) fn parse_anthropic_content(
             } => {
                 content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: thinking.clone(),
-                    provider_metadata: Some(provider_namespace(
-                        options_name,
-                        json!({ "signature": signature }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace(options_name, json!({ "signature": signature }))
+                            .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             // Provider-executed (server-side) tool calls are surfaced as tool
@@ -667,20 +685,23 @@ pub(crate) fn parse_anthropic_content(
                     provider_executed: Some(true),
                     dynamic: Some(true),
                     thought_signature: None,
-                    provider_metadata: Some(provider_namespace(
-                        options_name,
-                        json!({ "type": "mcp-tool-use", "serverName": server_name }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace(
+                            options_name,
+                            json!({ "type": "mcp-tool-use", "serverName": server_name }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             // Redacted thinking — upstream emits as reasoning with redactedData
             ContentBlock::RedactedThinking { data } => {
                 content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: String::new(),
-                    provider_metadata: Some(provider_namespace(
-                        options_name,
-                        json!({ "redactedData": data }),
-                    )),
+                    provider_metadata: Some(
+                        provider_namespace(options_name, json!({ "redactedData": data }))
+                            .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             // ── Server-tool result blocks → GenerateContent::ToolResult ──
@@ -719,13 +740,16 @@ pub(crate) fn parse_anthropic_content(
                                 source_type: "url".to_string(),
                                 url: str_field(result, "url"),
                                 title: str_field(result, "title"),
-                                provider_metadata: Some(provider_namespace(
-                                    options_name,
-                                    json!({
-                                        "pageAge": result.get("page_age").cloned()
-                                            .unwrap_or(Value::Null),
-                                    }),
-                                )),
+                                provider_metadata: Some(
+                                    provider_namespace(
+                                        options_name,
+                                        json!({
+                                            "pageAge": result.get("page_age").cloned()
+                                                .unwrap_or(Value::Null),
+                                        }),
+                                    )
+                                    .expect("provider metadata must be an object"),
+                                ),
                             }));
                         }
                     }
@@ -851,6 +875,7 @@ pub(crate) fn parse_anthropic_content(
                             options_name,
                             json!({ "type": "mcp-tool-use", "serverName": server }),
                         )
+                        .expect("provider metadata must be an object")
                     }),
                 }));
             }
@@ -885,6 +910,7 @@ pub(crate) async fn anthropic_generate_core(
     )
     .await?;
 
+    let response_body = resp.raw_value;
     let data: AnthropicResponse = resp.value;
 
     let is_json_response_from_tool = uses_json_response_tool
@@ -943,7 +969,7 @@ pub(crate) async fn anthropic_generate_core(
             timestamp: None,
             model_id: Some(data.model),
             headers: Some(resp.response_headers),
-            body: resp.raw_value,
+            body: response_body,
         }),
         request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
     })
@@ -1200,7 +1226,7 @@ pub(crate) async fn anthropic_stream_core(
                                         provider_metadata: Some(provider_namespace(CANONICAL, json!({
                                                 "type": "mcp-tool-use",
                                                 "serverName": server_name,
-                                            }))),
+                                            })).expect("provider metadata must be an object")),
                                     }));
                                 }
                                 // Redacted thinking — emit as ReasoningStart.
@@ -1208,7 +1234,7 @@ pub(crate) async fn anthropic_stream_core(
                                     let id = index.to_string();
                                     yield Ok(StreamPart::ReasoningStart {
                                         id: id.clone(),
-                                        provider_metadata: Some(provider_namespace(CANONICAL, json!({ "redactedData": data }))),
+                                        provider_metadata: Some(provider_namespace(CANONICAL, json!({ "redactedData": data })).expect("provider metadata must be an object")),
                                     });
                                     blocks.insert(
                                         index,
@@ -1309,7 +1335,7 @@ pub(crate) async fn anthropic_stream_core(
                                 && let Some(BlockState::Thinking) = blocks.get(&index) {
                                     yield Ok(StreamPart::ReasoningDelta {
                                         id: index.to_string(), delta: String::new(),
-                                        provider_metadata: Some(provider_namespace(CANONICAL, json!({ "signature": sig }))),
+                                        provider_metadata: Some(provider_namespace(CANONICAL, json!({ "signature": sig })).expect("provider metadata must be an object")),
                                     });
                                 }
                         }
@@ -1385,7 +1411,7 @@ pub(crate) async fn anthropic_stream_core(
                                 }
                                 if let Ok(usage) = serde_json::from_value(effective_usage.clone()) {
                                     final_usage = super::usage::usage_from_anthropic(&usage);
-                                    final_usage.raw = Some(raw_usage.clone());
+                                    final_usage.raw = raw_usage.as_object().cloned();
                                 }
                             }
                         }

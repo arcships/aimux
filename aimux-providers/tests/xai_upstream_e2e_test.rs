@@ -52,7 +52,6 @@ fn assert_request(fetch: &MockFetch, stream: bool, tools: bool) {
     }
     if tools {
         expected["tools"] = json!([{"type": "web_search"}]);
-        expected["tool_choice"] = json!("auto");
     }
     assert_eq!(request.json_body(), expected);
 }
@@ -145,7 +144,7 @@ async fn stream_reports_cost_and_text() {
     assert_eq!(usage.output_tokens.total, Some(5));
     assert_eq!(
         metadata.as_ref().unwrap(),
-        &provider_namespace("xai", json!({"costInUsdTicks": 113500}))
+        &provider_namespace("xai", json!({"costInUsdTicks": 113500})).unwrap()
     );
     assert!(
         !parts
@@ -176,7 +175,7 @@ async fn tool_results_preserve_actions_and_sources() {
     options.tools = Some(vec![Tool::Provider(ProviderTool {
         id: "xai.web_search".into(),
         name: "web_search".into(),
-        args: json!({}),
+        args: serde_json::Map::new(),
     })]);
     let result = model(&fetch).do_generate(&options).await.unwrap();
     assert_request(&fetch, false, true);

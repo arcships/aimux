@@ -175,7 +175,9 @@ async fn stream_text_deltas() {
     assert_eq!(usage.output_tokens.total, Some(227));
     assert_eq!(
         usage.raw,
-        Some(json!({"input_tokens": 17, "output_tokens": 227}))
+        json!({"input_tokens": 17, "output_tokens": 227})
+            .as_object()
+            .cloned()
     );
     assert_eq!(provider_metadata.as_ref().unwrap()["anthropic"], serde_json::from_value::<serde_json::Map<String, Value>>(json!({"container": null, "contextManagement": null, "iterations": null, "stopSequence": null, "usage": {"input_tokens": 17, "output_tokens": 227}})).unwrap());
 }
@@ -205,7 +207,6 @@ async fn generate_tool_call() {
         .unwrap();
     let mut expected = request();
     expected["tools"] = json!([{"name": "test-tool", "input_schema": schema}]);
-    expected["tool_choice"] = json!({"type": "auto"});
     assert_eq!(fetch.seen().len(), 1);
     assert_eq!(fetch.seen()[0].json_body(), expected);
     assert_eq!(result.content.len(), 2);

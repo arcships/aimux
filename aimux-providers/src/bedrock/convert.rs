@@ -317,7 +317,7 @@ fn push_file_part(file: &FilePart, content: &mut Vec<Value>, doc_counter: &mut u
         content,
         doc_counter,
     );
-    if let FileData::Url { url } = &file.data
+    if let FileData::Url { url, .. } = &file.data
         && let Some(block) = content.last_mut()
     {
         let inner = if block.get("guardContent").is_some() {
@@ -806,7 +806,7 @@ fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
         FileData::Reference { .. } => Err(aimux_core::AiMuxError::UnsupportedFunctionality(
             "File reference data".into(),
         )),
-        FileData::Url { url } => validate_media_type(&file.media_type, true, Some(url)),
+        FileData::Url { url, .. } => validate_media_type(&file.media_type, true, Some(url)),
         FileData::Text { .. } => {
             let media_type = if is_full_media_type(&file.media_type) {
                 &file.media_type
@@ -893,7 +893,7 @@ fn supports_native_structured_output(model_id: &str) -> bool {
 #[must_use]
 pub fn prepare_tools(
     tools: &Option<Vec<FunctionTool>>,
-    tool_choice: &ToolChoice,
+    tool_choice: Option<&ToolChoice>,
     model_id: &str,
 ) -> Value {
     let non_empty = tools.as_ref().filter(|t| !t.is_empty());
@@ -902,13 +902,15 @@ pub fn prepare_tools(
     };
 
     // `toolChoice: none` clears tools entirely (matches TS).
-    if matches!(tool_choice, ToolChoice::None) {
+    if matches!(tool_choice, Some(ToolChoice::None)) {
         return json!({});
     }
 
     // `toolChoice: tool` filters function tools to the named one.
     let filtered: Vec<&FunctionTool> = match tool_choice {
-        ToolChoice::Tool { tool_name } => tools.iter().filter(|t| &t.name == tool_name).collect(),
+        Some(ToolChoice::Tool { tool_name }) => {
+            tools.iter().filter(|t| &t.name == tool_name).collect()
+        }
         _ => tools.iter().collect(),
     };
 
@@ -939,10 +941,11 @@ pub fn prepare_tools(
     }
 
     let tool_choice_val = match tool_choice {
-        ToolChoice::Auto => json!({ "auto": {} }),
-        ToolChoice::Required => json!({ "any": {} }),
-        ToolChoice::Tool { tool_name } => json!({ "tool": { "name": tool_name } }),
-        ToolChoice::None => unreachable!(),
+        Some(ToolChoice::Auto) => json!({ "auto": {} }),
+        Some(ToolChoice::Required) => json!({ "any": {} }),
+        Some(ToolChoice::Tool { tool_name }) => json!({ "tool": { "name": tool_name } }),
+        Some(ToolChoice::None) => unreachable!(),
+        None => return json!({ "tools": tool_specs }),
     };
 
     json!({ "tools": tool_specs, "toolChoice": tool_choice_val })
@@ -1335,7 +1338,7 @@ pub fn build_request_body_checked(
         ));
     }
     let tool_choice = if uses_json_tool {
-        ToolChoice::Required
+        Some(ToolChoice::Required)
     } else {
         call.tool_choice.clone()
     };
@@ -1345,7 +1348,7 @@ pub fn build_request_body_checked(
         == Some(true);
     let mut provider_tools = super::tools::prepare_provider_tools(
         Some(&all_tools),
-        &tool_choice,
+        tool_choice.as_ref(),
         anthropic,
         disable_parallel,
         rejects_forced,
@@ -1366,12 +1369,12 @@ pub fn build_request_body_checked(
             .collect(),
     );
     let function_choice =
-        if provider_tools.using_anthropic_tools && matches!(tool_choice, ToolChoice::None) {
-            ToolChoice::Auto
+        if provider_tools.using_anthropic_tools && matches!(tool_choice, Some(ToolChoice::None)) {
+            Some(ToolChoice::Auto)
         } else {
             tool_choice.clone()
         };
-    let mut tool_config = prepare_tools(&tools, &function_choice, model_id);
+    let mut tool_config = prepare_tools(&tools, function_choice.as_ref(), model_id);
     if !provider_tools.tools.is_empty() {
         let mut combined = provider_tools.tools;
         if let Some(functions) = tool_config.get("tools").and_then(Value::as_array) {
@@ -1397,18 +1400,18 @@ pub fn build_request_body_checked(
     }
     if !provider_tools.using_anthropic_tools
         && rejects_forced
-        && matches!(tool_choice, ToolChoice::Required | ToolChoice::Tool { .. })
+        && matches!(tool_choice, Some(ToolChoice::Required | ToolChoice::Tool { .. }))
         && all_tools.iter().any(|tool| !matches!(tool, Tool::Provider(provider) if matches!(provider.id.as_str(), "anthropic.web_search_20250305" | "anthropic.web_search_20260318" | "anthropic.web_fetch_20260318")))
     {
         if tool_config.get("tools").is_some() { tool_config["toolChoice"] = json!({"auto":{}}); }
         let details = match &tool_choice {
-            ToolChoice::Tool {tool_name} => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
+            Some(ToolChoice::Tool {tool_name}) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
             _ => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".into(),
         };
         warn("toolChoice", Some(&details));
     }
     if let Some(tools) = &tools {
-        for tool in tools.iter().filter(|tool| !matches!(&function_choice, ToolChoice::Tool { tool_name } if tool_name != &tool.name)) {
+        for tool in tools.iter().filter(|tool| !matches!(&function_choice, Some(ToolChoice::Tool { tool_name }) if tool_name != &tool.name)) {
             if let Some(strict) = tool.strict
                 && !supports_strict_tools(model_id)
             {
@@ -1440,8 +1443,10 @@ pub fn build_request_body_checked(
             json!({"type":"auto","disable_parallel_tool_use":true})
         } else {
             match &tool_choice {
-                ToolChoice::Required => json!({"type":"any","disable_parallel_tool_use":true}),
-                ToolChoice::Tool { tool_name } => {
+                Some(ToolChoice::Required) => {
+                    json!({"type":"any","disable_parallel_tool_use":true})
+                }
+                Some(ToolChoice::Tool { tool_name }) => {
                     json!({"type":"tool","name":tool_name,"disable_parallel_tool_use":true})
                 }
                 _ => json!({"type":"auto","disable_parallel_tool_use":true}),
@@ -1647,7 +1652,7 @@ pub fn map_finish_reason(reason: &str) -> FinishReason {
 /// cases); `outputTokens.text` mirrors the TS `outputTokens.text` field.
 #[must_use]
 pub fn convert_usage(usage: Option<&BedrockUsage>) -> aimux_core::types::Usage {
-    use aimux_core::types::{TokenUsage, Usage};
+    use aimux_core::types::Usage;
 
     let Some(usage) = usage else {
         return Usage::default();
@@ -1659,20 +1664,21 @@ pub fn convert_usage(usage: Option<&BedrockUsage>) -> aimux_core::types::Usage {
     let cache_write = usage.cache_write_input_tokens.unwrap_or(0);
 
     Usage {
-        input_tokens: TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input + cache_read + cache_write),
             no_cache: Some(input),
             cache_read: Some(cache_read),
             cache_write: Some(cache_write),
-            ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(output),
             text: Some(output),
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 

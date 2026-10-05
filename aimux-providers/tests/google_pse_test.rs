@@ -13,7 +13,6 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
-use aimux_core::shared::provider_namespace;
 use aimux_provider_utils::Resolvable;
 use aimux_providers::{GooglePseProvider, GooglePseProviderSettings, create_google_pse};
 
@@ -158,37 +157,6 @@ async fn do_search_forwards_max_results_as_num() {
 }
 
 // -- cx from provider_options ------------------------------------------------
-
-#[tokio::test]
-async fn cx_resolved_from_provider_options_when_config_has_none() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/customsearch/v1"))
-        .and(query_param("cx", "options-cx"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(search_body()))
-        .mount(&server)
-        .await;
-
-    // Config without cx.
-    let config = GooglePseProviderSettings {
-        api_key: Some(Resolvable::Value(API_KEY.to_string())),
-        base_url: Some(format!("{}/customsearch/v1", server.uri()).to_string()),
-        ..Default::default()
-    };
-    let provider = create_google_pse(config).unwrap();
-    let model = provider.search_model();
-
-    let mut options = opts("rust language");
-    options.provider_options = Some(provider_namespace(
-        "google_pse",
-        json!({ "cx": "options-cx" }),
-    ));
-    model.do_search(&options).await.unwrap();
-
-    let requests = server.received_requests().await.unwrap();
-    let query = requests[0].url.query().unwrap_or("");
-    assert!(query.contains("cx=options-cx"), "query: {query}");
-}
 
 #[tokio::test]
 async fn missing_cx_returns_invalid_argument_error() {

@@ -82,7 +82,13 @@ impl ImageModel for GoogleImageModel {
         }
         for file in options.files.iter().flatten() {
             let (data, media_type) = match file {
-                ImageFile::Url { url } => (FileData::Url { url: url.clone() }, "image/*".into()),
+                ImageFile::Url { url } => (
+                    FileData::Url {
+                        url: url.clone(),
+                        original_url: None,
+                    },
+                    "image/*".into(),
+                ),
                 ImageFile::File { media_type, data } => (
                     FileData::Data {
                         data: match data {
@@ -136,7 +142,7 @@ impl ImageModel for GoogleImageModel {
             call.tools = Some(vec![Tool::Provider(ProviderTool {
                 id: "google.google_search".into(),
                 name: "google_search".into(),
-                args: search,
+                args: object.clone(),
             })]);
         }
         google.insert("responseModalities".into(), json!(["IMAGE"]));

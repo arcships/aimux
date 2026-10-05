@@ -24,7 +24,7 @@ pub(crate) struct PreparedTools {
 /// the beta one, or when strict and non-strict function tools are mixed.
 pub(crate) fn prepare_tools(
     tools: Option<&Vec<Tool>>,
-    tool_choice: &ToolChoice,
+    tool_choice: Option<&ToolChoice>,
     supports_strict_tool_calls: bool,
 ) -> Result<PreparedTools, AiMuxError> {
     let mut tool_warnings = Vec::new();
@@ -80,17 +80,17 @@ pub(crate) fn prepare_tools(
         }
     }
 
-    let tool_choice = match tool_choice {
+    let tool_choice = tool_choice.map(|choice| match choice {
         ToolChoice::Auto => json!("auto"),
         ToolChoice::None => json!("none"),
         ToolChoice::Required => json!("required"),
         ToolChoice::Tool { tool_name } => {
             json!({ "type": "function", "function": { "name": tool_name } })
         }
-    };
+    });
     Ok(PreparedTools {
         tools: Some(deepseek_tools),
-        tool_choice: Some(tool_choice),
+        tool_choice,
         tool_warnings,
     })
 }

@@ -210,7 +210,7 @@ async fn generate_tool_call_keeps_argument_text() {
     assert_eq!(result.finish_reason.raw.as_deref(), Some("tool_calls"));
     assert_eq!(result.usage.input_tokens.total, Some(124));
     assert_eq!(result.usage.output_tokens.total, Some(22));
-    assert_eq!(result.usage.raw, Some(body["usage"].clone()));
+    assert_eq!(result.usage.raw, body["usage"].as_object().cloned());
     assert!(result.warnings.is_empty());
     assert!(result.provider_metadata.is_none());
 }

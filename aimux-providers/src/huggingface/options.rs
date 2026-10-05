@@ -20,5 +20,5 @@ pub(crate) fn huggingface_options(
 
 /// `{ "huggingface": payload }`.
 pub(crate) fn huggingface_metadata(payload: Value) -> ProviderMetadata {
-    provider_namespace(NAMESPACE, payload)
+    provider_namespace(NAMESPACE, payload).expect("metadata payload is an object")
 }

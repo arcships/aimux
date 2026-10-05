@@ -336,7 +336,7 @@ fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Val
                 "text file parts".into(),
             ));
         }
-        FileData::Url { url } => (None, Some(url.as_str())),
+        FileData::Url { url, .. } => (None, Some(url.as_str())),
         FileData::Data { data } => (
             Some(match data {
                 FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
@@ -1056,7 +1056,7 @@ fn apply_tools(
     {
         body["tools"] = json!([]);
     }
-    let prepared = prepare_tools(&function_tools, Some(&options.tool_choice));
+    let prepared = prepare_tools(&function_tools, options.tool_choice.as_ref());
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);
         if let Some(tc) = prepared.tool_choice {

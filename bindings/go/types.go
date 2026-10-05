@@ -77,21 +77,26 @@ func ToolChoiceTool(name string) ToolChoice {
 
 // ── Core types ───────────────────────────────────────────────────────────────
 
-// TokenUsage is token usage detail with cache breakdown.
-type TokenUsage struct {
+// InputTokenUsage is input token usage detail with cache breakdown.
+type InputTokenUsage struct {
 	Total      *uint32 `json:"total,omitempty"`
 	NoCache    *uint32 `json:"no_cache,omitempty"`
 	CacheRead  *uint32 `json:"cache_read,omitempty"`
 	CacheWrite *uint32 `json:"cache_write,omitempty"`
-	Text       *uint32 `json:"text,omitempty"`
-	Reasoning  *uint32 `json:"reasoning,omitempty"`
+}
+
+// OutputTokenUsage is output token usage detail.
+type OutputTokenUsage struct {
+	Total     *uint32 `json:"total,omitempty"`
+	Text      *uint32 `json:"text,omitempty"`
+	Reasoning *uint32 `json:"reasoning,omitempty"`
 }
 
 // Usage is token usage statistics.
 type Usage struct {
-	InputTokens  TokenUsage      `json:"input_tokens,omitempty"`
-	OutputTokens TokenUsage      `json:"output_tokens,omitempty"`
-	Raw          json.RawMessage `json:"raw,omitempty"`
+	InputTokens  InputTokenUsage            `json:"input_tokens,omitempty"`
+	OutputTokens OutputTokenUsage           `json:"output_tokens,omitempty"`
+	Raw          map[string]json.RawMessage `json:"raw,omitempty"`
 }
 
 // FinishReason is the finish reason.
@@ -130,22 +135,29 @@ type ResponseMetadata struct {
 	ModelID   *string `json:"model_id,omitempty"`
 }
 
+// GenerateResponseMetadata is response metadata with an optional HTTP body.
+type GenerateResponseMetadata struct {
+	ResponseMetadata
+	Body json.RawMessage `json:"body,omitempty"`
+}
+
 // GenerateResult is the raw provider result.
 // Mirrors Kotlin GenerateResult (Types.kt:853-871).
 type GenerateResult struct {
-	Content          []ContentPart     `json:"content,omitempty"`
-	FinishReason     FinishReason      `json:"finish_reason,omitempty"`
-	Usage            Usage             `json:"usage,omitempty"`
-	Warnings         []json.RawMessage `json:"warnings,omitempty"`
-	ProviderMetadata json.RawMessage   `json:"provider_metadata,omitempty"`
-	Response         ResponseMetadata  `json:"response,omitempty"`
-	RequestBody      json.RawMessage   `json:"request_body,omitempty"`
-	ResponseHeaders  map[string]string `json:"response_headers,omitempty"`
+	Content          []ContentPart             `json:"content,omitempty"`
+	FinishReason     FinishReason              `json:"finish_reason,omitempty"`
+	Usage            Usage                     `json:"usage,omitempty"`
+	Warnings         []json.RawMessage         `json:"warnings,omitempty"`
+	ProviderMetadata json.RawMessage           `json:"provider_metadata,omitempty"`
+	Response         *GenerateResponseMetadata `json:"response,omitempty"`
+	RequestBody      json.RawMessage           `json:"request_body,omitempty"`
+	ResponseHeaders  map[string]string         `json:"response_headers,omitempty"`
 }
 
 // GenerateTextResult is the typed result of a GenerateText call.
 // Mirrors Kotlin GenerateTextResult (Types.kt:878-886).
 type GenerateTextResult struct {
+	Content          []ContentPart     `json:"content,omitempty"`
 	Text             string            `json:"text"`
 	ToolCalls        []ToolCall        `json:"tool_calls,omitempty"`
 	FinishReason     FinishReason      `json:"finish_reason,omitempty"`
@@ -190,6 +202,7 @@ type GenerateObjectResult struct {
 // Mirrors Rust StreamTextResultAggregated. reasoning/sources/files use weak
 // types (json.RawMessage) — same strategy as GenerateTextResult.
 type StreamTextResultAggregated struct {
+	Content          []ContentPart     `json:"content,omitempty"`
 	Text             string            `json:"text"`
 	Reasoning        []json.RawMessage `json:"reasoning,omitempty"`
 	ReasoningText    string            `json:"reasoning_text,omitempty"`
@@ -308,6 +321,10 @@ type GenerateTextOptions struct {
 	RepairToolCall RepairToolCallFunc `json:"-"`
 }
 
+type FunctionToolInputExample struct {
+	Input map[string]json.RawMessage `json:"input"`
+}
+
 // Tool is a function tool definition (the "function" variant).
 // Mirrors Kotlin Tool.Function (Types.kt:209-230).
 type Tool struct {
@@ -317,7 +334,7 @@ type Tool struct {
 	InputSchema     json.RawMessage            `json:"input_schema,omitempty"`
 	Strict          *bool                      `json:"strict,omitempty"`
 	ProviderOptions map[string]json.RawMessage `json:"provider_options,omitempty"`
-	InputExamples   []json.RawMessage          `json:"input_examples,omitempty"`
+	InputExamples   []FunctionToolInputExample `json:"input_examples,omitempty"`
 }
 
 // MarshalOptions serializes GenerateTextOptions to JSON. Returns "" for nil opts.

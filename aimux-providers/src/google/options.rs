@@ -72,9 +72,13 @@ impl Namespace {
 
     /// Wrap `payload` as response metadata under every write key.
     pub(crate) fn metadata(self, payload: Value) -> ProviderMetadata {
-        let mut metadata = provider_namespace(self.write_keys()[0], payload.clone());
+        let mut metadata = provider_namespace(self.write_keys()[0], payload.clone())
+            .expect("provider metadata must be an object");
         for key in &self.write_keys()[1..] {
-            metadata.extend(provider_namespace(key, payload.clone()));
+            metadata.extend(
+                provider_namespace(key, payload.clone())
+                    .expect("provider metadata must be an object"),
+            );
         }
         metadata
     }

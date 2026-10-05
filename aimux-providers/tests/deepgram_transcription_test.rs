@@ -166,7 +166,8 @@ async fn should_pass_detect_language_query_param() {
     let model = provider.transcription("nova-3");
 
     let mut opts = options(mock_audio(), "audio/wav");
-    let po = aimux_core::shared::provider_namespace("deepgram", json!({"detectLanguage": true}));
+    let po = aimux_core::shared::provider_namespace("deepgram", json!({"detectLanguage": true}))
+        .unwrap();
     opts.provider_options = Some(po);
 
     model.do_generate(&opts).await.unwrap();
@@ -189,7 +190,8 @@ async fn should_return_detected_language() {
     let model = provider.transcription("nova-3");
 
     let mut opts = options(mock_audio(), "audio/wav");
-    let po = aimux_core::shared::provider_namespace("deepgram", json!({"detectLanguage": true}));
+    let po = aimux_core::shared::provider_namespace("deepgram", json!({"detectLanguage": true}))
+        .unwrap();
     opts.provider_options = Some(po);
 
     let result = model.do_generate(&opts).await.unwrap();
@@ -278,7 +280,8 @@ async fn should_return_language_from_inline_response() {
     let model = provider.transcription("nova-3");
 
     let mut opts = options(mock_audio(), "audio/wav");
-    let po = aimux_core::shared::provider_namespace("deepgram", json!({"detectLanguage": true}));
+    let po = aimux_core::shared::provider_namespace("deepgram", json!({"detectLanguage": true}))
+        .unwrap();
     opts.provider_options = Some(po);
 
     let result = model.do_generate(&opts).await.unwrap();

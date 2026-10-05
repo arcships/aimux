@@ -46,18 +46,16 @@ fn generate_source_id() -> String {
 
 fn zero_usage() -> Usage {
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(0),
             no_cache: Some(0),
             cache_read: Some(0),
             cache_write: Some(0),
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(0),
             text: Some(0),
             reasoning: Some(0),
-            ..Default::default()
         },
         raw: None,
     }
@@ -461,7 +459,9 @@ impl LanguageModel for XaiResponsesModel {
 
         let usage = data.usage.as_ref().map_or_else(zero_usage, |u| {
             let mut usage = convert_xai_responses_usage(u);
-            usage.raw = raw_value.get("usage").cloned();
+            usage.raw = raw_value
+                .get("usage")
+                .and_then(|value| value.as_object().cloned());
             usage
         });
         let provider_metadata = response_provider_metadata(
@@ -683,7 +683,7 @@ impl LanguageModel for XaiResponsesModel {
                             if let Some(usage) = response.get("usage")
                                 && let Ok(u) = serde_json::from_value::<types::XaiResponsesUsage>(usage.clone()) {
                                     let mut converted = convert_xai_responses_usage(&u);
-                                    converted.raw = Some(usage.clone());
+                                    converted.raw = usage.as_object().cloned();
                                     final_usage = Some(converted);
                                     cost_in_usd_ticks = u.cost_in_usd_ticks;
                                 }
@@ -732,7 +732,7 @@ impl LanguageModel for XaiResponsesModel {
                             if let Some(usage) = response.get("usage")
                                 && let Ok(u) = serde_json::from_value::<types::XaiResponsesUsage>(usage.clone()) {
                                     let mut converted = convert_xai_responses_usage(&u);
-                                    converted.raw = Some(usage.clone());
+                                    converted.raw = usage.as_object().cloned();
                                     final_usage = Some(converted);
                                 }
                             if response.get("error").is_some_and(|error| !error.is_null()) {

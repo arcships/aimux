@@ -75,7 +75,7 @@ fn assert_usage(usage: &Usage, raw: Value) {
     assert_eq!(usage.output_tokens.total, Some(10));
     assert_eq!(usage.output_tokens.text, Some(10));
     assert_eq!(usage.output_tokens.reasoning, None);
-    assert_eq!(usage.raw, Some(raw));
+    assert_eq!(usage.raw, raw.as_object().cloned());
 }
 
 fn cohere_text() -> Value {
@@ -343,7 +343,7 @@ async fn generate_tool_calls() {
     assert_eq!(result.finish_reason.raw.as_deref(), Some("TOOL_CALL"));
     assert_eq!(result.usage.input_tokens.total, Some(1549));
     assert_eq!(result.usage.output_tokens.total, Some(103));
-    assert_eq!(result.usage.raw, Some(fixture["usage"].clone()));
+    assert_eq!(result.usage.raw, fixture["usage"].as_object().cloned());
 }
 
 /// TS: "should handle unparsable stream parts" (cohere/src/cohere-chat-language-model.test.ts)

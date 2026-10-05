@@ -223,9 +223,9 @@ class ContractTest {
     @Test
     void usageRawPreservesVendorFieldsRoundTrip() throws Exception {
         Types.Usage usage = Types.Usage.builder()
-            .inputTokens(Types.TokenUsage.builder().total(20L).build())
-            .outputTokens(Types.TokenUsage.builder().total(5L).build())
-            .raw(Types.AimuxJson.MAPPER.readTree(
+            .inputTokens(Types.InputTokenUsage.builder().total(20L).build())
+            .outputTokens(Types.OutputTokenUsage.builder().total(5L).build())
+            .raw((com.fasterxml.jackson.databind.node.ObjectNode) Types.AimuxJson.MAPPER.readTree(
                 "{\"prompt_cache_hit_tokens\":42,\"prompt_tokens\":20}"))
             .build();
 

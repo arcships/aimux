@@ -125,10 +125,10 @@ impl VertexImageModel {
             provider_options: None,
         }]);
         call_options.seed = options.seed;
-        call_options.provider_options = Some(provider_namespace(
-            GOOGLE_VERTEX,
-            Value::Object(inner_options),
-        ));
+        call_options.provider_options = Some(
+            provider_namespace(GOOGLE_VERTEX, Value::Object(inner_options))
+                .expect("provider metadata must be an object"),
+        );
         let body = build_vertex_request_body(&self.model_id, &call_options);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 

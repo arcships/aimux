@@ -58,20 +58,19 @@ impl CohereModel {
 fn convert_usage(usage: &UsageResponse) -> Usage {
     let tokens = &usage.tokens;
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(tokens.input_tokens),
             no_cache: Some(tokens.input_tokens),
             cache_read: None,
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(tokens.output_tokens),
             text: Some(tokens.output_tokens),
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(usage.raw.clone()),
+        raw: usage.raw.as_object().cloned(),
     }
 }
 

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, RawToolApprovalRequest};
 use aimux_core::shared::provider_namespace;
 use aimux_core::tool::{RawToolCall, ToolResult};
 use serde_json::{Value, json};
@@ -12,11 +12,17 @@ pub(crate) fn provider_tool_content(
     provider_key: &str,
     tool_names: &HashMap<String, String>,
     shell_provider_executed: bool,
+    mcp_tool_call_id: Option<&str>,
 ) -> Vec<GenerateContent> {
     let kind = part["type"].as_str().unwrap_or_default();
     let item_id = part["id"].as_str().unwrap_or_default();
     let call_id = part["call_id"].as_str().unwrap_or(item_id);
-    let metadata = || Some(provider_namespace(provider_key, json!({"itemId": item_id})));
+    let metadata = || {
+        Some(
+            provider_namespace(provider_key, json!({"itemId": item_id}))
+                .expect("provider metadata must be an object"),
+        )
+    };
     let name = |canonical: &str| {
         tool_names
             .get(canonical)
@@ -164,6 +170,42 @@ pub(crate) fn provider_tool_content(
             json!({"tools": part["tools"]}),
             metadata(),
         )],
+        "compaction" => vec![GenerateContent::Custom {
+            kind: "openai.compaction".into(),
+            provider_metadata: Some(
+                provider_namespace(
+                    provider_key,
+                    json!({
+                        "type": "compaction", "itemId": part["id"],
+                        "encryptedContent": part["encrypted_content"],
+                    }),
+                )
+                .expect("provider metadata must be an object"),
+            ),
+        }],
+        "mcp_approval_request" => {
+            let tool_call_id = aimux_provider_utils::generate_id();
+            let approval_id = part
+                .get("approval_request_id")
+                .and_then(Value::as_str)
+                .unwrap_or(item_id)
+                .to_owned();
+            vec![
+                call(
+                    &tool_call_id,
+                    format!("mcp.{}", part["name"].as_str().unwrap_or_default()),
+                    part["arguments"].as_str().unwrap_or_default().to_owned(),
+                    Some(true),
+                    Some(true),
+                    None,
+                ),
+                GenerateContent::ToolApprovalRequest(RawToolApprovalRequest {
+                    approval_id,
+                    tool_call_id,
+                    provider_metadata: None,
+                }),
+            ]
+        }
         "mcp_call" => {
             let tool_name = format!("mcp.{}", part["name"].as_str().unwrap_or_default());
             let mut output = json!({"type": "call", "serverLabel": part["server_label"],
@@ -175,14 +217,19 @@ pub(crate) fn provider_tool_content(
             }
             vec![
                 call(
-                    item_id,
+                    mcp_tool_call_id.unwrap_or(item_id),
                     tool_name.clone(),
                     part["arguments"].as_str().unwrap_or_default().to_string(),
                     Some(true),
                     Some(true),
                     None,
                 ),
-                result(item_id, tool_name, output, metadata()),
+                result(
+                    mcp_tool_call_id.unwrap_or(item_id),
+                    tool_name,
+                    output,
+                    metadata(),
+                ),
             ]
         }
         _ => Vec::new(),

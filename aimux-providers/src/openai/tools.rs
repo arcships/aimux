@@ -489,7 +489,9 @@ fn provider_tool(kind: &str, args: impl Serialize) -> Result<ProviderTool, AiMux
     Ok(ProviderTool {
         id: format!("openai.{kind}"),
         name: kind.to_owned(),
-        args,
+        args: args.as_object().cloned().ok_or_else(|| {
+            AiMuxError::InvalidArgument("provider tool arguments must be an object".into())
+        })?,
     })
 }
 
@@ -571,7 +573,7 @@ pub fn apply_patch() -> ProviderTool {
     ProviderTool {
         id: "openai.apply_patch".into(),
         name: "apply_patch".into(),
-        args: serde_json::json!({}),
+        args: serde_json::Map::new(),
     }
 }
 
@@ -581,7 +583,7 @@ pub fn computer() -> ProviderTool {
     ProviderTool {
         id: "openai.computer".into(),
         name: "computer".into(),
-        args: serde_json::json!({}),
+        args: serde_json::Map::new(),
     }
 }
 
@@ -591,7 +593,7 @@ pub fn local_shell() -> ProviderTool {
     ProviderTool {
         id: "openai.local_shell".into(),
         name: "local_shell".into(),
-        args: serde_json::json!({}),
+        args: serde_json::Map::new(),
     }
 }
 
@@ -601,7 +603,7 @@ pub fn programmatic_tool_calling() -> ProviderTool {
     ProviderTool {
         id: "openai.programmatic_tool_calling".into(),
         name: "programmatic_tool_calling".into(),
-        args: serde_json::json!({}),
+        args: serde_json::Map::new(),
     }
 }
 

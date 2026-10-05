@@ -58,6 +58,8 @@ pub enum ContentBlock {
         #[serde(default)]
         citations: Vec<Value>,
     },
+    #[serde(rename = "container_upload")]
+    ContainerUpload { file_id: String },
     #[serde(rename = "compaction")]
     Compaction {
         #[serde(default)]

@@ -192,7 +192,7 @@ async fn should_pass_input_type_setting() {
     let model = provider.embedding("voyage-3.5");
 
     let provider_options =
-        aimux_core::shared::provider_namespace("voyage", json!({"inputType": "document"}));
+        aimux_core::shared::provider_namespace("voyage", json!({"inputType": "document"})).unwrap();
     let options = EmbeddingCallOptions {
         values: test_values(),
         abort_signal: None,
@@ -223,7 +223,7 @@ async fn should_pass_output_dimension_setting() {
     let model = provider.embedding("voyage-3.5");
 
     let provider_options =
-        aimux_core::shared::provider_namespace("voyage", json!({"outputDimension": 256}));
+        aimux_core::shared::provider_namespace("voyage", json!({"outputDimension": 256})).unwrap();
     let options = EmbeddingCallOptions {
         values: test_values(),
         abort_signal: None,

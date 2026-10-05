@@ -252,7 +252,9 @@ fn variant_instance<'py>(py: Python<'py>, e: &AiMuxError) -> PyResult<Bound<'py,
         AiMuxError::ApiCall(_) => py.get_type_bound::<APICallError>(),
         AiMuxError::Retry(_) => py.get_type_bound::<RetryError>(),
         AiMuxError::JsonParse(_) => py.get_type_bound::<JSONParseError>(),
-        AiMuxError::InvalidResponseData(_) => py.get_type_bound::<InvalidResponseDataError>(),
+        AiMuxError::InvalidResponseData(_) | AiMuxError::ToolCallNotFoundForApproval { .. } => {
+            py.get_type_bound::<InvalidResponseDataError>()
+        }
         AiMuxError::NoSuchTool { .. } => py.get_type_bound::<NoSuchToolError>(),
         AiMuxError::InvalidToolInput { .. } => py.get_type_bound::<InvalidToolInputError>(),
         AiMuxError::ToolCallRepair { .. } => py.get_type_bound::<ToolCallRepairError>(),

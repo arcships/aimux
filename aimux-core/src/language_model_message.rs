@@ -164,6 +164,13 @@ fn to_assistant_part(part: &ContentPart) -> Result<AssistantPart, AiMuxError> {
         })
     };
     Ok(match part {
+        ContentPart::Custom { .. }
+        | ContentPart::ReasoningFile { .. }
+        | ContentPart::ToolApprovalRequest { .. } => {
+            return Err(AiMuxError::InvalidPrompt(
+                "this output part is not supported in provider prompts".into(),
+            ));
+        }
         ContentPart::Text {
             text,
             provider_options,
@@ -214,7 +221,10 @@ fn to_assistant_part(part: &ContentPart) -> Result<AssistantPart, AiMuxError> {
             media_type,
             provider_options,
         } => file(
-            FileData::Url { url: url.clone() },
+            FileData::Url {
+                url: url.clone(),
+                original_url: None,
+            },
             media_type,
             &None,
             provider_options,
@@ -325,6 +335,7 @@ pub fn convert_to_language_model_prompt(
                         if text.is_empty() && (msg.role == Role::User
                             || (msg.role == Role::Assistant && provider_options.is_none())))
             })
+            .filter(|part| !matches!(part, ContentPart::ToolApprovalRequest { .. }))
             .map(to_assistant_part)
             .collect::<Result<Vec<_>, _>>()?;
         let provider_options = None;

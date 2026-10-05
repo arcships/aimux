@@ -643,7 +643,7 @@ fn convert_user_part(
                 }
                 part
             }
-            FileData::Url { url } => {
+            FileData::Url { url, .. } => {
                 if file.media_type.split('/').next() == Some("image") {
                     let mut part = json!({ "type": "input_image", "image_url": url });
                     if let Some(detail) =
@@ -1050,8 +1050,8 @@ fn provider_tool_to_json(
     {
         return Ok(Some(json!({"type":kind})));
     }
-    validate_tool_args(kind, &tool.args)?;
-    let args = &tool.args;
+    let args = &Value::Object(tool.args.clone());
+    validate_tool_args(kind, args)?;
     let fields: &[(&str, &str)] = match kind {
         "file_search" => &[
             ("vectorStoreIds", "vector_store_ids"),
@@ -1881,7 +1881,7 @@ pub fn build_responses_request_body_for(
     let allowed_tools = openai_option(ns, provider_opts, "allowedTools");
     let prepared = prepare_responses_tools_for(
         &options.tools,
-        Some(&options.tool_choice),
+        options.tool_choice.as_ref(),
         allowed_tools.as_ref(),
         caps.supports_configuration_update,
     )?;
@@ -2000,7 +2000,7 @@ fn extract_base64_data(data_url: &str) -> Option<&str> {
 pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value>) -> Usage {
     let Some(usage) = usage else {
         return Usage {
-            raw,
+            raw: raw.and_then(|value| value.as_object().cloned()),
             ..Default::default()
         };
     };
@@ -2027,20 +2027,18 @@ pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value
     let text_tokens = output_tokens - reasoning_tokens;
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input_tokens),
             no_cache: Some(no_cache),
             cache_read: Some(cached_tokens),
             cache_write,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(output_tokens),
             text: Some(text_tokens),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
-        raw,
+        raw: raw.and_then(|value| value.as_object().cloned()),
     }
 }
 

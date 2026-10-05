@@ -87,7 +87,7 @@ pub(crate) fn prepare_function_tools(options: &CallOptions) -> PreparedTools {
         }
     }
     prepared.tools = Some(wire);
-    prepared.tool_choice = Some(tool_choice_value(&options.tool_choice));
+    prepared.tool_choice = options.tool_choice.as_ref().map(tool_choice_value);
     prepared
 }
 
@@ -512,7 +512,7 @@ fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
                 FileData::Data {
                     data: FileBytes::Base64(data),
                 } => file_part(file, FileSource::Base64(data))?,
-                FileData::Url { url } => file_part(file, FileSource::Url(url))?,
+                FileData::Url { url, .. } => file_part(file, FileSource::Url(url))?,
                 FileData::Reference { .. } => {
                     return Err(AiMuxError::UnsupportedFunctionality(
                         "file parts with provider references".to_string(),

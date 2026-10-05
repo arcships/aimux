@@ -10,7 +10,8 @@
 //! `aimux-core`.
 
 pub mod api_key;
-mod download_guard;
+#[doc(hidden)]
+pub use aimux_core::download_guard;
 pub mod extract_response_headers;
 pub mod fetch;
 pub mod generate_id;

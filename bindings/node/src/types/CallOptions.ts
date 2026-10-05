@@ -62,7 +62,7 @@ tools: Array<Tool> | null,
 /**
  * How the model should choose tools.
  */
-tool_choice: ToolChoice, 
+tool_choice: ToolChoice | null, 
 /**
  * Extra HTTP headers.
  */

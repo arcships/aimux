@@ -21,7 +21,8 @@ pub(crate) fn read(provider_options: Option<&SharedProviderOptions>) -> Option<&
 
 /// Wrap `payload` as response metadata under the namespace key.
 pub(crate) fn metadata(payload: Value) -> ProviderMetadata {
-    let mut metadata = provider_namespace(AMAZON_BEDROCK, payload.clone());
-    metadata.extend(provider_namespace("bedrock", payload));
+    let mut metadata =
+        provider_namespace(AMAZON_BEDROCK, payload.clone()).expect("metadata payload is an object");
+    metadata.extend(provider_namespace("bedrock", payload).expect("metadata payload is an object"));
     metadata
 }

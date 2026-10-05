@@ -12,7 +12,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{
     GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
 };
-use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::shared::{FileBytes, GeneratedFileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
@@ -102,9 +102,8 @@ impl LanguageModel for GoogleModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers;
-
         let response_body = resp.raw_value;
+        let response_headers = resp.response_headers;
 
         let data: GenerateContentResponse = resp.value;
 
@@ -517,13 +516,12 @@ impl LanguageModel for GoogleModel {
                                         inline.get("data").and_then(|v| v.as_str()),
                                         inline.get("mimeType").and_then(|v| v.as_str()),
                                     ) {
-                                        // part.thought === true → upstream emits 'reasoning-file';
-                                        // emit plain File (reasoning-file is a separate PR).
-                                        yield Ok(StreamPart::File(GeneratedFile {
-                                            data: FileData::Data { data: FileBytes::Base64(data.to_string()) },
+                                        let file = GeneratedFile {
+                                            data: GeneratedFileData::Data { data: FileBytes::Base64(data.to_string()) },
                                             media_type: mime.to_string(),
                                             provider_metadata: thought_sig_meta.clone(),
-                                        }));
+                                        };
+                                        yield Ok(if part.get("thought").and_then(serde_json::Value::as_bool).unwrap_or(false) { StreamPart::ReasoningFile(file) } else { StreamPart::File(file) });
                                     }
                                 }
                             }
@@ -808,15 +806,24 @@ fn extract_content_from_candidate(
                     inline.get("data").and_then(|v| v.as_str()),
                     inline.get("mimeType").and_then(|v| v.as_str()),
                 ) {
-                    // part.thought === true → upstream emits 'reasoning-file';
-                    // emit plain File (reasoning-file is a separate PR).
-                    content.push(GenerateContent::File(GeneratedFile {
-                        data: FileData::Data {
+                    let file = GeneratedFile {
+                        data: GeneratedFileData::Data {
                             data: FileBytes::Base64(data.to_string()),
                         },
                         media_type: mime.to_string(),
                         provider_metadata: thought_sig_meta.clone(),
-                    }));
+                    };
+                    content.push(
+                        if part
+                            .get("thought")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false)
+                        {
+                            GenerateContent::ReasoningFile(file)
+                        } else {
+                            GenerateContent::File(file)
+                        },
+                    );
                 }
             } else if let Some(tc) = part.get("toolCall") {
                 // Server-side tool call (provider-executed, Gemini 3).
@@ -910,6 +917,16 @@ fn set_provider_metadata(item: &mut GenerateContent, meta: ProviderMetadata) {
         })
         | GenerateContent::Source(Source {
             provider_metadata, ..
+        })
+        | GenerateContent::ReasoningFile(GeneratedFile {
+            provider_metadata, ..
+        })
+        | GenerateContent::Custom {
+            provider_metadata, ..
+        }
+        | GenerateContent::ToolApprovalRequest(aimux_core::result::RawToolApprovalRequest {
+            provider_metadata,
+            ..
         })
         | GenerateContent::ToolResult(ToolResult {
             provider_metadata, ..

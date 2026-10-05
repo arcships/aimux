@@ -100,7 +100,7 @@ async fn generate_reasoning_signature_and_usage() {
     assert_eq!(result.usage.input_tokens.no_cache, Some(4));
     assert_eq!(result.usage.output_tokens.total, Some(34));
     assert_eq!(result.usage.output_tokens.text, Some(34));
-    assert_eq!(result.usage.raw, Some(response["usage"].clone()));
+    assert_eq!(result.usage.raw, response["usage"].as_object().cloned());
 }
 
 /// TS: "should stream text deltas with metadata and usage" (amazon-bedrock/src/amazon-bedrock-chat-language-model.test.ts)
@@ -160,7 +160,9 @@ async fn stream_text_and_usage() {
     assert_eq!(usage.output_tokens.text, Some(34));
     assert_eq!(
         usage.raw,
-        Some(json!({"inputTokens":4,"outputTokens":34,"totalTokens":38}))
+        json!({"inputTokens":4,"outputTokens":34,"totalTokens":38})
+            .as_object()
+            .cloned()
     );
 }
 
@@ -436,7 +438,7 @@ async fn generate_provider_defined_tool_with_input_schema() {
         aimux_core::tool::ProviderTool {
             id: "anthropic.bash_20241022".into(),
             name: "bash".into(),
-            args: json!({}),
+            args: serde_json::Map::new(),
         },
     )]);
     let result = provider(&fetch)
@@ -447,7 +449,7 @@ async fn generate_provider_defined_tool_with_input_schema() {
     let body = fetch.seen()[0].json_body();
     assert_eq!(
         body["additionalModelRequestFields"],
-        json!({"tool_choice":{"type":"auto"},"anthropic_beta":["computer-use-2024-10-22"]})
+        json!({"anthropic_beta":["computer-use-2024-10-22"]})
     );
     assert_eq!(
         body["toolConfig"]["tools"],

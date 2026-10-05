@@ -31,7 +31,7 @@ use crate::google::utils::{GoogleJsonAccumulator, PartialArg};
 use crate::google::options::{GOOGLE, Namespace};
 use crate::shared::EndpointConfig;
 use aimux_core::language_model::SupportedUrls;
-use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::shared::{FileBytes, GeneratedFileData};
 
 /// A Google Vertex AI language model.
 ///
@@ -99,6 +99,7 @@ impl LanguageModel for VertexModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
 
         let raw: Value = resp.value;
@@ -159,7 +160,7 @@ impl LanguageModel for VertexModel {
                 timestamp: None,
                 model_id: None,
                 headers: Some(response_headers),
-                body: Some(raw),
+                body: response_body,
             }),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
@@ -338,7 +339,7 @@ impl LanguageModel for VertexModel {
                                 } else if let Some(file) = inline_file(part) {
                                     if let Some(id) = text_id.take() { yield Ok(StreamPart::TextEnd { id, provider_metadata: None }); }
                                     if let Some(id) = reasoning_id.take() { yield Ok(StreamPart::ReasoningEnd { id, provider_metadata: None }); }
-                                    yield Ok(StreamPart::File(file));
+                                    yield Ok(if part.get("thought") == Some(&Value::Bool(true)) { StreamPart::ReasoningFile(file) } else { StreamPart::File(file) });
                                 } else if let Some(fc) = part.get("functionCall") {
                                     let name = fc.get("name").and_then(Value::as_str);
                                     let args = fc.get("args").filter(|value| !value.is_null());
@@ -686,7 +687,7 @@ fn extract_content_from_candidate(
     candidate: &Candidate,
     code_execution_tool_name: &str,
 ) -> (Vec<GenerateContent>, bool) {
-    let mut content = Vec::new();
+    let mut content: Vec<GenerateContent> = Vec::new();
     let mut has_tool_calls = false;
     let mut source_id = 0usize;
     let mut last_code_execution_tool_call_id: Option<String> = None;
@@ -765,7 +766,16 @@ fn extract_content_from_candidate(
                         GenerateContent::Reasoning(reasoning) => {
                             reasoning.provider_metadata = provider_metadata
                         }
-                        GenerateContent::File(file) => file.provider_metadata = provider_metadata,
+                        GenerateContent::File(file) | GenerateContent::ReasoningFile(file) => {
+                            file.provider_metadata = provider_metadata
+                        }
+                        GenerateContent::Custom {
+                            provider_metadata: metadata,
+                            ..
+                        } => *metadata = provider_metadata,
+                        GenerateContent::ToolApprovalRequest(request) => {
+                            request.provider_metadata = provider_metadata
+                        }
                         GenerateContent::ToolCall(call) => {
                             call.provider_metadata = provider_metadata
                         }
@@ -778,7 +788,11 @@ fn extract_content_from_candidate(
                     }
                 }
             } else if let Some(file) = inline_file(part) {
-                content.push(GenerateContent::File(file));
+                content.push(if part.get("thought") == Some(&Value::Bool(true)) {
+                    GenerateContent::ReasoningFile(file)
+                } else {
+                    GenerateContent::File(file)
+                });
             } else if let Some(fc) = part.get("functionCall")
                 && fc.get("name").is_some_and(|name| !name.is_null())
             {
@@ -886,7 +900,7 @@ fn inline_file(part: &Value) -> Option<GeneratedFile> {
     let inline = part.get("inlineData")?;
     Some(GeneratedFile {
         media_type: inline.get("mimeType")?.as_str()?.to_string(),
-        data: FileData::Data {
+        data: GeneratedFileData::Data {
             data: FileBytes::Base64(inline.get("data")?.as_str()?.to_string()),
         },
         provider_metadata: thought_metadata(part),
@@ -907,7 +921,7 @@ fn confirmed_block_reason(feedback: Option<&Value>) -> Option<String> {
 }
 
 fn vertex_usage(raw: Option<&Value>) -> Usage {
-    use aimux_core::types::TokenUsage;
+    use aimux_core::types::{InputTokenUsage, OutputTokenUsage};
     let Some(raw) = raw.filter(|value| !value.is_null()) else {
         return Usage::default();
     };
@@ -917,19 +931,18 @@ fn vertex_usage(raw: Option<&Value>) -> Usage {
     let text = count("candidatesTokenCount");
     let reasoning = count("thoughtsTokenCount");
     Usage {
-        input_tokens: TokenUsage {
+        input_tokens: InputTokenUsage {
             total: Some(input),
             no_cache: Some(input.saturating_sub(cached)),
             cache_read: Some(cached),
             ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: OutputTokenUsage {
             total: Some(text + reasoning),
             text: Some(text),
             reasoning: Some(reasoning),
-            ..Default::default()
         },
-        raw: Some(raw.clone()),
+        raw: raw.as_object().cloned(),
     }
 }
 
@@ -969,7 +982,8 @@ fn vertex_request_body(
     streaming: bool,
 ) -> (Value, Vec<Warning>) {
     let mut body = build_vertex_request_body(model_id, options);
-    let mut warnings = prepare_all_tools(&options.tools, &options.tool_choice, model_id).warnings;
+    let mut warnings =
+        prepare_all_tools(&options.tools, options.tool_choice.as_ref(), model_id).warnings;
     body.as_object_mut().unwrap().remove("serviceTier");
     if Namespace::Vertex
         .read(options.provider_options.as_ref())

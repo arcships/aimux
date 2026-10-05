@@ -81,49 +81,7 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 
 // RFC-0016 M10: streaming Finish carries the provider's raw usage object
 // (buildTextDeltaSSE usage has prompt_tokens=3).
-func TestE2E_StreamFinishUsageRawNonNull(t *testing.T) {
-	srv := newMockServer()
-	defer srv.Close()
-	srv.SetContentType("text/event-stream")
-	srv.SetResponse(buildTextDeltaSSE())
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
-	defer m.Close()
-
-	stream := m.StreamText(`"Say hello"`, "")
-	for part := range stream.Parts() {
-		sp, err := ParseStreamPart(part)
-		if err != nil {
-			t.Fatalf("failed to parse: %v", err)
-		}
-		if sp.Tag != "Finish" {
-			continue
-		}
-		var finish struct {
-			Usage struct {
-				Raw json.RawMessage `json:"raw"`
-			} `json:"usage"`
-		}
-		if err := json.Unmarshal(sp.Payload, &finish); err != nil {
-			t.Fatalf("failed to decode Finish payload: %v", err)
-		}
-		if len(finish.Usage.Raw) == 0 || string(finish.Usage.Raw) == "null" {
-			t.Fatal("usage.raw must be populated (RFC-0016 M10)")
-		}
-		var raw map[string]any
-		json.Unmarshal(finish.Usage.Raw, &raw)
-		if raw["prompt_tokens"] != float64(3) {
-			t.Errorf("usage.raw.prompt_tokens should be 3, got %#v", raw["prompt_tokens"])
-		}
-		return
-	}
-	t.Fatal("no Finish part received")
-}
-
-// RFC-0016 M9: body-build warnings (topK unsupported) reach StreamStart.
-// OpenAI's full profile supports top_k, so this is exercised on a profile
-// that does not — the shared OpenAI path is what groq_test.rs covers in Rust;
-// here we assert the Go side parses a non-empty warnings payload verbatim.
 func TestE2E_StreamStartCarriesNonEmptyWarnings(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()

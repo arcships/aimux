@@ -37,7 +37,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GeneratedFile, ReasoningOutput, Source, StreamResult};
-use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::shared::{FileBytes, GeneratedFileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{ProviderTool, Tool};
 use aimux_core::types::ProviderMetadata;
@@ -139,6 +139,7 @@ fn opts() -> CallOptions {
 fn opts_with_tools(tools: Vec<Tool>) -> CallOptions {
     let mut o = opts();
     o.tools = Some(tools);
+    o.tool_choice = Some(aimux_core::tool::ToolChoice::Auto);
     o
 }
 
@@ -146,7 +147,7 @@ fn provider_tool(id: &str, name: &str) -> Tool {
     Tool::Provider(ProviderTool {
         id: id.to_string(),
         name: name.to_string(),
-        args: json!({}),
+        args: serde_json::Map::new(),
     })
 }
 
@@ -159,15 +160,15 @@ async fn collect(result: StreamResult) -> Vec<StreamPart> {
     parts
 }
 
-/// The base64 payload of a `GenerateContent::File`, or panic.
-fn file_base64(c: &GenerateContent) -> &str {
-    match c {
+fn file_base64(content: &GenerateContent) -> &str {
+    match content {
         GenerateContent::File(GeneratedFile {
-            data: FileData::Data {
-                data: FileBytes::Base64(s),
-            },
+            data:
+                GeneratedFileData::Data {
+                    data: FileBytes::Base64(data),
+                },
             ..
-        }) => s,
+        }) => data,
         other => panic!("expected File with base64 data, got {other:?}"),
     }
 }
@@ -175,7 +176,7 @@ fn file_base64(c: &GenerateContent) -> &str {
 fn files(content: &[GenerateContent]) -> Vec<&GenerateContent> {
     content
         .iter()
-        .filter(|c| matches!(c, GenerateContent::File(_)))
+        .filter(|part| matches!(part, GenerateContent::File(_)))
         .collect()
 }
 
@@ -319,12 +320,7 @@ fn sources(content: &[GenerateContent]) -> Vec<SourceView<'_>> {
 //            gemini/test_google_image_and_text_output.json
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// PNG magic bytes, base64-encoded: every image in the two Gemini image
-/// cassettes starts with this. Asserting the prefix (rather than "non-empty")
-/// proves the *actual* bytes survived rather than some placeholder.
 const PNG_BASE64_PREFIX: &str = "iVBORw0KGgoAAAANSUhEUgAA";
-
-/// The exact base64 length recorded in `nano_banana_image_generation_smoke`.
 const NANO_BANANA_BASE64_LEN: usize = 258_820;
 
 fn google_at(uri: &str) -> GoogleProvider {
@@ -453,7 +449,7 @@ async fn finding_1_gemini_inline_data_streams_as_file_part() {
         .filter_map(|p| match p {
             StreamPart::File(GeneratedFile {
                 data:
-                    FileData::Data {
+                    GeneratedFileData::Data {
                         data: FileBytes::Base64(b64),
                     },
                 media_type,
@@ -816,10 +812,13 @@ async fn finding_2_anthropic_web_search_result_mapped_and_sources_emitted() {
     ] {
         assert_eq!(
             by_url.get(url).copied(),
-            Some(&aimux_core::shared::provider_namespace(
-                "anthropic",
-                json!({ "pageAge": expected_page_age })
-            )),
+            Some(
+                &aimux_core::shared::provider_namespace(
+                    "anthropic",
+                    json!({ "pageAge": expected_page_age })
+                )
+                .unwrap()
+            ),
             "source {url}: providerMetadata must hold exactly anthropic.pageAge"
         );
     }

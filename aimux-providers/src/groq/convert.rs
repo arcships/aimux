@@ -42,7 +42,7 @@ fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
                     "text file parts".to_string(),
                 ));
             }
-            FileData::Url { url } => {
+            FileData::Url { url, .. } => {
                 if !is_image(&file.media_type) {
                     return Err(non_image());
                 }

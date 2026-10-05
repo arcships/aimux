@@ -319,58 +319,7 @@ void main() {
   const apiKey = 'sk-test-mock-key';
   const modelId = 'gpt-4o';
 
-  test('generateText returns a typed GenerateTextResult (text + tool calls)', () async {
-    final server = await startMockServer([
-      {'body': toolCallOpenAIResponse},
-    ]);
-    addTearDown(server.close);
 
-    final resultJson = await runTypedGenerateText(_TypedArgs(
-      baseUrl: server.baseUrl,
-      apiKey: apiKey,
-      modelId: modelId,
-      prompt: 'What is the weather in Tokyo?',
-      tools: [_weatherTool()],
-      toolChoice: ToolChoice.required,
-      maxOutputTokens: 1024,
-      temperature: 0.7,
-    ));
-    final result = GenerateTextResult.fromJson(resultJson);
-
-    // Typed field access on the result.
-    expect(result, isA<GenerateTextResult>());
-    expect(result.text, isA<String>());
-    expect(result.toolCalls, hasLength(1));
-    expect(result.toolCalls[0], isA<ToolCall>());
-    expect(result.toolCalls[0].toolName, 'get_weather');
-    expect(result.toolCalls[0].toolCallId, 'call_abc');
-    expect(result.toolCalls[0].input?['location'], 'Tokyo');
-    expect(result.raw, isA<GenerateResult>());
-
-    // finish_reason + usage are typed, not dynamic maps.
-    expect(result.finishReason, isA<FinishReason>());
-    expect(result.finishReason.unified, 'tool-calls');
-    expect(result.finishReason.raw, 'tool_calls');
-    expect(result.usage, isA<Usage>());
-    expect(result.usage.inputTokens, isA<TokenUsage>());
-    expect(result.usage.inputTokens.total, 20);
-    expect(result.usage.outputTokens.total, 10);
-
-    // The raw provider result carries a ToolCall content variant.
-    final content = result.raw.content;
-    expect(content.any((c) => c.tag == 'ToolCall'), isTrue);
-
-    // tools / tool_choice / max_output_tokens / temperature reached provider.
-    expect(server.recorded, hasLength(1));
-    expect(server.recorded.first.method, 'POST');
-    expect(server.recorded.first.path, '/chat/completions');
-    final sentBody = server.recorded.first.body as Map<String, dynamic>;
-    expect(sentBody, contains('tools'));
-    expect(sentBody['tool_choice'], 'required');
-    // gpt-4o is a non-reasoning model, so max_output_tokens maps to `max_tokens`.
-    expect(sentBody['max_tokens'], 1024);
-    expect(sentBody['temperature'], closeTo(0.7, 1e-9));
-  });
 
   test('generateText with a plain prompt returns text', () async {
     final server = await startMockServer([

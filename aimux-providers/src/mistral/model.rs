@@ -86,7 +86,7 @@ fn convert_usage(usage: &UsageResponse) -> Usage {
     let no_cache = prompt_tokens - cache_read;
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(prompt_tokens),
             no_cache: Some(no_cache),
             cache_read: if cache_read > 0 {
@@ -95,15 +95,14 @@ fn convert_usage(usage: &UsageResponse) -> Usage {
                 None
             },
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(completion_tokens),
             text: Some(completion_tokens),
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(raw),
+        raw: raw.as_object().cloned(),
     }
 }
 

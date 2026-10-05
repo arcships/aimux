@@ -76,7 +76,7 @@ pub(crate) struct PreparedProviderTools {
 
 pub(crate) fn prepare_provider_tools(
     tools: Option<&[Tool]>,
-    choice: &ToolChoice,
+    choice: Option<&ToolChoice>,
     anthropic: bool,
     disable_parallel: bool,
     rejects_forced: bool,
@@ -120,7 +120,7 @@ pub(crate) fn prepare_provider_tools(
         .filter(|tool| {
             !anthropic
                 || !rejects_forced
-                || !matches!(choice, ToolChoice::Tool { tool_name } if tool_name != &tool.name)
+                || !matches!(choice, Some(ToolChoice::Tool { tool_name }) if tool_name != &tool.name)
         })
         .collect();
     if !anthropic || selected.is_empty() {
@@ -142,10 +142,14 @@ pub(crate) fn prepare_provider_tools(
         })
         .collect();
     let fallback =
-        rejects_forced && matches!(choice, ToolChoice::Required | ToolChoice::Tool { .. });
+        rejects_forced && matches!(choice, Some(ToolChoice::Required | ToolChoice::Tool { .. }));
     let prepared = prepare_tools_with_provider(
         Some(&anthropic_tools),
-        Some(if fallback { &ToolChoice::Auto } else { choice }),
+        if fallback {
+            Some(&ToolChoice::Auto)
+        } else {
+            choice
+        },
         disable_parallel,
         false,
         false,
@@ -159,7 +163,7 @@ pub(crate) fn prepare_provider_tools(
     result.warnings.extend(prepared.tool_warnings);
     if fallback {
         let details = match choice {
-            ToolChoice::Tool { tool_name } => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
+            Some(ToolChoice::Tool { tool_name }) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
             _ => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".to_owned(),
         };
         result.warnings.push(Warning::Unsupported {
@@ -184,7 +188,7 @@ pub(crate) fn prepare_provider_tools(
 
 // Upstream validates configuration only for these factories; older tools pass
 // their configuration through unchecked.
-fn validate_args(id: &str, args: &Value) -> Result<(), AiMuxError> {
+fn validate_args(id: &str, args: &serde_json::Map<String, Value>) -> Result<(), AiMuxError> {
     let web_fetch = matches!(
         id,
         "anthropic.web_fetch_20250910" | "anthropic.web_fetch_20260209"
@@ -206,7 +210,6 @@ fn validate_args(id: &str, args: &Value) -> Result<(), AiMuxError> {
             "Invalid configuration for provider-defined tool {id}"
         ))
     };
-    let args = args.as_object().ok_or_else(invalid)?;
     let optional = |name: &str, valid: fn(&Value) -> bool| args.get(name).is_none_or(valid);
     let valid = if web_fetch || web_search {
         optional("maxUses", Value::is_number)

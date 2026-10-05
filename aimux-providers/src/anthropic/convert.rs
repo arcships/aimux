@@ -471,7 +471,7 @@ fn convert_file_part(
             };
             route_file_base64(&full, data, &bytes, filename.as_deref(), betas)?
         }
-        FileData::Url { url } => route_file_url(media_type, url, betas)?,
+        FileData::Url { url, .. } => route_file_url(media_type, url, betas)?,
         FileData::Reference { reference } => {
             let file_id = resolve_anthropic_reference(reference)?;
             betas.insert(BETA_FILES_API.to_string());
@@ -2096,27 +2096,27 @@ fn apply_anthropic_tools(
         ));
     }
     let requested_choice = if json_schema.is_some() {
-        &ToolChoice::Required
+        Some(&ToolChoice::Required)
     } else {
-        &options.tool_choice
+        options.tool_choice.as_ref()
     };
     let tool_choice = if caps.rejects_forced_tool_use
         && !anthropic_tools.is_empty()
         && matches!(
             requested_choice,
-            ToolChoice::Required | ToolChoice::Tool { .. }
+            Some(ToolChoice::Required | ToolChoice::Tool { .. })
         ) {
         warnings.push(Warning::Unsupported {
             feature: "toolChoice".to_string(),
             details: Some(match requested_choice {
-                ToolChoice::Required => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".to_string(),
-                ToolChoice::Tool { tool_name } => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
+                Some(ToolChoice::Required) => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".to_string(),
+                Some(ToolChoice::Tool { tool_name }) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
                 _ => unreachable!(),
             }),
         });
-        ToolChoice::Auto
+        Some(&ToolChoice::Auto)
     } else {
-        requested_choice.clone()
+        requested_choice
     };
     let prepared = prepare_tools_with_validator(
         if options.tools.is_some() || json_schema.is_some() {
@@ -2124,7 +2124,7 @@ fn apply_anthropic_tools(
         } else {
             None
         },
-        Some(&tool_choice),
+        tool_choice,
         disable_parallel_tool_use,
         json_schema.is_none()
             && caps.supports_structured_output
@@ -2144,7 +2144,7 @@ fn apply_anthropic_tools(
         // `undefined` args on provider-defined tools such as web_search).
         let mut defs = tool_defs;
         if caps.rejects_forced_tool_use
-            && let ToolChoice::Tool { tool_name } = requested_choice
+            && let Some(ToolChoice::Tool { tool_name }) = requested_choice
         {
             defs.retain(|tool| {
                 tool.get("name").and_then(Value::as_str) == Some(tool_name.as_str())

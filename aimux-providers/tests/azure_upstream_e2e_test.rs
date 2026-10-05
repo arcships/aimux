@@ -145,7 +145,7 @@ async fn responses_generate() {
     assert_eq!(result.usage.output_tokens.total, Some(11));
     assert_eq!(result.usage.output_tokens.reasoning, Some(0));
     assert_eq!(result.usage.output_tokens.text, Some(11));
-    assert_eq!(result.usage.raw, Some(fixture["usage"].clone()));
+    assert_eq!(result.usage.raw, fixture["usage"].as_object().cloned());
     assert_eq!(
         result.response.as_ref().unwrap().model_id.as_deref(),
         Some("test-deployment")

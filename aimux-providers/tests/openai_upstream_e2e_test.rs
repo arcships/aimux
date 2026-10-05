@@ -79,7 +79,10 @@ async fn chat_generate() {
     assert_eq!(result.usage.input_tokens.total, Some(4));
     assert_eq!(result.usage.input_tokens.no_cache, Some(4));
     assert_eq!(result.usage.output_tokens.text, Some(30));
-    assert_eq!(result.usage.raw, Some(chat_response()["usage"].clone()));
+    assert_eq!(
+        result.usage.raw,
+        chat_response()["usage"].as_object().cloned()
+    );
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
     assert_eq!(
         result.response.unwrap().id.as_deref(),
@@ -215,7 +218,10 @@ async fn responses_generate() {
         result.content,
         vec![GenerateContent::Text {
             text: "answer text".into(),
-            provider_metadata: Some(provider_namespace("openai", json!({"itemId":"msg_test"})))
+            provider_metadata: Some(
+                provider_namespace("openai", json!({"itemId":"msg_test"}))
+                    .expect("provider metadata must be an object")
+            )
         }]
     );
     assert_eq!(result.usage.input_tokens.total, Some(345));
@@ -225,7 +231,7 @@ async fn responses_generate() {
     assert_eq!(result.usage.output_tokens.total, Some(538));
     assert_eq!(result.usage.output_tokens.reasoning, Some(123));
     assert_eq!(result.usage.output_tokens.text, Some(415));
-    assert_eq!(result.usage.raw, Some(response["usage"].clone()));
+    assert_eq!(result.usage.raw, response["usage"].as_object().cloned());
     assert_eq!(result.response.unwrap().id.as_deref(), Some("resp_test"));
 }
 
@@ -448,7 +454,8 @@ async fn image_generate() {
     let fetch = MockFetch::new(vec![Canned::json(&response)]);
     let mut opts = ImageCallOptions::new("A cute baby sea otter");
     opts.size = Some(Size::new(1024, 1024));
-    opts.provider_options = provider_namespace("openai", json!({"style":"vivid"}));
+    opts.provider_options = provider_namespace("openai", json!({"style":"vivid"}))
+        .expect("provider metadata must be an object");
     let result = provider(&fetch)
         .image("test-image")
         .do_generate(&opts)
@@ -536,7 +543,7 @@ async fn responses_web_search_stream() {
     call.tools = Some(vec![Tool::Provider(aimux_core::tool::ProviderTool {
         id: "openai.web_search".into(),
         name: "webSearch".into(),
-        args: json!({}),
+        args: serde_json::Map::new(),
     })]);
     let result = provider(&fetch)
         .responses("test-model")
@@ -551,7 +558,7 @@ async fn responses_web_search_stream() {
     assert_request(
         &fetch,
         "/responses",
-        json!({"model":"test-model","input":[{"role":"user","content":[{"type":"input_text","text":"Hello"}]}],"stream":true,"tools":[{"type":"web_search"}],"tool_choice":"auto","include":["web_search_call.action.sources"]}),
+        json!({"model":"test-model","input":[{"role":"user","content":[{"type":"input_text","text":"Hello"}]}],"stream":true,"tools":[{"type":"web_search"}],"include":["web_search_call.action.sources"]}),
     );
     assert_eq!(
         serde_json::to_value(parts).unwrap(),

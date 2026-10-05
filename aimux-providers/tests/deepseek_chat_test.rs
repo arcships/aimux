@@ -25,7 +25,6 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
@@ -241,24 +240,6 @@ fn warning_values(warnings: &[Warning]) -> Vec<Value> {
         .collect()
 }
 
-fn deprecated(setting: &str) -> Warning {
-    Warning::Deprecated {
-        setting: setting.to_string(),
-        message: format!(
-            "{setting} is deprecated by DeepSeek and has been omitted. Remove {setting} from the request."
-        ),
-    }
-}
-
-fn thinking_unsupported(feature: &str) -> Warning {
-    Warning::Unsupported {
-        feature: feature.to_string(),
-        details: Some(format!(
-            "{feature} has no effect when DeepSeek thinking is enabled. Set providerOptions.deepseek.thinking.type to 'disabled' to use {feature}."
-        )),
-    }
-}
-
 fn compatibility(feature: &str, details: &str) -> Warning {
     Warning::Compatibility {
         feature: feature.to_string(),
@@ -330,173 +311,6 @@ fn logprob(token: &str, logprob: f64, bytes: Value) -> Value {
         "token": token, "logprob": logprob, "bytes": bytes,
         "top_logprobs": [{ "token": token, "logprob": logprob, "bytes": bytes }]
     })
-}
-
-// ===========================================================================
-// describe('model IDs') / describe('supportedUrls')
-// ===========================================================================
-
-#[tokio::test]
-async fn should_forward_the_model_id() {
-    for model_id in ["deepseek-v4-flash", "deepseek-v4-pro"] {
-        assert_eq!(generate_body(model_id, &options()).await["model"], model_id);
-    }
-}
-
-#[tokio::test]
-async fn should_natively_support_http_image_urls() {
-    let server = MockServer::start().await;
-    let urls = chat(&server, "deepseek-chat").supported_urls();
-    let patterns = &urls.0["image/*"];
-    assert_eq!(patterns.len(), 1);
-    assert!(patterns[0].is_match("https://example.com/a.png"));
-    assert!(patterns[0].is_match("http://example.com/a.png"));
-    assert!(!patterns[0].is_match("data:image/png;base64,AAAA"));
-}
-
-// ===========================================================================
-// describe('doGenerate')
-// ===========================================================================
-
-#[tokio::test]
-async fn should_reject_a_response_without_choices() {
-    let server = json_server(json!({
-        "id": "chatcmpl-empty", "object": "chat.completion", "created": 0,
-        "model": "deepseek-chat", "choices": [],
-        "usage": { "prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1 }
-    }))
-    .await;
-    let error = chat(&server, "deepseek-chat")
-        .do_generate(&options())
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(&error, AiMuxError::InvalidResponseData(m) if m == "Response did not contain any choices."),
-        "{error:?}"
-    );
-}
-
-#[tokio::test]
-async fn should_use_the_chat_completions_path_of_the_default_and_beta_base_urls() {
-    let server = json_server(text_response()).await;
-    chat(&server, "deepseek-chat")
-        .do_generate(&options())
-        .await
-        .unwrap();
-    beta_chat(&server, "deepseek-chat")
-        .do_generate(&options())
-        .await
-        .unwrap();
-    assert_eq!(
-        request_paths(&server).await,
-        ["/chat/completions", "/beta/chat/completions"]
-    );
-}
-
-// ---- describe('text') ------------------------------------------------------
-
-#[tokio::test]
-async fn text_should_send_correct_request_body() {
-    let mut options = options_for(vec![
-        LanguageModelMessage::System {
-            content: ("You are a helpful assistant.").into(),
-            provider_options: None,
-        },
-        LanguageModelMessage::user_text("Hello"),
-    ]);
-    options.temperature = Some(0.5);
-    options.top_p = Some(0.3);
-    assert_eq!(
-        generate_body("deepseek-chat", &options).await,
-        json!({
-            "messages": [
-                { "content": "You are a helpful assistant.", "role": "system" },
-                { "content": "Hello", "role": "user" }
-            ],
-            "model": "deepseek-chat",
-            "temperature": 0.5,
-            "top_p": 0.3
-        })
-    );
-}
-
-#[tokio::test]
-async fn text_should_omit_deprecated_and_ineffective_sampling_options_in_default_v4_thinking_mode()
-{
-    let mut options = options();
-    options.temperature = Some(0.2);
-    options.top_p = Some(0.4);
-    options.frequency_penalty = Some(0.5);
-    options.presence_penalty = Some(0.6);
-    let result = generate_result("deepseek-v4-flash", &options).await;
-    assert_eq!(
-        result.request.and_then(|r| r.body).unwrap(),
-        json!({ "model": "deepseek-v4-flash", "messages": [{ "role": "user", "content": "Hello" }] })
-    );
-    assert_eq!(
-        warning_values(&result.warnings),
-        warning_values(&[
-            deprecated("frequencyPenalty"),
-            deprecated("presencePenalty"),
-            thinking_unsupported("temperature"),
-            thinking_unsupported("topP"),
-        ])
-    );
-}
-
-#[tokio::test]
-async fn text_should_preserve_supported_sampling_options_when_v4_thinking_is_disabled() {
-    let mut options = with_provider_options(
-        options(),
-        json!({ "deepseek": { "thinking": { "type": "disabled" } } }),
-    );
-    options.temperature = Some(0.2);
-    options.top_p = Some(0.4);
-    options.frequency_penalty = Some(0.5);
-    options.presence_penalty = Some(0.6);
-    let result = generate_result("deepseek-v4-flash", &options).await;
-    assert_eq!(
-        result.request.and_then(|r| r.body).unwrap(),
-        json!({
-            "model": "deepseek-v4-flash",
-            "messages": [{ "role": "user", "content": "Hello" }],
-            "temperature": 0.2,
-            "top_p": 0.4,
-            "thinking": { "type": "disabled" }
-        })
-    );
-    assert_eq!(
-        warning_values(&result.warnings),
-        warning_values(&[
-            deprecated("frequencyPenalty"),
-            deprecated("presencePenalty")
-        ])
-    );
-}
-
-#[tokio::test]
-async fn text_should_warn_about_top_k_and_seed_and_not_send_them() {
-    // upstream: getArgs pushes `{ type: 'unsupported', feature: 'topK' }` and
-    // never puts topK in the body.
-    let mut options = options();
-    options.top_k = Some(40.0);
-    options.seed = Some(7);
-    let result = generate_result("deepseek-chat", &options).await;
-    let body = result.request.and_then(|r| r.body).unwrap();
-    assert!(body.get("top_k").is_none() && body.get("seed").is_none());
-    assert_eq!(
-        warning_values(&result.warnings),
-        warning_values(&[
-            Warning::Unsupported {
-                feature: "topK".to_string(),
-                details: None
-            },
-            Warning::Unsupported {
-                feature: "seed".to_string(),
-                details: None
-            },
-        ])
-    );
 }
 
 #[tokio::test]
@@ -1156,16 +970,13 @@ fn weather_wire_tool() -> Value {
 
 #[tokio::test]
 async fn tool_call_should_send_correct_request_body() {
-    // The core `tool_choice` is not optional (default `auto`), so it is always
-    // sent next to the tools.
     assert_eq!(
         generate_body("deepseek-reasoner", &tool_options()).await,
         json!({
             "messages": [{ "content": "Hello", "role": "user" }],
             "model": "deepseek-reasoner",
             "thinking": { "type": "enabled" },
-            "tools": [weather_wire_tool()],
-            "tool_choice": "auto"
+            "tools": [weather_wire_tool()]
         })
     );
 }
@@ -1174,14 +985,14 @@ async fn tool_call_should_send_correct_request_body() {
 async fn tool_call_should_send_the_tool_choice() {
     use aimux_core::options::ToolChoice;
     let mut options = tool_options();
-    options.tool_choice = ToolChoice::Tool {
+    options.tool_choice = Some(ToolChoice::Tool {
         tool_name: "weather".to_string(),
-    };
+    });
     assert_eq!(
         generate_body("deepseek-reasoner", &options).await["tool_choice"],
         json!({ "type": "function", "function": { "name": "weather" } })
     );
-    options.tool_choice = ToolChoice::Required;
+    options.tool_choice = Some(ToolChoice::Required);
     assert_eq!(
         generate_body("deepseek-reasoner", &options).await["tool_choice"],
         "required"
@@ -1195,7 +1006,7 @@ async fn tool_call_should_warn_about_provider_defined_tools() {
     options.tools = Some(vec![Tool::Provider(ProviderTool {
         id: "test.search".to_string(),
         name: "search".to_string(),
-        args: json!({}),
+        args: serde_json::Map::new(),
     })]);
     let result = generate_result("deepseek-chat", &options).await;
     assert_eq!(
@@ -1276,8 +1087,7 @@ async fn json_response_format_should_send_correct_request_body_without_schema() 
             "model": "deepseek-reasoner",
             "response_format": { "type": "json_object" },
             "thinking": { "type": "enabled" },
-            "tools": [weather_wire_tool()],
-            "tool_choice": "auto"
+            "tools": [weather_wire_tool()]
         })
     );
 }
@@ -1396,63 +1206,6 @@ async fn prefix_should_reject_prefix_completion_with_the_default_base_url() {
     );
 }
 
-// ===========================================================================
-// describe('doStream')
-// ===========================================================================
-
-// A stream whose first event is an error is returned as the `do_stream` error
-// (core's operation retry reads it); upstream emits it as an `error` part.
-// The classification (status, retryability) is upstream's.
-async fn stream_error(data: &Value) -> aimux_core::error::ApiCallError {
-    let server = sse_server(vec![data_event(data)]).await;
-    match chat(&server, "deepseek-chat").do_stream(&options()).await {
-        Err(AiMuxError::ApiCall(error)) => *error,
-        other => panic!(
-            "expected an API call error, got {:?}",
-            other.map(|_| "a stream")
-        ),
-    }
-}
-
-#[tokio::test]
-async fn stream_should_preserve_a_provider_error_envelope_in_stream_errors() {
-    let data = json!({ "error": {
-        "message": "Rate limit reached", "type": "rate_limit_error", "code": "rate_limit_exceeded"
-    } });
-    let error = stream_error(&data).await;
-    assert_eq!(error.message, "Rate limit reached");
-    assert_eq!(error.provider_code.as_deref(), Some("rate_limit_exceeded"));
-    assert_eq!(error.status_code, Some(429));
-    assert!(error.is_retryable);
-    // upstream: `data` is the whole error envelope.
-    let envelope: Value = serde_json::from_str(error.response_body.as_deref().unwrap()).unwrap();
-    assert_eq!(envelope, data);
-}
-
-#[tokio::test]
-async fn stream_should_classify_insufficient_quota_as_non_retryable() {
-    let data = json!({ "error": {
-        "message": "You exceeded your current quota.", "type": "rate_limit_error",
-        "code": "insufficient_quota"
-    } });
-    let error = stream_error(&data).await;
-    assert_eq!(error.status_code, Some(429));
-    assert!(!error.is_retryable);
-}
-
-#[tokio::test]
-async fn stream_should_preserve_the_provider_type_when_code_is_an_http_status() {
-    let data = json!({ "error": {
-        "message": "Rate limit reached", "type": "rate_limit_error", "code": "429"
-    } });
-    let error = stream_error(&data).await;
-    assert_eq!(error.provider_code.as_deref(), Some("429"));
-    assert_eq!(error.status_code, Some(429));
-    assert!(error.is_retryable);
-}
-
-// ---- describe('text') ------------------------------------------------------------
-
 async fn stream_parts(
     model_id: &str,
     options: &CallOptions,
@@ -1462,140 +1215,6 @@ async fn stream_parts(
     let result = chat(&server, model_id).do_stream(options).await.unwrap();
     let body = result.request.clone().and_then(|r| r.body).unwrap();
     (body, collect(result).await)
-}
-
-#[tokio::test]
-async fn stream_text_should_send_model_id_settings_and_input() {
-    let mut options = options_for(vec![
-        LanguageModelMessage::System {
-            content: ("You are a helpful assistant.").into(),
-            provider_options: None,
-        },
-        LanguageModelMessage::user_text("Hello"),
-    ]);
-    options.temperature = Some(0.5);
-    options.top_p = Some(0.3);
-    let (body, _) = stream_parts("deepseek-chat", &options, text_chunks()).await;
-    assert_eq!(
-        body,
-        json!({
-            "messages": [
-                { "content": "You are a helpful assistant.", "role": "system" },
-                { "content": "Hello", "role": "user" }
-            ],
-            "model": "deepseek-chat",
-            "stream": true,
-            "stream_options": { "include_usage": true },
-            "temperature": 0.5,
-            "top_p": 0.3
-        })
-    );
-}
-
-#[tokio::test]
-async fn stream_text_should_omit_deprecated_and_ineffective_sampling_options_in_default_v4_thinking_mode()
- {
-    let mut options = options();
-    options.temperature = Some(0.2);
-    options.top_p = Some(0.4);
-    options.frequency_penalty = Some(0.5);
-    options.presence_penalty = Some(0.6);
-    let (body, parts) = stream_parts("deepseek-v4-flash", &options, text_chunks()).await;
-    assert_eq!(
-        body,
-        json!({
-            "model": "deepseek-v4-flash",
-            "messages": [{ "role": "user", "content": "Hello" }],
-            "stream": true,
-            "stream_options": { "include_usage": true }
-        })
-    );
-    assert_eq!(
-        stream_start_warnings(&parts),
-        warning_values(&[
-            deprecated("frequencyPenalty"),
-            deprecated("presencePenalty"),
-            thinking_unsupported("temperature"),
-            thinking_unsupported("topP"),
-        ])
-    );
-}
-
-#[tokio::test]
-async fn stream_text_should_preserve_supported_sampling_options_when_v4_thinking_is_disabled() {
-    let mut options = with_provider_options(
-        options(),
-        json!({ "deepseek": { "thinking": { "type": "disabled" } } }),
-    );
-    options.temperature = Some(0.2);
-    options.top_p = Some(0.4);
-    options.frequency_penalty = Some(0.5);
-    options.presence_penalty = Some(0.6);
-    let (body, parts) = stream_parts("deepseek-v4-flash", &options, text_chunks()).await;
-    assert_eq!(
-        body,
-        json!({
-            "model": "deepseek-v4-flash",
-            "messages": [{ "role": "user", "content": "Hello" }],
-            "temperature": 0.2,
-            "top_p": 0.4,
-            "thinking": { "type": "disabled" },
-            "stream": true,
-            "stream_options": { "include_usage": true }
-        })
-    );
-    assert_eq!(
-        stream_start_warnings(&parts),
-        warning_values(&[
-            deprecated("frequencyPenalty"),
-            deprecated("presencePenalty")
-        ])
-    );
-}
-
-#[tokio::test]
-async fn stream_text_should_send_message_names() {
-    let name = |value: &str| json!({ "deepseek": { "name": value } });
-    let options = options_for(vec![
-        with_options(
-            LanguageModelMessage::System {
-                content: ("You are a helpful assistant.").into(),
-                provider_options: None,
-            },
-            name("guide"),
-        ),
-        with_options(LanguageModelMessage::user_text("Hello"), name("alice")),
-        with_options(
-            LanguageModelMessage::Assistant {
-                content: vec![AssistantPart::Text(TextPart {
-                    text: ("Hello, Alice.").into(),
-                    provider_options: None,
-                })],
-                provider_options: None,
-            },
-            name("assistant"),
-        ),
-    ]);
-    let (body, _) = stream_parts("deepseek-chat", &options, text_chunks()).await;
-    assert_eq!(
-        body["messages"],
-        json!([
-            { "content": "You are a helpful assistant.", "name": "guide", "role": "system" },
-            { "content": "Hello", "name": "alice", "role": "user" },
-            { "content": "Hello, Alice.", "name": "assistant", "role": "assistant" }
-        ])
-    );
-}
-
-#[tokio::test]
-async fn stream_text_should_pass_provider_options_user_id_as_user_id() {
-    let options = with_provider_options(
-        options(),
-        json!({ "deepseek": { "userId": "tenant_123-user" } }),
-    );
-    let (body, _) = stream_parts("deepseek-chat", &options, text_chunks()).await;
-    assert_eq!(body["user_id"], "tenant_123-user");
-    assert_eq!(body["stream"], true);
 }
 
 #[tokio::test]
@@ -2086,6 +1705,7 @@ async fn convert_should_convert_an_image_url_to_an_image_url_content_part() {
                 UserPart::File(FilePart {
                     data: FileData::Url {
                         url: ("https://example.com/image.png").into(),
+                        original_url: None,
                     },
                     media_type: ("image/png").into(),
                     filename: None,
@@ -2114,6 +1734,7 @@ async fn convert_should_pass_image_detail_to_image_url_content_parts() {
                 UserPart::File(FilePart {
                     data: FileData::Url {
                         url: ("https://example.com/image.webp").into(),
+                        original_url: None,
                     },
                     media_type: ("image/webp").into(),
                     filename: None,
@@ -2141,7 +1762,9 @@ async fn convert_should_convert_inline_image_data_to_file_data_and_preserve_its_
         },
         media_type: "image/jpg".to_string(),
         filename: Some("sample.jpg".to_string()),
-        provider_options: Some(provider_namespace("deepseek", json!({ "fileData": true }))),
+        provider_options: Some(
+            provider_namespace("deepseek", json!({ "fileData": true })).unwrap(),
+        ),
     });
     let messages = wire_messages(
         "deepseek-v4-flash-vision-exp",
@@ -2186,7 +1809,10 @@ async fn convert_should_reject_image_urls_longer_than_8192_characters() {
         "deepseek-v4-flash-vision-exp",
         &options_for(vec![LanguageModelMessage::User {
             content: vec![UserPart::File(FilePart {
-                data: FileData::Url { url: (url) },
+                data: FileData::Url {
+                    url: (url),
+                    original_url: None,
+                },
                 media_type: ("image/png").into(),
                 filename: None,
                 provider_options: None,

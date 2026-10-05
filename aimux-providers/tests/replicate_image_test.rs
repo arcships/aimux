@@ -157,11 +157,10 @@ async fn should_use_custom_wait_time() {
         .image("black-forest-labs/flux-schnell");
     let mut opts = options(PROMPT);
     opts.n = 1;
-    opts.provider_options
-        .extend(aimux_core::shared::provider_namespace(
-            "replicate",
-            json!({ "maxWaitTimeInSeconds": 30 }),
-        ));
+    opts.provider_options.extend(
+        aimux_core::shared::provider_namespace("replicate", json!({ "maxWaitTimeInSeconds": 30 }))
+            .unwrap(),
+    );
     model.do_generate(&opts).await.unwrap();
     let reqs = server.received_requests().await.unwrap();
     assert_eq!(

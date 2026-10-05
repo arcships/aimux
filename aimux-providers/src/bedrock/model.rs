@@ -213,8 +213,7 @@ impl LanguageModel for BedrockModel {
         usage.raw = raw_data
             .as_ref()
             .and_then(|raw| raw.get("usage"))
-            .filter(|v| !v.is_null())
-            .cloned();
+            .and_then(|value| value.as_object().cloned());
 
         let request_id = response_headers
             .get("x-amzn-requestid")
@@ -509,7 +508,7 @@ impl LanguageModel for BedrockModel {
                                     }
                                 };
                             final_usage = convert_usage(Some(&bedrock_usage));
-                            final_usage.raw = Some(usage.clone());
+                            final_usage.raw = usage.as_object().cloned();
                             if let Some(cache_usage) = cache_usage_metadata(Some(&bedrock_usage)) { finish_meta.insert("usage".into(), cache_usage); }
                         }
                         // #27: surface guardrails trace, performanceConfig, and

@@ -177,13 +177,16 @@ pub(crate) fn build_responses_generate_result_with_tools(
                             {
                                 content.push(GenerateContent::Text {
                                     text,
-                                    provider_metadata: Some(provider_namespace(
-                                        &provider_key,
-                                        text_metadata(
-                                            part,
-                                            cp.get("annotations").and_then(Value::as_array),
-                                        ),
-                                    )),
+                                    provider_metadata: Some(
+                                        provider_namespace(
+                                            &provider_key,
+                                            text_metadata(
+                                                part,
+                                                cp.get("annotations").and_then(Value::as_array),
+                                            ),
+                                        )
+                                        .expect("provider metadata must be an object"),
+                                    ),
                                 });
                             }
                         }
@@ -224,7 +227,10 @@ pub(crate) fn build_responses_generate_result_with_tools(
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
-                    provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(part))),
+                    provider_metadata: Some(
+                        provider_namespace(&provider_key, tool_metadata(part))
+                            .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             Some("custom_tool_call") => {
@@ -249,7 +255,10 @@ pub(crate) fn build_responses_generate_result_with_tools(
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
-                    provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(part))),
+                    provider_metadata: Some(
+                        provider_namespace(&provider_key, tool_metadata(part))
+                            .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             Some("reasoning") => {
@@ -261,7 +270,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
                         "itemId": part.get("id").cloned().unwrap_or(Value::Null),
                         "reasoningEncryptedContent": part.get("encrypted_content").cloned().unwrap_or(Value::Null),
                     }),
-                ));
+                ).expect("provider metadata must be an object"));
                 if parts.is_empty() {
                     content.push(GenerateContent::Reasoning(ReasoningOutput {
                         text: String::new(),
@@ -289,6 +298,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
                     &provider_key,
                     &tool_names,
                     shell_provider_executed,
+                    None,
                 );
                 has_function_call |= part["type"] == "apply_patch_call"
                     || (part["type"] == "computer_call" && !part["call_id"].is_null());
@@ -322,7 +332,8 @@ pub(crate) fn build_responses_generate_result_with_tools(
     if !logprobs.is_empty() {
         pm["logprobs"] = json!(logprobs);
     }
-    let provider_metadata = Some(provider_namespace(&provider_key, pm));
+    let provider_metadata =
+        Some(provider_namespace(&provider_key, pm).expect("provider metadata must be an object"));
 
     let response_id = data
         .get("id")
@@ -387,7 +398,7 @@ fn reasoning_stream_metadata(
     encrypted_content: Option<&str>,
 ) -> ProviderMetadata {
     let inner = json!({ "itemId": item_id, "reasoningEncryptedContent": encrypted_content });
-    provider_namespace(provider_key, inner)
+    provider_namespace(provider_key, inner).expect("provider metadata must be an object")
 }
 
 fn tool_metadata(item: &Value) -> Value {
@@ -580,6 +591,7 @@ where
         let mut ended_inputs = HashSet::new();
         let mut diff_received = HashSet::new();
         let mut hosted_tool_search_ids = VecDeque::new();
+        let mut approval_tool_call_ids: HashMap<String, String> = HashMap::new();
 
         let mut event_iter =
             futures::stream::iter(first_event.into_iter()).chain(sse_stream);
@@ -633,6 +645,8 @@ where
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("");
                                 match item_type {
+
+
                                     "message" => {
                                         let id = item
                                             .get("id")
@@ -641,7 +655,7 @@ where
                                             .to_string();
                                         output_ids.insert(output_index, id.clone());
                                         text_states.insert(id.clone(), item.clone());
-                                        yield Ok(StreamPart::TextStart { id, provider_metadata: Some(provider_namespace(&provider_key, text_metadata(item, None)))});
+                                        yield Ok(StreamPart::TextStart { id, provider_metadata: Some(provider_namespace(&provider_key, text_metadata(item, None)).expect("provider metadata must be an object"))});
                                     }
                                     "function_call" => {
                                         let call_id = item
@@ -770,7 +784,7 @@ where
                                     yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None });
                                     if code {
                                         let mut item = item.clone(); item["code"] = parsed["code"].clone();
-                                        for part in super::provider_events::provider_tool_content(&item, &provider_key, &tool_names, shell_provider_executed) {
+                                        for part in super::provider_events::provider_tool_content(&item, &provider_key, &tool_names, shell_provider_executed, None) {
                                             if let GenerateContent::ToolCall(call) = part { emitted_calls.insert(id.clone()); yield Ok(StreamPart::ToolCall(call)); }
                                         }
                                     }
@@ -940,7 +954,7 @@ where
                                             metadata_item["phase"] = phase.clone();
                                         }
                                         let annotations = text_annotations.remove(&id);
-                                        yield Ok(StreamPart::TextEnd { id, provider_metadata: Some(provider_namespace(&provider_key, text_metadata(&metadata_item, annotations.as_ref())))});
+                                        yield Ok(StreamPart::TextEnd { id, provider_metadata: Some(provider_namespace(&provider_key, text_metadata(&metadata_item, annotations.as_ref())).expect("provider metadata must be an object"))});
                                     }
                                     "function_call" => {
                                         has_function_call = true;
@@ -972,7 +986,7 @@ where
                                             provider_executed: None,
                                             dynamic: None,
                                             thought_signature: None,
-                                            provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(item))),
+                                            provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(item)).expect("provider metadata must be an object")),
                                         }));
                                     }
                                     "custom_tool_call" => {
@@ -1007,7 +1021,7 @@ where
                                             provider_executed: None,
                                             dynamic: None,
                                             thought_signature: None,
-                                            provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(item))),
+                                            provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(item)).expect("provider metadata must be an object")),
                                         }));
                                     }
                                     "reasoning" => {
@@ -1066,11 +1080,13 @@ where
                                             item["call_id"] = Value::Null;
                                         }
                                         pair_tool_search_id(&mut item, &mut hosted_tool_search_ids);
-                                        for part in super::provider_events::provider_tool_content(&item, &provider_key, &tool_names, shell_provider_executed) {
+                                        let mcp_tool_call_id = item.get("approval_request_id").and_then(Value::as_str)
+                                            .and_then(|id| approval_tool_call_ids.get(id)).cloned();
+                                        for part in super::provider_events::provider_tool_content(&item, &provider_key, &tool_names, shell_provider_executed, mcp_tool_call_id.as_deref()) {
                                             match part {
                                                 GenerateContent::ToolCall(call) => {
                                                     if item_type == "code_interpreter_call" || (item_type == "apply_patch_call" && item["status"] != "completed") { continue; }
-                                                    if emitted_calls.insert(call.tool_call_id.clone()) {
+                                                    if emitted_calls.insert(call.tool_call_id.clone()) || item_type == "mcp_call" {
                                                         has_function_call |= call.provider_executed != Some(true) && matches!(item_type, "computer_call" | "apply_patch_call");
                                                         if matches!(item_type, "computer_call" | "apply_patch_call" | "tool_search_call") {
                                                             if item_type == "tool_search_call" && item["execution"] != "server" {
@@ -1085,6 +1101,13 @@ where
                                                     }
                                                 }
                                                 GenerateContent::ToolResult(result) => { yield Ok(StreamPart::ToolResult(result)); }
+                                                GenerateContent::ToolApprovalRequest(approval) => {
+                                                    approval_tool_call_ids.insert(approval.approval_id.clone(), approval.tool_call_id.clone());
+                                                    yield Ok(StreamPart::ToolApprovalRequest(approval));
+                                                }
+                                                GenerateContent::Custom { kind, provider_metadata } => {
+                                                    yield Ok(StreamPart::Custom { kind, provider_metadata });
+                                                }
                                                 _ => {}
                                             }
                                         }
@@ -1208,7 +1231,7 @@ where
             pm["reasoningContext"] = ctx;
         }
         if !logprobs.is_empty() { pm["logprobs"] = json!(logprobs); }
-        let provider_metadata = Some(provider_namespace(&provider_key, pm));
+        let provider_metadata = Some(provider_namespace(&provider_key, pm).expect("provider metadata must be an object"));
 
         yield Ok(StreamPart::Finish {
             finish_reason: final_finish_reason.unwrap_or(FinishReason {
