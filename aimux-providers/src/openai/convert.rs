@@ -1360,11 +1360,11 @@ fn apply_tools(
         prepare_tools_groq(
             &function_tools,
             options.tools.as_ref(),
-            Some(&options.tool_choice),
+            options.tool_choice.as_ref(),
             model_id,
         )
     } else {
-        prepare_tools(&function_tools, Some(&options.tool_choice))
+        prepare_tools(&function_tools, options.tool_choice.as_ref())
     };
 
     if let Some(tools) = prepared.tools {

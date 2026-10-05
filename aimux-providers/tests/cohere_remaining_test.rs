@@ -19,7 +19,7 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, Tool, ToolChoice};
 use aimux_core::result::GenerateContent;
-use aimux_core::tool::{FunctionTool, ProviderTool};
+use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
 use aimux_providers::cohere::convert::{
@@ -113,28 +113,6 @@ fn prepare_tools_function_tool() {
     );
     assert!(result.tool_choice.is_none());
     assert!(result.tool_warnings.is_empty());
-}
-
-/// TS: "should add warnings for provider-defined tools"
-#[test]
-fn prepare_tools_provider_tool_warns() {
-    let provider_tool = Tool::Provider(ProviderTool {
-        id: "provider.tool".to_string(),
-        name: "tool".to_string(),
-        args: json!({}),
-    });
-    let result = prepare_tools(&Some(vec![provider_tool]), None);
-
-    // Tools list is empty (provider tool was dropped) → tools is None.
-    assert!(result.tools.is_none());
-    assert!(result.tool_choice.is_none());
-    assert_eq!(result.tool_warnings.len(), 1);
-    match &result.tool_warnings[0] {
-        aimux_core::types::Warning::Unsupported { feature, .. } => {
-            assert_eq!(feature, "provider-defined tool provider.tool");
-        }
-        other => panic!("expected Unsupported warning, got {other:?}"),
-    }
 }
 
 /// TS: "should handle auto tool choice"

@@ -1919,7 +1919,7 @@ fn apply_anthropic_tools(
         } else {
             None
         },
-        Some(&options.tool_choice),
+        options.tool_choice.as_ref(),
         disable_parallel_tool_use,
         caps.supports_structured_output,
         caps.supports_structured_output,

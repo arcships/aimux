@@ -501,6 +501,25 @@ public final class Types {
     // `Tool` is an internally-tagged union on `type` (`"function" | "provider"`).
     // ─────────────────────────────────────────────────────────────────────────────
 
+    public static class FunctionToolInputExample {
+        @JsonProperty("input") private ObjectNode input = emptyObject();
+
+        @JsonCreator
+        FunctionToolInputExample() {}
+
+        public FunctionToolInputExample(ObjectNode input) { this.input = input; }
+        public ObjectNode getInput() { return input; }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof FunctionToolInputExample
+                && Objects.equals(input, ((FunctionToolInputExample) o).input);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(input); }
+    }
+
     /**
      * A user-defined function tool.
      *
@@ -512,13 +531,13 @@ public final class Types {
         @JsonProperty("input_schema") private JsonNode inputSchema = emptyObject();
         @JsonProperty("strict") private Boolean strict;
         @JsonProperty("provider_options") private Map<String, JsonNode> providerOptions;
-        @JsonProperty("input_examples") private List<JsonNode> inputExamples;
+        @JsonProperty("input_examples") private List<FunctionToolInputExample> inputExamples;
 
         @JsonCreator
         FunctionTool() {}
 
         private FunctionTool(String name, String description, JsonNode inputSchema, Boolean strict,
-                             Map<String, JsonNode> providerOptions, List<JsonNode> inputExamples) {
+                             Map<String, JsonNode> providerOptions, List<FunctionToolInputExample> inputExamples) {
             this.name = name;
             this.description = description;
             this.inputSchema = inputSchema;
@@ -532,7 +551,7 @@ public final class Types {
         public JsonNode getInputSchema() { return inputSchema; }
         public Boolean getStrict() { return strict; }
         public Map<String, JsonNode> getProviderOptions() { return providerOptions; }
-        public List<JsonNode> getInputExamples() { return inputExamples; }
+        public List<FunctionToolInputExample> getInputExamples() { return inputExamples; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -542,14 +561,14 @@ public final class Types {
             private JsonNode inputSchema = emptyObject();
             private Boolean strict;
             private Map<String, JsonNode> providerOptions;
-            private List<JsonNode> inputExamples;
+            private List<FunctionToolInputExample> inputExamples;
 
             public Builder name(String v) { this.name = v; return this; }
             public Builder description(String v) { this.description = v; return this; }
             public Builder inputSchema(JsonNode v) { this.inputSchema = v; return this; }
             public Builder strict(Boolean v) { this.strict = v; return this; }
             public Builder providerOptions(Map<String, JsonNode> v) { this.providerOptions = v; return this; }
-            public Builder inputExamples(List<JsonNode> v) { this.inputExamples = v; return this; }
+            public Builder inputExamples(List<FunctionToolInputExample> v) { this.inputExamples = v; return this; }
 
             public FunctionTool build() {
                 return new FunctionTool(name, description, inputSchema, strict, providerOptions, inputExamples);
@@ -583,12 +602,12 @@ public final class Types {
     public static class ProviderTool {
         @JsonProperty("id") private String id = "";
         @JsonProperty("name") private String name = "";
-        @JsonProperty("args") private JsonNode args = emptyObject();
+        @JsonProperty("args") private ObjectNode args = emptyObject();
 
         @JsonCreator
         ProviderTool() {}
 
-        private ProviderTool(String id, String name, JsonNode args) {
+        private ProviderTool(String id, String name, ObjectNode args) {
             this.id = id;
             this.name = name;
             this.args = args;
@@ -596,18 +615,18 @@ public final class Types {
 
         public String getId() { return id; }
         public String getName() { return name; }
-        public JsonNode getArgs() { return args; }
+        public ObjectNode getArgs() { return args; }
 
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
             private String id = "";
             private String name = "";
-            private JsonNode args = emptyObject();
+            private ObjectNode args = emptyObject();
 
             public Builder id(String v) { this.id = v; return this; }
             public Builder name(String v) { this.name = v; return this; }
-            public Builder args(JsonNode v) { this.args = v; return this; }
+            public Builder args(ObjectNode v) { this.args = v; return this; }
 
             public ProviderTool build() { return new ProviderTool(id, name, args); }
         }
@@ -649,13 +668,13 @@ public final class Types {
             @JsonProperty("input_schema") private JsonNode inputSchema = emptyObject();
             @JsonProperty("strict") private Boolean strict;
             @JsonProperty("provider_options") private Map<String, JsonNode> providerOptions;
-            @JsonProperty("input_examples") private List<JsonNode> inputExamples;
+            @JsonProperty("input_examples") private List<FunctionToolInputExample> inputExamples;
 
             @JsonCreator
             Function() {}
 
             private Function(String name, String description, JsonNode inputSchema, Boolean strict,
-                             Map<String, JsonNode> providerOptions, List<JsonNode> inputExamples) {
+                             Map<String, JsonNode> providerOptions, List<FunctionToolInputExample> inputExamples) {
                 this.name = name;
                 this.description = description;
                 this.inputSchema = inputSchema;
@@ -675,7 +694,7 @@ public final class Types {
             public JsonNode getInputSchema() { return inputSchema; }
             public Boolean getStrict() { return strict; }
             public Map<String, JsonNode> getProviderOptions() { return providerOptions; }
-            public List<JsonNode> getInputExamples() { return inputExamples; }
+            public List<FunctionToolInputExample> getInputExamples() { return inputExamples; }
 
             public static Builder builder() { return new Builder(); }
 
@@ -685,14 +704,14 @@ public final class Types {
                 private JsonNode inputSchema = emptyObject();
                 private Boolean strict;
                 private Map<String, JsonNode> providerOptions;
-                private List<JsonNode> inputExamples;
+                private List<FunctionToolInputExample> inputExamples;
 
                 public Builder name(String v) { this.name = v; return this; }
                 public Builder description(String v) { this.description = v; return this; }
                 public Builder inputSchema(JsonNode v) { this.inputSchema = v; return this; }
                 public Builder strict(Boolean v) { this.strict = v; return this; }
                 public Builder providerOptions(Map<String, JsonNode> v) { this.providerOptions = v; return this; }
-                public Builder inputExamples(List<JsonNode> v) { this.inputExamples = v; return this; }
+                public Builder inputExamples(List<FunctionToolInputExample> v) { this.inputExamples = v; return this; }
 
                 public Function build() {
                     return new Function(name, description, inputSchema, strict, providerOptions, inputExamples);
@@ -722,12 +741,12 @@ public final class Types {
         public static class Provider extends Tool {
             @JsonProperty("id") private String id = "";
             @JsonProperty("name") private String name = "";
-            @JsonProperty("args") private JsonNode args = emptyObject();
+            @JsonProperty("args") private ObjectNode args = emptyObject();
 
             @JsonCreator
             Provider() {}
 
-            private Provider(String id, String name, JsonNode args) {
+            private Provider(String id, String name, ObjectNode args) {
                 this.id = id;
                 this.name = name;
                 this.args = args;
@@ -740,18 +759,18 @@ public final class Types {
 
             public String getId() { return id; }
             public String getName() { return name; }
-            public JsonNode getArgs() { return args; }
+            public ObjectNode getArgs() { return args; }
 
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
                 private String id = "";
                 private String name = "";
-                private JsonNode args = emptyObject();
+                private ObjectNode args = emptyObject();
 
                 public Builder id(String v) { this.id = v; return this; }
                 public Builder name(String v) { this.name = v; return this; }
-                public Builder args(JsonNode v) { this.args = v; return this; }
+                public Builder args(ObjectNode v) { this.args = v; return this; }
 
                 public Provider build() { return new Provider(id, name, args); }
             }

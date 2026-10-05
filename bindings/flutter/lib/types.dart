@@ -339,6 +339,14 @@ typedef RepairToolCall = FutureOr<RawToolCall?> Function(
 // Tools
 // ─────────────────────────────────────────────────────────────────────────────
 
+class FunctionToolInputExample {
+  final Map<String, dynamic> input;
+  FunctionToolInputExample({required this.input});
+  factory FunctionToolInputExample.fromJson(Map<String, dynamic> json) =>
+      FunctionToolInputExample(input: json['input'] as Map<String, dynamic>);
+  Map<String, dynamic> toJson() => {'input': input};
+}
+
 /// A function tool definition. Mirrors `FunctionTool.ts`.
 @JsonSerializable()
 class FunctionTool {
@@ -350,7 +358,7 @@ class FunctionTool {
   @JsonKey(name: 'provider_options')
   final Map<String, dynamic>? providerOptions;
   @JsonKey(name: 'input_examples')
-  final List<Map<String, dynamic>>? inputExamples;
+  final List<FunctionToolInputExample>? inputExamples;
 
   FunctionTool({
     required this.name,

@@ -83,7 +83,7 @@ FunctionTool _$FunctionToolFromJson(Map<String, dynamic> json) => FunctionTool(
       strict: json['strict'] as bool?,
       providerOptions: json['provider_options'] as Map<String, dynamic>?,
       inputExamples: (json['input_examples'] as List<dynamic>?)
-          ?.map((e) => e as Map<String, dynamic>)
+          ?.map((e) => FunctionToolInputExample.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
 
@@ -94,7 +94,7 @@ Map<String, dynamic> _$FunctionToolToJson(FunctionTool instance) =>
       'input_schema': instance.inputSchema,
       'strict': instance.strict,
       'provider_options': instance.providerOptions,
-      'input_examples': instance.inputExamples,
+      'input_examples': instance.inputExamples?.map((e) => e.toJson()).toList(),
     };
 
 ResponseMetadata _$ResponseMetadataFromJson(Map<String, dynamic> json) =>

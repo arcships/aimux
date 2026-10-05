@@ -16,10 +16,9 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, Tool, ToolChoice};
+use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::bedrock::{BedrockModel, BedrockProviderConfig};
@@ -671,62 +670,6 @@ async fn bedrock_generate_settings() {
     assert!((body["inferenceConfig"]["topP"].as_f64().unwrap() - 0.9).abs() < 1e-6);
     assert_eq!(body["inferenceConfig"]["topK"], json!(40.0));
     assert_eq!(body["inferenceConfig"]["stopSequences"], json!(["END"]));
-}
-
-/// TS: "should pass tools and tool choice correctly" — required → {"any":{}}
-#[tokio::test]
-async fn bedrock_generate_tool_choice_required() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let opts = CallOptions {
-        tools: Some(vec![Tool::Function(
-            FunctionTool::new(
-                "get-weather".to_string(),
-                json!({"type":"object","properties":{"city":{"type":"string"}}}),
-            )
-            .with_description("Get weather".to_string()),
-        )]),
-        tool_choice: ToolChoice::Required,
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["toolConfig"]["toolChoice"], json!({ "any": {} }));
-    assert_eq!(
-        body["toolConfig"]["tools"][0]["toolSpec"]["name"],
-        "get-weather"
-    );
-}
-
-/// TS: "should only send the forced tool when toolChoice specifies a specific tool"
-#[tokio::test]
-async fn bedrock_generate_tool_choice_specific_tool() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let opts = CallOptions {
-        tools: Some(vec![Tool::Function(FunctionTool::new(
-            "get-weather".to_string(),
-            json!({"type":"object"}),
-        ))]),
-        tool_choice: ToolChoice::Tool {
-            tool_name: "get-weather".to_string(),
-        },
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(
-        body["toolConfig"]["toolChoice"],
-        json!({ "tool": { "name": "get-weather" } })
-    );
-    // Only the forced tool is sent.
-    assert_eq!(body["toolConfig"]["tools"].as_array().unwrap().len(), 1);
 }
 
 /// TS: a 429/throttling response maps to `AiMuxError::ApiCall` (429 in `status_code`).

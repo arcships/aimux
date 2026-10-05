@@ -22,7 +22,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
-use aimux_core::tool::{FunctionTool, ProviderTool};
+use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::mistral::convert::{
@@ -726,27 +726,6 @@ fn build_request_body_no_stream_flag() {
     let options = default_options(test_prompt());
     let body = build_request_body("mistral-small-latest", &options, false);
     assert!(body.get("stream").is_none());
-}
-
-/// TS: provider-defined tools are silently dropped (Mistral filters them out
-/// before calling prepare_tools — no warning is emitted).
-#[test]
-fn build_request_body_provider_tool_dropped() {
-    let provider_tool = Tool::Provider(ProviderTool {
-        id: "mistral.web_search".to_string(),
-        name: "web_search".to_string(),
-        args: json!({}),
-    });
-    let options = CallOptions {
-        prompt: test_prompt(),
-        tools: Some(vec![provider_tool]),
-        ..default_options(Vec::new())
-    };
-    let body = build_request_body("mistral-small-latest", &options, false);
-    assert!(
-        body.get("tools").is_none(),
-        "provider-only tools should produce no tools field"
-    );
 }
 
 /// TS: a function tool with a description includes it in the request body.

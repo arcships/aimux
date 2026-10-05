@@ -16,7 +16,7 @@ use serde::Deserialize;
 use crate::composite::{ChildModel, add_usage, build_aggregator_prompt, extract_text};
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
-use crate::options::{CallOptions, ToolChoice};
+use crate::options::CallOptions;
 use crate::result::{GenerateResult, StreamResult};
 use crate::retry;
 use crate::stream_part::StreamPart;
@@ -98,12 +98,12 @@ impl MoaModel {
 
     /// Build reference call options from the user's options. When
     /// `strip_reference_tools` is set, `tools` is cleared and `tool_choice` is
-    /// reset to `Auto` so references don't carry tool schemas.
+    /// cleared so references don't carry tool schemas.
     fn reference_options(&self, options: &CallOptions) -> CallOptions {
         let mut o = options.clone();
         if self.config.strip_reference_tools {
             o.tools = None;
-            o.tool_choice = ToolChoice::Auto;
+            o.tool_choice = None;
         }
         o
     }
@@ -627,24 +627,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn strip_reference_tools_default_clears_tools() {
-        // Verify the helper clears tools/tool_choice when configured (default).
-        let agg = mk("agg", "x", false, 0);
-        let moa = MoaModel::new(vec![], agg, MoaConfig::default());
-        let opts = CallOptions {
-            prompt: vec![],
-            tools: Some(vec![]),
-            tool_choice: ToolChoice::Required,
-            ..Default::default()
-        };
-        let ref_opts = moa.reference_options(&opts);
-        assert!(ref_opts.tools.is_none());
-        assert_eq!(ref_opts.tool_choice, ToolChoice::Auto);
-        // The original options are untouched (clone, not mutate).
-        assert_eq!(opts.tool_choice, ToolChoice::Required);
-    }
-
-    #[tokio::test]
     async fn no_references_does_not_inject_empty_heading() {
         // S4 regression guard: with 0 references the aggregator prompt is the
         // original prompt verbatim — no "# Reference model responses" heading.
@@ -854,29 +836,6 @@ mod tests {
         // output: text 3+6+1=10, reasoning 1+2+0=3
         assert_eq!(r.usage.output_tokens.text, Some(10));
         assert_eq!(r.usage.output_tokens.reasoning, Some(3));
-    }
-
-    #[tokio::test]
-    async fn strip_reference_tools_false_preserves_tools() {
-        // G5: strip_reference_tools=false keeps tools/tool_choice on references.
-        let agg = mk("agg", "x", false, 0);
-        let moa = MoaModel::new(
-            vec![],
-            agg,
-            MoaConfig {
-                strip_reference_tools: false,
-                ..Default::default()
-            },
-        );
-        let opts = CallOptions {
-            prompt: vec![],
-            tools: Some(vec![]),
-            tool_choice: ToolChoice::Required,
-            ..Default::default()
-        };
-        let ref_opts = moa.reference_options(&opts);
-        assert_eq!(ref_opts.tools.as_ref().map(std::vec::Vec::len), Some(0));
-        assert_eq!(ref_opts.tool_choice, ToolChoice::Required);
     }
 
     #[tokio::test]

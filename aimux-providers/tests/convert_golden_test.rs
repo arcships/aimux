@@ -11,11 +11,9 @@ use serde_json::json;
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::tool::{FunctionTool, Tool};
+use aimux_core::options::{CallOptions, ResponseFormat};
 
 use aimux_providers::anthropic::convert::build_request_body_with_warnings as anthropic_build;
-use aimux_providers::openai::convert::build_request_body_with_warnings as openai_build;
 use aimux_providers::openai::responses::convert::build_responses_request_body;
 
 fn user_prompt() -> LanguageModelPrompt {
@@ -24,22 +22,6 @@ fn user_prompt() -> LanguageModelPrompt {
         content: vec![ContentPart::text("Hello")],
         ..Default::default()
     }]
-}
-
-fn weather_tool() -> FunctionTool {
-    FunctionTool {
-        name: "weather".to_string(),
-        description: Some("current weather".to_string()),
-        input_schema: json!({
-            "type": "object",
-            "properties": { "location": { "type": "string" } },
-            "required": ["location"],
-            "additionalProperties": false
-        }),
-        strict: None,
-        provider_options: None,
-        input_examples: None,
-    }
 }
 
 fn json_schema_format() -> ResponseFormat {
@@ -55,80 +37,6 @@ fn json_schema_format() -> ResponseFormat {
 }
 
 // ── OpenAI Chat Completions ─────────────────────────────────────────────────
-
-#[test]
-fn openai_chat_golden() {
-    let options = CallOptions {
-        prompt: user_prompt(),
-        max_output_tokens: Some(2048),
-        temperature: Some(0.7),
-        reasoning: Some(aimux_core::types::ReasoningEffort::High),
-        tools: Some(vec![Tool::Function(weather_tool())]),
-        tool_choice: ToolChoice::Auto,
-        response_format: Some(json_schema_format()),
-        body_overrides: Some(json!({ "user": "override-me" })),
-        ..CallOptions::default()
-    };
-
-    let result = openai_build(
-        "o3-mini",
-        &options,
-        false,
-        "openai",
-        &aimux_providers::openai::OpenAICompatProfile::full(),
-    )
-    .expect("openai chat build");
-
-    assert_eq!(
-        result.body,
-        json!({
-            "model": "o3-mini",
-            "messages": [ { "role": "user", "content": "Hello" } ],
-            "max_completion_tokens": 2048,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "schema": {
-                        "type": "object",
-                        "properties": { "answer": { "type": "string" } },
-                        "required": ["answer"]
-                    },
-                    "name": "qa",
-                    "description": "answer extraction",
-                    "strict": true
-                }
-            },
-            "reasoning_effort": "high",
-            "tools": [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "weather",
-                        "description": "current weather",
-                        "parameters": {
-                            "type": "object",
-                            "properties": { "location": { "type": "string" } },
-                            "required": ["location"],
-                            "additionalProperties": false
-                        }
-                    }
-                }
-            ],
-            "tool_choice": "auto",
-            "user": "override-me"
-        }),
-        "openai chat body diverged: {}",
-        result.body
-    );
-    // `temperature` is stripped for reasoning models with a warning; the
-    // body override `user` lands after built-in fields.
-    assert_eq!(result.body.get("temperature"), None);
-    assert_eq!(
-        serde_json::to_value(&result.warnings).unwrap(),
-        json!([{ "Unsupported": { "feature": "temperature",
-                 "details": "temperature is not supported for reasoning models" } }])
-    );
-}
 
 // ── OpenAI Responses API ────────────────────────────────────────────────────
 

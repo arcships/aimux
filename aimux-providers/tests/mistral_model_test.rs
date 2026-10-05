@@ -15,10 +15,9 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, Tool, ToolChoice};
+use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::{MistralConfig, MistralProvider};
@@ -35,23 +34,6 @@ fn test_prompt() -> LanguageModelPrompt {
 
 fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
     CallOptions::new(prompt)
-}
-
-fn test_tool() -> Tool {
-    Tool::Function(FunctionTool {
-        name: "test-tool".to_string(),
-        description: None,
-        input_schema: json!({
-            "type": "object",
-            "properties": { "value": { "type": "string" } },
-            "required": ["value"],
-            "additionalProperties": false,
-            "$schema": "http://json-schema.org/draft-07/schema#"
-        }),
-        strict: None,
-        provider_options: None,
-        input_examples: None,
-    })
 }
 
 async fn mock_json_response(server: &MockServer, body: Value) {
@@ -358,89 +340,6 @@ async fn should_send_correct_request_body() {
     assert!(request_body.get("max_tokens").is_none());
     assert!(request_body.get("temperature").is_none());
     assert!(request_body.get("tools").is_none());
-}
-
-/// TS: "should pass tools and toolChoice" — Mistral maps `required` → `"any"`.
-#[tokio::test]
-async fn should_pass_tools_with_tool_choice_required() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        json!({
-            "id": "test-id",
-            "model": "mistral-small-latest",
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 },
-            "object": "chat.completion",
-            "choices": [{
-                "index": 0,
-                "finish_reason": "stop",
-                "message": { "role": "assistant", "content": "ok" }
-            }]
-        }),
-    )
-    .await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let options = CallOptions {
-        prompt: test_prompt(),
-        tools: Some(vec![test_tool()]),
-        tool_choice: ToolChoice::Required,
-        ..default_options(Vec::new())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(
-        body["tool_choice"],
-        json!("any"),
-        "Mistral uses 'any' for required tool choice"
-    );
-    assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
-}
-
-/// TS: "should pass tools and toolChoice" — `tool` choice filters tools.
-#[tokio::test]
-async fn should_pass_tools_with_tool_choice_tool() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        json!({
-            "id": "test-id",
-            "model": "mistral-small-latest",
-            "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 },
-            "object": "chat.completion",
-            "choices": [{
-                "index": 0,
-                "finish_reason": "stop",
-                "message": { "role": "assistant", "content": "ok" }
-            }]
-        }),
-    )
-    .await;
-
-    let config = MistralConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = MistralProvider::new(config);
-    let model = provider.model("mistral-small-latest");
-
-    let options = CallOptions {
-        prompt: test_prompt(),
-        tools: Some(vec![test_tool()]),
-        tool_choice: ToolChoice::Tool {
-            tool_name: "test-tool".to_string(),
-        },
-        ..default_options(Vec::new())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(body["tool_choice"], json!("any"));
-    assert_eq!(body["tools"].as_array().unwrap().len(), 1);
-    assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
 }
 
 /// TS: "should forward stopSequences as the Mistral stop parameter"

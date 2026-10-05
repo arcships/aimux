@@ -599,7 +599,7 @@ pub fn build_responses_request_body(
     let (input, input_warnings) = convert_to_xai_responses_input(&options.prompt)?;
     warnings.extend(input_warnings);
 
-    let prepared = prepare_responses_tools(&options.tools, Some(&options.tool_choice));
+    let prepared = prepare_responses_tools(&options.tools, options.tool_choice.as_ref());
     for tw in &prepared.tool_warnings {
         warnings.push(tw.clone());
     }

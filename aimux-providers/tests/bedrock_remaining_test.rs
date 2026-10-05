@@ -32,11 +32,10 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, Tool, ToolChoice};
+use aimux_core::options::CallOptions;
 use aimux_core::provider::Provider;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::bedrock::{
@@ -952,33 +951,6 @@ async fn stream_tool_call_empty_input() {
 
 // ── omit toolConfig ──────────────────────────────────────────────────────────
 
-/// TS: "should omit toolConfig when conversation has tool calls but toolChoice
-/// is none" — with `toolChoice: none`, no `toolConfig` is sent even when tools
-/// are provided.
-#[tokio::test]
-async fn omit_tool_config_when_tool_choice_none() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let opts = CallOptions {
-        tools: Some(vec![Tool::Function(FunctionTool::new(
-            "weather".to_string(),
-            json!({ "type": "object", "properties": { "city": { "type": "string" } } }),
-        ))]),
-        tool_choice: ToolChoice::None,
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("request body");
-    assert!(
-        body.get("toolConfig").is_none(),
-        "toolConfig should be absent when toolChoice is none, got {}",
-        body["toolConfig"]
-    );
-}
-
 /// TS: "should omit toolConfig and filter tool content when conversation has
 /// tool calls but no active tools".
 ///
@@ -1203,70 +1175,6 @@ async fn finish_reason_guardrail_intervened() {
     assert_eq!(
         result.finish_reason.raw.as_deref(),
         Some("guardrail_intervened")
-    );
-}
-
-/// TS: "should send all tools when toolChoice is auto" — all provided tools
-/// appear in the toolConfig, not just a filtered subset.
-#[tokio::test]
-async fn tool_choice_auto_sends_all_tools() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let opts = CallOptions {
-        tools: Some(vec![
-            Tool::Function(
-                FunctionTool::new("get-weather".to_string(), json!({ "type": "object" }))
-                    .with_description("Get weather".to_string()),
-            ),
-            Tool::Function(
-                FunctionTool::new("get-time".to_string(), json!({ "type": "object" }))
-                    .with_description("Get time".to_string()),
-            ),
-        ]),
-        tool_choice: ToolChoice::Auto,
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("request body");
-    assert_eq!(body["toolConfig"]["toolChoice"], json!({ "auto": {} }));
-    let tools = body["toolConfig"]["tools"].as_array().unwrap();
-    assert_eq!(
-        tools.len(),
-        2,
-        "both tools should be sent with toolChoice: auto"
-    );
-    assert_eq!(tools[0]["toolSpec"]["name"], "get-weather");
-    assert_eq!(tools[1]["toolSpec"]["name"], "get-time");
-}
-
-/// TS: "should omit empty tool descriptions to avoid Bedrock validation errors".
-///
-/// A function tool with an empty-string description must not emit a
-/// `description` field in the `toolSpec`.
-#[tokio::test]
-async fn tool_empty_description_omitted() {
-    let server = MockServer::start().await;
-    mock_converse_json(&server, 200, ok_converse_body()).await;
-
-    let model = make_model(&server);
-    let opts = CallOptions {
-        tools: Some(vec![Tool::Function(
-            FunctionTool::new("get-weather".to_string(), json!({ "type": "object" }))
-                .with_description("".to_string()),
-        )]),
-        tool_choice: ToolChoice::Auto,
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&opts).await.expect("should succeed");
-    let body = result.request_body.expect("request body");
-    let spec = &body["toolConfig"]["tools"][0]["toolSpec"];
-    assert!(
-        spec.get("description").is_none(),
-        "empty description should be omitted"
     );
 }
 

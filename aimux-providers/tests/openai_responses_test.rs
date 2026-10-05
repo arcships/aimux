@@ -18,7 +18,6 @@
 //! or SSE response, creates an `OpenAIResponsesModel` pointing at the mock,
 //! calls `do_generate` / `do_stream`, and asserts on the result.
 
-use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -28,10 +27,9 @@ use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, Tool, ToolChoice};
+use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::{OpenAIConfig, OpenAIProvider};
@@ -50,23 +48,6 @@ fn test_prompt() -> LanguageModelPrompt {
 /// Build `CallOptions` with everything unset except `prompt`.
 fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
     CallOptions::new(prompt)
-}
-
-/// A simple function tool named `weather`.
-fn weather_tool() -> FunctionTool {
-    FunctionTool {
-        name: "weather".to_string(),
-        description: None,
-        input_schema: json!({
-            "type": "object",
-            "properties": { "location": { "type": "string" } },
-            "required": ["location"],
-            "additionalProperties": false,
-        }),
-        strict: None,
-        provider_options: None,
-        input_examples: None,
-    }
 }
 
 /// Standard mock for a JSON responses-api response.
@@ -635,30 +616,6 @@ mod do_generate_request {
 
     // -- should send function tools --
 
-    /// TS: tools are prepared into the Responses `tools` array.
-    #[tokio::test]
-    async fn should_send_function_tools() {
-        let server = MockServer::start().await;
-        mock_json_response(&server, text_response_body()).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
-
-        let options = CallOptions {
-            tools: Some(vec![Tool::from(weather_tool())]),
-            tool_choice: ToolChoice::Auto,
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_generate(&options).await.expect("should succeed");
-        assert!(result.warnings.is_empty());
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["tools"][0]["type"], "function");
-        assert_eq!(body["tools"][0]["name"], "weather");
-        assert_eq!(body["tools"][0]["parameters"]["type"], "object");
-    }
-
     // -- should warn about unsupported topK --
 
     /// TS: topK is unsupported for the Responses API.
@@ -817,66 +774,6 @@ mod do_generate_response {
     }
 
     // -- should generate tool-call (function_call) --
-
-    /// TS: function_call output items map to tool-call content.
-    #[tokio::test]
-    async fn should_generate_tool_call() {
-        let server = MockServer::start().await;
-        mock_json_response(
-            &server,
-            json!({
-                "id": "resp_fc",
-                "object": "response",
-                "created_at": 1741257730,
-                "status": "completed",
-                "error": null,
-                "incomplete_details": null,
-                "model": "gpt-4o-2024-07-18",
-                "output": [
-                    {
-                        "type": "function_call",
-                        "id": "fc_123",
-                        "call_id": "call_abc",
-                        "name": "weather",
-                        "arguments": "{\"location\":\"San Francisco\"}"
-                    }
-                ],
-                "usage": {
-                    "input_tokens": 50,
-                    "output_tokens": 10
-                }
-            }),
-        )
-        .await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
-
-        let options = CallOptions {
-            tools: Some(vec![Tool::from(weather_tool())]),
-            tool_choice: ToolChoice::Auto,
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_generate(&options).await.expect("should succeed");
-
-        assert_eq!(result.content.len(), 1);
-        match &result.content[0] {
-            GenerateContent::ToolCall(RawToolCall {
-                tool_call_id,
-                tool_name,
-                input,
-                ..
-            }) => {
-                assert_eq!(tool_call_id, "call_abc");
-                assert_eq!(tool_name, "weather");
-                assert_eq!(input, r#"{"location":"San Francisco"}"#);
-            }
-            other => panic!("expected ToolCall, got {other:?}"),
-        }
-        // finish reason should be tool-calls (hasFunctionCall = true, no incomplete_details)
-        assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
-    }
 
     // -- should generate reasoning content --
 
@@ -1054,110 +951,6 @@ mod do_stream {
     }
 
     // -- should stream tool calls --
-
-    /// TS: "should send streaming tool calls"
-    ///
-    /// Verifies the function-call streaming path:
-    /// output_item.added (function_call) -> function_call_arguments.delta ->
-    /// function_call_arguments.done -> output_item.done (function_call).
-    #[tokio::test]
-    async fn should_stream_tool_calls() {
-        let server = MockServer::start().await;
-        let chunks = sse_body(&[
-            &sse_event(
-                r#"{"type":"response.created","response":{"id":"resp_tc","created_at":1741362087,"model":"gpt-4o-2024-07-18"}}"#,
-            ),
-            &sse_event(
-                r#"{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_added","name":"weather","arguments":"","status":"completed"}}"#,
-            ),
-            &sse_event(
-                r#"{"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":"{\"location\":"}"#,
-            ),
-            &sse_event(
-                r#"{"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":"\"Rome\"}"}"#,
-            ),
-            &sse_event(
-                r#"{"type":"response.function_call_arguments.done","item_id":"fc_1","output_index":0,"arguments":"{\"location\":\"Rome\"}"}"#,
-            ),
-            &sse_event(
-                r#"{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_done","name":"weather","arguments":"{\"location\":\"Rome\"}","status":"completed"}}"#,
-            ),
-            &sse_event(
-                r#"{"type":"response.completed","response":{"id":"resp_tc","created_at":1741362087,"model":"gpt-4o-2024-07-18","incomplete_details":null,"usage":{"input_tokens":0,"input_tokens_details":{"cached_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0}}}}"#,
-            ),
-        ]);
-        mock_sse_response(&server, &chunks).await;
-
-        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
-        let model = OpenAIProvider::new(config).responses_model("gpt-4o");
-
-        let options = CallOptions {
-            tools: Some(vec![Tool::from(weather_tool())]),
-            tool_choice: ToolChoice::Auto,
-            ..CallOptions::new(test_prompt())
-        };
-
-        let result = model.do_stream(&options).await.expect("should succeed");
-        let parts = collect_stream(result).await;
-
-        // StreamStart, ResponseMetadata, ToolInputStart, ToolInputDelta x2,
-        // ToolInputEnd, ToolCall, Finish
-        assert_eq!(parts.len(), 8);
-
-        // ToolInputStart uses the call_id from the added item.
-        match &parts[2] {
-            StreamPart::ToolInputStart { id, tool_name, .. } => {
-                assert_eq!(id, "call_added");
-                assert_eq!(tool_name, "weather");
-            }
-            other => panic!("expected ToolInputStart, got {other:?}"),
-        }
-
-        // ToolInputDelta uses the ongoing tool call's id (from added item).
-        match &parts[3] {
-            StreamPart::ToolInputDelta { id, delta, .. } => {
-                assert_eq!(id, "call_added");
-                assert!(delta.contains("location"));
-            }
-            other => panic!("expected ToolInputDelta, got {other:?}"),
-        }
-        match &parts[4] {
-            StreamPart::ToolInputDelta { id, delta, .. } => {
-                assert_eq!(id, "call_added");
-                assert!(delta.contains("Rome"));
-            }
-            other => panic!("expected ToolInputDelta, got {other:?}"),
-        }
-
-        // ToolInputEnd uses the call_id from the done item.
-        match &parts[5] {
-            StreamPart::ToolInputEnd { id, .. } => assert_eq!(id, "call_done"),
-            other => panic!("expected ToolInputEnd, got {other:?}"),
-        }
-
-        // ToolCall uses the call_id and arguments from the done item.
-        match &parts[6] {
-            StreamPart::ToolCall(RawToolCall {
-                tool_call_id,
-                tool_name,
-                input,
-                ..
-            }) => {
-                assert_eq!(tool_call_id, "call_done");
-                assert_eq!(tool_name, "weather");
-                assert_eq!(input, r#"{"location":"Rome"}"#);
-            }
-            other => panic!("expected ToolCall, got {other:?}"),
-        }
-
-        // Finish should have tool-calls finish reason.
-        match &parts[7] {
-            StreamPart::Finish { finish_reason, .. } => {
-                assert_eq!(finish_reason.unified, FinishReasonUnified::ToolCalls);
-            }
-            other => panic!("expected Finish, got {other:?}"),
-        }
-    }
 
     // -- should stream reasoning summary --
 

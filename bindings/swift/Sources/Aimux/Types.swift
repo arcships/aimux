@@ -251,6 +251,12 @@ public enum Warning: Codable, Equatable {
 
 // MARK: - Tool / ToolChoice
 
+public struct FunctionToolInputExample: Codable, Equatable {
+    public var input: [String: JSONValue]
+
+    public init(input: [String: JSONValue]) { self.input = input }
+}
+
 /// A user-defined function tool definition.
 public struct FunctionTool: Codable, Equatable {
     public var name: String
@@ -259,7 +265,7 @@ public struct FunctionTool: Codable, Equatable {
     public var inputSchema: JSONValue
     public var strict: Bool?
     public var providerOptions: JSONValue?
-    public var inputExamples: [JSONValue]?
+    public var inputExamples: [FunctionToolInputExample]?
 
     enum CodingKeys: String, CodingKey {
         case name, description
@@ -271,7 +277,7 @@ public struct FunctionTool: Codable, Equatable {
 
     public init(name: String, inputSchema: JSONValue, description: String? = nil,
                 strict: Bool? = nil, providerOptions: JSONValue? = nil,
-                inputExamples: [JSONValue]? = nil) {
+                inputExamples: [FunctionToolInputExample]? = nil) {
         self.name = name; self.inputSchema = inputSchema; self.description = description
         self.strict = strict; self.providerOptions = providerOptions; self.inputExamples = inputExamples
     }
@@ -281,9 +287,9 @@ public struct FunctionTool: Codable, Equatable {
 public struct ProviderTool: Codable, Equatable {
     public var id: String
     public var name: String
-    public var args: JSONValue
+    public var args: [String: JSONValue]
 
-    public init(id: String, name: String, args: JSONValue) {
+    public init(id: String, name: String, args: [String: JSONValue]) {
         self.id = id; self.name = name; self.args = args
     }
 }
@@ -307,12 +313,12 @@ public enum Tool: Codable, Equatable {
                 description: try c.decodeIfPresent(String.self, forKey: AnyCodingKey("description")),
                 strict: try c.decodeIfPresent(Bool.self, forKey: AnyCodingKey("strict")),
                 providerOptions: try c.decodeIfPresent(JSONValue.self, forKey: AnyCodingKey("provider_options")),
-                inputExamples: try c.decodeIfPresent([JSONValue].self, forKey: AnyCodingKey("input_examples"))))
+                inputExamples: try c.decodeIfPresent([FunctionToolInputExample].self, forKey: AnyCodingKey("input_examples"))))
         case "provider":
             self = .provider(ProviderTool(
                 id: try c.decode(String.self, forKey: AnyCodingKey("id")),
                 name: try c.decode(String.self, forKey: AnyCodingKey("name")),
-                args: try c.decode(JSONValue.self, forKey: AnyCodingKey("args"))))
+                args: try c.decode([String: JSONValue].self, forKey: AnyCodingKey("args"))))
         default:
             throw aimuxDecodingError(c.codingPath, "unknown tool type \(type)")
         }

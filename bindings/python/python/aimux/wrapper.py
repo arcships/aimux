@@ -54,6 +54,7 @@ __all__ = [
     "RepairToolCall",
     "ModelMessage",
     "FunctionTool",
+    "FunctionToolInputExample",
     "ProviderTool",
     "TextContentPart",
     "GenerateTextOptions",
@@ -665,6 +666,10 @@ class ResponseFormat(RootModel[Union[Literal["Text"], _ResponseFormatJsonBody]])
 # union with a ``type`` discriminator works directly.
 # ─────────────────────────────────────────────────────────────────────────────
 
+class FunctionToolInputExample(BaseModel):
+    input: Dict[str, Any]
+
+
 class FunctionTool(BaseModel):
     """A user-defined function tool (Rust ``FunctionTool``)."""
 
@@ -674,7 +679,7 @@ class FunctionTool(BaseModel):
     input_schema: Any
     strict: Optional[bool] = None
     provider_options: Optional[Dict[str, Any]] = None
-    input_examples: Optional[List[Any]] = None
+    input_examples: Optional[List[FunctionToolInputExample]] = None
 
 
 class ProviderTool(BaseModel):
@@ -683,7 +688,7 @@ class ProviderTool(BaseModel):
     type: Literal["provider"] = "provider"
     id: str
     name: str
-    args: Any
+    args: Dict[str, Any]
 
 
 Tool = Annotated[

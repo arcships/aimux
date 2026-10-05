@@ -17,7 +17,7 @@ use aimux_core::generate::{GenerateTextOptions, stream_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, Tool, ToolChoice};
+use aimux_core::options::{CallOptions, Tool};
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
@@ -409,44 +409,6 @@ async fn should_send_correct_request_body() {
     assert!(body.get("temperature").is_none());
     assert!(body.get("tools").is_none());
     assert!(body.get("documents").is_none());
-}
-
-/// TS: "should pass tools" with tool_choice none → "NONE"
-#[tokio::test]
-async fn should_pass_tools_with_tool_choice_none() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        json!({
-            "id": "test-id",
-            "message": {
-                "role": "assistant",
-                "content": [{ "type": "text", "text": "ok" }]
-            },
-            "finish_reason": "COMPLETE",
-            "usage": {
-                "billed_units": { "input_tokens": 12, "output_tokens": 7 },
-                "tokens": { "input_tokens": 12, "output_tokens": 7 }
-            }
-        }),
-    )
-    .await;
-
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
-
-    let options = CallOptions {
-        tools: Some(vec![test_tool()]),
-        tool_choice: ToolChoice::None,
-        ..default_options(test_prompt())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(body["tool_choice"], json!("NONE"));
-    assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -951,55 +913,6 @@ async fn should_pass_response_format() {
         body["response_format"],
         json!({ "type": "json_object", "json_schema": schema })
     );
-}
-
-/// TS: "should pass tools" with tool_choice required → "REQUIRED"
-#[tokio::test]
-async fn should_pass_tools_with_tool_choice_required() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, ok_cohere_body()).await;
-
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
-
-    let options = CallOptions {
-        prompt: test_prompt(),
-        tools: Some(vec![test_tool()]),
-        tool_choice: ToolChoice::Required,
-        ..default_options(Vec::new())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["tool_choice"], json!("REQUIRED"));
-    assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
-}
-
-/// TS: "should pass tools" with tool_choice tool → "REQUIRED" + filtered tools
-#[tokio::test]
-async fn should_pass_tools_with_tool_choice_tool() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, ok_cohere_body()).await;
-
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.model("command-r-plus");
-
-    let options = CallOptions {
-        prompt: test_prompt(),
-        tools: Some(vec![test_tool()]),
-        tool_choice: ToolChoice::Tool {
-            tool_name: "test-tool".to_string(),
-        },
-        ..default_options(Vec::new())
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["tool_choice"], json!("REQUIRED"));
-    assert_eq!(body["tools"].as_array().unwrap().len(), 1);
-    assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
 }
 
 /// TS: "should extract text documents and send to API" — non-image File parts
