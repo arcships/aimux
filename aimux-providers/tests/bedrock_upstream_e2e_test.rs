@@ -186,7 +186,8 @@ async fn stream_partial_tool_arguments() {
         .await
         .unwrap();
     let mut expected = chat_body();
-    expected["toolConfig"] = json!({"tools":[{"toolSpec":{"name":"test-tool","inputSchema":{"json":schema}}}],"toolChoice":{"auto":{}}});
+    expected["toolConfig"] =
+        json!({"tools":[{"toolSpec":{"name":"test-tool","inputSchema":{"json":schema}}}]});
     assert_eq!(fetch.seen()[0].json_body(), expected);
     let parts = result
         .stream

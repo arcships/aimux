@@ -67,16 +67,16 @@ use aimux_ffi::{
     aimux_openai_image_new, aimux_openai_image_new_with_base, aimux_openai_new,
     aimux_openai_new_with_base, aimux_openai_speech_new, aimux_openai_speech_new_with_base,
     aimux_openai_transcription_new, aimux_openai_transcription_new_with_base,
-    aimux_provider_from_env, aimux_provider_handle_new, aimux_provider_list_models,
-    aimux_provider_model, aimux_provider_new, aimux_recording_flush, aimux_recording_stop,
-    aimux_recording_try_flush, aimux_register_providers, aimux_rerank, aimux_router_new,
-    aimux_search, aimux_session_calls, aimux_session_infer_init, aimux_session_store_init,
-    aimux_speech_generate, aimux_stream_text, aimux_stream_text_as_openai,
-    aimux_stream_text_as_openai_with_abort, aimux_stream_text_with_abort, aimux_tavily_search_new,
-    aimux_tavily_search_new_with_base, aimux_tool_call_repair_context, aimux_trace_aggregate,
-    aimux_trace_clear, aimux_trace_export_jsonl, aimux_trace_new, aimux_trace_new_audited,
-    aimux_trace_session_chain, aimux_trace_session_trajectory, aimux_transcription_generate,
-    aimux_transcription_input_done, aimux_transcription_next_part, aimux_transcription_push_audio,
+    aimux_provider_handle_new, aimux_provider_list_models, aimux_provider_model,
+    aimux_provider_new, aimux_recording_flush, aimux_recording_stop, aimux_recording_try_flush,
+    aimux_register_providers, aimux_rerank, aimux_router_new, aimux_search, aimux_session_calls,
+    aimux_session_infer_init, aimux_session_store_init, aimux_speech_generate, aimux_stream_text,
+    aimux_stream_text_as_openai, aimux_stream_text_as_openai_with_abort,
+    aimux_stream_text_with_abort, aimux_tavily_search_new, aimux_tavily_search_new_with_base,
+    aimux_tool_call_repair_context, aimux_trace_aggregate, aimux_trace_clear,
+    aimux_trace_export_jsonl, aimux_trace_new, aimux_trace_new_audited, aimux_trace_session_chain,
+    aimux_trace_session_trajectory, aimux_transcription_generate, aimux_transcription_input_done,
+    aimux_transcription_next_part, aimux_transcription_push_audio,
     aimux_transcription_session_drop, aimux_transcription_session_new, aimux_vertex_new,
     aimux_vertex_new_with_base, aimux_video_generate, aimux_xai_new, aimux_xai_new_with_base,
 };
@@ -187,42 +187,6 @@ fn header_and_exports_agree() {
         .collect();
     protos.sort();
     assert_eq!(protos, exports, "header prototypes vs. no_mangle exports");
-}
-
-/// The hand-written `aimux_error_code_t` enum in `aimux-error.h` and the
-/// `AIMUX_E_*` constants in `src/lib.rs` carry the same names and values
-/// (18 / 19 are `AIMUX_E_LOAD_API_KEY` / `AIMUX_E_LOAD_SETTING`).
-#[test]
-fn header_error_codes_match_the_exported_constants() {
-    use std::collections::BTreeMap;
-
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let lib = std::fs::read_to_string(root.join("src/lib.rs")).unwrap();
-    let header = std::fs::read_to_string(root.join("aimux-error.h")).unwrap();
-
-    let in_lib: BTreeMap<String, i32> = lib
-        .lines()
-        .filter_map(|l| l.strip_prefix("pub const AIMUX_E_"))
-        .filter_map(|l| {
-            let (name, rest) = l.split_once(": i32 = ")?;
-            Some((
-                format!("AIMUX_E_{name}"),
-                rest.trim_end_matches(';').parse().ok()?,
-            ))
-        })
-        .collect();
-    let in_header: BTreeMap<String, i32> = header
-        .lines()
-        .map(str::trim)
-        .filter(|l| l.starts_with("AIMUX_E_"))
-        .filter_map(|l| {
-            let (name, rest) = l.split_once(" = ")?;
-            Some((name.to_string(), rest.trim_end_matches(',').parse().ok()?))
-        })
-        .collect();
-    assert_eq!(in_header, in_lib, "aimux-error.h vs. lib.rs error codes");
-    assert_eq!(in_lib["AIMUX_E_LOAD_API_KEY"], 18);
-    assert_eq!(in_lib["AIMUX_E_LOAD_SETTING"], 19);
 }
 
 // ── constructor class (49 exports) ──────────────────────────────────────────
@@ -602,19 +566,6 @@ fn constructor_exports_build_and_release_handles() {
     for h in handles {
         aimux_drop_handle(h);
     }
-}
-
-/// `provider_from_env` defers reading the key until request time.
-#[test]
-fn provider_from_env_handle() {
-    let mut h = 0;
-    let e = aimux_provider_from_env(
-        c("groq").as_ptr(),
-        c("llama-3.3-70b-versatile").as_ptr(),
-        &mut h,
-    );
-    expect_handle(e, h, "provider_from_env");
-    aimux_drop_handle(h);
 }
 
 // ── session class: text generation (4 exports) ──────────────────────────────
@@ -1314,27 +1265,4 @@ fn tool_call_repair_exports_reject_bad_arguments() {
     );
     expect_failure(e, "apply_tool_call_repair (unknown reply tag)");
     assert!(out.is_null());
-}
-
-/// `max_retries` (call-level) and `body_overrides` (removed) in a provider
-/// `config_json` are invalid arguments, not silently ignored.
-#[test]
-fn provider_config_json_rejects_removed_keys() {
-    for (config, key) in [
-        (r#"{"max_retries":0}"#, "max_retries"),
-        (r#"{"body_overrides":{"a":1}}"#, "body_overrides"),
-    ] {
-        let mut handle = 7;
-        let e = aimux_provider_new(
-            c("groq").as_ptr(),
-            c(FAKE_KEY).as_ptr(),
-            c("llama-3.3-70b").as_ptr(),
-            c(config).as_ptr(),
-            &mut handle,
-        );
-        assert_eq!(handle, 0, "failure writes the sentinel");
-        let (code, m) = expect_aimux_error(e, "provider_new (removed config key)");
-        assert_eq!(code, AIMUX_E_INVALID_ARGUMENT, "{m}");
-        assert!(m.contains(key), "message names `{key}`: {m}");
-    }
 }

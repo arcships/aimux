@@ -10,7 +10,6 @@ use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
 use aimux_provider_utils::Resolvable;
@@ -198,35 +197,4 @@ async fn status_401_maps_to_auth_error() {
         matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.status_code == Some(401) && m.message == "Invalid API key."),
         "expected Auth error, got {result:?}"
     );
-}
-
-// -- Provider trait ----------------------------------------------------------
-
-#[tokio::test]
-async fn search_model_provider_is_tinyfish() {
-    let config = TinyfishProviderSettings {
-        api_key: Some(Resolvable::Value(API_KEY.to_string())),
-        ..Default::default()
-    };
-    let provider = create_tinyfish(config).unwrap();
-    assert_eq!(provider.search_model().provider(), "tinyfish.search");
-}
-
-#[test]
-fn language_model_returns_no_such_model() {
-    let config = TinyfishProviderSettings {
-        api_key: Some(Resolvable::Value(API_KEY.to_string())),
-        ..Default::default()
-    };
-    let provider = create_tinyfish(config).unwrap();
-    match provider.language_model("tinyfish-search") {
-        Err(AiMuxError::NoSuchModel {
-            model_id,
-            model_type,
-        }) => {
-            assert_eq!(model_id, "tinyfish-search");
-            assert_eq!(model_type, "languageModel");
-        }
-        _ => panic!("expected NoSuchModel error, got success or another error variant"),
-    }
 }

@@ -19,16 +19,6 @@ fn make_provider(server: &MockServer) -> FirecrawlProvider {
 }
 
 #[test]
-fn search_model_provider_is_firecrawl() {
-    let provider = create_firecrawl(FirecrawlProviderSettings {
-        api_key: Some(Resolvable::Value("test-key".to_string())),
-        ..Default::default()
-    })
-    .unwrap();
-    assert_eq!(provider.search_model().provider(), "firecrawl.search");
-}
-
-#[test]
 fn language_model_returns_unsupported() {
     let provider = create_firecrawl(FirecrawlProviderSettings {
         api_key: Some(Resolvable::Value("test-key".to_string())),

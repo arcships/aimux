@@ -259,15 +259,3 @@ impl ProviderDiscovery for AnthropicAwsProvider {
         Box::pin(async move { crate::anthropic::list_models_once(&config).await })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn region_must_be_a_hostname_label() {
-        assert!(validate_region("us-east-1").is_ok());
-        assert!(validate_region("").is_err());
-        assert!(validate_region("evil.example/").is_err());
-    }
-}

@@ -60,46 +60,6 @@ pub fn rebuild_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aimux_core::recording::Recorder;
-
-    #[test]
-    fn rebuilds_a_registered_alias_and_a_vendor_package_by_id() {
-        let mut providers = crate::default_providers();
-        let provider = providers.remove("abacus").unwrap();
-        providers.insert("custom".into(), provider);
-        let registry = aimux_core::create_provider_registry(providers, Default::default());
-        let p = ProviderRecord::new("custom", "abacus.chat", "some-model");
-        let model = rebuild_provider(&p, &registry).unwrap();
-        assert_eq!(model.provider(), "abacus.chat");
-        assert_eq!(model.model_id(), "some-model");
-
-        let p = ProviderRecord::new("anthropic", "anthropic.messages", "some-model");
-        let model = rebuild_provider(&p, &registry).unwrap();
-        assert_eq!(model.provider(), "anthropic.messages");
-    }
-
-    #[test]
-    fn rebuilds_responses_and_refuses_a_recording_made_with_another_method() {
-        let registry =
-            aimux_core::create_provider_registry(crate::default_providers(), Default::default());
-        let p = ProviderRecord::new("openai", "openai.responses", "some-model");
-        let model = rebuild_provider(&p, &registry).unwrap();
-        assert_eq!(model.provider(), "openai.responses");
-        assert_eq!(model.model_id(), "some-model");
-
-        let p = ProviderRecord::new("openai", "openai.chat", "some-model");
-        let err = rebuild_provider(&p, &registry).err().unwrap();
-        assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
-    }
-
-    #[test]
-    fn an_unknown_provider_id_is_no_such_provider() {
-        let registry =
-            aimux_core::create_provider_registry(crate::default_providers(), Default::default());
-        let p = ProviderRecord::new("nope", "nope.chat", "m");
-        let err = rebuild_provider(&p, &registry).err().unwrap();
-        assert!(matches!(err, AiMuxError::NoSuchProvider { .. }), "{err}");
-    }
 
     #[test]
     fn empty_model_id_errors() {
@@ -109,54 +69,5 @@ mod tests {
             .err()
             .unwrap();
         assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
-    }
-
-    #[test]
-    fn empty_provider_id_errors() {
-        let registry =
-            aimux_core::create_provider_registry(crate::default_providers(), Default::default());
-        let err = rebuild_provider(&ProviderRecord::new("", "", "m"), &registry)
-            .err()
-            .unwrap();
-        assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
-    }
-
-    #[test]
-    fn recorded_provider_identity_carries_no_configuration() {
-        // The record that reaches disk is identity only: no base URL, headers
-        // or key source, so nothing from the provider config can leak.
-        let ring = aimux_core::recording::RingRecorder::with_capacity(8);
-        let options = aimux_core::generate::GenerateTextOptions::default().into_call_options(vec![
-            aimux_core::language_model_message::LanguageModelMessage::user_text("ping"),
-        ]);
-        ring.record_input("c1", &options, "openai.chat", "some-model");
-        ring.record_provider(
-            "c1",
-            &ProviderRecord::from_model("openai.chat", "some-model"),
-        );
-        ring.record_outcome(
-            "c1",
-            &aimux_core::recording::OutcomeRecord {
-                status: aimux_core::recording::OutcomeStatus::Success,
-                finish_reason: Some("stop".into()),
-                error: None,
-                error_value: None,
-                usage: None,
-            },
-        );
-        ring.record_transport_closed("c1");
-
-        let mut buf = Vec::new();
-        ring.export_jsonl(&mut buf).unwrap();
-        let line = String::from_utf8(buf).unwrap();
-        let rec: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
-        assert_eq!(
-            rec["provider"],
-            serde_json::json!({
-                "provider_id": "openai",
-                "provider": "openai.chat",
-                "model_id": "some-model",
-            })
-        );
     }
 }

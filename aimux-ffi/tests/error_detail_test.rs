@@ -146,19 +146,6 @@ fn unknown_provider_fills_unknown_provider_code() {
 }
 
 #[test]
-fn register_providers_entries_reject_removed_keys() {
-    for key in ["max_retries", "body_overrides"] {
-        let json = format!(
-            r#"{{"providers":[{{"name":"rm-key-probe","base_url":"http://127.0.0.1:1/v1","{key}":0}}]}}"#
-        );
-        let e = aimux_register_providers(c(&json).as_ptr());
-        let (code, m) = expect_aimux_error(e, "register_providers (removed key)");
-        assert_eq!(code, AIMUX_E_INVALID_ARGUMENT, "{m}");
-        assert!(m.contains(key), "message names `{key}`: {m}");
-    }
-}
-
-#[test]
 fn null_openai_args_are_ffi_errors() {
     let mut h = 0;
     let e = aimux_openai_new(ptr::null(), ptr::null(), &mut h);

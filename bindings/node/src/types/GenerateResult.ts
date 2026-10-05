@@ -13,31 +13,31 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * Result of `LanguageModel::do_generate` (non-streaming).
  */
-export type GenerateResult = {
+export type GenerateResult = { 
 /**
  * Generated content items (text, tool calls, etc.).
  */
-content: Array<GenerateContent<RawToolCall, RawToolApprovalRequest, GeneratedFile>>,
+content: Array<GenerateContent<RawToolCall, RawToolApprovalRequest, GeneratedFile>>, 
 /**
  * Why generation stopped.
  */
-finish_reason: FinishReason,
+finish_reason: FinishReason, 
 /**
  * Token usage.
  */
-usage: Usage,
+usage: Usage, 
 /**
  * Warnings issued by the provider.
  */
-warnings: Array<Warning>,
+warnings: Array<Warning>, 
 /**
  * Provider-specific metadata.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null,
+provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
 /**
  * Optional request information for telemetry and debugging.
  */
-request: RequestInfo | null,
+request: RequestInfo | null, 
 /**
  * Optional response metadata, headers, and body.
  */

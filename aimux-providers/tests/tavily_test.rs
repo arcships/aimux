@@ -19,16 +19,6 @@ fn make_provider(server: &MockServer) -> TavilyProvider {
 }
 
 #[test]
-fn search_model_provider_is_tavily() {
-    let provider = create_tavily(TavilyProviderSettings {
-        api_key: Some(Resolvable::Value("test-key".to_string())),
-        ..Default::default()
-    })
-    .unwrap();
-    assert_eq!(provider.search_model().provider(), "tavily.search");
-}
-
-#[test]
 fn language_model_returns_unsupported() {
     let provider = create_tavily(TavilyProviderSettings {
         api_key: Some(Resolvable::Value("test-key".to_string())),

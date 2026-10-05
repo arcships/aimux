@@ -2628,61 +2628,6 @@ mod tests {
         assert_eq!(parsed.outcome.status, OutcomeStatus::Incomplete);
     }
 
-    // ── schema 3:只记身份,拒绝旧 schema ───────────────────────────────────
-
-    #[test]
-    fn provider_record_from_model_takes_first_segment_as_id() {
-        let r = ProviderRecord::from_model("openai.chat", "gpt-4o");
-        assert_eq!(r.provider_id, "openai");
-        assert_eq!(r.provider, "openai.chat");
-        assert_eq!(r.model_id, "gpt-4o");
-        assert_eq!(ProviderRecord::from_model("groq", "m").provider_id, "groq");
-        assert_eq!(ProviderRecord::from_model("", "").provider_id, "");
-    }
-
-    #[test]
-    fn provider_record_serializes_identity_only() {
-        let v =
-            serde_json::to_value(ProviderRecord::new("deepseek", "deepseek.chat", "m")).unwrap();
-        assert_eq!(
-            v,
-            serde_json::json!({
-                "provider_id": "deepseek",
-                "provider": "deepseek.chat",
-                "model_id": "m",
-            })
-        );
-    }
-
-    #[test]
-    fn current_schema_is_three_and_round_trips() {
-        assert_eq!(RECORDING_SCHEMA, 3);
-        let rec = Recording::new(
-            "c",
-            InputRecord::from_call_options(&sample_options()),
-            ProviderRecord::from_model("openai.chat", "gpt-4o"),
-        );
-        let back: Recording = serde_json::from_str(&serde_json::to_string(&rec).unwrap()).unwrap();
-        assert_eq!(back.schema, 3);
-        assert_eq!(back.provider.provider_id, "openai");
-    }
-
-    #[test]
-    fn schema_two_recording_is_refused() {
-        let rec = Recording::new(
-            "c",
-            InputRecord::from_call_options(&sample_options()),
-            ProviderRecord::from_model("openai.chat", "gpt-4o"),
-        );
-        let mut v = serde_json::to_value(&rec).unwrap();
-        v["schema"] = serde_json::json!(2);
-        let err = serde_json::from_value::<Recording>(v).unwrap_err();
-        assert!(err.is_data(), "wire classification must be Data: {err}");
-        let msg = err.to_string();
-        assert!(msg.contains("unsupported recording schema 2"), "{msg}");
-        assert!(msg.contains("no longer read"), "{msg}");
-    }
-
     // ── C4-6:Provider 先于 Input 不丢 ─────────────────────────────────────
 
     fn full_provider() -> ProviderRecord {

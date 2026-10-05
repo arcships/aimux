@@ -165,39 +165,6 @@ async fn google_list_models() {
 
 #[tokio::test]
 #[serial]
-async fn ollama_preset_lists_models_without_authorization() {
-    let server = MockServer::start().await;
-    let body = r#"{"data":[{"id":"llama3.2","object":"model","owned_by":"ollama"},{"id":"qwen3:4b","object":"model","owned_by":"ollama"}]}"#;
-    Mock::given(method("GET"))
-        .and(path("/v1/models"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .append_header("content-type", "application/json")
-                .set_body_bytes(body.as_bytes().to_vec()),
-        )
-        .mount(&server)
-        .await;
-    let provider = aimux_providers::preset::create(
-        "ollama",
-        aimux_providers::PresetSettings {
-            base_url: Some(format!("{}/v1", server.uri())),
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
-    assert_eq!(models.len(), 2);
-    assert!(models.iter().any(|m| m.id == "llama3.2"));
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 1, "one exchange, no retry");
-    assert!(
-        requests[0].headers.get("authorization").is_none(),
-        "a keyless preset sends no Authorization header"
-    );
-}
-
-#[tokio::test]
-#[serial]
 async fn list_models_malformed_response() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

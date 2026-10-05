@@ -372,6 +372,8 @@ fn call_options_from(input: &Value) -> CallOptions {
         Some("required") => Some(ToolChoice::Required),
         Some("none") => Some(ToolChoice::None),
         Some("auto") => Some(ToolChoice::Auto),
+        // `generateText` prepares its default tool choice before calling the provider.
+        None if options.tools.is_some() => Some(ToolChoice::Auto),
         None => None,
         Some(other) => panic!("unmapped toolChoice {other}"),
     };
