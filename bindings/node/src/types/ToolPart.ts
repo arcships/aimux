@@ -5,4 +5,4 @@ import type { ToolResultPart } from "./ToolResultPart";
 /**
  * Parts allowed in a tool message.
  */
-export type ToolPart = { "type": "tool_result" } & ToolResultPart | { "type": "tool_approval_response" } & ToolApprovalResponsePart;
+export type ToolPart = { "type": "tool-result" } & ToolResultPart | { "type": "tool-approval-response" } & ToolApprovalResponsePart;

@@ -1073,6 +1073,7 @@ class GenerateResult(BaseModel):
     usage: Usage
     warnings: List[Warning]
     provider_metadata: Optional[Any] = None
+    request: Optional[RequestInfo] = None
     response: Optional[GenerateResponseMetadata] = None
     request: Optional[RequestInfo] = None
 

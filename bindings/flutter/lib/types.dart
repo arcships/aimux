@@ -414,6 +414,13 @@ class ResponseMetadata {
   Map<String, dynamic> toJson() => _$ResponseMetadataToJson(this);
 }
 
+class GenerateRequest {
+  final dynamic body;
+  GenerateRequest({this.body});
+  factory GenerateRequest.fromJson(Map<String, dynamic> json) => GenerateRequest(body: json['body']);
+  Map<String, dynamic> toJson() => {'body': body};
+}
+
 class GenerateResponse {
   final String? id;
   final String? timestamp;
