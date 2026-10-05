@@ -10,6 +10,7 @@
 //! - `convert-openai-responses-usage.ts` -> [`convert_responses_usage`]
 //! - `map-openai-responses-finish-reason.ts` -> [`map_responses_finish_reason`]
 
+use aimux_core::AiMuxError;
 use serde_json::{Value, json};
 
 use aimux_core::language_model_message::{
@@ -21,6 +22,7 @@ use aimux_core::shared::{FileBytes, FileData, JsonObject, SharedProviderOptions}
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Usage, Warning};
 
+use super::tool_args::{validate_tool_args, validate_tool_call, validate_tool_result};
 use super::types::ResponsesUsage;
 
 // -- Model capabilities ------------------------------------------------------
@@ -131,14 +133,15 @@ pub struct ResponsesInputResult {
 /// `has_previous_response_id` is true, assistant reasoning/function-call items
 /// that already carry an `itemId` are skipped (they live in the previous
 /// response chain).
-#[must_use]
+/// # Errors
+/// Rejects unsupported file data and unresolved file references.
 pub fn convert_to_responses_input(
     ns: ResponsesNamespace,
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,
     store: bool,
     has_previous_response_id: bool,
-) -> ResponsesInputResult {
+) -> Result<ResponsesInputResult, AiMuxError> {
     convert_responses_input_with_conversation(
         ns,
         prompt,
@@ -146,6 +149,7 @@ pub fn convert_to_responses_input(
         store,
         has_previous_response_id,
         false,
+        None,
     )
 }
 
@@ -156,7 +160,8 @@ fn convert_responses_input_with_conversation(
     store: bool,
     has_previous_response_id: bool,
     has_conversation: bool,
-) -> ResponsesInputResult {
+    tools: Option<&[Tool]>,
+) -> Result<ResponsesInputResult, AiMuxError> {
     let mut input: Vec<Value> = Vec::new();
     let mut warnings: Vec<Warning> = Vec::new();
 
@@ -197,15 +202,15 @@ fn convert_responses_input_with_conversation(
                     .iter()
                     .enumerate()
                     .map(|(index, part)| {
-                        let mut value = convert_user_part(ns, part, index);
+                        let mut value = convert_user_part(ns, part, index)?;
                         if let Some(breakpoint) =
                             openai_sub_option(ns, user_part_options(part), "promptCacheBreakpoint")
                         {
                             value["prompt_cache_breakpoint"] = breakpoint;
                         }
-                        value
+                        Ok(value)
                     })
-                    .collect();
+                    .collect::<Result<_, AiMuxError>>()?;
                 input.push(json!({ "role": "user", "content": content }));
             }
             LanguageModelMessage::Assistant { content, .. } => {
@@ -238,11 +243,45 @@ fn convert_responses_input_with_conversation(
                             tool_name,
                             input: tool_input,
                             provider_options,
+                            provider_executed,
                             ..
                         }) => {
                             let id = item_id(ns, provider_options);
                             if has_conversation && id.is_some() {
                                 continue;
+                            }
+                            let kind = provider_tool_kind(tools, tool_name);
+                            if provider_executed == &Some(true) {
+                                if store && let Some(id) = &id {
+                                    input.push(json!({"type":"item_reference", "id":id}));
+                                }
+                                if store || kind != Some("shell") {
+                                    continue;
+                                }
+                            }
+                            if let Some(kind) = kind {
+                                if store
+                                    && id.is_some()
+                                    && kind != "tool_search"
+                                    && kind != "programmatic_tool_calling"
+                                    && has_previous_response_id
+                                {
+                                    continue;
+                                }
+                                if store && let Some(id) = &id {
+                                    input.push(json!({"type":"item_reference", "id":id}));
+                                    continue;
+                                }
+                                if let Some(item) = provider_tool_call_input(
+                                    kind,
+                                    tool_name,
+                                    tool_call_id,
+                                    id.as_deref(),
+                                    tool_input,
+                                )? {
+                                    input.push(item);
+                                    continue;
+                                }
                             }
                             let namespace = namespace_from_provider_options(ns, provider_options);
                             let mut item = json!({
@@ -256,6 +295,19 @@ fn convert_responses_input_with_conversation(
                             }
                             if let Some(value) = openai_sub_option(ns, provider_options, "async") {
                                 item["async"] = value;
+                            }
+                            if let Some(caller) = openai_sub_option(ns, provider_options, "caller")
+                            {
+                                let mut caller = map_tool_fields(
+                                    &caller,
+                                    &[("type", "type"), ("callerId", "caller_id")],
+                                );
+                                if caller["type"] != "program"
+                                    && let Some(object) = caller.as_object_mut()
+                                {
+                                    object.remove("caller_id");
+                                }
+                                item["caller"] = caller;
                             }
                             input.push(item);
                         }
@@ -318,6 +370,27 @@ fn convert_responses_input_with_conversation(
                                 }
                             }
                         }
+                        AssistantPart::ToolResult(part) => {
+                            if has_conversation {
+                                continue;
+                            }
+                            let id = item_id(ns, &part.provider_options)
+                                .unwrap_or_else(|| part.tool_call_id.clone());
+                            let kind = part
+                                .tool_name
+                                .as_deref()
+                                .and_then(|name| provider_tool_kind(tools, name));
+                            match kind {
+                                Some("shell") => if let Some(item) = provider_tool_result_input("shell", &part.tool_call_id, &part.result)? { input.push(item); },
+                                Some("tool_search" | "programmatic_tool_calling") if !store => {
+                                    let kind = kind.unwrap_or_default();
+                                    validate_tool_result(kind, &part.result)?;
+                                    input.push(if kind == "tool_search" { json!({"type":"tool_search_output", "id":id, "execution":"server", "call_id":null, "status":"completed", "tools":part.result["tools"]}) } else { json!({"type":"program_output", "id":id, "call_id":part.tool_call_id, "result":part.result["result"], "status":part.result["status"]}) });
+                                }
+                                _ if store => input.push(json!({"type":"item_reference", "id":id})),
+                                _ => warnings.push(Warning::Other { message:format!("Results for OpenAI tool {} are not sent to the API when store is false", part.tool_name.as_deref().unwrap_or_default()) }),
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -326,9 +399,18 @@ fn convert_responses_input_with_conversation(
                 for part in content {
                     let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
+                        tool_name,
                         result,
                         ..
                     }) = part;
+                    if let Some(kind) = tool_name
+                        .as_deref()
+                        .and_then(|name| provider_tool_kind(tools, name))
+                        && let Some(item) = provider_tool_result_input(kind, tool_call_id, result)?
+                    {
+                        input.push(item);
+                        continue;
+                    }
                     let content_value = match result {
                         Value::String(s) => Value::String(s.clone()),
                         other => Value::String(other.to_string()),
@@ -361,7 +443,145 @@ fn convert_responses_input_with_conversation(
         });
     }
 
-    ResponsesInputResult { input, warnings }
+    Ok(ResponsesInputResult { input, warnings })
+}
+
+fn provider_tool_kind<'a>(tools: Option<&'a [Tool]>, name: &str) -> Option<&'a str> {
+    tools?.iter().find_map(|tool| match tool {
+        Tool::Provider(tool) if tool.name == name => tool.id.strip_prefix("openai."),
+        _ => None,
+    })
+}
+
+fn provider_tool_call_input(
+    kind: &str,
+    name: &str,
+    call_id: &str,
+    id: Option<&str>,
+    args: &Value,
+) -> Result<Option<Value>, AiMuxError> {
+    let parsed;
+    let args = if kind != "custom" && args.is_string() {
+        parsed = serde_json::from_str(args.as_str().unwrap_or_default())
+            .map_err(|error| AiMuxError::InvalidArgument(error.to_string()))?;
+        &parsed
+    } else {
+        args
+    };
+    if kind != "custom" {
+        validate_tool_call(kind, args)?;
+    }
+    let mut value = match kind {
+        "custom" => {
+            json!({"type":"custom_tool_call", "call_id":call_id, "name":name, "input":args.as_str().map(str::to_owned).unwrap_or_else(|| args.to_string())})
+        }
+        "local_shell" => {
+            json!({"type":"local_shell_call", "call_id":call_id, "action": map_tool_fields(&args["action"], &[("command", "command"), ("timeoutMs", "timeout_ms"), ("user", "user"), ("workingDirectory", "working_directory"), ("env", "env")])})
+        }
+        "shell" => {
+            json!({"type":"shell_call", "call_id":call_id, "status":"completed", "action":map_tool_fields(&args["action"], &[("commands", "commands"), ("timeoutMs", "timeout_ms"), ("maxOutputLength", "max_output_length")])})
+        }
+        "apply_patch" => {
+            json!({"type":"apply_patch_call", "call_id":args["callId"], "status":"completed", "operation":args["operation"]})
+        }
+        "computer" => {
+            let mut actions = args
+                .get("actions")
+                .and_then(Value::as_array)
+                .cloned()
+                .ok_or_else(|| AiMuxError::InvalidArgument("computer actions".into()))?;
+            for action in &mut actions {
+                if action["type"] == "scroll"
+                    && let Some(object) = action.as_object_mut()
+                {
+                    for (key, wire) in [("scrollX", "scroll_x"), ("scrollY", "scroll_y")] {
+                        if let Some(v) = object.remove(key) {
+                            object.insert(wire.into(), v);
+                        }
+                    }
+                }
+            }
+            json!({"type":"computer_call", "call_id":call_id, "status":args["status"], "actions":actions, "pending_safety_checks":args["pendingSafetyChecks"]})
+        }
+        "programmatic_tool_calling" => {
+            json!({"type":"program", "call_id":call_id, "code":args["code"], "fingerprint":args["fingerprint"]})
+        }
+        "tool_search" => {
+            let args = if let Some(text) = args.as_str() {
+                serde_json::from_str(text)
+                    .map_err(|error| AiMuxError::InvalidArgument(error.to_string()))?
+            } else {
+                args.clone()
+            };
+            let mut value = map_tool_fields(&args, &[("arguments", "arguments")]);
+            value["type"] = json!("tool_search_call");
+            value["status"] = json!("completed");
+            value["execution"] = json!(if args.get("call_id").is_some_and(|id| !id.is_null()) {
+                "client"
+            } else {
+                "server"
+            });
+            value["call_id"] = args.get("call_id").cloned().unwrap_or(Value::Null);
+            value
+        }
+        _ => return Ok(None),
+    };
+    if kind == "local_shell" {
+        value["action"]["type"] = json!("exec");
+    }
+    if let Some(id) = id {
+        value["id"] = json!(id);
+    } else if ["tool_search", "programmatic_tool_calling"].contains(&kind) {
+        value["id"] = json!(call_id);
+    }
+    Ok(Some(value))
+}
+
+fn provider_tool_result_input(
+    kind: &str,
+    call_id: &str,
+    result: &Value,
+) -> Result<Option<Value>, AiMuxError> {
+    validate_tool_result(kind, result)?;
+    let mut value = match kind {
+        "local_shell" => json!({"type":"local_shell_call_output", "output":result["output"]}),
+        "shell" => {
+            let mut output = result
+                .get("output")
+                .and_then(Value::as_array)
+                .cloned()
+                .ok_or_else(|| AiMuxError::InvalidArgument("shell output".into()))?;
+            for item in &mut output {
+                if let Some(outcome) = item.get_mut("outcome").and_then(Value::as_object_mut)
+                    && let Some(code) = outcome.remove("exitCode")
+                {
+                    outcome.insert("exit_code".into(), code);
+                }
+            }
+            json!({"type":"shell_call_output", "output":output})
+        }
+        "apply_patch" => {
+            json!({"type":"apply_patch_call_output", "status":result["status"], "output":result["output"]})
+        }
+        "computer" => {
+            json!({"type":"computer_call_output", "output":map_tool_fields(&result["output"], &[("imageUrl", "image_url"), ("fileId", "file_id"), ("detail", "detail")])})
+        }
+        "tool_search" => {
+            json!({"type":"tool_search_output", "execution":"client", "status":"completed", "tools":result["tools"]})
+        }
+        "custom" => {
+            json!({"type":"custom_tool_call_output", "output":result.as_str().map(str::to_owned).unwrap_or_else(|| result.to_string())})
+        }
+        _ => return Ok(None),
+    };
+    if kind == "computer" {
+        value["output"]["type"] = json!("computer_screenshot");
+        if let Some(checks) = result.get("acknowledgedSafetyChecks") {
+            value["acknowledged_safety_checks"] = checks.clone();
+        }
+    }
+    value["call_id"] = json!(call_id);
+    Ok(Some(value))
 }
 
 fn user_part_options(part: &UserPart) -> &Option<SharedProviderOptions> {
@@ -385,8 +605,12 @@ fn system_content(
 }
 
 /// Convert a single user-message content part into the Responses input shape.
-fn convert_user_part(ns: ResponsesNamespace, part: &UserPart, index: usize) -> Value {
-    match part {
+fn convert_user_part(
+    ns: ResponsesNamespace,
+    part: &UserPart,
+    index: usize,
+) -> Result<Value, AiMuxError> {
+    Ok(match part {
         UserPart::Text(part) => json!({ "type": "input_text", "text": part.text }),
         UserPart::File(file) => match &file.data {
             FileData::Data { data } => {
@@ -399,8 +623,7 @@ fn convert_user_part(ns: ResponsesNamespace, part: &UserPart, index: usize) -> V
                 };
                 inline_file(
                     ns,
-                    &aimux_provider_utils::resolve_full_media_type(file)
-                        .unwrap_or_else(|_| file.media_type.clone()),
+                    &aimux_provider_utils::resolve_full_media_type(file)?,
                     file.filename.as_deref(),
                     &b64,
                     &file.provider_options,
@@ -408,7 +631,9 @@ fn convert_user_part(ns: ResponsesNamespace, part: &UserPart, index: usize) -> V
                 )
             }
             FileData::Reference { reference } => {
-                let file_id = reference.get(ns.write_key());
+                let file_id = reference.get(ns.write_key()).ok_or_else(|| {
+                    AiMuxError::InvalidArgument(format!("No file reference for {}", ns.write_key()))
+                })?;
                 let mut part = json!({ "type": if file.media_type.split('/').next() == Some("image") { "input_image" } else { "input_file" }, "file_id": file_id });
                 if part["type"] == "input_image"
                     && let Some(detail) =
@@ -431,9 +656,13 @@ fn convert_user_part(ns: ResponsesNamespace, part: &UserPart, index: usize) -> V
                     json!({ "type": "input_file", "file_url": url })
                 }
             }
-            FileData::Text { .. } => unreachable!("text file parts are rejected before conversion"),
+            FileData::Text { .. } => {
+                return Err(AiMuxError::UnsupportedFunctionality(
+                    "text file parts".into(),
+                ));
+            }
         },
-    }
+    })
 }
 
 fn inline_file(
@@ -455,13 +684,9 @@ fn inline_file(
     }
 }
 
-/// Serialize tool-call arguments: null/empty -> `"{}"`, objects -> JSON string.
+/// Serialize tool-call arguments as JSON, including null and string values.
 fn serialize_arguments(input: &Value) -> String {
-    match input {
-        Value::Null => "{}".to_string(),
-        Value::String(s) if s.is_empty() => "{}".to_string(),
-        other => other.to_string(),
-    }
+    input.to_string()
 }
 
 /// Read the `itemId` from a content part's `providerOptions.openai.itemId`.
@@ -526,69 +751,495 @@ pub struct PreparedResponsesTools {
     pub tool_warnings: Vec<Warning>,
 }
 
-/// Prepare `FunctionTool`s into the Responses `tools` / `tool_choice` JSON shape.
+/// Prepare the upstream Responses function and provider tool family.
 ///
-/// Mirrors the function-tool path of TS `prepareResponsesTools`. Built-in
-/// provider tools (web_search, file_search, etc.) are out of scope for the
-/// core implementation and emit an `unsupported` warning.
-#[must_use]
+/// # Errors
+/// Returns an error for invalid provider tool arguments or conflicting namespaces.
 pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
     tool_choice: Option<&ToolChoice>,
-) -> PreparedResponsesTools {
-    let non_empty = tools.as_ref().filter(|t| !t.is_empty());
-    let mut tool_warnings: Vec<Warning> = Vec::new();
+) -> Result<PreparedResponsesTools, AiMuxError> {
+    prepare_responses_tools_for(tools, tool_choice, None, true)
+}
 
-    let tools_opt = match non_empty {
-        None => None,
-        Some(tools) => {
-            let mut openai_tools: Vec<Value> = Vec::new();
-            for t in tools {
-                match t {
-                    Tool::Function(ft) => {
-                        let mut tool = function_tool_to_json(ft);
-                        if let Ok(schema) = crate::openai::convert::normalize_json_schema(
-                            &ft.input_schema,
-                            &mut tool_warnings,
-                        ) {
-                            tool["parameters"] = schema;
+fn prepare_responses_tools_for(
+    tools: &Option<Vec<Tool>>,
+    tool_choice: Option<&ToolChoice>,
+    allowed_tools: Option<&Value>,
+    supports_async: bool,
+) -> Result<PreparedResponsesTools, AiMuxError> {
+    let Some(tools) = tools.as_ref().filter(|tools| !tools.is_empty()) else {
+        return Ok(PreparedResponsesTools {
+            tools: None,
+            tool_choice: None,
+            tool_warnings: Vec::new(),
+        });
+    };
+    let mut tool_warnings = Vec::new();
+    let mut prepared: Vec<Value> = Vec::new();
+    for tool in tools {
+        match tool {
+            Tool::Function(ft) => {
+                let mut value = function_tool_to_json(ft);
+                value["parameters"] = crate::openai::convert::normalize_json_schema(
+                    &ft.input_schema,
+                    &mut tool_warnings,
+                )?;
+                let opts = ft
+                    .provider_options
+                    .as_ref()
+                    .and_then(|options| options.get("openai"));
+                if let Some(opts) = opts {
+                    for (key, wire) in [
+                        ("async", "async"),
+                        ("deferLoading", "defer_loading"),
+                        ("allowedCallers", "allowed_callers"),
+                    ] {
+                        if let Some(v) = opts.get(key) {
+                            value[wire] = v.clone();
                         }
-                        openai_tools.push(tool);
                     }
-                    Tool::Provider(pt) => {
-                        tool_warnings.push(Warning::Unsupported {
-                            feature: format!("provider-defined tool {}", pt.id),
-                            details: None,
-                        });
+                    if let Some(schema) = opts.get("outputSchema") {
+                        value["output_schema"] = crate::openai::convert::normalize_json_schema(
+                            schema,
+                            &mut tool_warnings,
+                        )?;
+                    }
+                    resolve_async_tool_option(
+                        &mut value,
+                        supports_async,
+                        &ft.name,
+                        &mut tool_warnings,
+                    );
+                    if let Some(namespace) = opts.get("namespace") {
+                        let name =
+                            namespace
+                                .get("name")
+                                .and_then(Value::as_str)
+                                .ok_or_else(|| {
+                                    AiMuxError::InvalidArgument("tool namespace name".into())
+                                })?;
+                        let description = namespace
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| {
+                                AiMuxError::InvalidArgument("tool namespace description".into())
+                            })?;
+                        if let Some(group) = prepared
+                            .iter_mut()
+                            .find(|group| group["type"] == "namespace" && group["name"] == name)
+                        {
+                            if group["description"] != description {
+                                return Err(AiMuxError::UnsupportedFunctionality(format!(
+                                    "conflicting descriptions for OpenAI tool namespace {name}"
+                                )));
+                            }
+                            if let Some(items) = group["tools"].as_array_mut() {
+                                items.push(value);
+                            }
+                        } else {
+                            prepared.push(json!({"type":"namespace", "name":name, "description":description, "tools":[value]}));
+                        }
+                        continue;
                     }
                 }
+                prepared.push(value);
             }
-            if openai_tools.is_empty() {
-                None
-            } else {
-                Some(openai_tools)
+            Tool::Provider(tool) => {
+                if let Some(mut value) = provider_tool_to_json(tool)? {
+                    resolve_async_tool_option(
+                        &mut value,
+                        supports_async,
+                        &tool.name,
+                        &mut tool_warnings,
+                    );
+                    prepared.push(value);
+                }
             }
         }
-    };
-
-    let tool_choice_opt = match (&tools_opt, tool_choice) {
-        (None, _) => None,
-        (Some(_), None) => None,
-        (Some(_), Some(tc)) => match tc {
-            ToolChoice::Auto => Some(json!("auto")),
-            ToolChoice::None => Some(json!("none")),
-            ToolChoice::Required => Some(json!("required")),
-            ToolChoice::Tool { tool_name } => {
-                Some(json!({ "type": "function", "name": tool_name }))
-            }
-        },
-    };
-
-    PreparedResponsesTools {
-        tools: tools_opt,
-        tool_choice: tool_choice_opt,
-        tool_warnings,
     }
+    let mut tool_choice = tool_choice.map(|choice| match choice {
+        ToolChoice::Auto => json!("auto"),
+        ToolChoice::None => json!("none"),
+        ToolChoice::Required => json!("required"),
+        ToolChoice::Tool { tool_name } => {
+            let tool = tools.iter().find_map(|tool| match tool {
+                Tool::Provider(tool) if tool.name == *tool_name => Some(tool),
+                _ => None,
+            });
+            match tool.map(|tool| tool.id.as_str()) {
+                Some("openai.custom") => json!({"type":"custom", "name":tool_name}),
+                Some(id)
+                    if [
+                        "openai.code_interpreter",
+                        "openai.file_search",
+                        "openai.image_generation",
+                        "openai.web_search_preview",
+                        "openai.web_search",
+                        "openai.mcp",
+                        "openai.apply_patch",
+                        "openai.computer",
+                        "openai.programmatic_tool_calling",
+                    ]
+                    .contains(&id) =>
+                {
+                    json!({"type":id.trim_start_matches("openai.")})
+                }
+                _ => json!({"type":"function", "name":tool_name}),
+            }
+        }
+    });
+    if let Some(allowed) = allowed_tools {
+        tool_choice = Some(prepare_allowed_tools(allowed, tools, &mut tool_warnings)?);
+    }
+    Ok(PreparedResponsesTools {
+        tools: Some(prepared),
+        tool_choice,
+        tool_warnings,
+    })
+}
+
+fn resolve_async_tool_option(
+    value: &mut Value,
+    supported: bool,
+    name: &str,
+    warnings: &mut Vec<Warning>,
+) {
+    if !supported && value.get("async") == Some(&json!(true)) {
+        if let Some(object) = value.as_object_mut() {
+            object.remove("async");
+        }
+        warnings.push(Warning::Unsupported {
+            feature: format!("async tool calling for {name}"),
+            details: Some("Async tool calling is not supported by this model.".into()),
+        });
+    }
+}
+
+fn prepare_allowed_tools(
+    allowed: &Value,
+    tools: &[Tool],
+    warnings: &mut Vec<Warning>,
+) -> Result<Value, AiMuxError> {
+    let invalid = || AiMuxError::InvalidArgument("allowedTools".into());
+    let names = allowed
+        .get("toolNames")
+        .and_then(Value::as_array)
+        .filter(|names| !names.is_empty())
+        .ok_or_else(invalid)?;
+    let mode = allowed
+        .get("mode")
+        .map(|mode| {
+            mode.as_str()
+                .filter(|mode| ["auto", "required"].contains(mode))
+                .ok_or_else(invalid)
+        })
+        .transpose()?
+        .unwrap_or("auto");
+    let mut entries = Vec::new();
+    for name in names {
+        let name = name.as_str().ok_or_else(invalid)?;
+        let direct = tools.iter().find(|tool| match tool {
+            Tool::Function(tool) => tool.name == name,
+            Tool::Provider(tool) => tool.name == name,
+        });
+        let aliases: Vec<_> = tools.iter().filter(|tool| matches!(tool, Tool::Provider(tool) if tool.id.strip_prefix("openai.") == Some(name) && tool.name != name)).collect();
+        let tool = if let Some(tool) = direct {
+            if !aliases.is_empty() {
+                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("this name is both a tool name and the provider tool name of another tool in this request; the tool with this name is allowed".into()) });
+            }
+            Some(tool)
+        } else {
+            if aliases.len() > 1
+                && aliases.iter().any(|tool| match tool {
+                    Tool::Provider(tool) => tool.id == "openai.custom" || tool.id == "openai.mcp",
+                    _ => false,
+                })
+            {
+                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("several tools share this provider tool name; use the tool name from this request".into()) });
+                continue;
+            }
+            aliases.first().copied()
+        };
+        let entry = match tool {
+            Some(Tool::Function(tool)) => {
+                let opts = tool
+                    .provider_options
+                    .as_ref()
+                    .and_then(|options| options.get("openai"));
+                if opts.is_some_and(|opts| {
+                    opts.contains_key("namespace") || opts.get("deferLoading") == Some(&json!(true))
+                }) {
+                    warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("namespace and deferred tools are not visible to tool_choice.allowed_tools; the tool is removed from the allowed tools".into()) });
+                    continue;
+                }
+                json!({"type":"function", "name":tool.name})
+            }
+            Some(Tool::Provider(tool)) => {
+                let Some(value) = provider_tool_to_json(tool)? else {
+                    entries.push(json!({"type":"function", "name":name}));
+                    continue;
+                };
+                match value["type"].as_str() {
+                    Some("custom") => json!({"type":"custom", "name":tool.name}),
+                    Some("mcp") => json!({"type":"mcp", "server_label":value["server_label"]}),
+                    Some("tool_search") => {
+                        warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("tool_search is not visible to tool_choice.allowed_tools; the tool is removed from the allowed tools".into()) });
+                        continue;
+                    }
+                    Some(kind) => json!({"type":kind}),
+                    None => continue,
+                }
+            }
+            None => {
+                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("the tool is not part of the tools for this request and is sent as a function tool".into()) });
+                json!({"type":"function", "name":name})
+            }
+        };
+        entries.push(entry);
+    }
+    if entries.is_empty() {
+        return Err(AiMuxError::UnsupportedFunctionality(
+            "allowedTools with only tools that cannot be allow-listed".into(),
+        ));
+    }
+    Ok(json!({"type":"allowed_tools", "mode":mode, "tools":entries}))
+}
+
+// Only configured fields are sent: absent optional values are omitted, not null.
+fn map_tool_fields(value: &Value, fields: &[(&str, &str)]) -> Value {
+    let mut result = json!({});
+    for (name, wire) in fields {
+        if let Some(value) = value.get(*name) {
+            result[*wire] = value.clone();
+        }
+    }
+    result
+}
+
+fn provider_tool_to_json(
+    tool: &aimux_core::tool::ProviderTool,
+) -> Result<Option<Value>, AiMuxError> {
+    let kind = tool.id.strip_prefix("openai.").unwrap_or("");
+    if ![
+        "file_search",
+        "local_shell",
+        "shell",
+        "apply_patch",
+        "computer",
+        "web_search_preview",
+        "web_search",
+        "code_interpreter",
+        "image_generation",
+        "mcp",
+        "custom",
+        "programmatic_tool_calling",
+        "tool_search",
+    ]
+    .contains(&kind)
+    {
+        return Ok(None);
+    }
+    if [
+        "local_shell",
+        "apply_patch",
+        "computer",
+        "programmatic_tool_calling",
+    ]
+    .contains(&kind)
+    {
+        return Ok(Some(json!({"type":kind})));
+    }
+    validate_tool_args(kind, &tool.args)?;
+    let args = &tool.args;
+    let fields: &[(&str, &str)] = match kind {
+        "file_search" => &[
+            ("vectorStoreIds", "vector_store_ids"),
+            ("maxNumResults", "max_num_results"),
+            ("filters", "filters"),
+        ],
+        "web_search_preview" | "web_search" => &[
+            ("searchContextSize", "search_context_size"),
+            ("userLocation", "user_location"),
+        ],
+        "image_generation" => &[
+            ("action", "action"),
+            ("background", "background"),
+            ("inputFidelity", "input_fidelity"),
+            ("model", "model"),
+            ("moderation", "moderation"),
+            ("partialImages", "partial_images"),
+            ("quality", "quality"),
+            ("outputCompression", "output_compression"),
+            ("outputFormat", "output_format"),
+            ("size", "size"),
+        ],
+        "mcp" => &[
+            ("serverLabel", "server_label"),
+            ("authorization", "authorization"),
+            ("connectorId", "connector_id"),
+            ("headers", "headers"),
+            ("serverDescription", "server_description"),
+            ("serverUrl", "server_url"),
+        ],
+        "custom" => &[
+            ("description", "description"),
+            ("format", "format"),
+            ("async", "async"),
+        ],
+        "tool_search" => &[
+            ("execution", "execution"),
+            ("description", "description"),
+            ("parameters", "parameters"),
+        ],
+        _ => &[],
+    };
+    let mut value = map_tool_fields(args, fields);
+    value["type"] = json!(kind);
+    if let Some(location) = args.get("userLocation") {
+        value["user_location"] = map_tool_fields(
+            location,
+            &[
+                ("type", "type"),
+                ("country", "country"),
+                ("city", "city"),
+                ("region", "region"),
+                ("timezone", "timezone"),
+            ],
+        );
+    }
+    match kind {
+        "file_search" => {
+            if let Some(ranking) = args.get("ranking") {
+                value["ranking_options"] = map_tool_fields(
+                    ranking,
+                    &[("ranker", "ranker"), ("scoreThreshold", "score_threshold")],
+                );
+            }
+        }
+        "web_search" => {
+            if let Some(filters) = args.get("filters") {
+                value["filters"] = map_tool_fields(
+                    filters,
+                    &[
+                        ("allowedDomains", "allowed_domains"),
+                        ("blockedDomains", "blocked_domains"),
+                    ],
+                );
+            }
+            if let Some(access) = args.get("externalWebAccess") {
+                value["external_web_access"] = access.clone();
+            }
+        }
+        "code_interpreter" => {
+            value["container"] = match args.get("container") {
+                Some(container) if container.is_string() => container.clone(),
+                container => {
+                    let mut value = container
+                        .map(|container| map_tool_fields(container, &[("fileIds", "file_ids")]))
+                        .unwrap_or_else(|| json!({}));
+                    value["type"] = json!("auto");
+                    value
+                }
+            }
+        }
+        "image_generation" => {
+            if let Some(mask) = args.get("inputImageMask") {
+                value["input_image_mask"] =
+                    map_tool_fields(mask, &[("fileId", "file_id"), ("imageUrl", "image_url")]);
+            }
+        }
+        "custom" => {
+            value["name"] = json!(tool.name);
+            if let Some(format) = args.get("format") {
+                value["format"] = map_tool_fields(
+                    format,
+                    &[
+                        ("type", "type"),
+                        ("syntax", "syntax"),
+                        ("definition", "definition"),
+                    ],
+                );
+            }
+        }
+        "mcp" => {
+            if let Some(allowed) = args.get("allowedTools") {
+                value["allowed_tools"] = if allowed.is_array() {
+                    allowed.clone()
+                } else {
+                    map_tool_fields(
+                        allowed,
+                        &[("readOnly", "read_only"), ("toolNames", "tool_names")],
+                    )
+                };
+            }
+            value["require_approval"] = args
+                .get("requireApproval")
+                .map(|approval| {
+                    if approval.is_string() {
+                        approval.clone()
+                    } else if let Some(never) = approval.get("never") {
+                        json!({"never":map_tool_fields(never, &[("toolNames", "tool_names")])})
+                    } else {
+                        json!("never")
+                    }
+                })
+                .unwrap_or_else(|| json!("never"));
+        }
+        "shell" => {
+            if let Some(environment) = args.get("environment") {
+                value["environment"] = map_shell_environment(environment)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(Some(value))
+}
+
+fn map_shell_environment(environment: &Value) -> Result<Value, AiMuxError> {
+    let kind = environment
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("local");
+    let mut value = match kind {
+        "containerReference" => map_tool_fields(environment, &[("containerId", "container_id")]),
+        "containerAuto" => map_tool_fields(
+            environment,
+            &[("fileIds", "file_ids"), ("memoryLimit", "memory_limit")],
+        ),
+        _ => map_tool_fields(environment, &[("skills", "skills")]),
+    };
+    value["type"] = json!(match kind {
+        "containerReference" => "container_reference",
+        "containerAuto" => "container_auto",
+        _ => "local",
+    });
+    if kind == "containerAuto" {
+        if let Some(policy) = environment.get("networkPolicy") {
+            value["network_policy"] = map_tool_fields(
+                policy,
+                &[
+                    ("type", "type"),
+                    ("allowedDomains", "allowed_domains"),
+                    ("domainSecrets", "domain_secrets"),
+                ],
+            );
+        }
+        if let Some(skills) = environment.get("skills").and_then(Value::as_array) {
+            value["skills"] = Value::Array(skills.iter().map(|skill| {
+                if skill["type"] == "skillReference" {
+                    let id = skill.get("providerReference").and_then(|reference| reference.get("openai")).and_then(Value::as_str).ok_or_else(|| AiMuxError::InvalidArgument("No skill reference for openai".into()))?;
+                    Ok(json!({"type":"skill_reference", "skill_id":id, "version":skill.get("version").cloned().unwrap_or_else(|| json!("latest"))}))
+                } else {
+                    let mut value = map_tool_fields(skill, &[("name", "name"), ("description", "description")]);
+                    value["type"] = json!("inline");
+                    value["source"] = map_tool_fields(&skill["source"], &[("type", "type"), ("mediaType", "media_type"), ("data", "data")]);
+                    Ok(value)
+                }
+            }).collect::<Result<Vec<_>, AiMuxError>>()?);
+        }
+    }
+    Ok(value)
 }
 
 /// Convert a `FunctionTool` into the Responses `function` tool JSON shape.
@@ -844,6 +1495,7 @@ fn resolve_responses_include(
     ns: ResponsesNamespace,
     provider_opts: &Option<SharedProviderOptions>,
     is_reasoning_model: bool,
+    tools: Option<&[Tool]>,
 ) -> Option<Vec<Value>> {
     let mut include: Option<Vec<Value>> =
         openai_option(ns, provider_opts, "include").and_then(|v| v.as_array().cloned());
@@ -870,6 +1522,22 @@ fn resolve_responses_include(
         .and_then(|v| if v == true { Some(20) } else { v.as_u64() });
     if top_logprobs.is_some_and(|value| value > 0) {
         add_include("message.output_text.logprobs", &mut include);
+    }
+    for tool in tools.into_iter().flatten() {
+        if let Tool::Provider(tool) = tool {
+            match tool.id.as_str() {
+                "openai.web_search" | "openai.web_search_preview"
+                    if openai_option(ns, provider_opts, "includeWebSearchSources")
+                        != Some(json!(false)) =>
+                {
+                    add_include("web_search_call.action.sources", &mut include)
+                }
+                "openai.code_interpreter" => {
+                    add_include("code_interpreter_call.outputs", &mut include)
+                }
+                _ => {}
+            }
+        }
     }
     include
 }
@@ -996,28 +1664,29 @@ fn apply_responses_reasoning_block(
     }
 }
 
-/// Build the OpenAI Responses API request body (without warnings).
+/// Build the OpenAI Responses API request body and warnings.
 ///
-/// Splits the original ~380-line function into focused helpers (issue M11);
-/// behavior is unchanged.
-#[must_use]
+/// # Errors
+/// Rejects unsupported prompt parts and invalid tool arguments.
 pub fn build_responses_request_body(
     model_id: &str,
     options: &CallOptions,
     stream: bool,
-) -> ResponsesRequestBodyResult {
+) -> Result<ResponsesRequestBodyResult, AiMuxError> {
     build_responses_request_body_for(ResponsesNamespace::OPENAI, model_id, options, stream)
 }
 
 /// [`build_responses_request_body`] for a host with its own providerOptions
 /// namespace.
-#[must_use]
+///
+/// # Errors
+/// Rejects unsupported prompt parts and invalid tool arguments.
 pub fn build_responses_request_body_for(
     ns: ResponsesNamespace,
     model_id: &str,
     options: &CallOptions,
     stream: bool,
-) -> ResponsesRequestBodyResult {
+) -> Result<ResponsesRequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
     let caps = get_model_capabilities(model_id);
     let provider_opts = &options.provider_options;
@@ -1064,7 +1733,8 @@ pub fn build_responses_request_body_for(
         store_bool,
         has_previous_response_id,
         openai_option(ns, provider_opts, "conversation").is_some(),
-    );
+        options.tools.as_deref(),
+    )?;
     if let Some(effort) = openai_option(ns, provider_opts, "reasoningEffortUpdate")
         .and_then(|v| v.as_str().map(str::to_owned))
     {
@@ -1135,7 +1805,12 @@ pub fn build_responses_request_body_for(
     apply_responses_text_format(ns, &mut body, options, provider_opts, &mut warnings);
 
     // -- include (computed) --
-    let include = resolve_responses_include(ns, provider_opts, is_reasoning_model);
+    let include = resolve_responses_include(
+        ns,
+        provider_opts,
+        is_reasoning_model,
+        options.tools.as_deref(),
+    );
     if let Some(inc) = include {
         body["include"] = json!(inc);
     }
@@ -1203,7 +1878,13 @@ pub fn build_responses_request_body_for(
     );
 
     // -- Tools --
-    let prepared = prepare_responses_tools(&options.tools, Some(&options.tool_choice));
+    let allowed_tools = openai_option(ns, provider_opts, "allowedTools");
+    let prepared = prepare_responses_tools_for(
+        &options.tools,
+        Some(&options.tool_choice),
+        allowed_tools.as_ref(),
+        caps.supports_configuration_update,
+    )?;
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);
         if let Some(tc) = prepared.tool_choice {
@@ -1214,7 +1895,7 @@ pub fn build_responses_request_body_for(
         warnings.push(tw);
     }
 
-    ResponsesRequestBodyResult { body, warnings }
+    Ok(ResponsesRequestBodyResult { body, warnings })
 }
 
 // -- File id prefixes --------------------------------------------------------

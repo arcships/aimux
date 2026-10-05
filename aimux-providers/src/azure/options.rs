@@ -3,9 +3,9 @@
 //! The AI SDK's Azure package reuses the OpenAI models. Its Responses model
 //! reads `providerOptions.azure` (and, when a call gave no `azure` options,
 //! `providerOptions.openai`, the functional fallback this port keeps) and
-//! writes response metadata under `azure`; the other models read `openai`
-//! only, like the OpenAI package itself. This module is the one place that
-//! spells the Azure key.
+//! writes response metadata under `azure`. Transcription reads `azure` for API
+//! routing and Speech options and `openai` for OpenAI transcription options;
+//! the other models read `openai` only.
 
 use crate::openai::responses::ResponsesNamespace;
 

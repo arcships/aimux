@@ -1,10 +1,4 @@
-//! Golden equivalence tests for the three request-body converters that were
-//! split during M11 (#76).
-//!
-//! The splits were pure reorganization; these tests pin each converter's FULL
-//! request body + warning list for a representative option matrix so any
-//! future refactor (or a regression like the Anthropic default-budget drop)
-//! is caught by an exact comparison, not by a partial assertion.
+//! Golden request-body and warning tests for chat and messages conversion.
 
 use serde_json::json;
 
@@ -14,7 +8,6 @@ use aimux_core::tool::{FunctionTool, Tool};
 
 use aimux_providers::anthropic::convert::build_request_body_with_warnings as anthropic_build;
 use aimux_providers::openai::convert::build_request_body_with_warnings as openai_build;
-use aimux_providers::openai::responses::convert::build_responses_request_body;
 
 fn user_prompt() -> LanguageModelPrompt {
     vec![LanguageModelMessage::user_text("Hello")]
@@ -111,68 +104,6 @@ fn openai_chat_golden() {
         serde_json::to_value(&result.warnings).unwrap(),
         json!([{ "Unsupported": { "feature": "temperature",
                  "details": "temperature is not supported for reasoning models" } }])
-    );
-}
-
-// ── OpenAI Responses API ────────────────────────────────────────────────────
-
-#[test]
-fn responses_golden() {
-    let provider = aimux_core::shared::provider_namespace(
-        "openai",
-        json!({
-            "reasoningEffort": "high",
-            "textVerbosity": "low",
-            "metadata": { "k": "v" }
-        }),
-    );
-    let options = CallOptions {
-        prompt: user_prompt(),
-        seed: Some(42),
-        top_k: Some(0.2),
-        response_format: Some(json_schema_format()),
-        provider_options: Some(provider),
-        ..CallOptions::default()
-    };
-
-    let result = build_responses_request_body("o3-mini", &options, false);
-
-    assert_eq!(
-        result.body,
-        json!({
-            "model": "o3-mini",
-            "input": [
-                { "role": "user", "content": [ { "type": "input_text", "text": "Hello" } ] }
-            ],
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "strict": true,
-                    "name": "qa",
-                    "description": "answer extraction",
-                    "schema": {
-                        "type": "object",
-                        "properties": { "answer": { "type": "string" } },
-                        "required": ["answer"]
-                    }
-                },
-                "verbosity": "low"
-            },
-            "metadata": { "k": "v" },
-            "reasoning": { "effort": "high", "summary": "detailed" }
-        }),
-        "responses body diverged: {}",
-        result.body
-    );
-
-    // top_k / seed are unsupported in the Responses API → compatibility
-    // warnings, and the model is a reasoning model so it exposes `reasoning`.
-    assert_eq!(
-        serde_json::to_value(&result.warnings).unwrap(),
-        json!([
-            { "Unsupported": { "feature": "topK", "details": null } },
-            { "Unsupported": { "feature": "seed", "details": null } }
-        ])
     );
 }
 

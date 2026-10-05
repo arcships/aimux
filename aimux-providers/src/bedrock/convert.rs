@@ -19,7 +19,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ToolChoice};
+use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
@@ -856,14 +856,28 @@ fn validate_tool_result(result: &Value) -> Result<(), aimux_core::AiMuxError> {
 /// `strict` (and `output_config.format`), so the field is omitted for them.
 #[must_use]
 pub fn supports_strict_tools(model_id: &str) -> bool {
-    const REJECTING: &[&str] = &[
-        "claude-opus-4-7",
-        "claude-opus-4-8",
-        "claude-opus-5",
-        "claude-fable-5",
-        "claude-sonnet-5",
-    ];
-    !REJECTING.iter().any(|m| model_id.contains(m))
+    !MODELS_WITHOUT_STRICT_TOOL_SUPPORT
+        .iter()
+        .any(|m| model_id.contains(m))
+}
+
+const MODELS_WITHOUT_STRICT_TOOL_SUPPORT: &[&str] = &[
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-fable-5",
+    "claude-sonnet-5",
+];
+
+fn supports_native_structured_output(model_id: &str) -> bool {
+    let prefix = MODELS_WITHOUT_STRICT_TOOL_SUPPORT[0]
+        .split_once('-')
+        .unwrap()
+        .0;
+    supports_strict_tools(model_id)
+        && !["sonnet-4-6", "haiku-4-5"]
+            .iter()
+            .any(|suffix| model_id.contains(&format!("{prefix}-{suffix}")))
 }
 
 /// Prepare `FunctionTool`s into the Bedrock `toolConfig` JSON shape.
@@ -876,9 +890,6 @@ pub fn supports_strict_tools(model_id: &str) -> bool {
 /// - `description` is omitted when empty/whitespace
 /// - `strict` is passed through only for models that `supports_strict_tools`
 ///
-/// Provider-defined tools (web_search, anthropic provider tools) and the
-/// `additionalTools`/`betas`/`toolWarnings` they produce are not modelled in
-/// the Rust `FunctionTool` and are intentionally not handled here.
 #[must_use]
 pub fn prepare_tools(
     tools: &Option<Vec<FunctionTool>>,
@@ -942,31 +953,31 @@ pub fn prepare_tools(
 // The request capabilities come from Anthropic's getModelCapabilities, not
 // Bedrock's separate strict-tool support list. Unknown newer model IDs assume
 // adaptive thinking and reject sampling; legacy IDs retain their defaults.
-fn reasoning_capabilities(model_id: &str) -> (f64, bool, bool) {
+fn reasoning_capabilities(model_id: &str) -> (f64, bool, bool, bool) {
     let Some((_, model)) = model_id.split_once("claude-") else {
-        return (4096.0, false, false);
+        return (4096.0, false, false, false);
     };
     if ["opus-5", "fable-5", "sonnet-5", "opus-4-8", "opus-4-7"]
         .iter()
         .any(|id| model.starts_with(id))
     {
-        (128000.0, true, true)
+        (128000.0, true, true, true)
     } else if ["sonnet-4-6", "opus-4-6"]
         .iter()
         .any(|id| model.starts_with(id))
     {
-        (128000.0, true, false)
+        (128000.0, true, false, true)
     } else if ["sonnet-4-5", "opus-4-5", "haiku-4-5"]
         .iter()
         .any(|id| model.starts_with(id))
     {
-        (64000.0, false, false)
+        (64000.0, false, false, true)
     } else if model.starts_with("opus-4-1") {
-        (32000.0, false, false)
+        (32000.0, false, false, true)
     } else if model.starts_with("sonnet-4-") || model.starts_with("sonnet-4@") {
-        (64000.0, false, false)
+        (64000.0, false, false, false)
     } else if model.starts_with("opus-4-") || model.starts_with("opus-4@") {
-        (32000.0, false, false)
+        (32000.0, false, false, false)
     } else {
         let two = model.strip_prefix('v').unwrap_or(model);
         let legacy = model == "instant"
@@ -979,9 +990,9 @@ fn reasoning_capabilities(model_id: &str) -> (f64, bool, bool) {
             || model.starts_with("3-")
             || model.starts_with("3.");
         if legacy {
-            (4096.0, false, false)
+            (4096.0, false, false, false)
         } else {
-            (128000.0, true, true)
+            (128000.0, true, true, true)
         }
     }
 }
@@ -995,7 +1006,7 @@ pub fn build_request_body_checked(
     model_id: &str,
     call: &CallOptions,
     model_family: Option<&str>,
-) -> Result<(Value, Vec<aimux_core::types::Warning>), aimux_core::AiMuxError> {
+) -> Result<(Value, Vec<aimux_core::types::Warning>, bool, bool), aimux_core::AiMuxError> {
     use aimux_core::types::{ReasoningEffort, Warning};
     let mut warnings = Vec::new();
     let mut compatibility = Vec::new();
@@ -1020,7 +1031,8 @@ pub fn build_request_body_checked(
         .any(|p| p == options::OPENAI_MODEL_FAMILY);
     let oss = openai && model_id.contains("-oss-");
     let nova = model_id.contains("amazon.nova-2-lite-v1:0");
-    let (max_reasoning_tokens, adaptive, rejects_sampling) = reasoning_capabilities(model_id);
+    let (max_reasoning_tokens, adaptive, rejects_sampling, supports_structured_output) =
+        reasoning_capabilities(model_id);
     if let Some(effort) = &call.reasoning
         && effort.is_custom()
     {
@@ -1082,9 +1094,10 @@ pub fn build_request_body_checked(
         }
     }
     let thinking = anthropic && matches!(reasoning["type"].as_str(), Some("enabled" | "adaptive"));
-    let rejects_forced = model_id.contains("sonnet-5-5")
-        || model_id.contains("opus-5-5")
-        || model_id.contains("fable-5-1");
+    let rejects_forced = anthropic
+        && (model_id.contains("sonnet-5-5")
+            || model_id.contains("opus-5-5")
+            || model_id.contains("fable-5-1"));
     let mut inference = serde_json::Map::new();
     if let Some(max) = call.max_output_tokens {
         inference.insert("maxTokens".into(), json!(max));
@@ -1252,42 +1265,150 @@ pub fn build_request_body_checked(
     if let Some(betas) = bedrock.and_then(|b| b.get("anthropicBeta")) {
         fields.insert("anthropic_beta".into(), betas.clone());
     }
-    if let Some(tools) = &call.tools {
-        for tool in tools {
-            if let Tool::Provider(tool) = tool {
-                if matches!(
-                    tool.id.as_str(),
-                    "anthropic.web_search_20250305"
-                        | "anthropic.web_search_20260318"
-                        | "anthropic.web_fetch_20260318"
-                ) {
-                    let kind = tool.id.strip_prefix("anthropic.").unwrap();
-                    warn(
-                        &format!("{kind} tool"),
-                        Some(&format!(
-                            "The {kind} tool is not supported on Amazon Bedrock."
-                        )),
-                    );
-                } else if !anthropic {
-                    warn(&format!("tool {}", tool.id), None);
-                }
-            }
+    let anthropic_options = call
+        .provider_options
+        .as_ref()
+        .and_then(|p| p.get("anthropic"));
+    if let Some(value) = anthropic_options.and_then(|p| p.get("structuredOutputMode"))
+        && !value
+            .as_str()
+            .is_some_and(|v| ["outputFormat", "jsonTool", "auto"].contains(&v))
+    {
+        return Err(aimux_core::AiMuxError::InvalidArgument(
+            "Invalid Anthropic structuredOutputMode".into(),
+        ));
+    }
+    if anthropic_options
+        .and_then(|p| p.get("disableParallelToolUse"))
+        .is_some_and(|v| !v.is_boolean())
+    {
+        return Err(aimux_core::AiMuxError::InvalidArgument(
+            "Invalid Anthropic disableParallelToolUse".into(),
+        ));
+    }
+    let structured_mode = bedrock
+        .and_then(|b| b.get("structuredOutputMode"))
+        .or_else(|| anthropic_options.and_then(|p| p.get("structuredOutputMode")))
+        .and_then(Value::as_str)
+        .unwrap_or("auto");
+    if structured_mode == "jsonTool"
+        && let Some(output_config) = fields
+            .get_mut("output_config")
+            .and_then(Value::as_object_mut)
+    {
+        output_config.remove("format");
+        if output_config.is_empty() {
+            fields.remove("output_config");
         }
     }
-    let tools: Option<Vec<FunctionTool>> = call.tools.as_ref().map(|t| {
-        t.iter()
-            .filter_map(|t| {
-                if let Tool::Function(f) = t {
-                    Some(f.clone())
-                } else {
-                    None
-                }
+    let schema = match &call.response_format {
+        Some(ResponseFormat::Json { schema, .. }) => schema.as_ref(),
+        _ => None,
+    };
+    let supports_native = supports_native_structured_output(model_id);
+    let uses_native = anthropic
+        && schema.is_some()
+        && (structured_mode == "outputFormat"
+            || (structured_mode == "auto"
+                && supports_native
+                && (supports_structured_output || thinking || model_family == Some("anthropic"))));
+    let uses_json_instruction = !uses_native
+        && anthropic
+        && schema.is_some()
+        && (rejects_forced
+            || (structured_mode != "jsonTool"
+                && !supports_strict_tools(model_id)
+                && call.tools.as_ref().is_some_and(|tools| !tools.is_empty())));
+    let uses_json_tool = schema.is_some() && !uses_native && !uses_json_instruction;
+    if uses_native {
+        let output_config = fields.entry("output_config").or_insert_with(|| json!({}));
+        if !output_config.is_object() {
+            *output_config = json!({});
+        }
+        output_config["format"] = json!({"type":"json_schema", "schema":crate::anthropic::sanitize_json_schema::sanitize_json_schema(schema.unwrap())});
+    }
+    let mut all_tools = call.tools.clone().unwrap_or_default();
+    if uses_json_tool {
+        all_tools.push(Tool::Function(
+            FunctionTool::new("json", schema.unwrap().clone())
+                .with_description("Respond with a JSON object."),
+        ));
+    }
+    let tool_choice = if uses_json_tool {
+        ToolChoice::Required
+    } else {
+        call.tool_choice.clone()
+    };
+    let disable_parallel = anthropic_options
+        .and_then(|p| p.get("disableParallelToolUse"))
+        .and_then(Value::as_bool)
+        == Some(true);
+    let mut provider_tools = super::tools::prepare_provider_tools(
+        Some(&all_tools),
+        &tool_choice,
+        anthropic,
+        disable_parallel,
+        rejects_forced,
+    )?;
+    for warning in provider_tools.warnings.drain(..) {
+        match warning {
+            Warning::Unsupported { feature, details } => warn(&feature, details.as_deref()),
+            other => compatibility.push(other),
+        }
+    }
+    let tools: Option<Vec<FunctionTool>> = Some(
+        all_tools
+            .iter()
+            .filter_map(|tool| match tool {
+                Tool::Function(f) => Some(f.clone()),
+                _ => None,
             })
-            .collect()
-    });
-    let mut tool_config = prepare_tools(&tools, &call.tool_choice, model_id);
+            .collect(),
+    );
+    let function_choice =
+        if provider_tools.using_anthropic_tools && matches!(tool_choice, ToolChoice::None) {
+            ToolChoice::Auto
+        } else {
+            tool_choice.clone()
+        };
+    let mut tool_config = prepare_tools(&tools, &function_choice, model_id);
+    if !provider_tools.tools.is_empty() {
+        let mut combined = provider_tools.tools;
+        if let Some(functions) = tool_config.get("tools").and_then(Value::as_array) {
+            combined.extend(functions.clone());
+        }
+        tool_config["tools"] = json!(combined);
+    }
+    let has_additional_tools = provider_tools.tool_choice.is_some();
+    if provider_tools.using_anthropic_tools {
+        tool_config.as_object_mut().unwrap().remove("toolChoice");
+        if let Some(choice) = provider_tools.tool_choice {
+            fields.insert("tool_choice".into(), choice);
+        }
+    }
+    if !provider_tools.betas.is_empty() {
+        let mut betas = bedrock
+            .and_then(|b| b.get("anthropicBeta"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        betas.extend(provider_tools.betas.into_iter().map(Value::String));
+        fields.insert("anthropic_beta".into(), json!(betas));
+    }
+    if !provider_tools.using_anthropic_tools
+        && rejects_forced
+        && matches!(tool_choice, ToolChoice::Required | ToolChoice::Tool { .. })
+        && all_tools.iter().any(|tool| !matches!(tool, Tool::Provider(provider) if matches!(provider.id.as_str(), "anthropic.web_search_20250305" | "anthropic.web_search_20260318" | "anthropic.web_fetch_20260318")))
+    {
+        if tool_config.get("tools").is_some() { tool_config["toolChoice"] = json!({"auto":{}}); }
+        let details = match &tool_choice {
+            ToolChoice::Tool {tool_name} => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
+            _ => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".into(),
+        };
+        warn("toolChoice", Some(&details));
+    }
     if let Some(tools) = &tools {
-        for tool in tools {
+        for tool in tools.iter().filter(|tool| !matches!(&function_choice, ToolChoice::Tool { tool_name } if tool_name != &tool.name)) {
             if let Some(strict) = tool.strict
                 && !supports_strict_tools(model_id)
             {
@@ -1310,32 +1431,15 @@ pub fn build_request_body_checked(
             }
         }
     }
-    if rejects_forced
-        && matches!(
-            call.tool_choice,
-            ToolChoice::Required | ToolChoice::Tool { .. }
-        )
+    if !provider_tools.using_anthropic_tools
+        && anthropic
+        && disable_parallel
         && tool_config.get("tools").is_some()
     {
-        tool_config["toolChoice"] = json!({"auto":{}});
-        let details = match &call.tool_choice {
-            ToolChoice::Tool {tool_name} => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
-            _ => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".into(),
-        };
-        warn("toolChoice", Some(&details));
-    }
-    let disable_parallel = call
-        .provider_options
-        .as_ref()
-        .and_then(|p| p.get("anthropic"))
-        .and_then(|p| p.get("disableParallelToolUse"))
-        .and_then(Value::as_bool)
-        == Some(true);
-    if anthropic && disable_parallel && tool_config.get("tools").is_some() {
         let choice = if rejects_forced {
             json!({"type":"auto","disable_parallel_tool_use":true})
         } else {
-            match &call.tool_choice {
+            match &tool_choice {
                 ToolChoice::Required => json!({"type":"any","disable_parallel_tool_use":true}),
                 ToolChoice::Tool { tool_name } => {
                     json!({"type":"tool","name":tool_name,"disable_parallel_tool_use":true})
@@ -1347,7 +1451,7 @@ pub fn build_request_body_checked(
         tool_config.as_object_mut().unwrap().remove("toolChoice");
     }
     let mut prompt = call.prompt.clone();
-    if tool_config.get("tools").is_none() {
+    if tool_config.get("tools").is_none() && !has_additional_tools {
         let has_tools = prompt.iter().any(|message| match message {
             LanguageModelMessage::Assistant { content, .. } => content.iter().any(|part| {
                 matches!(
@@ -1382,6 +1486,26 @@ pub fn build_request_body_checked(
                 Some(
                     "Tool calls and results removed from conversation because Bedrock does not support tool content without active tools.",
                 ),
+            );
+        }
+    }
+    if uses_json_instruction {
+        let instruction = format!(
+            "JSON schema:\n{}\nYou MUST answer with only a JSON object that matches the JSON schema above. Do not wrap it in markdown fences or include any other text.",
+            schema.unwrap()
+        );
+        if let Some(LanguageModelMessage::System { content, .. }) = prompt.first_mut() {
+            if !content.is_empty() {
+                content.push_str("\n\n");
+            }
+            content.push_str(&instruction);
+        } else {
+            prompt.insert(
+                0,
+                LanguageModelMessage::System {
+                    content: instruction,
+                    provider_options: None,
+                },
             );
         }
     }
@@ -1420,7 +1544,7 @@ pub fn build_request_body_checked(
         body["toolConfig"] = tool_config;
     }
     warnings.extend(compatibility);
-    Ok((body, warnings))
+    Ok((body, warnings, uses_json_instruction, uses_json_tool))
 }
 
 fn validate_options(

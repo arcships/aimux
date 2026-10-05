@@ -520,3 +520,49 @@ async fn transcription_generate() {
     assert_eq!(result.duration_in_seconds, Some(36.709999084472656));
     assert_eq!(result.segments.len(), 5);
 }
+
+/// TS: "should handle streaming web search without action" (src/responses/openai-responses-language-model.test.ts)
+#[tokio::test]
+async fn responses_web_search_stream() {
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.created","response":{"id":"resp_missing_action","created_at":1741630255,"model":"test-model"}}),
+        json!({"type":"response.output_item.added","output_index":0,"item":{"type":"web_search_call","id":"ws_missing_action","status":"in_progress"}}),
+        json!({"type":"response.web_search_call.in_progress","output_index":0,"item_id":"ws_missing_action"}),
+        json!({"type":"response.web_search_call.completed","output_index":0,"item_id":"ws_missing_action"}),
+        json!({"type":"response.output_item.done","output_index":0,"item":{"type":"web_search_call","id":"ws_missing_action","status":"completed"}}),
+        json!({"type":"response.completed","response":{"id":"resp_missing_action","usage":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":12}}}),
+    ])]);
+    let mut call = options();
+    call.tools = Some(vec![Tool::Provider(aimux_core::tool::ProviderTool {
+        id: "openai.web_search".into(),
+        name: "webSearch".into(),
+        args: json!({}),
+    })]);
+    let result = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&call)
+        .await
+        .unwrap();
+    let parts = result
+        .stream
+        .map(|part| part.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+    assert_request(
+        &fetch,
+        "/responses",
+        json!({"model":"test-model","input":[{"role":"user","content":[{"type":"input_text","text":"Hello"}]}],"stream":true,"tools":[{"type":"web_search"}],"tool_choice":"auto","include":["web_search_call.action.sources"]}),
+    );
+    assert_eq!(
+        serde_json::to_value(parts).unwrap(),
+        json!([
+            {"StreamStart":{"warnings":[]}},
+            {"ResponseMetadata":{"id":"resp_missing_action","model_id":"test-model","timestamp":"2025-03-10T18:10:55+00:00"}},
+            {"ToolInputStart":{"id":"ws_missing_action","tool_name":"webSearch","provider_executed":true}},
+            {"ToolInputEnd":{"id":"ws_missing_action"}},
+            {"ToolCall":{"tool_call_id":"ws_missing_action","tool_name":"webSearch","input":"{}","provider_executed":true}},
+            {"ToolResult":{"tool_call_id":"ws_missing_action","tool_name":"webSearch","result":{}}},
+            {"Finish":{"finish_reason":{"unified":"stop","raw":null},"usage":{"input_tokens":{"total":10,"no_cache":10,"cache_read":0},"output_tokens":{"total":2,"reasoning":0,"text":2},"raw":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":12}},"provider_metadata":{"openai":{"responseId":"resp_missing_action"}}}}
+        ])
+    );
+}

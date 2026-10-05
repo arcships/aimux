@@ -14,7 +14,7 @@
 //! function — only the shared framework is extracted.
 
 use aimux_core::tool::RawToolCall;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::pin::Pin;
 
 use futures::{Stream, StreamExt};
@@ -81,6 +81,29 @@ pub fn build_responses_generate_result(
     body: Value,
     response_headers: HashMap<String, String>,
 ) -> Result<GenerateResult, AiMuxError> {
+    build_responses_generate_result_with_tools(
+        data,
+        raw_body,
+        request_warnings,
+        provider_key,
+        request_url,
+        body,
+        response_headers,
+        HashMap::new(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_responses_generate_result_with_tools(
+    data: &Value,
+    raw_body: &str,
+    request_warnings: Vec<Warning>,
+    provider_key: String,
+    request_url: String,
+    body: Value,
+    response_headers: HashMap<String, String>,
+    tool_names: HashMap<String, String>,
+) -> Result<GenerateResult, AiMuxError> {
     // Top-level error field.
     if let Some(err_obj) = data.get("error")
         && err_obj.is_object()
@@ -126,9 +149,11 @@ pub fn build_responses_generate_result(
         })
     })?;
 
+    let shell_provider_executed = hosted_shell(&body);
     let mut content: Vec<GenerateContent> = Vec::new();
     let mut has_function_call = false;
     let mut logprobs = Vec::new();
+    let mut hosted_tool_search_ids = VecDeque::new();
 
     for part in output {
         match part.get("type").and_then(|v| v.as_str()) {
@@ -166,7 +191,7 @@ pub fn build_responses_generate_result(
                         if let Some(annotations) = cp.get("annotations").and_then(|v| v.as_array())
                         {
                             for ann in annotations {
-                                if let Some(source) = annotation_source(ann, &provider_key) {
+                                if let Some(source) = annotation_source(ann) {
                                     content.push(GenerateContent::Source(source));
                                 }
                             }
@@ -256,7 +281,19 @@ pub fn build_responses_generate_result(
                     }
                 }
             }
-            _ => {}
+            _ => {
+                let mut part = part.clone();
+                pair_tool_search_id(&mut part, &mut hosted_tool_search_ids);
+                let parts = super::provider_events::provider_tool_content(
+                    &part,
+                    &provider_key,
+                    &tool_names,
+                    shell_provider_executed,
+                );
+                has_function_call |= part["type"] == "apply_patch_call"
+                    || (part["type"] == "computer_call" && !part["call_id"].is_null());
+                content.extend(parts);
+            }
         }
     }
 
@@ -360,6 +397,13 @@ fn tool_metadata(item: &Value) -> Value {
             metadata[key] = value.clone();
         }
     }
+    if let Some(caller) = item.get("caller").filter(|value| !value.is_null()) {
+        metadata["caller"] = if caller["type"] == "program" {
+            json!({"type": "program", "callerId": caller["caller_id"]})
+        } else {
+            caller.clone()
+        };
+    }
     metadata
 }
 
@@ -374,42 +418,22 @@ fn text_metadata(item: &Value, annotations: Option<&Vec<Value>>) -> Value {
     metadata
 }
 
-fn annotation_source(annotation: &Value, provider_key: &str) -> Option<Source> {
-    let kind = annotation.get("type")?.as_str()?;
-    let url = kind == "url_citation";
-    if !url
-        && !matches!(
-            kind,
-            "file_citation" | "container_file_citation" | "file_path"
-        )
-    {
+fn annotation_source(annotation: &Value) -> Option<Source> {
+    if annotation["type"] != "url_citation" {
         return None;
-    }
-    let mut metadata = json!({ "type": kind, "fileId": annotation["file_id"] });
-    if let Some(index) = annotation.get("index") {
-        metadata["index"] = index.clone();
-    }
-    if let Some(container) = annotation.get("container_id") {
-        metadata["containerId"] = container.clone();
     }
     Some(Source {
         id: generate_source_id(),
-        source_type: if url { "url" } else { "document" }.to_string(),
+        source_type: "url".into(),
         url: annotation
             .get("url")
             .and_then(Value::as_str)
             .map(str::to_owned),
         title: annotation
-            .get(if url {
-                "title"
-            } else if kind == "file_path" {
-                "file_id"
-            } else {
-                "filename"
-            })
+            .get("title")
             .and_then(Value::as_str)
             .map(str::to_owned),
-        provider_metadata: (!url).then(|| provider_namespace(provider_key, metadata)),
+        provider_metadata: None,
     })
 }
 
@@ -486,6 +510,36 @@ pub(crate) fn build_responses_event_stream_with_raw<S>(
 where
     S: Stream<Item = Result<Value, AiMuxError>> + Unpin + Send + 'static,
 {
+    build_responses_event_stream_with_tools(
+        first_event,
+        sse_stream,
+        provider_key,
+        warnings,
+        store_flag,
+        request_url,
+        request_body,
+        response_headers,
+        include_raw_chunks,
+        HashMap::new(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_responses_event_stream_with_tools<S>(
+    first_event: Option<Result<Value, AiMuxError>>,
+    sse_stream: S,
+    provider_key: String,
+    warnings: Vec<Warning>,
+    store_flag: bool,
+    request_url: String,
+    request_body: Value,
+    response_headers: HashMap<String, String>,
+    include_raw_chunks: bool,
+    tool_names: HashMap<String, String>,
+) -> Result<ResponsesEventStream, AiMuxError>
+where
+    S: Stream<Item = Result<Value, AiMuxError>> + Unpin + Send + 'static,
+{
     // Peek at the first SSE event to detect early errors (before any output).
     if let Some(Ok(ref val)) = first_event {
         let etype = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -520,6 +574,12 @@ where
         let mut output_ids: HashMap<usize, String> = HashMap::new();
         let mut text_annotations: HashMap<String, Vec<Value>> = HashMap::new();
         let mut logprobs = Vec::new();
+        let shell_provider_executed = hosted_shell(&request_body);
+        let mut provider_items: HashMap<usize, Value> = HashMap::new();
+        let mut emitted_calls = HashSet::new();
+        let mut ended_inputs = HashSet::new();
+        let mut diff_received = HashSet::new();
+        let mut hosted_tool_search_ids = VecDeque::new();
 
         let mut event_iter =
             futures::stream::iter(first_event.into_iter()).chain(sse_stream);
@@ -669,7 +729,51 @@ where
                                             provider_metadata: Some(meta),
                                         });
                                     }
-                                    _ => {}
+                                    _ => {
+                                        provider_items.insert(output_index, item.clone());
+                                        for part in provider_tool_start(item, &tool_names) {
+                                            if let StreamPart::ToolCall(call) = &part { emitted_calls.insert(call.tool_call_id.clone()); }
+                                            if let StreamPart::ToolInputEnd { id, .. } = &part { ended_inputs.insert(id.clone()); }
+                                            yield Ok(part);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        "response.image_generation_call.partial_image" => {
+                            yield Ok(StreamPart::ToolResult(aimux_core::tool::ToolResult {
+                                tool_call_id: parsed["item_id"].as_str().unwrap_or_default().to_owned(),
+                                tool_name: tool_names.get("image_generation").map_or("image_generation", String::as_str).to_owned(),
+                                result: json!({"result": parsed["partial_image_b64"]}),
+                                preliminary: Some(true), is_error: None, dynamic: None, provider_metadata: None,
+                            }));
+                        }
+                        "response.code_interpreter_call_code.delta" | "response.apply_patch_call_operation_diff.delta" => {
+                            let index = parsed["output_index"].as_u64().unwrap_or(0) as usize;
+                            if let Some(item) = provider_items.get(&index) {
+                                let id = item.get("call_id").filter(|v| !v.is_null()).unwrap_or(&item["id"]).as_str().unwrap_or_default().to_owned();
+                                diff_received.insert(id.clone());
+                                yield Ok(StreamPart::ToolInputDelta { id, delta: escaped_delta(parsed["delta"].as_str().unwrap_or_default()), provider_metadata: None });
+                            }
+                        }
+                        "response.code_interpreter_call_code.done" | "response.apply_patch_call_operation_diff.done" => {
+                            let index = parsed["output_index"].as_u64().unwrap_or(0) as usize;
+                            if let Some(item) = provider_items.get(&index) {
+                                let id = item.get("call_id").filter(|v| !v.is_null()).unwrap_or(&item["id"]).as_str().unwrap_or_default().to_owned();
+                                if ended_inputs.insert(id.clone()) {
+                                    let code = etype == "response.code_interpreter_call_code.done";
+                                    if !code && !diff_received.contains(&id) {
+                                        yield Ok(StreamPart::ToolInputDelta { id: id.clone(), delta: escaped_delta(parsed["diff"].as_str().unwrap_or_default()), provider_metadata: None });
+                                    }
+                                    yield Ok(StreamPart::ToolInputDelta { id: id.clone(), delta: if code { "\"}" } else { "\"}}" }.to_owned(), provider_metadata: None });
+                                    yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None });
+                                    if code {
+                                        let mut item = item.clone(); item["code"] = parsed["code"].clone();
+                                        for part in super::provider_events::provider_tool_content(&item, &provider_key, &tool_names, shell_provider_executed) {
+                                            if let GenerateContent::ToolCall(call) = part { emitted_calls.insert(id.clone()); yield Ok(StreamPart::ToolCall(call)); }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -868,7 +972,7 @@ where
                                             provider_executed: None,
                                             dynamic: None,
                                             thought_signature: None,
-                                            provider_metadata: None,
+                                            provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(item))),
                                         }));
                                     }
                                     "custom_tool_call" => {
@@ -903,7 +1007,7 @@ where
                                             provider_executed: None,
                                             dynamic: None,
                                             thought_signature: None,
-                                            provider_metadata: None,
+                                            provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(item))),
                                         }));
                                     }
                                     "reasoning" => {
@@ -941,7 +1045,51 @@ where
                                         }
                                         active_reasoning.remove(&id);
                                     }
-                                    _ => {}
+                                    _ => {
+                                        let mut item = item.clone();
+                                        if item_type == "local_shell_call" && let Some(action) = item["action"].as_object_mut() {
+                                                for (from, to) in [("timeout_ms", "timeoutMs"), ("working_directory", "workingDirectory")] {
+                                                    if let Some(value) = action.remove(from) { action.insert(to.into(), value); }
+                                                }
+                                        }
+                                        if item_type == "apply_patch_call" {
+                                            let id = item["call_id"].as_str().unwrap_or_default().to_owned();
+                                            if ended_inputs.insert(id.clone()) && item["operation"]["type"] != "delete_file" {
+                                                if !diff_received.contains(&id) {
+                                                    yield Ok(StreamPart::ToolInputDelta { id: id.clone(), delta: escaped_delta(item["operation"]["diff"].as_str().unwrap_or_default()), provider_metadata: None });
+                                                }
+                                                yield Ok(StreamPart::ToolInputDelta { id: id.clone(), delta: "\"}}".into(), provider_metadata: None });
+                                                yield Ok(StreamPart::ToolInputEnd { id, provider_metadata: None });
+                                            }
+                                        }
+                                        if item_type == "tool_search_call" && item["execution"] == "server" {
+                                            item["call_id"] = Value::Null;
+                                        }
+                                        pair_tool_search_id(&mut item, &mut hosted_tool_search_ids);
+                                        for part in super::provider_events::provider_tool_content(&item, &provider_key, &tool_names, shell_provider_executed) {
+                                            match part {
+                                                GenerateContent::ToolCall(call) => {
+                                                    if item_type == "code_interpreter_call" || (item_type == "apply_patch_call" && item["status"] != "completed") { continue; }
+                                                    if emitted_calls.insert(call.tool_call_id.clone()) {
+                                                        has_function_call |= call.provider_executed != Some(true) && matches!(item_type, "computer_call" | "apply_patch_call");
+                                                        if matches!(item_type, "computer_call" | "apply_patch_call" | "tool_search_call") {
+                                                            if item_type == "tool_search_call" && item["execution"] != "server" {
+                                                                yield Ok(StreamPart::ToolInputStart { id: call.tool_call_id.clone(), tool_name: call.tool_name.clone(), provider_executed: call.provider_executed, dynamic: None, title: None, provider_metadata: None });
+                                                            }
+                                                            if !ended_inputs.contains(&call.tool_call_id) {
+                                                                if item_type == "computer_call" && !call.input.is_empty() { yield Ok(StreamPart::ToolInputDelta { id: call.tool_call_id.clone(), delta: call.input.clone(), provider_metadata: None }); }
+                                                                yield Ok(StreamPart::ToolInputEnd { id: call.tool_call_id.clone(), provider_metadata: None });
+                                                            }
+                                                        }
+                                                        yield Ok(StreamPart::ToolCall(call));
+                                                    }
+                                                }
+                                                GenerateContent::ToolResult(result) => { yield Ok(StreamPart::ToolResult(result)); }
+                                                _ => {}
+                                            }
+                                        }
+                                        provider_items.remove(&output_index);
+                                    }
                                 }
                             }
                         }
@@ -951,7 +1099,7 @@ where
                             if let Some(ann) = parsed.get("annotation") {
                                 let id = parsed.get("item_id").and_then(Value::as_str).unwrap_or_default().to_string();
                                 text_annotations.entry(id).or_default().push(ann.clone());
-                                if let Some(source) = annotation_source(ann, &provider_key) { yield Ok(StreamPart::Source(source)); }
+                                if let Some(source) = annotation_source(ann) { yield Ok(StreamPart::Source(source)); }
                             }
                         }
 
@@ -1071,4 +1219,136 @@ where
         });
     };
     Ok(Box::pin(stream))
+}
+
+fn pair_tool_search_id(item: &mut Value, hosted_ids: &mut VecDeque<Value>) {
+    match item["type"].as_str() {
+        Some("tool_search_call") if item["execution"] == "server" => {
+            hosted_ids.push_back(
+                item.get("call_id")
+                    .filter(|v| !v.is_null())
+                    .unwrap_or(&item["id"])
+                    .clone(),
+            );
+        }
+        Some("tool_search_output") if item.get("call_id").is_none_or(Value::is_null) => {
+            if let Some(id) = hosted_ids.pop_front() {
+                item["call_id"] = id;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn escaped_delta(value: &str) -> String {
+    let value = json!(value).to_string();
+    value[1..value.len() - 1].to_owned()
+}
+
+fn provider_tool_start(item: &Value, names: &HashMap<String, String>) -> Vec<StreamPart> {
+    let kind = item["type"].as_str().unwrap_or_default();
+    let canonical = match kind {
+        "web_search_call" => "web_search",
+        "file_search_call" => "file_search",
+        "image_generation_call" => "image_generation",
+        "code_interpreter_call" => "code_interpreter",
+        "computer_call" => "computer",
+        "apply_patch_call" => "apply_patch",
+        "tool_search_call" if item["execution"] == "server" => "tool_search",
+        _ => return Vec::new(),
+    };
+    let name = names
+        .get(canonical)
+        .map_or(canonical, String::as_str)
+        .to_owned();
+    let id = item
+        .get("call_id")
+        .filter(|v| !v.is_null())
+        .unwrap_or(&item["id"])
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    let hosted = matches!(
+        kind,
+        "web_search_call"
+            | "file_search_call"
+            | "image_generation_call"
+            | "code_interpreter_call"
+            | "tool_search_call"
+    )
+    .then_some(true);
+    let call = || {
+        StreamPart::ToolCall(RawToolCall {
+            tool_call_id: id.clone(),
+            tool_name: name.clone(),
+            input: "{}".to_owned(),
+            provider_executed: hosted,
+            dynamic: None,
+            thought_signature: None,
+            provider_metadata: None,
+        })
+    };
+    if matches!(kind, "file_search_call" | "image_generation_call") {
+        return vec![call()];
+    }
+    let mut parts = vec![StreamPart::ToolInputStart {
+        id: id.clone(),
+        tool_name: name.clone(),
+        provider_executed: hosted,
+        dynamic: None,
+        title: None,
+        provider_metadata: None,
+    }];
+    match kind {
+        "web_search_call" => {
+            parts.push(StreamPart::ToolInputEnd {
+                id: id.clone(),
+                provider_metadata: None,
+            });
+            parts.push(call());
+        }
+        "code_interpreter_call" => parts.push(StreamPart::ToolInputDelta {
+            id,
+            delta: format!("{{\"containerId\":{},\"code\":\"", item["container_id"]),
+            provider_metadata: None,
+        }),
+        "apply_patch_call" => {
+            let operation = &item["operation"];
+            if operation["type"] == "delete_file" {
+                parts.push(StreamPart::ToolInputDelta {
+                    id: id.clone(),
+                    delta: json!({"callId":id,"operation":operation}).to_string(),
+                    provider_metadata: None,
+                });
+                parts.push(StreamPart::ToolInputEnd {
+                    id,
+                    provider_metadata: None,
+                });
+            } else {
+                parts.push(StreamPart::ToolInputDelta {
+                    id: id.clone(),
+                    delta: format!(
+                        "{{\"callId\":{},\"operation\":{{\"type\":{},\"path\":{},\"diff\":\"",
+                        json!(id),
+                        operation["type"],
+                        operation["path"]
+                    ),
+                    provider_metadata: None,
+                });
+            }
+        }
+        _ => {}
+    }
+    parts
+}
+
+fn hosted_shell(body: &Value) -> bool {
+    body["tools"].as_array().is_some_and(|tools| {
+        tools.iter().any(|tool| {
+            tool["type"] == "shell"
+                && tool
+                    .get("environment")
+                    .is_some_and(|environment| environment["type"] != "local")
+        })
+    })
 }

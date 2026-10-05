@@ -20,7 +20,7 @@ use aimux_core::shared::SharedProviderOptions;
 
 use aimux_provider_utils::HttpBody;
 
-use super::options;
+use super::{AmazonBedrockEmbeddingModelFamily, options};
 use crate::shared::EndpointConfig;
 
 /// An Amazon Bedrock embedding model (e.g. `"amazon.titan-embed-text-v2:0"`).
@@ -30,7 +30,7 @@ use crate::shared::EndpointConfig;
 pub struct BedrockEmbeddingModel {
     model_id: String,
     config: EndpointConfig,
-    model_family: Option<String>,
+    model_family: Option<AmazonBedrockEmbeddingModelFamily>,
 }
 
 impl BedrockEmbeddingModel {
@@ -42,21 +42,23 @@ impl BedrockEmbeddingModel {
         }
     }
 
-    pub(crate) fn with_model_family(mut self, model_family: Option<String>) -> Self {
+    pub(crate) fn with_model_family(
+        mut self,
+        model_family: Option<AmazonBedrockEmbeddingModelFamily>,
+    ) -> Self {
         self.model_family = model_family;
         self
     }
 
     fn model_family(&self) -> &str {
-        self.model_family.as_deref().unwrap_or_else(|| {
-            if is_nova_embedding_model(&self.model_id) {
-                "nova"
-            } else if is_cohere_embedding_model(&self.model_id) {
-                options::COHERE_MODEL_FAMILY
-            } else {
-                "titan"
-            }
-        })
+        match self.model_family {
+            Some(AmazonBedrockEmbeddingModelFamily::Titan) => "titan",
+            Some(AmazonBedrockEmbeddingModelFamily::Cohere) => options::COHERE_MODEL_FAMILY,
+            Some(AmazonBedrockEmbeddingModelFamily::Nova) => "nova",
+            None if is_nova_embedding_model(&self.model_id) => "nova",
+            None if is_cohere_embedding_model(&self.model_id) => options::COHERE_MODEL_FAMILY,
+            None => "titan",
+        }
     }
 }
 

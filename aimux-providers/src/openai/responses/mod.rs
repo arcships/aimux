@@ -23,7 +23,9 @@
 //! [`responses_convert`] (RFC-0012 §3.5).
 
 pub mod convert;
+mod provider_events;
 pub mod responses_convert;
+pub(crate) mod tool_args;
 pub mod types;
 
 pub(crate) use convert::ResponsesProfile;
@@ -211,7 +213,7 @@ impl OpenAIResponsesModel {
             }
         }
         let mut result =
-            build_responses_request_body_for(profile.namespace, &self.model_id, options, stream);
+            build_responses_request_body_for(profile.namespace, &self.model_id, options, stream)?;
         convert::apply_file_id_prefixes(&mut result.body, &profile.file_id_prefixes);
         if profile.explicit_message_item_type
             && let Some(input) = result.body["input"].as_array_mut()
@@ -279,7 +281,7 @@ impl LanguageModel for OpenAIResponsesModel {
             .unwrap_or_default();
         let data = resp.value;
 
-        responses_convert::build_responses_generate_result(
+        responses_convert::build_responses_generate_result_with_tools(
             &data,
             &raw_body,
             request_result.warnings,
@@ -287,6 +289,7 @@ impl LanguageModel for OpenAIResponsesModel {
             endpoint,
             body,
             response_headers,
+            tool_name_mapping(options),
         )
     }
 
@@ -323,7 +326,7 @@ impl LanguageModel for OpenAIResponsesModel {
             Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
             first_event => first_event,
         };
-        let stream = responses_convert::build_responses_event_stream_with_raw(
+        let stream = responses_convert::build_responses_event_stream_with_tools(
             first_event,
             sse_stream,
             provider_key,
@@ -333,6 +336,7 @@ impl LanguageModel for OpenAIResponsesModel {
             body.clone(),
             response_headers.clone(),
             options.include_raw_chunks == Some(true),
+            tool_name_mapping(options),
         )?;
 
         Ok(StreamResult {
@@ -343,4 +347,29 @@ impl LanguageModel for OpenAIResponsesModel {
             }),
         })
     }
+}
+
+fn tool_name_mapping(options: &CallOptions) -> HashMap<String, String> {
+    let mut names = HashMap::new();
+    for tool in options.tools.iter().flatten() {
+        if let aimux_core::tool::Tool::Provider(tool) = tool
+            && let Some(name) = tool.id.strip_prefix("openai.")
+        {
+            names.insert(name.to_owned(), tool.name.clone());
+        }
+    }
+    if let Some(name) = options.tools.iter().flatten().find_map(|tool| match tool {
+        aimux_core::tool::Tool::Provider(tool)
+            if matches!(
+                tool.id.as_str(),
+                "openai.web_search" | "openai.web_search_preview"
+            ) =>
+        {
+            Some(tool.name.clone())
+        }
+        _ => None,
+    }) {
+        names.insert("web_search".into(), name);
+    }
+    names
 }

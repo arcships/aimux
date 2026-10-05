@@ -133,7 +133,7 @@ impl LanguageModel for BedrockModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let (body, warnings) =
+        let (body, warnings, uses_json_instruction, uses_json_tool) =
             build_request_body_checked(&self.model_id, options, self.model_family.as_deref())?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
@@ -154,15 +154,37 @@ impl LanguageModel for BedrockModel {
 
         // Extract content from response.output.message.content
         let mut content = Vec::new();
+        let mut extractor = uses_json_instruction.then(JsonObjectTextExtractor::default);
+        let mut is_json_response_from_tool = false;
         if let Some(output) = &data.output
             && let Some(message) = &output.message
         {
             for block in &message.content {
+                let before = content.len();
                 extract_content(block, &mut content, &self.model_id);
+                for part in &mut content[before..] {
+                    if let GenerateContent::ToolCall(tool) = part
+                        && uses_json_tool
+                        && tool.tool_name == "json"
+                    {
+                        is_json_response_from_tool = true;
+                        *part = GenerateContent::Text {
+                            text: tool.input.clone(),
+                            provider_metadata: None,
+                        };
+                    }
+                }
+                if let Some(extractor) = &mut extractor {
+                    for part in &mut content[before..] {
+                        if let GenerateContent::Text { text, .. } = part {
+                            *text = extractor.process(text);
+                        }
+                    }
+                }
             }
         }
 
-        let finish_reason = data
+        let mut finish_reason = data
             .stop_reason
             .as_deref()
             .map(map_finish_reason)
@@ -171,6 +193,22 @@ impl LanguageModel for BedrockModel {
                 raw: None,
             });
 
+        if is_json_response_from_tool && finish_reason.unified == FinishReasonUnified::ToolCalls {
+            finish_reason.unified = FinishReasonUnified::Stop;
+        }
+        let mut provider_metadata = response_provider_metadata(&data);
+        if is_json_response_from_tool {
+            let mut payload = provider_metadata
+                .as_ref()
+                .and_then(|meta| meta.get("amazonBedrock"))
+                .cloned()
+                .unwrap_or_default();
+            payload.insert("isJsonResponseFromTool".into(), json!(true));
+            payload
+                .entry("stopSequence")
+                .or_insert(serde_json::Value::Null);
+            provider_metadata = Some(options::metadata(json!(payload)));
+        }
         let mut usage = convert_usage(data.usage.as_ref());
         usage.raw = raw_data
             .as_ref()
@@ -188,7 +226,7 @@ impl LanguageModel for BedrockModel {
             finish_reason,
             usage,
             warnings,
-            provider_metadata: response_provider_metadata(&data),
+            provider_metadata,
             response: Some(aimux_core::shared::ResponseInfo {
                 id: request_id,
                 timestamp: response_headers.get("date").cloned(),
@@ -201,7 +239,7 @@ impl LanguageModel for BedrockModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let (body, warnings) =
+        let (body, warnings, uses_json_instruction, uses_json_tool) =
             build_request_body_checked(&self.model_id, options, self.model_family.as_deref())?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
@@ -242,6 +280,8 @@ impl LanguageModel for BedrockModel {
 
             let mut messages = super::event_stream::decode_stream(body_stream);
 
+            let mut extractor = uses_json_instruction.then(JsonObjectTextExtractor::default);
+            let mut is_json_response_from_tool = false;
             let mut text_blocks = HashSet::new();
             let mut reasoning_blocks: HashMap<usize, Option<String>> = HashMap::new();
             let mut block_counter = 0usize;
@@ -320,6 +360,7 @@ impl LanguageModel for BedrockModel {
                                 } else {
                                     id
                                 }, model_id.contains("mistral."));
+                                if !(uses_json_tool && name == "json") {
                                 yield Ok(StreamPart::ToolInputStart {
                                     id: id.clone(),
                                     tool_name: name.clone(),
@@ -328,6 +369,7 @@ impl LanguageModel for BedrockModel {
                                     title: None,
                                     provider_metadata: None,
                                 });
+                                }
                                 tool_blocks.insert(idx, (id, name, String::new()));
                             } else {
                                 // Text block.
@@ -358,28 +400,26 @@ impl LanguageModel for BedrockModel {
                                         text_blocks.insert(idx);
                                         yield Ok(StreamPart::TextStart { id, provider_metadata: None});
                                     }
-                                    {
-                                        let id = idx.to_string();
-                                        yield Ok(StreamPart::TextDelta {
-                                            id,
-                                            delta: text.to_string(),
-                                            provider_metadata: None,
-                                        });
+                                    let delta = extractor.as_mut().map(|extractor| extractor.process(text)).unwrap_or_else(|| text.to_string());
+                                    if !delta.is_empty() {
+                                        yield Ok(StreamPart::TextDelta { id: idx.to_string(), delta, provider_metadata: None });
                                     }
                                 }
                             // Tool use input delta
                             if let Some(partial) =
                                 delta.get("toolUse").and_then(|t| t.get("input"))
                                 && let Some(partial_str) = partial.as_str()
-                                    && let Some((id, _name, acc)) = tool_blocks.get_mut(&idx)
+                                    && let Some((id, name, acc)) = tool_blocks.get_mut(&idx)
                                         && !partial_str.is_empty() {
                                             acc.push_str(partial_str);
+                                            if !(uses_json_tool && name == "json") {
                                             let id = id.clone();
                                             yield Ok(StreamPart::ToolInputDelta {
                                                 id,
                                                 delta: partial_str.to_string(),
                                                 provider_metadata: None,
                                             });
+                                            }
                                         }
                             if let Some(rc) = delta.get("reasoningContent") {
                                 if !["text", "signature", "data", "redactedContent"].iter().any(|key| rc.get(key).and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty())) { continue; }
@@ -407,6 +447,13 @@ impl LanguageModel for BedrockModel {
                             .unwrap_or(0) as usize;
 
                         if let Some((id, name, acc)) = tool_blocks.remove(&idx) {
+                            if uses_json_tool && name == "json" {
+                                is_json_response_from_tool = true;
+                                let id = idx.to_string();
+                                yield Ok(StreamPart::TextStart { id: id.clone(), provider_metadata: None });
+                                yield Ok(StreamPart::TextDelta { id: id.clone(), delta: acc, provider_metadata: None });
+                                yield Ok(StreamPart::TextEnd { id, provider_metadata: None });
+                            } else {
                             yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
                             // Empty input normalizes to "{}" per the upstream
                             // provider.
@@ -424,6 +471,7 @@ impl LanguageModel for BedrockModel {
                                 thought_signature: None,
                                 provider_metadata: None,
                             }));
+                            }
                         } else if let Some(redacted) = reasoning_blocks.remove(&idx) {
                             yield Ok(StreamPart::ReasoningEnd { id: idx.to_string(), provider_metadata: reasoning_redacted_meta(redacted) });
                         } else if text_blocks.remove(&idx) {
@@ -434,7 +482,9 @@ impl LanguageModel for BedrockModel {
                         if let Some(reason) =
                             payload.get("stopReason").and_then(|v| v.as_str())
                         {
-                            final_finish_reason = Some(map_finish_reason(reason));
+                            let mut finish_reason = map_finish_reason(reason);
+                            if is_json_response_from_tool && finish_reason.unified == FinishReasonUnified::ToolCalls { finish_reason.unified = FinishReasonUnified::Stop; }
+                            final_finish_reason = Some(finish_reason);
                         }
                         // #26: surface which stop sequence sentinel fired
                         // (additionalModelResponseFields.delta.stop_sequence), if any.
@@ -483,6 +533,10 @@ impl LanguageModel for BedrockModel {
             // #26: merge the stop sentinel into the metadata payload, then build
             // the Finish provider_metadata under `amazonBedrock` (mirrors the
             // TS `doStream` flush handler).
+            if is_json_response_from_tool {
+                finish_meta.insert("isJsonResponseFromTool".into(), json!(true));
+                finish_meta.insert("stopSequence".into(), serde_json::Value::Null);
+            }
             if let Some(seq) = stop_sequence {
                 finish_meta.insert(
                     "stopSequence".to_string(),
@@ -658,4 +712,56 @@ fn response_provider_metadata(data: &BedrockConverseResponse) -> Option<Provider
             .unwrap_or(serde_json::Value::Null),
     );
     Some(options::metadata(serde_json::Value::Object(payload)))
+}
+
+#[derive(Default)]
+struct JsonObjectTextExtractor {
+    started: bool,
+    completed: bool,
+    depth: usize,
+    in_string: bool,
+    escaped: bool,
+}
+
+impl JsonObjectTextExtractor {
+    fn process(&mut self, text: &str) -> String {
+        let mut result = String::new();
+        for character in text.chars() {
+            if self.completed {
+                break;
+            }
+            if !self.started {
+                if character != '{' {
+                    continue;
+                }
+                self.started = true;
+                self.depth = 1;
+                result.push(character);
+                continue;
+            }
+            result.push(character);
+            if self.escaped {
+                self.escaped = false;
+                continue;
+            }
+            if character == '\\' && self.in_string {
+                self.escaped = true;
+                continue;
+            }
+            if character == '"' {
+                self.in_string = !self.in_string;
+                continue;
+            }
+            if self.in_string {
+                continue;
+            }
+            if character == '{' {
+                self.depth += 1;
+            } else if character == '}' {
+                self.depth -= 1;
+                self.completed = self.depth == 0;
+            }
+        }
+        result
+    }
 }

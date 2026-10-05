@@ -19,6 +19,7 @@ pub mod image;
 pub mod model;
 pub mod responses;
 pub mod speech;
+pub mod tools;
 pub mod transcription;
 mod types;
 
@@ -28,6 +29,7 @@ pub use image::OpenAIImageModel;
 pub use model::OpenAIModel;
 pub use responses::OpenAIResponsesModel;
 pub use speech::OpenAISpeechModel;
+pub use tools::{OpenAIComputerAction, OpenAIComputerSafetyCheck};
 pub use transcription::OpenAITranscriptionModel;
 
 use std::sync::{Arc, OnceLock};

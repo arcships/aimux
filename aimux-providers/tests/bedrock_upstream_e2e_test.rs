@@ -356,3 +356,111 @@ async fn rerank_json_documents_and_parse_ranking() {
     assert!(result.provider_metadata.is_none());
     assert_eq!(result.response.unwrap().body.unwrap(), response);
 }
+
+/// TS: "should handle JSON response format in streaming" (amazon-bedrock-chat-language-model.test.ts).
+#[tokio::test]
+async fn stream_json_response_tool_as_text() {
+    let fetch = MockFetch::new(vec![stream_response(json!([
+        {"contentBlockStart":{"contentBlockIndex":0,"start":{"toolUse":{"toolUseId":"tool-use-id","name":"json"}}}},
+        {"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"{\"value\":\"test\"}"}}}},
+        {"contentBlockStop":{"contentBlockIndex":0}},
+        {"messageStop":{"stopReason":"tool_use"}}
+    ]))]);
+    let mut call = CallOptions::new(vec![LanguageModelMessage::user_text("Generate JSON")]);
+    call.response_format = Some(aimux_core::options::ResponseFormat::Json {
+        schema: Some(
+            json!({"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}),
+        ),
+        name: None,
+        description: None,
+    });
+    let result = provider(&fetch)
+        .chat("anthropic.model")
+        .do_stream(&call)
+        .await
+        .unwrap();
+    let parts = result
+        .stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty()));
+    assert!(
+        matches!(&parts[1], StreamPart::ResponseMetadata(meta) if meta.model_id.as_deref() == Some("anthropic.model"))
+    );
+    assert_eq!(parts.len(), 6);
+    assert!(matches!(&parts[2], StreamPart::TextStart { id, .. } if id == "0"));
+    assert!(
+        matches!(&parts[3], StreamPart::TextDelta { id, delta, .. } if id == "0" && delta == "{\"value\":\"test\"}")
+    );
+    assert!(matches!(&parts[4], StreamPart::TextEnd { id, .. } if id == "0"));
+    let StreamPart::Finish {
+        finish_reason,
+        provider_metadata,
+        ..
+    } = &parts[5]
+    else {
+        panic!("expected finish")
+    };
+    assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
+    assert_eq!(finish_reason.raw.as_deref(), Some("tool_use"));
+    assert_eq!(
+        serde_json::to_value(provider_metadata.as_ref().unwrap()).unwrap(),
+        json!({
+            "amazonBedrock":{"isJsonResponseFromTool":true,"stopSequence":null},
+            "bedrock":{"isJsonResponseFromTool":true,"stopSequence":null}
+        })
+    );
+    assert_eq!(
+        fetch.seen()[0].json_body(),
+        json!({
+            "messages":[{"role":"user","content":[{"text":"Generate JSON"}]}],
+            "additionalModelResponseFieldPaths":["/delta/stop_sequence"],
+            "toolConfig":{"tools":[{"toolSpec":{"name":"json","description":"Respond with a JSON object.",
+                "inputSchema":{"json":{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}}}}],"toolChoice":{"any":{}}}
+        })
+    );
+}
+
+/// TS: "should handle Anthropic provider-defined tools" (amazon-bedrock-chat-language-model.test.ts).
+#[tokio::test]
+async fn generate_provider_defined_tool_with_input_schema() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "output":{"message":{"role":"assistant","content":[{"toolUse":{"toolUseId":"tool-use-id","name":"bash","input":{"command":"ls -l"}}}]}},
+        "usage":{"inputTokens":10,"outputTokens":20,"totalTokens":30},"stopReason":"tool_use"
+    }))]);
+    let mut call = options();
+    call.tools = Some(vec![aimux_core::tool::Tool::Provider(
+        aimux_core::tool::ProviderTool {
+            id: "anthropic.bash_20241022".into(),
+            name: "bash".into(),
+            args: json!({}),
+        },
+    )]);
+    let result = provider(&fetch)
+        .chat("anthropic.model")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    let body = fetch.seen()[0].json_body();
+    assert_eq!(
+        body["additionalModelRequestFields"],
+        json!({"tool_choice":{"type":"auto"},"anthropic_beta":["computer-use-2024-10-22"]})
+    );
+    assert_eq!(
+        body["toolConfig"]["tools"],
+        json!([{"toolSpec":{"name":"bash","inputSchema":{"json":{
+            "$schema":"http://json-schema.org/draft-07/schema#","type":"object",
+            "properties":{"command":{"type":"string"},"restart":{"type":"boolean"}},
+            "required":["command"],"additionalProperties":false
+        }}}}])
+    );
+    assert!(body["toolConfig"].get("toolChoice").is_none());
+    assert_eq!(result.content.len(), 1);
+    assert!(result.warnings.is_empty());
+    assert!(
+        matches!(&result.content[0], GenerateContent::ToolCall(tool) if tool.tool_call_id == "tool-use-id" && tool.tool_name == "bash" && tool.input == "{\"command\":\"ls -l\"}")
+    );
+}

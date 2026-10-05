@@ -327,3 +327,47 @@ async fn speech_generate() {
     );
     assert!(matches!(result.audio, AudioData::Binary(audio) if audio == vec![1,2,3]));
 }
+
+/// TS: "sends audio and the required model definition" (azure-transcription-model.test.ts)
+#[tokio::test]
+async fn speech_transcription_request() {
+    for audio in [
+        AudioInput::Binary(vec![1, 2, 3]),
+        AudioInput::Base64("AQID".into()),
+    ] {
+        let fetch = MockFetch::new(vec![Canned::json(&json!({
+            "combinedPhrases": [{"text": "Hello world."}], "phrases": [],
+        }))]);
+        provider(&fetch)
+            .transcription("mai-transcribe-2")
+            .do_generate(&TranscriptionCallOptions::new(audio, "audio/wav"))
+            .await
+            .unwrap();
+        let seen = fetch.seen();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(
+            seen[0].url,
+            "https://test-resource.cognitiveservices.azure.com/speechtotext/transcriptions:transcribe?api-version=2025-10-15"
+        );
+        assert_eq!(seen[0].headers["ocp-apim-subscription-key"], "test-api-key");
+        assert!(!seen[0].headers.contains_key("api-key"));
+        assert!(seen[0].headers["user-agent"].contains("ai-sdk-azure/"));
+        let body = String::from_utf8(seen[0].body.clone()).unwrap();
+        assert!(body.contains("name=\"audio\"; filename=\"audio.wav\""));
+        assert!(body.contains("Content-Type: audio/wav"));
+        assert!(body.contains("\r\n\r\n\u{1}\u{2}\u{3}\r\n"));
+        let definition = body
+            .split("name=\"definition\"\r\n\r\n")
+            .nth(1)
+            .unwrap()
+            .split("\r\n")
+            .next()
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(definition).unwrap(),
+            json!({
+                "enhancedMode": {"enabled": true, "model": "MAI-Transcribe-2", "modelOptions": {"timestamps": "segment"}},
+            })
+        );
+    }
+}

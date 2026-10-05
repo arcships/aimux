@@ -34,6 +34,7 @@ pub mod image;
 mod model;
 pub(crate) mod options;
 pub mod reranking;
+pub(crate) mod tools;
 mod types;
 
 use std::sync::{Arc, OnceLock};
@@ -88,16 +89,38 @@ pub(crate) fn encode_model_id(model_id: &str) -> String {
     percent_encoding::utf8_percent_encode(model_id, SAFE).to_string()
 }
 
+/// The chat family override supported by the upstream provider.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AmazonBedrockChatModelFamily {
+    Anthropic,
+}
+
+impl AmazonBedrockChatModelFamily {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+        }
+    }
+}
+
+/// The embedding families supported by the upstream provider.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AmazonBedrockEmbeddingModelFamily {
+    Titan,
+    Cohere,
+    Nova,
+}
+
 /// Optional family override for opaque inference-profile IDs.
 #[derive(Clone, Debug, Default)]
 pub struct AmazonBedrockChatModelSettings {
-    pub model_family: Option<String>,
+    pub model_family: Option<AmazonBedrockChatModelFamily>,
 }
 
 /// Optional embedding family override for opaque inference-profile IDs.
 #[derive(Clone, Debug, Default)]
 pub struct AmazonBedrockEmbeddingModelSettings {
-    pub model_family: Option<String>,
+    pub model_family: Option<AmazonBedrockEmbeddingModelFamily>,
 }
 
 pub(crate) fn bedrock_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
@@ -505,8 +528,11 @@ impl AmazonBedrockProvider {
         model_id: &str,
         settings: &AmazonBedrockChatModelSettings,
     ) -> BedrockModel {
-        self.chat(model_id)
-            .with_model_family(settings.model_family.clone())
+        self.chat(model_id).with_model_family(
+            settings
+                .model_family
+                .map(|family| family.as_str().to_owned()),
+        )
     }
 
     /// An embedding model (e.g. `"amazon.titan-embed-text-v2:0"`);
@@ -523,7 +549,7 @@ impl AmazonBedrockProvider {
         settings: &AmazonBedrockEmbeddingModelSettings,
     ) -> BedrockEmbeddingModel {
         self.embedding(model_id)
-            .with_model_family(settings.model_family.clone())
+            .with_model_family(settings.model_family)
     }
 
     #[must_use]

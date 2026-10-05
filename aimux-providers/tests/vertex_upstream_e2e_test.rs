@@ -11,7 +11,7 @@ use aimux_core::options::{CallOptions, Tool};
 use aimux_core::result::GenerateContent;
 use aimux_core::shared::{AspectRatio, provider_namespace};
 use aimux_core::tool::FunctionTool;
-use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
+use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions};
 use aimux_core::types::FinishReasonUnified;
 use aimux_core::video_model::{VideoCallOptions, VideoData, VideoModel, VideoOperationStatus};
 use aimux_provider_utils::Resolvable;
@@ -368,5 +368,56 @@ async fn video_missing_operation_name_is_an_error() {
     assert_eq!(
         seen[0].json_body(),
         json!({"instances": [{"prompt": "A futuristic city with flying cars"}], "parameters": {"sampleCount": 1}})
+    );
+}
+
+/// TS: "transcribes audio via Vertex generateContent with audioTranscriptionConfig"
+/// (google-vertex/src/gemini-transcription/google-vertex-gemini-transcription-model.test.ts)
+#[tokio::test]
+async fn gemini_transcription_generate_request_and_result() {
+    let usage = json!({"promptTokenCount": 10, "candidatesTokenCount": 4});
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "candidates": [{"content": {"parts": [{"text": "Hello "}, {"text": "world."}]}}],
+        "usageMetadata": usage,
+    }))]);
+    let provider = create_google_vertex(VertexProviderSettings {
+        access_token: Some(Resolvable::Value("test-oauth-token".into())),
+        project: Some("test-project".into()),
+        location: Some("us-central1".into()),
+        fetch: Some(fetch.transport()),
+        ..Default::default()
+    })
+    .unwrap();
+    let mut options =
+        TranscriptionCallOptions::new(AudioInput::Binary(vec![1, 2, 3, 4]), "audio/wav");
+    options.provider_options = Some(provider_namespace(
+        "googleVertex",
+        json!({
+            "customVocabulary": ["Gemini", "Kubernetes"], "languageCodes": ["es-ES"], "mode": "SMART",
+        }),
+    ));
+    let result = provider
+        .transcription("gemini-3.5-transcribe")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    let seen = fetch.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(
+        seen[0].url,
+        "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/test-project/locations/us-central1/publishers/google/models/gemini-3.5-transcribe:generateContent"
+    );
+    assert_eq!(seen[0].headers["authorization"], "Bearer test-oauth-token");
+    assert_eq!(
+        seen[0].json_body(),
+        json!({
+            "contents": [{"role": "user", "parts": [{"inlineData": {"mimeType": "audio/wav", "data": "AQIDBA=="}}]}],
+            "generationConfig": {"audioTranscriptionConfig": {"languageCodes": ["es-ES"], "customVocabulary": ["Gemini", "Kubernetes"], "mode": "SMART"}},
+        })
+    );
+    assert_eq!(result.text, "Hello world.");
+    assert_eq!(
+        serde_json::to_value(result.provider_metadata.unwrap()).unwrap(),
+        json!({"google": {"usageMetadata": usage}})
     );
 }

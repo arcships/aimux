@@ -19,10 +19,12 @@
 //! providerOptions namespace and `assistant-` file-id prefix.
 //!
 //! Not ported from the AI SDK package: Azure-hosted DeepSeek (`deepseek`),
-//! the legacy completion model, MAI-Transcribe / MAI-Voice (`speechBaseURL`,
-//! `maiBaseURL`, `webSocket`).
+//! the legacy completion model and MAI-Voice (`maiBaseURL`, `webSocket`).
 
 pub(crate) mod options;
+mod transcription;
+
+pub use transcription::AzureTranscriptionModel;
 
 use std::sync::{Arc, OnceLock};
 
@@ -85,6 +87,9 @@ pub struct AzureOpenAIProviderSettings {
     /// used as is; a non-Azure gateway gets `{base_url}{path}`. A trailing
     /// slash is removed.
     pub base_url: Option<String>,
+    /// Azure Speech endpoint prefix. Independent of `base_url` and `api_version`.
+    /// Defaults to the resource's Cognitive Services endpoint.
+    pub speech_base_url: Option<String>,
     /// The API key, sent as `api-key`. `None` (with no `token_provider`) loads
     /// `AZURE_API_KEY` when a request is made and fails that request with
     /// `AiMuxError::LoadApiKey` if it is unset. An explicit value is used as
@@ -115,6 +120,7 @@ impl std::fmt::Debug for AzureOpenAIProviderSettings {
         f.debug_struct("AzureOpenAIProviderSettings")
             .field("resource_name", &self.resource_name)
             .field("base_url", &self.base_url)
+            .field("speech_base_url", &self.speech_base_url)
             .field("api_key", &self.api_key)
             .field("token_provider", &self.token_provider)
             .field(
@@ -164,7 +170,7 @@ fn base_url_info(base_url: Option<&str>) -> Result<BaseUrlInfo, AiMuxError> {
 /// # Errors
 ///
 /// Returns `AiMuxError::InvalidArgument` when a non-empty `api_key` and
-/// `token_provider` are given or `base_url` is not an `http(s)` URL with a
+/// `token_provider` are given or `base_url` / `speech_base_url` is not an `http(s)` URL with a
 /// host. Those are the only ways this fails: credentials and the resource
 /// name are resolved per request, not here.
 pub fn create_azure(
@@ -187,6 +193,11 @@ pub fn create_azure(
         .as_deref()
         .map(validate_base_url)
         .transpose()?;
+    let speech_base_url = settings
+        .speech_base_url
+        .as_deref()
+        .map(validate_base_url)
+        .transpose()?;
     let info = base_url_info(base_url.as_deref())?;
     let fetch = settings
         .token_provider
@@ -198,6 +209,15 @@ pub fn create_azure(
             }) as FetchFunction
         })
         .or(settings.fetch);
+    let speech_headers = match &settings.token_provider {
+        Some(_) => Resolvable::Value(settings.headers.clone().unwrap_or_default()),
+        None => credential_headers(
+            Credential::explicit_or_env(settings.api_key.clone(), API_KEY_ENV_VAR, "Azure Speech"),
+            AuthScheme::Header("Ocp-Apim-Subscription-Key"),
+            Vec::new(),
+            settings.headers.clone(),
+        ),
+    };
     let headers = match settings.token_provider {
         Some(_) => Resolvable::Value(settings.headers.unwrap_or_default()),
         None => credential_headers(
@@ -210,6 +230,11 @@ pub fn create_azure(
     Ok(AzureOpenAIProvider {
         resource_name: settings.resource_name,
         base_url,
+        speech_base_url,
+        speech_headers: crate::openai::config::headers_with_user_agent(
+            speech_headers,
+            "ai-sdk-azure",
+        ),
         info,
         api_version: settings.api_version,
         use_deployment_based_urls: settings.use_deployment_based_urls,
@@ -267,6 +292,8 @@ pub fn azure() -> &'static AzureOpenAIProvider {
 pub struct AzureOpenAIProvider {
     resource_name: Option<String>,
     base_url: Option<String>,
+    speech_base_url: Option<String>,
+    speech_headers: HeadersFn,
     info: BaseUrlInfo,
     api_version: Option<String>,
     use_deployment_based_urls: bool,
@@ -431,13 +458,38 @@ impl AzureOpenAIProvider {
         )
     }
 
-    /// A transcription model for a deployment; `provider()` is
-    /// `"azure.transcription"`.
+    /// A transcription model; `provider()` is `"azure.transcription"`.
+    /// The Azure Speech API is selected per call by `providerOptions.azure.api`
+    /// and defaults to Speech for the MAI transcription model, OpenAI otherwise.
     #[must_use]
-    pub fn transcription(&self, deployment: &str) -> OpenAITranscriptionModel {
-        OpenAITranscriptionModel::from_config(
+    pub fn transcription(&self, deployment: &str) -> AzureTranscriptionModel {
+        let mut speech = self.model_config("azure.transcription", deployment);
+        let rules = self.url_rules();
+        let base_url = self.speech_base_url.clone();
+        speech.url = Arc::new(move |_| {
+            let prefix = match &base_url {
+                Some(prefix) => without_trailing_slash(prefix),
+                None => {
+                    // Reuse the resource-name validation and lazy environment lookup.
+                    let mut rules = rules.clone();
+                    rules.base_url = None;
+                    rules
+                        .prefix()?
+                        .replace(".openai.azure.com/openai", ".cognitiveservices.azure.com")
+                }
+            };
+            Ok(format!(
+                "{prefix}/speechtotext/transcriptions:transcribe?api-version=2025-10-15"
+            ))
+        });
+        speech.headers = self.speech_headers.clone();
+        AzureTranscriptionModel::new(
             deployment.to_string(),
-            self.model_config("azure.transcription", deployment),
+            OpenAITranscriptionModel::from_config(
+                deployment.to_string(),
+                self.model_config("azure.transcription", deployment),
+            ),
+            speech,
         )
     }
 
