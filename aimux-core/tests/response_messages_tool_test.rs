@@ -83,8 +83,7 @@ impl LanguageModel for ProviderTranscriptModel {
             warnings: vec![],
             provider_metadata: None,
             response: Default::default(),
-            request_body: None,
-            response_headers: None,
+            request: None,
         })
     }
 
@@ -145,8 +144,8 @@ impl LanguageModel for ProviderTranscriptModel {
         ];
         Ok(StreamResult {
             stream: Box::pin(futures::stream::iter(parts)),
-            request_body: None,
-            response_headers: None,
+            request: None,
+            response: None,
         })
     }
 }
@@ -258,8 +257,7 @@ impl LanguageModel for InvalidToolInputModel {
             warnings: vec![],
             provider_metadata: None,
             response: Default::default(),
-            request_body: None,
-            response_headers: None,
+            request: None,
         })
     }
 
@@ -312,8 +310,7 @@ impl LanguageModel for EmptyModel {
             warnings: vec![],
             provider_metadata: None,
             response: Default::default(),
-            request_body: None,
-            response_headers: None,
+            request: None,
         })
     }
 
@@ -365,8 +362,7 @@ impl LanguageModel for ContentMetadataModel {
             warnings: vec![],
             provider_metadata: None,
             response: Default::default(),
-            request_body: None,
-            response_headers: None,
+            request: None,
         })
     }
 
@@ -428,8 +424,8 @@ impl LanguageModel for ContentMetadataModel {
         ];
         Ok(StreamResult {
             stream: Box::pin(futures::stream::iter(parts)),
-            request_body: None,
-            response_headers: None,
+            request: None,
+            response: None,
         })
     }
 }

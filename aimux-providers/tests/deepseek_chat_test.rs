@@ -282,7 +282,10 @@ async fn should_send_correct_text_request_body() {
     options.top_p = Some(0.3);
 
     let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
 
     assert_eq!(body["model"], json!("deepseek-chat"));
     assert_eq!(
@@ -351,7 +354,10 @@ async fn should_send_correct_tool_call_request_body() {
     options.provider_options = deepseek_opts(json!({ "thinking": { "type": "enabled" } }));
 
     let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
 
     assert_eq!(body["model"], json!("deepseek-reasoner"));
     assert!(
@@ -449,7 +455,10 @@ async fn should_send_json_response_format_without_schema() {
     options.provider_options = deepseek_opts(json!({ "thinking": { "type": "enabled" } }));
 
     let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
 
     assert_eq!(body["response_format"], json!({ "type": "json_object" }));
     // DeepSeek does not inject a "Return JSON." system message.
@@ -503,7 +512,10 @@ async fn should_send_json_response_format_with_schema() {
     options.provider_options = deepseek_opts(json!({ "thinking": { "type": "enabled" } }));
 
     let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
 
     // With a schema, deepseek uses json_schema format (via OpenAI shared converter).
     assert_eq!(body["response_format"]["type"], "json_schema");
@@ -578,7 +590,10 @@ async fn should_send_correct_stream_request_body() {
     options.top_p = Some(0.3);
 
     let result = model.do_stream(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
 
     assert_eq!(body["model"], json!("deepseek-chat"));
     assert_eq!(body["stream"], json!(true));

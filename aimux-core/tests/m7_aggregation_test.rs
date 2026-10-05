@@ -74,8 +74,7 @@ impl LanguageModel for RichModel {
             warnings: vec![],
             provider_metadata: None,
             response: Default::default(),
-            request_body: None,
-            response_headers: None,
+            request: None,
         })
     }
     async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
@@ -108,8 +107,7 @@ impl LanguageModel for PlainModel {
             warnings: vec![],
             provider_metadata: None,
             response: Default::default(),
-            request_body: None,
-            response_headers: None,
+            request: None,
         })
     }
     async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
@@ -308,8 +306,7 @@ impl LanguageModel for BedrockModel {
             warnings: vec![],
             provider_metadata: None,
             response: Default::default(),
-            request_body: None,
-            response_headers: None,
+            request: None,
         })
     }
     async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {

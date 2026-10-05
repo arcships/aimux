@@ -1585,7 +1585,10 @@ mod do_generate {
             .await
             .unwrap();
 
-        let request_body = result.request_body.expect("should have request body");
+        let request_body = result
+            .request
+            .and_then(|request| request.body)
+            .expect("should have request body");
         assert_eq!(request_body["model"], "gemma2-9b-it");
         assert_eq!(request_body["messages"][0]["content"], "Hello");
     }

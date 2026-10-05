@@ -151,8 +151,8 @@ impl MoaModel {
                     usage = add_usage(usage, &res.usage);
                     let mid = res
                         .response
-                        .model_id
-                        .clone()
+                        .as_ref()
+                        .and_then(|response| response.model_id.clone())
                         .unwrap_or_else(|| format!("ref-{i}"));
                     texts.push((mid, extract_text(&res.content)));
                 }
@@ -295,14 +295,14 @@ impl LanguageModel for MoaModel {
             }
         };
 
-        // RFC-0022 §3.4: return None for request_body/response_headers. The
+        // RFC-0022 §3.4: return None for request/response. The
         // aggregator's request body is a synthesized prompt (references
         // spliced in), not the user's original — exposing it would mislead
         // cache probing (RFC-0015 fingerprinting).
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: None,
-            response_headers: None,
+            request: None,
+            response: None,
         })
     }
 }
@@ -359,12 +359,14 @@ mod tests {
                 usage: self.usage.clone(),
                 warnings: vec![],
                 provider_metadata: None,
-                response: crate::types::ResponseMetadata {
-                    model_id: Some(self.name.into()),
-                    ..Default::default()
-                },
-                request_body: None,
-                response_headers: None,
+                response: Some(
+                    crate::types::ResponseMetadata {
+                        model_id: Some(self.name.into()),
+                        ..Default::default()
+                    }
+                    .into(),
+                ),
+                request: None,
             })
         }
         async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
@@ -393,8 +395,8 @@ mod tests {
             ];
             Ok(StreamResult {
                 stream: Box::pin(stream::iter(parts)),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }
@@ -683,8 +685,8 @@ mod tests {
             ];
             Ok(StreamResult {
                 stream: Box::pin(stream::iter(parts)),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }
@@ -756,8 +758,8 @@ mod tests {
                         provider_metadata: None,
                     }),
                 ])),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }
@@ -926,8 +928,8 @@ mod tests {
             ];
             Ok(StreamResult {
                 stream: Box::pin(stream::iter(parts)),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }

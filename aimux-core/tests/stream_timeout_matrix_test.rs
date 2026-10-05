@@ -65,8 +65,8 @@ impl LanguageModel for ProbeModel {
                 }
                 futures::future::pending::<()>().await;
             }),
-            request_body: None,
-            response_headers: None,
+            request: None,
+            response: None,
         })
     }
 }

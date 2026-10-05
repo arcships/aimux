@@ -121,7 +121,7 @@ impl LanguageModel for XaiResponsesModel {
 
         let response_headers = resp.response_headers;
 
-        let _raw_value = resp.raw_value.unwrap_or(Value::Null);
+        let response_value = resp.raw_value.unwrap_or(Value::Null);
         let data = resp.value;
 
         let mut content: Vec<GenerateContent> = Vec::new();
@@ -350,13 +350,14 @@ impl LanguageModel for XaiResponsesModel {
             usage,
             warnings: request_result.warnings,
             provider_metadata,
-            response: ResponseMetadata {
+            response: Some(aimux_core::shared::ResponseInfo {
                 id: data.id,
                 timestamp,
                 model_id: data.model,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+                headers: Some(response_headers),
+                body: Some(response_value),
+            }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -935,8 +936,10 @@ impl LanguageModel for XaiResponsesModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

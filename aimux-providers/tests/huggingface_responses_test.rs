@@ -327,7 +327,10 @@ async fn should_send_model_id_settings_and_input() {
     options.max_output_tokens = Some(100);
 
     let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
 
     assert_eq!(body["model"], json!("deepseek-ai/DeepSeek-V3-0324"));
     assert_eq!(body["temperature"], json!(0.5));
@@ -820,7 +823,10 @@ async fn should_send_correct_streaming_request() {
     options.temperature = Some(0.7);
 
     let result = model.do_stream(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
 
     assert_eq!(body["model"], json!("deepseek-ai/DeepSeek-V3-0324"));
     assert_eq!(body["temperature"], json!(0.7));
@@ -894,7 +900,10 @@ async fn should_convert_user_messages_with_images() {
         .do_generate(&default_options(prompt))
         .await
         .expect("ok");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
 
     assert_eq!(
         body["input"][0]["content"],
@@ -963,7 +972,10 @@ async fn should_handle_assistant_messages() {
         .do_generate(&default_options(prompt))
         .await
         .expect("ok");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
 
     assert_eq!(
         body["input"],
@@ -1308,7 +1320,10 @@ async fn should_send_text_format_for_structured_output() {
     });
 
     let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
 
     assert_eq!(
         body["text"]["format"],
@@ -1373,7 +1388,10 @@ async fn should_handle_structured_output_with_custom_name_and_description() {
     });
 
     let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
 
     assert_eq!(body["text"]["format"]["name"], json!("person_profile"));
     assert_eq!(
@@ -1652,7 +1670,10 @@ async fn should_send_provider_specific_options() {
     });
 
     let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
 
     assert_eq!(body["metadata"], json!({ "key": "value" }));
     assert_eq!(body["instructions"], json!("Be concise"));
@@ -1711,7 +1732,10 @@ async fn should_prepare_tools_correctly() {
     };
 
     let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
 
     assert_eq!(
         body["tools"],
@@ -1772,7 +1796,10 @@ async fn should_handle_auto_and_required_tool_choices() {
     options.tool_choice = ToolChoice::Auto;
 
     let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
     assert_eq!(body["tool_choice"], json!("auto"));
 
     // Test required
@@ -1784,7 +1811,10 @@ async fn should_handle_auto_and_required_tool_choices() {
     options.tool_choice = ToolChoice::Required;
 
     let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
     assert_eq!(body["tool_choice"], json!("required"));
 }
 

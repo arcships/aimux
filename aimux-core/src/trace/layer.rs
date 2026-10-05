@@ -531,10 +531,19 @@ impl LanguageModel for TraceLayer {
         let ctx = self.make_record_ctx(options, None, None, Arc::new(AtomicU64::new(u64::MAX)));
         match self.inner.do_generate(options).await {
             Ok(result) => {
-                let request_id = result.response.id.clone();
+                let request_id = result
+                    .response
+                    .as_ref()
+                    .and_then(|response| response.id.clone());
                 let mut rec_ctx = ctx;
-                rec_ctx.request_body = result.request_body.clone();
-                rec_ctx.response_headers = result.response_headers.clone();
+                rec_ctx.request_body = result
+                    .request
+                    .as_ref()
+                    .and_then(|request| request.body.clone());
+                rec_ctx.response_headers = result
+                    .response
+                    .as_ref()
+                    .and_then(|response| response.headers.clone());
                 rec_ctx.record(&result.usage, None, request_id);
                 Ok(result)
             }
@@ -558,8 +567,14 @@ impl LanguageModel for TraceLayer {
         };
 
         let rec_ctx = Arc::new(RecordCtx {
-            request_body: result.request_body.clone(),
-            response_headers: result.response_headers.clone(),
+            request_body: result
+                .request
+                .as_ref()
+                .and_then(|request| request.body.clone()),
+            response_headers: result
+                .response
+                .as_ref()
+                .and_then(|response| response.headers.clone()),
             ..ctx
         });
         let ttft_obs = ttft.clone();
@@ -595,8 +610,8 @@ impl LanguageModel for TraceLayer {
 
         Ok(StreamResult {
             stream: Box::pin(guarded),
-            request_body: result.request_body,
-            response_headers: result.response_headers,
+            request: result.request,
+            response: result.response,
         })
     }
 }

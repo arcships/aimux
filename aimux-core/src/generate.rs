@@ -32,6 +32,25 @@ use crate::tool::Tool;
 use crate::types::{FinishReason, ProviderMetadata, ReasoningEffort, Usage, Warning};
 use crate::{AbortSignal, retry, timeout};
 
+fn response_metadata_defaults(
+    mut metadata: crate::types::ResponseMetadata,
+    model_id: &str,
+) -> crate::types::ResponseMetadata {
+    metadata.id.get_or_insert_with(|| {
+        use rand::Rng;
+        rand::thread_rng()
+            .sample_iter(rand::distributions::Alphanumeric)
+            .take(16)
+            .map(char::from)
+            .collect()
+    });
+    metadata
+        .timestamp
+        .get_or_insert_with(crate::util::rfc3339_now);
+    metadata.model_id.get_or_insert_with(|| model_id.to_owned());
+    metadata
+}
+
 /// Matches the AI SDK's `isOutputChunk`: only chunks containing model output
 /// start or reset the first/chunk output timers.
 fn is_output_chunk<C>(part: &StreamPart<C>) -> bool {
@@ -155,6 +174,10 @@ pub struct GenerateTextResult {
     /// Warnings from the provider.
     pub warnings: Vec<Warning>,
     /// Raw provider result (for advanced use).
+    #[serde(with = "user_raw_result")]
+    #[ts(
+        type = "Omit<import('./GenerateResult').GenerateResult, 'request' | 'response'> & { response: ResponseMetadata, request_body: JsonValue | null, response_headers: { [key: string]: string } | null }"
+    )]
     pub raw: GenerateResult,
     // ── M7: top-level aggregation (extracted from `raw.content`) ──
     /// Reasoning / thinking segments from the model.
@@ -189,6 +212,73 @@ pub struct GenerateTextResult {
     /// default), `total_usage` equals `usage`. Provided for AI SDK parity.
     #[serde(default)]
     pub total_usage: Usage,
+}
+
+// Keep the established user-facing JSON while the provider result uses V4 envelopes.
+mod user_raw_result {
+    use super::GenerateResult;
+    use serde::{Deserialize, Serialize};
+    use serde_json::{Map, Value, json};
+
+    pub fn serialize<S: serde::Serializer>(
+        result: &GenerateResult,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let Value::Object(mut fields) =
+            serde_json::to_value(result).map_err(serde::ser::Error::custom)?
+        else {
+            return Err(serde::ser::Error::custom("expected a result object"));
+        };
+        fields.remove("request");
+        fields.insert(
+            "request_body".into(),
+            json!(
+                result
+                    .request
+                    .as_ref()
+                    .and_then(|request| request.body.as_ref())
+            ),
+        );
+        let response = result.response.as_ref();
+        fields.insert(
+            "response_headers".into(),
+            json!(response.and_then(|response| response.headers.as_ref())),
+        );
+        fields.insert(
+            "response".into(),
+            json!({
+                "id": response.and_then(|response| response.id.as_ref()),
+                "timestamp": response.and_then(|response| response.timestamp.as_ref()),
+                "model_id": response.and_then(|response| response.model_id.as_ref()),
+            }),
+        );
+        fields.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<GenerateResult, D::Error> {
+        let mut fields = Map::<String, Value>::deserialize(deserializer)?;
+        let body = fields.remove("request_body").unwrap_or(Value::Null);
+        fields.insert(
+            "request".into(),
+            if body.is_null() {
+                Value::Null
+            } else {
+                json!({ "body": body })
+            },
+        );
+        let headers = fields.remove("response_headers").unwrap_or(Value::Null);
+        let response = fields.entry("response").or_insert_with(|| json!({}));
+        if response.is_null() {
+            *response = json!({});
+        }
+        response
+            .as_object_mut()
+            .ok_or_else(|| serde::de::Error::custom("expected a response object"))?
+            .insert("headers".into(), headers);
+        serde_json::from_value(Value::Object(fields)).map_err(serde::de::Error::custom)
+    }
 }
 
 /// Result of `generate_object` (user-facing, M12). The parsed JSON object plus
@@ -567,7 +657,7 @@ pub async fn generate_text(
         }
         do_generate_with_logging(model, &call_options, span.clone(), started)
     });
-    let result = match timeout::run(operation, abort_signal.as_ref(), operation_timeout).await {
+    let mut result = match timeout::run(operation, abort_signal.as_ref(), operation_timeout).await {
         Ok(r) => r,
         Err(e) => {
             if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
@@ -576,6 +666,19 @@ pub async fn generate_text(
             return Err(e);
         }
     };
+    let response_info = result.response.get_or_insert_with(Default::default);
+    let response = response_metadata_defaults(
+        crate::types::ResponseMetadata {
+            id: response_info.id.take(),
+            timestamp: response_info.timestamp.take(),
+            model_id: response_info.model_id.take(),
+        },
+        model.model_id(),
+    );
+    response_info.id.clone_from(&response.id);
+    response_info.timestamp.clone_from(&response.timestamp);
+    response_info.model_id.clone_from(&response.model_id);
+
     // 4. Extract text, tool calls, reasoning, sources, files from content.
     let mut text = String::new();
     let mut tool_calls = Vec::new();
@@ -636,7 +739,6 @@ pub async fn generate_text(
     // Extract fields before moving `result` into `raw`.
     let raw_finish_reason = result.finish_reason.raw.clone();
     let provider_metadata = result.provider_metadata.clone();
-    let response = result.response.clone();
     let usage = result.usage.clone();
 
     Ok(GenerateTextResult {
@@ -719,7 +821,7 @@ pub async fn generate_object(
         Some(text_result.reasoning_text.clone())
     };
     let provider_metadata = text_result.raw.provider_metadata.clone();
-    let response = text_result.raw.response.clone();
+    let response = text_result.response.clone();
     Ok(GenerateObjectResult {
         object,
         finish_reason,
@@ -874,9 +976,11 @@ pub async fn stream_text(
     // 解构避免部分 move(result 各字段去向不同)。
     let StreamResult {
         stream,
-        request_body,
-        response_headers,
+        request,
+        response,
     } = result;
+    let request_body = request.and_then(|request| request.body);
+    let response_headers = response.and_then(|response| response.headers);
 
     // The consumption phase keeps observing the same deadlines: the
     // first-chunk budget armed at operation start continues until the first
@@ -973,10 +1077,27 @@ pub async fn stream_text(
         })
     };
     let mut stream = stream;
-    let stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>> =
-        Box::pin(async_stream::stream! {
+    let mut response_metadata =
+        response_metadata_defaults(crate::types::ResponseMetadata::default(), model.model_id());
+    let stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>> = Box::pin(
+        async_stream::stream! {
+            let mut sent_response_metadata = false;
             while let Some(item) = stream.next().await {
                 match item {
+                    Ok(StreamPart::ResponseMetadata(metadata)) => {
+                        if metadata.id.is_some() { response_metadata.id = metadata.id; }
+                        if metadata.timestamp.is_some() { response_metadata.timestamp = metadata.timestamp; }
+                        if metadata.model_id.is_some() { response_metadata.model_id = metadata.model_id; }
+                        sent_response_metadata = true;
+                        yield Ok(StreamPart::ResponseMetadata(response_metadata.clone()));
+                    }
+                    Ok(part @ StreamPart::Finish { .. }) => {
+                        if !sent_response_metadata {
+                            sent_response_metadata = true;
+                            yield Ok(StreamPart::ResponseMetadata(response_metadata.clone()));
+                        }
+                        yield Ok(part.map_tool_call(|_| unreachable!("finish has no tool call")));
+                    }
                     Ok(StreamPart::ToolCall(raw)) => {
                         let parsed = parse_tool_call(
                             raw,
@@ -988,10 +1109,18 @@ pub async fn stream_text(
                         yield Ok(StreamPart::ToolCall(parsed));
                     }
                     Ok(part) => yield Ok(part.map_tool_call(|_| unreachable!("matched above"))),
-                    Err(error) => yield Err(error),
+                    Err(error) => {
+                        let terminal = !error.is_recoverable_stream_error();
+                        yield Err(error);
+                        if terminal { return; }
+                    }
                 }
             }
-        });
+            if !sent_response_metadata {
+                yield Ok(StreamPart::ResponseMetadata(response_metadata));
+            }
+        },
+    );
     // 录制开启时才包装(终结时写 outcome + 传输封闭);关闭时零成本透传。
     let stream = crate::recording::RecordingOutcomeStream::new(
         stream,
@@ -1270,8 +1399,8 @@ mod operation_retry_tests {
                     delta: "hello".into(),
                     provider_metadata: None,
                 })])),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             }
         }
 
@@ -1288,8 +1417,8 @@ mod operation_retry_tests {
                 stream: Box::pin(
                     futures::stream::iter([Ok(finish)]).chain(futures::stream::pending()),
                 ),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             }
         }
 
@@ -1312,8 +1441,8 @@ mod operation_retry_tests {
                     ])
                     .chain(futures::stream::pending()),
                 ),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             }
         }
 
@@ -1327,8 +1456,8 @@ mod operation_retry_tests {
                         provider_metadata: None,
                     }),
                 ])),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             }
         }
     }
@@ -1368,8 +1497,8 @@ mod operation_retry_tests {
                         })))])
                         .chain(futures::stream::pending()),
                     ),
-                    request_body: None,
-                    response_headers: None,
+                    request: None,
+                    response: None,
                 }),
                 StreamBehavior::NeverReturns => std::future::pending().await,
                 StreamBehavior::RetryableFirstError if attempt == 0 => {
@@ -1394,6 +1523,10 @@ mod operation_retry_tests {
         let mut result = stream_text(&model, "hello", retry_options()).await.unwrap();
         let first = result.stream.next().await.unwrap().unwrap();
         assert!(matches!(first, StreamPart::TextDelta { delta, .. } if delta == "hello"));
+        assert!(
+            matches!(result.stream.next().await.unwrap().unwrap(), StreamPart::ResponseMetadata(metadata)
+            if metadata.id.is_some() && metadata.timestamp.is_some() && metadata.model_id.as_deref() == Some(model.model_id()))
+        );
         assert!(result.stream.next().await.is_none());
     }
 
@@ -1419,6 +1552,10 @@ mod operation_retry_tests {
         assert!(matches!(
             result.stream.next().await.unwrap().unwrap(),
             StreamPart::TextDelta { delta, .. } if delta == "hello"
+        ));
+        assert!(matches!(
+            result.stream.next().await.unwrap().unwrap(),
+            StreamPart::ResponseMetadata(_)
         ));
         assert!(result.stream.next().await.is_none());
     }
@@ -1457,6 +1594,10 @@ mod operation_retry_tests {
 
         assert!(matches!(
             result.stream.next().await.unwrap().unwrap(),
+            StreamPart::ResponseMetadata(_)
+        ));
+        assert!(matches!(
+            result.stream.next().await.unwrap().unwrap(),
             StreamPart::Finish { .. }
         ));
         tokio::time::sleep(std::time::Duration::from_millis(60)).await;
@@ -1477,6 +1618,10 @@ mod operation_retry_tests {
         assert!(matches!(
             result.stream.next().await.unwrap().unwrap(),
             StreamPart::Error { .. }
+        ));
+        assert!(matches!(
+            result.stream.next().await.unwrap().unwrap(),
+            StreamPart::ResponseMetadata(_)
         ));
         assert!(matches!(
             result.stream.next().await.unwrap().unwrap(),

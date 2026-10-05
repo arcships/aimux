@@ -468,8 +468,9 @@ async fn exposes_response_headers() {
         .expect("should succeed");
 
     let headers = result
-        .response_headers
+        .response
         .as_ref()
+        .and_then(|response| response.headers.as_ref())
         .expect("response_headers should be Some");
     assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }

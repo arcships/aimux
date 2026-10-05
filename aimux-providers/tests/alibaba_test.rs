@@ -450,7 +450,10 @@ async fn top_level_reasoning_maps_to_reasoning_effort() {
     options.reasoning = Some(ReasoningEffort::High);
 
     let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
+    let body = result
+        .request
+        .and_then(|request| request.body)
+        .expect("body");
     assert_eq!(body["reasoning_effort"], json!("high"));
 }
 
@@ -660,8 +663,9 @@ async fn exposes_response_headers() {
         .expect("should succeed");
 
     let headers = result
-        .response_headers
+        .response
         .as_ref()
+        .and_then(|response| response.headers.as_ref())
         .expect("response_headers should be Some");
     assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }

@@ -40,8 +40,7 @@ impl LanguageModel for JsonModel {
             warnings: vec![],
             provider_metadata: None,
             response: Default::default(),
-            request_body: None,
-            response_headers: None,
+            request: None,
         })
     }
     async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
@@ -74,8 +73,7 @@ impl LanguageModel for NonJsonModel {
             warnings: vec![],
             provider_metadata: None,
             response: Default::default(),
-            request_body: None,
-            response_headers: None,
+            request: None,
         })
     }
     async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
@@ -151,8 +149,8 @@ impl LanguageModel for StreamModel {
         ];
         Ok(StreamResult {
             stream: Box::pin(stream::iter(parts)),
-            request_body: None,
-            response_headers: None,
+            request: None,
+            response: None,
         })
     }
 }
@@ -311,8 +309,8 @@ impl LanguageModel for MetadataOnlyReasoningModel {
         ];
         Ok(StreamResult {
             stream: Box::pin(stream::iter(parts)),
-            request_body: None,
-            response_headers: None,
+            request: None,
+            response: None,
         })
     }
 }

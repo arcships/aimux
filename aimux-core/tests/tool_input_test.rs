@@ -362,8 +362,7 @@ impl LanguageModel for RawToolModel {
             warnings: vec![],
             provider_metadata: None,
             response: Default::default(),
-            request_body: None,
-            response_headers: None,
+            request: None,
         })
     }
 
@@ -418,8 +417,8 @@ impl LanguageModel for RawToolModel {
         ]);
         Ok(StreamResult {
             stream: Box::pin(futures::stream::iter(parts)),
-            request_body: None,
-            response_headers: None,
+            request: None,
+            response: None,
         })
     }
 }
