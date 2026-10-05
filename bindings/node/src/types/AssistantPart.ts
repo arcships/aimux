@@ -10,4 +10,4 @@ import type { ToolResultPart } from "./ToolResultPart";
 /**
  * Parts allowed in an assistant message.
  */
-export type AssistantPart = { "type": "text" } & TextPart | { "type": "file" } & FilePart | { "type": "reasoning" } & LanguageModelReasoningPart | { "type": "reasoning_file" } & ReasoningFilePart | { "type": "custom" } & CustomPart | { "type": "tool_call" } & ToolCallPart | { "type": "tool_result" } & ToolResultPart;
+export type AssistantPart = { "type": "text" } & TextPart | { "type": "file" } & FilePart | { "type": "reasoning" } & LanguageModelReasoningPart | { "type": "reasoning-file" } & ReasoningFilePart | { "type": "custom" } & CustomPart | { "type": "tool-call" } & ToolCallPart | { "type": "tool-result" } & ToolResultPart;
