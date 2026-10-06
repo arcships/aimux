@@ -230,23 +230,31 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
         UserPart::Text(TextPart { text, .. }) => json!({ "type": "text", "text": text }),
         UserPart::File(file) => {
             use base64::Engine;
-            let is_image = file.media_type.split('/').next() == Some("image");
-            if !is_image && file.media_type != "application/pdf" {
-                return Err(AiMuxError::UnsupportedFunctionality(
-                    "Only images and PDF file parts are supported".to_string(),
-                ));
-            }
+            let is_image = get_top_level_media_type(&file.media_type) == "image";
             let url = match &file.data {
                 FileData::Data { data } => {
+                    let media_type = resolve_full_media_type(file)?;
+                    if !is_image && media_type != "application/pdf" {
+                        return Err(AiMuxError::UnsupportedFunctionality(
+                            "Only images and PDF file parts are supported".to_string(),
+                        ));
+                    }
                     let b64 = match data {
                         FileBytes::Binary(bytes) => {
                             base64::engine::general_purpose::STANDARD.encode(bytes)
                         }
                         FileBytes::Base64(data) => data.clone(),
                     };
-                    format!("data:{};base64,{}", resolve_full_media_type(file)?, b64)
+                    format!("data:{media_type};base64,{b64}")
                 }
-                FileData::Url { url, .. } => url.clone(),
+                FileData::Url { url, .. } => {
+                    if !is_image && file.media_type != "application/pdf" {
+                        return Err(AiMuxError::UnsupportedFunctionality(
+                            "Only images and PDF file parts are supported".to_string(),
+                        ));
+                    }
+                    url.clone()
+                }
                 FileData::Reference { .. } => {
                     return Err(AiMuxError::UnsupportedFunctionality(
                         "file parts with provider references".into(),
@@ -258,7 +266,7 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
                     ));
                 }
             };
-            if get_top_level_media_type(&file.media_type) == "image" {
+            if is_image {
                 json!({ "type": "image_url", "image_url": url })
             } else {
                 json!({ "type": "document_url", "document_url": url })
@@ -278,6 +286,27 @@ pub fn build_request_body(
     options: &CallOptions,
     stream: bool,
 ) -> Result<Value, AiMuxError> {
+    let provider_options = options
+        .provider_options
+        .as_ref()
+        .and_then(|namespaces| namespaces.get("mistral"))
+        .map(|namespace| {
+            crate::openai::convert::parse_option_fields(namespace, "mistral", |key, value| {
+                let valid = match key {
+                    "safePrompt" | "structuredOutputs" | "strictJsonSchema"
+                    | "parallelToolCalls" => value.is_boolean(),
+                    "documentImageLimit" | "documentPageLimit" => value.is_number(),
+                    "promptCacheKey" => value.is_string(),
+                    "reasoningEffort" => value
+                        .as_str()
+                        .is_some_and(|value| matches!(value, "high" | "none")),
+                    _ => return None,
+                };
+                Some(if valid { Ok(value.clone()) } else { Err(()) })
+            })
+        })
+        .transpose()?
+        .unwrap_or_default();
     let messages = convert_prompt_to_mistral_messages(&options.prompt)?;
 
     let mut body = json!({
@@ -289,14 +318,8 @@ pub fn build_request_body(
         body["stream"] = json!(true);
     }
 
-    if let Some(safe_prompt) = options
-        .provider_options
-        .as_ref()
-        .and_then(|namespaces| namespaces.get("mistral"))
-        .and_then(|options| options.get("safePrompt"))
-        .and_then(Value::as_bool)
-    {
-        body["safe_prompt"] = json!(safe_prompt);
+    if let Some(safe_prompt) = provider_options.get("safePrompt") {
+        body["safe_prompt"] = safe_prompt.clone();
     }
 
     if let Some(max_tokens) = options.max_output_tokens {

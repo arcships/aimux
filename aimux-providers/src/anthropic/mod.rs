@@ -125,6 +125,8 @@ pub struct AnthropicProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
+    /// Generator for source IDs. Defaults to the provider utility generator.
+    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl std::fmt::Debug for AnthropicProviderSettings {
@@ -140,6 +142,7 @@ impl std::fmt::Debug for AnthropicProviderSettings {
             )
             .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
+            .field("generate_id", &self.generate_id.is_some())
             .finish()
     }
 }
@@ -195,6 +198,7 @@ pub fn create_anthropic(
             "4.0.68",
         ),
         fetch: settings.fetch,
+        generate_id: settings.generate_id,
         supported_urls: supported_urls(),
     })
 }
@@ -215,6 +219,7 @@ pub struct AnthropicProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
+    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
     supported_urls: SupportedUrls,
 }
 
@@ -250,6 +255,7 @@ impl AnthropicProvider {
             model_id.to_string(),
             self.model_config(self.name.clone()),
         )
+        .with_generate_id(self.generate_id.clone())
     }
 
     /// The files interface; `provider()` is the provider name.
