@@ -286,7 +286,7 @@ pub fn create_xai(settings: XAIProviderSettings) -> Result<XAIProvider, AiMuxErr
                 Vec::new(),
                 settings.headers,
             ),
-            "xai",
+            options::NAMESPACE,
             "5.0.12",
         ),
         fetch: settings.fetch,

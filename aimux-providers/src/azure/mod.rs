@@ -208,7 +208,9 @@ pub fn create_azure(
         api_version: settings.api_version,
         use_deployment_based_urls: settings.use_deployment_based_urls,
         headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            headers, "azure", "4.0.84",
+            headers,
+            options::NAMESPACE,
+            "4.0.84",
         ),
         fetch: settings.fetch,
         token_provider,
@@ -352,6 +354,7 @@ impl AzureOpenAIProvider {
             supported_urls: aimux_core::language_model::SupportedUrls::default(),
             transform_request_body: self.transform_request_body.clone(),
             responses: ResponsesProfile::default(),
+            chat_options: options::CHAT_OPTIONS,
         }
     }
 

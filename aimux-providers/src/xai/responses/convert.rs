@@ -597,9 +597,11 @@ pub fn build_responses_request_body(
         .as_ref()
         .map(|namespaces| {
             let mut namespaces = namespaces.clone();
-            if let Some(raw) = namespaces.get("xai") {
-                let parsed =
-                    crate::openai::convert::parse_option_fields(raw, "xai", |key, value| {
+            if let Some(raw) = namespaces.get(crate::xai::options::NAMESPACE) {
+                let parsed = crate::openai::convert::parse_option_fields(
+                    raw,
+                    crate::xai::options::NAMESPACE,
+                    |key, value| {
                         let valid = match key {
                             "reasoningEffort" => value.as_str().is_some_and(|s| {
                                 matches!(s, "none" | "low" | "medium" | "high" | "xhigh")
@@ -640,8 +642,9 @@ pub fn build_responses_request_body(
                             _ => return None,
                         };
                         Some(if valid { Ok(value.clone()) } else { Err(()) })
-                    })?;
-                namespaces.insert("xai".to_string(), parsed);
+                    },
+                )?;
+                namespaces.insert(crate::xai::options::NAMESPACE.to_string(), parsed);
             }
             Ok::<_, AiMuxError>(namespaces)
         })

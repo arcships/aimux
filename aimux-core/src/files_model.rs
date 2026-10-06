@@ -98,11 +98,6 @@ pub struct UploadFileResult {
 /// et al.
 #[async_trait]
 pub trait Files: Send + Sync {
-    /// Files interface specification version.
-    fn specification_version(&self) -> &str {
-        "v4"
-    }
-
     /// Provider ID.
     fn provider(&self) -> &str;
 

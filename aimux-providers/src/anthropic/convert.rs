@@ -32,7 +32,9 @@ use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Map, Value, json};
 
 use crate::anthropic::cache_control::CacheControlValidator;
-use crate::anthropic::options::{CANONICAL, anthropic_options, anthropic_options_in};
+use crate::anthropic::options::{
+    CANONICAL, PROVIDER_SKILL_TYPE, anthropic_options, anthropic_options_in,
+};
 use crate::anthropic::prepare_tools::{AnthropicTool, prepare_tools_for};
 use crate::anthropic::tool_name_mapping::ToolNameMapping;
 
@@ -1633,7 +1635,7 @@ pub struct RequestBodyResult {
 
 fn parse_anthropic_option_object(shape: &str, value: &Value) -> Result<Value, ()> {
     let object = value.as_object().ok_or(())?;
-    let parsed = crate::openai::convert::parse_option_fields(object, "anthropic", |key, value| {
+    let parsed = crate::openai::convert::parse_option_fields(object, CANONICAL, |key, value| {
         let kind = match (shape, key) {
             ("options", "sendReasoning" | "disableParallelToolUse" | "toolStreaming") => "bool",
             ("options", "structuredOutputMode") => "outputFormat|jsonTool|auto",
@@ -1684,7 +1686,7 @@ fn parse_anthropic_option_object(shape: &str, value: &Value) -> Result<Value, ()
             ("container", "skills") => "[]skill",
             ("skill", "type") => "anthropic|custom",
             ("skill", "skillId")
-                if object.get("type").and_then(Value::as_str) == Some("anthropic") =>
+                if object.get("type").and_then(Value::as_str) == Some(PROVIDER_SKILL_TYPE) =>
             {
                 "string"
             }

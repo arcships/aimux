@@ -16,3 +16,7 @@ pub(crate) const NAMESPACE: &str = "azure";
 /// metadata under `azure`.
 pub(crate) const RESPONSES: ResponsesNamespace =
     ResponsesNamespace::new(&[NAMESPACE, "openai"], NAMESPACE);
+
+/// Chat uses the same option schema as the OpenAI package.
+pub(crate) const CHAT_OPTIONS: crate::openai::options::ChatOptionsParser =
+    crate::openai::options::parse_chat_options;

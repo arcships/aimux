@@ -222,7 +222,7 @@ impl VideoModel for VertexVideoModel {
             videos,
             warnings: Vec::new(),
             provider_metadata: Some(
-                ["googleVertex", "google-vertex", "vertex"]
+                crate::google::options::VERTEX_VIDEO_METADATA_KEYS
                     .into_iter()
                     .map(|key| {
                         (
