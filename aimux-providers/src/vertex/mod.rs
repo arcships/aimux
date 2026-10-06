@@ -461,6 +461,7 @@ impl VertexProvider {
         Ok(GoogleSpeechModel::from_config(
             model_id.to_string(),
             self.model_config("google.vertex.speech", false),
+            crate::google::options::Namespace::Vertex,
         ))
     }
 

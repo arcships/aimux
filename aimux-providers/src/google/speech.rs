@@ -21,7 +21,7 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use super::options::{Namespace, google_metadata, no_null};
+use super::options::{GOOGLE, Namespace, google_metadata, no_null};
 use crate::shared::EndpointConfig;
 
 const DEFAULT_VOICE: &str = "Kore";
@@ -155,7 +155,7 @@ pub fn google_speech_input(
     provider_options: Option<&Value>,
 ) -> GoogleSpeechInput {
     let options = provider_options
-        .and_then(|options| options.get("google"))
+        .and_then(|options| options.get(GOOGLE))
         .filter(|google| google.is_object());
     let mut text = text.to_owned();
     if let Some(turns) = options
@@ -226,11 +226,20 @@ struct SpeechResponseBody {
 pub struct GoogleSpeechModel {
     model_id: String,
     config: EndpointConfig,
+    namespace: Namespace,
 }
 
 impl GoogleSpeechModel {
-    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
-        Self { model_id, config }
+    pub(crate) fn from_config(
+        model_id: String,
+        config: EndpointConfig,
+        namespace: Namespace,
+    ) -> Self {
+        Self {
+            model_id,
+            config,
+            namespace,
+        }
     }
 }
 
@@ -256,13 +265,8 @@ impl GoogleSpeechModel {
         let instructions = options.instructions.as_deref();
 
         // Vertex reads `googleVertex`/`vertex` (then `google`); every other
-        // Google provider reads `google`.
-        let namespace = if self.config.provider.contains("vertex") {
-            Namespace::Vertex
-        } else {
-            Namespace::Google
-        };
-        let raw = namespace.read(options.provider_options.as_ref());
+        // Google provider reads `google`. The constructor decides.
+        let raw = self.namespace.read(options.provider_options.as_ref());
         let google = parse_options(raw)?;
 
         // Older Gemini families require prompt-based directions. Default newer
@@ -273,7 +277,14 @@ impl GoogleSpeechModel {
         let input = google_speech_input(
             text,
             Some(voice),
-            raw.map(|raw| json!({"google": raw})).as_ref(),
+            raw.map(|raw| {
+                Value::Object(
+                    [(GOOGLE.to_string(), Value::Object(raw.clone()))]
+                        .into_iter()
+                        .collect(),
+                )
+            })
+            .as_ref(),
         );
         if input.uses_custom_voice {
             return Err(AiMuxError::InvalidArgument(
