@@ -770,10 +770,17 @@ fn apply_responses_provider_options(
     set("user", "user");
     set("instructions", "instructions");
     set("promptCacheKey", "prompt_cache_key");
-    set("promptCacheOptions", "prompt_cache_options");
     set("promptCacheRetention", "prompt_cache_retention");
     set("safetyIdentifier", "safety_identifier");
     set("truncation", "truncation");
+    if let Some(Value::Object(options)) = openai_option(provider_opts, "promptCacheOptions") {
+        body["prompt_cache_options"] = Value::Object(
+            options
+                .into_iter()
+                .filter(|(key, _)| matches!(key.as_str(), "mode" | "ttl"))
+                .collect(),
+        );
+    }
 }
 
 /// `service_tier` with model-capability validation.

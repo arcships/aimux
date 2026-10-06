@@ -4,6 +4,7 @@
 //! `mistral-prepare-tools.ts`, and `map-mistral-finish-reason.ts`.
 
 use aimux_core::content::ContentPart;
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
@@ -283,8 +284,35 @@ fn convert_part_to_mistral(part: &ContentPart) -> Value {
 // ── Request body ────────────────────────────────────────────────────────────
 
 /// Convert `CallOptions` to a Mistral request body.
-#[must_use]
-pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -> Value {
+///
+/// # Errors
+/// Returns a parse error for invalid Mistral provider options.
+pub fn build_request_body(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+) -> Result<Value, AiMuxError> {
+    let provider_options = options
+        .provider_options
+        .as_ref()
+        .and_then(|namespaces| namespaces.get("mistral"))
+        .map(|namespace| {
+            crate::openai::convert::parse_option_fields(namespace, "mistral", |key, value| {
+                let valid = match key {
+                    "safePrompt" | "structuredOutputs" | "strictJsonSchema"
+                    | "parallelToolCalls" => value.is_boolean(),
+                    "documentImageLimit" | "documentPageLimit" => value.is_number(),
+                    "promptCacheKey" => value.is_string(),
+                    "reasoningEffort" => value
+                        .as_str()
+                        .is_some_and(|value| matches!(value, "high" | "none")),
+                    _ => return None,
+                };
+                Some(if valid { Ok(value.clone()) } else { Err(()) })
+            })
+        })
+        .transpose()?
+        .unwrap_or_default();
     let messages = convert_prompt_to_mistral_messages(&options.prompt);
 
     let mut body = json!({
@@ -296,14 +324,8 @@ pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -
         body["stream"] = json!(true);
     }
 
-    if let Some(safe_prompt) = options
-        .provider_options
-        .as_ref()
-        .and_then(|namespaces| namespaces.get("mistral"))
-        .and_then(|options| options.get("safePrompt"))
-        .and_then(Value::as_bool)
-    {
-        body["safe_prompt"] = json!(safe_prompt);
+    if let Some(safe_prompt) = provider_options.get("safePrompt") {
+        body["safe_prompt"] = safe_prompt.clone();
     }
 
     if let Some(max_tokens) = options.max_output_tokens {
@@ -377,7 +399,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -
         }
     }
 
-    body
+    Ok(body)
 }
 
 /// Parse Mistral finish reason string into `FinishReason`.

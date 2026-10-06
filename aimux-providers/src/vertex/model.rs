@@ -181,7 +181,7 @@ impl LanguageModel for VertexModel {
             ));
         }
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let body = build_vertex_request_body(&self.model_id, options);
+        let body = build_vertex_request_body(&self.model_id, options)?;
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
@@ -277,7 +277,7 @@ impl LanguageModel for VertexModel {
             ));
         }
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let body = build_vertex_request_body(&self.model_id, options);
+        let body = build_vertex_request_body(&self.model_id, options)?;
         let headers = self.build_headers(options.headers.as_ref());
         let endpoint = self.stream_endpoint();
         let resp = aimux_provider_utils::post_json_to_api(

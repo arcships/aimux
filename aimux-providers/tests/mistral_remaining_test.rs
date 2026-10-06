@@ -715,14 +715,14 @@ fn parse_finish_reason_unknown() {
 #[test]
 fn build_request_body_stream_flag() {
     let options = default_options(test_prompt());
-    let body = build_request_body("mistral-small-latest", &options, true);
+    let body = build_request_body("mistral-small-latest", &options, true).unwrap();
     assert_eq!(body["stream"], json!(true));
 }
 
 #[test]
 fn build_request_body_no_stream_flag() {
     let options = default_options(test_prompt());
-    let body = build_request_body("mistral-small-latest", &options, false);
+    let body = build_request_body("mistral-small-latest", &options, false).unwrap();
     assert!(body.get("stream").is_none());
 }
 
@@ -736,7 +736,7 @@ fn build_request_body_tool_with_description() {
         tools: Some(vec![Tool::Function(tool)]),
         ..default_options(Vec::new())
     };
-    let body = build_request_body("mistral-small-latest", &options, false);
+    let body = build_request_body("mistral-small-latest", &options, false).unwrap();
     assert_eq!(body["tools"][0]["function"]["name"], json!("weather"));
     assert_eq!(
         body["tools"][0]["function"]["description"],
@@ -754,7 +754,7 @@ fn build_request_body_tool_with_strict() {
         tools: Some(vec![Tool::Function(tool)]),
         ..default_options(Vec::new())
     };
-    let body = build_request_body("mistral-small-latest", &options, false);
+    let body = build_request_body("mistral-small-latest", &options, false).unwrap();
     assert_eq!(body["tools"][0]["function"]["strict"], json!(true));
 }
 
@@ -771,7 +771,7 @@ fn build_request_body_json_schema_with_name_and_description() {
         }),
         ..default_options(Vec::new())
     };
-    let body = build_request_body("mistral-small-latest", &options, false);
+    let body = build_request_body("mistral-small-latest", &options, false).unwrap();
     assert_eq!(body["response_format"]["type"], json!("json_schema"));
     assert_eq!(body["response_format"]["json_schema"]["schema"], schema);
     assert_eq!(
@@ -800,7 +800,7 @@ fn build_request_body_json_object_when_no_schema() {
         }),
         ..default_options(Vec::new())
     };
-    let body = build_request_body("mistral-small-latest", &options, false);
+    let body = build_request_body("mistral-small-latest", &options, false).unwrap();
     assert_eq!(body["response_format"], json!({ "type": "json_object" }));
 }
 

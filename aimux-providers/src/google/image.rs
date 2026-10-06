@@ -283,13 +283,20 @@ impl GoogleImageModel {
             generation_config.insert("seed".to_string(), json!(seed));
         }
 
-        // Passthrough provider options (excluding googleSearch)
+        // Only declared generation-config options survive the upstream language schema.
         if let Some(google) = options.provider_options.get("google") {
-            for (key, value) in google {
-                if key == "googleSearch" || key == "personGeneration" || key == "aspectRatio" {
-                    continue;
+            for key in [
+                "audioTimestamp",
+                "thinkingConfig",
+                "mediaResolution",
+                "imageConfig",
+            ] {
+                if let Some(value) = google.get(key) {
+                    generation_config.insert(
+                        key.to_string(),
+                        crate::google::convert::image_generation_option(key, value),
+                    );
                 }
-                generation_config.insert(key.clone(), value.clone());
             }
         }
 

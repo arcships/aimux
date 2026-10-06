@@ -4,6 +4,7 @@
 //! `cohere-prepare-tools.ts`, and `map-cohere-finish-reason.ts`.
 
 use aimux_core::content::ContentPart;
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
@@ -309,12 +310,14 @@ pub struct RequestBodyResult {
 /// Mirrors the TS `getArgs` in `cohere-chat-language-model.ts`: assembles the
 /// model id, messages, documents, sampling settings, response format, tools,
 /// and the `thinking` config resolved from `reasoning` / provider options.
-#[must_use]
+///
+/// # Errors
+/// Returns a parse error for invalid Cohere provider options.
 pub fn build_request_body(
     model_id: &str,
     options: &CallOptions,
     stream: bool,
-) -> RequestBodyResult {
+) -> Result<RequestBodyResult, AiMuxError> {
     let converted = convert_prompt_to_cohere(&options.prompt);
     let mut warnings: Vec<Warning> = Vec::new();
 
@@ -380,11 +383,11 @@ pub fn build_request_body(
     }
 
     // Reasoning / thinking.
-    if let Some(thinking) = resolve_cohere_thinking(options.reasoning, &options.provider_options) {
+    if let Some(thinking) = resolve_cohere_thinking(options.reasoning, &options.provider_options)? {
         body["thinking"] = thinking;
     }
 
-    RequestBodyResult { body, warnings }
+    Ok(RequestBodyResult { body, warnings })
 }
 
 // ── Reasoning / thinking ────────────────────────────────────────────────────
@@ -414,44 +417,61 @@ fn reasoning_budget_percentage(reasoning: ReasoningEffort) -> Option<f64> {
 /// - `reasoning: None` (not specified) → no `thinking` field.
 /// - `reasoning: "none"` → `{ type: "disabled" }`.
 /// - other reasoning levels → `{ type: "enabled", token_budget: <n> }`.
-#[must_use]
+///
+/// # Errors
+/// Returns a parse error for invalid Cohere thinking options.
 pub fn resolve_cohere_thinking(
     reasoning: Option<ReasoningEffort>,
     provider_options: &Option<SharedProviderOptions>,
-) -> Option<Value> {
+) -> Result<Option<Value>, AiMuxError> {
     // Provider options take precedence.
     if let Some(po) = provider_options
         && let Some(cohere) = po.get("cohere")
         && let Some(thinking) = cohere.get("thinking")
     {
+        let thinking = thinking.as_object().ok_or_else(|| {
+            AiMuxError::InvalidArgument("invalid cohere provider options".to_string())
+        })?;
+        let thinking =
+            crate::openai::convert::parse_option_fields(thinking, "cohere", |key, value| {
+                let valid = match key {
+                    "type" => value
+                        .as_str()
+                        .is_some_and(|value| matches!(value, "enabled" | "disabled")),
+                    "tokenBudget" => value.is_number(),
+                    _ => return None,
+                };
+                Some(if valid { Ok(value.clone()) } else { Err(()) })
+            })?;
         let t_type = thinking
             .get("type")
             .and_then(|v| v.as_str())
             .unwrap_or("enabled")
             .to_string();
         let mut obj = json!({ "type": t_type });
-        if let Some(budget) = thinking
-            .get("tokenBudget")
-            .filter(|value| value.is_number())
-        {
+        if let Some(budget) = thinking.get("tokenBudget") {
             obj["token_budget"] = budget.clone();
         }
-        return Some(obj);
+        return Ok(Some(obj));
     }
 
-    let reasoning = reasoning?;
+    let Some(reasoning) = reasoning else {
+        return Ok(None);
+    };
     if reasoning == ReasoningEffort::ProviderDefault {
-        return None;
+        return Ok(None);
     }
     if reasoning == ReasoningEffort::None {
-        return Some(json!({ "type": "disabled" }));
+        return Ok(Some(json!({ "type": "disabled" })));
     }
 
-    let pct = reasoning_budget_percentage(reasoning)?;
+    let Some(pct) = reasoning_budget_percentage(reasoning) else {
+        return Ok(None);
+    };
     let max_tokens = DEFAULT_REASONING_MAX_TOKENS;
     let raw = (max_tokens as f64 * pct).round() as u32;
     let budget = max_tokens.min(1024.max(raw));
-    Some(json!({ "type": "enabled", "token_budget": budget }))
+    Ok(Some(json!({ "type": "enabled", "token_budget": budget })))
 }
 
 /// Parse Cohere finish reason string into `FinishReason`.

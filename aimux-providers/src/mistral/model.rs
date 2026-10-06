@@ -225,7 +225,7 @@ impl LanguageModel for MistralModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options, false);
+        let body = build_request_body(&self.model_id, options, false)?;
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest::new(
@@ -324,7 +324,7 @@ impl LanguageModel for MistralModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options, true);
+        let body = build_request_body(&self.model_id, options, true)?;
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest::new(
