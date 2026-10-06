@@ -911,7 +911,7 @@ sealed interface GenerateContent {
 
     @Serializable
     data class ReasoningFile(
-        val data: FileData,
+        val data: GeneratedFileData,
         @SerialName("media_type") val mediaType: String,
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     ) : GenerateContent

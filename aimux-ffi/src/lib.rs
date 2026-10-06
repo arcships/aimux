@@ -438,6 +438,7 @@ pub const AIMUX_E_RETRY: i32 = 14;
 pub const AIMUX_E_NO_SUCH_TOOL: i32 = 15;
 pub const AIMUX_E_INVALID_TOOL_INPUT: i32 = 16;
 pub const AIMUX_E_TOOL_CALL_REPAIR: i32 = 17;
+pub const AIMUX_E_NO_OUTPUT_GENERATED: i32 = 18;
 
 // 100..105 preserve `RecordingError` as a separate high-level type while C
 // uses one code space for every returned error.
@@ -468,6 +469,7 @@ fn aimux_error_code_of(err: &AiMuxError) -> i32 {
         AiMuxError::ApiCall { .. } => AIMUX_E_API_CALL,
         AiMuxError::Retry(_) => AIMUX_E_RETRY,
         AiMuxError::JsonParse(_) => AIMUX_E_JSON_PARSE,
+        AiMuxError::NoOutputGenerated(_) => AIMUX_E_NO_OUTPUT_GENERATED,
         AiMuxError::InvalidResponseData(_) | AiMuxError::ToolCallNotFoundForApproval { .. } => {
             AIMUX_E_INVALID_RESPONSE_DATA
         }
@@ -3468,7 +3470,7 @@ mod tests {
     fn expect_aimux_error(e: *mut aimux_error_t) -> (i32, String) {
         assert!(!e.is_null(), "expected a returned error");
         let code = aimux_error_code(e);
-        if !(AIMUX_E_OTHER..=AIMUX_E_TOOL_CALL_REPAIR).contains(&code) {
+        if !(AIMUX_E_OTHER..=AIMUX_E_NO_OUTPUT_GENERATED).contains(&code) {
             panic!("expected an AiMuxError code, got {code}: {}", msg(e));
         }
         let out = (code, take(aimux_error_message(e)).unwrap());

@@ -276,6 +276,15 @@ pub fn convert_to_responses_input(
                     else {
                         continue;
                     };
+                    if let ToolResultOutput::ExecutionDenied {
+                        provider_options, ..
+                    } = output
+                        && openai_sub_option(provider_options, "approvalId")
+                            .and_then(|value| value.as_str().map(|id| !id.is_empty()))
+                            == Some(true)
+                    {
+                        continue;
+                    }
                     let mut content_value = convert_tool_result_output(output, &mut warnings)?;
                     if !matches!(output, ToolResultOutput::Content { .. })
                         && let Some(breakpoint) =
@@ -326,7 +335,7 @@ fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
             filename,
             provider_options,
         }) => {
-            let is_image = media_type.starts_with("image");
+            let is_image = media_type.split('/').next() == Some("image");
             let mut item = match data {
                 FileData::Data { data } => {
                     let b64 = match data {
@@ -354,8 +363,13 @@ fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
                         json!({ "type": "input_file", "file_url": url })
                     }
                 }
-                FileData::Reference { .. } => {
-                    json!({ "type": "input_text", "text": "" })
+                FileData::Reference { reference } => {
+                    let file_id = reference.get("openai").ok_or_else(|| {
+                        AiMuxError::InvalidArgument(
+                            "missing file reference for provider openai".into(),
+                        )
+                    })?;
+                    json!({ "type": if is_image { "input_image" } else { "input_file" }, "file_id": file_id })
                 }
                 FileData::Text { .. } => {
                     return Err(AiMuxError::UnsupportedFunctionality(
@@ -364,7 +378,6 @@ fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
                 }
             };
             if item["type"] == "input_image"
-                && matches!(data, FileData::Data { .. })
                 && let Some(detail) = openai_sub_option(provider_options, "imageDetail")
             {
                 item["detail"] = detail;
@@ -397,12 +410,6 @@ fn convert_tool_result_output(
                     continue;
                 }
                 let mut converted = convert_user_part(&UserPart::File(part.clone()))?;
-                if let FileData::Reference { reference } = &part.data {
-                    let file_id = reference.get("openai").ok_or_else(|| {
-                        AiMuxError::InvalidArgument("missing file reference for provider".into())
-                    })?;
-                    converted = json!({"type": if part.media_type.starts_with("image/") { "input_image" } else { "input_file" }, "file_id":file_id});
-                }
                 if converted["type"] == "input_file" && converted.get("file_data").is_some() {
                     converted["filename"] = json!(part.filename.as_deref().unwrap_or("data"));
                 }
