@@ -329,14 +329,12 @@ mod stream {
             &xai,
         )?;
         let ws_url = url.to_string();
-        let mut ws = ws_connect(&WebSocketRequest {
-            url: ws_url.clone(),
-            headers: exchange.headers(),
-            subprotocols: Vec::new(),
-            abort_signal: options.abort_signal.clone(),
-            timeout: options.timeout,
-            connector: model.web_socket.clone(),
-        })
+        let mut ws = ws_connect(&WebSocketRequest::for_transcription(
+            ws_url.clone(),
+            exchange.headers(),
+            &options,
+            model.web_socket.clone(),
+        ))
         .await?;
 
         let expected_done = if xai.multichannel == Some(true) {

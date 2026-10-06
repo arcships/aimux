@@ -369,6 +369,7 @@ impl GoogleProvider {
         GoogleSpeechModel::from_config(
             model_id.to_string(),
             self.model_config(format!("{}.speech", self.name)),
+            options::Namespace::Google,
         )
     }
 
