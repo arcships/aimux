@@ -118,6 +118,12 @@ impl GenerateTextOptions {
         self,
         prompt: crate::language_model_message::LanguageModelPrompt,
     ) -> CallOptions {
+        let tool_choice = self.tool_choice.or_else(|| {
+            self.tools
+                .as_ref()
+                .filter(|tools| !tools.is_empty())
+                .map(|_| ToolChoice::Auto)
+        });
         CallOptions {
             prompt,
             max_output_tokens: self.max_output_tokens,
@@ -130,7 +136,7 @@ impl GenerateTextOptions {
             response_format: self.response_format,
             seed: self.seed,
             tools: self.tools,
-            tool_choice: self.tool_choice,
+            tool_choice,
             headers: self.headers,
             provider_options: self.provider_options,
             reasoning: self.reasoning,

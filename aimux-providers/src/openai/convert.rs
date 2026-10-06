@@ -6,7 +6,7 @@ use aimux_core::language_model_message::{
     ToolResultContent, ToolResultOutput, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
+use aimux_core::shared::{FileBytes, FileData, JsonObject, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
 use serde::Serialize;
@@ -902,6 +902,200 @@ pub struct RequestBodyResult {
     pub warnings: Vec<Warning>,
 }
 
+/// Parse declared namespace fields, discarding unknown keys like a default z.object.
+///
+/// # Errors
+/// Returns a parse error when a declared field fails its schema.
+pub(crate) fn parse_option_fields(
+    options: &JsonObject,
+    provider: &str,
+    parse: impl Fn(&str, &Value) -> Option<Result<Value, ()>>,
+) -> Result<JsonObject, AiMuxError> {
+    let mut parsed = JsonObject::new();
+    for (key, value) in options {
+        if let Some(result) = parse(key, value) {
+            parsed.insert(
+                key.clone(),
+                result.map_err(|()| {
+                    AiMuxError::InvalidArgument(format!("invalid {provider} provider options"))
+                })?,
+            );
+        }
+    }
+    Ok(parsed)
+}
+
+fn parse_chat_provider_options(
+    options: &Option<SharedProviderOptions>,
+    provider: &str,
+) -> Result<Option<SharedProviderOptions>, AiMuxError> {
+    if !matches!(provider, "openai" | "groq" | "deepseek") {
+        return Ok(options.clone());
+    }
+    let Some(namespace) = options.as_ref().and_then(|options| options.get(provider)) else {
+        return Ok(None);
+    };
+    let parsed = parse_option_fields(namespace, provider, |key, value| {
+        let one_of = |values: &[&str]| value.as_str().is_some_and(|s| values.contains(&s));
+        let valid = match (provider, key) {
+            ("openai", "logitBias") => {
+                return Some(value.as_object().ok_or(()).and_then(|object| {
+                    let mut parsed = JsonObject::new();
+                    for (key, value) in object {
+                        if !value.is_number() {
+                            return Err(());
+                        }
+                        let key = key.trim_matches(|c| {
+                            matches!(c,
+                                '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}'
+                                | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}'
+                                | '\u{205f}' | '\u{3000}' | '\u{feff}'
+                            )
+                        });
+                        let number = if key.is_empty() {
+                            0.0
+                        } else if let Some((digits, radix)) = key
+                            .strip_prefix("0x")
+                            .or_else(|| key.strip_prefix("0X"))
+                            .map(|s| (s, 16))
+                            .or_else(|| {
+                                key.strip_prefix("0o")
+                                    .or_else(|| key.strip_prefix("0O"))
+                                    .map(|s| (s, 8))
+                            })
+                            .or_else(|| {
+                                key.strip_prefix("0b")
+                                    .or_else(|| key.strip_prefix("0B"))
+                                    .map(|s| (s, 2))
+                            })
+                        {
+                            if digits.is_empty() {
+                                return Err(());
+                            }
+                            let bits_per_digit = match radix {
+                                16 => 4,
+                                8 => 3,
+                                _ => 1,
+                            };
+                            let mut significant_bits = 0usize;
+                            let mut mantissa = 0u64;
+                            let mut guard = false;
+                            let mut sticky = false;
+                            for digit in digits.chars() {
+                                let digit = digit.to_digit(radix).ok_or(())?;
+                                for shift in (0..bits_per_digit).rev() {
+                                    let bit = (digit >> shift) & 1;
+                                    if significant_bits == 0 && bit == 0 {
+                                        continue;
+                                    }
+                                    if significant_bits < 53 {
+                                        mantissa = (mantissa << 1) | u64::from(bit);
+                                    } else if significant_bits == 53 {
+                                        guard = bit != 0;
+                                    } else {
+                                        sticky |= bit != 0;
+                                    }
+                                    significant_bits += 1;
+                                }
+                            }
+                            if guard && (sticky || mantissa & 1 != 0) {
+                                mantissa += 1;
+                            }
+                            let exponent = significant_bits.saturating_sub(53);
+                            if exponent > 1023 {
+                                f64::INFINITY
+                            } else {
+                                mantissa as f64 * 2.0f64.powi(exponent as i32)
+                            }
+                        } else {
+                            key.parse::<f64>().map_err(|_| ())?
+                        };
+                        if !number.is_finite() {
+                            return Err(());
+                        }
+                        let key = if number == 0.0 {
+                            "0".to_string()
+                        } else if number.abs() >= 1e21 || number.abs() < 1e-6 {
+                            let scientific = format!("{number:e}");
+                            let (mantissa, exponent) = scientific.split_once('e').ok_or(())?;
+                            let exponent = exponent.parse::<i32>().map_err(|_| ())?;
+                            format!("{mantissa}e{exponent:+}")
+                        } else {
+                            number.to_string()
+                        };
+                        parsed.insert(key, value.clone());
+                    }
+                    Ok(Value::Object(parsed))
+                }));
+            }
+            ("openai", "logprobs") => value.is_boolean() || value.is_number(),
+            ("openai", "maxCompletionTokens") => value.is_number(),
+            ("openai", "metadata") => value.as_object().is_some_and(|object| {
+                object.iter().all(|(key, value)| {
+                    key.encode_utf16().count() <= 64
+                        && value
+                            .as_str()
+                            .is_some_and(|s| s.encode_utf16().count() <= 512)
+                })
+            }),
+            ("openai", "prediction") => value.is_object(),
+            ("openai", "reasoningEffort") => {
+                one_of(&["none", "minimal", "low", "medium", "high", "xhigh", "max"])
+            }
+            ("openai", "serviceTier") => {
+                one_of(&["auto", "flex", "priority", "fast", "ultrafast", "default"])
+            }
+            ("openai", "textVerbosity") => one_of(&["low", "medium", "high"]),
+            ("openai", "promptCacheRetention") => one_of(&["in_memory", "24h"]),
+            ("openai", "systemMessageMode") => one_of(&["system", "developer", "remove"]),
+            ("openai", "user" | "promptCacheKey" | "safetyIdentifier") | ("groq", "user") => {
+                value.is_string()
+            }
+            ("openai", "parallelToolCalls" | "store" | "strictJsonSchema" | "forceReasoning")
+            | ("groq", "parallelToolCalls" | "structuredOutputs" | "strictJsonSchema")
+            | ("deepseek", "logprobs" | "strictJsonSchema") => value.is_boolean(),
+            ("groq", "reasoningFormat") => one_of(&["parsed", "raw", "hidden"]),
+            ("groq", "reasoningEffort") => one_of(&["none", "default", "low", "medium", "high"]),
+            ("groq", "serviceTier") => one_of(&["on_demand", "performance", "flex", "auto"]),
+            ("deepseek", "reasoningEffort") => one_of(&["low", "medium", "high", "xhigh", "max"]),
+            ("deepseek", "topLogprobs") => value
+                .as_f64()
+                .is_some_and(|n| n.fract() == 0.0 && (0.0..=20.0).contains(&n)),
+            ("deepseek", "userId") => value.as_str().is_some_and(|s| {
+                !s.is_empty()
+                    && s.len() <= 512
+                    && s.bytes()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
+            }),
+            ("openai", "promptCacheOptions") | ("deepseek", "thinking") => {
+                return Some(value.as_object().ok_or(()).and_then(|object| {
+                    parse_option_fields(object, provider, |key, value| {
+                        let valid = match (provider, key) {
+                            ("openai", "mode") => value
+                                .as_str()
+                                .is_some_and(|s| matches!(s, "implicit" | "explicit")),
+                            ("openai", "ttl") => value.as_str() == Some("30m"),
+                            ("deepseek", "type") => value
+                                .as_str()
+                                .is_some_and(|s| matches!(s, "adaptive" | "enabled" | "disabled")),
+                            _ => return None,
+                        };
+                        Some(if valid { Ok(value.clone()) } else { Err(()) })
+                    })
+                    .map(Value::Object)
+                    .map_err(|_| ())
+                }));
+            }
+            _ => return None,
+        };
+        Some(if valid { Ok(value.clone()) } else { Err(()) })
+    })?;
+    Ok(Some(std::collections::HashMap::from([(
+        provider.to_string(),
+        parsed,
+    )])))
+}
+
 /// Get a value from provider_options.openai.<key>.
 fn openai_option(options: &Option<SharedProviderOptions>, key: &str) -> Option<Value> {
     options
@@ -941,21 +1135,18 @@ pub fn build_request_body(
 /// Conversion errors propagate to the caller (fail-fast, issue H2): the old
 /// behaviour of silently returning `body: null` sent empty requests upstream
 /// and made conversion failures invisible.
-/// Look up a key from the provider-specific options (groq → "groq" then
-/// "openai"; otherwise "openai").
+/// Look up a key from the selected vendor namespace.
 fn provider_option(
     provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     key: &str,
 ) -> Option<Value> {
-    if provider == "groq"
-        && let Some(v) = provider_opts
+    if matches!(provider, "groq" | "deepseek") {
+        return provider_opts
             .as_ref()
-            .and_then(|m| m.get("groq"))
+            .and_then(|m| m.get(provider))
             .and_then(|o| o.get(key))
-            .cloned()
-    {
-        return Some(v);
+            .cloned();
     }
     openai_option(provider_opts, key)
 }
@@ -1027,8 +1218,7 @@ fn apply_max_tokens(
     profile: &OpenAICompatProfile,
     is_reasoning_model: bool,
 ) {
-    let max_completion_tokens_opt = provider_option(provider_opts, provider, "maxCompletionTokens")
-        .and_then(|v| v.as_u64().map(|n| n as u32));
+    let max_completion_tokens_opt = provider_option(provider_opts, provider, "maxCompletionTokens");
 
     let use_mct_key = match profile.max_tokens_key {
         Some("max_tokens") => false,
@@ -1200,7 +1390,12 @@ fn apply_response_format(
                         .unwrap_or(true),
                 )
             } else {
-                (true, true)
+                (
+                    true,
+                    provider_option(provider_opts, provider, "strictJsonSchema")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
+                )
             };
 
             if schema.is_some() && structured_outputs {
@@ -1257,12 +1452,32 @@ fn apply_provider_option_passthrough(
     set("promptCacheRetention", "prompt_cache_retention");
     set("promptCacheOptions", "prompt_cache_options");
     set("safetyIdentifier", "safety_identifier");
-    // M3 (RFC-0016): logprobs request support. Previously `logprobs` /
-    // `topLogprobs` were silently dropped by the provider_options whitelist —
-    // the only option that "quietly did nothing". Pass-through as-is (OpenAI
-    // expects `logprobs: bool` and `top_logprobs: int`).
-    set("logprobs", "logprobs");
-    set("topLogprobs", "top_logprobs");
+    if provider == "deepseek" {
+        set("userId", "user_id");
+    }
+    if provider != "openai" {
+        set("topLogprobs", "top_logprobs");
+    }
+    if let Some(logprobs) = provider_option(provider_opts, provider, "logprobs") {
+        if provider == "openai" {
+            if logprobs == json!(true) || logprobs.is_number() {
+                body["logprobs"] = json!(true);
+                body["top_logprobs"] = if logprobs.is_number() {
+                    logprobs
+                } else {
+                    json!(0)
+                };
+            }
+        } else if provider == "deepseek" {
+            if logprobs == json!(true) || body.get("top_logprobs").is_some() {
+                body["logprobs"] = json!(true);
+            }
+        } else {
+            body["logprobs"] = logprobs;
+        }
+    } else if provider == "deepseek" && body.get("top_logprobs").is_some() {
+        body["logprobs"] = json!(true);
+    }
     // Groq: reasoning_format provider option
     if provider == "groq"
         && let Some(val) = provider_option(provider_opts, provider, "reasoningFormat")
@@ -1406,7 +1621,8 @@ pub fn build_request_body_with_warnings(
 ) -> Result<RequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
     let caps = get_model_capabilities(model_id);
-    let provider_opts = &options.provider_options;
+    let parsed_provider_opts = parse_chat_provider_options(&options.provider_options, provider)?;
+    let provider_opts = &parsed_provider_opts;
 
     let resolved_reasoning_effort =
         resolve_reasoning_effort(provider_opts, provider, &options.reasoning);

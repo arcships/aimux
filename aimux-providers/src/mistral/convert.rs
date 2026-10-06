@@ -296,6 +296,16 @@ pub fn build_request_body(
         body["stream"] = json!(true);
     }
 
+    if let Some(safe_prompt) = options
+        .provider_options
+        .as_ref()
+        .and_then(|namespaces| namespaces.get("mistral"))
+        .and_then(|options| options.get("safePrompt"))
+        .and_then(Value::as_bool)
+    {
+        body["safe_prompt"] = json!(safe_prompt);
+    }
+
     if let Some(max_tokens) = options.max_output_tokens {
         body["max_tokens"] = json!(max_tokens);
     }
