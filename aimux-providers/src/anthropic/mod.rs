@@ -74,6 +74,11 @@ const DEFAULT_NAME: &str = "anthropic.messages";
 /// The first-party URL without its version segment means the versioned one
 /// (`normalizeBaseURL` in `createAnthropic`); anything else is taken as given.
 fn normalize_base_url(url: &str) -> Result<String, AiMuxError> {
+    if url.trim().is_empty() {
+        return Err(AiMuxError::InvalidArgument(
+            "baseURL must be a non-empty string.".into(),
+        ));
+    }
     let url = validate_base_url(url)?;
     Ok(if url == API_ORIGIN {
         DEFAULT_BASE_URL.to_string()
@@ -196,7 +201,7 @@ pub fn create_anthropic(
                 vec![("anthropic-version".to_string(), API_VERSION.to_string())],
                 settings.headers,
             ),
-            "anthropic",
+            options::CANONICAL,
             "4.0.68",
         ),
         fetch: settings.fetch,

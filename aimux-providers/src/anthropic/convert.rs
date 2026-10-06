@@ -196,21 +196,109 @@ fn convert_prompt_with_validator(
         }
     }
 
-    for msg in prompt {
+    let mut has_system = false;
+    for (index, msg) in prompt.iter().enumerate() {
         let eff = match msg {
-            LanguageModelMessage::System {
-                content,
-                provider_options,
-            } => {
+            LanguageModelMessage::System { .. } => {
+                if index > 0 && matches!(prompt[index - 1], LanguageModelMessage::System { .. }) {
+                    continue;
+                }
                 flush(&mut messages, &mut last, &mut acc);
-                let cc =
-                    validator.get_cache_control(provider_options.as_ref(), "system message", true);
-                let blocks = vec![apply_cc(json!({ "type": "text", "text": content }), cc)];
-                if !seen_non_system {
-                    system.extend(blocks);
+                let mut converted = Vec::new();
+                for message in prompt[index..]
+                    .iter()
+                    .take_while(|message| matches!(message, LanguageModelMessage::System { .. }))
+                {
+                    let LanguageModelMessage::System {
+                        content,
+                        provider_options,
+                    } = message
+                    else {
+                        unreachable!()
+                    };
+                    let options = anthropic_options(provider_options.as_ref(), options_name)
+                        .unwrap_or_default();
+                    let invalid =
+                        || AiMuxError::InvalidArgument("invalid anthropic provider options".into());
+                    let clear_at = options.get("clearAt");
+                    if clear_at.is_some_and(|value| value.as_str() != Some("next_user_message")) {
+                        return Err(invalid());
+                    }
+                    let effort = options.get("effort");
+                    if effort.is_some_and(|value| {
+                        !matches!(
+                            value.as_str(),
+                            Some("low" | "medium" | "high" | "xhigh" | "max")
+                        )
+                    }) {
+                        return Err(invalid());
+                    }
+                    let changes = match options.get("toolChanges") {
+                        Some(value) => value.as_array().ok_or_else(invalid)?.as_slice(),
+                        None => &[],
+                    };
+                    let mut blocks = Vec::new();
+                    if !content.is_empty()
+                        || (changes.is_empty() && clear_at.is_none() && effort.is_none())
+                    {
+                        let cc = validator.get_cache_control(
+                            provider_options.as_ref(),
+                            "system message",
+                            true,
+                        );
+                        blocks.push(apply_cc(json!({ "type": "text", "text": content }), cc));
+                    }
+                    for change in changes {
+                        let kind = change
+                            .get("type")
+                            .and_then(Value::as_str)
+                            .filter(|kind| matches!(*kind, "tool_addition" | "tool_removal"))
+                            .ok_or_else(invalid)?;
+                        let name = change
+                            .get("toolName")
+                            .and_then(Value::as_str)
+                            .ok_or_else(invalid)?;
+                        blocks.push(json!({ "type": kind, "tool": {
+                            "type": "tool_reference", "name": tool_names.to_provider_tool_name(name)
+                        }}));
+                    }
+                    converted.push((blocks, clear_at.cloned(), effort.cloned(), changes.len()));
+                }
+                let change_count: usize = converted.iter().map(|message| message.3).sum();
+                let has_controls = converted
+                    .iter()
+                    .any(|message| message.1.is_some() || message.2.is_some());
+                if !seen_non_system || (!has_system && change_count == 0 && !has_controls) {
+                    if change_count > 0 {
+                        warnings.push(Warning::Other { message: "tool changes on the initial system message are not supported by Anthropic. Configure the initial tool set via the tools option instead. The tool changes have been ignored.".into() });
+                    }
+                    for (blocks, clear_at, effort, _) in converted {
+                        if blocks.is_empty() && clear_at.is_none() && effort.is_some() {
+                            messages.push(json!({ "role": "system", "content": [], "output_config": { "effort": effort } }));
+                            betas.insert("mid-conversation-output-config-2026-07-01".into());
+                        } else if clear_at.is_some() || effort.is_some() {
+                            warnings.push(Warning::Other { message: "clearAt and effort on this initial system message are not supported by Anthropic. Use a separate effort-only system message with empty content to set effort. These options have been ignored.".into() });
+                        }
+                        system.extend(blocks.into_iter().filter(|block| block["type"] == "text"));
+                    }
+                    has_system = true;
                 } else {
-                    messages.push(json!({ "role": "system", "content": blocks }));
                     betas.insert(BETA_MID_CONVERSATION_SYSTEM.to_string());
+                    for (blocks, clear_at, effort, changes) in converted {
+                        let mut message = json!({ "role": "system", "content": blocks });
+                        if let Some(clear_at) = clear_at {
+                            message["clear_at"] = clear_at;
+                            betas.insert("mid-conversation-system-clear-at-2026-08-21".into());
+                        }
+                        if let Some(effort) = effort {
+                            message["output_config"] = json!({ "effort": effort });
+                            betas.insert("mid-conversation-output-config-2026-07-01".into());
+                        }
+                        if changes > 0 {
+                            betas.insert("mid-conversation-tool-changes-2026-07-01".into());
+                        }
+                        messages.push(message);
+                    }
                 }
                 continue;
             }
@@ -335,11 +423,7 @@ fn convert_prompt_with_validator(
     // Merge any cache_control validation warnings.
     warnings.extend(validator.take_warnings());
 
-    let system_opt = if system.is_empty() {
-        None
-    } else {
-        Some(system)
-    };
+    let system_opt = has_system.then_some(system);
     Ok(AnthropicPromptConversion {
         system: system_opt,
         messages,
@@ -1843,7 +1927,7 @@ pub struct RequestBodyResult {
 
 fn parse_anthropic_option_object(shape: &str, value: &Value) -> Result<Value, ()> {
     let object = value.as_object().ok_or(())?;
-    let parsed = crate::openai::convert::parse_option_fields(object, "anthropic", |key, value| {
+    let parsed = crate::openai::convert::parse_option_fields(object, CANONICAL, |key, value| {
         let kind = match (shape, key) {
             ("options", "sendReasoning" | "disableParallelToolUse" | "toolStreaming") => "bool",
             ("options", "structuredOutputMode") => "outputFormat|jsonTool|auto",
@@ -1894,7 +1978,7 @@ fn parse_anthropic_option_object(shape: &str, value: &Value) -> Result<Value, ()
             ("container", "skills") => "[]skill",
             ("skill", "type") => "anthropic|custom",
             ("skill", "skillId")
-                if object.get("type").and_then(Value::as_str) == Some("anthropic") =>
+                if object.get("type").and_then(Value::as_str) == Some(CANONICAL) =>
             {
                 "string"
             }
