@@ -1542,12 +1542,50 @@ impl<S> RecordingOutcomeStream<S> {
     }
 }
 
-impl<S, C, A, R> futures::Stream for RecordingOutcomeStream<S>
+enum StreamOutcome<'a> {
+    Finish(&'a crate::types::FinishReason, &'a crate::types::Usage),
+    Error(&'a crate::AiMuxError),
+    Other,
+}
+
+trait RecordingStreamPart {
+    fn recording_outcome(&self) -> StreamOutcome<'_>;
+}
+
+impl<C, A, R> RecordingStreamPart for crate::stream_part::StreamPart<C, A, R> {
+    fn recording_outcome(&self) -> StreamOutcome<'_> {
+        match self {
+            Self::Finish {
+                finish_reason,
+                usage,
+                ..
+            } => StreamOutcome::Finish(finish_reason, usage),
+            Self::Error { error } => StreamOutcome::Error(error),
+            _ => StreamOutcome::Other,
+        }
+    }
+}
+
+impl RecordingStreamPart for crate::stream_part::TextStreamPart {
+    fn recording_outcome(&self) -> StreamOutcome<'_> {
+        match self {
+            Self::Finish {
+                finish_reason,
+                usage,
+                ..
+            } => StreamOutcome::Finish(finish_reason, usage),
+            Self::Error { error } => StreamOutcome::Error(error),
+            _ => StreamOutcome::Other,
+        }
+    }
+}
+
+impl<S, P> futures::Stream for RecordingOutcomeStream<S>
 where
-    S: futures::Stream<Item = Result<crate::stream_part::StreamPart<C, A, R>, crate::AiMuxError>>
-        + Unpin,
+    S: futures::Stream<Item = Result<P, crate::AiMuxError>> + Unpin,
+    P: RecordingStreamPart,
 {
-    type Item = Result<crate::stream_part::StreamPart<C, A, R>, crate::AiMuxError>;
+    type Item = Result<P, crate::AiMuxError>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
@@ -1557,12 +1595,8 @@ where
         let inner = std::pin::Pin::new(&mut this.inner);
         match inner.poll_next(cx) {
             std::task::Poll::Ready(Some(Ok(part))) => {
-                match &part {
-                    crate::stream_part::StreamPart::Finish {
-                        finish_reason,
-                        usage,
-                        ..
-                    } => {
+                match part.recording_outcome() {
+                    StreamOutcome::Finish(finish_reason, usage) => {
                         let this = self.as_mut().get_mut();
                         if let Some(mut pending) = this.pending.take() {
                             // Provider error 已定性;尾随 Finish 补上 usage。
@@ -1581,7 +1615,7 @@ where
                             this.record(&outcome);
                         }
                     }
-                    crate::stream_part::StreamPart::Error { error } => {
+                    StreamOutcome::Error(error) => {
                         let this = self.as_mut().get_mut();
                         if !this.recorded && this.pending.is_none() {
                             this.pending = Some(OutcomeRecord {

@@ -10,7 +10,7 @@ import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Machine-readable codes matching aimux-ffi `aimux_error_code_t` (aimux-error.h).
- * 1..17 mirror the 16 core variants (1 is the catch-all `Other`;
+ * 1..18 mirror the 17 core variants (1 is the catch-all `Other`;
  * 4 is retired — the legacy `Tool` variant; 14 = `Retry`). The
  * per-status codes (Provider, Http, RateLimited, Auth, ModelNotFound) are
  * gone, every HTTP-shaped failure arrives as [AIMUX_E_API_CALL].
@@ -30,6 +30,7 @@ const val AIMUX_E_ABORTED: Int = 13
 const val AIMUX_E_NO_SUCH_TOOL: Int = 15
 const val AIMUX_E_INVALID_TOOL_INPUT: Int = 16
 const val AIMUX_E_TOOL_CALL_REPAIR: Int = 17
+const val AIMUX_E_NO_OUTPUT_GENERATED: Int = 18
 const val AIMUX_E_OTHER: Int = 1
 const val AIMUX_E_RETRY: Int = 14
 
@@ -55,7 +56,7 @@ const val AIMUX_E_RETRY: Int = 14
  * }
  * ```
  *
- * Transport: Rust → C `aimux_error_t *` with code 1..17 → [fromC].
+ * Transport: Rust → C `aimux_error_t *` with code 1..18 → [fromC].
  * Primary path is not a JSON
  * error envelope.
  */
@@ -86,7 +87,7 @@ sealed class AimuxException(
          * string. Does not own the pointer: the caller ([expectAimuxError]) frees
          * the returned error afterwards (retry attempt errors are new owned
          * copies and are freed here). Code [AIMUX_OK] or a code outside
-         * 1..17 is a header/library mismatch and throws [IllegalStateException].
+         * 1..18 is a header/library mismatch and throws [IllegalStateException].
          */
         @JvmStatic
         internal fun fromC(error: Pointer, prefix: String = ""): AimuxException {
@@ -189,7 +190,7 @@ sealed class AimuxException(
             }
 
         /**
-         * Build the subclass for a core / C error code (1..17).
+         * Build the subclass for a core / C error code (1..18).
          *
          * Any other code — [AIMUX_OK] on a failure path or a code this binding
          * does not know — is a header/library mismatch and throws
@@ -251,6 +252,7 @@ sealed class AimuxException(
             AIMUX_E_NO_SUCH_TOOL -> NoSuchToolError(message, status, retryMs, cause, retryable, toolName, availableTools)
             AIMUX_E_INVALID_TOOL_INPUT -> InvalidToolInputError(message, status, retryMs, cause, retryable, toolName, toolInput)
             AIMUX_E_TOOL_CALL_REPAIR -> ToolCallRepairError(message, status, retryMs, cause, retryable, originalError)
+            AIMUX_E_NO_OUTPUT_GENERATED -> NoOutputGeneratedError(message, status, retryMs, cause, retryable)
             AIMUX_E_OTHER -> OtherError(message, status, retryMs, cause, retryable)
             else -> throw IllegalStateException("Unknown aimux_error_code_t: $code")
         }
@@ -273,12 +275,21 @@ sealed class AimuxException(
             AIMUX_E_NO_SUCH_TOOL -> "NoSuchTool"
             AIMUX_E_INVALID_TOOL_INPUT -> "InvalidToolInput"
             AIMUX_E_TOOL_CALL_REPAIR -> "ToolCallRepair"
+            AIMUX_E_NO_OUTPUT_GENERATED -> "NoOutputGenerated"
             AIMUX_E_OTHER -> "Other"
             AIMUX_E_RETRY -> "Retry"
             else -> "Code($code)"
         }
     }
 }
+
+class NoOutputGeneratedError(
+    message: String,
+    status: Int = -1,
+    retryMs: Long = -1,
+    cause: Throwable? = null,
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_NO_OUTPUT_GENERATED, status, retryMs, cause, retryable)
 
 class JSONParseError(
     message: String,
