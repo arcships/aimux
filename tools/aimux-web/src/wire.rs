@@ -11,6 +11,7 @@ use ts_rs::TS;
 use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::generate::GenerateTextOptions;
+use aimux_core::language_model_message::ToolResultOutput;
 use aimux_core::message::{MessageContent, ModelMessage, ModelPrompt, Role};
 use aimux_core::tool::{FunctionTool, Tool};
 
@@ -125,9 +126,10 @@ pub enum WireContentPart {
     },
     ToolResult {
         tool_call_id: String,
-        result: Value,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        is_error: Option<bool>,
+        tool_name: String,
+        /// The core type, imported by the frontend through the `@aimux/types` alias.
+        #[ts(type = "import(\"@aimux/types/ToolResultOutput\").ToolResultOutput")]
+        output: ToolResultOutput,
     },
 }
 
@@ -181,15 +183,12 @@ fn to_content_part(p: &WireContentPart) -> ContentPart {
         },
         WireContentPart::ToolResult {
             tool_call_id,
-            result,
-            is_error,
+            tool_name,
+            output,
         } => ContentPart::ToolResult {
             tool_call_id: tool_call_id.clone(),
-            result: result.clone(),
-            tool_name: None,
-            is_error: *is_error,
-            preliminary: None,
-            dynamic: None,
+            tool_name: tool_name.clone(),
+            output: output.clone(),
             provider_options: None,
         },
     }
@@ -443,8 +442,11 @@ mod tests {
                 role: "tool".into(),
                 content: vec![WireContentPart::ToolResult {
                     tool_call_id: "c1".into(),
-                    result: serde_json::json!({"value": 2}),
-                    is_error: None,
+                    tool_name: "calc".into(),
+                    output: ToolResultOutput::Json {
+                        value: serde_json::json!({"value": 2}),
+                        provider_options: None,
+                    },
                 }],
             },
         ];

@@ -864,11 +864,8 @@ class _ToolCallContentPart(BaseModel):
 class _ToolResultContentPart(BaseModel):
     type: Literal["tool_result"] = "tool_result"
     tool_call_id: str
-    result: Any
-    tool_name: Optional[str] = None
-    is_error: Optional[bool] = None
-    preliminary: Optional[bool] = None
-    dynamic: Optional[bool] = None
+    tool_name: str
+    output: Any
     provider_options: Optional[Any] = None
 
 

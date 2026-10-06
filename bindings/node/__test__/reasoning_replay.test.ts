@@ -52,9 +52,9 @@ const CHAT_RESPONSE = JSON.stringify({
   usage: { prompt_tokens: 10, completion_tokens: 1, total_tokens: 11 },
 })
 
-// ── Issue 1: tool role ContentPart[] with the legacy `output` field ─────────
+// ── Issue 1: tool role ContentPart[] with a structured `output` ─────────────
 
-test('issue 1: tool_result with legacy `output` field is accepted and carries tool_call_id', async (t) => {
+test('issue 1: tool_result with a structured `output` is accepted and carries tool_call_id', async (t) => {
   let requestBody: any = null
   const { server, url } = await startMockServer(async (req, res) => {
     requestBody = await readBody(req)
@@ -65,8 +65,7 @@ test('issue 1: tool_result with legacy `output` field is accepted and carries to
   try {
     const model = await openai('test-key', 'deepseek-v4-flash', url)
 
-    // The exact shape from the user's failing case: a tool message whose
-    // ContentPart uses the legacy `output` field (Vercel AI SDK / 0.1.0 TS).
+    // A tool message whose ContentPart carries the AI SDK `ToolResultPart` shape.
     const messages = [
       { role: 'user', content: 'write a file' },
       {
@@ -83,7 +82,8 @@ test('issue 1: tool_result with legacy `output` field is accepted and carries to
         content: [{
           type: 'tool_result',
           tool_call_id: 'tc1',
-          output: 'Successfully wrote to /tmp/test.txt',
+          tool_name: 'write_file',
+          output: { type: 'text', value: 'Successfully wrote to /tmp/test.txt' },
         }],
       },
     ]

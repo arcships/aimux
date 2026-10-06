@@ -344,7 +344,11 @@ class TestToolCallRoundTrip:
                         {
                             "type": "tool_result",
                             "tool_call_id": "call_abc",
-                            "result": {"temperature": 22, "condition": "sunny"},
+                            "tool_name": "get_weather",
+                            "output": {
+                                "type": "json",
+                                "value": {"temperature": 22, "condition": "sunny"},
+                            },
                         }
                     ],
                 ),
