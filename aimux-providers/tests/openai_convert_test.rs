@@ -18,7 +18,7 @@
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::tool::FunctionTool;
 use aimux_providers::openai::convert::{
     build_request_body, convert_prompt_to_openai_messages, prepare_tools,
@@ -546,6 +546,44 @@ mod build_request_body_tests {
         assert_eq!(body["top_logprobs"], json!(3));
     }
 
+    /// TS: "should pass tools and toolChoice"
+    #[test]
+    fn passes_tools_and_tool_choice() {
+        let options = CallOptions {
+            tools: Some(vec![Tool::Function(FunctionTool {
+                name: "test-tool".to_string(),
+                description: None,
+                input_schema: value_schema(),
+                strict: None,
+                provider_options: None,
+                input_examples: None,
+            })]),
+            tool_choice: Some(ToolChoice::Tool {
+                tool_name: "test-tool".to_string(),
+            }),
+            ..default_options(test_prompt())
+        };
+        let body = build_request_body("gpt-3.5-turbo", &options, false).unwrap();
+        assert_eq!(
+            body,
+            json!({
+                "model": "gpt-3.5-turbo",
+                "messages": [{ "role": "user", "content": "Hello" }],
+                "tool_choice": {
+                    "type": "function",
+                    "function": { "name": "test-tool" }
+                },
+                "tools": [{
+                    "type": "function",
+                    "function": {
+                        "name": "test-tool",
+                        "parameters": value_schema()
+                    }
+                }]
+            })
+        );
+    }
+
     /// TS: "should not send a response_format when response format is text"
     #[test]
     fn text_response_format_is_omitted() {
@@ -695,6 +733,82 @@ mod build_request_body_tests {
                 "model": "gpt-4o-2024-08-06",
                 "messages": [{ "role": "user", "content": "Hello" }],
                 "response_format": { "type": "json_object" }
+            })
+        );
+    }
+
+    /// TS: "should set strict with tool call"
+    ///
+    /// Tools with `toolChoice: required` and a description.
+    #[test]
+    fn strict_with_tool_call_required() {
+        let options = CallOptions {
+            tools: Some(vec![Tool::Function(FunctionTool {
+                name: "test-tool".to_string(),
+                description: Some("test description".to_string()),
+                input_schema: value_schema(),
+                strict: None,
+                provider_options: None,
+                input_examples: None,
+            })]),
+            tool_choice: Some(ToolChoice::Required),
+            ..default_options(test_prompt())
+        };
+        let body = build_request_body("gpt-4o-2024-08-06", &options, false).unwrap();
+        assert_eq!(
+            body,
+            json!({
+                "model": "gpt-4o-2024-08-06",
+                "messages": [{ "role": "user", "content": "Hello" }],
+                "tool_choice": "required",
+                "tools": [{
+                    "type": "function",
+                    "function": {
+                        "name": "test-tool",
+                        "description": "test description",
+                        "parameters": value_schema()
+                    }
+                }]
+            })
+        );
+    }
+
+    /// TS: "should set strict for tool usage"
+    ///
+    /// Tools with `toolChoice: tool` (no description).
+    #[test]
+    fn strict_for_tool_usage() {
+        let options = CallOptions {
+            tools: Some(vec![Tool::Function(FunctionTool {
+                name: "test-tool".to_string(),
+                description: None,
+                input_schema: value_schema(),
+                strict: None,
+                provider_options: None,
+                input_examples: None,
+            })]),
+            tool_choice: Some(ToolChoice::Tool {
+                tool_name: "test-tool".to_string(),
+            }),
+            ..default_options(test_prompt())
+        };
+        let body = build_request_body("gpt-4o-2024-08-06", &options, false).unwrap();
+        assert_eq!(
+            body,
+            json!({
+                "model": "gpt-4o-2024-08-06",
+                "messages": [{ "role": "user", "content": "Hello" }],
+                "tool_choice": {
+                    "type": "function",
+                    "function": { "name": "test-tool" }
+                },
+                "tools": [{
+                    "type": "function",
+                    "function": {
+                        "name": "test-tool",
+                        "parameters": value_schema()
+                    }
+                }]
             })
         );
     }
