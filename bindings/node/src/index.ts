@@ -61,6 +61,7 @@ import type {
   ToolCallRepairReply,
   DecisionCallOptions,
   DecisionResult,
+  DecisionProbabilitySource,
 } from './types'
 
 // Error hierarchy (throw/catch). Wire payload type `AiMuxError` lives under StreamPart only.
@@ -121,7 +122,6 @@ export {
   anthropicAws,
   azure,
   provider,
-  jevDecision,
   DecisionModel,
   type ProviderHandle,
 } from './native.ts'
@@ -180,6 +180,16 @@ export async function decide(
 ): Promise<DecisionResult> {
   const bridge = signal ? new AbortBridge(signal) : undefined
   return JSON.parse(await model.decide(JSON.stringify(options), bridge)) as DecisionResult
+}
+
+/** Declare how a hosted or self-hosted System One endpoint produces probabilities. */
+export async function jevDecision(
+  apiKey: string,
+  modelId: string,
+  endpoint?: string,
+  probabilitySource?: DecisionProbabilitySource,
+): Promise<native.DecisionModel> {
+  return native.jevDecision(apiKey, modelId, endpoint, probabilitySource)
 }
 
 /**

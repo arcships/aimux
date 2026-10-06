@@ -148,6 +148,9 @@ async fn malformed_answers_fail_with_http_context_without_retry() {
     let mut score = fixture();
     score["answers"]["anger"]["score"] = json!(4);
     responses.push(score);
+    let mut contradictory_score = fixture();
+    contradictory_score["answers"]["anger"]["score"] = json!(0);
+    responses.push(contradictory_score);
     for response in responses {
         let server = MockServer::start().await;
         mount(&server, 200, response).await;

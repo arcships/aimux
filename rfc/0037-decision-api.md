@@ -29,7 +29,11 @@ Capability 声明题型支持、数量限制、完整分布与 probability_sourc
 请求重复 ID/label、空 instructions/criteria、本地能力限制会在 HTTP 前失败。
 缺题、多题、题型/label/levels 不符、非有限或超范围概率、错误分布键会使整次调用失败。
 分布允许每项两位小数舍入的累积误差，保留原始数值，不自动归一化。
-Score 验证合法范围与等级，不要求舍入后的概率重算值精确等于服务的分数。
+Score 验证合法范围、等级与分布期望的一致性。概率与分数分别舍入到两位小数
+时，每项允许 0.005 的误差；采用中心化残差 `sum((i - score) * p[i])`，
+容差为 `0.005 + 0.005 * sum(abs(i - score))`，另加浮点运算余量。这允许
+舍入后概率之和略偏离 1，但拒绝分数和分布表达相反判断。
+后续 adapter 应按其精度声明扩展校验，当前两位小数规则仍属于首批实现。
 
 ## 第一阶段 Jev adapter
 
@@ -57,9 +61,9 @@ Jev 的保守限制；不宣称默认 vLLM/SGLang serve 提供这个路由，不
 ## 调用入口
 
 - Rust：JevProvider::decision_model + core decide。
-- Node：jevDecision + typed decide(model, options, signal?)；raw model.decide 接受 JSON。
-- Python：jev_decision + decide(model, state, questions, **options)；native 调用释放 GIL。
-- C：aimux_jev_decision_new、aimux_decide、aimux_decide_with_abort；采用现有 handle/error/string 生命周期。
+- Node：jevDecision + typed decide(model, options, signal?)；factory 的可选第四个 probabilitySource 参数声明来源；raw model.decide 接受 JSON。
+- Python：jev_decision + decide(model, state, questions, **options)；factory 的可选 probability_source 参数声明来源；native 调用释放 GIL。
+- C：aimux_jev_decision_new、aimux_jev_decision_new_with_probability_source、aimux_decide、aimux_decide_with_abort；采用现有 handle/error/string 生命周期，原 factory 签名不变。
 
 各语言包装及示例见 [Decision API](../docs/api/decision.md)。
 
@@ -70,12 +74,14 @@ Jev 使用官方示例的离线 contract fixture，明确标注不是实测录�
 provider retry 分类；core 覆盖 optional distributions、abort、timeout；C 覆盖
 handle 类型、销毁、JSON 错误和 abort。
 
-首批验证：Rust 工作区 3845 passed / 57 ignored；Node 的 decision、wrapper、
-error 三组测试共 24 passed；Python decision 测试 2 passed。工作区 fmt、
+验证：Rust 工作区 3848 passed / 57 ignored；Node 的 decision、wrapper、
+error 三组测试共 26 passed；Python decision 测试 6 passed。工作区 fmt、
 Clippy（warnings as errors）、TypeScript 编译与类型生成一致性检查通过。
 跨语言测试使用实际构建的 native 模块与本地 HTTP server，未调用线上 Jev。
 Node 测试同时发现并修复共享 AbortBridge 对已取消 signal 的处理，覆盖
 调用前取消与在途取消。
+
+Provider 精度规则与 Node/Python/C 的 capability 查询仍属后续完善范围。
 
 后续按调研顺序扩展 TypeSafe / wrapper 专用能力、SGLang scoring adapter、
 OpenAI/Anthropic/Google structured-output adapter，以及 Go/Java/Kotlin/Swift/Flutter

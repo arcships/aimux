@@ -591,6 +591,10 @@ aimux_error_t *aimux_search(uint64_t handle, const char *opts_json, char **out_j
  * abort_handle=0 means no caller cancellation. */
 aimux_error_t *aimux_jev_decision_new(const char *api_key, const char *model_id,
                                     const char *endpoint, uint64_t *out_handle);
+/* probability_source: native, logit_scoring, model_estimate; NULL uses native. */
+aimux_error_t *aimux_jev_decision_new_with_probability_source(
+    const char *api_key, const char *model_id, const char *endpoint,
+    const char *probability_source, uint64_t *out_handle);
 aimux_error_t *aimux_decide(uint64_t handle, const char *opts_json, char **out_json);
 aimux_error_t *aimux_decide_with_abort(uint64_t handle, const char *opts_json,
                                      uint64_t abort_handle, char **out_json);

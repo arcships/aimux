@@ -1,7 +1,7 @@
 import test from 'ava'
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
-import { APICallError, RequestAbortedError, jevDecision, decide } from '../src/index.ts'
+import { APICallError, InvalidArgumentError, RequestAbortedError, jevDecision, decide } from '../src/index.ts'
 import type { DecisionCallOptions } from '../src/index.ts'
 
 const fixture = JSON.parse(readFileSync(new URL('../../../aimux-providers/tests/fixtures/jev_systemone.json', import.meta.url), 'utf8')).response
@@ -76,4 +76,25 @@ test('invalid provider answer rejects with HTTP context', async t => {
   const address = server.address() as { port: number }
   const model = await jevDecision('test-key', 'jev-1.13', `http://127.0.0.1:${address.port}/v1/systemone`)
   await t.throwsAsync(decide(model, options), { instanceOf: APICallError })
+})
+
+test('self-hosted probability provenance survives the Node boundary', async t => {
+  const server = createServer((req, res) => {
+    req.resume()
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(fixture))
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.teardown(() => server.close())
+  const address = server.address() as { port: number }
+  for (const source of ['native', 'logit_scoring', 'model_estimate'] as const) {
+    const model = await jevDecision('test-key', 'jev-1.13', `http://127.0.0.1:${address.port}/v1/systemone`, source)
+    t.is((await decide(model, options)).probability_source, source)
+  }
+})
+
+test('unknown probability source is rejected at model construction', async t => {
+  // Exercise the raw JSON boundary as well as the typed wrapper contract.
+  const { jevDecision: rawJevDecision } = await import('../src/native.ts')
+  await t.throwsAsync(rawJevDecision('test-key', 'jev-1.13', undefined, 'unknown'), { instanceOf: InvalidArgumentError })
 })

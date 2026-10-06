@@ -155,6 +155,21 @@ pub enum DecisionProbabilitySource {
     ModelEstimate,
 }
 
+impl std::str::FromStr for DecisionProbabilitySource {
+    type Err = AiMuxError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "native" => Ok(Self::Native),
+            "logit_scoring" => Ok(Self::LogitScoring),
+            "model_estimate" => Ok(Self::ModelEstimate),
+            _ => Err(AiMuxError::InvalidArgument(format!(
+                "unknown decision probability source: {value:?}"
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(export)]
@@ -220,6 +235,25 @@ fn valid_distribution(values: &[f64]) -> bool {
         && (values.iter().sum::<f64>() - 1.0).abs() <= 0.005 * values.len() as f64 + 1e-9
 }
 
+/// If the unrounded probabilities q sum to one, their expected index t
+/// satisfies sum((i - t) * q[i]) = 0. With probabilities and score independently
+/// rounded to two decimals, the residual is bounded by 0.005 per term plus
+/// 0.005 for the score. Centering on the supplied score also accounts for a
+/// rounded distribution whose sum is slightly different from one.
+fn consistent_score(score: f64, probabilities: &[f64]) -> bool {
+    let residual: f64 = probabilities
+        .iter()
+        .enumerate()
+        .map(|(index, probability)| (index as f64 - score) * probability)
+        .sum();
+    let tolerance = 0.005
+        + 0.005
+            * (0..probabilities.len())
+                .map(|index| (index as f64 - score).abs())
+                .sum::<f64>();
+    residual.abs() <= tolerance + 1e-9
+}
+
 impl DecisionResult {
     /// Reject partial, mistyped, out-of-range and mismatched answers.
     /// # Errors
@@ -276,7 +310,9 @@ impl DecisionResult {
                         && (0.0..=(levels.len() - 1) as f64).contains(expected_value)
                         && confidence.is_none_or(is_probability)
                         && probabilities.as_ref().is_none_or(|distribution| {
-                            distribution.len() == levels.len() && valid_distribution(distribution)
+                            distribution.len() == levels.len()
+                                && valid_distribution(distribution)
+                                && consistent_score(*expected_value, distribution)
                         })
                 }
                 _ => false,

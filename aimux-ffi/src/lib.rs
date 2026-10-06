@@ -2852,12 +2852,34 @@ pub extern "C" fn aimux_jev_decision_new(
     endpoint: *const c_char,
     out_handle: *mut u64,
 ) -> *mut aimux_error_t {
+    aimux_jev_decision_new_with_probability_source(
+        api_key,
+        model_id,
+        endpoint,
+        std::ptr::null(),
+        out_handle,
+    )
+}
+
+/// Create a Jev-compatible model with explicit probability provenance.
+/// `probability_source` is native, logit_scoring or model_estimate; NULL uses native.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_jev_decision_new_with_probability_source(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    endpoint: *const c_char,
+    probability_source: *const c_char,
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let key = str_arg(api_key, "api_key")?;
         let model_id = str_arg(model_id, "model_id")?;
         let mut config = aimux_providers::JevConfig::new(key);
         if let Some(endpoint) = parse_base_url(endpoint)? {
             config = config.with_endpoint(endpoint);
+        }
+        if let Some(source) = opt_str_arg(probability_source, "probability_source")? {
+            config.probability_source = source.parse()?;
         }
         let model = aimux_providers::JevProvider::new(config).decision_model(&model_id)?;
         Ok(intern_handle(HandleEntry::Decision(Arc::from(model))))

@@ -39,12 +39,18 @@ pub async fn jev_decision(
     api_key: String,
     model_id: String,
     endpoint: Option<String>,
+    probability_source: Option<String>,
 ) -> AimuxResult<DecisionModel> {
     AimuxResult(
         async {
             let mut config = aimux_providers::JevConfig::new(api_key);
             if let Some(endpoint) = endpoint {
                 config = config.with_endpoint(endpoint);
+            }
+            if let Some(source) = probability_source {
+                config.probability_source = source
+                    .parse()
+                    .map_err(|error| AiMuxBindingError::from(&error))?;
             }
             let model = aimux_providers::JevProvider::new(config)
                 .decision_model(&model_id)

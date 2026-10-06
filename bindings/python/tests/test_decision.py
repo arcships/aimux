@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
-from aimux import APICallError, decide, jev_decision
+from aimux import APICallError, InvalidArgumentError, decide, jev_decision
 
 FIXTURE = json.loads((Path(__file__).resolve().parents[3] / 'aimux-providers/tests/fixtures/jev_systemone.json').read_text())['response']
 QUESTIONS = [
@@ -67,3 +67,16 @@ def test_invalid_answer_uses_python_error_class(server):
     model = jev_decision('test-key', 'jev-1.13', base + '/invalid')
     with pytest.raises(APICallError):
         decide(model, 'text', QUESTIONS, max_retries=0, timeout={'total_ms': 2000})
+
+
+@pytest.mark.parametrize('source', ['native', 'logit_scoring', 'model_estimate'])
+def test_self_hosted_probability_source(server, source):
+    base, _ = server
+    model = jev_decision('test-key', 'jev-1.13', base + '/v1/systemone', probability_source=source)
+    result = decide(model, 'text', QUESTIONS, max_retries=0, timeout={'total_ms': 2000})
+    assert result['probability_source'] == source
+
+
+def test_unknown_probability_source():
+    with pytest.raises(InvalidArgumentError):
+        jev_decision('test-key', 'jev-1.13', probability_source='unknown')

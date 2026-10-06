@@ -151,3 +151,60 @@ async fn total_timeout_bounds_pending_attempt() {
     ));
     assert_eq!(model.calls.load(Ordering::Relaxed), 1);
 }
+
+#[tokio::test]
+async fn scores_must_agree_with_distributions_allowing_rounding() {
+    let model = TestModel {
+        calls: AtomicUsize::new(0),
+        pending: false,
+        distributions: false,
+    };
+    for (probabilities, score, valid) in [
+        (vec![1.0, 0.0], 1.0, false),
+        (vec![0.0, 1.0], 0.0, false),
+        (vec![1.0, 0.0], 0.0, true),
+        (vec![0.3, 0.7], 0.8, false),
+        (vec![0.33, 0.33, 0.33], 1.0, true),
+        (vec![0.0, 0.34, 0.67], 1.67, true),
+        (vec![1.0, 0.0], 0.011, false),
+    ] {
+        let mut request = options();
+        let levels: Vec<String> = (0..probabilities.len())
+            .map(|index| format!("level-{index}"))
+            .collect();
+        if let DecisionQuestion::Score {
+            levels: request_levels,
+            ..
+        } = &mut request.questions[1]
+        {
+            *request_levels = levels.clone();
+        }
+        let mut result = model.do_decide(&request).await.unwrap();
+        result.answers.insert(
+            "score".into(),
+            DecisionAnswer::Score {
+                expected_value: score,
+                levels,
+                probabilities: Some(probabilities.clone()),
+                confidence: None,
+            },
+        );
+        assert_eq!(
+            result.validate(&request).is_ok(),
+            valid,
+            "score={score}, probabilities={probabilities:?}"
+        );
+    }
+}
+
+#[test]
+fn probability_sources_parse_only_known_contract_values() {
+    for source in ["native", "logit_scoring", "model_estimate"] {
+        let parsed: DecisionProbabilitySource = source.parse().unwrap();
+        assert_eq!(serde_json::to_value(parsed).unwrap(), json!(source));
+    }
+    assert!(matches!(
+        "unknown".parse::<DecisionProbabilitySource>(),
+        Err(AiMuxError::InvalidArgument(_))
+    ));
+}

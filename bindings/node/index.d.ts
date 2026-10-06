@@ -430,7 +430,7 @@ export declare function initSessionInfer(enabled: boolean): void
 export declare function initSessionStore(): void
 
 /** Create a Jev model; endpoint overrides the complete POST URL. */
-export declare function jevDecision(apiKey: string, modelId: string, endpoint?: string | undefined | null): Promise<AimuxResult<DecisionModel>>
+export declare function jevDecision(apiKey: string, modelId: string, endpoint?: string | undefined | null, probabilitySource?: string | undefined | null): Promise<AimuxResult<DecisionModel>>
 
 /** Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`. */
 export declare function listSessions(): AimuxResult<string>

@@ -30,7 +30,7 @@
 //!
 //! ## Coverage
 //!
-//! All 126 `#[unsafe(no_mangle)]` exports in `src/lib.rs` are exercised (the
+//! All 127 `#[unsafe(no_mangle)]` exports in `src/lib.rs` are exercised (the
 //! constructor and utility classes in full; the session class one
 //! representative call per export). [`header_and_exports_agree`] pins the
 //! count against the two headers. Decision exports are exercised by
@@ -158,7 +158,7 @@ fn header_and_exports_agree() {
     exports.sort();
     assert_eq!(
         exports.len(),
-        126,
+        127,
         "export count changed; update the headers"
     );
 
