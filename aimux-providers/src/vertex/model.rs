@@ -204,6 +204,19 @@ impl LanguageModel for VertexModel {
                     )
                 )
             }),
+            aimux_core::language_model_message::LanguageModelMessage::User { content, .. } => {
+                content.iter().any(|part| {
+                    matches!(
+                        part,
+                        aimux_core::language_model_message::UserPart::File(
+                            aimux_core::language_model_message::FilePart {
+                                data: aimux_core::shared::FileData::Reference { .. },
+                                ..
+                            }
+                        )
+                    )
+                })
+            }
             _ => false,
         }) {
             return Err(AiMuxError::UnsupportedFunctionality(
@@ -334,6 +347,19 @@ impl LanguageModel for VertexModel {
                     )
                 )
             }),
+            aimux_core::language_model_message::LanguageModelMessage::User { content, .. } => {
+                content.iter().any(|part| {
+                    matches!(
+                        part,
+                        aimux_core::language_model_message::UserPart::File(
+                            aimux_core::language_model_message::FilePart {
+                                data: aimux_core::shared::FileData::Reference { .. },
+                                ..
+                            }
+                        )
+                    )
+                })
+            }
             _ => false,
         }) {
             return Err(AiMuxError::UnsupportedFunctionality(

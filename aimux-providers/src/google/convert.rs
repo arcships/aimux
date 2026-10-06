@@ -229,9 +229,14 @@ fn convert_user_parts(content: &[UserPart], namespace: ProviderMetadataNamespace
                     FileData::Data {
                         data: FileBytes::Base64(data),
                     } => data.clone(),
-                    FileData::Url { url, .. } => {
+                    FileData::Url { url, original_url } => {
+                        let uri = if url.starts_with("gs:") {
+                            original_url.as_deref().unwrap_or(url)
+                        } else {
+                            url
+                        };
                         parts.push(json!({
-                            "fileData": { "mimeType": media_type, "fileUri": url }
+                            "fileData": { "mimeType": media_type, "fileUri": uri }
                         }));
                         continue;
                     }
@@ -566,6 +571,24 @@ fn convert_tool_parts(
                                             .to_string(),
                                         );
                                     }
+                                }
+                                FileData::Url { url, original_url }
+                                    if namespace == ProviderMetadataNamespace::Vertex
+                                        && url.starts_with("gs:")
+                                        && original_url
+                                            .as_deref()
+                                            .unwrap_or(url)
+                                            .starts_with("gs://")
+                                        && matches!(
+                                            file.media_type.as_str(),
+                                            "image/png"
+                                                | "image/jpeg"
+                                                | "image/webp"
+                                                | "application/pdf"
+                                                | "text/plain"
+                                        ) =>
+                                {
+                                    files.push(json!({ "fileData": { "mimeType": file.media_type, "fileUri": original_url.as_deref().unwrap_or(url) } }));
                                 }
                                 _ => texts.push(
                                     crate::openai::convert::tool_result_content_value(

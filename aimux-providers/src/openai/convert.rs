@@ -359,7 +359,11 @@ fn resolve_provider_reference(
 }
 
 /// Convert a file part to the OpenAI format, handling images, audio, and PDF.
-fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Value, String> {
+fn convert_file_part_to_openai(
+    file: &FilePart,
+    part_index: usize,
+    provider: &str,
+) -> Result<Value, String> {
     use base64::Engine;
 
     let FilePart {
@@ -368,11 +372,17 @@ fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Val
         filename,
         provider_options,
     } = file;
-    let prompt_cache_breakpoint = get_prompt_cache_breakpoint(provider_options);
+    let prompt_cache_breakpoint = (provider == "openai")
+        .then(|| get_prompt_cache_breakpoint(provider_options))
+        .flatten();
     let (data_b64, url) = match data {
         FileData::Reference { reference } => {
-            let file_id = resolve_provider_reference(reference, "openai")?;
-            let mut part = json!({ "type": "file", "file": { "file_id": file_id } });
+            let file_id = resolve_provider_reference(reference, provider)?;
+            let mut part = if provider == "deepseek" {
+                json!({ "type": "file", "file_id": file_id })
+            } else {
+                json!({ "type": "file", "file": { "file_id": file_id } })
+            };
             if let Some(bpt) = prompt_cache_breakpoint {
                 part["prompt_cache_breakpoint"] = bpt;
             }
@@ -480,6 +490,34 @@ fn convert_message_to_openai(
     provider: &str,
     warnings: &mut Vec<Warning>,
 ) -> Result<Vec<Value>, AiMuxError> {
+    if provider != "openai" && provider != "deepseek" {
+        let has_reference = match msg {
+            LanguageModelMessage::User { content, .. } => content.iter().any(|part| {
+                matches!(
+                    part,
+                    UserPart::File(FilePart {
+                        data: FileData::Reference { .. },
+                        ..
+                    })
+                )
+            }),
+            LanguageModelMessage::Assistant { content, .. } => content.iter().any(|part| {
+                matches!(
+                    part,
+                    AssistantPart::File(FilePart {
+                        data: FileData::Reference { .. },
+                        ..
+                    })
+                )
+            }),
+            _ => false,
+        };
+        if has_reference {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "file parts with provider references".into(),
+            ));
+        }
+    }
     let message = match msg {
         LanguageModelMessage::System {
             content,
@@ -490,7 +528,10 @@ fn convert_message_to_openai(
                 SystemMessageMode::Developer => "developer",
                 SystemMessageMode::System => "system",
             };
-            let content = match get_prompt_cache_breakpoint(provider_options) {
+            let content = match (provider == "openai")
+                .then(|| get_prompt_cache_breakpoint(provider_options))
+                .flatten()
+            {
                 None => json!(content),
                 Some(bpt) => json!([{
                     "type": "text", "text": content, "prompt_cache_breakpoint": bpt,
@@ -509,7 +550,7 @@ fn convert_message_to_openai(
                 } else {
                     tool_result_to_content(&result.output)
                 };
-                if provider != "deepseek"
+                if provider == "openai"
                     && let Some(breakpoint) = tool_result_cache_breakpoint(&result.output)
                         .or_else(|| get_prompt_cache_breakpoint(&result.provider_options))
                 {
@@ -522,14 +563,9 @@ fn convert_message_to_openai(
             return Ok(messages);
         }
         LanguageModelMessage::User { content, .. } => {
-            let all_plain_text = content.iter().all(|part| {
-                matches!(
-                    part,
-                    UserPart::Text(TextPart {
-                        provider_options: None,
-                        ..
-                    })
-                )
+            let all_plain_text = content.len() == 1 && content.iter().all(|part| {
+                matches!(part, UserPart::Text(text)
+                    if provider != "openai" || get_prompt_cache_breakpoint(&text.provider_options).is_none())
             });
             let content = if all_plain_text {
                 json!(
@@ -547,9 +583,10 @@ fn convert_message_to_openai(
                         .iter()
                         .enumerate()
                         .map(|(index, part)| match part {
-                            UserPart::Text(text) => Ok(convert_text_part_to_openai(text)),
-                            UserPart::File(file) => convert_file_part_to_openai(file, index)
-                                .map_err(AiMuxError::InvalidArgument),
+                            UserPart::Text(text) => Ok(convert_text_part_to_openai(text, provider)),
+                            UserPart::File(file) =>
+                                convert_file_part_to_openai(file, index, provider)
+                                    .map_err(AiMuxError::InvalidArgument),
                         })
                         .collect::<Result<Vec<_>, _>>()?
                 )
@@ -565,7 +602,11 @@ fn convert_message_to_openai(
                     AssistantPart::Text(part) => text.push_str(&part.text),
                     AssistantPart::Reasoning(part) => reasoning.push_str(&part.text),
                     AssistantPart::ToolCall(part) => {
-                        let arguments = part.input.to_string();
+                        let arguments = if provider == "openai" && !part.input.is_object() {
+                            "{}".to_string()
+                        } else {
+                            part.input.to_string()
+                        };
                         tool_calls.push(json!({
                             "type": "function", "id": part.tool_call_id,
                             "function": { "name": part.tool_name, "arguments": arguments },
@@ -608,10 +649,10 @@ fn convert_message_to_openai(
                     for part in content {
                         match part {
                             AssistantPart::Text(text) => {
-                                parts.push(convert_text_part_to_openai(text))
+                                parts.push(convert_text_part_to_openai(text, provider))
                             }
                             AssistantPart::File(file) => parts.push(
-                                convert_file_part_to_openai(file, parts.len())
+                                convert_file_part_to_openai(file, parts.len(), provider)
                                     .map_err(AiMuxError::InvalidArgument)?,
                             ),
                             AssistantPart::Reasoning(_)
@@ -842,9 +883,11 @@ pub(crate) fn tool_result_cache_breakpoint(output: &ToolResultOutput) -> Option<
     }
 }
 
-fn convert_text_part_to_openai(part: &TextPart) -> Value {
+fn convert_text_part_to_openai(part: &TextPart, provider: &str) -> Value {
     let mut value = json!({ "type": "text", "text": part.text });
-    if let Some(bpt) = get_prompt_cache_breakpoint(&part.provider_options) {
+    if provider == "openai"
+        && let Some(bpt) = get_prompt_cache_breakpoint(&part.provider_options)
+    {
         value["prompt_cache_breakpoint"] = bpt;
     }
     value

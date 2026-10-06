@@ -308,6 +308,14 @@ pub fn convert_to_xai_responses_input(
                             content_parts.push(json!({ "type": "input_text", "text": text }));
                         }
                         UserPart::File(file) => {
+                            if matches!(file.data, FileData::Data { .. })
+                                && file.media_type.split('/').next() != Some("image")
+                            {
+                                return Err(AiMuxError::UnsupportedFunctionality(format!(
+                                    "file part media type {} as inline data (xAI Responses requires a URL or a Files API reference for non-image files)",
+                                    file.media_type
+                                )));
+                            }
                             content_parts.push(match &file.data {
                                 FileData::Data {
                                     data: FileBytes::Binary(bytes),

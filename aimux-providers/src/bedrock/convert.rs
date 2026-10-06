@@ -297,18 +297,59 @@ pub(crate) fn validate_tool_result_content(
                 for part in value {
                     let unsupported = match part {
                         ToolResultContent::Text(_) => false,
-                        ToolResultContent::File(file) => match &file.data {
-                            FileData::Data { .. } => {
-                                crate::google::convert::tool_file_media_type(file)?;
-                                false
+                        ToolResultContent::File(file) => {
+                            let allowed_data = matches!(file.data, FileData::Data { .. })
+                                || matches!(&file.data, FileData::Url { url, .. } if url.starts_with("s3:"));
+                            if !allowed_data {
+                                return Err(
+                                    aimux_core::error::AiMuxError::UnsupportedFunctionality(
+                                        "tool result content part".to_string(),
+                                    ),
+                                );
                             }
-                            FileData::Url { url, .. } => {
-                                !url.starts_with("s3:")
-                                    || !(file.media_type.starts_with("image/")
-                                        || file.media_type.starts_with("video/"))
+                            let media_type = crate::google::convert::tool_file_media_type(file)?;
+                            let supported = matches!(
+                                media_type.as_str(),
+                                "image/jpeg"
+                                    | "image/png"
+                                    | "image/gif"
+                                    | "image/webp"
+                                    | "video/x-matroska"
+                                    | "video/quicktime"
+                                    | "video/mp4"
+                                    | "video/webm"
+                                    | "video/x-flv"
+                                    | "video/mpeg"
+                                    | "video/mpg"
+                                    | "video/wmv"
+                                    | "video/x-ms-wmv"
+                                    | "video/3gpp"
+                                    | "application/pdf"
+                                    | "text/csv"
+                                    | "application/msword"
+                                    | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                    | "application/vnd.ms-excel"
+                                    | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                    | "text/html"
+                                    | "text/plain"
+                                    | "text/markdown"
+                            );
+                            if !supported {
+                                let kind = match media_type.split('/').next() {
+                                    Some("image") => "image",
+                                    Some("video") => "video",
+                                    _ => "file",
+                                };
+                                return Err(
+                                    aimux_core::error::AiMuxError::UnsupportedFunctionality(
+                                        format!("{kind} mime type: {media_type}"),
+                                    ),
+                                );
                             }
-                            _ => true,
-                        },
+                            matches!(file.data, FileData::Url { .. })
+                                && !(media_type.starts_with("image/")
+                                    || media_type.starts_with("video/"))
+                        }
                         ToolResultContent::Custom { .. } => true,
                     };
                     if unsupported {
@@ -333,6 +374,17 @@ fn push_file_part(file: &FilePart, content: &mut Vec<Value>, doc_counter: &mut u
             data: FileBytes::Base64(data),
         } => data.clone(),
         FileData::Text { text } => base64::engine::general_purpose::STANDARD.encode(text),
+        FileData::Url { url, .. }
+            if url.starts_with("s3:") && file.media_type.starts_with("image/") =>
+        {
+            content.push(json!({
+                "image": {
+                    "format": mime_to_image_format(&file.media_type),
+                    "source": { "s3Location": { "uri": url } }
+                }
+            }));
+            return true;
+        }
         FileData::Url { .. } | FileData::Reference { .. } => return false,
     };
     let is_text = matches!(file.data, FileData::Text { .. });

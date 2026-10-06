@@ -229,6 +229,7 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
         UserPart::Text(TextPart { text, .. }) => json!({ "type": "text", "text": text }),
         UserPart::File(file) => {
             use base64::Engine;
+            let is_image = file.media_type.split('/').next() == Some("image");
             let url = match &file.data {
                 FileData::Data { data } => {
                     let b64 = match data {
@@ -237,17 +238,34 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
                         }
                         FileBytes::Base64(data) => data.clone(),
                     };
-                    format!("data:{};base64,{}", file.media_type, b64)
+                    let media_type = &file.media_type;
+                    if !is_image && media_type != "application/pdf" {
+                        return Err(AiMuxError::UnsupportedFunctionality(
+                            "Only images and PDF file parts are supported".to_string(),
+                        ));
+                    }
+                    format!("data:{media_type};base64,{b64}")
                 }
-                FileData::Url { url, .. } => url.clone(),
-                FileData::Reference { .. } => return Ok(Value::Null),
+                FileData::Url { url, .. } => {
+                    if !is_image && file.media_type != "application/pdf" {
+                        return Err(AiMuxError::UnsupportedFunctionality(
+                            "Only images and PDF file parts are supported".to_string(),
+                        ));
+                    }
+                    url.clone()
+                }
+                FileData::Reference { .. } => {
+                    return Err(AiMuxError::UnsupportedFunctionality(
+                        "file parts with provider references".to_string(),
+                    ));
+                }
                 FileData::Text { .. } => {
                     return Err(AiMuxError::UnsupportedFunctionality(
                         "text file parts".to_string(),
                     ));
                 }
             };
-            if file.media_type.split('/').next() == Some("image") {
+            if is_image {
                 json!({ "type": "image_url", "image_url": url })
             } else {
                 json!({ "type": "document_url", "document_url": url })

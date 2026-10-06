@@ -562,3 +562,29 @@ async fn transient_upload_failure_is_retried_without_re_initiating() {
     );
     assert_eq!(upload_attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// get_model_path  (TS: get-model-path.test.ts)
+// ════════════════════════════════════════════════════════════════════════════
+
+mod get_model_path_tests {
+    use aimux_providers::google::utils::get_model_path;
+
+    #[test]
+    fn pass_through_for_models_slash() {
+        assert_eq!(get_model_path("models/some-model"), "models/some-model");
+    }
+
+    #[test]
+    fn pass_through_for_tuned_models_slash() {
+        assert_eq!(
+            get_model_path("tunedModels/some-model"),
+            "tunedModels/some-model"
+        );
+    }
+
+    #[test]
+    fn add_prefix_to_models_without_slash() {
+        assert_eq!(get_model_path("some-model"), "models/some-model");
+    }
+}
