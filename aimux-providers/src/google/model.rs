@@ -102,7 +102,7 @@ impl LanguageModel for GoogleModel {
         }
         crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
+        let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
         let url = exchange.url(&format!("/{}:generateContent", self.model_path()));
@@ -204,7 +204,7 @@ impl LanguageModel for GoogleModel {
         }
         crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
+        let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
         let endpoint = exchange.url(&format!(

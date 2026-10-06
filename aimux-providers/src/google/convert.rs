@@ -19,6 +19,7 @@
 //! provider-executed tool parts.
 
 use super::options::{GOOGLE, Namespace};
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
@@ -1191,6 +1192,33 @@ fn is_empty_object_schema(obj: &Map<String, Value>) -> bool {
         && !obj.contains_key("additionalProperties")
 }
 
+// Image wrappers delegate these fields through the upstream language schema.
+#[must_use]
+pub(crate) fn image_generation_option(key: &str, value: &Value) -> Value {
+    let fields: &[&str] = match key {
+        "thinkingConfig" => &["thinkingBudget", "includeThoughts", "thinkingLevel"],
+        "imageConfig" => &[
+            "aspectRatio",
+            "imageSize",
+            "personGeneration",
+            "prominentPeople",
+            "imageOutputOptions",
+        ],
+        "imageOutputOptions" => &["mimeType", "compressionQuality"],
+        _ => return value.clone(),
+    };
+    let Some(object) = value.as_object() else {
+        return value.clone();
+    };
+    Value::Object(
+        object
+            .iter()
+            .filter(|(key, _)| fields.contains(&key.as_str()))
+            .map(|(key, value)| (key.clone(), image_generation_option(key, value)))
+            .collect(),
+    )
+}
+
 // ── build_request_body ───────────────────────────────────────────────────────
 
 /// Build the Gemini `generateContent` request body from `CallOptions`.
@@ -1203,26 +1231,36 @@ fn is_empty_object_schema(obj: &Map<String, Value>) -> bool {
 ///
 /// This is the request-body-only entry point; warnings about unsupported tools
 /// are discarded. Use [`build_request_body_with_warnings`] to surface them.
-#[must_use]
-pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
-    build_request_body_with_warnings(model_id, options).0
+///
+/// # Errors
+/// Returns an error when `structuredOutputs` is not a boolean.
+pub fn build_request_body(model_id: &str, options: &CallOptions) -> Result<Value, AiMuxError> {
+    build_request_body_with_warnings(model_id, options).map(|(body, _)| body)
 }
 
 /// Build a Vertex Gemini request body using Vertex's provider-metadata
 /// namespaces when replaying response parts.
-#[must_use]
-pub(crate) fn build_vertex_request_body(model_id: &str, options: &CallOptions) -> Value {
-    build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Vertex).0
+///
+/// # Errors
+/// Returns an error when `structuredOutputs` is not a boolean.
+pub(crate) fn build_vertex_request_body(
+    model_id: &str,
+    options: &CallOptions,
+) -> Result<Value, AiMuxError> {
+    build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Vertex)
+        .map(|(body, _)| body)
 }
 
 /// Build the Gemini `generateContent` request body **and** collect the tool
 /// warnings (e.g. unsupported provider-defined tools, mixed function+provider
 /// tools on pre-Gemini-3 models).
-#[must_use]
+///
+/// # Errors
+/// Returns an error when `structuredOutputs` is not a boolean.
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
-) -> (Value, Vec<Warning>) {
+) -> Result<(Value, Vec<Warning>), AiMuxError> {
     build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Google)
 }
 
@@ -1230,7 +1268,24 @@ fn build_request_body_with_warnings_for_namespace(
     model_id: &str,
     options: &CallOptions,
     namespace: Namespace,
-) -> (Value, Vec<Warning>) {
+) -> Result<(Value, Vec<Warning>), AiMuxError> {
+    let provider_options = options.provider_options.as_ref().and_then(|options| {
+        namespace
+            .read_keys()
+            .iter()
+            .find_map(|name| options.get(*name).map(|value| (*name, value)))
+    });
+    let structured_outputs =
+        match provider_options.and_then(|(_, options)| options.get("structuredOutputs")) {
+            None => true,
+            Some(Value::Bool(value)) => *value,
+            Some(_) => {
+                return Err(AiMuxError::InvalidArgument(format!(
+                    "invalid {} provider options",
+                    provider_options.unwrap().0
+                )));
+            }
+        };
     let GooglePrompt {
         system_instruction,
         contents,
@@ -1274,11 +1329,7 @@ fn build_request_body_with_warnings_for_namespace(
     {
         generation_config.insert("responseMimeType".to_string(), json!("application/json"));
         if let Some(s) = schema
-            && namespace
-                .read_in(options.provider_options.as_ref())
-                .and_then(|options| options.get("structuredOutputs"))
-                .and_then(Value::as_bool)
-                .unwrap_or(true)
+            && structured_outputs
         {
             let openapi = convert_json_schema_to_openapi_schema(s, true);
             if !openapi.is_null() {
@@ -1345,7 +1396,7 @@ fn build_request_body_with_warnings_for_namespace(
     // the TS SDK. (Some callers include it; the API ignores extra fields.)
     let _ = model_id;
 
-    (Value::Object(body), prepared.warnings)
+    Ok((Value::Object(body), prepared.warnings))
 }
 
 // ── finish reason ────────────────────────────────────────────────────────────

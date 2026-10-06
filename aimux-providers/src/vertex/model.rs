@@ -168,7 +168,7 @@ impl LanguageModel for VertexModel {
         }
         crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let body = build_vertex_request_body(&self.model_id, options);
+        let body = build_vertex_request_body(&self.model_id, options)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
         let resp = aimux_provider_utils::post_json_to_api(
@@ -302,7 +302,7 @@ impl LanguageModel for VertexModel {
         }
         crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let body = build_vertex_request_body(&self.model_id, options);
+        let body = build_vertex_request_body(&self.model_id, options)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
         let endpoint = self.stream_endpoint(exchange.base_url());
