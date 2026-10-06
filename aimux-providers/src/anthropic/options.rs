@@ -14,6 +14,9 @@ use aimux_core::shared::{JsonObject, SharedProviderOptions};
 /// whatever its name.
 pub(crate) const CANONICAL: &str = "anthropic";
 
+/// The type discriminator for provider-managed container skills.
+pub(crate) const PROVIDER_SKILL_TYPE: &str = CANONICAL;
+
 /// The providerOptions key of a provider name: its first dot-separated
 /// segment, trimmed (`"proxy.messages"` -> `"proxy"`, `"proxy"` -> `"proxy"`).
 pub(crate) fn options_name_of(provider: &str) -> String {

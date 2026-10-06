@@ -313,11 +313,13 @@ impl VideoModel for VertexVideoModel {
             })
             .collect();
         let payload = json!({"videos": video_metadata});
-        let mut metadata = Namespace::Vertex.metadata(payload.clone());
-        metadata.extend(
-            provider_namespace("google-vertex", payload)
-                .expect("provider metadata must be an object"),
-        );
+        let metadata = crate::google::options::VERTEX_VIDEO_METADATA_KEYS
+            .into_iter()
+            .flat_map(|key| {
+                provider_namespace(key, payload.clone())
+                    .expect("provider metadata must be an object")
+            })
+            .collect();
 
         if videos.is_empty() {
             return Err(AiMuxError::InvalidResponseData(

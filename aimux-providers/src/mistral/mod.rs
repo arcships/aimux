@@ -165,7 +165,7 @@ pub fn create_mistral(settings: MistralProviderSettings) -> Result<MistralProvid
             Vec::new(),
             settings.headers,
         ),
-        "mistral",
+        options::NAMESPACE,
         "4.0.54",
     );
     Ok(MistralProvider {

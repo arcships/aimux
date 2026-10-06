@@ -120,8 +120,11 @@ pub fn create_cohere(settings: CohereProviderSettings) -> Result<CohereProvider,
         Vec::new(),
         settings.headers,
     );
-    let headers =
-        aimux_provider_utils::headers::with_user_agent_suffix_fn(headers, "cohere", "4.0.52");
+    let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
+        headers,
+        options::NAMESPACE,
+        "4.0.52",
+    );
     Ok(CohereProvider {
         generate_id: settings.generate_id,
         base_url,

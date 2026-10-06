@@ -34,7 +34,9 @@ use aimux_provider_utils::{
 use serde_json::{Map, Value, json};
 
 use crate::anthropic::cache_control::CacheControlValidator;
-use crate::anthropic::options::{CANONICAL, anthropic_options, anthropic_options_in};
+use crate::anthropic::options::{
+    CANONICAL, PROVIDER_SKILL_TYPE, anthropic_options, anthropic_options_in,
+};
 use crate::anthropic::prepare_tools::{AnthropicTool, prepare_tools_with_validator};
 use crate::anthropic::tool_name_mapping::ToolNameMapping;
 
@@ -1978,7 +1980,7 @@ fn parse_anthropic_option_object(shape: &str, value: &Value) -> Result<Value, ()
             ("container", "skills") => "[]skill",
             ("skill", "type") => "anthropic|custom",
             ("skill", "skillId")
-                if object.get("type").and_then(Value::as_str) == Some(CANONICAL) =>
+                if object.get("type").and_then(Value::as_str) == Some(PROVIDER_SKILL_TYPE) =>
             {
                 "string"
             }

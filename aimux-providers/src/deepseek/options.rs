@@ -126,30 +126,40 @@ pub(crate) fn parse_chat_options(
     provider_options: Option<&SharedProviderOptions>,
     name: &str,
 ) -> Result<DeepSeekChatOptions, AiMuxError> {
-    let namespace = provider_options.and_then(|all| all.get(name));
-    if namespace
-        .and_then(|options| options.get("thinking"))
-        .is_some_and(|thinking| !thinking.is_object())
-    {
-        return Err(invalid(name, "thinking must be an object"));
-    }
-    let options: DeepSeekChatOptions = parse_namespace(namespace, name)?;
-    if options.top_logprobs.is_some_and(|n| n > 20) {
-        return Err(invalid(name, "topLogprobs must be at most 20"));
-    }
-    if let Some(user_id) = &options.user_id {
-        if user_id.is_empty()
-            || !user_id
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    crate::openai::convert::parse_chat_provider_options(provider_options, name, |namespace| {
+        if namespace
+            .get("thinking")
+            .is_some_and(|thinking| !thinking.is_object())
         {
-            return Err(invalid(name, "userId must match /^[a-zA-Z0-9_-]+$/"));
+            return Err(invalid(name, "thinking must be an object"));
         }
-        if user_id.len() > 512 {
-            return Err(invalid(name, "userId must be at most 512 characters long"));
+        let mut normalized = namespace.clone();
+        if let Some(value) = normalized.get_mut("topLogprobs")
+            && let Some(number) = value.as_f64()
+            && number.fract() == 0.0
+            && (0.0..=20.0).contains(&number)
+        {
+            *value = Value::from(number as u8);
         }
-    }
-    Ok(options)
+        let options: DeepSeekChatOptions = parse_namespace(Some(&normalized), name)?;
+        if options.top_logprobs.is_some_and(|n| n > 20) {
+            return Err(invalid(name, "topLogprobs must be at most 20"));
+        }
+        if let Some(user_id) = &options.user_id {
+            if user_id.is_empty()
+                || !user_id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+            {
+                return Err(invalid(name, "userId must match /^[a-zA-Z0-9_-]+$/"));
+            }
+            if user_id.len() > 512 {
+                return Err(invalid(name, "userId must be at most 512 characters long"));
+            }
+        }
+        Ok(options)
+    })
+    .map(Option::unwrap_or_default)
 }
 
 /// The options of a message.

@@ -693,180 +693,16 @@ pub(crate) fn parse_option_fields(
     Ok(parsed)
 }
 
-fn parse_chat_provider_options(
-    options: &Option<SharedProviderOptions>,
+/// Parse a namespace with the option schema supplied by its package.
+pub(crate) fn parse_chat_provider_options<T>(
+    options: Option<&SharedProviderOptions>,
     provider: &str,
-) -> Result<Option<SharedProviderOptions>, AiMuxError> {
-    let provider = if provider == "azure" {
-        "openai"
-    } else {
-        provider
-    };
-    if !matches!(provider, "openai" | "groq" | "deepseek") {
-        return Ok(options.clone());
-    }
-    let Some(namespace) = options.as_ref().and_then(|options| options.get(provider)) else {
-        return Ok(None);
-    };
-    let parsed = parse_option_fields(namespace, provider, |key, value| {
-        let one_of = |values: &[&str]| value.as_str().is_some_and(|s| values.contains(&s));
-        let valid = match (provider, key) {
-            ("openai", "logitBias") => {
-                return Some(value.as_object().ok_or(()).and_then(|object| {
-                    let mut parsed = JsonObject::new();
-                    for (key, value) in object {
-                        if !value.is_number() {
-                            return Err(());
-                        }
-                        let key = key.trim_matches(|c| {
-                            matches!(c,
-                                '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}'
-                                | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}'
-                                | '\u{205f}' | '\u{3000}' | '\u{feff}'
-                            )
-                        });
-                        let number = if key.is_empty() {
-                            0.0
-                        } else if let Some((digits, radix)) = key
-                            .strip_prefix("0x")
-                            .or_else(|| key.strip_prefix("0X"))
-                            .map(|s| (s, 16))
-                            .or_else(|| {
-                                key.strip_prefix("0o")
-                                    .or_else(|| key.strip_prefix("0O"))
-                                    .map(|s| (s, 8))
-                            })
-                            .or_else(|| {
-                                key.strip_prefix("0b")
-                                    .or_else(|| key.strip_prefix("0B"))
-                                    .map(|s| (s, 2))
-                            })
-                        {
-                            if digits.is_empty() {
-                                return Err(());
-                            }
-                            let bits_per_digit = match radix {
-                                16 => 4,
-                                8 => 3,
-                                _ => 1,
-                            };
-                            let mut significant_bits = 0usize;
-                            let mut mantissa = 0u64;
-                            let mut guard = false;
-                            let mut sticky = false;
-                            for digit in digits.chars() {
-                                let digit = digit.to_digit(radix).ok_or(())?;
-                                for shift in (0..bits_per_digit).rev() {
-                                    let bit = (digit >> shift) & 1;
-                                    if significant_bits == 0 && bit == 0 {
-                                        continue;
-                                    }
-                                    if significant_bits < 53 {
-                                        mantissa = (mantissa << 1) | u64::from(bit);
-                                    } else if significant_bits == 53 {
-                                        guard = bit != 0;
-                                    } else {
-                                        sticky |= bit != 0;
-                                    }
-                                    significant_bits += 1;
-                                }
-                            }
-                            if guard && (sticky || mantissa & 1 != 0) {
-                                mantissa += 1;
-                            }
-                            let exponent = significant_bits.saturating_sub(53);
-                            if exponent > 1023 {
-                                f64::INFINITY
-                            } else {
-                                mantissa as f64 * 2.0f64.powi(exponent as i32)
-                            }
-                        } else {
-                            key.parse::<f64>().map_err(|_| ())?
-                        };
-                        if !number.is_finite() {
-                            return Err(());
-                        }
-                        let key = if number == 0.0 {
-                            "0".to_string()
-                        } else if number.abs() >= 1e21 || number.abs() < 1e-6 {
-                            let scientific = format!("{number:e}");
-                            let (mantissa, exponent) = scientific.split_once('e').ok_or(())?;
-                            let exponent = exponent.parse::<i32>().map_err(|_| ())?;
-                            format!("{mantissa}e{exponent:+}")
-                        } else {
-                            number.to_string()
-                        };
-                        parsed.insert(key, value.clone());
-                    }
-                    Ok(Value::Object(parsed))
-                }));
-            }
-            ("openai", "logprobs") => value.is_boolean() || value.is_number(),
-            ("openai", "maxCompletionTokens") => value.is_number(),
-            ("openai", "metadata") => value.as_object().is_some_and(|object| {
-                object.iter().all(|(key, value)| {
-                    key.encode_utf16().count() <= 64
-                        && value
-                            .as_str()
-                            .is_some_and(|s| s.encode_utf16().count() <= 512)
-                })
-            }),
-            ("openai", "prediction") => value.is_object(),
-            ("openai", "reasoningEffort") => {
-                one_of(&["none", "minimal", "low", "medium", "high", "xhigh", "max"])
-            }
-            ("openai", "serviceTier") => {
-                one_of(&["auto", "flex", "priority", "fast", "ultrafast", "default"])
-            }
-            ("openai", "textVerbosity") => one_of(&["low", "medium", "high"]),
-            ("openai", "promptCacheRetention") => one_of(&["in_memory", "24h"]),
-            ("openai", "systemMessageMode") => one_of(&["system", "developer", "remove"]),
-            ("openai", "user" | "promptCacheKey" | "safetyIdentifier") | ("groq", "user") => {
-                value.is_string()
-            }
-            ("openai", "parallelToolCalls" | "store" | "strictJsonSchema" | "forceReasoning")
-            | ("groq", "parallelToolCalls" | "structuredOutputs" | "strictJsonSchema")
-            | ("deepseek", "logprobs" | "strictJsonSchema") => value.is_boolean(),
-            ("groq", "reasoningFormat") => one_of(&["parsed", "raw", "hidden"]),
-            ("groq", "reasoningEffort") => one_of(&["none", "default", "low", "medium", "high"]),
-            ("groq", "serviceTier") => one_of(&["on_demand", "performance", "flex", "auto"]),
-            ("deepseek", "reasoningEffort") => one_of(&["low", "medium", "high", "xhigh", "max"]),
-            ("deepseek", "topLogprobs") => value
-                .as_f64()
-                .is_some_and(|n| n.fract() == 0.0 && (0.0..=20.0).contains(&n)),
-            ("deepseek", "userId") => value.as_str().is_some_and(|s| {
-                !s.is_empty()
-                    && s.len() <= 512
-                    && s.bytes()
-                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
-            }),
-            ("openai", "promptCacheOptions") | ("deepseek", "thinking") => {
-                return Some(value.as_object().ok_or(()).and_then(|object| {
-                    parse_option_fields(object, provider, |key, value| {
-                        let valid = match (provider, key) {
-                            ("openai", "mode") => value
-                                .as_str()
-                                .is_some_and(|s| matches!(s, "implicit" | "explicit")),
-                            ("openai", "ttl") => value.as_str() == Some("30m"),
-                            ("deepseek", "type") => value
-                                .as_str()
-                                .is_some_and(|s| matches!(s, "adaptive" | "enabled" | "disabled")),
-                            _ => return None,
-                        };
-                        Some(if valid { Ok(value.clone()) } else { Err(()) })
-                    })
-                    .map(Value::Object)
-                    .map_err(|_| ())
-                }));
-            }
-            _ => return None,
-        };
-        Some(if valid { Ok(value.clone()) } else { Err(()) })
-    })?;
-    Ok(Some(std::collections::HashMap::from([(
-        provider.to_string(),
-        parsed,
-    )])))
+    parse: impl FnOnce(&JsonObject) -> Result<T, AiMuxError>,
+) -> Result<Option<T>, AiMuxError> {
+    options
+        .and_then(|options| options.get(provider))
+        .map(parse)
+        .transpose()
 }
 
 /// Get a value from provider_options.openai.<key>.
@@ -1106,91 +942,6 @@ fn apply_response_format(
     Ok(())
 }
 
-fn validate_chat_options(options: &Option<SharedProviderOptions>) -> Result<(), AiMuxError> {
-    let invalid =
-        |key: &str| AiMuxError::InvalidArgument(format!("invalid openai provider option: {key}"));
-    for key in [
-        "parallelToolCalls",
-        "store",
-        "strictJsonSchema",
-        "forceReasoning",
-    ] {
-        if let Some(value) = openai_option(options, key)
-            && !value.is_boolean()
-        {
-            return Err(invalid(key));
-        }
-    }
-    for key in ["user", "promptCacheKey", "safetyIdentifier"] {
-        if let Some(value) = openai_option(options, key)
-            && !value.is_string()
-        {
-            return Err(invalid(key));
-        }
-    }
-    for (key, allowed) in [
-        (
-            "reasoningEffort",
-            &["none", "minimal", "low", "medium", "high", "xhigh", "max"][..],
-        ),
-        (
-            "serviceTier",
-            &["auto", "flex", "priority", "fast", "ultrafast", "default"][..],
-        ),
-        ("textVerbosity", &["low", "medium", "high"][..]),
-        ("promptCacheRetention", &["in_memory", "24h"][..]),
-        ("systemMessageMode", &["system", "developer", "remove"][..]),
-    ] {
-        if let Some(value) = openai_option(options, key)
-            && !value.as_str().is_some_and(|v| allowed.contains(&v))
-        {
-            return Err(invalid(key));
-        }
-    }
-    if let Some(value) = openai_option(options, "logprobs")
-        && !value.is_boolean()
-        && !value.is_number()
-    {
-        return Err(invalid("logprobs"));
-    }
-    if let Some(value) = openai_option(options, "maxCompletionTokens")
-        && !value.is_number()
-    {
-        return Err(invalid("maxCompletionTokens"));
-    }
-    for key in ["metadata", "prediction", "logitBias", "promptCacheOptions"] {
-        let Some(value) = openai_option(options, key) else {
-            continue;
-        };
-        let Some(obj) = value.as_object() else {
-            return Err(invalid(key));
-        };
-        if key == "metadata"
-            && obj.iter().any(|(k, v)| {
-                k.chars().count() > 64 || !v.as_str().is_some_and(|v| v.chars().count() <= 512)
-            })
-        {
-            return Err(invalid(key));
-        }
-        if key == "logitBias"
-            && obj
-                .iter()
-                .any(|(k, v)| k.parse::<f64>().is_err() || !v.is_number())
-        {
-            return Err(invalid(key));
-        }
-        if key == "promptCacheOptions"
-            && (obj
-                .get("mode")
-                .is_some_and(|v| !matches!(v.as_str(), Some("implicit" | "explicit")))
-                || obj.get("ttl").is_some_and(|v| v != "30m"))
-        {
-            return Err(invalid(key));
-        }
-    }
-    Ok(())
-}
-
 /// Pass through the simple provider-specific options that map 1:1 to a body
 /// field.
 fn apply_provider_option_passthrough(
@@ -1329,12 +1080,32 @@ pub fn build_request_body_with_warnings(
     options: &CallOptions,
     stream: bool,
 ) -> Result<RequestBodyResult, AiMuxError> {
+    build_request_body_with_chat_options(
+        model_id,
+        options,
+        stream,
+        super::options::parse_chat_options,
+    )
+}
+
+pub(crate) fn build_request_body_with_chat_options(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+    parse: super::options::ChatOptionsParser,
+) -> Result<RequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
     let caps = get_model_capabilities(model_id);
-    let parsed_provider_opts = parse_chat_provider_options(&options.provider_options, "openai")?;
+    let parsed_provider_opts = parse_chat_provider_options(
+        options.provider_options.as_ref(),
+        super::options::NAMESPACE,
+        parse,
+    )?
+    .map(|parsed| {
+        std::collections::HashMap::from([(super::options::NAMESPACE.to_string(), parsed)])
+    });
     let provider_opts = &parsed_provider_opts;
 
-    validate_chat_options(provider_opts)?;
     let mut resolved_reasoning_effort = resolve_reasoning_effort(provider_opts, &options.reasoning);
     if let (Some(effort), Some(supported)) =
         (&resolved_reasoning_effort, caps.supported_reasoning_efforts)

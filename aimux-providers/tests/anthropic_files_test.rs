@@ -299,18 +299,6 @@ async fn handles_base64_string_data() {
 }
 
 #[tokio::test]
-async fn has_specification_version_v4() {
-    let provider = create_anthropic(AnthropicProviderSettings {
-        api_key: Some("test-api-key".to_string()),
-        ..Default::default()
-    })
-    .unwrap();
-    let files = Provider::files(&provider).unwrap();
-
-    assert_eq!(files.specification_version(), "v4");
-}
-
-#[tokio::test]
 async fn has_correct_provider_name() {
     let provider = create_anthropic(AnthropicProviderSettings {
         api_key: Some("test-api-key".to_string()),
@@ -320,5 +308,6 @@ async fn has_correct_provider_name() {
     .unwrap();
     let files = Provider::files(&provider).unwrap();
 
+    // The project has no specification version.
     assert_eq!(files.provider(), "anthropic.files");
 }

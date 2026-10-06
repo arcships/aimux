@@ -241,7 +241,9 @@ pub fn create_azure(
         use_deployment_based_urls: settings.use_deployment_based_urls,
         fetch,
         headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            headers, "azure", "4.0.84",
+            headers,
+            options::NAMESPACE,
+            "4.0.84",
         ),
     })
 }
@@ -414,6 +416,7 @@ impl AzureOpenAIProvider {
             supported_urls: crate::openai::config::supported_urls(provider),
             transform_request_body: None,
             responses: ResponsesProfile::default(),
+            chat_options: options::CHAT_OPTIONS,
         }
     }
 
