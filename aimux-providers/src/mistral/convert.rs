@@ -289,21 +289,25 @@ pub fn build_request_body(
     let provider_options = options
         .provider_options
         .as_ref()
-        .and_then(|namespaces| namespaces.get("mistral"))
+        .and_then(|namespaces| namespaces.get(crate::mistral::options::NAMESPACE))
         .map(|namespace| {
-            crate::openai::convert::parse_option_fields(namespace, "mistral", |key, value| {
-                let valid = match key {
-                    "safePrompt" | "structuredOutputs" | "strictJsonSchema"
-                    | "parallelToolCalls" => value.is_boolean(),
-                    "documentImageLimit" | "documentPageLimit" => value.is_number(),
-                    "promptCacheKey" => value.is_string(),
-                    "reasoningEffort" => value
-                        .as_str()
-                        .is_some_and(|value| matches!(value, "high" | "none")),
-                    _ => return None,
-                };
-                Some(if valid { Ok(value.clone()) } else { Err(()) })
-            })
+            crate::openai::convert::parse_option_fields(
+                namespace,
+                crate::mistral::options::NAMESPACE,
+                |key, value| {
+                    let valid = match key {
+                        "safePrompt" | "structuredOutputs" | "strictJsonSchema"
+                        | "parallelToolCalls" => value.is_boolean(),
+                        "documentImageLimit" | "documentPageLimit" => value.is_number(),
+                        "promptCacheKey" => value.is_string(),
+                        "reasoningEffort" => value
+                            .as_str()
+                            .is_some_and(|value| matches!(value, "high" | "none")),
+                        _ => return None,
+                    };
+                    Some(if valid { Ok(value.clone()) } else { Err(()) })
+                },
+            )
         })
         .transpose()?
         .unwrap_or_default();

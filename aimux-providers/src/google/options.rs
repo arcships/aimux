@@ -16,6 +16,9 @@ pub(crate) const GOOGLE: &str = "google";
 
 /// The Vertex AI namespace.
 pub(crate) const GOOGLE_VERTEX: &str = "googleVertex";
+/// Keys the Vertex video model writes its metadata under: the current
+/// namespace plus the two legacy keys upstream keeps for compatibility.
+pub(crate) const VERTEX_VIDEO_METADATA_KEYS: [&str; 3] = [GOOGLE_VERTEX, "google-vertex", "vertex"];
 
 /// Which provider's namespaces a model reads and writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

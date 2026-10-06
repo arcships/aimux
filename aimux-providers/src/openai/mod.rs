@@ -18,6 +18,7 @@ pub mod embedding;
 pub mod files;
 pub mod image;
 pub mod model;
+pub(crate) mod options;
 pub mod responses;
 pub mod speech;
 pub mod transcription;

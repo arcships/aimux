@@ -85,16 +85,16 @@ where
 pub(crate) fn parse_groq_options(
     options: &CallOptions,
 ) -> Result<GroqLanguageModelChatOptions, AiMuxError> {
-    let Some(groq) = options
-        .provider_options
-        .as_ref()
-        .and_then(|all| all.get(NAMESPACE))
-    else {
-        return Ok(GroqLanguageModelChatOptions::default());
-    };
-    serde_json::from_value(Value::Object(groq.clone())).map_err(|error| {
-        AiMuxError::InvalidArgument(format!(
-            "invalid argument for parameter providerOptions: {error}"
-        ))
-    })
+    crate::openai::convert::parse_chat_provider_options(
+        options.provider_options.as_ref(),
+        NAMESPACE,
+        |groq| {
+            serde_json::from_value(Value::Object(groq.clone())).map_err(|error| {
+                AiMuxError::InvalidArgument(format!(
+                    "invalid argument for parameter providerOptions: {error}"
+                ))
+            })
+        },
+    )
+    .map(Option::unwrap_or_default)
 }

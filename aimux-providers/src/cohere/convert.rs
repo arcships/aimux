@@ -441,8 +441,10 @@ pub fn resolve_cohere_thinking(
         let thinking = thinking.as_object().ok_or_else(|| {
             AiMuxError::InvalidArgument("invalid cohere provider options".to_string())
         })?;
-        let thinking =
-            crate::openai::convert::parse_option_fields(thinking, "cohere", |key, value| {
+        let thinking = crate::openai::convert::parse_option_fields(
+            thinking,
+            crate::cohere::options::NAMESPACE,
+            |key, value| {
                 let valid = match key {
                     "type" => value
                         .as_str()
@@ -451,7 +453,8 @@ pub fn resolve_cohere_thinking(
                     _ => return None,
                 };
                 Some(if valid { Ok(value.clone()) } else { Err(()) })
-            })?;
+            },
+        )?;
         let t_type = thinking
             .get("type")
             .and_then(|v| v.as_str())

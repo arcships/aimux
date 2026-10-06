@@ -214,7 +214,7 @@ impl VideoModel for GoogleVideoModel {
             warnings: Vec::new(),
             provider_metadata: Some(
                 [(
-                    "google".to_string(),
+                    crate::google::options::GOOGLE.to_string(),
                     [("videos".to_string(), json!(video_metadata))]
                         .into_iter()
                         .collect(),

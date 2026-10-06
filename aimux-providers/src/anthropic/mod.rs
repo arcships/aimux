@@ -194,7 +194,7 @@ pub fn create_anthropic(
                 vec![("anthropic-version".to_string(), API_VERSION.to_string())],
                 settings.headers,
             ),
-            "anthropic",
+            crate::anthropic::options::CANONICAL,
             "4.0.68",
         ),
         fetch: settings.fetch,

@@ -25,7 +25,9 @@ use aimux_provider_utils::{
 };
 
 use super::config::{OpenAIModelConfig, TransformRequestBody};
-use super::convert::{RequestBodyResult, build_request_body_with_warnings, parse_finish_reason};
+use super::convert::{
+    RequestBodyResult, build_request_body_with_chat_options, parse_finish_reason,
+};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
 
 /// An OpenAI chat-completions language model.
@@ -140,6 +142,7 @@ impl LanguageModel for OpenAIModel {
             &self.model_id,
             options,
             self.config.transform_request_body.as_ref(),
+            self.config.chat_options,
         )
         .await
     }
@@ -157,6 +160,7 @@ impl LanguageModel for OpenAIModel {
             &self.model_id,
             options,
             self.config.transform_request_body.as_ref(),
+            self.config.chat_options,
         )
         .await
     }
@@ -185,8 +189,10 @@ pub(crate) async fn execute_generate(
     model_id: &str,
     options: &CallOptions,
     transform_request_body: Option<&TransformRequestBody>,
+    parse_chat_options: super::options::ChatOptionsParser,
 ) -> Result<GenerateResult, AiMuxError> {
-    let request_result = build_request_body_with_warnings(model_id, options, false)?;
+    let request_result =
+        build_request_body_with_chat_options(model_id, options, false, parse_chat_options)?;
     let body = match transform_request_body {
         Some(transform) => transform(request_result.body),
         None => request_result.body,
@@ -338,8 +344,10 @@ pub(crate) async fn execute_stream(
     model_id: &str,
     options: &CallOptions,
     transform_request_body: Option<&TransformRequestBody>,
+    parse_chat_options: super::options::ChatOptionsParser,
 ) -> Result<StreamResult, AiMuxError> {
-    let request_result = build_request_body_with_warnings(model_id, options, true)?;
+    let request_result =
+        build_request_body_with_chat_options(model_id, options, true, parse_chat_options)?;
     // M9 (RFC-0016): keep the warnings computed while building the body —
     // they are emitted in `StreamStart` below instead of being dropped.
     let RequestBodyResult { body, warnings } = request_result;
