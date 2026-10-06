@@ -238,7 +238,7 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
                         }
                         FileBytes::Base64(data) => data.clone(),
                     };
-                    let media_type = &file.media_type;
+                    let media_type = crate::google::convert::tool_file_media_type(file)?;
                     if !is_image && media_type != "application/pdf" {
                         return Err(AiMuxError::UnsupportedFunctionality(
                             "Only images and PDF file parts are supported".to_string(),
@@ -285,6 +285,27 @@ pub fn build_request_body(
     options: &CallOptions,
     stream: bool,
 ) -> Result<Value, AiMuxError> {
+    let provider_options = options
+        .provider_options
+        .as_ref()
+        .and_then(|namespaces| namespaces.get("mistral"))
+        .map(|namespace| {
+            crate::openai::convert::parse_option_fields(namespace, "mistral", |key, value| {
+                let valid = match key {
+                    "safePrompt" | "structuredOutputs" | "strictJsonSchema"
+                    | "parallelToolCalls" => value.is_boolean(),
+                    "documentImageLimit" | "documentPageLimit" => value.is_number(),
+                    "promptCacheKey" => value.is_string(),
+                    "reasoningEffort" => value
+                        .as_str()
+                        .is_some_and(|value| matches!(value, "high" | "none")),
+                    _ => return None,
+                };
+                Some(if valid { Ok(value.clone()) } else { Err(()) })
+            })
+        })
+        .transpose()?
+        .unwrap_or_default();
     let messages = convert_prompt_to_mistral_messages(&options.prompt)?;
 
     let mut body = json!({
@@ -296,14 +317,8 @@ pub fn build_request_body(
         body["stream"] = json!(true);
     }
 
-    if let Some(safe_prompt) = options
-        .provider_options
-        .as_ref()
-        .and_then(|namespaces| namespaces.get("mistral"))
-        .and_then(|options| options.get("safePrompt"))
-        .and_then(Value::as_bool)
-    {
-        body["safe_prompt"] = json!(safe_prompt);
+    if let Some(safe_prompt) = provider_options.get("safePrompt") {
+        body["safe_prompt"] = safe_prompt.clone();
     }
 
     if let Some(max_tokens) = options.max_output_tokens {

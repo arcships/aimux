@@ -205,6 +205,7 @@ impl LanguageModel for VertexAnthropicModel {
         let content = crate::anthropic::stream::parse_anthropic_content(
             &data.content,
             &ToolNameMapping::new(options.tools.as_deref()),
+            &crate::anthropic::stream::generate_id,
         );
 
         let finish_reason = data
@@ -421,6 +422,7 @@ impl LanguageModel for VertexAnthropicModel {
                                             &tool_names,
                                             &mcp_tool_calls,
                                             &server_tool_calls,
+                                            &crate::anthropic::stream::generate_id,
                                         ) {
                                             yield Ok(part);
                                         }

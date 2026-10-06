@@ -173,6 +173,7 @@ impl LanguageModel for AnthropicAwsModel {
             options.abort_signal.clone(),
             options.recording_context.clone(),
             &ToolNameMapping::new(options.tools.as_deref()),
+            &crate::anthropic::stream::generate_id,
         )
         .await
     }
@@ -190,6 +191,7 @@ impl LanguageModel for AnthropicAwsModel {
             options.abort_signal.clone(),
             options.recording_context.clone(),
             ToolNameMapping::new(options.tools.as_deref()),
+            std::sync::Arc::new(crate::anthropic::stream::generate_id),
         )
         .await
     }
