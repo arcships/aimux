@@ -33,12 +33,27 @@ struct PreparedCall {
 pub struct AnthropicMessagesModel {
     model_id: String,
     config: AnthropicModelConfig,
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 }
 
 impl AnthropicMessagesModel {
     /// A model of the host the config describes.
     pub(crate) fn with_config(model_id: String, config: AnthropicModelConfig) -> Self {
-        Self { model_id, config }
+        Self {
+            model_id,
+            config,
+            generate_id: std::sync::Arc::new(aimux_provider_utils::generate_id),
+        }
+    }
+
+    pub(crate) fn with_generate_id(
+        mut self,
+        generate_id: Option<std::sync::Arc<dyn Fn() -> String + Send + Sync>>,
+    ) -> Self {
+        if let Some(generate_id) = generate_id {
+            self.generate_id = generate_id;
+        }
+        self
     }
 
     /// Build the request for one call: the body (host preparation and the
@@ -96,6 +111,7 @@ impl LanguageModel for AnthropicMessagesModel {
                 .as_ref()
                 .is_some_and(|options| options.contains_key(&self.config.provider_options_name)),
             &ToolNameMapping::new(options.tools.as_deref()),
+            self.generate_id.as_ref(),
         )
         .await
     }
@@ -112,6 +128,7 @@ impl LanguageModel for AnthropicMessagesModel {
                 .as_ref()
                 .is_some_and(|options| options.contains_key(&self.config.provider_options_name)),
             ToolNameMapping::new(options.tools.as_deref()),
+            self.generate_id.clone(),
         )
         .await
     }

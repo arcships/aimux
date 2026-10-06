@@ -173,7 +173,7 @@ pub fn convert_prompt_to_cohere(
                                     }
                                     FileData::Text { .. } => {
                                         return Err(AiMuxError::UnsupportedFunctionality(
-                                            "text file parts".into(),
+                                            "image file parts with text data".into(),
                                         ));
                                     }
                                 };

@@ -230,23 +230,31 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
         UserPart::Text(TextPart { text, .. }) => json!({ "type": "text", "text": text }),
         UserPart::File(file) => {
             use base64::Engine;
-            let is_image = file.media_type.split('/').next() == Some("image");
-            if !is_image && file.media_type != "application/pdf" {
-                return Err(AiMuxError::UnsupportedFunctionality(
-                    "Only images and PDF file parts are supported".to_string(),
-                ));
-            }
+            let is_image = get_top_level_media_type(&file.media_type) == "image";
             let url = match &file.data {
                 FileData::Data { data } => {
+                    let media_type = resolve_full_media_type(file)?;
+                    if !is_image && media_type != "application/pdf" {
+                        return Err(AiMuxError::UnsupportedFunctionality(
+                            "Only images and PDF file parts are supported".to_string(),
+                        ));
+                    }
                     let b64 = match data {
                         FileBytes::Binary(bytes) => {
                             base64::engine::general_purpose::STANDARD.encode(bytes)
                         }
                         FileBytes::Base64(data) => data.clone(),
                     };
-                    format!("data:{};base64,{}", resolve_full_media_type(file)?, b64)
+                    format!("data:{media_type};base64,{b64}")
                 }
-                FileData::Url { url, .. } => url.clone(),
+                FileData::Url { url, .. } => {
+                    if !is_image && file.media_type != "application/pdf" {
+                        return Err(AiMuxError::UnsupportedFunctionality(
+                            "Only images and PDF file parts are supported".to_string(),
+                        ));
+                    }
+                    url.clone()
+                }
                 FileData::Reference { .. } => {
                     return Err(AiMuxError::UnsupportedFunctionality(
                         "file parts with provider references".into(),
@@ -258,7 +266,7 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
                     ));
                 }
             };
-            if get_top_level_media_type(&file.media_type) == "image" {
+            if is_image {
                 json!({ "type": "image_url", "image_url": url })
             } else {
                 json!({ "type": "document_url", "document_url": url })

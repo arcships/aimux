@@ -37,8 +37,14 @@ use serde_json::{Value, json};
 /// messages into a single `assistant` block. Assistant text is trimmed when it
 /// is the last content part of the last message of the last block; empty
 /// assistant text is dropped unless the message also carries reasoning.
-#[must_use]
-pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, Vec<Value>) {
+///
+/// # Errors
+///
+/// Returns an unsupported-functionality error for unsupported tool result content.
+pub fn convert_prompt_to_bedrock(
+    prompt: &LanguageModelPrompt,
+) -> Result<(Vec<Value>, Vec<Value>), aimux_core::error::AiMuxError> {
+    validate_tool_result_content(prompt)?;
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Blk {
         System,
@@ -248,7 +254,7 @@ pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, V
         }
     }
 
-    (system, messages)
+    Ok((system, messages))
 }
 
 fn append_user_message(messages: &mut Vec<Value>, content: Vec<Value>) {
@@ -659,9 +665,15 @@ pub fn prepare_tools(
 /// and `inferenceConfig.maxTokens` is bumped by `budgetTokens`. The
 /// `reasoningConfig` key never appears in the request body. User-supplied
 /// `additionalModelRequestFields` are merged with the derived `thinking` field.
-#[must_use]
-pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
-    let (system, messages) = convert_prompt_to_bedrock(&options.prompt);
+///
+/// # Errors
+///
+/// Returns an unsupported-functionality error for unsupported tool result content.
+pub fn build_request_body(
+    model_id: &str,
+    options: &CallOptions,
+) -> Result<Value, aimux_core::error::AiMuxError> {
+    let (system, messages) = convert_prompt_to_bedrock(&options.prompt)?;
 
     // Extract Bedrock-specific provider options.
     let bedrock_opts = options::read(options.provider_options.as_ref());
@@ -751,7 +763,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
         body.insert("toolConfig".to_string(), tool_config);
     }
 
-    Value::Object(body)
+    Ok(Value::Object(body))
 }
 
 /// Map a Bedrock `stopReason` to the unified `FinishReason`.
