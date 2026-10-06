@@ -420,14 +420,13 @@ mod convert_messages {
             })],
             provider_options: None,
         }];
-        // Groq references don't contain an "openai" key, so the converter
-        // returns an InvalidArgument error instead of panicking.
+        // Upstream rejects file parts with provider references outright.
         let result = model.do_generate(&default_options(prompt)).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            err.to_string().contains("No provider reference found"),
-            "error should mention 'No provider reference found': {err}"
+            err.to_string().contains("file parts with provider references"),
+            "error should mention 'file parts with provider references': {err}"
         );
     }
 }

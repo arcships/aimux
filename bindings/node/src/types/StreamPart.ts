@@ -19,27 +19,27 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * [`StreamPart`] (raw argument text); `stream_text` emits [`TextStreamPart`]
  * (parsed and validated [`ToolCall`]).
  */
-export type StreamPart = { "TextStart": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextDelta": { id: string, delta: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "StreamStart": { warnings: Array<Warning>, } } | { "Finish": { finish_reason: FinishReason, usage: Usage, provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "Error": { error: AiMuxError, } } | { "ToolInputStart": { id: string, tool_name: string,
+export type StreamPart = { "TextStart": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextDelta": { id: string, delta: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "StreamStart": { warnings: Array<Warning>, } } | { "Finish": { finish_reason: FinishReason, usage: Usage, provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "Error": { error: AiMuxError, } } | { "ToolInputStart": { id: string, tool_name: string, 
 /**
  * Whether the tool call will be executed by the provider.
  */
-provider_executed?: boolean | null,
+provider_executed?: boolean | null, 
 /**
  * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
  */
-dynamic?: boolean | null,
+dynamic?: boolean | null, 
 /**
  * Optional title for the tool call.
  */
-title?: string | null, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolCall": ToolCall } | { "ToolResult": ToolResult } | { "File": GeneratedFile } | { "ReasoningFile": ReasoningFileOutput } | { "Custom": { kind: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolApprovalRequest": ToolApprovalRequestOutput } | { "ReasoningStart": { id: string,
+title?: string | null, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolCall": ToolCall } | { "ToolResult": ToolResult } | { "File": GeneratedFile } | { "ReasoningFile": ReasoningFileOutput } | { "Custom": { kind: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolApprovalRequest": ToolApprovalRequestOutput } | { "ReasoningStart": { id: string, 
 /**
  * Provider-specific metadata (e.g. xAI `itemId`).
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningDelta": { id: string, delta: string,
+provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningDelta": { id: string, delta: string, 
 /**
  * Provider-specific metadata (e.g. xAI `itemId`).
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningEnd": { id: string,
+provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningEnd": { id: string, 
 /**
  * Provider-specific metadata (e.g. xAI `itemId`, `reasoningEncryptedContent`).
  */
