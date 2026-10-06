@@ -161,7 +161,11 @@ pub fn convert_prompt_to_cohere(
                                         format!("data:{};base64,{}", file.media_type, b64)
                                     }
                                     FileData::Url { url, .. } => url.clone(),
-                                    FileData::Reference { .. } => continue,
+                                    FileData::Reference { .. } => {
+                                        return Err(AiMuxError::UnsupportedFunctionality(
+                                            "image file parts with provider references".to_string(),
+                                        ));
+                                    }
                                     FileData::Text { .. } => {
                                         return Err(AiMuxError::UnsupportedFunctionality(
                                             "image file parts with text data".to_string(),
@@ -181,7 +185,16 @@ pub fn convert_prompt_to_cohere(
                                         data: FileBytes::Base64(data),
                                     } => data.clone(),
                                     FileData::Text { text } => text.clone(),
-                                    FileData::Url { .. } | FileData::Reference { .. } => continue,
+                                    FileData::Url { .. } => {
+                                        return Err(AiMuxError::UnsupportedFunctionality(
+                                            "File URL data: URLs should be downloaded by the AI SDK and not reach this point. This indicates a configuration issue.".to_string(),
+                                        ));
+                                    }
+                                    FileData::Reference { .. } => {
+                                        return Err(AiMuxError::UnsupportedFunctionality(
+                                            "file parts with provider references".to_string(),
+                                        ));
+                                    }
                                 };
                                 let mut doc_data = json!({ "text": text });
                                 if let Some(filename) = &file.filename {
@@ -427,9 +440,9 @@ pub fn resolve_cohere_thinking(
         let mut obj = json!({ "type": t_type });
         if let Some(budget) = thinking
             .get("tokenBudget")
-            .and_then(serde_json::Value::as_u64)
+            .filter(|value| value.is_number())
         {
-            obj["token_budget"] = json!(budget);
+            obj["token_budget"] = budget.clone();
         }
         return Some(obj);
     }

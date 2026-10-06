@@ -308,6 +308,14 @@ pub fn convert_to_xai_responses_input(
                             content_parts.push(json!({ "type": "input_text", "text": text }));
                         }
                         UserPart::File(file) => {
+                            if matches!(file.data, FileData::Data { .. })
+                                && file.media_type.split('/').next() != Some("image")
+                            {
+                                return Err(AiMuxError::UnsupportedFunctionality(format!(
+                                    "file part media type {} as inline data (xAI Responses requires a URL or a Files API reference for non-image files)",
+                                    file.media_type
+                                )));
+                            }
                             content_parts.push(match &file.data {
                                 FileData::Data {
                                     data: FileBytes::Binary(bytes),
@@ -587,7 +595,61 @@ pub fn build_responses_request_body(
     stream: bool,
 ) -> Result<ResponsesRequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
-    let xai_opts = &options.provider_options;
+    let parsed_options = options
+        .provider_options
+        .as_ref()
+        .map(|namespaces| {
+            let mut namespaces = namespaces.clone();
+            if let Some(raw) = namespaces.get("xai") {
+                let parsed =
+                    crate::openai::convert::parse_option_fields(raw, "xai", |key, value| {
+                        let valid = match key {
+                            "reasoningEffort" => value.as_str().is_some_and(|s| {
+                                matches!(s, "none" | "low" | "medium" | "high" | "xhigh")
+                            }),
+                            "reasoningSummary" => value
+                                .as_str()
+                                .is_some_and(|s| matches!(s, "auto" | "concise" | "detailed")),
+                            "logprobs" | "parallelToolCalls" | "store" => value.is_boolean(),
+                            "topLogprobs" => value
+                                .as_f64()
+                                .is_some_and(|n| n.fract() == 0.0 && (0.0..=8.0).contains(&n)),
+                            "minP" => value.as_f64().is_some_and(|n| (0.0..=1.0).contains(&n)),
+                            "maxTurns" => value.as_f64().is_some_and(|n| {
+                                n.fract() == 0.0 && n.abs() <= 9_007_199_254_740_991.0
+                            }),
+                            "promptCacheKey" | "safetyIdentifier" | "previousResponseId"
+                            | "user" => value.is_string(),
+                            "serviceTier" => value
+                                .as_str()
+                                .is_some_and(|s| matches!(s, "default" | "priority")),
+                            "include" => {
+                                value.is_null()
+                                    || value.as_array().is_some_and(|items| {
+                                        items.iter().all(|item| {
+                                            item.as_str().is_some_and(|s| {
+                                                matches!(
+                                                    s,
+                                                    "file_search_call.results"
+                                                        | "web_search_call.action.sources"
+                                                        | "code_interpreter_call.outputs"
+                                                        | "reasoning.encrypted_content"
+                                                        | "no_inline_citations"
+                                                )
+                                            })
+                                        })
+                                    })
+                            }
+                            _ => return None,
+                        };
+                        Some(if valid { Ok(value.clone()) } else { Err(()) })
+                    })?;
+                namespaces.insert("xai".to_string(), parsed);
+            }
+            Ok::<_, AiMuxError>(namespaces)
+        })
+        .transpose()?;
+    let xai_opts = &parsed_options;
 
     if options.stop_sequences.is_some() {
         warnings.push(Warning::Unsupported {

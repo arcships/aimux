@@ -26,9 +26,10 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
-    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, UserPart,
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, Tool};
+use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, ReasoningOutput};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
@@ -283,6 +284,97 @@ mod convert_messages {
     }
 
     // ── tool calls ──
+
+    /// TS: "should stringify arguments to tool calls"
+    #[tokio::test]
+    async fn tool_call_arguments_stringified() {
+        let server = MockServer::start().await;
+        mock_json(&server, text_completion_body()).await;
+
+        let model = make_provider(&server);
+
+        let prompt: LanguageModelPrompt = vec![
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "quux".into(),
+                    tool_name: "thwomp".into(),
+                    input: json!({"foo":"bar123"}),
+                    provider_executed: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
+            LanguageModelMessage::Tool {
+                content: vec![ToolPart::ToolResult(ToolResultPart {
+                    tool_call_id: "quux".into(),
+                    tool_name: "thwomp".into(),
+                    output: ToolResultOutput::Json {
+                        value: json!({"oof":"321rab"}),
+                        provider_options: None,
+                    },
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
+        ];
+        model.do_generate(&default_options(prompt)).await.unwrap();
+
+        let body = first_request_body(&server).await;
+        // Assistant message
+        assert_eq!(body["messages"][0]["role"], "assistant");
+        assert_eq!(body["messages"][0]["content"], "");
+        assert_eq!(body["messages"][0]["tool_calls"][0]["id"], "quux");
+        assert_eq!(body["messages"][0]["tool_calls"][0]["type"], "function");
+        assert_eq!(
+            body["messages"][0]["tool_calls"][0]["function"]["name"],
+            "thwomp"
+        );
+        assert_eq!(
+            body["messages"][0]["tool_calls"][0]["function"]["arguments"],
+            r#"{"foo":"bar123"}"#
+        );
+        // Tool message
+        assert_eq!(body["messages"][1]["role"], "tool");
+        assert_eq!(body["messages"][1]["tool_call_id"], "quux");
+        assert_eq!(body["messages"][1]["content"], r#"{"oof":"321rab"}"#);
+    }
+
+    /// TS: "should send reasoning if present"
+    #[tokio::test]
+    async fn reasoning_in_assistant_message() {
+        let server = MockServer::start().await;
+        mock_json(&server, text_completion_body()).await;
+
+        let model = make_provider(&server);
+
+        let prompt: LanguageModelPrompt = vec![LanguageModelMessage::Assistant {
+            content: vec![
+                AssistantPart::Reasoning(ReasoningPart {
+                    text: "I think the tool will return the correct value.".into(),
+                    provider_options: None,
+                }),
+                AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "quux".into(),
+                    tool_name: "thwomp".into(),
+                    input: json!({"foo":"bar123"}),
+                    provider_executed: None,
+                    provider_options: None,
+                }),
+            ],
+            provider_options: None,
+        }];
+        model.do_generate(&default_options(prompt)).await.unwrap();
+
+        let body = first_request_body(&server).await;
+        let msg = &body["messages"][0];
+        assert_eq!(msg["role"], "assistant");
+        assert_eq!(msg["content"], "");
+        assert_eq!(
+            msg["reasoning"],
+            "I think the tool will return the correct value."
+        );
+        assert_eq!(msg["tool_calls"][0]["function"]["name"], "thwomp");
+    }
 
     /// TS: "should not include reasoning field when no reasoning content is present"
     #[tokio::test]
@@ -710,6 +802,89 @@ mod prepare_tools {
         let body = first_request_body(&server).await;
         assert!(body["tools"][0]["function"].get("strict").is_none());
     }
+
+    /// TS: "should handle tool choice 'auto'"
+    #[tokio::test]
+    async fn tool_choice_auto() {
+        let server = MockServer::start().await;
+        mock_json(&server, text_completion_body()).await;
+
+        let model = make_provider(&server);
+
+        let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
+        let options = CallOptions {
+            tools: Some(vec![Tool::from(tool)]),
+            tool_choice: Some(ToolChoice::Auto),
+            ..default_options(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let body = first_request_body(&server).await;
+        assert_eq!(body["tool_choice"], "auto");
+    }
+
+    /// TS: "should handle tool choice 'required'"
+    #[tokio::test]
+    async fn tool_choice_required() {
+        let server = MockServer::start().await;
+        mock_json(&server, text_completion_body()).await;
+
+        let model = make_provider(&server);
+
+        let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
+        let options = CallOptions {
+            tools: Some(vec![Tool::from(tool)]),
+            tool_choice: Some(ToolChoice::Required),
+            ..default_options(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let body = first_request_body(&server).await;
+        assert_eq!(body["tool_choice"], "required");
+    }
+
+    /// TS: "should handle tool choice 'none'"
+    #[tokio::test]
+    async fn tool_choice_none() {
+        let server = MockServer::start().await;
+        mock_json(&server, text_completion_body()).await;
+
+        let model = make_provider(&server);
+
+        let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
+        let options = CallOptions {
+            tools: Some(vec![Tool::from(tool)]),
+            tool_choice: Some(ToolChoice::None),
+            ..default_options(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let body = first_request_body(&server).await;
+        assert_eq!(body["tool_choice"], "none");
+    }
+
+    /// TS: "should handle tool choice 'tool'"
+    #[tokio::test]
+    async fn tool_choice_tool() {
+        let server = MockServer::start().await;
+        mock_json(&server, text_completion_body()).await;
+
+        let model = make_provider(&server);
+
+        let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
+        let options = CallOptions {
+            tools: Some(vec![Tool::from(tool)]),
+            tool_choice: Some(ToolChoice::Tool {
+                tool_name: "testFunction".to_string(),
+            }),
+            ..default_options(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let body = first_request_body(&server).await;
+        assert_eq!(body["tool_choice"]["type"], "function");
+        assert_eq!(body["tool_choice"]["function"]["name"], "testFunction");
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1015,6 +1190,39 @@ mod do_generate {
 
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::Other);
         assert_eq!(result.finish_reason.raw.as_deref(), Some("eos"));
+    }
+
+    /// TS: "should pass tools and toolChoice"
+    #[tokio::test]
+    async fn pass_tools_and_tool_choice() {
+        let server = MockServer::start().await;
+        mock_json(&server, groq_text_body()).await;
+
+        let model = make_provider(&server);
+
+        let tool = FunctionTool::new(
+            "test-tool",
+            json!({
+                "type": "object",
+                "properties": { "value": { "type": "string" } },
+                "required": ["value"],
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+            }),
+        );
+        let options = CallOptions {
+            tools: Some(vec![Tool::from(tool)]),
+            tool_choice: Some(ToolChoice::Tool {
+                tool_name: "test-tool".to_string(),
+            }),
+            ..default_options(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let body = first_request_body(&server).await;
+        assert_eq!(body["tool_choice"]["type"], "function");
+        assert_eq!(body["tool_choice"]["function"]["name"], "test-tool");
+        assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
     }
 
     /// TS: "should pass response format information as json_schema when
