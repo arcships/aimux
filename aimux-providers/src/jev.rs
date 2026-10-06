@@ -1,5 +1,4 @@
-//! Jev hosted System One API. An explicit endpoint override can target a
-//! Jev-compatible wrapper without assuming its URL or calibration semantics.
+//! Official TypeSafe System One API for Jev decision models.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -15,7 +14,7 @@ use aimux_provider_utils::{HttpRequest, load_api_key};
 #[derive(Clone)]
 pub struct JevConfig {
     pub api_key: String,
-    /// Full POST URL; hosted default includes the required trailing slash.
+    /// Full POST URL for the official API, or an explicitly configured proxy.
     pub endpoint: String,
     pub headers: HashMap<String, String>,
     pub retry_config: aimux_core::retry::RetryConfig,
@@ -27,7 +26,7 @@ impl JevConfig {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
-            endpoint: "https://jev-ai.org/api/v1/systemone/".into(),
+            endpoint: "https://api.typesafe.ai/v1/systemone".into(),
             headers: HashMap::new(),
             retry_config: Default::default(),
             probability_source: DecisionProbabilitySource::Native,
@@ -35,12 +34,12 @@ impl JevConfig {
     }
 
     /// # Errors
-    /// Returns `InvalidArgument` if `JEV_API_KEY` is unavailable.
+    /// Returns `InvalidArgument` if `TYPESAFE_API_KEY` is unavailable.
     pub fn from_env() -> Result<Self, AiMuxError> {
-        Ok(Self::new(load_api_key(None, "JEV_API_KEY", "Jev")?))
+        Ok(Self::new(load_api_key(None, "TYPESAFE_API_KEY", "Jev")?))
     }
 
-    /// Override the complete endpoint (for example a `/v1/systemone` wrapper).
+    /// Override the complete endpoint (for example a trusted API proxy).
     #[must_use]
     pub fn with_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.endpoint = endpoint.into();
@@ -84,15 +83,12 @@ pub struct JevDecisionModel {
 
 fn request_body(model_id: &str, options: &DecisionCallOptions) -> Result<Value, AiMuxError> {
     options.validate()?;
-    if options.state.is_null() {
+    if !matches!(
+        options.state,
+        Value::String(_) | Value::Object(_) | Value::Array(_)
+    ) {
         return Err(AiMuxError::InvalidArgument(
-            "Jev state cannot be null".into(),
-        ));
-    }
-    // Hosted Jev constraints; intentionally distinct from TypeSafe's limits.
-    if options.questions.len() > 20 {
-        return Err(AiMuxError::InvalidArgument(
-            "Jev accepts at most 20 questions".into(),
+            "TypeSafe state must be a string, object, or array".into(),
         ));
     }
     if options
@@ -107,17 +103,6 @@ fn request_body(model_id: &str, options: &DecisionCallOptions) -> Result<Value, 
     let mut questions = serde_json::Map::new();
     for question in &options.questions {
         let id = question.id();
-        if id.len() > 64
-            || !id
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-            || !id.as_bytes()[0].is_ascii_alphanumeric()
-            || question.instructions().chars().count() > 1000
-        {
-            return Err(AiMuxError::InvalidArgument(format!(
-                "question {id:?} exceeds Jev ID or instruction limits"
-            )));
-        }
         let body = match question {
             DecisionQuestion::Boolean { instructions, .. } => {
                 json!({"type": "noul", "instructions": instructions})
@@ -127,27 +112,14 @@ fn request_body(model_id: &str, options: &DecisionCallOptions) -> Result<Value, 
                 options,
                 ..
             } => {
-                if !(2..=24).contains(&options.len())
-                    || options.iter().any(|option| {
-                        option.label.chars().count() > 64
-                            || option
-                                .description
-                                .as_ref()
-                                .is_some_and(|d| d.chars().count() > 400)
-                    })
-                {
+                if options.len() > 255 {
                     return Err(AiMuxError::InvalidArgument(format!(
-                        "question {id:?} exceeds Jev choice limits"
+                        "question {id:?} exceeds TypeSafe's 255 choice limit"
                     )));
                 }
                 let criteria: serde_json::Map<String, Value> = options
                     .iter()
-                    .map(|option| {
-                        (
-                            option.label.clone(),
-                            json!(option.description.as_deref().unwrap_or(&option.label)),
-                        )
-                    })
+                    .map(|option| (option.label.clone(), json!(option.description)))
                     .collect();
                 json!({"type": "choice", "instructions": instructions, "criteria": criteria})
             }
@@ -156,7 +128,7 @@ fn request_body(model_id: &str, options: &DecisionCallOptions) -> Result<Value, 
                 levels,
                 ..
             } => {
-                if levels.len() > 10 || levels.iter().any(|label| label.chars().count() > 400) {
+                if levels.len() > 10 {
                     return Err(AiMuxError::InvalidArgument(format!(
                         "question {id:?} exceeds Jev score limits"
                     )));
@@ -178,29 +150,27 @@ enum WireAnswer {
     Choice {
         choice: String,
         probabilities: BTreeMap<String, f64>,
-        confidence: Option<f64>,
+        confidence: f64,
     },
     Score {
         score: f64,
         legend: BTreeMap<String, String>,
         probabilities: BTreeMap<String, f64>,
-        confidence: Option<f64>,
+        confidence: f64,
     },
 }
 
 #[derive(Deserialize)]
 struct WireResponse {
     model: String,
-    model_version: Option<String>,
     answers: BTreeMap<String, WireAnswer>,
-    usage: Option<WireUsage>,
-    latency_ms: Option<f64>,
+    usage: WireUsage,
 }
 
 #[derive(Deserialize)]
 struct WireUsage {
-    input_tokens: Option<u32>,
-    output_tokens: Option<u32>,
+    input_tokens: u32,
+    output_tokens: u32,
 }
 
 fn convert_response(
@@ -222,7 +192,7 @@ fn convert_response(
             } => DecisionAnswer::Choice {
                 selected: choice,
                 probabilities: Some(probabilities),
-                confidence,
+                confidence: Some(confidence),
             },
             WireAnswer::Score {
                 score,
@@ -259,19 +229,19 @@ fn convert_response(
                     expected_value: score,
                     levels,
                     probabilities: Some(distribution),
-                    confidence,
+                    confidence: Some(confidence),
                 }
             }
         };
         answers.insert(id, answer);
     }
-    let usage = data.usage.map(|usage| Usage {
+    let usage = Some(Usage {
         input_tokens: TokenUsage {
-            total: usage.input_tokens,
+            total: Some(data.usage.input_tokens),
             ..Default::default()
         },
         output_tokens: TokenUsage {
-            total: usage.output_tokens,
+            total: Some(data.usage.output_tokens),
             ..Default::default()
         },
         raw: raw.get("usage").cloned(),
@@ -280,10 +250,10 @@ fn convert_response(
         answers,
         provider: "jev".into(),
         model: data.model,
-        model_version: data.model_version,
+        model_version: None,
         probability_source: source,
         usage,
-        latency_ms: data.latency_ms,
+        latency_ms: None,
         provider_metadata: Some(HashMap::from([("jev".into(), raw.clone())])),
         response: Some(DecisionResponse {
             headers: Some(headers),
@@ -310,9 +280,9 @@ impl DecisionModel for JevDecisionModel {
             supports_choice: true,
             supports_score: true,
             returns_distributions: true,
-            max_questions: Some(20),
-            min_choices: Some(2),
-            max_choices: Some(24),
+            max_questions: None,
+            min_choices: Some(1),
+            max_choices: Some(255),
             max_score_levels: Some(10),
         }
     }
@@ -340,22 +310,7 @@ impl DecisionModel for JevDecisionModel {
             aimux_provider_utils::create_json_response_handler::<WireResponse>(),
             aimux_provider_utils::create_standard_json_error_response_handler(),
         )
-        .await
-        .map_err(|mut error| {
-            // Jev's idempotency conflicts cannot be retried; cancelled calls can.
-            if let AiMuxError::ApiCall(data) = &mut error {
-                if data.status_code == Some(409) {
-                    data.is_retryable = false;
-                }
-                if data.status_code == Some(499) {
-                    data.is_retryable = true;
-                }
-                if data.provider_code.as_deref() == Some("api_key_spend_limit_exceeded") {
-                    data.is_retryable = false;
-                }
-            }
-            error
-        })?;
+        .await?;
         let raw = response.raw_value.unwrap_or(Value::Null);
         let response_headers = response.response_headers;
         let result = convert_response(

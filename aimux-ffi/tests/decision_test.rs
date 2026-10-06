@@ -8,8 +8,8 @@ use std::ptr;
 #[test]
 fn decision_handles_json_errors_and_abort_follow_c_abi_contract() {
     let key = c("test-key");
-    let model = c("jev-1.13");
-    let endpoint = c("http://127.0.0.1:1/api/v1/systemone/");
+    let model = c("jev-latest");
+    let endpoint = c("http://127.0.0.1:1/v1/systemone");
     let mut handle = 0;
     ok(
         aimux_jev_decision_new(key.as_ptr(), model.as_ptr(), endpoint.as_ptr(), &mut handle),
@@ -70,14 +70,14 @@ fn probability_source_survives_c_abi_round_trip() {
                 }
             }
             reader.read_exact(&mut vec![0; size]).unwrap();
-            let body = r#"{"model":"jev-1.13","answers":{"q":{"type":"noul","noul":0.89}}}"#;
+            let body = r#"{"model":"jev-latest","answers":{"q":{"type":"noul","noul":0.89}},"usage":{"input_tokens":10,"output_tokens":1}}"#;
             write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
         });
         let mut handle = 0;
         ok(
             aimux_jev_decision_new_with_probability_source(
                 c("test-key").as_ptr(),
-                c("jev-1.13").as_ptr(),
+                c("jev-latest").as_ptr(),
                 endpoint.as_ptr(),
                 c(source).as_ptr(),
                 &mut handle,
@@ -101,7 +101,7 @@ fn probability_source_survives_c_abi_round_trip() {
     let (code, _) = expect_aimux_error(
         aimux_jev_decision_new_with_probability_source(
             c("test-key").as_ptr(),
-            c("jev-1.13").as_ptr(),
+            c("jev-latest").as_ptr(),
             ptr::null(),
             c("unknown").as_ptr(),
             &mut handle,

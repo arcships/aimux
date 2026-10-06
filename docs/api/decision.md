@@ -13,7 +13,7 @@ use serde_json::json;
 
 # async fn example() -> Result<(), AiMuxError> {
 let provider = JevProvider::new(JevConfig::from_env()?);
-let model = provider.decision_model("jev-1.13")?;
+let model = provider.decision_model("jev-latest")?;
 let request = DecisionCallOptions::new(json!({"message": "Please refund the duplicate charge"}), vec![
     DecisionQuestion::Boolean {
         id: "refund".into(), instructions: "Is a refund requested?".into(),
@@ -32,7 +32,7 @@ if let DecisionAnswer::Boolean { probability_true } = result.answers["refund"] {
 ```ts
 import { jevDecision, decide } from '@arcships/aimux'
 
-const model = await jevDecision(process.env.JEV_API_KEY!, 'jev-1.13')
+const model = await jevDecision(process.env.TYPESAFE_API_KEY!, 'jev-latest')
 const result = await decide(model, {
   state: { message: 'Please refund the duplicate charge' },
   questions: [
@@ -47,14 +47,10 @@ const result = await decide(model, {
 console.log(result.answers)
 ```
 
-factory 的第三个 `endpoint` 参数可覆盖完整 POST URL。
-第四个 `probabilitySource` 参数接受 `native`、`logit_scoring` 或
-`model_estimate`，缺省为 `native`。对自建服务，应按其实际实现声明来源：
-
-```ts
-const local = await jevDecision('local-key', 'local-model',
-  'http://127.0.0.1:8000/v1/systemone', 'logit_scoring')
-```
+默认请求 TypeSafe 官方 `https://api.typesafe.ai/v1/systemone`。
+factory 的第三个 `endpoint` 参数可覆盖完整 POST URL，用于显式配置的代理
+或本地 contract 测试。第四个 `probabilitySource` 参数接受 `native`、
+`logit_scoring` 或 `model_estimate`，官方接入缺省为 `native`。
 
 `decide` 的第三个参数接受 AbortSignal。timeout 复用已有毫秒配置。
 
@@ -64,15 +60,14 @@ const local = await jevDecision('local-key', 'local-model',
 import os
 from aimux import jev_decision, decide
 
-model = jev_decision(os.environ['JEV_API_KEY'], 'jev-1.13')
+model = jev_decision(os.environ['TYPESAFE_API_KEY'], 'jev-latest')
 result = decide(model, {'message': 'Please refund the duplicate charge'}, [
     {'id': 'refund', 'type': 'boolean', 'instructions': 'Is a refund requested?'}
 ], max_retries=0)
 print(result['answers']['refund']['probability_true'])
 ```
 
-自建服务可传第四个参数或 `probability_source='logit_scoring'` / `'model_estimate'`；
-缺省为 `'native'`，结果保留调用方声明的来源。
+可选第四个参数 `probability_source` 缺省为 `'native'`，结果保留声明的来源。
 
 ## C ABI
 
@@ -82,7 +77,7 @@ print(result['answers']['refund']['probability_true'])
 [错误模型](../error-model.md)。用 aimux_drop_handle 释放模型，
 aimux_free_string 释放结果。
 
-自建服务可使用 `aimux_jev_decision_new_with_probability_source(key, model_id,
+显式配置概率来源时可使用 `aimux_jev_decision_new_with_probability_source(key, model_id,
 endpoint, probability_source, &handle)`，source 接受上述三个值，NULL 使用
 `native`。原有 `aimux_jev_decision_new` 签名保持兼容。未知 source 在模型创建时
 返回 InvalidArgument。
@@ -99,8 +94,12 @@ Choice/Score probabilities 可为空，Jev adapter 会返回完整分布。
 有分布的 Score 必须与概率加权的平均位置一致；校验允许概率及分数各自保留
 两位小数带来的误差，拒绝与分布明显矛盾的分数。原始数字不会被改写。
 probability_source 表示来源，不保证校准；confidence 保留 provider 定义。
-raw response、model_version 和原始 usage 可用于审计。
+raw response、实际执行的 model 和原始 usage 可用于审计。官方响应不含独立
+model_version 或 latency_ms，这两个可选字段留空。
 
-Jev 最多 20 题，Choice 2–24 项，Score 2–10 级。具体文字长度与 ID 限制见
-[官方 contract](https://jev-ai.org/docs/decisions/)。不支持 decision_model 的
+TypeSafe 官方 Choice 支持 1–255 项，Score 支持 2–10 级；state 支持字符串、
+对象或数组。不施加未公布的题目数量、ID 字符或文字长度上限。依据见
+[官方 contract](https://docs.typesafe.ai/api)。不支持 decision_model 的
 provider 返回 UnsupportedFunctionality。当前 state 不定义图像或其他媒体 part。
+当前题目 instructions、Choice description 和 Score levels 仅支持字符串；
+官方结构化题目描述及 Noul true/false criteria 尚未暴露。

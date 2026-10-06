@@ -6,7 +6,7 @@
 
 - **OpenAI：**官方已宣布 Decisions API，处于 limited preview。公告说明 API 接收文本或图像上下文、用户定义的问题和有限答案集合，返回可用于分类、路由和 agent action 的答案。公开公告没有 endpoint、请求/响应 schema、SDK 方法或概率字段。[官方公告](https://openai.com/index/devday-2026-recap/)
 - **Vercel AI SDK：**已有实验性统一决策接口 `experimental_decide`，支持 Choice、Score、Boolean。TypeSafe 使用原生决策 API 并保留 Choice/Score 概率分布；OpenAI、Anthropic、Google 使用各自生成 API 的 structured output，Choice/Score 不返回分布，Boolean 返回未承诺校准的 P(true) 估计。[TypeSafe provider 文档](https://ai-sdk.dev/providers/ai-sdk-providers/typesafe-ai) · [OpenAI provider 文档](https://ai-sdk.dev/providers/ai-sdk-providers/openai)
-- **Jev：**公开了完整的 System One API 文档。请求包含 state 和多个 `noul`、`choice`、`score` 问题；响应按问题 ID 返回答案和概率分布。[官方文档](https://jev-ai.org/docs/)
+- **Jev：**公开了完整的 System One API 文档。请求包含 state 和多个 `noul`、`choice`、`score` 问题；响应按问题 ID 返回答案和概率分布。[官方文档](https://docs.typesafe.ai/api)
 - **vLLM：**官方 DiffusionGemma 示例提供 Jev 兼容的 `/v1/systemone` wrapper。vLLM 的 `/v1/decisions` 核心接口目前在 RFC 中，提议支持 logit、encoder、canvas 等评分后端。[示例](https://docs.vllm.ai/en/latest/examples/features/structured_diffusion/) · [RFC #59365](https://github.com/vllm-project/vllm/issues/59365)
 - **SGLang：**已合并 `/v1/score` 的逐项候选 token 评分、温度缩放和 logprobs 支持。统一 typed decision endpoint 尚未确定；dLLM 决策能力仍在路线图中。LLM2Jev 提供独立的 Jev 兼容服务。[评分 PR #40826](https://github.com/sgl-project/sglang/pull/40826) · [路线图 #39499](https://github.com/sgl-project/sglang/issues/39499) · [LLM2Jev](https://github.com/Yinsongxu/LLM2Jev)
 - **aimux：**建议增加独立的 `decide` 操作和统一的请求/响应类型。接口需包含候选项、候选概率、模型信息、概率来源和 provider metadata。普通 JSON constrained output 不提供这些决策字段。
@@ -48,13 +48,13 @@ const { answers } = await experimental_decide({
 });
 ```
 
-本次查到的原生 provider 支持：TypeSafe、OpenAI、Anthropic、Google。AI SDK 的 TypeSafe provider 用一个 `/v1/systemone` 请求发送全部问题，保留完整 Choice/Score 分布、confidence metadata、model ID、usage 和 raw response。官方 provider 文档列出 Choice 1–255 项、Score 2–10 级；Boolean 的 `probability` 表示 P(true)。
+本次查到的 AI SDK decision provider 包括 TypeSafe、OpenAI、Anthropic、Google；其中 TypeSafe 使用原生决策接口，后三者使用生成式模拟。AI SDK 的 TypeSafe provider 用一个 `/v1/systemone` 请求发送全部问题，保留完整 Choice/Score 分布、confidence metadata、model ID、usage 和 raw response。官方 provider 文档列出 Choice 1–255 项、Score 2–10 级；Boolean 的 `probability` 表示 P(true)。
 
 **多模态：**当前 Decision API 文档和 provider 示例定义 `state` 为文本或 JSON 数据，未定义 `ImagePart`、URL/二进制媒体输入字段或多模态 state contract。OpenAI、Anthropic、Google 的普通语言模型 API 支持图像输入；这项能力尚未体现在 `decisionModel` 文档所述 contract 中。当前资料不支持将 AI SDK `decide` 认定为原生多模态决策 API。
 
 OpenAI adapter 使用 Responses API structured output；Anthropic 使用 Messages API structured output；Google 使用 Gemini structured output。每次 generation 回答一组题。Choice/Score 返回标签和分数，不返回完整概率分布。Boolean `probability` 是模型按 prompt 估出的 P(true)，SDK 验证其为有限 `[0,1]` 数值，provider 文档不承诺校准。调用方负责应用阈值。拒答、截断、缺答案或非法答案会使整次调用失败。
 
-Gateway 可解析决策模型 ID；官方 provider 文档支持 registry/custom aliases。现行文档使用 `decisionModel` 命名。Vercel CLI/Eve 文档记录了将该能力用于模型路由和工具审批的用法。AI SDK 的统一 API 属于 SDK 层 contract；各 adapter 调用 provider 自身生成 API。
+Gateway 可解析决策模型 ID；官方 provider 文档支持 registry/custom aliases。现行文档使用 `decisionModel` 命名。Vercel CLI/Eve 文档记录了将该能力用于模型路由和工具审批的用法。AI SDK 的统一 API 属于 SDK 层 contract；各 adapter 调用 provider 自身 API；TypeSafe 使用原生决策接口。
 
 AI SDK OpenAI-compatible provider 文档列出 language/chat/completion、embedding、image 等工厂，没有记录 `decisionModel`。vLLM、SGLang 的决策 wire 需要自定义 decision model provider 或 adapter。
 
@@ -68,15 +68,15 @@ OpenAI 公告介绍了有限答案集合上的实时决策，支持文本和图�
 
 ### Jev / TypeSafe
 
-官方端点：`POST https://jev-ai.org/api/v1/systemone/`。认证使用 `Authorization: Bearer <key>`。请求主要字段为 `model`、`state`、`questions`；官方文档说明单次最多 20 题。
+官方端点：`POST https://api.typesafe.ai/v1/systemone`。认证使用 `Authorization: Bearer <key>`，官方 SDK 环境变量为 `TYPESAFE_API_KEY`，推荐模型 `jev-latest`。请求主要字段为 `model`、`state`、`questions`；官方没有公布题目数量上限。Choice 最多 255 项，Score 为 2–10 级。
 
 | 类型 | 请求 criteria | 响应 | 常见用途 |
 |---|---|---|---|
-| `noul` | 无 | `noul` 概率 | yes/no 判断 |
+| `noul` | 可选 true/false 描述 | `noul` 概率 | yes/no 判断 |
 | `choice` | label 到描述的对象 | 选中 label、概率 map、confidence | 分类、路由 |
 | `score` | 从低到高的 label 数组 | 期望分数、legend、概率 map、confidence | 严重度、优先级 |
 
-`score` 的值是概率分布的期望位置，可能为小数。choice criteria 必须是对象；score criteria 必须是数组。响应还包含 model/version、usage 和 latency。官方文档说明 output tokens 不收费。
+`score` 的值是概率分布的期望位置，可能为小数。choice criteria 必须是对象；score criteria 必须是数组。响应包含实际执行的 `model` 和 `usage.input_tokens` / `output_tokens`；官方示例不包含独立的 `model_version` 或 `latency_ms` 字段。
 
 ### vLLM
 
@@ -160,8 +160,8 @@ Provider capability 建议区分：
 
 1. 定义 canonical request/result 和 provider capability。
 2. 实现 Jev System One adapter，映射 Noul、Choice、Score、响应和错误字段。
-3. 支持使用 Jev wire 的 vLLM `/v1/systemone` wrapper，并单独处理示例扩展字段。
-4. 支持 SGLang `/v1/score` 或 LLM2Jev 时，声明它们的评分方式、候选限制和校准来源。
+3. 先补齐 TypeSafe 官方字段覆盖及各语言 binding；首批接入只做官方 Jev API。
+4. vLLM、SGLang 的官方候选评分能力属于后续调研方向，不在当前接入中增加第三方 wrapper。
 5. OpenAI adapter 根据其公开 preview schema 实现。
 
 ### 代码落点
@@ -175,7 +175,7 @@ Provider capability 建议区分：
 ## 待确认事项
 
 - OpenAI preview 文档开放后，补充准确的 endpoint、schema、概率语义和限制。
-- Jev 的相似域名服务有独立密钥、限制和计费；本报告仅记录 `jev-ai.org` 官方 contract。
+- Jev 是 TypeSafe 的模型；适配仅以 `docs.typesafe.ai` 和 `api.typesafe.ai` 的官方 contract 为准，不接入第三方转售服务。
 - vLLM RFC 的 endpoint 与性能数字仍需以上游实现及独立测量确认。
 - SGLang token scoring 的结果受 tokenizer、prompt、候选 token 数和 temperature calibration 影响。
 - 自动化阈值依赖模型版本和概率校准；建议在结果中保留模型、概率来源与原始 metadata。
@@ -192,10 +192,10 @@ Provider capability 建议区分：
 - [AI SDK TypeSafe provider PR #20851](https://github.com/vercel/ai/pull/20851)
 - [AI SDK provider adapters PR #20858](https://github.com/vercel/ai/pull/20858)
 - [AI SDK decision registry PR #20875](https://github.com/vercel/ai/pull/20875)
-- [Jev API introduction](https://jev-ai.org/docs/)
-- [Jev question types](https://jev-ai.org/docs/question-types/)
-- [Jev authentication](https://jev-ai.org/docs/authentication/)
-- [Jev errors](https://jev-ai.org/docs/errors/)
+- [Jev API introduction](https://docs.typesafe.ai/api)
+- [Jev question types](https://docs.typesafe.ai/primitives)
+- [Jev authentication](https://docs.typesafe.ai/introduction/quickstart)
+- [Jev errors](https://docs.typesafe.ai/api#errors)
 - [vLLM DiffusionGemma example](https://docs.vllm.ai/en/latest/examples/features/structured_diffusion/)
 - [vLLM RFC #59365](https://github.com/vllm-project/vllm/issues/59365)
 - [vLLM Structured Outputs](https://docs.vllm.ai/en/latest/features/structured_outputs/)

@@ -41,26 +41,33 @@ Score 验证合法范围、等级与分布期望的一致性。概率与分数�
 
 ## 第一阶段 Jev adapter
 
-默认 POST `https://jev-ai.org/api/v1/systemone/`，Bearer key；环境变量
-`JEV_API_KEY`。Boolean 映射为 noul；Choice 数组转换成 criteria 对象，缺省
-description 使用 label；Score levels 转换成 criteria 数组。响应 legend 与
-probabilities 的索引必须连续且匹配请求等级，保留分数的小数部分。
+默认 POST `https://api.typesafe.ai/v1/systemone`，Bearer key；环境变量
+`TYPESAFE_API_KEY`，与 TypeSafe 官方 SDK 一致。模型 ID 显式传入，示例使用
+官方推荐的 `jev-latest`。Jev 是 TypeSafe 的模型，只适配官方服务。
 
-Jev 托管限制：1–20 题，Choice 2–24 项，Score 2–10 级，ID 为不超过 64
-个字符的 ASCII 字母数字/下划线/横线且以字母数字开头。instructions 最多
-1000 字符，Choice label 64 字符 / description 400 字符，Score label 400 字符。
-这些限制来自 [Jev 文档](https://jev-ai.org/docs/question-types/)，不能使用
-TypeSafe 的 Choice 1–255 限制代替。
+Boolean 映射为 noul；Choice 数组转换成 criteria 对象，省略 description
+时使用官方允许的 null；Score levels 转换成有序 criteria 数组。响应 legend
+与 probabilities 的索引必须连续且匹配请求等级，保留分数的小数部分。
+
+官方 Choice 支持 1–255 项，Score 支持 2–10 级。state 为字符串、对象或数组；
+不施加未在官方 contract 中公布的题目数量、ID 格式或文字长度上限。
+依据：[API reference](https://docs.typesafe.ai/api)、
+[SDK 常量](https://docs.typesafe.ai/sdk/python/api/constants)。
+
+当前公共类型支持字符串 instructions、Choice description 和 Score levels；
+官方允许的结构化题目描述与 Noul true/false criteria 尚未暴露，属于明确的
+字段覆盖限制，不通过 JSON 字符串模拟这些字段。
+
+响应 `model` 保留实际模型版本，usage 保留输入/输出 token 和 raw 数据。
+官方未定义独立的 model_version 和 latency_ms 字段，这两个可选结果字段留空。
+Choice/Score 的 confidence、分布及 usage 按官方必需字段校验。
 
 HTTP 错误使用既有 ApiCallError，保留 code、raw body、headers 与请求上下文。
-Jev 409 幂等冲突不重试，499 可以重试，429 daily spend limit 不自动重试。
-其他 retry 行为复用现有 operation retry，支持 Retry-After。调用方通过 headers
-传 Idempotency-Key；重试复用同一 headers。无自动 key 生成。
+官方 429 限流和 529 过载复用 Core 的临时错误重试与 Retry-After 处理。
+不包含第三方服务的计费、幂等冲突或取消状态专用规则。
 
-JevConfig.endpoint 可指定完整 URL，适用于显式部署的 System One wrapper。
-使用 wrapper 时调用方应按其实现设置 probability_source。第一阶段仍使用
-Jev 的保守限制；不宣称默认 vLLM/SGLang serve 提供这个路由，不支持 wrapper
-特有的 samples、steps、依赖问题或多模态扩展。
+JevConfig.endpoint 可覆盖完整 URL，用于显式配置的代理或本地 contract 测试；
+不提供其他服务的专用 adapter 或生成式 fallback。
 
 ## 调用入口
 
@@ -78,7 +85,7 @@ Jev 使用官方示例的离线 contract fixture，明确标注不是实测录�
 provider retry 分类；core 覆盖 optional distributions、abort、timeout；C 覆盖
 handle 类型、销毁、JSON 错误和 abort。
 
-验证：Rust 工作区 3848 passed / 57 ignored；Node 的 decision、wrapper、
+验证：Rust 工作区 3850 passed / 57 ignored；Node 的 decision、wrapper、
 error 三组测试共 26 passed；Python decision 测试 6 passed。工作区 fmt、
 Clippy（warnings as errors）、TypeScript 编译与类型生成一致性检查通过。
 跨语言测试使用实际构建的 native 模块与本地 HTTP server，未调用线上 Jev。
@@ -87,14 +94,11 @@ Node 测试同时发现并修复共享 AbortBridge 对已取消 signal 的处理
 
 Provider 精度规则与 Node/Python/C 的 capability 查询仍属后续完善范围。
 
-第一优先级是完成 TypeSafe / Jev 的原生 System One 接入。当前实现仅覆盖
-`jev-ai.org` 文档 contract，尚不能宣称完成 TypeSafe 托管接口：其 AI SDK
-provider 使用 `https://api.typesafe.ai/v1/systemone`、`TYPESAFE_AI_API_KEY`
-和 `jev-latest`，字段能力与限制也需逐项核对。优先复用现有 System One
-编解码，补齐 endpoint、认证配置、模型、能力限制及 contract 测试；不将
-TypeSafe 另列为候选 provider，也不预设需要另写一套 adapter。
+第一优先级为 TypeSafe 官方 Jev 接入。本 PR 直接校正现有 System One
+adapter，不另增第三方 provider。当前接入以官方文档 fixture 和本地 HTTP
+server 验证，未声明线上实测。
 
-完成首要接入后，再扩展 wrapper 专用能力、SGLang scoring adapter，
-以及 Go/Java/Kotlin/Swift/Flutter 宿主包装。Provider 精度规则和 capability
-查询按首要接入的实际需要推进。OpenAI 自有 Decisions endpoint 待取得
-公开 preview wire schema 后实现；不以 Responses structured output 代替。
+后续先完善官方结构化题目字段覆盖，再按实际需要完善 Provider 精度规则、
+capability 查询和 Go/Java/Kotlin/Swift/Flutter 宿主包装。其他官方决策接口
+另按其正式 contract 接入；OpenAI Decisions 待取得公开 preview wire schema，
+不以 Responses structured output 代替。

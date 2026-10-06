@@ -18,12 +18,12 @@ fn options() -> DecisionCallOptions {
         json!({"ticket": "Billed twice"}),
         vec![
             DecisionQuestion::Boolean {
-                id: "needs_human".into(),
-                instructions: "Does this need a human?".into(),
+                id: "is_urgent".into(),
+                instructions: "The message conveys urgency or time-sensitivity".into(),
             },
             DecisionQuestion::Choice {
-                id: "queue".into(),
-                instructions: "Which team?".into(),
+                id: "department".into(),
+                instructions: "Which team should handle this".into(),
                 options: ["billing", "technical", "sales"]
                     .into_iter()
                     .map(|label| DecisionOption {
@@ -33,12 +33,16 @@ fn options() -> DecisionCallOptions {
                     .collect(),
             },
             DecisionQuestion::Score {
-                id: "anger".into(),
-                instructions: "How angry?".into(),
-                levels: ["Calm", "Mildly annoyed", "Frustrated", "Angry"]
-                    .into_iter()
-                    .map(String::from)
-                    .collect(),
+                id: "frustration".into(),
+                instructions: "How frustrated the customer appears".into(),
+                levels: [
+                    "Calm, just stating facts",
+                    "Frustrated but civil",
+                    "Very angry, strong language",
+                ]
+                .into_iter()
+                .map(String::from)
+                .collect(),
             },
         ],
     )
@@ -46,14 +50,16 @@ fn options() -> DecisionCallOptions {
 
 fn model(server: &MockServer) -> Box<dyn DecisionModel> {
     let mut config =
-        JevConfig::new("test-key").with_endpoint(format!("{}/api/v1/systemone/", server.uri()));
+        JevConfig::new("test-key").with_endpoint(format!("{}/v1/systemone", server.uri()));
     config.retry_config.initial_delay = Duration::ZERO;
-    JevProvider::new(config).decision_model("jev-1.13").unwrap()
+    JevProvider::new(config)
+        .decision_model("jev-latest")
+        .unwrap()
 }
 
 async fn mount(server: &MockServer, status: u16, response: Value) {
     Mock::given(method("POST"))
-        .and(path("/api/v1/systemone/"))
+        .and(path("/v1/systemone"))
         .and(header("Authorization", "Bearer test-key"))
         .respond_with(
             ResponseTemplate::new(status)
@@ -71,28 +77,27 @@ async fn official_contract_round_trip_preserves_types_and_raw_metadata() {
     let model = model(&server);
     let result = decide(model.as_ref(), options()).await.unwrap();
     assert!(
-        matches!(result.answers["needs_human"], DecisionAnswer::Boolean { probability_true } if probability_true == 0.89)
+        matches!(result.answers["is_urgent"], DecisionAnswer::Boolean { probability_true } if probability_true == 1.0)
     );
     assert!(
-        matches!(&result.answers["queue"], DecisionAnswer::Choice { selected, probabilities: Some(p), .. } if selected == "billing" && p.len() == 3)
+        matches!(&result.answers["department"], DecisionAnswer::Choice { selected, probabilities: Some(p), .. } if selected == "technical" && p.len() == 3)
     );
     assert!(
-        matches!(&result.answers["anger"], DecisionAnswer::Score { expected_value, probabilities: Some(p), .. } if *expected_value == 1.89 && p == &[0.0, 0.11, 0.89, 0.0])
+        matches!(&result.answers["frustration"], DecisionAnswer::Score { expected_value, probabilities: Some(p), .. } if *expected_value == 1.0 && p == &[0.0, 1.0, 0.0])
     );
-    assert_eq!(result.model_version.as_deref(), Some("jev-1.13-20260917"));
-    assert_eq!(result.usage.as_ref().unwrap().input_tokens.total, Some(503));
+    assert_eq!(result.model, "jev-1.13.0");
+    assert_eq!(result.model_version, None);
+    assert_eq!(result.usage.as_ref().unwrap().input_tokens.total, Some(392));
+    assert_eq!(result.usage.as_ref().unwrap().output_tokens.total, Some(65));
     assert_eq!(
-        result.usage.as_ref().unwrap().raw.as_ref().unwrap()["charged_tokens"],
-        503
+        result.usage.as_ref().unwrap().raw,
+        Some(fixture()["usage"].clone())
     );
     assert_eq!(
         result.response.as_ref().unwrap().body.as_ref().unwrap(),
         &fixture()
     );
-    assert_eq!(
-        result.provider_metadata.as_ref().unwrap()["jev"]["id"],
-        "dec_contract_fixture"
-    );
+    assert_eq!(result.provider_metadata.as_ref().unwrap()["jev"], fixture());
     assert_eq!(
         result.response.as_ref().unwrap().headers.as_ref().unwrap()["x-request-id"],
         "test-request"
@@ -102,16 +107,20 @@ async fn official_contract_round_trip_preserves_types_and_raw_metadata() {
     let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
     assert_eq!(body["state"], options().state);
     assert_eq!(
-        body["questions"]["needs_human"],
-        json!({"type":"noul", "instructions":"Does this need a human?"})
+        body["questions"]["is_urgent"],
+        json!({"type":"noul", "instructions":"The message conveys urgency or time-sensitivity"})
     );
     assert_eq!(
-        body["questions"]["queue"]["criteria"],
-        json!({"billing":"billing", "technical":"technical", "sales":"sales"})
+        body["questions"]["department"]["criteria"],
+        json!({"billing":null, "technical":null, "sales":null})
     );
     assert_eq!(
-        body["questions"]["anger"]["criteria"],
-        json!(["Calm", "Mildly annoyed", "Frustrated", "Angry"])
+        body["questions"]["frustration"]["criteria"],
+        json!([
+            "Calm, just stating facts",
+            "Frustrated but civil",
+            "Very angry, strong language"
+        ])
     );
 }
 
@@ -119,38 +128,50 @@ async fn official_contract_round_trip_preserves_types_and_raw_metadata() {
 async fn malformed_answers_fail_with_http_context_without_retry() {
     let mut responses = Vec::new();
     let mut missing = fixture();
-    missing["answers"].as_object_mut().unwrap().remove("queue");
+    missing["answers"]
+        .as_object_mut()
+        .unwrap()
+        .remove("department");
     responses.push(missing);
     let mut unknown = fixture();
-    unknown["answers"]["queue"]["choice"] = json!("unknown");
+    unknown["answers"]["department"]["choice"] = json!("unknown");
     responses.push(unknown);
     let mut range = fixture();
-    range["answers"]["needs_human"]["noul"] = json!(1.2);
+    range["answers"]["is_urgent"]["noul"] = json!(1.2);
     responses.push(range);
     let mut keys = fixture();
-    keys["answers"]["anger"]["probabilities"] = json!({"0":0,"1":0.11,"2":0.89,"4":0});
+    keys["answers"]["frustration"]["probabilities"] = json!({"0":0,"1":1.0,"4":0});
     responses.push(keys);
     let mut wrong_type = fixture();
-    wrong_type["answers"]["queue"] = json!({"type":"noul", "noul":0.8});
+    wrong_type["answers"]["department"] = json!({"type":"noul", "noul":0.8});
     responses.push(wrong_type);
     let mut distribution = fixture();
-    distribution["answers"]["queue"]["probabilities"]["billing"] = json!(0.4);
+    distribution["answers"]["department"]["probabilities"]["technical"] = json!(0.4);
     responses.push(distribution);
     let mut missing_distribution = fixture();
-    missing_distribution["answers"]["queue"]
+    missing_distribution["answers"]["department"]
         .as_object_mut()
         .unwrap()
         .remove("probabilities");
     responses.push(missing_distribution);
     let mut legend = fixture();
-    legend["answers"]["anger"]["legend"]["0"] = json!("Other");
+    legend["answers"]["frustration"]["legend"]["0"] = json!("Other");
     responses.push(legend);
     let mut score = fixture();
-    score["answers"]["anger"]["score"] = json!(4);
+    score["answers"]["frustration"]["score"] = json!(4);
     responses.push(score);
     let mut contradictory_score = fixture();
-    contradictory_score["answers"]["anger"]["score"] = json!(0);
+    contradictory_score["answers"]["frustration"]["score"] = json!(0);
     responses.push(contradictory_score);
+    let mut missing_confidence = fixture();
+    missing_confidence["answers"]["department"]
+        .as_object_mut()
+        .unwrap()
+        .remove("confidence");
+    responses.push(missing_confidence);
+    let mut missing_usage = fixture();
+    missing_usage.as_object_mut().unwrap().remove("usage");
+    responses.push(missing_usage);
     for response in responses {
         let server = MockServer::start().await;
         mount(&server, 200, response).await;
@@ -161,8 +182,8 @@ async fn malformed_answers_fail_with_http_context_without_retry() {
             panic!("expected contextual API error")
         };
         assert_eq!(error.status_code, Some(200));
-        assert!(error.url.ends_with("/api/v1/systemone/"));
-        assert_eq!(error.request_body_values["model"], "jev-1.13");
+        assert!(error.url.ends_with("/v1/systemone"));
+        assert_eq!(error.request_body_values["model"], "jev-latest");
         assert!(error.response_body.is_some());
         assert!(!error.is_retryable);
         assert_eq!(server.received_requests().await.unwrap().len(), 1);
@@ -174,35 +195,41 @@ async fn invalid_requests_never_reach_http() {
     let server = MockServer::start().await;
     let mut duplicate = options();
     duplicate.questions.push(duplicate.questions[0].clone());
-    let mut invalid_id = options();
-    invalid_id.questions[0] = DecisionQuestion::Boolean {
-        id: "bad.id".into(),
-        instructions: "test".into(),
-    };
-    let mut short_choice = options();
-    if let DecisionQuestion::Choice { options, .. } = &mut short_choice.questions[1] {
-        options.truncate(1);
+    let mut empty_choice = options();
+    if let DecisionQuestion::Choice { options, .. } = &mut empty_choice.questions[1] {
+        options.clear();
     }
     let mut duplicate_label = options();
     if let DecisionQuestion::Choice { options, .. } = &mut duplicate_label.questions[1] {
         options.push(options[0].clone());
     }
-    let mut too_many = options();
-    for index in 0..20 {
-        too_many.questions.push(DecisionQuestion::Boolean {
-            id: format!("q{index}"),
-            instructions: "test".into(),
-        });
+    let mut too_many_choices = options();
+    if let DecisionQuestion::Choice { options, .. } = &mut too_many_choices.questions[1] {
+        *options = (0..256)
+            .map(|index| DecisionOption {
+                label: format!("option{index}"),
+                description: None,
+            })
+            .collect();
     }
-    let mut null = options();
-    null.state = Value::Null;
+    let mut too_many_levels = options();
+    if let DecisionQuestion::Score { levels, .. } = &mut too_many_levels.questions[2] {
+        *levels = (0..11).map(|index| format!("level{index}")).collect();
+    }
+    for state in [Value::Null, json!(true), json!(42)] {
+        let mut invalid_state = options();
+        invalid_state.state = state;
+        assert!(matches!(
+            decide(model(&server).as_ref(), invalid_state).await,
+            Err(AiMuxError::InvalidArgument(_))
+        ));
+    }
     for options in [
         duplicate,
-        invalid_id,
-        short_choice,
+        empty_choice,
         duplicate_label,
-        too_many,
-        null,
+        too_many_choices,
+        too_many_levels,
     ] {
         assert!(matches!(
             decide(model(&server).as_ref(), options).await,
@@ -213,14 +240,14 @@ async fn invalid_requests_never_reach_http() {
 }
 
 #[tokio::test]
-async fn provider_failures_use_jev_retry_rules_and_preserve_codes() {
+async fn official_provider_failures_use_standard_retry_rules_and_preserve_codes() {
     for (status, code, attempts) in [
-        (401, "invalid_api_key", 1),
-        (409, "request_in_progress", 1),
-        (429, "api_key_spend_limit_exceeded", 1),
-        (429, "rate_limit_exceeded", 3),
-        (503, "service_unavailable", 3),
-        (499, "request_cancelled", 3),
+        (401, "authentication_error", 1),
+        (422, "validation_error", 1),
+        (429, "rate_limit", 3),
+        (529, "overloaded", 3),
+        (503, "unavailable", 3),
+        (499, "cancelled", 1),
     ] {
         let server = MockServer::start().await;
         mount(
@@ -252,4 +279,76 @@ fn non_decision_provider_returns_unsupported() {
         provider.decision_model("gpt-test"),
         Err(AiMuxError::UnsupportedFunctionality(_))
     ));
+}
+
+#[test]
+fn official_defaults_and_capabilities() {
+    let config = JevConfig::new("test-key");
+    assert_eq!(config.endpoint, "https://api.typesafe.ai/v1/systemone");
+    let model = JevProvider::new(config)
+        .decision_model("jev-latest")
+        .unwrap();
+    let capabilities = model.capabilities();
+    assert_eq!(capabilities.max_questions, None);
+    assert_eq!(capabilities.min_choices, Some(1));
+    assert_eq!(capabilities.max_choices, Some(255));
+    assert_eq!(capabilities.max_score_levels, Some(10));
+}
+
+#[tokio::test]
+async fn official_requests_accept_single_and_255_choices_and_more_than_20_questions() {
+    for choice_count in [1, 255] {
+        let server = MockServer::start().await;
+        let id = "问题.with punctuation";
+        let labels: Vec<String> = (0..choice_count).map(|i| format!("label{i}")).collect();
+        let mut request = DecisionCallOptions::new(
+            json!([{"ticket": "Help"}]),
+            vec![DecisionQuestion::Choice {
+                id: id.into(),
+                instructions: "a".repeat(1001),
+                options: labels
+                    .iter()
+                    .map(|label| DecisionOption {
+                        label: label.clone(),
+                        description: None,
+                    })
+                    .collect(),
+            }],
+        );
+        let probabilities: serde_json::Map<String, Value> = labels
+            .iter()
+            .enumerate()
+            .map(|(i, label)| (label.clone(), json!(if i == 0 { 1.0 } else { 0.0 })))
+            .collect();
+        let mut answers = serde_json::Map::from_iter([(
+            id.to_string(),
+            json!({"type":"choice", "choice":labels[0],
+                "probabilities": probabilities, "confidence":1.0}),
+        )]);
+        for i in 0..21 {
+            let id = format!("q{i}");
+            request.questions.push(DecisionQuestion::Boolean {
+                id: id.clone(),
+                instructions: "Urgent?".into(),
+            });
+            answers.insert(id, json!({"type":"noul", "noul":1.0}));
+        }
+        mount(
+            &server,
+            200,
+            json!({"model":"jev-1.13.0", "answers":answers,
+            "usage":{"input_tokens":100,"output_tokens":10}}),
+        )
+        .await;
+        decide(model(&server).as_ref(), request).await.unwrap();
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
+        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+        assert_eq!(
+            body["questions"][id]["criteria"].as_object().unwrap().len(),
+            choice_count
+        );
+        assert_eq!(body["questions"][id]["criteria"][&labels[0]], Value::Null);
+        assert_eq!(body["questions"].as_object().unwrap().len(), 22);
+    }
 }

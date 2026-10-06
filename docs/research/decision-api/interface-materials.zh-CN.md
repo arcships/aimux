@@ -4,27 +4,27 @@
 
 ## 1. Jev / TypeSafe 的 System One API
 
-官方文档入口：[Jev AI Introduction](https://jev-ai.org/docs/)、[Question Types](https://jev-ai.org/docs/question-types/)、[Authentication](https://jev-ai.org/docs/authentication/)、[Errors](https://jev-ai.org/docs/errors/)。
-
-文档描述：Jev 是 decision model，不是聊天模型。输入一个 state（文本或 JSON）和多个 typed questions，输出每题的答案与概率分布。官方托管端点为 `POST https://jev-ai.org/api/v1/systemone/`；文档写明一次最多 20 题，类型 `noul`、`choice`、`score`。认证为 `Authorization: Bearer <key>`。注意尾部斜杠：无斜杠 URL 会 308 重定向。
+官方文档入口：[Introduction](https://docs.typesafe.ai/introduction)、[API reference](https://docs.typesafe.ai/api)、[Quick start](https://docs.typesafe.ai/introduction/quickstart)、[SDK 常量](https://docs.typesafe.ai/sdk/python/api/constants)。Jev 是 TypeSafe 的首个公开 System One 模型，以下仅记录官方接口。
 
 ```http
-POST /api/v1/systemone/ HTTP/1.1
-Host: jev-ai.org
-Authorization: Bearer $JEV_API_KEY
+POST /v1/systemone HTTP/1.1
+Host: api.typesafe.ai
+Authorization: Bearer $TYPESAFE_API_KEY
 Content-Type: application/json
 ```
 
+请求包含 `model`、共享 `state` 和 id→question 的 `questions`。state 支持字符串、对象、数组。推荐模型为 `jev-latest`；响应 `model` 给出实际版本，例如 `jev-1.13.0`。
+
 ```json
 {
-  "model": "jev-1.13",
+  "model": "jev-latest",
   "state": "We were billed twice and need help before Friday.",
   "questions": {
     "human": {"type": "noul", "instructions": "Does this need a human reply?"},
     "queue": {
       "type": "choice",
       "instructions": "Choose the team that should own the first reply.",
-      "criteria": {"billing": "Invoices and duplicate charges", "technical": "API errors and outages"}
+      "criteria": {"billing": "Invoices and duplicate charges", "technical": null}
     },
     "urgency": {
       "type": "score",
@@ -35,24 +35,25 @@ Content-Type: application/json
 }
 ```
 
-答案以题目 ID 为键。Noul 是 `noul` 概率；choice 包含选中 label、每个选项概率和 confidence；score 返回期望值（可以是小数）、索引到 label 的 legend、概率和 confidence。
+以下响应为按官方 schema 构造的示例，不是线上录制：
 
 ```json
 {
-  "id": "dec_…",
-  "model": "jev-1.13",
-  "model_version": "jev-1.13-20260917",
+  "model": "jev-1.13.0",
   "answers": {
     "human": {"type": "noul", "noul": 0.89},
     "queue": {"type": "choice", "choice": "billing", "probabilities": {"billing": 0.91, "technical": 0.09}, "confidence": 0.91},
     "urgency": {"type": "score", "score": 1.72, "legend": {"0": "low", "1": "normal", "2": "high"}, "probabilities": {"0": 0.1, "1": 0.08, "2": 0.82}, "confidence": 0.82}
   },
-  "usage": {"input_tokens": 503, "output_tokens": 70},
-  "latency_ms": 250
+  "usage": {"input_tokens": 503, "output_tokens": 70}
 }
 ```
 
-字段约束：choice 的 `criteria` 是 label→description 对象；score 的 `criteria` 是有序数组；noul 可用可选 true/false 说明。分数表示分布的期望值。Jev 页面称 output tokens 不计费。
+Choice 最多 255 项；描述可为字符串、对象、数组或 null。Score criteria 为有序数组，支持 2–10 级，score 是概率加权的等级位置；legend 将索引映回描述。Noul 可带 true/false 描述，noul 表示 P(true)。instructions 和 Score 描述也允许字符串、对象或数组。官方未公布题目数量、ASCII ID 或文本长度限制。
+
+当前 aimux 的统一请求先支持字符串 instructions/描述/Score levels 和文本/JSON state；不支持的结构化题目字段不能认定为已经接入。Choice 省略描述时映射为官方允许的 null。
+
+响应要求 model、answers 和 usage；Choice/Score 包含完整分布和 confidence。HTTP 401 表示认证错误，422 表示请求校验失败，429/529 为临时限流或过载。实际重试由 aimux Core 管理，保留 HTTP 上下文和 raw response。
 
 ## 2. OpenAI Decisions API
 
