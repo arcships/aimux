@@ -8,10 +8,9 @@
 //! transport is the one the settings name. The expected request comes from the
 //! fixture; the inputs are rebuilt from the fixture's recorded `sdk.input`.
 //!
-//! Two differences from the recording are deliberate and asserted around:
-//! the `user-agent` header is the SDK's own identifier and aimux sends none,
-//! and the recorded `authorization` is redacted, so the key the case used is
-//! substituted back.
+//! The recorded `authorization` is redacted, so the key the case used is
+//! substituted back. The recorded SDK and runtime user-agent identifiers are
+//! replaced with the pinned provider package's user-agent suffix.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
@@ -263,7 +262,7 @@ impl Fixture {
     }
 
     /// The recorded request must equal what went out: method, URL, headers
-    /// (names case-insensitively, `user-agent` aside) and body.
+    /// (names case-insensitively, with the pinned user-agent) and body.
     /// `authorization` is the value the redacted recording stands for, or
     /// `None` when the recording carries no `authorization` header at all.
     fn assert_request(&self, seen: &Seen, authorization: Option<&str>) {
@@ -282,7 +281,10 @@ impl Fixture {
             .iter()
             .map(|(k, v)| (k.to_ascii_lowercase(), v.as_str().unwrap().to_string()))
             .collect();
-        expected.remove("user-agent");
+        expected.insert(
+            "user-agent".to_string(),
+            "ai-sdk-openai-compatible/3.0.59".to_string(),
+        );
         match authorization {
             Some(value) => {
                 assert_eq!(

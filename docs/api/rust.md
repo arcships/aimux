@@ -27,11 +27,13 @@ async fn main() -> Result<(), AiMuxError> {
 
 ## Providers
 
-Every provider package follows the AI SDK shape: `XxxProviderSettings`
-(all fields optional), `create_xxx(settings)` and an infallible default
-instance `xxx()`. Models are taken from the provider (`provider.chat(id)`,
-`provider.language_model(id)?`, `provider.embedding_model(id)?`, …); each
-reports `provider()` as `"{name}.{method}"` (`openai.chat`, `anthropic.messages`).
+Provider packages follow the AI SDK shape: `XxxProviderSettings`,
+`create_xxx(settings)` and a default instance `xxx()` where the package
+provides one. Required fields follow the package: OpenAI-compatible settings
+require `name` and `base_url`. Models are taken from the provider (`provider.chat(id)`,
+`provider.language_model(id)?`, `provider.embedding_model(id)?`, …). Model
+identity follows the package (`openai.chat`, `anthropic.messages`); custom
+name handling is package-specific.
 
 ```rust
 use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
@@ -50,9 +52,13 @@ let anthropic = create_anthropic(AnthropicProviderSettings {
 let model = anthropic.messages("claude-sonnet-4-5");
 ```
 
-Settings that need a function (a rotating key, headers, a custom transport)
-take a `Resolvable` (`Resolvable::from_fn`, `from_async_fn`) or a `Fetch`; a
-provider-level rewrite of the request body is `transform_request_body`.
+Settings are package-specific. OpenAI, Anthropic and Google take
+`api_key: Option<String>` and `headers: Option<HeaderMapOpt>`; these are fixed
+values, not callbacks. `fetch: Option<FetchFunction>` supplies a custom
+transport. These packages have no `transform_request_body` setting;
+OpenAI-compatible settings expose that hook, matching their upstream package.
+OpenAI defaults to Responses through `call` and `language_model`; `chat`
+selects Chat Completions explicitly.
 Retry is not a provider setting: `max_retries` on the call options (default
 2, 2000 ms initial delay, factor 2).
 

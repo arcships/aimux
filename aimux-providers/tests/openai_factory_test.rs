@@ -7,10 +7,9 @@
 //! transport is the one the settings name. The expected request comes from the
 //! fixture; the inputs are rebuilt from the fixture's recorded `sdk.input`.
 //!
-//! Two differences from the recording are deliberate and asserted around:
-//! the `user-agent` header is the SDK's own identifier and aimux sends none,
-//! and the recorded `authorization` is redacted, so the key the case used is
-//! substituted back.
+//! The recorded `authorization` is redacted, so the key the case used is
+//! substituted back. The recorded SDK and runtime user-agent identifiers are
+//! replaced with the pinned provider package's user-agent suffix.
 
 use aimux_core::tool::RawToolCall;
 use std::collections::{BTreeMap, VecDeque};
@@ -263,7 +262,7 @@ impl Fixture {
     }
 
     /// The recorded request must equal what went out: method, URL, headers
-    /// (names case-insensitively, `user-agent` aside) and body.
+    /// (names case-insensitively, with the pinned user-agent) and body.
     fn assert_request(&self, seen: &Seen, authorization: &str) {
         let recorded = &self.json["request"];
         assert_eq!(
@@ -280,7 +279,7 @@ impl Fixture {
             .iter()
             .map(|(k, v)| (k.to_ascii_lowercase(), v.as_str().unwrap().to_string()))
             .collect();
-        expected.remove("user-agent");
+        expected.insert("user-agent".to_string(), "ai-sdk-openai/4.0.80".to_string());
         assert_eq!(
             expected.get("authorization").map(String::as_str),
             Some("<redacted>"),
