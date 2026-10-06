@@ -12,6 +12,10 @@
 timeout 和 abort；`DecisionModel::do_decide` 执行一次 provider attempt。
 `Provider::decision_model(model_id)` 默认返回 UnsupportedFunctionality。
 
+支持范围限于原生决策接口和候选评分能力。普通生成 API 的 structured output
+不作为 decision adapter，也不提供生成答案或概率的模拟 fallback。
+AI SDK 的此类适配仅作为调研背景，不属于 aimux 开发范围。
+
 state 是文本或 JSON Value；它不隐式解释媒体对象。questions 是带 ID 的有序数组，
 支持 Boolean、Choice、Score。Choice options 是 label / optional description
 数组；Score levels 是从低到高的 label 数组。第一阶段不引入 Boolean 的 true/false
@@ -83,7 +87,6 @@ Node 测试同时发现并修复共享 AbortBridge 对已取消 signal 的处理
 
 Provider 精度规则与 Node/Python/C 的 capability 查询仍属后续完善范围。
 
-后续按调研顺序扩展 TypeSafe / wrapper 专用能力、SGLang scoring adapter、
-OpenAI/Anthropic/Google structured-output adapter，以及 Go/Java/Kotlin/Swift/Flutter
-宿主包装。OpenAI 自有 Decisions endpoint 按公开 preview wire schema 实现，
-不能与通过 Responses structured output 实现的 adapter 混为一谈。
+后续按调研顺序扩展 TypeSafe / wrapper 专用能力、SGLang scoring adapter，
+以及 Go/Java/Kotlin/Swift/Flutter 宿主包装。OpenAI 自有 Decisions endpoint
+待取得公开 preview wire schema 后实现；不以 Responses structured output 代替。

@@ -102,6 +102,7 @@ vLLM 的 [Structured Outputs](https://docs.vllm.ai/en/latest/features/structured
 
 - aimux 增加稳定的 `decide` API，作为一等任务操作。
 - 公共 API 不使用 `experimental_` 前缀。
+- 支持范围限于原生决策接口和候选评分能力；不实现 structured-output 模拟 adapter 或生成式 fallback。AI SDK 的此类实现仅保留为调研事实。
 - 请求使用共享 `state` 和带 ID 的 typed questions；首批问题类型为 Choice、Score、Boolean。
 - 结果按问题 ID 返回 typed answers。Choice/Score 概率分布按 provider 能力提供，不设为所有 provider 的必填项；Boolean probability 表示 P(true)。
 - Provider adapter 保留概率来源、模型信息和原始 metadata。没有对应能力的 provider 返回明确 unsupported error。
@@ -143,7 +144,7 @@ DecisionAnswer =
 | Score { expected_value, levels, probabilities?: Vec<f64>, confidence? }
 ```
 
-Canonical `options` 和 `levels` 使用有序数组，adapter 将其转换为各 provider wire 格式。score index 采用 0-based 约定，并保留 provider 原始响应。Choice/Score 概率分布设为可选，以支持 structured-output adapter；native provider 可返回完整分布。`confidence` 作为可选 provider 字段，各 provider 的 confidence 语义单独记录。Boolean 概率字段表示 P(true)。
+Canonical `options` 和 `levels` 使用有序数组，adapter 将其转换为各 provider wire 格式。score index 采用 0-based 约定，并保留 provider 原始响应。Choice/Score 概率分布按 provider 实际能力提供；字段可选不代表支持 structured-output 模拟。`confidence` 作为可选 provider 字段，各 provider 的 confidence 语义单独记录。Boolean 概率字段表示 P(true)。
 
 ### 能力声明
 
@@ -151,7 +152,6 @@ Provider capability 建议区分：
 
 - `native_decision`：provider 接受 typed decision 请求。
 - `logit_scoring`：provider 返回候选 token logits/logprobs；能力说明需包括 token 限制与校准方法。
-- `constrained_generation`：provider 约束生成格式。
 - 输入种类、支持的问题类型、问题数量限制、是否返回完整分布、模型版本和概率来源。
 
 响应保留 raw provider metadata，并记录概率来源。模型 logits 归一化结果和专用决策服务的概率不能默认具有相同校准质量。

@@ -53,7 +53,7 @@ factory 的第三个 `endpoint` 参数可覆盖完整 POST URL。
 
 ```ts
 const local = await jevDecision('local-key', 'local-model',
-  'http://127.0.0.1:8000/v1/systemone', 'model_estimate')
+  'http://127.0.0.1:8000/v1/systemone', 'logit_scoring')
 ```
 
 `decide` 的第三个参数接受 AbortSignal。timeout 复用已有毫秒配置。
@@ -88,6 +88,10 @@ endpoint, probability_source, &handle)`，source 接受上述三个值，NULL �
 返回 InvalidArgument。
 
 ## 结果语义
+
+Decision adapter 的支持范围限于原生决策接口和候选评分能力，不提供
+structured-output 模拟或生成式 fallback。`model_estimate` 仅用于如实记录
+外部服务的概率来源，不表示 aimux 实现了相应模拟能力。
 
 Boolean probability_true 表示 P(true)，调用方设置业务阈值。Choice selected
 是 label，Score expected_value 是零起点的浮点位置，可能为小数。
