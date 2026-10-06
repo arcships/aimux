@@ -22,12 +22,21 @@ use super::tool_name_mapping::ToolNameMapping;
 pub struct AnthropicModel {
     model_id: String,
     config: AnthropicConfig,
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 }
 
 impl AnthropicModel {
     #[must_use]
     pub fn new(model_id: String, config: AnthropicConfig) -> Self {
-        Self { model_id, config }
+        let generate_id = config
+            .generate_id
+            .clone()
+            .unwrap_or_else(|| std::sync::Arc::new(super::stream::generate_id));
+        Self {
+            model_id,
+            config,
+            generate_id,
+        }
     }
 
     fn endpoint(&self) -> String {
@@ -133,6 +142,7 @@ impl LanguageModel for AnthropicModel {
             options.abort_signal.clone(),
             options.recording_context.clone(),
             &ToolNameMapping::new(options.tools.as_deref()),
+            self.generate_id.as_ref(),
         )
         .await
     }
@@ -151,6 +161,7 @@ impl LanguageModel for AnthropicModel {
             options.abort_signal.clone(),
             options.recording_context.clone(),
             ToolNameMapping::new(options.tools.as_deref()),
+            self.generate_id.clone(),
         )
         .await
     }
