@@ -104,7 +104,11 @@ Node 测试同时发现并修复共享 AbortBridge 对已取消 signal 的处理
 
 第一优先级为 TypeSafe 官方 Jev 接入。本 PR 直接校正现有 System One
 adapter，不另增第三方 provider。当前接入以官方文档 fixture 和本地 HTTP
-server 验证，未声明线上实测。
+server 验证；另于 2026-10-06 使用 Python binding 对官方 endpoint 完成
+两次线上调用（普通题目、原生对象/数组描述），均返回 `jev-1.13.0`。
+三种题型、原生等级保留、usage、概率分布与 Score 精度校验均通过。
+实际请求和响应保存在 `aimux-providers/tests/fixtures/jev_systemone_live.json`，
+不含凭据；回归测试离线重放这些响应，CI 无需线上 key。
 
 官方字段覆盖、Provider 精度规则、全语言 capability 查询和宿主包装均已实现。
 其他官方决策接口

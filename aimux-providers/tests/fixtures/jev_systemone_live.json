@@ -1,0 +1,326 @@
+{
+  "source": "Recorded live calls to the official TypeSafe API through the aimux Python binding",
+  "recorded_at": "2026-10-06T13:14:27.864678+00:00",
+  "endpoint": "https://api.typesafe.ai/v1/systemone",
+  "requested_model": "jev-latest",
+  "capabilities": {
+    "rounding": {
+      "probability_decimals": 2,
+      "score_decimals": 2
+    },
+    "probability_source": "native",
+    "supports_boolean": true,
+    "supports_choice": true,
+    "supports_score": true,
+    "returns_distributions": true,
+    "max_questions": null,
+    "min_choices": 1,
+    "max_choices": 255,
+    "max_score_levels": 10
+  },
+  "cases": [
+    {
+      "name": "basic",
+      "request": {
+        "state": "I was billed twice and payments are blocked. Please fix this urgently.",
+        "questions": [
+          {
+            "id": "urgent",
+            "type": "boolean",
+            "instructions": "Does the customer request urgent action?"
+          },
+          {
+            "id": "department",
+            "type": "choice",
+            "instructions": "Choose the responsible department.",
+            "options": [
+              {
+                "label": "billing"
+              },
+              {
+                "label": "technical"
+              },
+              {
+                "label": "sales"
+              }
+            ]
+          },
+          {
+            "id": "severity",
+            "type": "score",
+            "instructions": "Rate the impact of the issue.",
+            "levels": [
+              "Minor inconvenience",
+              "Significant issue",
+              "Payments completely blocked"
+            ]
+          }
+        ],
+        "max_retries": 0,
+        "timeout": {
+          "total_ms": 30000
+        }
+      },
+      "response": {
+        "model": "jev-1.13.0",
+        "answers": {
+          "urgent": {
+            "type": "noul",
+            "noul": 0.99
+          },
+          "department": {
+            "type": "choice",
+            "choice": "billing",
+            "confidence": 1.0,
+            "probabilities": {
+              "billing": 1.0,
+              "sales": 0.0,
+              "technical": 0.0
+            }
+          },
+          "severity": {
+            "type": "score",
+            "score": 2.0,
+            "confidence": 1.0,
+            "legend": {
+              "0": "Minor inconvenience",
+              "1": "Significant issue",
+              "2": "Payments completely blocked"
+            },
+            "probabilities": {
+              "0": 0.0,
+              "1": 0.0,
+              "2": 1.0
+            }
+          }
+        },
+        "usage": {
+          "input_tokens": 365,
+          "output_tokens": 68
+        }
+      },
+      "answers": {
+        "department": {
+          "type": "choice",
+          "selected": "billing",
+          "probabilities": {
+            "billing": 1.0,
+            "sales": 0.0,
+            "technical": 0.0
+          },
+          "confidence": 1.0
+        },
+        "severity": {
+          "type": "score",
+          "expected_value": 2.0,
+          "levels": [
+            "Minor inconvenience",
+            "Significant issue",
+            "Payments completely blocked"
+          ],
+          "probabilities": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "confidence": 1.0
+        },
+        "urgent": {
+          "type": "boolean",
+          "probability_true": 0.99
+        }
+      },
+      "model": "jev-1.13.0",
+      "rounding": {
+        "probability_decimals": 2,
+        "score_decimals": 2
+      },
+      "usage": {
+        "input_tokens": {
+          "total": 365
+        },
+        "output_tokens": {
+          "total": 68
+        },
+        "raw": {
+          "input_tokens": 365,
+          "output_tokens": 68
+        }
+      }
+    },
+    {
+      "name": "native_structured",
+      "request": {
+        "state": {
+          "ticket": "Payments blocked"
+        },
+        "questions": [
+          {
+            "id": "urgent",
+            "type": "boolean",
+            "instructions": {
+              "question": "Is action urgent?",
+              "context": [
+                "payments"
+              ]
+            },
+            "criteria": {
+              "true": {
+                "includes": [
+                  "blocked"
+                ]
+              },
+              "false": [
+                "routine",
+                "can wait"
+              ]
+            }
+          },
+          {
+            "id": "department",
+            "type": "choice",
+            "instructions": [
+              "Route the ticket",
+              {
+                "priority": "payments"
+              }
+            ],
+            "options": [
+              {
+                "label": "billing",
+                "description": {
+                  "includes": [
+                    "payments"
+                  ],
+                  "examples": [
+                    "payout failure"
+                  ]
+                }
+              },
+              {
+                "label": "technical"
+              }
+            ]
+          },
+          {
+            "id": "severity",
+            "type": "score",
+            "instructions": "Rate severity",
+            "levels": [
+              {
+                "label": "low",
+                "includes": [
+                  "minor inconvenience"
+                ]
+              },
+              [
+                "blocking",
+                "No workaround"
+              ]
+            ]
+          }
+        ],
+        "max_retries": 0,
+        "timeout": {
+          "total_ms": 30000
+        }
+      },
+      "response": {
+        "model": "jev-1.13.0",
+        "answers": {
+          "urgent": {
+            "type": "noul",
+            "noul": 0.91
+          },
+          "department": {
+            "type": "choice",
+            "choice": "billing",
+            "confidence": 0.98,
+            "probabilities": {
+              "billing": 0.99,
+              "technical": 0.01
+            }
+          },
+          "severity": {
+            "type": "score",
+            "score": 0.99,
+            "confidence": 0.99,
+            "legend": {
+              "0": {
+                "label": "low",
+                "includes": [
+                  "minor inconvenience"
+                ]
+              },
+              "1": [
+                "blocking",
+                "No workaround"
+              ]
+            },
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.99
+            }
+          }
+        },
+        "usage": {
+          "input_tokens": 448,
+          "output_tokens": 61
+        }
+      },
+      "answers": {
+        "department": {
+          "type": "choice",
+          "selected": "billing",
+          "probabilities": {
+            "billing": 0.99,
+            "technical": 0.01
+          },
+          "confidence": 0.98
+        },
+        "severity": {
+          "type": "score",
+          "expected_value": 0.99,
+          "levels": [
+            {
+              "label": "low",
+              "includes": [
+                "minor inconvenience"
+              ]
+            },
+            [
+              "blocking",
+              "No workaround"
+            ]
+          ],
+          "probabilities": [
+            0.01,
+            0.99
+          ],
+          "confidence": 0.99
+        },
+        "urgent": {
+          "type": "boolean",
+          "probability_true": 0.91
+        }
+      },
+      "model": "jev-1.13.0",
+      "rounding": {
+        "probability_decimals": 2,
+        "score_decimals": 2
+      },
+      "usage": {
+        "input_tokens": {
+          "total": 448
+        },
+        "output_tokens": {
+          "total": 61
+        },
+        "raw": {
+          "input_tokens": 448,
+          "output_tokens": 61
+        }
+      }
+    }
+  ]
+}

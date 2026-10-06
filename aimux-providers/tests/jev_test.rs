@@ -1,4 +1,5 @@
-//! Offline contract tests using a documented official example. No live credentials.
+//! Offline contract tests using official examples and recorded live responses.
+//! No live credentials or external requests are needed to replay them.
 use std::time::Duration;
 
 use aimux_core::decision_model::*;
@@ -11,6 +12,24 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 fn fixture() -> Value {
     let fixture: Value = serde_json::from_str(include_str!("fixtures/jev_systemone.json")).unwrap();
     fixture["response"].clone()
+}
+
+#[tokio::test]
+async fn recorded_official_live_responses_replay_through_core_validation() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("fixtures/jev_systemone_live.json")).unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let server = MockServer::start().await;
+        mount(&server, 200, case["response"].clone()).await;
+        let request: DecisionCallOptions = serde_json::from_value(case["request"].clone()).unwrap();
+        let result = decide(model(&server).as_ref(), request).await.unwrap();
+        let result = serde_json::to_value(result).unwrap();
+        assert_eq!(result["answers"], case["answers"], "{}", case["name"]);
+        assert_eq!(result["model"], case["model"]);
+        assert_eq!(result["rounding"], case["rounding"]);
+        assert_eq!(result["usage"], case["usage"]);
+        assert_eq!(result["response"]["body"], case["response"]);
+    }
 }
 
 fn options() -> DecisionCallOptions {
