@@ -233,7 +233,7 @@ pub fn create_azure(
         speech_base_url,
         speech_headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
             speech_headers,
-            "azure",
+            options::NAMESPACE,
             "4.0.84",
         ),
         info,
