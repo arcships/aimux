@@ -157,7 +157,7 @@ impl LanguageModel for GoogleModel {
         }
         crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
+        let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options)?;
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest::new(
@@ -267,7 +267,7 @@ impl LanguageModel for GoogleModel {
         }
         crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
+        let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options)?;
         let headers = self.build_headers(options.headers.as_ref());
         let endpoint = self.stream_endpoint();
         let resp = aimux_provider_utils::post_json_to_api(

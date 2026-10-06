@@ -197,8 +197,7 @@ impl LanguageModel for BedrockModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        super::convert::validate_tool_result_content(&options.prompt)?;
-        let body = build_request_body(&self.model_id, options);
+        let body = build_request_body(&self.model_id, options)?;
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.endpoint(false);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
@@ -267,8 +266,7 @@ impl LanguageModel for BedrockModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        super::convert::validate_tool_result_content(&options.prompt)?;
-        let body = build_request_body(&self.model_id, options);
+        let body = build_request_body(&self.model_id, options)?;
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.endpoint(true);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
