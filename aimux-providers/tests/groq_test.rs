@@ -425,7 +425,8 @@ mod convert_messages {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            err.to_string().contains("file parts with provider references"),
+            err.to_string()
+                .contains("file parts with provider references"),
             "error should mention 'file parts with provider references': {err}"
         );
     }
