@@ -225,7 +225,8 @@ pub use cohere::{
 };
 pub use google::{
     GoogleEmbeddingModel, GoogleFiles, GoogleImageModel, GoogleImageSettings, GoogleModel,
-    GoogleProvider, GoogleProviderSettings, GoogleVideoModel, create_google, google,
+    GoogleProvider, GoogleProviderSettings, GoogleSpeechModel, GoogleTranscriptionModel,
+    GoogleVideoModel, create_google, google,
 };
 pub use mistral::{
     MistralEmbeddingModel, MistralModel, MistralProvider, MistralProviderSettings,

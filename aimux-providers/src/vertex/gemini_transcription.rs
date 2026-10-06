@@ -6,79 +6,15 @@ use serde_json::{Value, json};
 
 use super::ProjectLocationFn;
 use crate::google::options::{GOOGLE, Namespace};
+use crate::google::transcription::parse_offset_seconds;
 use crate::shared::EndpointConfig;
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::{SharedProviderOptions, provider_namespace};
+use aimux_core::shared::provider_namespace;
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionResponse,
     TranscriptionResult, TranscriptionSegment, TranscriptionStreamOptions,
     TranscriptionStreamResult,
 };
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GeminiOptions {
-    #[serde(default)]
-    language_codes: Option<Vec<String>>,
-    #[serde(default)]
-    custom_vocabulary: Option<Vec<String>>,
-    #[serde(default)]
-    word_timestamp: Option<bool>,
-    #[serde(default)]
-    diarization: Option<bool>,
-    #[serde(default)]
-    mode: Option<Mode>,
-}
-
-#[derive(Deserialize)]
-enum Mode {
-    #[serde(rename = "SMART")]
-    Smart,
-    #[serde(rename = "VERBATIM")]
-    Verbatim,
-}
-
-fn transcription_config(options: Option<&SharedProviderOptions>) -> Result<Value, AiMuxError> {
-    let Some(options) = Namespace::Vertex.read(options) else {
-        return Ok(json!({}));
-    };
-    // z.optional() accepts absence, but not explicit null.
-    for key in [
-        "languageCodes",
-        "customVocabulary",
-        "wordTimestamp",
-        "diarization",
-        "mode",
-    ] {
-        if options.get(key).is_some_and(Value::is_null) {
-            return Err(AiMuxError::InvalidArgument(format!(
-                "Google Vertex transcription option {key} cannot be null"
-            )));
-        }
-    }
-    let parsed: GeminiOptions = serde_json::from_value(Value::Object(options.clone()))
-        .map_err(|error| AiMuxError::InvalidArgument(error.to_string()))?;
-    let mut config = json!({});
-    if let Some(value) = parsed.language_codes {
-        config["languageCodes"] = json!(value);
-    }
-    if let Some(value) = parsed.custom_vocabulary {
-        config["customVocabulary"] = json!(value);
-    }
-    if let Some(value) = parsed.word_timestamp {
-        config["wordTimestamp"] = json!(value);
-    }
-    if let Some(value) = parsed.diarization {
-        config["diarization"] = json!(value);
-    }
-    if let Some(value) = parsed.mode {
-        config["mode"] = json!(match value {
-            Mode::Smart => "SMART",
-            Mode::Verbatim => "VERBATIM",
-        });
-    }
-    Ok(config)
-}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -115,16 +51,6 @@ struct Candidate {
 struct Response {
     candidates: Option<Vec<Candidate>>,
     usage_metadata: Option<serde_json::Map<String, Value>>,
-}
-
-fn offset(value: &Option<String>) -> Option<f64> {
-    // Number.parseFloat accepts a numeric prefix, including duration suffixes.
-    let value = value.as_ref()?.trim_start();
-    (1..=value.len())
-        .rev()
-        .filter(|end| value.is_char_boundary(*end))
-        .find_map(|end| value[..end].parse::<f64>().ok())
-        .filter(|value| value.is_finite())
 }
 
 /// Gemini transcription model, distinct from Cloud Speech-to-Text.
@@ -176,7 +102,10 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
         }
         (self.project_location)().await?;
         let timestamp = chrono::Utc::now().to_rfc3339();
-        let config = transcription_config(options.provider_options.as_ref())?;
+        let config = crate::google::transcription::TranscriptionOptions::parse(
+            Namespace::Vertex.read(options.provider_options.as_ref()),
+        )?
+        .audio_transcription_config();
         let audio = match &options.audio {
             AudioInput::Base64(value) => value.clone(),
             AudioInput::Binary(value) => {
@@ -229,8 +158,8 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
             for word in transcription.words.unwrap_or_default() {
                 if let (Some(text), Some(start_second), Some(end_second)) = (
                     word.word.clone(),
-                    offset(&word.start_offset),
-                    offset(&word.end_offset),
+                    parse_offset_seconds(word.start_offset.as_deref()),
+                    parse_offset_seconds(word.end_offset.as_deref()),
                 ) {
                     segments.push(TranscriptionSegment {
                         text,
@@ -290,27 +219,15 @@ impl VertexGeminiTranscriptionModel {
         &self,
         options: TranscriptionStreamOptions,
     ) -> Result<TranscriptionStreamResult, AiMuxError> {
-        use aimux_core::transcription_model::{
-            AudioChunk, TranscriptionRequest, TranscriptionStreamPart,
-        };
-        use aimux_provider_utils::ws::{WebSocketRequest, WsMessage, ws_connect};
-        use futures::StreamExt;
-        use std::time::Duration;
-        use tokio::time::Instant;
+        use aimux_core::transcription_model::TranscriptionRequest;
+        use aimux_provider_utils::ws::{WebSocketRequest, ws_connect};
 
-        if options.input_audio_format.format_type != "audio/pcm"
-            || options
-                .input_audio_format
-                .rate
-                .is_some_and(|rate| rate != 16000)
-        {
-            return Err(AiMuxError::InvalidArgument(
-                "The Gemini Live transcription API only supports 16kHz 16-bit PCM input audio."
-                    .into(),
-            ));
-        }
+        crate::google::transcription::validate_live_input_audio_format(&options)?;
         let target = (self.project_location)().await?;
-        let config = transcription_config(options.provider_options.as_ref())?;
+        let config = crate::google::transcription::TranscriptionOptions::parse(
+            Namespace::Vertex.read(options.provider_options.as_ref()),
+        )?
+        .audio_transcription_config();
         let setup = json!({"setup": {
             "model": format!("projects/{}/locations/{}/publishers/google/models/{}", target.project, target.location, self.model_id),
             "inputAudioTranscription": config,
@@ -336,122 +253,14 @@ impl VertexGeminiTranscriptionModel {
             model_id: Some(self.model_id.clone()),
             ..Default::default()
         });
-        let include_raw = options.include_raw_chunks;
-        let mut audio = options.audio;
-        let stream = async_stream::stream! {
-            yield Ok(TranscriptionStreamPart::StreamStart { warnings: Vec::new() });
-            let mut ready = false;
-            let mut audio_ended = false;
-            let mut deadline = None;
-            let mut segment_counter = 0;
-            let mut segment_buffer = String::new();
-            let mut latest_interim = String::new();
-            let mut full_text = String::new();
-            let mut language = None;
-            let mut usage_metadata = None;
-            let mut complete = false;
-            loop {
-                tokio::select! {
-                    chunk = audio.next(), if ready && !audio_ended => {
-                        let message = match chunk {
-                            Some(chunk) => {
-                                let data = match chunk {
-                                    AudioChunk::Base64(data) => data,
-                                    AudioChunk::Binary(data) => base64::Engine::encode(&base64::engine::general_purpose::STANDARD, data),
-                                };
-                                json!({"realtimeInput": {"audio": {"data": data, "mimeType": "audio/pcm;rate=16000"}}})
-                            }
-                            None => {
-                                audio_ended = true;
-                                deadline = Some(Instant::now() + Duration::from_secs(3));
-                                json!({"realtimeInput": {"audioStreamEnd": true}})
-                            }
-                        };
-                        if let Err(error) = socket.send_text(&message.to_string()).await {
-                            yield Err(error); break;
-                        }
-                    }
-                    incoming = socket.next() => {
-                        let incoming = match incoming {
-                            Some(Ok(incoming)) => incoming,
-                            Some(Err(error)) => { yield Err(error); break; }
-                            None if audio_ended => { complete = true; break; }
-                            None => {
-                                yield Err(AiMuxError::InvalidResponseData("Vertex Live transcription WebSocket closed unexpectedly before finishing".into()));
-                                break;
-                            }
-                        };
-                        let text = match incoming {
-                            WsMessage::Text(text) => text,
-                            WsMessage::Binary(data) => String::from_utf8_lossy(&data).into_owned(),
-                        };
-                        let Ok(message) = serde_json::from_str::<Value>(&text) else { continue; };
-                        if include_raw { yield Ok(TranscriptionStreamPart::Raw { raw_value: message.clone() }); }
-                        if message.get("setupComplete").is_some_and(|value| !value.is_null()) { ready = true; }
-                        if let Some(value) = message.get("usageMetadata").filter(|value| !value.is_null()) { usage_metadata = Some(value.clone()); }
-                        if let Some(error) = message.get("error").filter(|value| !value.is_null()) {
-                            yield Err(AiMuxError::InvalidResponseData(error.get("message").and_then(Value::as_str).unwrap_or("Vertex Live API error").into()));
-                            break;
-                        }
-                        let content = message.get("serverContent");
-                        if let Some(text) = content.and_then(|value| value.get("interimInputTranscription")).and_then(|value| value.get("text")).and_then(Value::as_str).filter(|text| !text.is_empty()) {
-                            if audio_ended { deadline = Some(Instant::now() + Duration::from_secs(3)); }
-                            latest_interim = text.to_owned();
-                            yield Ok(TranscriptionStreamPart::TranscriptPartial {
-                                id: Some(format!("google-segment-{segment_counter}")), text: text.into(), start_second: None, duration_in_seconds: None, channel_index: None, provider_metadata: None,
-                            });
-                        }
-                        let transcription = content.and_then(|value| value.get("inputTranscription")).filter(|value| !value.is_null()).or_else(|| message.get("inputTranscription"));
-                        if let Some(transcription) = transcription {
-                            if let Some(value) = transcription.get("languageCode").and_then(Value::as_str) { language = Some(value.to_owned()); }
-                            if let Some(text) = transcription.get("text").and_then(Value::as_str).filter(|text| !text.is_empty()) {
-                                if audio_ended { deadline = Some(Instant::now() + Duration::from_secs(3)); }
-                                latest_interim.clear();
-                                segment_buffer.push_str(text);
-                                yield Ok(TranscriptionStreamPart::TranscriptDelta { id: Some(format!("google-segment-{segment_counter}")), delta: text.into(), provider_metadata: None });
-                            }
-                        }
-                        let turn_complete = content.and_then(|value| value.get("turnComplete")).and_then(Value::as_bool) == Some(true);
-                        if turn_complete || transcription.and_then(|value| value.get("finished")).and_then(Value::as_bool) == Some(true) {
-                            if segment_buffer.is_empty() { segment_buffer = std::mem::take(&mut latest_interim); }
-                            latest_interim.clear();
-                            if !segment_buffer.is_empty() {
-                                if !full_text.is_empty() { full_text.push(' '); }
-                                full_text.push_str(&segment_buffer);
-                                yield Ok(TranscriptionStreamPart::TranscriptFinal {
-                                    id: Some(format!("google-segment-{segment_counter}")), text: std::mem::take(&mut segment_buffer), start_second: None, end_second: None, channel_index: None, provider_metadata: None,
-                                });
-                                segment_counter += 1;
-                            }
-                        }
-                        let status = content.and_then(|value| value.get("interactionStatus")).and_then(Value::as_str);
-                        if audio_ended && (matches!(status, Some("IDLE" | "REQUIRES_ACTION")) || (turn_complete && status.is_none())) {
-                            complete = true; break;
-                        }
-                    }
-                    _ = async {
-                        match deadline { Some(deadline) => tokio::time::sleep_until(deadline).await, None => std::future::pending().await }
-                    } => { complete = true; break; }
-                }
-            }
-            if complete {
-                if segment_buffer.is_empty() { segment_buffer = latest_interim; }
-                if !segment_buffer.is_empty() {
-                    if !full_text.is_empty() { full_text.push(' '); }
-                    full_text.push_str(&segment_buffer);
-                    yield Ok(TranscriptionStreamPart::TranscriptFinal {
-                        id: Some(format!("google-segment-{segment_counter}")), text: segment_buffer, start_second: None, end_second: None, channel_index: None, provider_metadata: None,
-                    });
-                }
-                yield Ok(TranscriptionStreamPart::Finish {
-                    text: full_text, segments: Vec::new(), language, duration_in_seconds: None,
-                    provider_metadata: usage_metadata.map(|usage| provider_namespace(GOOGLE, json!({"usageMetadata": usage})).expect("provider metadata must be an object")),
-                });
-            }
-            socket.close().await;
-        };
+        let stream = crate::google::transcription::live_stream(
+            socket,
+            options.audio,
+            options.include_raw_chunks,
+            "Vertex",
+        );
         Ok(TranscriptionStreamResult {
-            stream: Box::pin(stream),
+            stream,
             request,
             response,
         })
