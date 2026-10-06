@@ -5,6 +5,20 @@ import 'package:aimux/decision.dart';
 import 'package:aimux/errors.dart';
 import 'package:test/test.dart';
 
+// Keep the worker closure outside the server's lexical scope so Dart cannot
+// capture its unsendable HttpServer through a shared closure context.
+Future<Map<String, dynamic>> runDecision(
+    String endpoint, Map<String, dynamic> options) => Isolate.run(() {
+  final model = DecisionModel.jev('test-key', 'jev-latest', endpoint: endpoint);
+  try {
+    final caps = model.capabilities();
+    if (caps['max_choices'] != 255 || caps['rounding']['score_decimals'] != 2) {
+      throw StateError('incorrect capabilities');
+    }
+    return model.decide(options);
+  } finally { model.close(); }
+});
+
 void main() {
   test('official structured contract and capabilities cross the C ABI', () async {
     final fixture = jsonDecode(File('../../contract-tests/fixtures/decision-native.json').readAsStringSync()) as Map;
@@ -22,16 +36,7 @@ void main() {
     final endpoint = 'http://127.0.0.1:${server.port}/v1/systemone';
     final options = (fixture['request'] as Map).cast<String, dynamic>();
     // The Rust call blocks; the HTTP server remains on this isolate.
-    final result = await Isolate.run(() {
-      final model = DecisionModel.jev('test-key', 'jev-latest', endpoint: endpoint);
-      try {
-        final caps = model.capabilities();
-        if (caps['max_choices'] != 255 || caps['rounding']['score_decimals'] != 2) {
-          throw StateError('incorrect capabilities');
-        }
-        return model.decide(options);
-      } finally { model.close(); }
-    });
+    final result = await runDecision(endpoint, options);
     expect(captures.length, 1);
     expect(result['answers']['urgent']['probability_true'], 0.9);
     expect(result['answers']['severity']['levels'], options['questions'][2]['levels']);
