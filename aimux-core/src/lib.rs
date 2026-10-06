@@ -21,6 +21,7 @@ mod abort_signal;
 pub mod composite;
 pub mod content;
 pub mod decision_model;
+mod decision_replay;
 pub mod embedding_model;
 pub mod error;
 pub mod files_model;

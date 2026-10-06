@@ -92,8 +92,8 @@ Jev 使用官方示例的离线 contract fixture，明确标注不是实测录�
 provider retry 分类；core 覆盖 optional distributions、abort、timeout；C 覆盖
 handle 类型、销毁、JSON 错误和 abort。
 
-验证：Rust 工作区 3857 passed / 57 ignored；Node 的 decision、wrapper、
-error 三组测试共 27 passed；Python decision 测试 7 passed。工作区 fmt、
+验证：Rust 工作区 3871 passed / 57 ignored；Node 的 decision、wrapper、
+error 三组测试共 27 passed；Python decision 测试 8 passed。工作区 fmt、
 Clippy（warnings as errors）、TypeScript 编译与类型生成一致性检查通过。
 跨语言测试使用实际构建的 native 模块与本地 HTTP server，未调用线上 Jev。
 Node 测试同时发现并修复共享 AbortBridge 对已取消 signal 的处理，覆盖
@@ -107,8 +107,18 @@ adapter，不另增第三方 provider。当前接入以官方文档 fixture 和�
 server 验证；另于 2026-10-06 使用 Python binding 对官方 endpoint 完成
 两次线上调用（普通题目、原生对象/数组描述），均返回 `jev-1.13.0`。
 三种题型、原生等级保留、usage、概率分布与 Score 精度校验均通过。
-实际请求和响应保存在 `aimux-providers/tests/fixtures/jev_systemone_live.json`，
-不含凭据；回归测试离线重放这些响应，CI 无需线上 key。
+随后使用统一 recorder 重新录制这两种请求，实际 wire 交换和规范化结果
+保存在 `aimux-providers/tests/fixtures/jev_systemone_live.jsonl`，不含凭据。
+回归测试通过共享 HTTP replay helper 和 Core decision mock 分别回放；
+CI 无需线上 key。
+
+`decide` 复用统一 JSONL/ring recorder，输入标记为 decision（旧记录默认
+language model），state/questions 存入 input.options，能力快照存入 provider.profile，
+规范化结果存入 outcome.decision_result。每次 retry 分配独立 attempt，
+录制器快照跨 HTTP、取消和收尾保持一致。覆盖成功、错误、超时、取消、
+脱敏、无重复占位记录、严格匹配和 recorder 替换。
+`aimux-replay --mock` 支持标准 JSONL 的离线 decision 回放；不带 --mock
+时可重建官方 Jev 执行请求回放。
 
 官方字段覆盖、Provider 精度规则、全语言 capability 查询和宿主包装均已实现。
 其他官方决策接口

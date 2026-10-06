@@ -108,6 +108,9 @@ impl DecisionQuestion {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DecisionCallOptions {
+    #[serde(skip)]
+    #[ts(skip)]
+    pub recording_context: Option<crate::recording::RecordingContext>,
     pub state: DecisionState,
     pub questions: Vec<DecisionQuestion>,
     #[serde(skip)]
@@ -129,6 +132,7 @@ impl DecisionCallOptions {
         Self {
             state,
             questions,
+            recording_context: None,
             abort_signal: None,
             max_retries: None,
             timeout: None,
@@ -420,6 +424,12 @@ pub trait DecisionModel: Send + Sync {
     fn provider(&self) -> &str;
     fn model_id(&self) -> &str;
     fn capabilities(&self) -> DecisionCapabilities;
+    fn config_snapshot(&self) -> crate::recording::ProviderRecord {
+        let mut snapshot =
+            crate::recording::ProviderRecord::minimal(self.provider(), self.model_id());
+        snapshot.profile = Some(serde_json::json!({"decision_capabilities": self.capabilities()}));
+        snapshot
+    }
     fn retry_config(&self) -> crate::retry::RetryConfig {
         crate::retry::RetryConfig::default()
     }
@@ -435,7 +445,7 @@ pub trait DecisionModel: Send + Sync {
 /// retry exhaustion, timeout or caller abort errors.
 pub async fn decide(
     model: &dyn DecisionModel,
-    options: DecisionCallOptions,
+    mut options: DecisionCallOptions,
 ) -> Result<DecisionResult, AiMuxError> {
     options.validate()?;
     let capabilities = model.capabilities();
@@ -491,8 +501,25 @@ pub async fn decide(
         model.retry_config(),
         abort_signal.clone(),
     );
-    timeout::run(
+    let context = crate::recording::recorder().map(|recorder| {
+        let ctx =
+            crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
+        options.recording_context = Some(ctx.clone());
+        ctx.recorder.record_decision_input(
+            &ctx.call_id,
+            &options,
+            model.provider(),
+            model.model_id(),
+        );
+        ctx.recorder
+            .record_provider(&ctx.call_id, &model.config_snapshot());
+        ctx
+    });
+    let result = timeout::run(
         retries.retry(|| async {
+            if let Some(ctx) = &options.recording_context {
+                let _ = ctx.start_attempt();
+            }
             let result = model.do_decide(&options).await?;
             if result.rounding != capabilities.rounding {
                 return Err(AiMuxError::InvalidResponseData(
@@ -523,5 +550,21 @@ pub async fn decide(
         abort_signal.as_ref(),
         timeout,
     )
-    .await
+    .await;
+    if let Some(ctx) = context {
+        let outcome = match &result {
+            Ok(result) => crate::recording::OutcomeRecord {
+                status: crate::recording::OutcomeStatus::Success,
+                usage: serde_json::to_value(&result.usage).ok(),
+                decision_result: serde_json::to_value(result)
+                    .ok()
+                    .map(crate::recording::redact_json),
+                ..Default::default()
+            },
+            Err(error) => crate::recording::OutcomeRecord::from_error(error),
+        };
+        ctx.recorder.record_transport_closed(&ctx.call_id);
+        ctx.recorder.record_outcome(&ctx.call_id, &outcome);
+    }
+    result
 }

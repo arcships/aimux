@@ -284,6 +284,20 @@ impl DecisionModel for JevDecisionModel {
     fn model_id(&self) -> &str {
         &self.model_id
     }
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        let mut snapshot =
+            aimux_core::recording::ProviderRecord::minimal(self.provider(), self.model_id());
+        snapshot.base_url = Some(self.config.endpoint.clone());
+        snapshot.api_key_source = if self.config.api_key.is_empty() {
+            "none"
+        } else {
+            "explicit"
+        }
+        .into();
+        snapshot.profile = Some(json!({"decision_capabilities": self.capabilities()}));
+        snapshot.provider_options = Some(json!({"headers": self.config.headers}));
+        snapshot
+    }
     fn retry_config(&self) -> aimux_core::retry::RetryConfig {
         self.config.retry_config
     }
@@ -315,12 +329,11 @@ impl DecisionModel for JevDecisionModel {
             headers.extend(extra.clone());
         }
         let response = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.config.endpoint.clone(),
-                headers: headers.into_iter().collect(),
-                abort_signal: options.abort_signal.clone(),
-                ..Default::default()
-            },
+            HttpRequest::new(
+                &self.config.endpoint,
+                headers.into_iter().collect(),
+                options,
+            ),
             body.clone(),
             aimux_provider_utils::create_json_response_handler::<WireResponse>(),
             aimux_provider_utils::create_standard_json_error_response_handler(),

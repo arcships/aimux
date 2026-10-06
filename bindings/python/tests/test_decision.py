@@ -10,6 +10,27 @@ from pathlib import Path
 import pytest
 from aimux import APICallError, InvalidArgumentError, decide, jev_decision, decision_capabilities
 
+
+def test_decision_uses_unified_runtime_recording(server, tmp_path):
+    from aimux import init_recording, recording_flush, recording_stop
+    base, _ = server
+    init_recording(str(tmp_path))
+    try:
+        result = decide(jev_decision('test-key', 'jev-latest', base + '/v1/systemone'),
+                        {'message': 'Billed twice'}, QUESTIONS, max_retries=0)
+    finally:
+        recording_flush()
+        recording_stop()
+    records = [json.loads(line) for line in (tmp_path / 'recordings.jsonl').read_text().splitlines()]
+    assert len(records) == 1
+    record = records[0]
+    assert record['complete'] is True
+    assert record['input']['operation'] == 'decision'
+    assert record['input']['options']['questions'] == QUESTIONS
+    assert record['outcome']['decision_result']['answers'] == result['answers']
+    assert record['exchanges'][0]['attempt'] == 1
+    assert 'test-key' not in json.dumps(record)
+
 FIXTURE = json.loads((Path(__file__).resolve().parents[3] / 'aimux-providers/tests/fixtures/jev_systemone.json').read_text())['response']
 QUESTIONS = [
     {'id': 'is_urgent', 'type': 'boolean', 'instructions': 'The message conveys urgency or time-sensitivity'},

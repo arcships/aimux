@@ -149,3 +149,43 @@ TypeSafe 官方 Choice 支持 1–255 项，Score 支持 2–10 级；state 支�
 provider 返回 UnsupportedFunctionality。当前 state 不定义图像或其他媒体 part。
 能力查询在所有绑定均可用，包含题型支持、数量限制、完整分布、概率来源与
 舍入精度。查询不会发起 HTTP 请求。
+
+## 录制与回放
+
+`decide` 复用统一录制器；各语言现有的 `init_recording` / ring recording
+入口均会录制 decision。无需在调用处另存 JSON。例如 Python：
+
+```python
+from aimux import init_recording, recording_flush, recording_stop
+
+init_recording("./recordings")
+try:
+    result = decide(model, state, questions)
+finally:
+    recording_flush()
+    recording_stop()
+```
+
+标准 `recordings.jsonl` 每行记录一次逻辑调用：`input.operation = "decision"`，
+`input.options` 保留 state/questions；provider 快照含 endpoint 和 capabilities；
+exchanges 记录各重试 attempt 的 HTTP 请求、响应和时延；
+`outcome.decision_result` 保存规范化结果。凭据沿用统一脱敏规则。
+旧语言录制缺少 operation 时仍按 language model 解析，schema 2 保持兼容。
+
+CLI 离线回放不需要 key：
+
+```sh
+aimux-replay ./recordings/recordings.jsonl --mock
+aimux-replay ./recordings/recordings.jsonl --dry-run
+```
+
+Rust 可用 `aimux_core::replay::MockDecisionReplayModel::from_jsonl` 加载录制，
+再通过 `decide` 或 `replay_decision_with_model` 离线回放。匹配 provider/model、
+state/questions、headers 和 provider_options；timeout/retry 控制不参与匹配。
+输入未命中或记录不完整时返回错误。请求回放可通过
+`aimux_providers::rebuild_decision_provider` 重建官方 Jev，再调用
+`replay_decision_with_model` 发出真实请求；CLI 不带 `--mock` 时也走这条路径。
+
+实测录制在 `aimux-providers/tests/fixtures/jev_systemone_live.jsonl`。
+Provider 回归测试通过共享 HTTP replay helper 重放实际 wire 交换；另有
+规范化结果回放测试。两者均离线执行。

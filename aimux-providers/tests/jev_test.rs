@@ -9,6 +9,8 @@ use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+mod common;
+
 fn fixture() -> Value {
     let fixture: Value = serde_json::from_str(include_str!("fixtures/jev_systemone.json")).unwrap();
     fixture["response"].clone()
@@ -16,19 +18,19 @@ fn fixture() -> Value {
 
 #[tokio::test]
 async fn recorded_official_live_responses_replay_through_core_validation() {
-    let fixture: Value =
-        serde_json::from_str(include_str!("fixtures/jev_systemone_live.json")).unwrap();
-    for case in fixture["cases"].as_array().unwrap() {
+    for line in include_str!("fixtures/jev_systemone_live.jsonl").lines() {
+        let recording: aimux_core::recording::Recording = serde_json::from_str(line).unwrap();
         let server = MockServer::start().await;
-        mount(&server, 200, case["response"].clone()).await;
-        let request: DecisionCallOptions = serde_json::from_value(case["request"].clone()).unwrap();
+        common::replay::mount_recording(&server, &recording).await;
+        let request: DecisionCallOptions =
+            serde_json::from_value(recording.input.options.clone()).unwrap();
         let result = decide(model(&server).as_ref(), request).await.unwrap();
         let result = serde_json::to_value(result).unwrap();
-        assert_eq!(result["answers"], case["answers"], "{}", case["name"]);
-        assert_eq!(result["model"], case["model"]);
-        assert_eq!(result["rounding"], case["rounding"]);
-        assert_eq!(result["usage"], case["usage"]);
-        assert_eq!(result["response"]["body"], case["response"]);
+        let expected = recording.outcome.decision_result.unwrap();
+        for field in ["answers", "model", "rounding", "usage"] {
+            assert_eq!(result[field], expected[field]);
+        }
+        assert_eq!(result["response"]["body"], expected["response"]["body"]);
     }
 }
 

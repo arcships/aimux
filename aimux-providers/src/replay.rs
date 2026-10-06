@@ -25,6 +25,42 @@ use aimux_core::recording::ProviderRecord;
 use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
 use crate::provider::ProviderOptions;
 
+/// Rebuild the official TypeSafe decision model from a unified recording.
+/// # Errors
+/// Rejects unsupported providers, invalid model IDs and missing credentials.
+pub fn rebuild_decision_provider(
+    p: &ProviderRecord,
+    api_key: Option<&str>,
+) -> Result<Box<dyn aimux_core::decision_model::DecisionModel>, AiMuxError> {
+    if p.provider != "jev" {
+        return Err(AiMuxError::UnsupportedFunctionality(format!(
+            "decision replay: unsupported provider {}",
+            p.provider
+        )));
+    }
+    let mut config = crate::JevConfig::new(resolve_api_key(p, api_key)?);
+    if let Some(endpoint) = &p.base_url {
+        config = config.with_endpoint(endpoint);
+    }
+    if let Some(headers) = p.provider_options.as_ref().and_then(|v| v.get("headers")) {
+        config.headers = serde_json::from_value(headers.clone())
+            .map_err(|e| AiMuxError::InvalidArgument(format!("decision replay headers: {e}")))?;
+        // A recorded redaction is not a usable credential. The freshly supplied
+        // API key is installed by Jev; other secret headers require configuration.
+        config.headers.retain(|_, value| value != "[REDACTED]");
+    }
+    if let Some(source) = p
+        .profile
+        .as_ref()
+        .and_then(|v| v.get("decision_capabilities"))
+        .and_then(|v| v.get("probability_source"))
+    {
+        config.probability_source = serde_json::from_value(source.clone())
+            .map_err(|e| AiMuxError::InvalidArgument(e.to_string()))?;
+    }
+    crate::JevProvider::new(config).decision_model(&p.model_id)
+}
+
 /// 按 `ProviderRecord` 重建 provider(OpenAI 兼容族,MVP)。
 ///
 /// - `provider.provider != "openai"` → `Unsupported`(R8:不猜测原生协议)。
@@ -437,6 +473,7 @@ mod tests {
                 finish_reason: Some("stop".into()),
                 error: None,
                 error_value: None,
+                decision_result: None,
                 usage: None,
             },
         );
