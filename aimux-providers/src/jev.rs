@@ -182,8 +182,8 @@ struct WireResponse {
 
 #[derive(Deserialize)]
 struct WireUsage {
-    input_tokens: u32,
-    output_tokens: u32,
+    input_tokens: Option<u32>,
+    output_tokens: Option<u32>,
 }
 
 fn convert_response(
@@ -202,11 +202,26 @@ fn convert_response(
                 choice,
                 probabilities,
                 confidence,
-            } => DecisionAnswer::Choice {
-                selected: choice,
-                probabilities: Some(probabilities),
-                confidence: Some(confidence),
-            },
+            } => {
+                let selected_probability = probabilities.get(&choice).ok_or_else(|| {
+                    AiMuxError::InvalidResponseData(format!(
+                        "Jev choice {id:?} has no selected probability"
+                    ))
+                })?;
+                if probabilities
+                    .values()
+                    .any(|probability| probability > selected_probability)
+                {
+                    return Err(AiMuxError::InvalidResponseData(format!(
+                        "Jev choice {id:?} is not a highest-probability option"
+                    )));
+                }
+                DecisionAnswer::Choice {
+                    selected: choice,
+                    probabilities: Some(probabilities),
+                    confidence: Some(confidence),
+                }
+            }
             WireAnswer::Score {
                 score,
                 legend,
@@ -250,11 +265,11 @@ fn convert_response(
     }
     let usage = Some(Usage {
         input_tokens: TokenUsage {
-            total: Some(data.usage.input_tokens),
+            total: data.usage.input_tokens,
             ..Default::default()
         },
         output_tokens: TokenUsage {
-            total: Some(data.usage.output_tokens),
+            total: data.usage.output_tokens,
             ..Default::default()
         },
         raw: raw.get("usage").cloned(),

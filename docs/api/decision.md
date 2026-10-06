@@ -135,6 +135,7 @@ structured-output 模拟或生成式 fallback。`model_estimate` 仅用于如实
 Boolean probability_true 表示 P(true)，调用方设置业务阈值。Choice selected
 是 label，Score expected_value 是零起点的浮点位置，可能为小数。
 Choice/Score probabilities 可为空，Jev adapter 会返回完整分布。
+Jev 的 selected 必须是最大概率选项，允许并列最高，由 adapter 按官方协议校验。
 有分布的 Score 必须与概率加权的平均位置一致。provider 在 capabilities 和
 结果的 `rounding` 中分别声明 `probability_decimals` 和 `score_decimals`。TypeSafe
 声明两者均为 2；其他 provider 若不声明，默认仅容忍浮点运算误差。Core 按
@@ -142,6 +143,8 @@ Choice/Score probabilities 可为空，Jev adapter 会返回完整分布。
 probability_source 表示来源，不保证校准；confidence 保留 provider 定义。
 raw response、实际执行的 model 和原始 usage 可用于审计。官方响应不含独立
 model_version 或 latency_ms，这两个可选字段留空。
+TypeSafe 的 usage 对象必须存在；input_tokens/output_tokens 可缺省或为 null，
+未报告的数量保留为未知，不影响有效答案。
 
 TypeSafe 官方 Choice 支持 1–255 项，Score 支持 2–10 级；state 支持字符串、
 对象或数组。不施加未公布的题目数量、ID 字符或文字长度上限。依据见

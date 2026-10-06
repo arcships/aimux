@@ -39,6 +39,19 @@ QUESTIONS = [
 ]
 
 
+@pytest.mark.parametrize('usage', [{}, {'input_tokens': None, 'output_tokens': None},
+                                 {'input_tokens': 12}, {'output_tokens': 7}])
+def test_optional_usage_counts_preserve_answers(server, monkeypatch, usage):
+    monkeypatch.setitem(FIXTURE, 'usage', usage)
+    base, _ = server
+    result = decide(jev_decision('test-key', 'jev-latest', base + '/v1/systemone'),
+                    {'message': 'Billed twice'}, QUESTIONS, max_retries=0)
+    assert len(result['answers']) == 3
+    assert result['usage']['input_tokens']['total'] == usage.get('input_tokens')
+    assert result['usage']['output_tokens']['total'] == usage.get('output_tokens')
+    assert result['usage']['raw'] == usage
+
+
 @pytest.fixture
 def server():
     captures = []

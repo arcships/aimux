@@ -15,6 +15,28 @@ const options: DecisionCallOptions = {
   max_retries: 0,
 }
 
+test('missing or null usage counts preserve valid decision answers', async t => {
+  let usage: Record<string, number | null> = {}
+  const server = createServer((req, res) => {
+    req.resume()
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ...fixture, usage }))
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.teardown(() => server.close())
+  const address = server.address() as { port: number }
+  const model = await jevDecision('test-key', 'jev-latest', `http://127.0.0.1:${address.port}/v1/systemone`)
+  const usages: Record<string, number | null>[] = [{}, { input_tokens: null, output_tokens: null }, { input_tokens: 12 }, { output_tokens: 7 }]
+  for (const counts of usages) {
+    usage = counts
+    const result = await decide(model, options)
+    t.is(Object.keys(result.answers).length, 3)
+    t.is(result.usage?.input_tokens.total, counts.input_tokens ?? null)
+    t.is(result.usage?.output_tokens.total, counts.output_tokens ?? null)
+    t.deepEqual(result.usage?.raw, counts)
+  }
+})
+
 test('typed decide maps all question types and preserves response metadata', async t => {
   let body: any
   let authorization: string | undefined

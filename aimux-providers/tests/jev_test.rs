@@ -17,6 +17,87 @@ fn fixture() -> Value {
 }
 
 #[tokio::test]
+async fn optional_usage_counts_do_not_discard_valid_answers() {
+    for usage in [
+        json!({}),
+        json!({"input_tokens":null,"output_tokens":null}),
+        json!({"input_tokens":12}),
+        json!({"output_tokens":7}),
+        json!({"input_tokens":null,"output_tokens":7}),
+    ] {
+        let server = MockServer::start().await;
+        let mut response = fixture();
+        response["usage"] = usage.clone();
+        mount(&server, 200, response).await;
+        let result = decide(model(&server).as_ref(), options()).await.unwrap();
+        assert_eq!(result.answers.len(), 3);
+        let actual = result.usage.unwrap();
+        assert_eq!(
+            actual.input_tokens.total,
+            usage["input_tokens"].as_u64().map(|n| n as u32)
+        );
+        assert_eq!(
+            actual.output_tokens.total,
+            usage["output_tokens"].as_u64().map(|n| n as u32)
+        );
+        assert_eq!(actual.raw, Some(usage));
+    }
+    let server = MockServer::start().await;
+    let mut response = fixture();
+    response.as_object_mut().unwrap().remove("usage");
+    mount(&server, 200, response).await;
+    assert!(decide(model(&server).as_ref(), options()).await.is_err());
+}
+
+#[tokio::test]
+async fn official_choice_requires_a_maximum_probability_and_accepts_ties() {
+    for (probabilities, selected, valid) in [
+        (
+            json!({"billing":1.0,"technical":0.0,"sales":0.0}),
+            "technical",
+            false,
+        ),
+        (
+            json!({"billing":0.34,"technical":0.33,"sales":0.33}),
+            "technical",
+            false,
+        ),
+        (
+            json!({"billing":0.5,"technical":0.5,"sales":0.0}),
+            "technical",
+            true,
+        ),
+        (
+            json!({"billing":0.5,"technical":0.5,"sales":0.0}),
+            "billing",
+            true,
+        ),
+        (
+            json!({"billing":1.0,"technical":0.0,"sales":0.0}),
+            "billing",
+            true,
+        ),
+    ] {
+        let server = MockServer::start().await;
+        let mut response = fixture();
+        response["answers"]["department"]["probabilities"] = probabilities;
+        response["answers"]["department"]["choice"] = json!(selected);
+        mount(&server, 200, response).await;
+        let result = decide(model(&server).as_ref(), options()).await;
+        assert_eq!(result.is_ok(), valid);
+        if !valid {
+            let AiMuxError::ApiCall(error) = result.unwrap_err() else {
+                panic!("expected HTTP context");
+            };
+            assert_eq!(error.status_code, Some(200));
+            assert!(!error.is_retryable);
+            assert!(error.message.contains("highest-probability"));
+        }
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
 async fn recorded_official_live_responses_replay_through_core_validation() {
     for line in include_str!("fixtures/jev_systemone_live.jsonl").lines() {
         let recording: aimux_core::recording::Recording = serde_json::from_str(line).unwrap();

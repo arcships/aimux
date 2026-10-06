@@ -65,6 +65,9 @@ Boolean 映射为 noul；Choice 数组转换成 criteria 对象，省略 descrip
 响应 `model` 保留实际模型版本，usage 保留输入/输出 token 和 raw 数据。
 官方未定义独立的 model_version 和 latency_ms 字段，这两个可选结果字段留空。
 Choice/Score 的 confidence、分布及 usage 按官方必需字段校验。
+usage 对象内的 input_tokens/output_tokens 可缺省或为 null，映射为未知数量。
+Jev Choice 按官方定义选取最大概率项，允许并列最高；该规则在 adapter 校验。
+依据：[官方 SDK 响应定义](https://docs.typesafe.ai/sdk/python/api/types/responses)。
 
 HTTP 错误使用既有 ApiCallError，保留 code、raw body、headers 与请求上下文。
 官方 429 限流和 529 过载复用 Core 的临时错误重试与 Retry-After 处理。
@@ -93,7 +96,8 @@ provider retry 分类；core 覆盖 optional distributions、abort、timeout；C
 handle 类型、销毁、JSON 错误和 abort。
 
 验证：Rust 工作区 3871 passed / 57 ignored；Node 的 decision、wrapper、
-error 三组测试共 27 passed；Python decision 测试 8 passed。工作区 fmt、
+error 三组测试共 28 passed；Python decision 测试 12 passed。
+Usage/Choice 修复另通过 Jev 与录制回放测试共 23 个。工作区 fmt、
 Clippy（warnings as errors）、TypeScript 编译与类型生成一致性检查通过。
 跨语言测试使用实际构建的 native 模块与本地 HTTP server，未调用线上 Jev。
 Node 测试同时发现并修复共享 AbortBridge 对已取消 signal 的处理，覆盖
