@@ -211,10 +211,11 @@ type ResponseMetadata struct {
 	ModelID   *string `json:"model_id,omitempty"`
 }
 
-// GenerateResponseMetadata is response metadata with an optional HTTP body.
+// GenerateResponseMetadata is response metadata with optional HTTP details.
 type GenerateResponseMetadata struct {
 	ResponseMetadata
-	Body json.RawMessage `json:"body,omitempty"`
+	Body    json.RawMessage   `json:"body,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 // GenerateResult is the raw provider result.

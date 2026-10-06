@@ -384,6 +384,67 @@ public final class Types {
         }
     }
 
+    /** Response metadata and HTTP details from a generation call. */
+    public static class GenerateResponse {
+        @JsonProperty("id") private String id;
+        @JsonProperty("timestamp") private String timestamp;
+        @JsonProperty("model_id") private String modelId;
+        @JsonProperty("headers") private Map<String, String> headers;
+        @JsonProperty("body") private JsonNode body;
+
+        @JsonCreator
+        GenerateResponse() {}
+
+        private GenerateResponse(String id, String timestamp, String modelId, Map<String, String> headers, JsonNode body) {
+            this.id = id;
+            this.timestamp = timestamp;
+            this.modelId = modelId;
+            this.headers = headers;
+            this.body = body;
+        }
+
+        public String getId() { return id; }
+        public String getTimestamp() { return timestamp; }
+        public String getModelId() { return modelId; }
+        public Map<String, String> getHeaders() { return headers; }
+        public JsonNode getBody() { return body; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String id;
+            private String timestamp;
+            private String modelId;
+            private Map<String, String> headers;
+            private JsonNode body;
+
+            public Builder id(String v) { this.id = v; return this; }
+            public Builder timestamp(String v) { this.timestamp = v; return this; }
+            public Builder modelId(String v) { this.modelId = v; return this; }
+            public Builder headers(Map<String, String> v) { this.headers = v; return this; }
+            public Builder body(JsonNode v) { this.body = v; return this; }
+
+            public GenerateResponse build() { return new GenerateResponse(id, timestamp, modelId, headers, body); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof GenerateResponse)) return false;
+            GenerateResponse that = (GenerateResponse) o;
+            return Objects.equals(id, that.id)
+                && Objects.equals(timestamp, that.timestamp)
+                && Objects.equals(modelId, that.modelId)
+                && Objects.equals(headers, that.headers)
+                && Objects.equals(body, that.body);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(id, timestamp, modelId, headers, body);
+        }
+    }
+
     /**
      * A tool call requested by the model.
      *
@@ -3033,7 +3094,7 @@ public final class Types {
         @JsonProperty("usage") private Usage usage = new Usage();
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
         @JsonProperty("provider_metadata") private JsonNode providerMetadata;
-        @JsonProperty("response") private ResponseMetadata response = new ResponseMetadata();
+        @JsonProperty("response") private GenerateResponse response = new GenerateResponse();
         @JsonProperty("request_body") private JsonNode requestBody;
         @JsonProperty("response_headers") private Map<String, String> responseHeaders;
 
@@ -3041,7 +3102,7 @@ public final class Types {
         GenerateResult() {}
 
         private GenerateResult(List<GenerateContent> content, FinishReason finishReason, Usage usage,
-                               List<JsonNode> warnings, JsonNode providerMetadata, ResponseMetadata response,
+                               List<JsonNode> warnings, JsonNode providerMetadata, GenerateResponse response,
                                JsonNode requestBody, Map<String, String> responseHeaders) {
             this.content = content;
             this.finishReason = finishReason;
@@ -3058,7 +3119,7 @@ public final class Types {
         public Usage getUsage() { return usage; }
         public List<JsonNode> getWarnings() { return warnings; }
         public JsonNode getProviderMetadata() { return providerMetadata; }
-        public ResponseMetadata getResponse() { return response; }
+        public GenerateResponse getResponse() { return response; }
         public JsonNode getRequestBody() { return requestBody; }
         public Map<String, String> getResponseHeaders() { return responseHeaders; }
 
@@ -3087,7 +3148,7 @@ public final class Types {
             private Usage usage = new Usage();
             private List<JsonNode> warnings = new ArrayList<>();
             private JsonNode providerMetadata;
-            private ResponseMetadata response = new ResponseMetadata();
+            private GenerateResponse response = new GenerateResponse();
             private JsonNode requestBody;
             private Map<String, String> responseHeaders;
 
@@ -3096,7 +3157,7 @@ public final class Types {
             public Builder usage(Usage v) { this.usage = v; return this; }
             public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
             public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
-            public Builder response(ResponseMetadata v) { this.response = v; return this; }
+            public Builder response(GenerateResponse v) { this.response = v; return this; }
             public Builder requestBody(JsonNode v) { this.requestBody = v; return this; }
             public Builder responseHeaders(Map<String, String> v) { this.responseHeaders = v; return this; }
 
@@ -4378,25 +4439,19 @@ public final class Types {
             @JsonProperty("reason") private String reason;
             @JsonProperty("is_automatic") private Boolean isAutomatic;
             @JsonProperty("signature") private String signature;
-            @JsonProperty("tool_call_id") private String toolCallId;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
             @JsonCreator ToolApprovalRequest() {}
-            public ToolApprovalRequest(String approvalId, Types.ToolCall toolCall, String reason, Boolean isAutomatic, String signature, String toolCallId, JsonNode providerMetadata) {
+            public ToolApprovalRequest(String approvalId, Types.ToolCall toolCall, String reason, Boolean isAutomatic, String signature) {
                 this.approvalId = approvalId;
                 this.toolCall = toolCall;
                 this.reason = reason;
                 this.isAutomatic = isAutomatic;
                 this.signature = signature;
-                this.toolCallId = toolCallId;
-                this.providerMetadata = providerMetadata;
             }
             public String getApprovalId() { return approvalId; }
             public Types.ToolCall getToolCall() { return toolCall; }
             public String getReason() { return reason; }
             public Boolean getIsAutomatic() { return isAutomatic; }
             public String getSignature() { return signature; }
-            public String getToolCallId() { return toolCallId; }
-            public JsonNode getProviderMetadata() { return providerMetadata; }
             public static Builder builder() { return new Builder(); }
             public static class Builder {
                 private String approvalId;
@@ -4404,23 +4459,19 @@ public final class Types {
                 private String reason;
                 private Boolean isAutomatic;
                 private String signature;
-                private String toolCallId;
-                private JsonNode providerMetadata;
                 public Builder approvalId(String value) { this.approvalId = value; return this; }
                 public Builder toolCall(Types.ToolCall value) { this.toolCall = value; return this; }
                 public Builder reason(String value) { this.reason = value; return this; }
                 public Builder isAutomatic(Boolean value) { this.isAutomatic = value; return this; }
                 public Builder signature(String value) { this.signature = value; return this; }
-                public Builder toolCallId(String value) { this.toolCallId = value; return this; }
-                public Builder providerMetadata(JsonNode value) { this.providerMetadata = value; return this; }
-                public ToolApprovalRequest build() { return new ToolApprovalRequest(approvalId, toolCall, reason, isAutomatic, signature, toolCallId, providerMetadata); }
+                public ToolApprovalRequest build() { return new ToolApprovalRequest(approvalId, toolCall, reason, isAutomatic, signature); }
             }
             @Override public boolean equals(Object value) {
                 if (!(value instanceof ToolApprovalRequest)) return false;
                 ToolApprovalRequest other = (ToolApprovalRequest) value;
-                return Objects.equals(approvalId, other.approvalId) && Objects.equals(toolCall, other.toolCall) && Objects.equals(reason, other.reason) && Objects.equals(isAutomatic, other.isAutomatic) && Objects.equals(signature, other.signature) && Objects.equals(toolCallId, other.toolCallId) && Objects.equals(providerMetadata, other.providerMetadata);
+                return Objects.equals(approvalId, other.approvalId) && Objects.equals(toolCall, other.toolCall) && Objects.equals(reason, other.reason) && Objects.equals(isAutomatic, other.isAutomatic) && Objects.equals(signature, other.signature);
             }
-            @Override public int hashCode() { return Objects.hash(approvalId, toolCall, reason, isAutomatic, signature, toolCallId, providerMetadata); }
+            @Override public int hashCode() { return Objects.hash(approvalId, toolCall, reason, isAutomatic, signature); }
         }
         /** Fallback for variants introduced after this wrapper was written. */
         public static class Unknown extends StreamPart {

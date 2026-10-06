@@ -419,9 +419,10 @@ class GenerateResponse {
   final String? timestamp;
   final String? modelId;
   final dynamic body;
-  GenerateResponse({this.id, this.timestamp, this.modelId, this.body});
-  factory GenerateResponse.fromJson(Map<String, dynamic> json) => GenerateResponse(id: json['id'] as String?, timestamp: json['timestamp'] as String?, modelId: json['model_id'] as String?, body: json['body']);
-  Map<String, dynamic> toJson() => {'id': id, 'timestamp': timestamp, 'model_id': modelId, if (body != null) 'body': body};
+  final Map<String, String>? headers;
+  GenerateResponse({this.id, this.timestamp, this.modelId, this.body, this.headers});
+  factory GenerateResponse.fromJson(Map<String, dynamic> json) => GenerateResponse(id: json['id'] as String?, timestamp: json['timestamp'] as String?, modelId: json['model_id'] as String?, body: json['body'], headers: (json['headers'] as Map<String, dynamic>?)?.map((key, value) => MapEntry(key, value as String)));
+  Map<String, dynamic> toJson() => {'id': id, 'timestamp': timestamp, 'model_id': modelId, if (body != null) 'body': body, if (headers != null) 'headers': headers};
 }
 
 /// A content item in a `GenerateResult`. Mirrors `GenerateContent.ts`

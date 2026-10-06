@@ -1238,7 +1238,7 @@ pub fn extract_sources(
     };
 
     for chunk in chunks {
-        if let Some(web) = chunk.get("web") {
+        if let Some(web) = chunk.get("web").filter(|value| !value.is_null()) {
             sources.push(GenerateContent::Source(Source::Url {
                 id: next_id(id_counter),
                 url: web
@@ -1252,7 +1252,7 @@ pub fn extract_sources(
                     .map(std::string::ToString::to_string),
                 provider_metadata: None,
             }));
-        } else if let Some(image) = chunk.get("image") {
+        } else if let Some(image) = chunk.get("image").filter(|value| !value.is_null()) {
             sources.push(GenerateContent::Source(Source::Url {
                 id: next_id(id_counter),
                 url: image
@@ -1266,7 +1266,10 @@ pub fn extract_sources(
                     .map(std::string::ToString::to_string),
                 provider_metadata: None,
             }));
-        } else if let Some(rc) = chunk.get("retrievedContext") {
+        } else if let Some(rc) = chunk
+            .get("retrievedContext")
+            .filter(|value| !value.is_null())
+        {
             let uri = rc
                 .get("uri")
                 .and_then(|v| v.as_str())
@@ -1318,8 +1321,11 @@ pub fn extract_sources(
                 }));
             }
             // else: no uri and no fileSearchStore → no source.
-        } else if let Some(maps) = chunk.get("maps")
-            && let Some(uri) = maps.get("uri").and_then(|v| v.as_str())
+        } else if let Some(maps) = chunk.get("maps").filter(|value| !value.is_null())
+            && let Some(uri) = maps
+                .get("uri")
+                .and_then(|v| v.as_str())
+                .filter(|uri| !uri.is_empty())
         {
             sources.push(GenerateContent::Source(Source::Url {
                 id: next_id(id_counter),

@@ -34,8 +34,12 @@ use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPromptMessage;
 use aimux_core::message::Role;
+use aimux_core::options::ToolChoice;
+use aimux_core::tool::FunctionTool;
 
-use aimux_providers::bedrock::convert::{BedrockUsage, convert_prompt_to_bedrock, convert_usage};
+use aimux_providers::bedrock::convert::{
+    BedrockUsage, convert_prompt_to_bedrock, convert_usage, prepare_tools,
+};
 
 // ── prompt builders ─────────────────────────────────────────────────────────
 
@@ -947,6 +951,86 @@ fn media_type_route_to_document_text_plain() {
 // URL)", "...for unsupported full image mediaType", and "...when top-level-only
 // bytes cannot be detected"): FileUrl is not converted; unknown image mimes
 // fall back to "png" instead of throwing; no magic-byte detection.
+
+// ════════════════════════════════════════════════════════════════════════════
+// amazon-bedrock-prepare-tools
+// ════════════════════════════════════════════════════════════════════════════
+
+const NON_ANTHROPIC_MODEL: &str = "meta.llama3-70b-instruct-v1:0";
+
+fn func_tool(name: &str, description: Option<&str>, input_schema: Value) -> FunctionTool {
+    FunctionTool {
+        name: name.to_string(),
+        description: description.map(std::string::ToString::to_string),
+        input_schema,
+        strict: None,
+        provider_options: None,
+        input_examples: None,
+    }
+}
+
+/// TS: "should handle tool choice 'auto'"
+#[test]
+fn prepare_tools_tool_choice_auto() {
+    let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
+    let config = prepare_tools(&tools, Some(&ToolChoice::Auto), NON_ANTHROPIC_MODEL);
+    assert_eq!(config["toolChoice"], json!({ "auto": {} }));
+}
+
+/// TS: "should handle tool choice 'required'"
+#[test]
+fn prepare_tools_tool_choice_required() {
+    let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
+    let config = prepare_tools(&tools, Some(&ToolChoice::Required), NON_ANTHROPIC_MODEL);
+    assert_eq!(config["toolChoice"], json!({ "any": {} }));
+}
+
+/// TS: "should handle tool choice 'none' by clearing tools"
+#[test]
+fn prepare_tools_tool_choice_none_clears() {
+    let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
+    let config = prepare_tools(&tools, Some(&ToolChoice::None), NON_ANTHROPIC_MODEL);
+    assert_eq!(config, json!({}));
+}
+
+/// TS: "should handle tool choice 'tool'"
+#[test]
+fn prepare_tools_tool_choice_tool() {
+    let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
+    let config = prepare_tools(
+        &tools,
+        Some(&ToolChoice::Tool {
+            tool_name: "testFunction".to_string(),
+        }),
+        NON_ANTHROPIC_MODEL,
+    );
+    assert_eq!(
+        config["toolChoice"],
+        json!({ "tool": { "name": "testFunction" } })
+    );
+}
+
+/// TS: "should filter function tools to only the named tool when tool choice is 'tool'"
+#[test]
+fn prepare_tools_tool_choice_filters_to_named() {
+    let tools = Some(vec![
+        func_tool(
+            "getWeather",
+            Some("Get weather"),
+            json!({ "type": "object" }),
+        ),
+        func_tool("getTime", Some("Get time"), json!({ "type": "object" })),
+    ]);
+    let config = prepare_tools(
+        &tools,
+        Some(&ToolChoice::Tool {
+            tool_name: "getWeather".to_string(),
+        }),
+        NON_ANTHROPIC_MODEL,
+    );
+    assert_eq!(config["tools"].as_array().unwrap().len(), 1);
+    assert_eq!(config["tools"][0]["toolSpec"]["name"], json!("getWeather"));
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // convert-amazon-bedrock-usage
