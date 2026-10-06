@@ -34,10 +34,8 @@ macro_rules! delegate_list_models {
 // OpenAI-compatible providers are looked up by name from `provider_registry.json`.
 // The 250 per-provider `XxxConfig`/`XxxProvider` shell types were retired in
 // phase 4 — use [`provider`] / [`provider_from_env`] instead.
-pub mod jev;
 pub mod provider;
 pub mod provider_name;
-pub use jev::{JevConfig, JevDecisionModel, JevProvider};
 pub mod replay;
 pub use provider::{
     ExternalProviderEntry, ProviderOptions, ProviderProfile, is_external_provider,
@@ -55,6 +53,7 @@ pub mod azure;
 pub mod bedrock;
 pub mod cohere;
 pub mod google;
+pub mod jev;
 pub mod mistral;
 pub mod openai;
 pub mod vertex;
@@ -131,6 +130,7 @@ pub use google::{
     GoogleConfig, GoogleEmbeddingModel, GoogleImageModel, GoogleImageSettings, GoogleProvider,
     GoogleVideoModel,
 };
+pub use jev::{JevConfig, JevDecisionModel, JevProvider};
 pub use mistral::{MistralConfig, MistralEmbeddingModel, MistralProvider};
 pub use openai::{
     OpenAIConfig, OpenAIEmbeddingModel, OpenAIImageModel, OpenAIProvider, OpenAIResponsesModel,
