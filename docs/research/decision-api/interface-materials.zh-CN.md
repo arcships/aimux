@@ -51,7 +51,7 @@ Content-Type: application/json
 
 Choice 最多 255 项；描述可为字符串、对象、数组或 null。Score criteria 为有序数组，支持 2–10 级，score 是概率加权的等级位置；legend 将索引映回描述。Noul 可带 true/false 描述，noul 表示 P(true)。instructions 和 Score 描述也允许字符串、对象或数组。官方未公布题目数量、ASCII ID 或文本长度限制。
 
-当前 aimux 的统一请求先支持字符串 instructions/描述/Score levels 和文本/JSON state；不支持的结构化题目字段不能认定为已经接入。Choice 省略描述时映射为官方允许的 null。
+aimux 的统一请求支持字符串/对象/数组形式的 instructions、Choice 描述和 Score 等级，并暴露 Noul 的 true/false criteria。Choice 省略描述时映射为官方允许的 null。
 
 响应要求 model、answers 和 usage；Choice/Score 包含完整分布和 confidence。HTTP 401 表示认证错误，422 表示请求校验失败，429/529 为临时限流或过载。实际重试由 aimux Core 管理，保留 HTTP 上下文和 raw response。
 

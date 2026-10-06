@@ -13,6 +13,11 @@ pub struct DecisionModel {
 
 #[napi]
 impl DecisionModel {
+    #[napi]
+    pub fn capabilities(&self) -> AimuxResult<String> {
+        AimuxResult(serialize_result(&self.inner.capabilities()))
+    }
+
     #[napi(ts_return_type = "Promise<string>")]
     pub async fn decide(
         &self,

@@ -111,3 +111,36 @@ fn probability_source_survives_c_abi_round_trip() {
     assert_eq!(code, AIMUX_E_INVALID_ARGUMENT);
     assert_eq!(handle, 0);
 }
+
+#[test]
+fn decision_capabilities_are_local_and_validate_handle_lifecycle() {
+    let mut handle = 0;
+    ok(
+        aimux_jev_decision_new(
+            c("test").as_ptr(),
+            c("jev-latest").as_ptr(),
+            ptr::null(),
+            &mut handle,
+        ),
+        "create",
+    );
+    let mut out = ptr::null_mut();
+    ok(
+        aimux_decision_capabilities(handle, &mut out),
+        "capabilities",
+    );
+    let caps: serde_json::Value = serde_json::from_str(&take(out)).unwrap();
+    assert_eq!(caps["max_choices"], 255);
+    assert_eq!(caps["rounding"]["probability_decimals"], 2);
+    aimux_drop_handle(handle);
+    out = ptr::null_mut();
+    expect_ffi_error(
+        aimux_decision_capabilities(handle, &mut out),
+        "dropped handle",
+    );
+    assert!(out.is_null());
+    let abort = aimux_abort_signal_new();
+    expect_ffi_error(aimux_decision_capabilities(abort, &mut out), "wrong handle");
+    assert!(out.is_null());
+    aimux_abort_signal_drop(abort);
+}

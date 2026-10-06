@@ -1,8 +1,8 @@
 # RFC-0037: 稳定的 typed Decision API
 
-> **Status**: 第一阶段已实现；后续 adapter 和绑定仍待开发
+> **Status**: TypeSafe 官方字段、全语言绑定、能力查询与精度规则已实现
 > **Date**: 2026-10-06
-> **Scope**: Core、Jev System One、Rust / C ABI / Node / Python
+> **Scope**: Core、TypeSafe 官方 Jev、Rust / C ABI / Node / Python / Go / Java / Kotlin / Swift / Flutter
 > **Research**: [调查报告](../docs/research/decision-api/report.zh-CN.md)、[接口材料](../docs/research/decision-api/interface-materials.zh-CN.md)
 
 ## Contract
@@ -18,8 +18,9 @@ AI SDK 的此类适配仅作为调研背景，不属于 aimux 开发范围。
 
 state 是文本或 JSON Value；它不隐式解释媒体对象。questions 是带 ID 的有序数组，
 支持 Boolean、Choice、Score。Choice options 是 label / optional description
-数组；Score levels 是从低到高的 label 数组。第一阶段不引入 Boolean 的 true/false
-说明或 Score 的额外 description，避免在没有确定 wire 字段时静默丢弃信息。
+数组；instructions、description 和 Score levels 每项均为字符串、对象或数组。
+Boolean criteria 可包含 true/false 描述；结构化字段原样发送并保留在 Score
+答案的 levels 中，不转换成字符串。
 
 answers 使用 question ID map。Boolean probability_true 始终表示 P(true)，
 不隐式应用 0.5 阈值。Choice selected 必须是候选 label；可选 probabilities
@@ -32,12 +33,16 @@ Capability 声明题型支持、数量限制、完整分布与 probability_sourc
 
 请求重复 ID/label、空 instructions/criteria、本地能力限制会在 HTTP 前失败。
 缺题、多题、题型/label/levels 不符、非有限或超范围概率、错误分布键会使整次调用失败。
-分布允许每项两位小数舍入的累积误差，保留原始数值，不自动归一化。
-Score 验证合法范围、等级与分布期望的一致性。概率与分数分别舍入到两位小数
-时，每项允许 0.005 的误差；采用中心化残差 `sum((i - score) * p[i])`，
-容差为 `0.005 + 0.005 * sum(abs(i - score))`，另加浮点运算余量。这允许
-舍入后概率之和略偏离 1，但拒绝分数和分布表达相反判断。
-后续 adapter 应按其精度声明扩展校验，当前两位小数规则仍属于首批实现。
+舍入精度由 provider 的 `DecisionCapabilities.rounding` 声明，并写入
+`DecisionResult.rounding`；结果精度必须匹配声明，不能通过响应自行放宽。
+`probability_decimals` 与 `score_decimals` 独立配置，支持 0–15 位，None 表示
+仅容忍浮点误差。TypeSafe Jev 声明两者为 2；不归一化或改写原始数字。
+
+概率项误差上界 `ep = 0.5 * 10^(-probability_decimals)`，Score 误差上界
+`es = 0.5 * 10^(-score_decimals)`；无舍入声明时各自为 0。分布和容差为
+`ep * n`，Score 中心化残差 `sum((i - score) * p[i])` 的容差为
+`es + ep * sum(abs(i - score))`，均另加浮点运算余量。精确、高精度和
+两位小数 provider 分别采用其声明，不再使用统一两位小数规则。
 
 ## 第一阶段 Jev adapter
 
@@ -54,9 +59,8 @@ Boolean 映射为 noul；Choice 数组转换成 criteria 对象，省略 descrip
 依据：[API reference](https://docs.typesafe.ai/api)、
 [SDK 常量](https://docs.typesafe.ai/sdk/python/api/constants)。
 
-当前公共类型支持字符串 instructions、Choice description 和 Score levels；
-官方允许的结构化题目描述与 Noul true/false criteria 尚未暴露，属于明确的
-字段覆盖限制，不通过 JSON 字符串模拟这些字段。
+官方结构化 instructions、Choice 描述、Score 等级和 Noul true/false criteria
+均已暴露。Score legend 使用同一描述类型，保留对象/数组。
 
 响应 `model` 保留实际模型版本，usage 保留输入/输出 token 和 raw 数据。
 官方未定义独立的 model_version 和 latency_ms 字段，这两个可选结果字段留空。
@@ -74,7 +78,10 @@ JevConfig.endpoint 可覆盖完整 URL，用于显式配置的代理或本地 co
 - Rust：JevProvider::decision_model + core decide。
 - Node：jevDecision + typed decide(model, options, signal?)；factory 的可选第四个 probabilitySource 参数声明来源；raw model.decide 接受 JSON。
 - Python：jev_decision + decide(model, state, questions, **options)；factory 的可选 probability_source 参数声明来源；native 调用释放 GIL。
-- C：aimux_jev_decision_new、aimux_jev_decision_new_with_probability_source、aimux_decide、aimux_decide_with_abort；采用现有 handle/error/string 生命周期，原 factory 签名不变。
+- C：aimux_jev_decision_new、aimux_jev_decision_new_with_probability_source、aimux_decide、aimux_decide_with_abort、aimux_decision_capabilities；采用现有 handle/error/string 生命周期。
+- Go：NewJevDecision + Decide / DecideContext / Capabilities；支持 context 取消。
+- Java / Kotlin / Swift / Flutter：DecisionModel.jev + decide + capabilities，复用同一 C ABI。
+- Node/Python 提供 decisionCapabilities / decision_capabilities，raw model.capabilities 返回 JSON。所有能力查询均无 HTTP。
 
 各语言包装及示例见 [Decision API](../docs/api/decision.md)。
 
@@ -85,20 +92,21 @@ Jev 使用官方示例的离线 contract fixture，明确标注不是实测录�
 provider retry 分类；core 覆盖 optional distributions、abort、timeout；C 覆盖
 handle 类型、销毁、JSON 错误和 abort。
 
-验证：Rust 工作区 3850 passed / 57 ignored；Node 的 decision、wrapper、
-error 三组测试共 26 passed；Python decision 测试 6 passed。工作区 fmt、
+验证：Rust 工作区 3857 passed / 57 ignored；Node 的 decision、wrapper、
+error 三组测试共 27 passed；Python decision 测试 7 passed。工作区 fmt、
 Clippy（warnings as errors）、TypeScript 编译与类型生成一致性检查通过。
 跨语言测试使用实际构建的 native 模块与本地 HTTP server，未调用线上 Jev。
 Node 测试同时发现并修复共享 AbortBridge 对已取消 signal 的处理，覆盖
 调用前取消与在途取消。
 
-Provider 精度规则与 Node/Python/C 的 capability 查询仍属后续完善范围。
+共享 `decision-native.json` fixture 覆盖各宿主语言的结构化字段、能力查询和
+原始等级保留；并验证 handle 关闭、无 HTTP 能力查询及 Go context 取消。
 
 第一优先级为 TypeSafe 官方 Jev 接入。本 PR 直接校正现有 System One
 adapter，不另增第三方 provider。当前接入以官方文档 fixture 和本地 HTTP
 server 验证，未声明线上实测。
 
-后续先完善官方结构化题目字段覆盖，再按实际需要完善 Provider 精度规则、
-capability 查询和 Go/Java/Kotlin/Swift/Flutter 宿主包装。其他官方决策接口
+官方字段覆盖、Provider 精度规则、全语言 capability 查询和宿主包装均已实现。
+其他官方决策接口
 另按其正式 contract 接入；OpenAI Decisions 待取得公开 preview wire schema，
 不以 Responses structured output 代替。

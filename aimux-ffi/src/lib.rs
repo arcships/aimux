@@ -2886,6 +2886,23 @@ pub extern "C" fn aimux_jev_decision_new_with_probability_source(
     })
 }
 
+/// Query native capabilities without a network call. Writes DecisionCapabilities JSON.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_decision_capabilities(
+    handle: u64,
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let HandleEntry::Decision(model) = entry_of(handle, "decision")? else {
+            return Err(FfiError::InvalidHandle {
+                expected: "decision",
+            }
+            .into());
+        };
+        Ok(serde_json::to_string(&model.capabilities()).map_err(AiMuxError::from)?)
+    })
+}
+
 /// Execute a typed decision. Writes DecisionResult JSON.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_decide(

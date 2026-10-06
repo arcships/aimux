@@ -64,9 +64,10 @@ pub mod prelude {
     pub use crate::composite::ChildModel;
     pub use crate::content::ContentPart;
     pub use crate::decision_model::{
-        DecisionAnswer, DecisionCallOptions, DecisionCapabilities, DecisionModel, DecisionOption,
-        DecisionProbabilitySource, DecisionQuestion, DecisionResponse, DecisionResult,
-        DecisionState, decide,
+        DecisionAnswer, DecisionBooleanCriteria, DecisionCallOptions, DecisionCapabilities,
+        DecisionDescription, DecisionModel, DecisionOption, DecisionProbabilitySource,
+        DecisionQuestion, DecisionResponse, DecisionResult, DecisionRounding, DecisionState,
+        decide,
     };
     pub use crate::embedding_model::{
         EmbeddingCallOptions, EmbeddingModel, EmbeddingResult, embed,

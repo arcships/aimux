@@ -11,6 +11,11 @@ use aimux_core::types::{TokenUsage, Usage};
 use aimux_core::{AiMuxError, ApiCallError, Provider};
 use aimux_provider_utils::{HttpRequest, load_api_key};
 
+const JEV_ROUNDING: DecisionRounding = DecisionRounding {
+    probability_decimals: Some(2),
+    score_decimals: Some(2),
+};
+
 #[derive(Clone)]
 pub struct JevConfig {
     pub api_key: String,
@@ -104,8 +109,16 @@ fn request_body(model_id: &str, options: &DecisionCallOptions) -> Result<Value, 
     for question in &options.questions {
         let id = question.id();
         let body = match question {
-            DecisionQuestion::Boolean { instructions, .. } => {
-                json!({"type": "noul", "instructions": instructions})
+            DecisionQuestion::Boolean {
+                instructions,
+                criteria,
+                ..
+            } => {
+                let mut body = json!({"type": "noul", "instructions": instructions});
+                if let Some(criteria) = criteria {
+                    body["criteria"] = json!(criteria);
+                }
+                body
             }
             DecisionQuestion::Choice {
                 instructions,
@@ -154,7 +167,7 @@ enum WireAnswer {
     },
     Score {
         score: f64,
-        legend: BTreeMap<String, String>,
+        legend: BTreeMap<String, DecisionDescription>,
         probabilities: BTreeMap<String, f64>,
         confidence: f64,
     },
@@ -247,6 +260,7 @@ fn convert_response(
         raw: raw.get("usage").cloned(),
     });
     Ok(DecisionResult {
+        rounding: JEV_ROUNDING,
         answers,
         provider: "jev".into(),
         model: data.model,
@@ -275,6 +289,7 @@ impl DecisionModel for JevDecisionModel {
     }
     fn capabilities(&self) -> DecisionCapabilities {
         DecisionCapabilities {
+            rounding: JEV_ROUNDING,
             probability_source: self.config.probability_source,
             supports_boolean: true,
             supports_choice: true,

@@ -62,6 +62,7 @@ import type {
   DecisionCallOptions,
   DecisionResult,
   DecisionProbabilitySource,
+  DecisionCapabilities,
 } from './types'
 
 // Error hierarchy (throw/catch). Wire payload type `AiMuxError` lives under StreamPart only.
@@ -182,6 +183,11 @@ export async function decide(
   return JSON.parse(await model.decide(JSON.stringify(options), bridge)) as DecisionResult
 }
 
+/** Query native decision capabilities without making a network request. */
+export function decisionCapabilities(model: native.DecisionModel): DecisionCapabilities {
+  return JSON.parse(model.capabilities()) as DecisionCapabilities
+}
+
 /** Declare how a hosted or self-hosted System One endpoint produces probabilities. */
 export async function jevDecision(
   apiKey: string,
@@ -203,6 +209,9 @@ export type RawModel = Model
 
 export type {
   DecisionAnswer,
+  DecisionDescription,
+  DecisionBooleanCriteria,
+  DecisionRounding,
   DecisionQuestion,
   DecisionOption,
   DecisionCapabilities,

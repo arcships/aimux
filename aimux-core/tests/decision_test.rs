@@ -22,6 +22,7 @@ impl DecisionModel for TestModel {
     }
     fn capabilities(&self) -> DecisionCapabilities {
         DecisionCapabilities {
+            rounding: DecisionRounding::default(),
             probability_source: DecisionProbabilitySource::ModelEstimate,
             supports_boolean: true,
             supports_choice: true,
@@ -39,6 +40,7 @@ impl DecisionModel for TestModel {
             std::future::pending::<()>().await;
         }
         Ok(DecisionResult {
+            rounding: DecisionRounding::default(),
             answers: BTreeMap::from([
                 (
                     "choice".into(),
@@ -79,7 +81,7 @@ fn options() -> DecisionCallOptions {
 }
 
 #[tokio::test]
-async fn optional_distributions_support_structured_generation() {
+async fn optional_distributions_follow_declared_provider_capabilities() {
     let model = TestModel {
         calls: AtomicUsize::new(0),
         pending: false,
@@ -169,8 +171,8 @@ async fn scores_must_agree_with_distributions_allowing_rounding() {
         (vec![1.0, 0.0], 0.011, false),
     ] {
         let mut request = options();
-        let levels: Vec<String> = (0..probabilities.len())
-            .map(|index| format!("level-{index}"))
+        let levels: Vec<DecisionDescription> = (0..probabilities.len())
+            .map(|index| format!("level-{index}").into())
             .collect();
         if let DecisionQuestion::Score {
             levels: request_levels,
@@ -180,6 +182,10 @@ async fn scores_must_agree_with_distributions_allowing_rounding() {
             *request_levels = levels.clone();
         }
         let mut result = model.do_decide(&request).await.unwrap();
+        result.rounding = DecisionRounding {
+            probability_decimals: Some(2),
+            score_decimals: Some(2),
+        };
         result.answers.insert(
             "score".into(),
             DecisionAnswer::Score {
@@ -207,4 +213,60 @@ fn probability_sources_parse_only_known_contract_values() {
         "unknown".parse::<DecisionProbabilitySource>(),
         Err(AiMuxError::InvalidArgument(_))
     ));
+}
+
+#[tokio::test]
+async fn precision_is_explicit_and_independent_for_probabilities_and_scores() {
+    let model = TestModel {
+        calls: AtomicUsize::new(0),
+        pending: false,
+        distributions: false,
+    };
+    let request = options();
+    let mut result = model.do_decide(&request).await.unwrap();
+    result.answers.insert(
+        "score".into(),
+        DecisionAnswer::Score {
+            expected_value: 0.76,
+            levels: vec!["low".into(), "high".into()],
+            probabilities: Some(vec![0.25, 0.75]),
+            confidence: None,
+        },
+    );
+    assert!(result.validate(&request).is_err());
+    result.rounding.score_decimals = Some(1);
+    assert!(result.validate(&request).is_ok());
+    result.rounding.score_decimals = Some(2);
+    assert!(result.validate(&request).is_err());
+    result.rounding = DecisionRounding {
+        probability_decimals: Some(2),
+        score_decimals: None,
+    };
+    if let DecisionAnswer::Score { expected_value, .. } = result.answers.get_mut("score").unwrap() {
+        *expected_value = 0.754;
+    }
+    assert!(result.validate(&request).is_ok());
+    result.rounding.probability_decimals = Some(4);
+    assert!(result.validate(&request).is_err());
+    result.rounding.probability_decimals = Some(16);
+    assert!(result.validate(&request).is_err());
+}
+
+#[test]
+fn structured_descriptions_reject_scalar_coercion_and_bad_levels() {
+    for invalid in [json!(null), json!(true), json!(42)] {
+        let mut request = serde_json::to_value(options()).unwrap();
+        request["questions"][0]["instructions"] = invalid;
+        assert!(serde_json::from_value::<DecisionCallOptions>(request).is_err());
+    }
+    for levels in [
+        json!([{}, "high"]),
+        json!([[], "high"]),
+        json!([{"label":"low"}, {"label":"low"}]),
+    ] {
+        let mut request = serde_json::to_value(options()).unwrap();
+        request["questions"][1]["levels"] = levels;
+        let request: DecisionCallOptions = serde_json::from_value(request).unwrap();
+        assert!(request.validate().is_err());
+    }
 }

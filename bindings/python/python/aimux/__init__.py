@@ -162,6 +162,7 @@ __all__ = [
     "tavily_search",
     "DecisionModel",
     "jev_decision",
+    "decision_capabilities",
     "decide",
     "RepairToolCall",
     "generate_text",
@@ -171,6 +172,11 @@ __all__ = [
     "generate_text_as_openai",
     "stream_text_as_openai",
 ]
+
+
+def decision_capabilities(model: DecisionModel) -> Dict[str, Any]:
+    """Query question support, limits and rounding precision without HTTP."""
+    return json.loads(model.capabilities())
 
 
 def decide(model: DecisionModel, state: Any, questions: List[Dict[str, Any]],

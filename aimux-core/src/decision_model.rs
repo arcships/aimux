@@ -14,12 +14,54 @@ use crate::{AbortSignal, AiMuxError, retry, timeout};
 /// explicit input contract; JSON objects are not interpreted as media parts.
 pub type DecisionState = serde_json::Value;
 
+/// Native question text or structured guidance, serialized without coercion.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+#[ts(export)]
+pub enum DecisionDescription {
+    Text(String),
+    Object(#[ts(type = "Record<string, unknown>")] serde_json::Map<String, serde_json::Value>),
+    Array(#[ts(type = "unknown[]")] Vec<serde_json::Value>),
+}
+
+impl From<String> for DecisionDescription {
+    fn from(value: String) -> Self {
+        Self::Text(value)
+    }
+}
+
+impl From<&str> for DecisionDescription {
+    fn from(value: &str) -> Self {
+        Self::Text(value.into())
+    }
+}
+
+impl DecisionDescription {
+    fn is_empty(&self) -> bool {
+        match self {
+            Self::Text(text) => text.trim().is_empty(),
+            Self::Object(object) => object.is_empty(),
+            Self::Array(array) => array.is_empty(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct DecisionBooleanCriteria {
+    #[serde(rename = "true", default, skip_serializing_if = "Option::is_none")]
+    pub true_description: Option<DecisionDescription>,
+    #[serde(rename = "false", default, skip_serializing_if = "Option::is_none")]
+    pub false_description: Option<DecisionDescription>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DecisionOption {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    pub description: Option<DecisionDescription>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -28,18 +70,20 @@ pub struct DecisionOption {
 pub enum DecisionQuestion {
     Boolean {
         id: String,
-        instructions: String,
+        instructions: DecisionDescription,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        criteria: Option<DecisionBooleanCriteria>,
     },
     Choice {
         id: String,
-        instructions: String,
+        instructions: DecisionDescription,
         options: Vec<DecisionOption>,
     },
     /// Ordered labels, from lowest to highest. Scores use zero-based positions.
     Score {
         id: String,
-        instructions: String,
-        levels: Vec<String>,
+        instructions: DecisionDescription,
+        levels: Vec<DecisionDescription>,
     },
 }
 
@@ -52,7 +96,7 @@ impl DecisionQuestion {
     }
 
     #[must_use]
-    pub fn instructions(&self) -> &str {
+    pub fn instructions(&self) -> &DecisionDescription {
         match self {
             Self::Boolean { instructions, .. }
             | Self::Choice { instructions, .. }
@@ -110,7 +154,7 @@ impl DecisionCallOptions {
                     "empty or duplicate decision question ID: {id:?}"
                 )));
             }
-            if question.instructions().trim().is_empty() {
+            if question.instructions().is_empty() {
                 return Err(invalid(format!("question {id:?} requires instructions")));
             }
             let labels: Vec<&str> = match question {
@@ -127,7 +171,17 @@ impl DecisionCallOptions {
                             "question {id:?} requires at least two score levels"
                         )));
                     }
-                    levels.iter().map(String::as_str).collect()
+                    if levels.iter().any(DecisionDescription::is_empty)
+                        || levels
+                            .iter()
+                            .enumerate()
+                            .any(|(i, level)| levels[..i].contains(level))
+                    {
+                        return Err(invalid(format!(
+                            "question {id:?} has empty or duplicate levels"
+                        )));
+                    }
+                    continue;
                 }
             };
             let mut unique = HashSet::new();
@@ -183,7 +237,7 @@ pub enum DecisionAnswer {
     },
     Score {
         expected_value: f64,
-        levels: Vec<String>,
+        levels: Vec<DecisionDescription>,
         probabilities: Option<Vec<f64>>,
         confidence: Option<f64>,
     },
@@ -192,6 +246,8 @@ pub enum DecisionAnswer {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DecisionCapabilities {
+    #[serde(default)]
+    pub rounding: DecisionRounding,
     pub probability_source: DecisionProbabilitySource,
     pub supports_boolean: bool,
     pub supports_choice: bool,
@@ -201,6 +257,28 @@ pub struct DecisionCapabilities {
     pub min_choices: Option<usize>,
     pub max_choices: Option<usize>,
     pub max_score_levels: Option<usize>,
+}
+
+/// Declared decimal rounding precision. None means only floating-point noise
+/// is tolerated, not decimal rounding. Providers must report their actual rule.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DecisionRounding {
+    pub probability_decimals: Option<u8>,
+    pub score_decimals: Option<u8>,
+}
+
+impl DecisionRounding {
+    fn error(decimals: Option<u8>) -> f64 {
+        decimals.map_or(0.0, |digits| 0.5 * 10_f64.powi(-i32::from(digits)))
+    }
+
+    fn is_valid(self) -> bool {
+        [self.probability_decimals, self.score_decimals]
+            .into_iter()
+            .flatten()
+            .all(|digits| digits <= 15)
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
@@ -213,6 +291,8 @@ pub struct DecisionResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DecisionResult {
+    #[serde(default)]
+    pub rounding: DecisionRounding,
     pub answers: BTreeMap<String, DecisionAnswer>,
     pub provider: String,
     pub model: String,
@@ -228,26 +308,27 @@ fn is_probability(value: f64) -> bool {
     value.is_finite() && (0.0..=1.0).contains(&value)
 }
 
-/// Allow independently rounded native probabilities (two decimals per item).
+/// Allow independent rounding at the provider-declared precision.
 /// Do not normalize them: preserve the provider's numbers and raw response.
-fn valid_distribution(values: &[f64]) -> bool {
+fn valid_distribution(values: &[f64], rounding: DecisionRounding) -> bool {
     values.iter().all(|p| is_probability(*p))
-        && (values.iter().sum::<f64>() - 1.0).abs() <= 0.005 * values.len() as f64 + 1e-9
+        && (values.iter().sum::<f64>() - 1.0).abs()
+            <= DecisionRounding::error(rounding.probability_decimals) * values.len() as f64 + 1e-9
 }
 
 /// If the unrounded probabilities q sum to one, their expected index t
 /// satisfies sum((i - t) * q[i]) = 0. With probabilities and score independently
-/// rounded to two decimals, the residual is bounded by 0.005 per term plus
-/// 0.005 for the score. Centering on the supplied score also accounts for a
+/// rounded at their declared precisions, the residual is bounded by the
+/// corresponding per-term and score errors. Centering on the score also accounts for a
 /// rounded distribution whose sum is slightly different from one.
-fn consistent_score(score: f64, probabilities: &[f64]) -> bool {
+fn consistent_score(score: f64, probabilities: &[f64], rounding: DecisionRounding) -> bool {
     let residual: f64 = probabilities
         .iter()
         .enumerate()
         .map(|(index, probability)| (index as f64 - score) * probability)
         .sum();
-    let tolerance = 0.005
-        + 0.005
+    let tolerance = DecisionRounding::error(rounding.score_decimals)
+        + DecisionRounding::error(rounding.probability_decimals)
             * (0..probabilities.len())
                 .map(|index| (index as f64 - score).abs())
                 .sum::<f64>();
@@ -259,6 +340,11 @@ impl DecisionResult {
     /// # Errors
     /// Returns `InvalidResponseData` when the response violates the request.
     pub fn validate(&self, request: &DecisionCallOptions) -> Result<(), AiMuxError> {
+        if !self.rounding.is_valid() {
+            return Err(AiMuxError::InvalidResponseData(
+                "invalid decision rounding precision".into(),
+            ));
+        }
         let invalid = |id: &str| {
             AiMuxError::InvalidResponseData(format!("invalid decision answer for {id:?}"))
         };
@@ -292,6 +378,7 @@ impl DecisionResult {
                                     .all(|option| distribution.contains_key(&option.label))
                                 && valid_distribution(
                                     &distribution.values().copied().collect::<Vec<_>>(),
+                                    self.rounding,
                                 )
                         })
                 }
@@ -311,8 +398,8 @@ impl DecisionResult {
                         && confidence.is_none_or(is_probability)
                         && probabilities.as_ref().is_none_or(|distribution| {
                             distribution.len() == levels.len()
-                                && valid_distribution(distribution)
-                                && consistent_score(*expected_value, distribution)
+                                && valid_distribution(distribution, self.rounding)
+                                && consistent_score(*expected_value, distribution, self.rounding)
                         })
                 }
                 _ => false,
@@ -352,6 +439,11 @@ pub async fn decide(
 ) -> Result<DecisionResult, AiMuxError> {
     options.validate()?;
     let capabilities = model.capabilities();
+    if !capabilities.rounding.is_valid() {
+        return Err(AiMuxError::InvalidArgument(
+            "invalid provider rounding precision".into(),
+        ));
+    }
     if capabilities
         .max_questions
         .is_some_and(|max| options.questions.len() > max)
@@ -402,6 +494,11 @@ pub async fn decide(
     timeout::run(
         retries.retry(|| async {
             let result = model.do_decide(&options).await?;
+            if result.rounding != capabilities.rounding {
+                return Err(AiMuxError::InvalidResponseData(
+                    "decision rounding does not match provider capabilities".into(),
+                ));
+            }
             result.validate(&options)?;
             if capabilities.returns_distributions
                 && result.answers.values().any(|answer| {

@@ -18,6 +18,7 @@ fn options() -> DecisionCallOptions {
         json!({"ticket": "Billed twice"}),
         vec![
             DecisionQuestion::Boolean {
+                criteria: None,
                 id: "is_urgent".into(),
                 instructions: "The message conveys urgency or time-sensitivity".into(),
             },
@@ -41,7 +42,7 @@ fn options() -> DecisionCallOptions {
                     "Very angry, strong language",
                 ]
                 .into_iter()
-                .map(String::from)
+                .map(DecisionDescription::from)
                 .collect(),
             },
         ],
@@ -214,7 +215,9 @@ async fn invalid_requests_never_reach_http() {
     }
     let mut too_many_levels = options();
     if let DecisionQuestion::Score { levels, .. } = &mut too_many_levels.questions[2] {
-        *levels = (0..11).map(|index| format!("level{index}")).collect();
+        *levels = (0..11)
+            .map(|index| format!("level{index}").into())
+            .collect();
     }
     for state in [Value::Null, json!(true), json!(42)] {
         let mut invalid_state = options();
@@ -305,7 +308,7 @@ async fn official_requests_accept_single_and_255_choices_and_more_than_20_questi
             json!([{"ticket": "Help"}]),
             vec![DecisionQuestion::Choice {
                 id: id.into(),
-                instructions: "a".repeat(1001),
+                instructions: "a".repeat(1001).into(),
                 options: labels
                     .iter()
                     .map(|label| DecisionOption {
@@ -328,6 +331,7 @@ async fn official_requests_accept_single_and_255_choices_and_more_than_20_questi
         for i in 0..21 {
             let id = format!("q{i}");
             request.questions.push(DecisionQuestion::Boolean {
+                criteria: None,
                 id: id.clone(),
                 instructions: "Urgent?".into(),
             });
@@ -351,4 +355,42 @@ async fn official_requests_accept_single_and_255_choices_and_more_than_20_questi
         assert_eq!(body["questions"][id]["criteria"][&labels[0]], Value::Null);
         assert_eq!(body["questions"].as_object().unwrap().len(), 22);
     }
+}
+
+#[tokio::test]
+async fn structured_official_fields_and_legends_survive_without_stringification() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../contract-tests/fixtures/decision-native.json"
+    ))
+    .unwrap();
+    let request: DecisionCallOptions = serde_json::from_value(fixture["request"].clone()).unwrap();
+    let server = MockServer::start().await;
+    mount(&server, 200, fixture["response"].clone()).await;
+    let model = model(&server);
+    let result = decide(model.as_ref(), request).await.unwrap();
+    assert_eq!(result.rounding, model.capabilities().rounding);
+    assert_eq!(result.rounding.probability_decimals, Some(2));
+    let requests = server.received_requests().await.unwrap();
+    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(
+        body["questions"]["urgent"]["instructions"],
+        fixture["request"]["questions"][0]["instructions"]
+    );
+    assert_eq!(
+        body["questions"]["urgent"]["criteria"],
+        fixture["request"]["questions"][0]["criteria"]
+    );
+    assert_eq!(
+        body["questions"]["department"]["criteria"]["billing"],
+        fixture["request"]["questions"][1]["options"][0]["description"]
+    );
+    assert_eq!(
+        body["questions"]["severity"]["criteria"],
+        fixture["request"]["questions"][2]["levels"]
+    );
+    let result = serde_json::to_value(result).unwrap();
+    assert_eq!(
+        result["answers"]["severity"]["levels"],
+        fixture["request"]["questions"][2]["levels"]
+    );
 }

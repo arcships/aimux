@@ -2,7 +2,8 @@
 import type { DecisionAnswer } from "./DecisionAnswer";
 import type { DecisionProbabilitySource } from "./DecisionProbabilitySource";
 import type { DecisionResponse } from "./DecisionResponse";
+import type { DecisionRounding } from "./DecisionRounding";
 import type { Usage } from "./Usage";
 import type { JsonValue } from "./serde_json/JsonValue";
 
-export type DecisionResult = { answers: { [key in string]: DecisionAnswer }, provider: string, model: string, model_version: string | null, probability_source: DecisionProbabilitySource, usage: Usage | null, latency_ms: number | null, provider_metadata: { [key in string]: JsonValue } | null, response: DecisionResponse | null, };
+export type DecisionResult = { rounding: DecisionRounding, answers: { [key in string]: DecisionAnswer }, provider: string, model: string, model_version: string | null, probability_source: DecisionProbabilitySource, usage: Usage | null, latency_ms: number | null, provider_metadata: { [key in string]: JsonValue } | null, response: DecisionResponse | null, };

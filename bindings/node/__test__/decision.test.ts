@@ -1,7 +1,7 @@
 import test from 'ava'
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
-import { APICallError, InvalidArgumentError, RequestAbortedError, jevDecision, decide } from '../src/index.ts'
+import { APICallError, InvalidArgumentError, RequestAbortedError, jevDecision, decide, decisionCapabilities } from '../src/index.ts'
 import type { DecisionCallOptions } from '../src/index.ts'
 
 const fixture = JSON.parse(readFileSync(new URL('../../../aimux-providers/tests/fixtures/jev_systemone.json', import.meta.url), 'utf8')).response
@@ -97,4 +97,33 @@ test('unknown probability source is rejected at model construction', async t => 
   // Exercise the raw JSON boundary as well as the typed wrapper contract.
   const { jevDecision: rawJevDecision } = await import('../src/native.ts')
   await t.throwsAsync(rawJevDecision('test-key', 'jev-latest', undefined, 'unknown'), { instanceOf: InvalidArgumentError })
+})
+
+
+test('official structured fields and capabilities preserve the native contract', async t => {
+  const fixture = JSON.parse(readFileSync(new URL('../../../contract-tests/fixtures/decision-native.json', import.meta.url), 'utf8'))
+  const requests: any[] = []
+  const server = createServer((req, res) => {
+    let data = ''
+    req.on('data', chunk => { data += chunk })
+    req.on('end', () => {
+      requests.push(JSON.parse(data))
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(fixture.response))
+    })
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.teardown(() => server.close())
+  const address = server.address() as { port: number }
+  const model = await jevDecision('test-key', 'jev-latest', `http://127.0.0.1:${address.port}/v1/systemone`)
+  const caps = decisionCapabilities(model)
+  t.is(caps.max_choices, 255)
+  t.deepEqual(caps.rounding, { probability_decimals: 2, score_decimals: 2 })
+  t.is(requests.length, 0)
+  const result = await decide(model, fixture.request)
+  t.is(requests.length, 1)
+  t.deepEqual(requests[0].questions.urgent.criteria, fixture.request.questions[0].criteria)
+  t.deepEqual(requests[0].questions.department.instructions, fixture.request.questions[1].instructions)
+  t.like(result.answers.severity, { levels: fixture.request.questions[2].levels })
+  t.deepEqual(result.rounding, caps.rounding)
 })

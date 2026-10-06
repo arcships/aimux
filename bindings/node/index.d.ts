@@ -33,6 +33,7 @@ export declare class AbortBridge {
 }
 
 export declare class DecisionModel {
+  capabilities(): AimuxResult<string>
   decide(optsJson: string, bridge?: AbortBridge | undefined | null): Promise<string>
 }
 

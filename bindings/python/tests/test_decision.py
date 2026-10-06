@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
-from aimux import APICallError, InvalidArgumentError, decide, jev_decision
+from aimux import APICallError, InvalidArgumentError, decide, jev_decision, decision_capabilities
 
 FIXTURE = json.loads((Path(__file__).resolve().parents[3] / 'aimux-providers/tests/fixtures/jev_systemone.json').read_text())['response']
 QUESTIONS = [
@@ -80,3 +80,36 @@ def test_self_hosted_probability_source(server, source):
 def test_unknown_probability_source():
     with pytest.raises(InvalidArgumentError):
         jev_decision('test-key', 'jev-latest', probability_source='unknown')
+
+
+def test_official_structured_contract_and_capabilities():
+    fixture = json.loads((Path(__file__).resolve().parents[3] / 'contract-tests/fixtures/decision-native.json').read_text())
+    captures = []
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            captures.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+            body = json.dumps(fixture['response']).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, *args): pass
+    http = HTTPServer(('127.0.0.1', 0), Handler)
+    thread = threading.Thread(target=http.serve_forever, daemon=True)
+    thread.start()
+    try:
+        model = jev_decision('test-key', 'jev-latest', f'http://127.0.0.1:{http.server_port}/v1/systemone')
+        caps = decision_capabilities(model)
+        assert caps['max_choices'] == 255
+        assert caps['rounding'] == {'probability_decimals': 2, 'score_decimals': 2}
+        assert not captures
+        request = fixture['request']
+        result = decide(model, request['state'], request['questions'], max_retries=0, timeout={'total_ms':2000})
+        assert captures[0]['questions']['urgent']['criteria'] == request['questions'][0]['criteria']
+        assert result['answers']['severity']['levels'] == request['questions'][2]['levels']
+        assert result['rounding'] == caps['rounding']
+    finally:
+        http.shutdown()
+        http.server_close()
+        thread.join(timeout=2)

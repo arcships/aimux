@@ -13,6 +13,10 @@ pub struct DecisionModel {
 
 #[pymethods]
 impl DecisionModel {
+    pub fn capabilities(&self) -> PyResult<String> {
+        serialize_result(&self.inner.capabilities())
+    }
+
     pub fn decide(&self, py: Python<'_>, opts_json: &str) -> PyResult<String> {
         let options: DecisionCallOptions = wire_json("opts_json", opts_json)?;
         let result = py
