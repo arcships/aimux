@@ -1120,13 +1120,25 @@ pub fn build_request_body_checked(
             warn("temperature", Some(&details));
         } else {
             let temp = if !openai || oss {
-                if !(0.0..=1.0).contains(&temp) {
+                if temp > 1.0 {
                     warn(
                         "temperature",
-                        Some("temperature clamped to the Bedrock range [0, 1]"),
+                        Some(&format!(
+                            "{temp} exceeds bedrock maximum of 1.0. clamped to 1.0"
+                        )),
                     );
+                    1.0
+                } else if temp < 0.0 {
+                    warn(
+                        "temperature",
+                        Some(&format!(
+                            "{temp} is below bedrock minimum of 0. clamped to 0"
+                        )),
+                    );
+                    0.0
+                } else {
+                    temp
                 }
-                temp.clamp(0.0, 1.0)
             } else {
                 temp
             };
@@ -1649,9 +1661,8 @@ pub fn map_finish_reason(reason: &str) -> FinishReason {
 ///
 /// Mirrors the TS `convertAmazonBedrockUsage(usage: AmazonBedrockUsage |
 /// undefined | null)`: a `None`/null/undefined usage yields an all-`None`
-/// `Usage` (the TS `undefined` fields). The TS `raw` echo is not modelled on
-/// the Rust `Usage` type (see `convert-usage` tests for the skipped `raw`
-/// cases); `outputTokens.text` mirrors the TS `outputTokens.text` field.
+/// `Usage` (the TS `undefined` fields). The original provider payload is
+/// retained in `raw`; `outputTokens.text` mirrors the TS field.
 #[must_use]
 pub fn convert_usage(usage: Option<&BedrockUsage>) -> aimux_core::types::Usage {
     use aimux_core::types::Usage;

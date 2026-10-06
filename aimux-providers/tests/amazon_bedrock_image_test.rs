@@ -17,7 +17,7 @@ fn bedrock_response() -> Value {
 
 async fn mock_bedrock(server: &MockServer, body: Value) {
     Mock::given(method("POST"))
-        .and(path("/model/amazon.nova-canvas-v1:0/invoke"))
+        .and(path("/model/amazon.nova-canvas-v1%3A0/invoke"))
         .respond_with(ResponseTemplate::new(200).set_body_json(body))
         .mount(server)
         .await;
@@ -156,7 +156,7 @@ async fn should_support_inpainting() {
 async fn should_handle_moderated_response() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/model/amazon.nova-canvas-v1:0/invoke"))
+        .and(path("/model/amazon.nova-canvas-v1%3A0/invoke"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "id": "fe7256d1-50d9-4663-8592-85eaf002e80c",
             "status": "Request Moderated",

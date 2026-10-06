@@ -355,25 +355,6 @@ impl LanguageModel for OpenAICompatibleChatModel {
         let response_headers = resp.response_headers;
         let mut sse_stream = resp.value;
 
-        // Only the first event is checked before returning the stream: an
-        // error reported immediately stays inside Core's operation-retry
-        // boundary. A normal event is chained back and never consumed.
-        let first_event = match sse_stream.next().await {
-            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
-            first => first,
-        };
-        if let Some(Ok(event)) = &first_event
-            && let Some(error) = event.get("error")
-        {
-            return Err(stream_error(
-                &metadata_key,
-                error,
-                &endpoint,
-                body.clone(),
-                response_headers.clone(),
-            ));
-        }
-
         let dialect = self.config.chat.dialect.clone();
         let mut metadata_extractor = dialect
             .metadata_extractor
@@ -413,10 +394,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
             let mut pending: HashMap<usize, PendingToolCall> = HashMap::new();
             let mut forwarded: HashSet<usize> = HashSet::new();
 
-            let mut event_iter =
-                futures::stream::iter(first_event.into_iter()).chain(sse_stream);
-
-            while let Some(event) = event_iter.next().await {
+            while let Some(event) = sse_stream.next().await {
                 match event {
                     Ok(parsed) => {
                         if emit_raw_chunks {

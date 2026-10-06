@@ -13,7 +13,7 @@ use bytes::Bytes;
 use futures::{StreamExt, stream::BoxStream};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
@@ -130,6 +130,18 @@ impl LanguageModel for BedrockModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    fn supported_urls(&self) -> SupportedUrls {
+        let s3 = regex::Regex::new(r"^s3://").expect("static pattern");
+        SupportedUrls(
+            [
+                ("image/*".into(), vec![s3.clone()]),
+                ("video/*".into(), vec![s3]),
+            ]
+            .into_iter()
+            .collect(),
+        )
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
@@ -612,7 +624,11 @@ fn extract_content(
                 model_id.contains("mistral."),
             ),
             tool_name: tool_use.name.clone(),
-            input: tool_use.input.to_string(),
+            input: if tool_use.input.is_null() {
+                "{}".into()
+            } else {
+                tool_use.input.to_string()
+            },
             provider_executed: None,
             dynamic: None,
             provider_metadata: None,

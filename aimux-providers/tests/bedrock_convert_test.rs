@@ -5,21 +5,6 @@
 //! - `amazon-bedrock-prepare-tools.test.ts` (23 cases incl. `it.each`)
 //! - `convert-amazon-bedrock-usage.test.ts` (9 cases)
 //!
-//! Cases the Rust data model cannot express are skipped with an inline
-//! comment. The main categories of skips:
-//! - **System-after-non-system throw**: the Rust converter currently lifts
-//!   all system messages into the system array.
-//! - **S3 URLs / provider references**: `FileUrl` / `FileReference` are not
-//!   converted by the Rust Bedrock path.
-//! - **Top-level-only mediaType auto-detection from bytes**: the Rust path
-//!   does not sniff magic bytes.
-//! - **Mistral tool-call-id normalization (`isMistral`)**: the Rust
-//!   `convert_prompt_to_bedrock` has no `isMistral` parameter. The
-//!   non-Mistral (passthrough) cases ARE covered.
-//! - **Provider-defined tools (web_search, anthropic provider tools)** and
-//!   `additionalTools`/`betas`: the Rust `FunctionTool` has no `type`/`id`.
-//! - **`raw` echo on `Usage`**: the Rust `Usage` type has no `raw` field.
-
 use serde_json::{Value, json};
 
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions, provider_namespace};
@@ -155,10 +140,6 @@ fn system_combine_multiple_leading() {
     );
 }
 
-// SKIPPED (TS: "should throw an error if a system message is provided after a
-// non-system message"): the converter currently lifts all system messages
-// into the system array.
-
 /// TS: "should extract the system message"
 #[test]
 fn system_extract_single() {
@@ -187,9 +168,6 @@ fn user_convert_image_parts() {
         }])
     );
 }
-
-// SKIPPED (TS: "should convert image parts with S3 URLs"): FileUrl is not
-// converted by the Rust Bedrock path.
 
 /// TS: "should convert messages with document parts"
 #[test]
@@ -269,11 +247,6 @@ fn user_consistent_document_names() {
         ])
     );
 }
-
-// Message-level cache-point cases remain outside this restored test subset.
-
-// SKIPPED (TS: "should throw for file parts with provider references"):
-// FileReference is not converted by the user-file path.
 
 /// TS: "should add cache point to user content part when specified"
 #[test]
@@ -368,8 +341,6 @@ fn assistant_combine_sequential() {
         ])
     );
 }
-
-// Message-level cache-point cases remain outside this restored test subset.
 
 /// TS: "should add cache point to assistant content part when specified"
 #[test]
@@ -742,9 +713,6 @@ fn tool_result_content_image() {
     );
 }
 
-// SKIPPED (TS: "should convert tool result images with S3 URLs"): FileUrl is
-// not converted by the Rust Bedrock path.
-
 /// TS: "should convert tool result with content array containing PDF"
 #[test]
 fn tool_result_content_pdf() {
@@ -906,9 +874,6 @@ fn citations_multiple_pdfs() {
 
 // ── additional file format tests ────────────────────────────────────────────
 
-// SKIPPED (TS: "should throw an error for unsupported file mime type in user
-// message content"): unknown mimes fall back to a default format (no throw).
-
 /// TS: "should handle xlsx files correctly"
 #[test]
 fn file_format_xlsx() {
@@ -943,10 +908,6 @@ fn file_format_docx() {
 }
 
 // ── Mistral tool call ID normalization ──────────────────────────────────────
-
-// SKIPPED (TS: "should normalize tool call IDs in tool results when isMistral
-// is true" and "...in tool calls when isMistral is true"): the Rust
-// convert_prompt_to_bedrock has no isMistral parameter.
 
 /// TS: "should not normalize tool call IDs when isMistral is false"
 #[test]
@@ -1005,10 +966,6 @@ fn media_type_pass_through_full_image() {
     );
 }
 
-// SKIPPED (TS: "should detect subtype from inline bytes when mediaType is
-// top-level-only (image)" and "...(application/pdf)"): the Rust path does not
-// sniff magic bytes to resolve a top-level-only mediaType.
-
 /// TS: "should route to document slot for non-image top-level type via getTopLevelMediaType"
 #[test]
 fn media_type_route_to_document_text_plain() {
@@ -1024,11 +981,6 @@ fn media_type_route_to_document_text_plain() {
         json!({ "document": { "format": "txt", "name": "document-1", "source": { "bytes": "base64data" } } })
     );
 }
-
-// SKIPPED (TS: "should throw UnsupportedFunctionalityError for URL data (File
-// URL)", "...for unsupported full image mediaType", and "...when top-level-only
-// bytes cannot be detected"): FileUrl is not converted; unknown image mimes
-// fall back to "png" instead of throwing; no magic-byte detection.
 
 // ════════════════════════════════════════════════════════════════════════════
 // amazon-bedrock-prepare-tools
@@ -1114,10 +1066,8 @@ fn prepare_tools_tool_choice_filters_to_named() {
 // convert-amazon-bedrock-usage
 // ════════════════════════════════════════════════════════════════════════════
 //
-// The TS `convertAmazonBedrockUsage` echoes the input as `result.raw`. The Rust
-// `Usage` type has no `raw` field, so only the `inputTokens`/`outputTokens`
-// breakdown is asserted; the two `raw`-only cases ("should include totalTokens
-// in raw when provided" and "should preserve raw usage data") are SKIPPED.
+// The TS `convertAmazonBedrockUsage` echoes the input as `result.raw`.
+// The assertions below cover the `inputTokens`/`outputTokens` breakdown.
 
 fn bedrock_usage(
     input: u32,
@@ -1218,6 +1168,3 @@ fn usage_undefined() {
     assert_eq!(u.output_tokens.total, None);
     assert_eq!(u.output_tokens.text, None);
 }
-
-// SKIPPED (TS: "should include totalTokens in raw when provided" and "should
-// preserve raw usage data"): the Rust `Usage` type has no `raw` echo field.

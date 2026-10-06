@@ -366,24 +366,6 @@ impl LanguageModel for GroqChatLanguageModel {
         let response_headers = resp.response_headers;
         let mut sse_stream = resp.value;
 
-        // Only the first event is checked before returning the stream: an
-        // error reported immediately stays inside Core's operation-retry
-        // boundary. A normal event is chained back and never consumed.
-        let first_event = match sse_stream.next().await {
-            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
-            first => first,
-        };
-        if let Some(Ok(event)) = &first_event
-            && event.get("error").is_some()
-        {
-            return Err(create_groq_stream_error(
-                event,
-                &endpoint,
-                body.clone(),
-                response_headers.clone(),
-            ));
-        }
-
         let emit_raw_chunks = options.include_raw_chunks == Some(true);
         let stream_error_url = endpoint;
         let stream_error_body = body.clone();
@@ -405,10 +387,7 @@ impl LanguageModel for GroqChatLanguageModel {
             let mut is_active_text = false;
             let mut is_active_reasoning = false;
 
-            let mut event_iter =
-                futures::stream::iter(first_event.into_iter()).chain(sse_stream);
-
-            while let Some(event) = event_iter.next().await {
+            while let Some(event) = sse_stream.next().await {
                 let parsed = match event {
                     Ok(parsed) => parsed,
                     // a chunk that fails to parse is reported as an error part
