@@ -141,7 +141,7 @@ impl VertexImageModel {
             provider_namespace(GOOGLE_VERTEX, Value::Object(inner_options))
                 .expect("provider metadata must be an object"),
         );
-        let body = build_vertex_request_body(&self.model_id, &call_options);
+        let body = build_vertex_request_body(&self.model_id, &call_options)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(

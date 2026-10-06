@@ -15,7 +15,6 @@
 use aimux_core::tool::RawToolCall;
 use aimux_core::tool::ToolResult;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures::StreamExt;
 
@@ -70,18 +69,6 @@ pub(crate) fn anthropic_stream_error(
 /// Read a string field, dropping absent / non-string values.
 fn str_field(v: &Value, key: &str) -> Option<String> {
     v.get(key).and_then(|x| x.as_str()).map(str::to_string)
-}
-
-/// Process-wide counter backing [`generate_source_id`].
-static SOURCE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-/// Unique id for a `Source` derived from a web-search result. Upstream calls
-/// `this.generateId()` at the same points.
-fn generate_source_id() -> String {
-    format!(
-        "anthropic-source-{}",
-        SOURCE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
-    )
 }
 
 /// `web_search_result` → the camel-cased shape upstream exposes (:1243-1249).
@@ -377,6 +364,7 @@ pub(crate) fn stream_parts_for_result_block(
     names: &ToolNameMapping,
     mcp_tool_calls: &HashMap<String, (String, String)>,
     server_tool_calls: &HashMap<String, String>,
+    generate_id: &(dyn Fn() -> String + Send + Sync),
 ) -> Vec<StreamPart> {
     let caller = match block {
         ContentBlock::WebSearchToolResult { caller, .. }
@@ -429,7 +417,7 @@ pub(crate) fn stream_parts_for_result_block(
             )];
             parts.extend(results.iter().map(|result| {
                 StreamPart::Source(Source::Url {
-                    id: generate_source_id(),
+                    id: generate_id(),
                     url: str_field(result, "url").unwrap_or_default(),
                     title: str_field(result, "title"),
                     provider_metadata: Some(
@@ -543,10 +531,14 @@ pub(crate) struct CitationDocument {
     pub media_type: String,
 }
 
-fn citation_source(citation: &Value, documents: &[CitationDocument]) -> Option<Source> {
+fn citation_source(
+    citation: &Value,
+    documents: &[CitationDocument],
+    generate_id: &(dyn Fn() -> String + Send + Sync),
+) -> Option<Source> {
     match citation["type"].as_str()? {
         "web_search_result_location" => Some(Source::Url {
-            id: generate_source_id(),
+            id: generate_id(),
             url: str_field(citation, "url")?,
             title: str_field(citation, "title"),
             provider_metadata: Some(
@@ -577,7 +569,7 @@ fn citation_source(citation: &Value, documents: &[CitationDocument]) -> Option<S
                 })
             };
             Some(Source::Document {
-                id: generate_source_id(),
+                id: generate_id(),
                 media_type: document.media_type.clone(),
                 title: str_field(citation, "document_title")
                     .unwrap_or_else(|| document.title.clone()),
@@ -625,6 +617,7 @@ pub(crate) fn parse_anthropic_content(
     names: &ToolNameMapping,
     uses_json_response_tool: bool,
     mut citation_documents: Vec<CitationDocument>,
+    generate_id: &(dyn Fn() -> String + Send + Sync),
 ) -> Vec<GenerateContent> {
     let options_name = CANONICAL;
     let mut content = Vec::new();
@@ -669,7 +662,9 @@ pub(crate) fn parse_anthropic_content(
                 content.extend(
                     citations
                         .iter()
-                        .filter_map(|citation| citation_source(citation, &citation_documents))
+                        .filter_map(|citation| {
+                            citation_source(citation, &citation_documents, generate_id)
+                        })
                         .map(GenerateContent::Source),
                 );
             }
@@ -812,7 +807,7 @@ pub(crate) fn parse_anthropic_content(
                         // URLs and titles reach `result.sources`.
                         for result in results {
                             content.push(GenerateContent::Source(Source::Url {
-                                id: generate_source_id(),
+                                id: generate_id(),
                                 url: str_field(result, "url").unwrap_or_default(),
                                 title: str_field(result, "title"),
                                 provider_metadata: Some(
@@ -981,6 +976,7 @@ pub(crate) async fn anthropic_generate_core(
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
     citation_documents: Vec<CitationDocument>,
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 ) -> Result<GenerateResult, AiMuxError> {
     let resp = aimux_provider_utils::post_json_to_api(
         request,
@@ -1004,6 +1000,7 @@ pub(crate) async fn anthropic_generate_core(
         tool_names,
         uses_json_response_tool,
         citation_documents,
+        generate_id.as_ref(),
     );
 
     let mut finish_reason = data
@@ -1096,6 +1093,7 @@ pub(crate) async fn anthropic_stream_core(
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
     mut citation_documents: Vec<CitationDocument>,
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 ) -> Result<StreamResult, AiMuxError> {
     let endpoint = request.url.clone();
     let options_name = config.provider_options_name.clone();
@@ -1344,6 +1342,7 @@ pub(crate) async fn anthropic_stream_core(
                                         &tool_names,
                                         &mcp_tool_calls,
                                         &server_tool_calls,
+                                        generate_id.as_ref(),
                                     ) {
                                         yield Ok(part);
                                     }
@@ -1365,7 +1364,7 @@ pub(crate) async fn anthropic_stream_core(
                                 if let Some(BlockState::Text { citations }) = blocks.get_mut(&index) {
                                     citations.push(citation.clone());
                                 }
-                                if let Some(source) = citation_source(&citation, &citation_documents) {
+                                if let Some(source) = citation_source(&citation, &citation_documents, generate_id.as_ref()) {
                                     yield Ok(StreamPart::Source(source));
                                 }
                             }

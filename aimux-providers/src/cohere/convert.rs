@@ -12,7 +12,7 @@ use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
-use aimux_provider_utils::resolve_full_media_type;
+use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Value, json};
 
 // ── Prepared tools ──────────────────────────────────────────────────────────
@@ -144,7 +144,7 @@ pub fn convert_prompt_to_cohere(
                             }
                         }
                         UserPart::File(file) => {
-                            if file.media_type.split('/').next() == Some("image") {
+                            if get_top_level_media_type(&file.media_type) == "image" {
                                 let url = match &file.data {
                                     FileData::Data { data } => {
                                         use base64::Engine;

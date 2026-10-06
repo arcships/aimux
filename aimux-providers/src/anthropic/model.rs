@@ -9,15 +9,13 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::StreamExt;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::language_model_message::{LanguageModelMessage, UserPart};
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, Source, StreamResult};
-use aimux_core::stream_part::StreamPart;
+use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_core::types::Warning;
 use aimux_provider_utils::HttpRequest;
 
@@ -153,7 +151,7 @@ impl LanguageModel for AnthropicMessagesModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let call = self.prepare(options, false).await?;
-        let mut result = anthropic_generate_core(
+        anthropic_generate_core(
             call.http,
             call.body,
             call.warnings,
@@ -162,20 +160,14 @@ impl LanguageModel for AnthropicMessagesModel {
             self.uses_custom_options(options),
             call.uses_json_response_tool,
             Self::citation_documents(options),
+            self.generate_id.clone(),
         )
-        .await?;
-        for content in &mut result.content {
-            if let GenerateContent::Source(source) = content {
-                let (Source::Url { id, .. } | Source::Document { id, .. }) = source;
-                *id = (self.generate_id)();
-            }
-        }
-        Ok(result)
+        .await
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let call = self.prepare(options, true).await?;
-        let mut result = anthropic_stream_core(
+        anthropic_stream_core(
             call.http,
             call.body,
             call.warnings,
@@ -184,18 +176,8 @@ impl LanguageModel for AnthropicMessagesModel {
             self.uses_custom_options(options),
             call.uses_json_response_tool,
             Self::citation_documents(options),
+            self.generate_id.clone(),
         )
-        .await?;
-        let generate_id = self.generate_id.clone();
-        result.stream = Box::pin(result.stream.map(move |part| {
-            part.map(|mut part| {
-                if let StreamPart::Source(source) = &mut part {
-                    let (Source::Url { id, .. } | Source::Document { id, .. }) = source;
-                    *id = generate_id();
-                }
-                part
-            })
-        }));
-        Ok(result)
+        .await
     }
 }

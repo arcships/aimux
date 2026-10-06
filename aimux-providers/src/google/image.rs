@@ -157,7 +157,7 @@ impl ImageModel for GoogleImageModel {
             google.insert("imageConfig".into(), serde_json::Value::Object(config));
         }
         validate_call_options(&call)?;
-        let (body, _) = build_request_body_with_warnings(&self.model_id, &call);
+        let (body, _) = build_request_body_with_warnings(&self.model_id, &call)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let response = aimux_provider_utils::post_json_to_api(
             exchange.request(

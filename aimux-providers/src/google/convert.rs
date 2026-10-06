@@ -19,6 +19,7 @@
 //! provider-executed tool parts.
 
 use super::options::{GOOGLE, Namespace};
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
@@ -987,26 +988,36 @@ pub fn sanitize_response_json_schema(schema: &Value) -> Value {
 ///
 /// This is the request-body-only entry point; warnings about unsupported tools
 /// are discarded. Use [`build_request_body_with_warnings`] to surface them.
-#[must_use]
-pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
-    build_request_body_with_warnings(model_id, options).0
+///
+/// # Errors
+/// Returns an error when `structuredOutputs` is not a boolean.
+pub fn build_request_body(model_id: &str, options: &CallOptions) -> Result<Value, AiMuxError> {
+    build_request_body_with_warnings(model_id, options).map(|(body, _)| body)
 }
 
 /// Build a Vertex Gemini request body using Vertex's provider-metadata
 /// namespaces when replaying response parts.
-#[must_use]
-pub(crate) fn build_vertex_request_body(model_id: &str, options: &CallOptions) -> Value {
-    build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Vertex).0
+///
+/// # Errors
+/// Returns an error when `structuredOutputs` is not a boolean.
+pub(crate) fn build_vertex_request_body(
+    model_id: &str,
+    options: &CallOptions,
+) -> Result<Value, AiMuxError> {
+    build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Vertex)
+        .map(|(body, _)| body)
 }
 
 /// Build the Gemini `generateContent` request body **and** collect the tool
 /// warnings (e.g. unsupported provider-defined tools, mixed function+provider
 /// tools on pre-Gemini-3 models).
-#[must_use]
+///
+/// # Errors
+/// Returns an error when `structuredOutputs` is not a boolean.
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
-) -> (Value, Vec<Warning>) {
+) -> Result<(Value, Vec<Warning>), AiMuxError> {
     build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Google)
 }
 
@@ -1014,7 +1025,24 @@ fn build_request_body_with_warnings_for_namespace(
     model_id: &str,
     options: &CallOptions,
     namespace: Namespace,
-) -> (Value, Vec<Warning>) {
+) -> Result<(Value, Vec<Warning>), AiMuxError> {
+    let provider_options = options.provider_options.as_ref().and_then(|options| {
+        namespace
+            .read_keys()
+            .iter()
+            .find_map(|name| options.get(*name).map(|value| (*name, value)))
+    });
+    let structured_outputs =
+        match provider_options.and_then(|(_, options)| options.get("structuredOutputs")) {
+            None => true,
+            Some(Value::Bool(value)) => *value,
+            Some(_) => {
+                return Err(AiMuxError::InvalidArgument(format!(
+                    "invalid {} provider options",
+                    provider_options.unwrap().0
+                )));
+            }
+        };
     let GooglePrompt {
         mut system_instruction,
         mut contents,
@@ -1157,7 +1185,7 @@ fn build_request_body_with_warnings_for_namespace(
     {
         generation_config.insert("responseMimeType".to_string(), json!("application/json"));
         if let Some(schema) = schema
-            && option("structuredOutputs") != Some(&Value::Bool(false))
+            && structured_outputs
         {
             generation_config.insert(
                 "responseJsonSchema".into(),
@@ -1308,7 +1336,7 @@ fn build_request_body_with_warnings_for_namespace(
     warnings.extend(prompt_warnings);
     warnings.extend(thinking_warnings);
     warnings.extend(prepared.warnings);
-    (Value::Object(body), warnings)
+    Ok((Value::Object(body), warnings))
 }
 
 /// Validate prompt constraints and provider options before sending a request.

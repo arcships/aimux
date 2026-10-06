@@ -506,6 +506,20 @@ impl LanguageModel for XaiResponsesModel {
         let response_headers = resp.response_headers;
 
         let mut sse_stream = resp.value;
+        let first_event = match sse_stream.next().await {
+            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+            first => first,
+        };
+        if let Some(Ok(event)) = &first_event
+            && types::event_type(event) == "error"
+        {
+            return Err(super::xai_stream_error(
+                event,
+                &endpoint,
+                body.clone(),
+                response_headers.clone(),
+            ));
+        }
         let stream_error_url = endpoint;
         let stream_request_body = body.clone();
         let stream_response_headers = response_headers.clone();
@@ -534,7 +548,8 @@ impl LanguageModel for XaiResponsesModel {
             // Track ongoing function calls by output_index.
             let mut ongoing_tool_calls: HashMap<u64, (String, String)> = HashMap::new(); // output_index -> (tool_call_id, tool_name)
 
-            while let Some(event) = sse_stream.next().await {
+            let mut event_iter = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
+            while let Some(event) = event_iter.next().await {
                 match event {
                     Ok(parsed) => {
                         if include_raw_chunks {
@@ -751,7 +766,11 @@ impl LanguageModel for XaiResponsesModel {
                                     stream_response_headers.clone(),
                                 ),
                             });
-                            continue;
+                            final_finish_reason = FinishReason {
+                                unified: FinishReasonUnified::Error,
+                                raw: Some("error".to_string()),
+                            };
+                            break;
                         }
 
                         // ── custom_tool_call_input.delta / .done ──

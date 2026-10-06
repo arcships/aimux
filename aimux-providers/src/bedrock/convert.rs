@@ -38,12 +38,21 @@ use serde_json::{Value, json};
 /// messages into a single `assistant` block. Assistant text is trimmed when it
 /// is the last content part of the last message of the last block; empty
 /// assistant text is dropped unless the message also carries reasoning.
-#[must_use]
-pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, Vec<Value>) {
+///
+/// # Errors
+///
+/// Returns an error for prompt content the Converse API cannot express.
+pub fn convert_prompt_to_bedrock(
+    prompt: &LanguageModelPrompt,
+) -> Result<(Vec<Value>, Vec<Value>), aimux_core::AiMuxError> {
     convert_prompt(prompt, false)
 }
 
-fn convert_prompt(prompt: &LanguageModelPrompt, is_mistral: bool) -> (Vec<Value>, Vec<Value>) {
+fn convert_prompt(
+    prompt: &LanguageModelPrompt,
+    is_mistral: bool,
+) -> Result<(Vec<Value>, Vec<Value>), aimux_core::AiMuxError> {
+    validate_prompt(prompt)?;
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Blk {
         System,
@@ -257,7 +266,7 @@ fn convert_prompt(prompt: &LanguageModelPrompt, is_mistral: bool) -> (Vec<Value>
         }
     }
 
-    (system, messages)
+    Ok((system, messages))
 }
 
 fn push_user_text(part: &TextPart, content: &mut Vec<Value>) {
@@ -1508,8 +1517,7 @@ pub fn build_request_body_checked(
             );
         }
     }
-    validate_prompt(&prompt)?;
-    let (system, messages) = convert_prompt(&prompt, model_id.contains("mistral."));
+    let (system, messages) = convert_prompt(&prompt, model_id.contains("mistral."))?;
     let mut body = json!({"messages":messages});
     if !system.is_empty() {
         body["system"] = json!(system);

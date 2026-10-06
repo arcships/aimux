@@ -644,7 +644,7 @@ fn convert_assistant_message(
                     Value::String(text) if text.is_empty() => None,
                     Value::Number(number) if number.as_f64() == Some(0.0) => None,
                     Value::String(text) => Some(text.clone()),
-                    other => Some(other.to_string()),
+                    other => Some(signature_string(other)),
                 });
                 if let Some(signature) = signature {
                     call["extra_content"] = json!({ "google": { "thought_signature": signature } });
@@ -689,6 +689,36 @@ pub(crate) fn parse_finish_reason(raw: &str) -> FinishReason {
     FinishReason {
         unified,
         raw: Some(raw.to_string()),
+    }
+}
+
+// String(value), as used by the compatible package for thought signatures.
+fn signature_string(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Object(_) => "[object Object]".into(),
+        Value::Array(values) => values
+            .iter()
+            .map(|value| {
+                if value.is_null() {
+                    String::new()
+                } else {
+                    signature_string(value)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        Value::Number(value) => value.as_f64().map_or_else(
+            || value.to_string(),
+            |value| {
+                if value == 0.0 {
+                    "0".into()
+                } else {
+                    value.to_string()
+                }
+            },
+        ),
+        _ => value.to_string(),
     }
 }
 

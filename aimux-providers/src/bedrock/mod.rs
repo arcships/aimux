@@ -40,13 +40,15 @@ mod types;
 use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
+use futures::future::BoxFuture;
 use serde_json::Value;
 
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
-use aimux_core::provider::Provider;
+use aimux_core::model_catalogue::RuntimeModel;
+use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::reranking_model::RerankingModel;
 use aimux_provider_utils::{
     AwsCredentials, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
@@ -593,6 +595,10 @@ impl AmazonBedrockProvider {
 }
 
 impl Provider for AmazonBedrockProvider {
+    fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
+        Some(self)
+    }
+
     fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
         Ok(self.call(model_id))
     }
@@ -610,5 +616,67 @@ impl Provider for AmazonBedrockProvider {
         model_id: &str,
     ) -> Option<Result<Arc<dyn RerankingModel>, AiMuxError>> {
         Some(Ok(Arc::new(self.reranking(model_id))))
+    }
+}
+
+impl ProviderDiscovery for AmazonBedrockProvider {
+    /// `GET /foundation-models` (the Bedrock `ListFoundationModels` API): one
+    /// exchange, no retry, authenticated like any other request.
+    fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
+        let auth = self.auth.clone();
+        let base_url = self.base_url.clone();
+        let config = self.runtime_config();
+        Box::pin(async move {
+            // `ListFoundationModels` is on the control plane, whose host is
+            // `bedrock.{region}.amazonaws.com` (the runtime is
+            // `bedrock-runtime.{region}.amazonaws.com`); an explicit base URL
+            // replaces it.
+            let url = match &base_url {
+                Some(base) => format!("{base}/foundation-models"),
+                None => format!(
+                    "https://bedrock.{}.amazonaws.com/foundation-models",
+                    auth.region()?
+                ),
+            };
+            let exchange = config.exchange(None).await?;
+            let mut headers = exchange.headers();
+            headers.push(("Accept".to_string(), "application/json".to_string()));
+            let mut request = exchange.with_transport(aimux_provider_utils::HttpRequest {
+                url,
+                headers,
+                ..Default::default()
+            });
+            request.credentialed_origin = Some(request.url.clone());
+            let resp = aimux_provider_utils::get_from_api(
+                request,
+                aimux_provider_utils::create_json_response_handler(),
+                bedrock_failed_response_handler(),
+            )
+            .await?;
+
+            // AWS response: { modelSummaries: [{ modelId, modelName, ... }] }
+            #[derive(serde::Deserialize)]
+            struct Resp {
+                #[serde(default, rename = "modelSummaries")]
+                summaries: Vec<Entry>,
+            }
+            #[derive(serde::Deserialize)]
+            struct Entry {
+                #[serde(rename = "modelId")]
+                id: String,
+                #[serde(default, rename = "modelName")]
+                name: Option<String>,
+            }
+            let parsed: Resp = resp.value;
+            Ok(parsed
+                .summaries
+                .into_iter()
+                .map(|entry| RuntimeModel {
+                    id: entry.id,
+                    owned_by: entry.name.or(Some("amazon".to_string())),
+                    created: None,
+                })
+                .collect())
+        })
     }
 }

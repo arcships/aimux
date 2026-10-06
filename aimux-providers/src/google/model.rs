@@ -85,7 +85,7 @@ impl LanguageModel for GoogleModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         validate_call_options(options)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let (body, mut tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
+        let (body, mut tool_warnings) = build_request_body_with_warnings(&self.model_id, options)?;
         for warning in &mut tool_warnings {
             if let aimux_core::types::Warning::Other { message } = warning {
                 *message = message.replace("google.generative-ai", &self.config.provider);
@@ -170,7 +170,7 @@ impl LanguageModel for GoogleModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         validate_call_options(options)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let (body, mut tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
+        let (body, mut tool_warnings) = build_request_body_with_warnings(&self.model_id, options)?;
         for warning in &mut tool_warnings {
             if let aimux_core::types::Warning::Other { message } = warning {
                 *message = message.replace("google.generative-ai", &self.config.provider);

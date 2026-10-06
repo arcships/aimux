@@ -88,7 +88,7 @@ impl LanguageModel for VertexModel {
         let options = vertex_call_options(options)?;
         let options = &options;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let (body, warnings) = vertex_request_body(&self.model_id, options, false);
+        let (body, warnings) = vertex_request_body(&self.model_id, options, false)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
         let resp = aimux_provider_utils::post_json_to_api(
@@ -170,7 +170,7 @@ impl LanguageModel for VertexModel {
         let options = vertex_call_options(options)?;
         let options = &options;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let (body, warnings) = vertex_request_body(&self.model_id, options, true);
+        let (body, warnings) = vertex_request_body(&self.model_id, options, true)?;
         let include_raw_chunks = options.include_raw_chunks == Some(true);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
@@ -1001,8 +1001,8 @@ fn vertex_request_body(
     model_id: &str,
     options: &CallOptions,
     streaming: bool,
-) -> (Value, Vec<Warning>) {
-    let mut body = build_vertex_request_body(model_id, options);
+) -> Result<(Value, Vec<Warning>), AiMuxError> {
+    let mut body = build_vertex_request_body(model_id, options)?;
     let mut warnings =
         prepare_all_tools(&options.tools, options.tool_choice.as_ref(), model_id).warnings;
     body.as_object_mut().unwrap().remove("serviceTier");
@@ -1044,5 +1044,5 @@ fn vertex_request_body(
             .or_insert_with(|| json!({}));
         function_config["streamFunctionCallArguments"] = json!(true);
     }
-    (body, warnings)
+    Ok((body, warnings))
 }
