@@ -750,7 +750,6 @@ module.exports.provider = nativeBinding.provider
 module.exports.recordingFlush = nativeBinding.recordingFlush
 module.exports.recordingStop = nativeBinding.recordingStop
 module.exports.recordingTryFlush = nativeBinding.recordingTryFlush
-module.exports.registerProviders = nativeBinding.registerProviders
 module.exports.router = nativeBinding.router
 module.exports.sessionCalls = nativeBinding.sessionCalls
 module.exports.startTranscriptionSession = nativeBinding.startTranscriptionSession

@@ -30,7 +30,7 @@
 //!
 //! ## Coverage
 //!
-//! All 123 `#[unsafe(no_mangle)]` exports in `src/lib.rs` are exercised (the
+//! All 122 `#[unsafe(no_mangle)]` exports in `src/lib.rs` are exercised (the
 //! constructor and utility classes in full; the session class one
 //! representative call per export). [`header_and_exports_agree`] pins the
 //! count against the two headers.
@@ -69,8 +69,8 @@ use aimux_ffi::{
     aimux_openai_transcription_new, aimux_openai_transcription_new_with_base,
     aimux_provider_handle_new, aimux_provider_list_models, aimux_provider_model,
     aimux_provider_new, aimux_recording_flush, aimux_recording_stop, aimux_recording_try_flush,
-    aimux_register_providers, aimux_rerank, aimux_router_new, aimux_search, aimux_session_calls,
-    aimux_session_infer_init, aimux_session_store_init, aimux_speech_generate, aimux_stream_text,
+    aimux_rerank, aimux_router_new, aimux_search, aimux_session_calls, aimux_session_infer_init,
+    aimux_session_store_init, aimux_speech_generate, aimux_stream_text,
     aimux_stream_text_as_openai, aimux_stream_text_as_openai_with_abort,
     aimux_stream_text_with_abort, aimux_tavily_search_new, aimux_tavily_search_new_with_base,
     aimux_tool_call_repair_context, aimux_trace_aggregate, aimux_trace_clear,
@@ -157,7 +157,7 @@ fn header_and_exports_agree() {
     exports.sort();
     assert_eq!(
         exports.len(),
-        123,
+        122,
         "export count changed; update the headers"
     );
 
@@ -951,15 +951,15 @@ fn utility_exports_return_clean_values() {
     // aimux_drop_handle(0) is documented as a safe no-op.
     aimux_drop_handle(0);
 
-    // register_providers: valid overlay then a malformed config.
-    let valid = c(
-        r#"{"providers":[{"name":"ffi-smoke-provider","base_url":"http://127.0.0.1:1/v1","protocol":"openai_compat"}]}"#,
+    // A malformed provider config.
+    let mut unused = 0;
+    let e = aimux_provider_new(
+        c("groq").as_ptr(),
+        ptr::null(),
+        c("m").as_ptr(),
+        c("{not json").as_ptr(),
+        &mut unused,
     );
-    ok(
-        aimux_register_providers(valid.as_ptr()),
-        "register_providers (valid)",
-    );
-    let e = aimux_register_providers(c("{not json").as_ptr());
     // Malformed JSON text is this C layer's finding. AiMuxError-only payload
     // getters answer their sentinels for its unified FFI code.
     assert!(!e.is_null());

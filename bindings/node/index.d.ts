@@ -519,17 +519,6 @@ export declare function recordingStop(): void
  */
 export declare function recordingTryFlush(): AimuxResult<undefined>
 
-/**
- * Register external OpenAI-compatible providers from a JSON config string
- * (RFC-0020). Entries override same-named built-ins or add new ones.
- *
- * `configJson` shape: `{ "providers": [ { "name": "...", "base_url": "...", ... } ] }`.
- * Malformed JSON text throws a plain `Error` (napi `InvalidArg`); a
- * well-formed document the registry rejects (bad base_url scheme, empty
- * name, unsupported protocol, wrong shape) throws `InvalidArgumentError`.
- */
-export declare function registerProviders(configJson: string): AimuxResult<undefined>
-
 export declare function router(models: Array<Model>, configJson?: string | undefined | null): AimuxResult<Model>
 
 /**
