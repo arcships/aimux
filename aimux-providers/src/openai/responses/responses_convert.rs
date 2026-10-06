@@ -148,26 +148,13 @@ pub fn build_responses_generate_result(
                                 });
                             }
                         }
-                        // Annotations (url_citation → Source).
                         if let Some(annotations) = cp.get("annotations").and_then(|v| v.as_array())
                         {
-                            for (i, ann) in annotations.iter().enumerate() {
-                                if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation")
-                                {
-                                    content.push(GenerateContent::Source(Source::Url {
-                                        id: format!("annotation-{i}"),
-                                        url: ann
-                                            .get("url")
-                                            .and_then(|v| v.as_str())
-                                            .unwrap_or_default()
-                                            .to_string(),
-                                        title: ann
-                                            .get("title")
-                                            .and_then(|v| v.as_str())
-                                            .map(std::string::ToString::to_string),
-                                        provider_metadata: None,
-                                    }));
-                                }
+                            for ann in annotations {
+                                content.push(GenerateContent::Source(annotation_source(
+                                    ann,
+                                    &provider_key,
+                                )?));
                             }
                         }
                     }
@@ -398,7 +385,74 @@ fn reasoning_stream_metadata(
     json!({ (provider_key): inner })
 }
 
-/// Generate a unique source ID for streaming annotation sources.
+fn annotation_source(annotation: &Value, provider_key: &str) -> Result<Source, AiMuxError> {
+    let invalid = |field: &str| {
+        AiMuxError::InvalidResponseData(format!("Invalid Responses annotation field: {field}"))
+    };
+    let string = |field| {
+        annotation
+            .get(field)
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid(field))
+    };
+    let number = |field| {
+        annotation
+            .get(field)
+            .filter(|value| value.is_number())
+            .cloned()
+            .ok_or_else(|| invalid(field))
+    };
+    let annotation_type = string("type")?;
+    if annotation_type == "url_citation" {
+        number("start_index")?;
+        number("end_index")?;
+        return Ok(Source::Url {
+            id: generate_source_id(),
+            url: string("url")?.to_string(),
+            title: Some(string("title")?.to_string()),
+            provider_metadata: None,
+        });
+    }
+    let file_id = string("file_id")?;
+    let (media_type, filename, metadata) = match annotation_type {
+        "file_citation" | "file_path" => (
+            if annotation_type == "file_path" {
+                "application/octet-stream"
+            } else {
+                "text/plain"
+            },
+            if annotation_type == "file_path" {
+                file_id
+            } else {
+                string("filename")?
+            },
+            json!({ "type": annotation_type, "fileId": file_id, "index": number("index")? }),
+        ),
+        "container_file_citation" => {
+            number("start_index")?;
+            number("end_index")?;
+            (
+                "text/plain",
+                string("filename")?,
+                json!({
+                    "type": annotation_type,
+                    "fileId": file_id,
+                    "containerId": string("container_id")?,
+                }),
+            )
+        }
+        _ => return Err(invalid("type")),
+    };
+    Ok(Source::Document {
+        id: generate_source_id(),
+        media_type: media_type.to_string(),
+        title: filename.to_string(),
+        filename: Some(filename.to_string()),
+        provider_metadata: Some(json!({ (provider_key): metadata })),
+    })
+}
+
+/// Generate a unique source ID for annotation sources.
 ///
 /// Uses a process-wide atomic counter — consistent with the xAI Responses
 /// provider (`aimux-providers/src/xai/responses/mod.rs`). Upstream TS uses
@@ -945,23 +999,15 @@ where
 
                         // ── response.output_text.annotation.added → Source ─────────
                         "response.output_text.annotation.added" => {
-                            if let Some(ann) = parsed.get("annotation")
-                                && ann.get("type").and_then(|v| v.as_str())
-                                    == Some("url_citation")
-                            {
-                                yield Ok(StreamPart::Source(Source::Url {
-                                    id: generate_source_id(),
-                                    url: ann
-                                        .get("url")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or_default()
-                                        .to_string(),
-                                    title: ann
-                                        .get("title")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string),
-                                    provider_metadata: None,
-                                }));
+                            match annotation_source(
+                                parsed.get("annotation").unwrap_or(&Value::Null),
+                                &provider_key,
+                            ) {
+                                Ok(source) => yield Ok(StreamPart::Source(source)),
+                                Err(error) => {
+                                    stream_errored = true;
+                                    yield Ok(StreamPart::Error { error });
+                                }
                             }
                         }
 

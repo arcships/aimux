@@ -151,6 +151,7 @@ data class GenerateResponse(
     val timestamp: String? = null,
     @SerialName("model_id") val modelId: String? = null,
     val body: JsonElement? = null,
+    val headers: Map<String, String>? = null,
 )
 
 /**
@@ -905,7 +906,7 @@ sealed interface GenerateContent {
 
     @Serializable
     data class ReasoningFile(
-        val data: FileData,
+        val data: GeneratedFileData,
         @SerialName("media_type") val mediaType: String,
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     ) : GenerateContent

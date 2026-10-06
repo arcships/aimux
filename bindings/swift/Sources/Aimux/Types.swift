@@ -1008,11 +1008,12 @@ public struct GenerateResponseMetadata: Codable, Equatable {
     public var timestamp: String?
     public var modelId: String?
     public var body: JSONValue?
+    public var headers: [String: String]?
     enum CodingKeys: String, CodingKey {
-        case id, timestamp, body, modelId = "model_id"
+        case id, timestamp, body, headers, modelId = "model_id"
     }
-    public init(id: String? = nil, timestamp: String? = nil, modelId: String? = nil, body: JSONValue? = nil) {
-        self.id = id; self.timestamp = timestamp; self.modelId = modelId; self.body = body
+    public init(id: String? = nil, timestamp: String? = nil, modelId: String? = nil, body: JSONValue? = nil, headers: [String: String]? = nil) {
+        self.id = id; self.timestamp = timestamp; self.modelId = modelId; self.body = body; self.headers = headers
     }
 }
 
