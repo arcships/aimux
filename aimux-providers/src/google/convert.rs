@@ -1100,7 +1100,12 @@ fn build_request_body_with_warnings_for_namespace(
         && let ResponseFormat::Json { schema, .. } = rf
     {
         generation_config.insert("responseMimeType".to_string(), json!("application/json"));
-        if let Some(s) = schema {
+        if let Some(s) = schema
+            && read_provider_options(options.provider_options.as_ref(), namespace)
+                .and_then(|options| options.get("structuredOutputs"))
+                .and_then(Value::as_bool)
+                .unwrap_or(true)
+        {
             let openapi = convert_json_schema_to_openapi_schema(s, true);
             if !openapi.is_null() {
                 generation_config.insert("responseSchema".to_string(), openapi);

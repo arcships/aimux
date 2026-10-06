@@ -432,9 +432,9 @@ pub fn resolve_cohere_thinking(
         let mut obj = json!({ "type": t_type });
         if let Some(budget) = thinking
             .get("tokenBudget")
-            .and_then(serde_json::Value::as_u64)
+            .filter(|value| value.is_number())
         {
-            obj["token_budget"] = json!(budget);
+            obj["token_budget"] = budget.clone();
         }
         return Some(obj);
     }

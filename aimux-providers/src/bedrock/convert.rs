@@ -529,7 +529,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
     let bedrock_opts = options
         .provider_options
         .as_ref()
-        .and_then(|po| po.get("bedrock"));
+        .and_then(|po| po.get("amazonBedrock").or_else(|| po.get("bedrock")));
     let reasoning_config = bedrock_opts.and_then(|bo| bo.get("reasoningConfig"));
     let user_amrf = bedrock_opts.and_then(|bo| bo.get("additionalModelRequestFields"));
 
