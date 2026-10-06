@@ -277,8 +277,13 @@ pub enum AiMuxError {
 
     /// Registry-level "provider name does not resolve" (the AI SDK's
     /// `NoSuchProviderError`).
-    #[error("No such provider: {provider_id}")]
-    NoSuchProvider { provider_id: String },
+    #[error("No such provider: {provider_id} (available providers: {})", .available_providers.join(","))]
+    NoSuchProvider {
+        provider_id: String,
+        model_id: String,
+        model_type: String,
+        available_providers: Vec<String>,
+    },
 
     #[error("request timed out: {0}")]
     Timeout(String),

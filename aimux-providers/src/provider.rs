@@ -86,6 +86,8 @@ impl ProviderProfile {
             supports_structured_outputs: true,
             supports_multi_part_tool_content: false,
             dialect,
+            supported_urls: None,
+            convert_usage: None,
         })
     }
 }

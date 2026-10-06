@@ -55,9 +55,6 @@ use crate::shared::{Credential, provider_headers};
 
 use config::OpenAIModelConfig;
 
-/// The chat-completions model of the native package (`provider.chat(id)`).
-pub type OpenAIChatModel = OpenAIModel;
-
 pub(crate) fn openai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -185,20 +182,24 @@ pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider,
     Ok(OpenAIProvider {
         name,
         base_url,
-        headers: provider_headers(
-            Credential::explicit_or_env(
-                settings.api_key.map(Resolvable::Value),
-                API_KEY_ENV_VAR,
-                "OpenAI",
+        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+            provider_headers(
+                Credential::explicit_or_env(
+                    settings.api_key.map(Resolvable::Value),
+                    API_KEY_ENV_VAR,
+                    "OpenAI",
+                ),
+                [
+                    ("OpenAI-Organization", settings.organization),
+                    ("OpenAI-Project", settings.project),
+                ]
+                .into_iter()
+                .filter_map(|(name, value)| value.map(|value| (name.to_string(), value)))
+                .collect(),
+                settings.headers,
             ),
-            [
-                ("OpenAI-Organization", settings.organization),
-                ("OpenAI-Project", settings.project),
-            ]
-            .into_iter()
-            .filter_map(|(name, value)| value.map(|value| (name.to_string(), value)))
-            .collect(),
-            settings.headers,
+            "openai",
+            "4.0.80",
         ),
         fetch: settings.fetch,
         #[cfg(feature = "realtime")]
@@ -239,7 +240,7 @@ impl OpenAIProvider {
 
     /// A chat-completions model; `provider()` is `"{name}.chat"`.
     #[must_use]
-    pub fn chat(&self, model_id: &str) -> OpenAIChatModel {
+    pub fn chat(&self, model_id: &str) -> OpenAIModel {
         OpenAIModel::from_config(model_id.to_string(), self.model_config("chat"))
     }
 
@@ -255,7 +256,9 @@ impl OpenAIProvider {
     /// A Responses API model; `provider()` is `"{name}.responses"`.
     #[must_use]
     pub fn responses(&self, model_id: &str) -> OpenAIResponsesModel {
-        OpenAIResponsesModel::from_config(model_id.to_string(), self.model_config("responses"))
+        let mut config = self.model_config("responses");
+        config.responses.file_id_prefixes = vec!["file-"];
+        OpenAIResponsesModel::from_config(model_id.to_string(), config)
     }
 
     /// An embedding model; `provider()` is `"{name}.embedding"`.

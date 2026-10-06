@@ -295,8 +295,16 @@ fn aimux_error_object<'env>(env: &'env Env, error: &AiMuxError) -> NapiResult<Ob
                 obj.set("modelType", model_type.as_str())?;
             }
         }
-        AiMuxError::NoSuchProvider { provider_id } => {
+        AiMuxError::NoSuchProvider {
+            provider_id,
+            model_id,
+            model_type,
+            available_providers,
+        } => {
             obj.set("providerId", provider_id.as_str())?;
+            obj.set("modelId", model_id.as_str())?;
+            obj.set("modelType", model_type.as_str())?;
+            obj.set("availableProviders", available_providers.clone())?;
         }
         AiMuxError::LoadApiKey {
             env_var,

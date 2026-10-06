@@ -33,7 +33,6 @@ use aimux_core::openai_output::{
     ChatCompletionChunk, OpenAiStreamOptions, encode_chunk_sse, to_chat_completion,
     to_chat_completion_stream,
 };
-use aimux_provider_utils::Resolvable;
 use aimux_providers::deepseek::{DeepSeekProviderSettings, create_deepseek};
 use aimux_providers::openai::{OpenAIModel, OpenAIProviderSettings, create_openai};
 
@@ -848,7 +847,7 @@ async fn cross_protocol_deepseek_with_reasoning() {
         .await;
 
     let provider = create_deepseek(DeepSeekProviderSettings {
-        api_key: Some(Resolvable::Value("test-key".to_string())),
+        api_key: Some("test-key".to_string()),
         base_url: Some(server.uri()),
         ..Default::default()
     })

@@ -474,7 +474,7 @@ pub fn cohere_embedding(
 ) -> PyResult<EmbeddingModel> {
     use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
     let provider = create_cohere(CohereProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        api_key: Some(api_key.to_string()),
         base_url: base_url.map(str::to_string),
         ..Default::default()
     })
@@ -495,7 +495,7 @@ pub fn cohere_reranking(
 ) -> PyResult<RerankingModel> {
     use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
     let provider = create_cohere(CohereProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        api_key: Some(api_key.to_string()),
         base_url: base_url.map(str::to_string),
         ..Default::default()
     })

@@ -35,7 +35,6 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
-use aimux_provider_utils::Resolvable;
 use aimux_providers::groq::{GroqChatLanguageModel, GroqProviderSettings, create_groq, groq};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -54,7 +53,7 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 fn model_at(server: &MockServer, model_id: &str) -> GroqChatLanguageModel {
     create_groq(GroqProviderSettings {
         base_url: Some(server.uri()),
-        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        api_key: Some("test-api-key".to_string()),
         ..Default::default()
     })
     .expect("groq provider should build")
@@ -2137,7 +2136,7 @@ mod package {
     fn groq_at(server: &MockServer) -> aimux_providers::groq::GroqProvider {
         create_groq(GroqProviderSettings {
             base_url: Some(server.uri()),
-            api_key: Some(Resolvable::Value("test-api-key".to_string())),
+            api_key: Some("test-api-key".to_string()),
             ..Default::default()
         })
         .unwrap()
@@ -2164,16 +2163,6 @@ mod package {
                 .language_model("m")
                 .unwrap();
         assert_eq!(model.provider(), "groq.chat");
-    }
-
-    #[test]
-    fn a_custom_name_changes_identity_only() {
-        let provider = create_groq(GroqProviderSettings {
-            name: Some("groq_eu".to_string()),
-            ..Default::default()
-        })
-        .unwrap();
-        assert_eq!(provider.chat("m").provider(), "groq_eu.chat");
     }
 
     #[test]
@@ -2333,7 +2322,7 @@ mod package {
         assert!(n > 0, "no groq cassettes");
         let model = create_groq(GroqProviderSettings {
             base_url: Some(format!("{}/openai/v1", server.uri())),
-            api_key: Some(Resolvable::Value("test-key".to_string())),
+            api_key: Some("test-key".to_string()),
             ..Default::default()
         })
         .unwrap()

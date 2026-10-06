@@ -778,7 +778,7 @@ pub extern "C" fn aimux_error_model_type(err: *const aimux_error_t) -> *mut c_ch
 pub extern "C" fn aimux_error_provider_id(err: *const aimux_error_t) -> *mut c_char {
     opt_cstring(
         map_aimux_error(err, |e| match e {
-            AiMuxError::NoSuchProvider { provider_id } => Some(provider_id.clone()),
+            AiMuxError::NoSuchProvider { provider_id, .. } => Some(provider_id.clone()),
             _ => None,
         })
         .flatten(),
@@ -1097,10 +1097,9 @@ pub extern "C" fn aimux_openai_new(
 ) -> *mut aimux_error_t {
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
-        // The bindings' `openai` constructor is the Chat Completions model.
-        Ok(intern_model(Arc::new(
-            openai_provider(api_key, None)?.chat(&model_id),
-        )))
+        Ok(intern_model(
+            openai_provider(api_key, None)?.language_model(&model_id)?,
+        ))
     })
 }
 
@@ -1117,7 +1116,7 @@ pub extern "C" fn aimux_openai_new_with_base(
     with_out_handle(out_handle, || {
         let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
         let provider = openai_provider(api_key, parse_base_url(base_url)?)?;
-        Ok(intern_model(Arc::new(provider.chat(&model_id))))
+        Ok(intern_model(provider.language_model(&model_id)?))
     })
 }
 
@@ -1324,7 +1323,7 @@ fn cohere_provider(
     base_url: Option<String>,
 ) -> Result<aimux_providers::cohere::CohereProvider, AiMuxError> {
     create_cohere(CohereProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        api_key: Some(api_key),
         base_url,
         ..Default::default()
     })
@@ -1337,7 +1336,7 @@ fn mistral_provider(
     base_url: Option<String>,
 ) -> Result<aimux_providers::mistral::MistralProvider, AiMuxError> {
     create_mistral(MistralProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        api_key: Some(api_key),
         base_url,
         ..Default::default()
     })
@@ -1350,7 +1349,7 @@ fn xai_provider(
     base_url: Option<String>,
 ) -> Result<aimux_providers::xai::XAIProvider, AiMuxError> {
     create_xai(XAIProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+        api_key: Some(api_key),
         base_url,
         ..Default::default()
     })
@@ -3829,6 +3828,9 @@ mod tests {
 
         let owner = boxed(AiMuxError::NoSuchProvider {
             provider_id: "p".into(),
+            model_id: String::new(),
+            model_type: String::new(),
+            available_providers: Vec::new(),
         });
         let h = owner;
         assert_eq!(aimux_error_code(h), AIMUX_E_NO_SUCH_PROVIDER);
@@ -4093,6 +4095,9 @@ mod tests {
             (
                 AiMuxError::NoSuchProvider {
                     provider_id: s("x"),
+                    model_id: String::new(),
+                    model_type: String::new(),
+                    available_providers: Vec::new(),
                 },
                 AIMUX_E_NO_SUCH_PROVIDER,
             ),

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use futures::future::BoxFuture;
 
 use crate::error::AiMuxError;
 use crate::language_model::{LanguageModel, SupportedUrls};
@@ -16,7 +17,7 @@ pub enum LanguageModelOperation {
 }
 
 /// Optional hooks for transforming parameters and wrapping either operation.
-/// The supplied model exposes both operations using the transformed parameters.
+/// The supplied callbacks invoke either operation using the transformed parameters.
 #[async_trait]
 pub trait LanguageModelMiddleware: Send + Sync {
     fn override_provider(&self, _model: &dyn LanguageModel) -> Option<String> {
@@ -42,18 +43,24 @@ pub trait LanguageModelMiddleware: Send + Sync {
 
     async fn wrap_generate(
         &self,
-        params: &CallOptions,
-        model: &dyn LanguageModel,
+        _params: &CallOptions,
+        _model: &dyn LanguageModel,
+        do_generate: &(dyn Fn() -> BoxFuture<'_, Result<GenerateResult, AiMuxError>> + Send + Sync),
+        _do_stream: &(dyn Fn() -> BoxFuture<'_, Result<StreamResult, AiMuxError>> + Send + Sync),
     ) -> Result<GenerateResult, AiMuxError> {
-        model.do_generate(params).await
+        do_generate().await
     }
 
     async fn wrap_stream(
         &self,
-        params: &CallOptions,
-        model: &dyn LanguageModel,
+        _params: &CallOptions,
+        _model: &dyn LanguageModel,
+        _do_generate: &(
+             dyn Fn() -> BoxFuture<'_, Result<GenerateResult, AiMuxError>> + Send + Sync
+         ),
+        do_stream: &(dyn Fn() -> BoxFuture<'_, Result<StreamResult, AiMuxError>> + Send + Sync),
     ) -> Result<StreamResult, AiMuxError> {
-        model.do_stream(params).await
+        do_stream().await
     }
 }
 
@@ -70,13 +77,17 @@ struct WrappedLanguageModel {
 pub fn wrap_language_model(
     model: Arc<dyn LanguageModel>,
     middleware: &[Arc<dyn LanguageModelMiddleware>],
+    model_id: Option<&str>,
+    provider_id: Option<&str>,
 ) -> Arc<dyn LanguageModel> {
     middleware.iter().rev().fold(model, |model, middleware| {
-        let provider = middleware
-            .override_provider(model.as_ref())
+        let provider = provider_id
+            .map(str::to_string)
+            .or_else(|| middleware.override_provider(model.as_ref()))
             .unwrap_or_else(|| model.provider().to_string());
-        let model_id = middleware
-            .override_model_id(model.as_ref())
+        let model_id = model_id
+            .map(str::to_string)
+            .or_else(|| middleware.override_model_id(model.as_ref()))
             .unwrap_or_else(|| model.model_id().to_string());
         let supported_urls = middleware
             .override_supported_urls(model.as_ref())
@@ -114,8 +125,10 @@ impl LanguageModel for WrappedLanguageModel {
                 self.model.as_ref(),
             )
             .await?;
+        let do_generate = || self.model.do_generate(&params);
+        let do_stream = || self.model.do_stream(&params);
         self.middleware
-            .wrap_generate(&params, self.model.as_ref())
+            .wrap_generate(&params, self.model.as_ref(), &do_generate, &do_stream)
             .await
     }
 
@@ -128,8 +141,10 @@ impl LanguageModel for WrappedLanguageModel {
                 self.model.as_ref(),
             )
             .await?;
+        let do_generate = || self.model.do_generate(&params);
+        let do_stream = || self.model.do_stream(&params);
         self.middleware
-            .wrap_stream(&params, self.model.as_ref())
+            .wrap_stream(&params, self.model.as_ref(), &do_generate, &do_stream)
             .await
     }
 }

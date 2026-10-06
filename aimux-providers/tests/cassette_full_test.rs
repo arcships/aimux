@@ -17,7 +17,6 @@ use wiremock::MockServer;
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::stream_part::StreamPart;
-use aimux_provider_utils::Resolvable;
 use aimux_providers::deepseek::{DeepSeekProviderSettings, create_deepseek};
 use aimux_providers::groq::{GroqProviderSettings, create_groq};
 use aimux_providers::openai_compatible::{
@@ -34,7 +33,7 @@ enum Kind {
 }
 
 fn chat_model(kind: Kind, base_url: String, model_id: &str) -> std::sync::Arc<dyn LanguageModel> {
-    let api_key = Some(Resolvable::Value("test-key".to_string()));
+    let api_key = Some("test-key".to_string());
     match kind {
         Kind::Generic => create_openai_compatible(OpenAICompatibleProviderSettings {
             name: "compat".to_string(),
@@ -458,7 +457,7 @@ async fn replay_cohere() {
     assert!(n > 0);
 
     let provider = create_cohere(CohereProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(format!("{}/v2", server.uri())),
         ..Default::default()
     })

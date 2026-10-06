@@ -8,21 +8,51 @@ use std::collections::HashMap;
 
 use crate::resolvable::Resolvable;
 
-/// The SDK version (injected at build time or hardcoded for now).
-const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
-
 /// A header layer: `None` removes the header from earlier layers.
 pub type HeaderMapOpt = HashMap<String, Option<String>>;
 
 /// Headers supplied directly or computed per request (token refresh, …).
 pub type HeadersFn = Resolvable<HeaderMapOpt>;
 
-/// Add a `User-Agent` suffix to the headers.
-///
-/// Pattern: `ai-sdk/<provider-name>/<version>`
-pub fn with_user_agent_suffix(headers: &mut HashMap<String, String>, provider_name: &str) {
-    let ua = format!("ai-sdk/{provider_name}/{SDK_VERSION}");
-    headers.insert("User-Agent".to_string(), ua);
+/// Append a suffix to the case-insensitive `user-agent` header.
+pub fn with_user_agent_suffix(headers: &mut HashMap<String, String>, suffix: &str) {
+    let layer = headers
+        .drain()
+        .map(|(name, value)| (name, Some(value)))
+        .collect();
+    *headers = normalize_headers(layer).into_iter().collect();
+    let value = user_agent_value(headers.get("user-agent").map_or("", String::as_str), suffix);
+    headers.insert("user-agent".to_string(), value);
+}
+
+pub(crate) fn user_agent_value(current: &str, suffix: &str) -> String {
+    [current, suffix]
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Resolve provider headers and append the pinned package's suffix per request.
+#[must_use]
+pub fn with_user_agent_suffix_fn(
+    headers: HeadersFn,
+    package: &'static str,
+    version: &'static str,
+) -> HeadersFn {
+    Resolvable::from_async_fn(move || {
+        let headers = headers.clone();
+        async move {
+            let mut headers = normalize_headers(headers.resolve().await?)
+                .into_iter()
+                .collect();
+            with_user_agent_suffix(&mut headers, &format!("ai-sdk-{package}/{version}"));
+            Ok(headers
+                .into_iter()
+                .map(|(name, value)| (name, Some(value)))
+                .collect())
+        }
+    })
 }
 
 /// Merge header layers, earliest first. Names are lowercased; a later layer

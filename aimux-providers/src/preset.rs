@@ -310,6 +310,11 @@ pub fn create(
 ) -> Result<OpenAICompatibleProvider, AiMuxError> {
     let entry = lookup(name).ok_or_else(|| AiMuxError::NoSuchProvider {
         provider_id: name.to_string(),
+        model_id: name.to_string(),
+        model_type: String::new(),
+        available_providers: entries()
+            .map(|entry| entry.descriptor.name.to_string())
+            .collect(),
     })?;
     assemble(entry.descriptor, settings)
 }
@@ -378,6 +383,8 @@ fn assemble(
         supports_structured_outputs: true,
         supports_multi_part_tool_content: false,
         dialect,
+        supported_urls: None,
+        convert_usage: None,
     };
 
     OpenAICompatibleProvider::assemble(Assembly {

@@ -75,11 +75,7 @@ impl GoogleImageModel {
         if let Some(max) = self.settings.max_images_per_call {
             return max;
         }
-        if is_gemini_model(&self.model_id) {
-            10
-        } else {
-            4
-        }
+        1
     }
 
     // ── Imagen path ─────────────────────────────────────────────────────────

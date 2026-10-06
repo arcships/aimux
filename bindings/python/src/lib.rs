@@ -445,10 +445,13 @@ pub(crate) fn openai_provider(
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn openai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
+    use aimux_core::provider::Provider;
+
     let provider = openai_provider(api_key, base_url)?;
     Ok(Model {
-        // This constructor is the Chat Completions model.
-        inner: Arc::new(provider.chat(model_id)),
+        inner: provider
+            .language_model(model_id)
+            .map_err(|e| to_py_err(&e))?,
         trace_store: None,
     })
 }
@@ -527,7 +530,7 @@ fn cohere(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
     use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
 
     let provider = create_cohere(CohereProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        api_key: Some(api_key.to_string()),
         base_url: base_url.map(str::to_string),
         ..Default::default()
     })
@@ -549,7 +552,7 @@ fn mistral(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mo
     use aimux_providers::mistral::{MistralProviderSettings, create_mistral};
 
     let provider = create_mistral(MistralProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        api_key: Some(api_key.to_string()),
         base_url: base_url.map(str::to_string),
         ..Default::default()
     })
@@ -571,7 +574,7 @@ fn xai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model>
     use aimux_providers::xai::{XAIProviderSettings, create_xai};
 
     let provider = create_xai(XAIProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        api_key: Some(api_key.to_string()),
         base_url: base_url.map(str::to_string),
         ..Default::default()
     })

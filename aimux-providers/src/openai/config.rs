@@ -16,8 +16,8 @@ use serde_json::Value;
 use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
 use aimux_provider_utils::{
-    ExchangeContext, FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, combine_headers,
-    normalize_headers,
+    ExchangeContext, FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, Resolvable,
+    combine_headers, normalize_headers,
 };
 
 use super::responses::ResponsesProfile;
@@ -40,6 +40,7 @@ pub(crate) struct OpenAIModelConfig {
     /// Provider headers (credential, organization, project, user headers),
     /// resolved on every request.
     pub(crate) headers: HeadersFn,
+    pub(crate) token_provider: Option<Resolvable<String>>,
     /// Transport; `None` uses the process default, resolved per request.
     pub(crate) fetch: Option<FetchFunction>,
     /// URLs the model fetches itself. Empty: the caller downloads them.
@@ -64,6 +65,7 @@ impl OpenAIModelConfig {
             provider,
             url: Arc::new(move |path| Ok(format!("{base_url}{path}"))),
             headers,
+            token_provider: None,
             fetch,
             supported_urls: SupportedUrls::default(),
             transform_request_body,
@@ -121,7 +123,18 @@ impl OpenAIModelConfig {
                     .collect()
             })
             .unwrap_or_default();
-        Ok(normalize_headers(combine_headers(&[&provider, &call])))
+        let mut headers = combine_headers(&[&provider, &call]);
+        if let Some(token) = &self.token_provider
+            && !headers
+                .iter()
+                .any(|(name, value)| name.eq_ignore_ascii_case("authorization") && value.is_some())
+        {
+            headers.insert(
+                "authorization".to_string(),
+                Some(format!("Bearer {}", token.resolve().await?)),
+            );
+        }
+        Ok(normalize_headers(headers))
     }
 
     /// An exchange that inherits the operation's cancellation and recording

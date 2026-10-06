@@ -1003,7 +1003,7 @@ async fn e2e_mistral_generate_text() {
         .await;
 
     let provider = create_mistral(MistralProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(server.uri()),
         ..Default::default()
     })
@@ -1050,7 +1050,7 @@ async fn e2e_mistral_stream_text() {
         .await;
 
     let provider = create_mistral(MistralProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(server.uri()),
         ..Default::default()
     })
@@ -1099,7 +1099,7 @@ async fn e2e_cohere_generate_text() {
         .await;
 
     let provider = create_cohere(CohereProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(server.uri()),
         ..Default::default()
     })
@@ -1154,7 +1154,7 @@ async fn e2e_cohere_stream_text() {
         .await;
 
     let provider = create_cohere(CohereProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(server.uri()),
         ..Default::default()
     })

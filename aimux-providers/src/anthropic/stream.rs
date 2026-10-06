@@ -794,6 +794,7 @@ pub(crate) async fn anthropic_generate_core(
     body: serde_json::Value,
     warnings: Vec<Warning>,
     config: &AnthropicModelConfig,
+    used_custom_provider_key: bool,
     tool_names: &ToolNameMapping,
 ) -> Result<GenerateResult, AiMuxError> {
     let resp = aimux_provider_utils::post_json_to_api(
@@ -827,6 +828,7 @@ pub(crate) async fn anthropic_generate_core(
 
     let provider_metadata = super::usage::result_provider_metadata(
         &config.provider_options_name,
+        used_custom_provider_key,
         &serde_json::to_value(&data.usage).unwrap_or(Value::Null),
         data.stop_sequence.as_deref(),
         data.container.as_ref(),
@@ -889,6 +891,7 @@ pub(crate) async fn anthropic_stream_core(
     body: serde_json::Value,
     warnings: Vec<Warning>,
     config: &AnthropicModelConfig,
+    used_custom_provider_key: bool,
     tool_names: ToolNameMapping,
 ) -> Result<StreamResult, AiMuxError> {
     let endpoint = request.url.clone();
@@ -1362,6 +1365,7 @@ pub(crate) async fn anthropic_stream_core(
             provider_metadata: (!stream_errored).then(|| {
                 super::usage::result_provider_metadata(
                     options_name.as_str(),
+                    used_custom_provider_key,
                     &raw_usage,
                     stop_sequence.as_deref(),
                     container.as_ref(),

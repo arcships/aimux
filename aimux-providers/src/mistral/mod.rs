@@ -18,7 +18,6 @@ mod model;
 pub(crate) mod options;
 mod types;
 
-pub use crate::shared::TransformRequestBody;
 pub use embedding::MistralEmbeddingModel;
 pub use model::MistralModel;
 
@@ -107,7 +106,7 @@ fn chat_supported_urls() -> SupportedUrls {
 /// Settings of [`create_mistral`] (the AI SDK's `MistralProviderSettings`).
 ///
 /// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are
+/// created except `base_url`; `api_key` and `headers` are
 /// evaluated on every request.
 #[derive(Clone, Default)]
 pub struct MistralProviderSettings {
@@ -117,22 +116,16 @@ pub struct MistralProviderSettings {
     /// The API key. `None` loads `MISTRAL_API_KEY` when a request is made and
     /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
     /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
+    /// the environment.
+    pub api_key: Option<String>,
     /// Extra headers on every request. A `None` value removes the header,
     /// including `Authorization`. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of every model's `provider()` string
-    /// (`"{name}.chat"`, `"{name}.embedding"`). Default `"mistral"`. The
-    /// providerOptions key stays `mistral`.
-    pub name: Option<String>,
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
+    /// Generates unique IDs for chat output.
+    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl std::fmt::Debug for MistralProviderSettings {
@@ -140,17 +133,13 @@ impl std::fmt::Debug for MistralProviderSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MistralProviderSettings")
             .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
+            .field("api_key", &self.api_key.is_some())
             .field(
                 "headers",
                 &self.headers.as_ref().map(std::collections::HashMap::len),
             )
-            .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
+            .field("generate_id", &self.generate_id.is_some())
             .finish()
     }
 }
@@ -168,15 +157,23 @@ pub fn create_mistral(settings: MistralProviderSettings) -> Result<MistralProvid
         None => DEFAULT_BASE_URL.to_string(),
     };
     Ok(MistralProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        name: DEFAULT_NAME.to_string(),
         base_url,
-        headers: provider_headers(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Mistral"),
-            Vec::new(),
-            settings.headers,
+        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+            provider_headers(
+                Credential::explicit_or_env(
+                    settings.api_key.map(Resolvable::Value),
+                    API_KEY_ENV_VAR,
+                    "Mistral",
+                ),
+                Vec::new(),
+                settings.headers,
+            ),
+            "mistral",
+            "4.0.54",
         ),
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
+        generate_id: settings.generate_id,
     })
 }
 
@@ -198,7 +195,7 @@ pub struct MistralProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
+    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl MistralProvider {
@@ -208,7 +205,7 @@ impl MistralProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
+            None,
         )
     }
 
@@ -220,6 +217,7 @@ impl MistralProvider {
             self.model_config("chat")
                 .with_supported_urls(Arc::new(|_| chat_supported_urls())),
         )
+        .with_generate_id(self.generate_id.clone())
     }
 
     /// An embedding model (e.g. `"mistral-embed"`); `provider()` is

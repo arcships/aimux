@@ -40,20 +40,20 @@ use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{
     FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, Resolvable, combine_headers, load_setting,
-    normalize_headers, validate_base_url, without_trailing_slash,
+    validate_base_url, without_trailing_slash,
 };
 
 use crate::openai::config::OpenAIModelConfig;
 use crate::openai::responses::ResponsesProfile;
 use crate::openai::{
-    OpenAIChatModel, OpenAIEmbeddingModel, OpenAIImageModel, OpenAIResponsesModel,
-    OpenAISpeechModel, OpenAITranscriptionModel,
+    OpenAIEmbeddingModel, OpenAIImageModel, OpenAIModel, OpenAIResponsesModel, OpenAISpeechModel,
+    OpenAITranscriptionModel,
 };
 use crate::shared::{AuthScheme, Credential, credential_headers, is_valid_hostname_part};
 
 /// The chat-completions model of the Azure package (`provider.chat(id)`): the
 /// OpenAI one, configured for Azure.
-pub type AzureChatModel = OpenAIChatModel;
+pub type AzureChatModel = OpenAIModel;
 /// The Responses model of the Azure package: the OpenAI one, configured for
 /// Azure.
 pub type AzureResponsesModel = OpenAIResponsesModel;
@@ -191,8 +191,9 @@ pub fn create_azure(
         .map(validate_base_url)
         .transpose()?;
     let info = base_url_info(base_url.as_deref())?;
-    let headers = match settings.token_provider {
-        Some(token) => bearer_token_headers(token, settings.headers),
+    let token_provider = settings.token_provider;
+    let headers = match &token_provider {
+        Some(_) => Resolvable::Value(combine_headers(&[&settings.headers.unwrap_or_default()])),
         None => credential_headers(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Azure OpenAI"),
             AuthScheme::Header("api-key"),
@@ -206,33 +207,12 @@ pub fn create_azure(
         info,
         api_version: settings.api_version,
         use_deployment_based_urls: settings.use_deployment_based_urls,
-        headers,
+        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+            headers, "azure", "4.0.84",
+        ),
         fetch: settings.fetch,
+        token_provider,
         transform_request_body: settings.transform_request_body,
-    })
-}
-
-/// Headers for Entra ID authentication: the user's headers, plus
-/// `Authorization: Bearer <token>` unless one of them already sets
-/// `Authorization` (then the token is not even requested, as in the AI SDK).
-fn bearer_token_headers(token: Resolvable<String>, user: Option<HeaderMapOpt>) -> HeadersFn {
-    Resolvable::from_async_fn(move || {
-        let token = token.clone();
-        let user = user.clone().unwrap_or_default();
-        async move {
-            let sets_authorization = user
-                .iter()
-                .any(|(name, value)| name.eq_ignore_ascii_case("authorization") && value.is_some());
-            if sets_authorization {
-                return Ok(combine_headers(&[&user]));
-            }
-            let mut layer = HeaderMapOpt::new();
-            layer.insert(
-                "Authorization".to_string(),
-                Some(format!("Bearer {}", token.resolve().await?)),
-            );
-            Ok(combine_headers(&[&layer, &user]))
-        }
     })
 }
 
@@ -257,6 +237,7 @@ pub struct AzureOpenAIProvider {
     api_version: Option<String>,
     use_deployment_based_urls: bool,
     headers: HeadersFn,
+    token_provider: Option<Resolvable<String>>,
     fetch: Option<FetchFunction>,
     transform_request_body: Option<TransformRequestBody>,
 }
@@ -366,6 +347,7 @@ impl AzureOpenAIProvider {
             provider: provider.to_string(),
             url: Arc::new(move |path| rules.url(path, &deployment)),
             headers: self.headers.clone(),
+            token_provider: self.token_provider.clone(),
             fetch: self.fetch.clone(),
             supported_urls: aimux_core::language_model::SupportedUrls::default(),
             transform_request_body: self.transform_request_body.clone(),
@@ -377,7 +359,7 @@ impl AzureOpenAIProvider {
     /// `"azure.chat"`.
     #[must_use]
     pub fn chat(&self, deployment: &str) -> AzureChatModel {
-        OpenAIChatModel::from_config(
+        OpenAIModel::from_config(
             deployment.to_string(),
             self.model_config("azure.chat", deployment),
         )
@@ -484,7 +466,7 @@ impl ProviderDiscovery for AzureOpenAIProvider {
         if self.api_version.is_none() {
             rules.api_version = DEPLOYMENTS_API_VERSION.to_string();
         }
-        let headers = self.headers.clone();
+        let config = self.model_config("azure.responses", "");
         let fetch = self.fetch.clone();
         Box::pin(async move {
             // Azure response: { data: [{ id, model, modelName, ... }] }
@@ -502,7 +484,7 @@ impl ProviderDiscovery for AzureOpenAIProvider {
                 model_name: Option<String>,
             }
 
-            let provider_headers = normalize_headers(headers.resolve().await?);
+            let provider_headers = config.request_headers(None).await?;
             let mut url = url::Url::parse(&format!("{}/deployments", rules.prefix()?))
                 .map_err(|e| AiMuxError::InvalidArgument(format!("invalid Azure URL: {e}")))?;
             set_query_param(&mut url, "api-version", &rules.api_version);

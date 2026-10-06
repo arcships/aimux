@@ -35,7 +35,9 @@ mod types;
 
 pub use chat::OpenAICompatibleChatModel;
 pub use completion::OpenAICompatibleCompletionModel;
-pub use config::{MetadataExtractor, StreamMetadataExtractor, TransformRequestBody};
+pub use config::{
+    ConvertUsage, MetadataExtractor, StreamMetadataExtractor, SupportedUrlsFn, TransformRequestBody,
+};
 pub use embedding::OpenAICompatibleEmbeddingModel;
 pub use image::OpenAICompatibleImageModel;
 
@@ -47,7 +49,7 @@ use futures::future::BoxFuture;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
-use aimux_core::language_model::{LanguageModel, SupportedUrls};
+use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
@@ -81,11 +83,15 @@ pub struct OpenAICompatibleProviderSettings {
     /// Whether the chat endpoint accepts `json_schema` response formats; when
     /// not, a schema degrades to `json_object` with a warning.
     pub supports_structured_outputs: Option<bool>,
-    /// Rewrites every JSON request body once, after it is serialized and
+    /// Rewrites chat request bodies once, after they are serialized and
     /// before it is sent.
     pub transform_request_body: Option<TransformRequestBody>,
     /// Extract provider-specific metadata from generated and streamed responses.
     pub metadata_extractor: Option<Arc<dyn MetadataExtractor>>,
+    /// Returns the supported URLs for chat models.
+    pub supported_urls: Option<SupportedUrlsFn>,
+    /// Converts chat response token usage.
+    pub convert_usage: Option<ConvertUsage>,
 }
 
 impl std::fmt::Debug for OpenAICompatibleProviderSettings {
@@ -111,6 +117,8 @@ impl std::fmt::Debug for OpenAICompatibleProviderSettings {
                 &self.transform_request_body.is_some(),
             )
             .field("metadata_extractor", &self.metadata_extractor.is_some())
+            .field("supported_urls", &self.supported_urls.is_some())
+            .field("convert_usage", &self.convert_usage.is_some())
             .finish()
     }
 }
@@ -145,6 +153,8 @@ pub fn create_openai_compatible(
             supports_structured_outputs: settings.supports_structured_outputs.unwrap_or(false),
             supports_multi_part_tool_content: false,
             dialect,
+            supported_urls: settings.supported_urls,
+            convert_usage: settings.convert_usage,
         },
     })
 }
@@ -159,6 +169,8 @@ pub(crate) struct ChatProfile {
     pub supports_structured_outputs: bool,
     pub supports_multi_part_tool_content: bool,
     pub dialect: ChatDialect,
+    pub supported_urls: Option<SupportedUrlsFn>,
+    pub convert_usage: Option<ConvertUsage>,
 }
 
 /// Everything a compatible provider is made of. The public factory fills it
@@ -211,10 +223,14 @@ impl OpenAICompatibleProvider {
             name,
             base_url: assembly.base_url,
             query_params,
-            headers: provider_headers(
-                assembly.credential,
-                assembly.fixed_headers,
-                assembly.headers,
+            headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+                provider_headers(
+                    assembly.credential,
+                    assembly.fixed_headers,
+                    assembly.headers,
+                ),
+                "openai-compatible",
+                "3.0.59",
             ),
             fetch: assembly.fetch,
             transform_request_body: assembly.transform_request_body,
@@ -222,7 +238,8 @@ impl OpenAICompatibleProvider {
                 include_usage: assembly.profile.include_usage,
                 supports_structured_outputs: assembly.profile.supports_structured_outputs,
                 supports_multi_part_tool_content: assembly.profile.supports_multi_part_tool_content,
-                supported_urls: SupportedUrls::default(),
+                supported_urls: assembly.profile.supported_urls,
+                convert_usage: assembly.profile.convert_usage,
                 dialect: Arc::new(assembly.profile.dialect),
             },
         })
@@ -235,7 +252,11 @@ impl OpenAICompatibleProvider {
             query_params: self.query_params.clone(),
             headers: self.headers.clone(),
             fetch: self.fetch.clone(),
-            transform_request_body: self.transform_request_body.clone(),
+            transform_request_body: if method == "chat" {
+                self.transform_request_body.clone()
+            } else {
+                None
+            },
             chat: self.chat.clone(),
         }
     }

@@ -16,7 +16,6 @@ pub mod convert;
 pub(crate) mod options;
 pub mod responses;
 
-pub use crate::shared::TransformRequestBody;
 pub use responses::XaiResponsesModel;
 
 use std::sync::{Arc, OnceLock};
@@ -227,7 +226,7 @@ where
 /// Settings of [`create_xai`] (the AI SDK's `XaiProviderSettings`).
 ///
 /// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are
+/// created except `base_url`; `api_key` and `headers` are
 /// evaluated on every request.
 #[derive(Clone, Default)]
 pub struct XAIProviderSettings {
@@ -237,22 +236,14 @@ pub struct XAIProviderSettings {
     /// The API key. `None` loads `XAI_API_KEY` when a request is made and
     /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
     /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
+    /// the environment.
+    pub api_key: Option<String>,
     /// Extra headers on every request. A `None` value removes the header,
     /// including `Authorization`. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of the `provider()` strings
-    /// (`"{name}.responses"`). Default `"xai"`. The providerOptions key stays
-    /// `xai`.
-    pub name: Option<String>,
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for XAIProviderSettings {
@@ -260,17 +251,12 @@ impl std::fmt::Debug for XAIProviderSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("XAIProviderSettings")
             .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
+            .field("api_key", &self.api_key.is_some())
             .field(
                 "headers",
                 &self.headers.as_ref().map(std::collections::HashMap::len),
             )
-            .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -288,15 +274,22 @@ pub fn create_xai(settings: XAIProviderSettings) -> Result<XAIProvider, AiMuxErr
         None => DEFAULT_BASE_URL.to_string(),
     };
     Ok(XAIProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        name: DEFAULT_NAME.to_string(),
         base_url,
-        headers: provider_headers(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "xAI API key"),
-            Vec::new(),
-            settings.headers,
+        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+            provider_headers(
+                Credential::explicit_or_env(
+                    settings.api_key.map(Resolvable::Value),
+                    API_KEY_ENV_VAR,
+                    "xAI API key",
+                ),
+                Vec::new(),
+                settings.headers,
+            ),
+            "xai",
+            "5.0.12",
         ),
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -317,7 +310,6 @@ pub struct XAIProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl XAIProvider {
@@ -327,7 +319,7 @@ impl XAIProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
+            None,
         )
     }
 

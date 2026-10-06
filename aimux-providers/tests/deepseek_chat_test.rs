@@ -38,7 +38,6 @@ use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning};
-use aimux_provider_utils::Resolvable;
 use aimux_providers::deepseek::{
     DeepSeekChatLanguageModel, DeepSeekProviderSettings, create_deepseek,
 };
@@ -114,7 +113,7 @@ fn strict_tool(name: &str, strict: Option<bool>) -> Tool {
 
 fn settings(server: &MockServer, base_path: &str) -> DeepSeekProviderSettings {
     DeepSeekProviderSettings {
-        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        api_key: Some("test-api-key".to_string()),
         base_url: Some(format!("{}{base_path}", server.uri())),
         ..Default::default()
     }
@@ -531,6 +530,74 @@ async fn text_should_not_send_unknown_provider_options() {
         with_provider_options(options(), json!({ "deepseek": { "user": "u1", "foo": 1 } }));
     let body = generate_body("deepseek-chat", &options).await;
     assert!(body.get("user").is_none() && body.get("foo").is_none());
+}
+
+/// TS: "should pass through strict mode when strict is false" (line ~40).
+///
+/// A tool with `strict: false` should produce `"strict": false` in the
+/// serialized tool definition.
+#[tokio::test]
+async fn should_pass_through_strict_mode_when_strict_is_false() {
+    let tool = FunctionTool {
+        name: "testFunction".to_string(),
+        description: Some("A test function".to_string()),
+        input_schema: json!({ "type": "object", "properties": {} }),
+        strict: Some(false),
+        provider_options: None,
+        input_examples: None,
+    };
+    let mut options = options();
+    options.tools = Some(vec![Tool::from(tool)]);
+    let body = generate_body("deepseek-chat", &options).await;
+
+    assert_eq!(
+        body["tools"],
+        json!([{
+            "type": "function",
+            "function": {
+                "description": "A test function",
+                "name": "testFunction",
+                "parameters": { "type": "object", "properties": {} },
+                "strict": false
+            }
+        }])
+    );
+}
+
+/// TS: "should not include strict mode when strict is undefined" (line ~75).
+///
+/// A tool without `strict` set should NOT have a `"strict"` field in the
+/// serialized tool definition.
+#[tokio::test]
+async fn should_not_include_strict_mode_when_strict_is_undefined() {
+    let tool = FunctionTool {
+        name: "testFunction".to_string(),
+        description: Some("A test function".to_string()),
+        input_schema: json!({ "type": "object", "properties": {} }),
+        strict: None,
+        provider_options: None,
+        input_examples: None,
+    };
+    let mut options = options();
+    options.tools = Some(vec![Tool::from(tool)]);
+    let body = generate_body("deepseek-chat", &options).await;
+
+    assert_eq!(
+        body["tools"],
+        json!([{
+            "type": "function",
+            "function": {
+                "description": "A test function",
+                "name": "testFunction",
+                "parameters": { "type": "object", "properties": {} }
+            }
+        }])
+    );
+    // Verify strict is absent.
+    assert!(
+        body["tools"][0]["function"].get("strict").is_none(),
+        "strict should be absent"
+    );
 }
 
 #[tokio::test]
@@ -1930,26 +1997,6 @@ async fn convert_should_reject_a_non_string_name() {
     )]);
     let message = generate_error("deepseek-chat", &options).await;
     assert!(message.contains("invalid provider options"), "{message}");
-}
-
-#[tokio::test]
-async fn convert_should_serialize_a_name_from_a_custom_provider_options_namespace() {
-    let server = json_server(text_response()).await;
-    let model = create_deepseek(DeepSeekProviderSettings {
-        name: Some("azure".to_string()),
-        ..settings(&server, "")
-    })
-    .unwrap()
-    .chat("deepseek-chat");
-    let options = options_for(vec![with_options(
-        LanguageModelMessage::user_text("Hello"),
-        json!({ "azure": { "name": "alice" } }),
-    )]);
-    let result = model.do_generate(&options).await.unwrap();
-    assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["messages"],
-        json!([{ "role": "user", "content": "Hello", "name": "alice" }])
-    );
 }
 
 // ---- describe('user messages') ---------------------------------------------------------------

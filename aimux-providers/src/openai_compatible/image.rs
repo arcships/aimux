@@ -156,7 +156,7 @@ impl ImageModel for OpenAICompatibleImageModel {
             }
             body.extend(forwarded);
             body.insert("response_format".into(), json!("b64_json"));
-            let body = self.config.transform_body(Value::Object(body));
+            let body = Value::Object(body);
             let resp = aimux_provider_utils::post_json_to_api(
                 self.config
                     .http_request("/images/generations", headers, options)?,

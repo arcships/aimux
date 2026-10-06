@@ -340,8 +340,16 @@ fn variant_instance<'py>(py: Python<'py>, e: &AiMuxError) -> PyResult<Bound<'py,
                 (!model_type.is_empty()).then_some(model_type.as_str()),
             )?;
         }
-        AiMuxError::NoSuchProvider { provider_id } => {
+        AiMuxError::NoSuchProvider {
+            provider_id,
+            model_id,
+            model_type,
+            available_providers,
+        } => {
             inst.setattr("provider_id", provider_id.as_str())?;
+            inst.setattr("model_id", model_id.as_str())?;
+            inst.setattr("model_type", model_type.as_str())?;
+            inst.setattr("available_providers", available_providers.clone())?;
         }
         AiMuxError::LoadApiKey {
             env_var,
