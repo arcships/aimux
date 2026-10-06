@@ -20,11 +20,13 @@
 mod abort_signal;
 pub mod composite;
 pub mod content;
+pub mod custom_provider;
 pub(crate) mod download;
 #[doc(hidden)]
 pub mod download_guard;
 pub mod embedding_model;
 pub mod error;
+pub mod evaluation_model;
 pub mod files_model;
 pub mod generate;
 pub mod image_model;
@@ -73,6 +75,10 @@ pub mod prelude {
         EmbeddingCallOptions, EmbeddingModel, EmbeddingResult, embed,
     };
     pub use crate::error::{AiMuxError, ApiCallError};
+    pub use crate::evaluation_model::{
+        EvaluationAnswer, EvaluationCallOptions, EvaluationInput, EvaluationModel,
+        EvaluationQuestion, EvaluationQuestionType, EvaluationResult,
+    };
     pub use crate::files_model::{Files, UploadFileCallOptions, UploadFileResult};
     pub use crate::generate::{
         GenerateObjectResult, GenerateTextOptions, GenerateTextResult, StreamTextResult,
@@ -149,8 +155,10 @@ pub mod prelude {
 
 // Root-level re-exports for convenience.
 pub use abort_signal::AbortSignal;
+pub use custom_provider::{CustomProvider, CustomProviderOptions, custom_provider};
 pub use embedding_model::EmbeddingModel;
 pub use error::{AiMuxError, ApiCallError, RetryError, RetryErrorReason};
+pub use evaluation_model::EvaluationModel;
 pub use files_model::Files;
 pub use image_model::ImageModel;
 pub use language_model::LanguageModel;

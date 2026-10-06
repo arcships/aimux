@@ -13,6 +13,7 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
+use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_core::video_model::VideoModel;
 use aimux_provider_utils::{
@@ -20,6 +21,7 @@ use aimux_provider_utils::{
 };
 use std::sync::OnceLock;
 
+use crate::google::GoogleSpeechModel;
 use crate::shared::{Endpoint, EndpointConfig, TransformRequestBody};
 
 mod anthropic_model;
@@ -442,6 +444,26 @@ impl VertexProvider {
         )
     }
 
+    /// A Gemini speech (TTS) model, served by the Google speech model with
+    /// the Vertex options namespaces; `provider()` is `"google.vertex.speech"`.
+    /// Chirp (Cloud Text-to-Speech) ids are not ported and fail with
+    /// `AiMuxError::UnsupportedFunctionality`.
+    ///
+    /// # Errors
+    ///
+    /// `UnsupportedFunctionality` for a `chirp*` id.
+    pub fn speech(&self, model_id: &str) -> Result<GoogleSpeechModel, AiMuxError> {
+        if model_id.starts_with("chirp") {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "Google Vertex Chirp speech models are not supported".into(),
+            ));
+        }
+        Ok(GoogleSpeechModel::from_config(
+            model_id.to_string(),
+            self.model_config("google.vertex.speech", false),
+        ))
+    }
+
     /// A Gemini or Speech-to-Text transcription model; `provider()`
     /// is `"google.vertex.transcription"`. Its requests need a project and a
     /// location and fail in Express mode.
@@ -486,6 +508,13 @@ impl Provider for VertexProvider {
 
     fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
         Ok(Arc::new(self.image(model_id)))
+    }
+
+    fn speech_model(&self, model_id: &str) -> Option<Result<Arc<dyn SpeechModel>, AiMuxError>> {
+        Some(
+            self.speech(model_id)
+                .map(|model| Arc::new(model) as Arc<dyn SpeechModel>),
+        )
     }
 
     fn transcription_model(
