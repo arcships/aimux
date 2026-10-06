@@ -228,8 +228,8 @@ pub use google::{
     GoogleProvider, GoogleProviderSettings, GoogleVideoModel, create_google, google,
 };
 pub use mistral::{
-    MistralEmbeddingModel, MistralModel, MistralProvider, MistralProviderSettings, create_mistral,
-    mistral,
+    MistralEmbeddingModel, MistralModel, MistralProvider, MistralProviderSettings,
+    MistralSpeechModel, MistralTranscriptionModel, create_mistral, mistral,
 };
 pub use openai::{
     OpenAIEmbeddingModel, OpenAIImageModel, OpenAIProvider, OpenAIProviderSettings,
