@@ -59,6 +59,8 @@ import type {
   JsonValue,
   RawToolCall,
   ToolCallRepairReply,
+  DecisionCallOptions,
+  DecisionResult,
 } from './types'
 
 // Error hierarchy (throw/catch). Wire payload type `AiMuxError` lives under StreamPart only.
@@ -119,6 +121,8 @@ export {
   anthropicAws,
   azure,
   provider,
+  jevDecision,
+  DecisionModel,
   type ProviderHandle,
 } from './native.ts'
 
@@ -164,6 +168,18 @@ export type {
   VideoPollOptions,
   RawToolCall,
   ToolCallRepairReply,
+  DecisionCallOptions,
+  DecisionResult,
+}
+
+/** Typed decisions with the same JSON contract as Rust and C. */
+export async function decide(
+  model: native.DecisionModel,
+  options: DecisionCallOptions,
+  signal?: AbortSignal,
+): Promise<DecisionResult> {
+  const bridge = signal ? new AbortBridge(signal) : undefined
+  return JSON.parse(await model.decide(JSON.stringify(options), bridge)) as DecisionResult
 }
 
 /**
@@ -174,6 +190,15 @@ export type {
  * class instance type — pass the exact object a provider factory gives you.
  */
 export type RawModel = Model
+
+export type {
+  DecisionAnswer,
+  DecisionQuestion,
+  DecisionOption,
+  DecisionCapabilities,
+  DecisionProbabilitySource,
+  DecisionResponse,
+} from './types'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool-call repair (RFC-0035) — host-side, mirroring AI SDK `repairToolCall`

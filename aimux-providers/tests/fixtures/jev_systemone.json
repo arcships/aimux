@@ -1,0 +1,16 @@
+{
+  "source": "Contract fixture transcribed from https://jev-ai.org/docs/ (2026-10-06), not a recorded live call",
+  "response": {
+    "id": "dec_contract_fixture",
+    "model": "jev-1.13",
+    "model_version": "jev-1.13-20260917",
+    "provider": "jev-ai.org",
+    "answers": {
+      "needs_human": {"type": "noul", "noul": 0.89},
+      "queue": {"type": "choice", "choice": "billing", "probabilities": {"billing": 1, "technical": 0, "sales": 0}, "confidence": 1},
+      "anger": {"type": "score", "score": 1.89, "legend": {"0": "Calm", "1": "Mildly annoyed", "2": "Frustrated", "3": "Angry"}, "probabilities": {"0": 0, "1": 0.11, "2": 0.89, "3": 0}, "confidence": 0.89}
+    },
+    "usage": {"input_tokens": 503, "output_tokens": 70, "charged_tokens": 503, "charged_credits": 0, "wallet": "tokens"},
+    "latency_ms": 1056
+  }
+}

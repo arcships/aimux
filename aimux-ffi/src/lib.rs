@@ -104,6 +104,7 @@ enum HandleEntry {
     Reranking(Arc<dyn aimux_core::reranking_model::RerankingModel>),
     Video(Arc<dyn aimux_core::video_model::VideoModel>),
     Search(Arc<dyn aimux_core::search_model::SearchModel>),
+    Decision(Arc<dyn aimux_core::decision_model::DecisionModel>),
     Files(Arc<dyn aimux_core::files_model::Files>),
     /// Live transcription streaming session (RFC-0028 Phase 2).
     TranscriptionSession(Arc<transcription_session::TranscriptionFfiSession>),
@@ -2836,6 +2837,64 @@ pub extern "C" fn aimux_video_generate(
         let opts: aimux_core::video_model::VideoCallOptions =
             parse_json_arg(opts_json, "opts_json")?;
         run_json(async move { aimux_core::video_model::generate_video(model.as_ref(), opts).await })
+    })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: Decisions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Create a Jev decision model. Optional endpoint is a complete POST URL.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_jev_decision_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    endpoint: *const c_char,
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let key = str_arg(api_key, "api_key")?;
+        let model_id = str_arg(model_id, "model_id")?;
+        let mut config = aimux_providers::JevConfig::new(key);
+        if let Some(endpoint) = parse_base_url(endpoint)? {
+            config = config.with_endpoint(endpoint);
+        }
+        let model = aimux_providers::JevProvider::new(config).decision_model(&model_id)?;
+        Ok(intern_handle(HandleEntry::Decision(Arc::from(model))))
+    })
+}
+
+/// Execute a typed decision. Writes DecisionResult JSON.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_decide(
+    handle: u64,
+    opts_json: *const c_char,
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    aimux_decide_with_abort(handle, opts_json, 0, out_json)
+}
+
+/// Execute a decision with an optional abort handle (zero means none).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_decide_with_abort(
+    handle: u64,
+    opts_json: *const c_char,
+    abort_handle: u64,
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let HandleEntry::Decision(model) = entry_of(handle, "decision")? else {
+            return Err(FfiError::InvalidHandle {
+                expected: "decision",
+            }
+            .into());
+        };
+        let mut opts: aimux_core::decision_model::DecisionCallOptions =
+            parse_json_arg(opts_json, "opts_json")?;
+        if abort_handle != 0 {
+            opts.abort_signal = Some(abort_of(abort_handle)?);
+        }
+        run_json(async move { aimux_core::decision_model::decide(model.as_ref(), opts).await })
     })
 }
 

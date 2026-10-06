@@ -34,8 +34,10 @@ macro_rules! delegate_list_models {
 // OpenAI-compatible providers are looked up by name from `provider_registry.json`.
 // The 250 per-provider `XxxConfig`/`XxxProvider` shell types were retired in
 // phase 4 — use [`provider`] / [`provider_from_env`] instead.
+pub mod jev;
 pub mod provider;
 pub mod provider_name;
+pub use jev::{JevConfig, JevDecisionModel, JevProvider};
 pub mod replay;
 pub use provider::{
     ExternalProviderEntry, ProviderOptions, ProviderProfile, is_external_provider,
