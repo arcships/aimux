@@ -18,6 +18,7 @@
 use aimux_core::tool::RawToolCall;
 use aimux_core::tool::ToolResult;
 use std::collections::HashMap;
+use std::hash::{BuildHasher, RandomState};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures::StreamExt;
@@ -126,16 +127,19 @@ fn str_field(v: &Value, key: &str) -> Option<String> {
     v.get(key).and_then(|x| x.as_str()).map(str::to_string)
 }
 
-/// Process-wide counter backing [`generate_source_id`].
-static SOURCE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-/// Unique id for a `Source` derived from a web-search result. Upstream calls
-/// `this.generateId()` at the same points.
-fn generate_source_id() -> String {
-    format!(
-        "anthropic-source-{}",
-        SOURCE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
-    )
+/// Generate a non-cryptographic, 16-character alphanumeric ID, like `generateId`.
+#[must_use]
+pub(crate) fn generate_id() -> String {
+    const ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let random = RandomState::new();
+    (0..16)
+        .map(|index| {
+            let value = random.hash_one((counter, index));
+            char::from(ALPHABET[(value % ALPHABET.len() as u64) as usize])
+        })
+        .collect()
 }
 
 /// `web_search_result` → the camel-cased shape upstream exposes (:1243-1249).
@@ -404,6 +408,7 @@ pub(crate) fn stream_parts_for_result_block(
     names: &ToolNameMapping,
     mcp_tool_calls: &HashMap<String, (String, String)>,
     server_tool_calls: &HashMap<String, String>,
+    generate_id: &(dyn Fn() -> String + Send + Sync),
 ) -> Vec<StreamPart> {
     let tool_result =
         |tool_name: String, (result, is_error): (Value, Option<bool>), tool_use_id: &str| {
@@ -450,7 +455,7 @@ pub(crate) fn stream_parts_for_result_block(
             )];
             parts.extend(results.iter().map(|result| {
                 StreamPart::Source(Source::Url {
-                    id: generate_source_id(),
+                    id: generate_id(),
                     url: str_field(result, "url").unwrap_or_default(),
                     title: str_field(result, "title"),
                     provider_metadata: Some(
@@ -553,6 +558,7 @@ pub(crate) fn stream_parts_for_result_block(
 pub(crate) fn parse_anthropic_content(
     blocks: &[ContentBlock],
     names: &ToolNameMapping,
+    generate_id: &(dyn Fn() -> String + Send + Sync),
 ) -> Vec<GenerateContent> {
     let mut content = Vec::new();
     // Result blocks inherit information from their matching calls. Index the
@@ -686,7 +692,7 @@ pub(crate) fn parse_anthropic_content(
                         // URLs and titles reach `result.sources`.
                         for result in results {
                             content.push(GenerateContent::Source(Source::Url {
-                                id: generate_source_id(),
+                                id: generate_id(),
                                 url: str_field(result, "url").unwrap_or_default(),
                                 title: str_field(result, "title"),
                                 provider_metadata: Some(
@@ -850,6 +856,7 @@ pub(crate) async fn anthropic_generate_core(
     abort_signal: Option<AbortSignal>,
     recording_context: Option<aimux_core::recording::RecordingContext>,
     tool_names: &ToolNameMapping,
+    generate_id: &(dyn Fn() -> String + Send + Sync),
 ) -> Result<GenerateResult, AiMuxError> {
     let (request, request_body) = build_anthropic_request(
         endpoint,
@@ -872,7 +879,7 @@ pub(crate) async fn anthropic_generate_core(
 
     let data: AnthropicResponse = resp.value;
 
-    let content = parse_anthropic_content(&data.content, tool_names);
+    let content = parse_anthropic_content(&data.content, tool_names, generate_id);
 
     let finish_reason = data
         .stop_reason
@@ -952,6 +959,7 @@ pub(crate) async fn anthropic_stream_core(
     abort_signal: Option<AbortSignal>,
     recording_context: Option<aimux_core::recording::RecordingContext>,
     tool_names: ToolNameMapping,
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 ) -> Result<StreamResult, AiMuxError> {
     let (request, request_body) = build_anthropic_request(
         endpoint,
@@ -1153,6 +1161,7 @@ pub(crate) async fn anthropic_stream_core(
                                         &tool_names,
                                         &mcp_tool_calls,
                                         &server_tool_calls,
+                                        generate_id.as_ref(),
                                     ) {
                                         yield Ok(part);
                                     }

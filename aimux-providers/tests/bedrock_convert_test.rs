@@ -7,9 +7,8 @@
 //!
 //! Cases the Rust data model cannot express are skipped with an inline
 //! comment. The main categories of skips:
-//! - **System-after-non-system throw / unsupported-mime throws**: the Rust
-//!   `convert_prompt_to_bedrock` returns `(system, messages)` (no `Result`),
-//!   so it cannot surface `UnsupportedFunctionalityError`.
+//! - **System-after-non-system throw**: the converter currently lifts
+//!   all system messages into the system array.
 //! - **S3 URLs / provider references**: `FileUrl` / `FileReference` are not
 //!   converted by the Rust Bedrock path.
 //! - **Top-level-only mediaType auto-detection from bytes**: the Rust path
@@ -148,7 +147,8 @@ fn tool_result(id: &str, output: ToolResultOutput) -> ToolPart {
 /// TS: "should combine multiple leading system messages into a single system message"
 #[test]
 fn system_combine_multiple_leading() {
-    let (system, _) = convert_prompt_to_bedrock(&vec![system_msg("Hello"), system_msg("World")]);
+    let (system, _) =
+        convert_prompt_to_bedrock(&vec![system_msg("Hello"), system_msg("World")]).unwrap();
     assert_eq!(
         Value::Array(system),
         json!([{ "text": "Hello" }, { "text": "World" }])
@@ -156,13 +156,13 @@ fn system_combine_multiple_leading() {
 }
 
 // SKIPPED (TS: "should throw an error if a system message is provided after a
-// non-system message"): convert_prompt_to_bedrock returns (system, messages)
-// with no Result, so it cannot surface UnsupportedFunctionalityError.
+// non-system message"): the converter currently lifts all system messages
+// into the system array.
 
 /// TS: "should extract the system message"
 #[test]
 fn system_extract_single() {
-    let (system, _) = convert_prompt_to_bedrock(&vec![system_msg("Hello")]);
+    let (system, _) = convert_prompt_to_bedrock(&vec![system_msg("Hello")]).unwrap();
     assert_eq!(Value::Array(system), json!([{ "text": "Hello" }]));
 }
 
@@ -174,7 +174,8 @@ fn user_convert_image_parts() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![
         user_text("Hello"),
         file_base64("AAECAw==", "image/png", None, None),
-    ])]);
+    ])])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([{
@@ -196,7 +197,8 @@ fn user_convert_document_parts() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![
         user_text("Hello"),
         file_base64("AAECAw==", "application/pdf", None, None),
-    ])]);
+    ])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"],
         json!([
@@ -217,7 +219,8 @@ fn user_strip_file_extension() {
             Some("custom-filename.pdf"),
             None,
         ),
-    ])]);
+    ])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][1],
         json!({ "document": { "format": "pdf", "name": "custom-filename", "source": { "bytes": "AAECAw==" } } })
@@ -232,7 +235,8 @@ fn user_preserve_filename_without_extension() {
         "application/pdf",
         Some("custom-filename"),
         None,
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({ "document": { "format": "pdf", "name": "custom-filename", "source": { "bytes": "AAECAw==" } } })
@@ -249,7 +253,8 @@ fn user_consistent_document_names() {
         ]),
         assistant(vec![assistant_text("OK")]),
         user(vec![file_base64("AAECAw==", "application/pdf", None, None)]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([
@@ -268,7 +273,7 @@ fn user_consistent_document_names() {
 // Message-level cache-point cases remain outside this restored test subset.
 
 // SKIPPED (TS: "should throw for file parts with provider references"):
-// FileReference is not converted (no Result to surface the throw).
+// FileReference is not converted by the user-file path.
 
 /// TS: "should add cache point to user content part when specified"
 #[test]
@@ -277,7 +282,8 @@ fn user_content_part_cache_point() {
         user_text("Hello"),
         UserPart::Text(text_with_cache("cached", "default", Some("5m"))),
         user_text("World"),
-    ])]);
+    ])])
+    .unwrap();
     assert!(system.is_empty());
     assert_eq!(
         Value::Array(messages),
@@ -301,7 +307,8 @@ fn assistant_trim_trailing_whitespace_last() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
         user(vec![user_text("user content")]),
         assistant(vec![assistant_text("assistant content  ")]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([
@@ -320,7 +327,8 @@ fn assistant_trim_trailing_whitespace_multi_part() {
             assistant_text("assistant "),
             assistant_text("content  "),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([{ "text": "assistant " }, { "text": "content" }])
@@ -334,7 +342,8 @@ fn assistant_keep_trailing_whitespace_with_further_user() {
         user(vec![user_text("user content")]),
         assistant(vec![assistant_text("assistant content  ")]),
         user(vec![user_text("user content 2")]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([{ "text": "assistant content  " }])
@@ -349,7 +358,8 @@ fn assistant_combine_sequential() {
         assistant(vec![assistant_text("Hello")]),
         assistant(vec![assistant_text("World")]),
         assistant(vec![assistant_text("!")]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([
@@ -368,7 +378,8 @@ fn assistant_content_part_cache_point() {
         assistant_text("Hello"),
         AssistantPart::Text(text_with_cache("cached", "default", Some("1h"))),
         assistant_text("World"),
-    ])]);
+    ])])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([{
@@ -392,7 +403,8 @@ fn assistant_reasoning_with_signature() {
             "This is my step-by-step reasoning process",
             Some("test-signature"),
         )]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([{
@@ -418,7 +430,8 @@ fn assistant_preserve_amazon_bedrock_reasoning() {
             ),
             assistant_text("final answer"),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([
@@ -440,7 +453,8 @@ fn assistant_no_trim_reasoning_with_signature() {
             "This is my reasoning with trailing space    ",
             Some("test-signature"),
         )]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"][0]["reasoningContent"]["reasoningText"]["text"],
         json!("This is my reasoning with trailing space    ")
@@ -456,7 +470,8 @@ fn assistant_omit_reasoning_without_signature() {
             reasoning("This is my reasoning with trailing space    ", None),
             assistant_text("final answer"),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(messages[1]["content"], json!([{ "text": "final answer" }]));
 }
 
@@ -470,7 +485,8 @@ fn assistant_omit_multiple_reasoning_without_signatures() {
             reasoning("Second reasoning with trailing space    ", None),
             assistant_text("final answer"),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(messages[1]["content"], json!([{ "text": "final answer" }]));
 }
 
@@ -490,7 +506,8 @@ fn assistant_omit_unsigned_reasoning_preserving_tool_calls() {
                 provider_options: None,
             },
         )]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([
@@ -525,7 +542,8 @@ fn assistant_preserve_reasoning_multi_turn() {
             reasoning("The weather is sunny and warm.\n", Some("sig-def456")),
             assistant_text("It is sunny and 72F in SF."),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([
@@ -561,7 +579,8 @@ fn assistant_mix_text_and_reasoning() {
                 Some("reasoning-process"),
             ),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([
@@ -585,7 +604,8 @@ fn assistant_filter_empty_text_blocks() {
             assistant_text("  "),
             assistant_text("actual content"),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([
@@ -602,7 +622,8 @@ fn assistant_wrap_non_object_tool_input() {
         "call-1",
         "cityAttractions",
         Value::String("{ \"city\": \"San Francisco\", }".to_string()),
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"],
         json!([{
@@ -626,7 +647,8 @@ fn assistant_strip_invalid_tool_name_chars() {
             json!({}),
         ),
         tool_call("call-3", "$", json!({})),
-    ])]);
+    ])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"],
         json!([
@@ -649,7 +671,8 @@ fn assistant_preserve_empty_text_with_reasoning() {
             assistant_text("response text"),
             tool_call("call-123", "test", json!({})),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([
@@ -675,7 +698,8 @@ fn tool_result_content_text() {
                 provider_options: None,
             })],
         },
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0],
         json!({
@@ -705,7 +729,8 @@ fn tool_result_content_image() {
                 provider_options: None,
             })],
         },
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({
@@ -735,7 +760,8 @@ fn tool_result_content_pdf() {
                 provider_options: None,
             })],
         },
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({
@@ -749,10 +775,9 @@ fn tool_result_content_pdf() {
     );
 }
 
-// SKIPPED (TS: "should throw error for unsupported image format in tool result
+// NOT PORTED (TS: "should throw error for unsupported image format in tool result
 // content" and "should throw error for unsupported mime type in tool result
-// file content"): convert_prompt_to_bedrock returns no Result; unknown mimes
-// fall back to a default format instead of throwing.
+// file content").
 
 /// TS: "should fallback to stringified result when content is undefined" (json output)
 #[test]
@@ -763,7 +788,8 @@ fn tool_result_json_output() {
             value: json!({ "value": 42 }),
             provider_options: None,
         },
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({
@@ -785,7 +811,8 @@ fn citations_enabled_for_pdf() {
         "application/pdf",
         None,
         Some(provider_namespace("bedrock", json!({ "citations": { "enabled": true } })).unwrap()),
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({
@@ -807,7 +834,8 @@ fn citations_disabled_for_pdf() {
         "application/pdf",
         None,
         Some(provider_namespace("bedrock", json!({ "citations": { "enabled": false } })).unwrap()),
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({
@@ -829,7 +857,8 @@ fn citations_default_for_pdf() {
         "application/pdf",
         None,
         None,
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({
@@ -864,7 +893,8 @@ fn citations_multiple_pdfs() {
                     .unwrap(),
             ),
         ),
-    ])]);
+    ])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"],
         json!([
@@ -887,7 +917,8 @@ fn file_format_xlsx() {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         None,
         None,
-    )])]);
+    )])])
+    .unwrap();
     assert!(system.is_empty());
     assert_eq!(
         messages[0]["content"][0],
@@ -903,7 +934,8 @@ fn file_format_docx() {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         None,
         None,
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({ "document": { "format": "docx", "name": "document-1", "source": { "bytes": "base64data" } } })
@@ -926,7 +958,8 @@ fn mistral_no_normalize_when_false() {
             value: "The result is 42".to_string(),
             provider_options: None,
         },
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0]["toolResult"]["toolUseId"],
         json!(original_id)
@@ -943,7 +976,8 @@ fn mistral_default_no_normalize() {
             value: "The result is 42".to_string(),
             provider_options: None,
         },
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0]["toolResult"]["toolUseId"],
         json!(original_id)
@@ -960,7 +994,8 @@ fn media_type_pass_through_full_image() {
         "image/png",
         None,
         None,
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([{
@@ -982,7 +1017,8 @@ fn media_type_route_to_document_text_plain() {
         "text/plain",
         None,
         None,
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({ "document": { "format": "txt", "name": "document-1", "source": { "bytes": "base64data" } } })

@@ -929,6 +929,11 @@ fn parse_chat_provider_options(
     options: &Option<SharedProviderOptions>,
     provider: &str,
 ) -> Result<Option<SharedProviderOptions>, AiMuxError> {
+    let provider = if provider == "azure" {
+        "openai"
+    } else {
+        provider
+    };
     if !matches!(provider, "openai" | "groq" | "deepseek") {
         return Ok(options.clone());
     }
