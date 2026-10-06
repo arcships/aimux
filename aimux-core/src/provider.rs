@@ -12,6 +12,7 @@ use futures::future::BoxFuture;
 
 use crate::embedding_model::EmbeddingModel;
 use crate::error::AiMuxError;
+use crate::evaluation_model::EvaluationModel;
 use crate::files_model::Files;
 use crate::image_model::ImageModel;
 use crate::language_model::LanguageModel;
@@ -37,7 +38,8 @@ use crate::video_model::VideoModel;
 ///   `NoSuchModel`.
 /// - [`transcription_model`](Self::transcription_model),
 ///   [`speech_model`](Self::speech_model),
-///   [`reranking_model`](Self::reranking_model) and [`files`](Self::files)
+///   [`reranking_model`](Self::reranking_model),
+///   [`evaluation_model`](Self::evaluation_model) and [`files`](Self::files)
 ///   are optional: `None` means the vendor does not offer that modality.
 /// - [`video_model`](Self::video_model) and
 ///   [`search_model`](Self::search_model) are aimux extensions; they are not
@@ -89,6 +91,12 @@ pub trait Provider: Send + Sync {
 
     /// Create a reranking model; `None` when not offered.
     fn reranking_model(&self, id: &str) -> Option<Result<Arc<dyn RerankingModel>, AiMuxError>> {
+        let _ = id;
+        None
+    }
+
+    /// Create an experimental evaluation model; `None` when not offered.
+    fn evaluation_model(&self, id: &str) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
         let _ = id;
         None
     }
@@ -166,6 +174,9 @@ impl<P: Provider + ?Sized> Provider for &P {
     }
     fn reranking_model(&self, id: &str) -> Option<Result<Arc<dyn RerankingModel>, AiMuxError>> {
         (**self).reranking_model(id)
+    }
+    fn evaluation_model(&self, id: &str) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
+        (**self).evaluation_model(id)
     }
     fn files(&self) -> Option<Arc<dyn Files>> {
         (**self).files()
