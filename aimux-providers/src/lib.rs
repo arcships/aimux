@@ -252,7 +252,10 @@ pub use codex::{
     CodexMode, CodexModel, CodexProvider, CodexProviderSettings, CodexTokens, codex, codex_refresh,
     codex_refresh_at, create_codex,
 };
-pub use xai::{XAIProvider, XAIProviderSettings, XaiResponsesModel, create_xai, xai};
+pub use xai::{
+    XAIProvider, XAIProviderSettings, XaiResponsesModel, XaiSpeechModel, XaiTranscriptionModel,
+    XaiVideoModel, create_xai, xai,
+};
 
 pub use cartesia::{
     CartesiaProvider, CartesiaProviderSettings, CartesiaSpeechModel, CartesiaTranscriptionModel,
