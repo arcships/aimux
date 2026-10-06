@@ -161,7 +161,9 @@ fn apply_repair_outcome(
     let cause = match outcome {
         RepairOutcome::Repaired(repaired) => match parse_and_validate_tool_call(&repaired, tools) {
             Ok((input, dynamic)) => return parsed_tool_call(repaired, input, dynamic),
-            Err(repaired_error) => repaired_error,
+            // Upstream rethrows the parse error of the repaired call as is;
+            // only a failing repair function is wrapped.
+            Err(repaired_error) => return invalid_tool_call(tool_call, repaired_error),
         },
         RepairOutcome::Unchanged => return invalid_tool_call(tool_call, original_error),
         RepairOutcome::Failed(repair_error) => repair_error,

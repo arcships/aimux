@@ -9,6 +9,7 @@
 use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
+use aimux_core::language_model_message::ToolResultOutput;
 use aimux_core::message::{MessageContent, ModelMessage, Role};
 use aimux_core::stream_part::TextStreamPart;
 use aimux_core::tool::{FunctionTool, Tool, ToolCall, ToolChoice};
@@ -607,10 +608,15 @@ async fn e2e_openai_tool_call_round_trip() {
         },
         ModelMessage {
             role: Role::Tool,
-            content: MessageContent::Parts(vec![ContentPart::tool_result(
-                "call_abc",
-                json!({"temperature": 22, "condition": "sunny"}),
-            )]),
+            content: MessageContent::Parts(vec![ContentPart::ToolResult {
+                tool_call_id: "call_abc".into(),
+                tool_name: "get_weather".into(),
+                output: ToolResultOutput::Json {
+                    value: json!({"temperature": 22, "condition": "sunny"}),
+                    provider_options: None,
+                },
+                provider_options: None,
+            }]),
         },
     ];
 

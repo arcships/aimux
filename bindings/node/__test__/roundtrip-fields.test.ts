@@ -125,7 +125,7 @@ test('roundtrip: google toolName reaches functionResponse.name', async (t) => {
       },
       {
         role: 'tool',
-        content: [{ type: 'tool_result', tool_call_id: 'call-1', tool_name: 'weather', result: { temp: 70 } }],
+        content: [{ type: 'tool_result', tool_call_id: 'call-1', tool_name: 'weather', output: { type: 'json', value: { temp: 70 } } }],
       },
     ]
     await model.generateText(JSON.stringify(prompt))

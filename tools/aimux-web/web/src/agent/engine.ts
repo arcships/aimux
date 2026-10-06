@@ -165,8 +165,8 @@ export async function runAgent(
           toolResults.push({
             type: 'tool_result',
             tool_call_id: tc.id,
-            result: out.result,
-            is_error: false,
+            tool_name: tc.name,
+            output: { type: typeof out.result === 'string' ? 'text' : 'json', value: out.result },
           })
         } catch (e) {
           tc.result = String(e)
@@ -174,8 +174,8 @@ export async function runAgent(
           toolResults.push({
             type: 'tool_result',
             tool_call_id: tc.id,
-            result: String(e),
-            is_error: true,
+            tool_name: tc.name,
+            output: { type: 'error-text', value: String(e) },
           })
         } finally {
           tc.executing = false

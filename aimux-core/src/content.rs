@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
+use crate::language_model_message::ToolResultOutput;
 use crate::shared::SharedProviderOptions;
 
 /// A part of a multi-part message.
@@ -141,31 +142,11 @@ pub enum ContentPart {
         provider_options: Option<SharedProviderOptions>,
     },
 
-    /// The result of executing a tool call.
+    /// The result of executing a tool call (upstream `ToolResultPart`).
     ToolResult {
         tool_call_id: String,
-        /// The tool's output (usually a JSON value or plain text).
-        ///
-        /// Accepts the legacy `output` field name (used by the Vercel AI SDK
-        /// and the 0.1.0 TypeScript bindings) as an alias during deserialization,
-        /// so multi-part tool messages constructed either way round-trip
-        /// correctly. Serialization always emits `result`.
-        #[serde(alias = "output")]
-        result: Value,
-        /// The name of the tool that produced this result (optional on the
-        /// user-input side; providers that need it can look it up from the
-        /// preceding tool call).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        tool_name: Option<String>,
-        /// Whether the result is an error or error message.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        is_error: Option<bool>,
-        /// Whether the result is preliminary (replaces prior, e.g. image previews).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        preliminary: Option<bool>,
-        /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        dynamic: Option<bool>,
+        tool_name: String,
+        output: ToolResultOutput,
         /// Provider-specific options for this part (e.g.
         /// `anthropic.cacheControl`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -193,19 +174,6 @@ impl ContentPart {
             tool_name: tool_name.into(),
             input,
             provider_executed: None,
-            provider_options: None,
-        }
-    }
-
-    /// Convenience constructor for a tool-result part (no provider options).
-    pub fn tool_result(tool_call_id: impl Into<String>, result: Value) -> Self {
-        ContentPart::ToolResult {
-            tool_call_id: tool_call_id.into(),
-            result,
-            tool_name: None,
-            is_error: None,
-            preliminary: None,
-            dynamic: None,
             provider_options: None,
         }
     }
