@@ -194,9 +194,12 @@ pub struct StreamTextResultAggregated {
     /// Provider-specific metadata from the Finish chunk.
     #[serde(default)]
     pub provider_metadata: Option<ProviderMetadata>,
-    /// Response metadata (id, timestamp, model_id) if emitted by the stream.
+    /// Request information from the provider.
     #[serde(default)]
-    pub response: Option<crate::types::ResponseMetadata>,
+    pub request: RequestInfo,
+    /// Response metadata and headers from the last step.
+    #[serde(default)]
+    pub response: ResponseInfo,
     /// Assistant messages ready to append for the next turn.
     #[serde(default)]
     pub response_messages: Vec<crate::message::ModelMessage>,

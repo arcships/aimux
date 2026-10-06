@@ -10,7 +10,6 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
-use aimux_provider_utils::Resolvable;
 use aimux_providers::mistral::{MistralProvider, MistralProviderSettings, create_mistral};
 use futures::StreamExt;
 use mock_fetch::{Canned, MockFetch};
@@ -18,7 +17,7 @@ use serde_json::{Value, json};
 
 fn provider(fetch: &std::sync::Arc<MockFetch>) -> MistralProvider {
     create_mistral(MistralProviderSettings {
-        api_key: Some(Resolvable::Value("test-api-key".into())),
+        api_key: Some("test-api-key".into()),
         fetch: Some(fetch.transport()),
         ..Default::default()
     })

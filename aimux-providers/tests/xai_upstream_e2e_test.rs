@@ -12,7 +12,6 @@ use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{ProviderTool, Tool};
 use aimux_core::types::FinishReasonUnified;
-use aimux_provider_utils::Resolvable;
 use aimux_providers::xai::{XAIProviderSettings, XaiResponsesModel, create_xai};
 use futures::TryStreamExt;
 use mock_fetch::{Canned, MockFetch};
@@ -21,7 +20,7 @@ use serde_json::{Value, json};
 fn model(fetch: &std::sync::Arc<MockFetch>) -> XaiResponsesModel {
     create_xai(XAIProviderSettings {
         base_url: Some("https://example.test/v1/".into()),
-        api_key: Some(Resolvable::Value("test-key".into())),
+        api_key: Some("test-key".into()),
         fetch: Some(fetch.transport()),
         ..Default::default()
     })

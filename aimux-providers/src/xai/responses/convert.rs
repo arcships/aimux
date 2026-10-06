@@ -330,7 +330,9 @@ fn validate_response_options(options: &Option<SharedProviderOptions>) -> Result<
                 .as_f64()
                 .is_some_and(|v| v.fract() == 0.0 && (0.0..=8.0).contains(&v)),
             "minP" => value.as_f64().is_some_and(|v| (0.0..=1.0).contains(&v)),
-            "maxTurns" => value.as_f64().is_some_and(|v| v.fract() == 0.0),
+            "maxTurns" => value
+                .as_f64()
+                .is_some_and(|v| v.fract() == 0.0 && v.abs() <= 9_007_199_254_740_991.0),
             "logprobs" | "store" | "parallelToolCalls" => value.is_boolean(),
             "promptCacheKey" | "safetyIdentifier" | "user" | "previousResponseId" => {
                 value.is_string()
@@ -439,6 +441,14 @@ pub fn convert_to_xai_responses_input(
                             content_parts.push(json!({ "type": "input_text", "text": text }));
                         }
                         UserPart::File(file) => {
+                            if matches!(file.data, FileData::Data { .. })
+                                && file.media_type.split('/').next() != Some("image")
+                            {
+                                return Err(AiMuxError::UnsupportedFunctionality(format!(
+                                    "file part media type {} as inline data (xAI Responses requires a URL or a Files API reference for non-image files)",
+                                    file.media_type
+                                )));
+                            }
                             content_parts.push(match &file.data {
                                 FileData::Data {
                                     data: FileBytes::Binary(bytes),

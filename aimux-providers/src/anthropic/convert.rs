@@ -1841,6 +1841,223 @@ pub struct RequestBodyResult {
     pub betas: BTreeSet<String>,
 }
 
+fn parse_anthropic_option_object(shape: &str, value: &Value) -> Result<Value, ()> {
+    let object = value.as_object().ok_or(())?;
+    let parsed = crate::openai::convert::parse_option_fields(object, "anthropic", |key, value| {
+        let kind = match (shape, key) {
+            ("options", "sendReasoning" | "disableParallelToolUse" | "toolStreaming") => "bool",
+            ("options", "structuredOutputMode") => "outputFormat|jsonTool|auto",
+            ("options", "thinking") => "thinking",
+            ("options", "cacheControl") => "cache",
+            ("options", "metadata") => "metadata",
+            ("options", "mcpServers") => "[]mcp",
+            ("options", "container") => "container",
+            ("options", "effort") => "low|medium|high|xhigh|max",
+            ("options", "taskBudget") => "taskBudget",
+            ("options", "speed") | ("fallback", "speed") => "fast|standard",
+            ("options", "serviceTier") => "auto|standard_only",
+            ("options", "inferenceGeo") => "us|global",
+            ("options", "fallbacks") => "fallbacks",
+            ("options", "anthropicBeta") => "[]string",
+            ("options", "safeguards") => "[]safeguard",
+            ("options", "compaction") => "compaction",
+            ("options", "contextManagement") => "context",
+            ("thinking", "type") => "adaptive|enabled|disabled|between_tools",
+            ("thinking", "display")
+                if object.get("type").and_then(Value::as_str) == Some("adaptive") =>
+            {
+                "omitted|summarized|updates"
+            }
+            ("thinking", "budgetTokens")
+                if object.get("type").and_then(Value::as_str) == Some("enabled") =>
+            {
+                "number"
+            }
+            ("thinking", "blockBinding")
+                if object
+                    .get("type")
+                    .is_none_or(|t| t.as_str() == Some("adaptive")) =>
+            {
+                "binding"
+            }
+            ("binding", "prefixMismatchBehavior") => "error|drop_block",
+            ("cache", "type") => "ephemeral",
+            ("cache", "ttl") => "5m|1h",
+            ("metadata", "userId") => "string",
+            ("mcp", "type") => "url",
+            ("mcp", "name" | "url") => "string",
+            ("mcp", "authorizationToken") => "?string",
+            ("mcp", "toolConfiguration") => "?toolConfiguration",
+            ("toolConfiguration", "enabled") => "?bool",
+            ("toolConfiguration", "allowedTools") => "?[]string",
+            ("container", "id") | ("skill", "version") => "string",
+            ("container", "skills") => "[]skill",
+            ("skill", "type") => "anthropic|custom",
+            ("skill", "skillId")
+                if object.get("type").and_then(Value::as_str) == Some("anthropic") =>
+            {
+                "string"
+            }
+            ("skill", "providerReference")
+                if object.get("type").and_then(Value::as_str) == Some("custom") =>
+            {
+                "stringRecord"
+            }
+            ("taskBudget", "type") => "tokens",
+            ("taskBudget", "total") => "total",
+            ("taskBudget", "remaining") => "remaining",
+            ("fallback", "model") => "string",
+            ("fallback", "max_tokens") => "integer",
+            ("fallback", "thinking" | "output_config") | ("safeguard", "classifierContext") => {
+                "record"
+            }
+            ("safeguard", "type") => "dangerous_tool_use",
+            ("compaction", "type") => "summarize",
+            ("compaction", "instructions") => "string",
+            ("edit", "instructions")
+                if object.get("type").and_then(Value::as_str) == Some("compact_20260112") =>
+            {
+                "string"
+            }
+            ("context", "edits") => "[]edit",
+            ("edit", "type") => "clear_tool_uses_20250919|clear_thinking_20251015|compact_20260112",
+            ("edit", "trigger")
+                if object.get("type").and_then(Value::as_str)
+                    == Some("clear_tool_uses_20250919") =>
+            {
+                "trigger"
+            }
+            ("edit", "trigger")
+                if object.get("type").and_then(Value::as_str) == Some("compact_20260112") =>
+            {
+                "inputTokens"
+            }
+            ("edit", "clearAtLeast")
+                if object.get("type").and_then(Value::as_str)
+                    == Some("clear_tool_uses_20250919") =>
+            {
+                "inputTokens"
+            }
+            ("edit", "keep")
+                if object.get("type").and_then(Value::as_str)
+                    == Some("clear_tool_uses_20250919") =>
+            {
+                "toolUses"
+            }
+            ("edit", "keep")
+                if object.get("type").and_then(Value::as_str)
+                    == Some("clear_thinking_20251015") =>
+            {
+                "keepThinking"
+            }
+            ("edit", "clearToolInputs")
+                if object.get("type").and_then(Value::as_str)
+                    == Some("clear_tool_uses_20250919") =>
+            {
+                "bool"
+            }
+            ("edit", "excludeTools")
+                if object.get("type").and_then(Value::as_str)
+                    == Some("clear_tool_uses_20250919") =>
+            {
+                "[]string"
+            }
+            ("edit", "pauseAfterCompaction")
+                if object.get("type").and_then(Value::as_str) == Some("compact_20260112") =>
+            {
+                "bool"
+            }
+            ("trigger", "type") => "input_tokens|tool_uses",
+            ("inputTokens", "type") => "input_tokens",
+            ("toolUses", "type") => "tool_uses",
+            ("thinkingTurns", "type") => "thinking_turns",
+            ("trigger" | "inputTokens" | "toolUses" | "thinkingTurns", "value") => "number",
+            _ => return None,
+        };
+        Some(parse_anthropic_option_value(kind, value))
+    })
+    .map_err(|_| ())?;
+    let required: &[&str] = match shape {
+        "thinking" if !object.contains_key("type") => &["blockBinding"],
+        "thinking" | "cache" | "compaction" | "safeguard" | "edit" => &["type"],
+        "binding" => &["prefixMismatchBehavior"],
+        "mcp" => &["type", "name", "url"],
+        "skill" if object.get("type").and_then(Value::as_str) == Some("custom") => {
+            &["type", "providerReference"]
+        }
+        "skill" => &["type", "skillId"],
+        "taskBudget" => &["type", "total"],
+        "fallback" => &["model"],
+        "context" => &["edits"],
+        "trigger" | "inputTokens" | "toolUses" | "thinkingTurns" => &["type", "value"],
+        _ => &[],
+    };
+    if required.iter().any(|key| !parsed.contains_key(*key)) {
+        return Err(());
+    }
+    Ok(Value::Object(parsed))
+}
+
+fn parse_anthropic_option_value(kind: &str, value: &Value) -> Result<Value, ()> {
+    if let Some(kind) = kind.strip_prefix('?') {
+        return if value.is_null() {
+            Ok(Value::Null)
+        } else {
+            parse_anthropic_option_value(kind, value)
+        };
+    }
+    if let Some(kind) = kind.strip_prefix("[]") {
+        return value
+            .as_array()
+            .ok_or(())?
+            .iter()
+            .map(|v| parse_anthropic_option_value(kind, v))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::Array);
+    }
+    let valid = match kind {
+        "bool" => value.is_boolean(),
+        "string" => value.is_string(),
+        "number" => value.is_number(),
+        "integer" => value
+            .as_f64()
+            .is_some_and(|n| n.fract() == 0.0 && n.abs() <= 9_007_199_254_740_991.0),
+        "total" => value
+            .as_f64()
+            .is_some_and(|n| n.fract() == 0.0 && (20000.0..=9_007_199_254_740_991.0).contains(&n)),
+        "remaining" => value
+            .as_f64()
+            .is_some_and(|n| n.fract() == 0.0 && (0.0..=9_007_199_254_740_991.0).contains(&n)),
+        "record" => value.is_object(),
+        "stringRecord" => value
+            .as_object()
+            .is_some_and(|o| o.values().all(Value::is_string)),
+        "fallbacks" => {
+            return if value.as_str() == Some("default") {
+                Ok(value.clone())
+            } else {
+                parse_anthropic_option_value("[]fallback", value)
+            };
+        }
+        "keepThinking" => {
+            return if value.as_str() == Some("all") {
+                Ok(value.clone())
+            } else {
+                parse_anthropic_option_object("thinkingTurns", value)
+            };
+        }
+        "thinking" | "binding" | "cache" | "metadata" | "mcp" | "toolConfiguration"
+        | "container" | "skill" | "taskBudget" | "fallback" | "safeguard" | "compaction"
+        | "context" | "edit" | "trigger" | "inputTokens" | "toolUses" | "thinkingTurns" => {
+            return parse_anthropic_option_object(kind, value);
+        }
+        _ => value
+            .as_str()
+            .is_some_and(|s| kind.split('|').any(|allowed| allowed == s)),
+    };
+    if valid { Ok(value.clone()) } else { Err(()) }
+}
+
 /// What differs between the hosts of the Messages API as far as the request
 /// body goes: which providerOptions key the caller's options live under (read
 /// in addition to the canonical one) and which tool/output features the host
@@ -2422,7 +2639,10 @@ fn append_anthropic_mcp_servers(
             if let Some(at) = server.get("authorizationToken") {
                 o.insert("authorization_token".to_string(), at.clone());
             }
-            if let Some(tc) = server.get("toolConfiguration") {
+            if let Some(tc) = server
+                .get("toolConfiguration")
+                .filter(|value| !value.is_null())
+            {
                 let mut tc_obj = Map::new();
                 if let Some(at) = tc.get("allowedTools") {
                     tc_obj.insert("allowed_tools".to_string(), at.clone());
@@ -2556,6 +2776,24 @@ pub(crate) fn build_request_body_for(
     stream: bool,
     profile: &RequestProfile,
 ) -> Result<RequestBodyResult, AiMuxError> {
+    let mut parsed_options = options.clone();
+    if let Some(raw) =
+        anthropic_options_in(options.provider_options.as_ref(), &profile.options_name)
+    {
+        let parsed =
+            parse_anthropic_option_object("options", &Value::Object(raw)).map_err(|()| {
+                AiMuxError::InvalidArgument("invalid anthropic provider options".to_string())
+            })?;
+        let namespaces = parsed_options
+            .provider_options
+            .get_or_insert_with(Default::default);
+        namespaces.remove(CANONICAL);
+        namespaces.insert(
+            profile.options_name.clone(),
+            parsed.as_object().unwrap().clone(),
+        );
+    }
+    let options = &parsed_options;
     let mut warnings: Vec<Warning> = Vec::new();
     let mut betas: BTreeSet<String> = BTreeSet::new();
     let caps = get_model_capabilities(model_id);

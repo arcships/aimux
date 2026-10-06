@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Middleware wraps generation and streaming with callbacks for both operations,
+  parameter transforms and provider/model/supported-URL overrides. Explicit
+  model and provider ids take precedence over middleware overrides.
+  `NoSuchProvider` carries `provider_id`, `model_id`, `model_type` and
+  `available_providers`. Node and Python OpenAI constructors use Responses
+  by default.
+
 - Vendor packages follow their upstream counterparts more closely. Visible
   changes: Bedrock percent-encodes the model id in request URLs and writes
   provider metadata under both `amazonBedrock` and `bedrock`; OpenAI embeddings
@@ -33,8 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timestamp, model id, headers and body. `StreamResult` has `request` and
   `response: Option<StreamResponseInfo>`. The flat `request_body` and
   `response_headers` fields are removed and `response` is optional; the call
-  layer fills a missing id, timestamp and model id. The user-facing results and
-  their JSON are unchanged.
+  layer fills a missing id, timestamp and model id. `GenerateTextResult`
+  exposes `request: RequestInfo` and `response: ResponseInfo`, including
+  headers and body.
 
 - The prompt a provider receives is modelled by role (`aimux-core`), as the AI
   SDK's `LanguageModelV4Message`. `LanguageModelPrompt` is
@@ -66,11 +74,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`aimux-core`). A provider emits `tool::RawToolCall` (`input` is the raw
   argument text) in `GenerateContent::ToolCall(..)` and
   `StreamPart::ToolCall(..)`, and `tool::ToolResult` in the `ToolResult`
-  variants; these variants are newtype variants now. `StreamPart` is generic
-  over the tool-call type: a provider's `do_stream` yields `StreamPart`
-  (= `StreamPart<RawToolCall>`), `stream_text` and everything after it yield
-  `TextStreamPart` (= `StreamPart<ToolCall>`, parsed input with `invalid` /
-  `error`). `RawToolCall` moved from `parse_tool_call` to `tool`. Wire format:
+  variants; these variants are newtype variants now. A provider's `do_stream`
+  yields `StreamPart` with raw tool-call input. `stream_text` and everything
+  after it yield `TextStreamPart` with parsed input and `invalid` / `error`.
+  Call-layer streams consume provider response-metadata events internally;
+  `TextStreamPart` has no `ResponseMetadata` variant. `RawToolCall` moved from `parse_tool_call` to `tool`. Wire format:
   enum variants keep their JSON shape; a provider-layer `StreamPart::ToolCall`
   has a string `input` and no `invalid` / `error`; a
   `GenerateContent::ToolCall` with a non-string `input` no longer
@@ -196,21 +204,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Provider::discovery()`; `supported_urls()` is added to `LanguageModel`.
 - Every `XxxConfig`, config builder, `from_env()`, `with_*` method and
   `XxxProvider::new(...)` is gone, in every provider package. Each package
-  has `XxxProviderSettings` (all fields optional), `create_xxx(settings)`
-  (fallible only for an unusable `base_url`, a conflicting key setting or an
-  undeclared template parameter) and an infallible default instance `xxx()`.
+  has package-specific `XxxProviderSettings`, `create_xxx(settings)`
+  (validating package-specific settings, including base URLs, conflicting
+  credentials and template parameters) and a default instance `xxx()` where
+  the package provides one.
   Models read a crate-private per-model config; there are no getters and no
-  snapshot. `Fetch` (HTTP), `WsConnector` (WebSocket) and `Resolvable<T>`
-  (value, closure, async closure or future) are the injection points;
-  `transform_request_body` is the one provider-level body hook.
-- Credentials and per-request settings are evaluated on every request:
-  `api_key: None` reads the package's environment variable, `Some("")` is
+  snapshot. `Fetch` (HTTP) and package-specific WebSocket settings are
+  transport injection points. OpenAI, Anthropic and Google use fixed string
+  credentials and header maps, without a body-transform setting. The
+  OpenAI-compatible package exposes its upstream `transform_request_body`,
+  `supported_urls` and `convert_usage` hooks. Cohere and Mistral expose
+  `generate_id` settings. Package settings omit `name` and body transforms
+  when the upstream package does not offer them. Every request carries
+  `ai-sdk-<package>/<version>` in its user-agent.
+- For packages using the API-key loader, environment fallbacks are evaluated
+  on every request: `api_key: None` reads the package's environment variable, `Some("")` is
   sent verbatim and never falls back to the environment, and a missing key
   fails the call (not the factory) with `AiMuxError::LoadApiKey { env_var,
   description }`. A missing required setting (AWS region, Azure resource name,
   Vertex project, …) fails the call with `AiMuxError::LoadSetting { env_var,
-  name }`. Headers merge case-insensitively (provider, then call, then
-  credential) and a credential header is sent once.
+  name }`. Credentials and custom headers otherwise follow each package's
+  settings; the generic compatible factory sends no auth for a missing or empty
+  key. Headers merge case-insensitively in package-specific order; custom and
+  call headers can override credential headers.
 - Retry is a call-level concern only. `RetryConfig`, `retry_config()`,
   `with_retry_config`, the `max_retries` fields on every provider config and
   `ProviderRecord.max_retries` are deleted; the nine core operations call
@@ -221,9 +237,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exactly once.
 - `body_overrides` is removed everywhere (provider configs, builders,
   `CallOptions`, `ProviderOptions`, `config_json`, binding `ProviderConfig`).
-  Provider-level body rewrites are a `transform_request_body` closure that
-  runs once on the finished JSON body. `ProviderOptions`, the C ABI
-  `config_json` and the Node `ProviderConfig` that carry `max_retries` or
+  OpenAI-compatible provider-level body rewrites use its upstream
+  `transform_request_body` closure on the finished JSON body. `ProviderOptions`,
+  the C ABI `config_json` and the Node `ProviderConfig` that carry `max_retries` or
   `body_overrides` now fail with `InvalidArgument` instead of ignoring them
   (`reject_removed_provider_options` for other shapes).
 - Recording: `RECORDING_SCHEMA = 3`. `ProviderRecord` holds identity only
@@ -233,8 +249,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `provider_id` through the caller-supplied registry, retaining its settings.
   If the default model method differs from the recorded one, pass the model
   to `replay_with_model`. Recorded provider strings change with the next item.
-- `model.provider()` is `"{name}.{method}"`, where `name` is
-  `settings.name` (default: the package name). Defaults: `openai.chat` /
+- `model.provider()` follows the package's fixed identity or, where offered,
+  its `settings.name` override. Defaults: `openai.chat` /
   `openai.responses` / `openai.embedding` / `openai.image` / `openai.speech` /
   `openai.transcription` / `openai.files`; `anthropic.messages` (a custom name
   is used verbatim; `{name}.files` derives from it), `anthropic-aws`,
@@ -281,8 +297,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hooks.
 - Anthropic: the base URL includes `/v1` (endpoint `{base}/messages`; only the
   bare `https://api.anthropic.com` is rewritten); `ANTHROPIC_BASE_URL` and
-  `OPENAI_BASE_URL` are no longer read; `stream` is omitted on non-streaming
-  calls; `providerOptions.anthropic.metadata.userId` maps to `metadata.user_id`; `anthropic-beta` is
+  `OPENAI_BASE_URL` supply the base URL when the corresponding setting is
+  absent; `stream` is omitted on non-streaming calls; `providerOptions.anthropic.metadata.userId` maps to `metadata.user_id`; `anthropic-beta` is
   sent on every host. Result-level `providerMetadata` is now populated
   (`usage`, `stopSequence`, `iterations`, `container`, `contextManagement`,
   under `anthropic` and the custom name), `usage.raw` is the provider's own
@@ -307,8 +323,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `https://router.huggingface.co/v1`; the xAI-specific chat response
   handling (citations, search parameters, 200-status errors) is not available
   on that path. The xAI Responses model now sends `top_k` and warns for
-  `frequencyPenalty` and `presencePenalty`, as upstream does. The OpenAI default `language_model` stays chat (upstream: Responses; see the
-  RFC-0036 §5 table). Codex is `codex.responses`, its ChatGPT-account base URL
+  `frequencyPenalty` and `presencePenalty`, as upstream does. The OpenAI default `language_model` and
+  `call` use Responses, matching upstream; `chat` remains an explicit accessor. Codex is `codex.responses`, its ChatGPT-account base URL
   defaults to `https://chatgpt.com/backend-api/codex` (it was missing
   `/codex`), and `store: false` is a package rule. `open_responses`: `url` →
   `base_url`. The Azure deepseek / completion / MAI models and the Foundry item

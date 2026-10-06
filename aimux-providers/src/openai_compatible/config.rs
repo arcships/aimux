@@ -127,6 +127,9 @@ pub(crate) fn default_error_structure(data: &Value) -> ProviderErrorParts {
     }
 }
 
+/// Returns the URLs supported by chat models.
+pub type SupportedUrlsFn = Arc<dyn Fn() -> SupportedUrls + Send + Sync>;
+
 /// Chat-only settings of a provider.
 #[derive(Clone)]
 pub(crate) struct ChatSettings {

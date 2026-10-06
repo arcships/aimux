@@ -35,7 +35,9 @@ mod types;
 
 pub use chat::OpenAICompatibleChatModel;
 pub use completion::OpenAICompatibleCompletionModel;
-pub use config::{ConvertUsage, MetadataExtractor, StreamMetadataExtractor, TransformRequestBody};
+pub use config::{
+    ConvertUsage, MetadataExtractor, StreamMetadataExtractor, SupportedUrlsFn, TransformRequestBody,
+};
 pub use embedding::OpenAICompatibleEmbeddingModel;
 pub use image::OpenAICompatibleImageModel;
 
@@ -89,7 +91,7 @@ pub struct OpenAICompatibleProviderSettings {
     /// Extracts metadata from chat responses and streaming chunks.
     pub metadata_extractor: Option<Arc<dyn MetadataExtractor>>,
     /// URL patterns supported by chat models, evaluated when requested.
-    pub supported_urls: Option<Arc<dyn Fn() -> SupportedUrls + Send + Sync>>,
+    pub supported_urls: Option<SupportedUrlsFn>,
     /// Custom chat token accounting.
     pub convert_usage: Option<ConvertUsage>,
 }
@@ -117,6 +119,8 @@ impl std::fmt::Debug for OpenAICompatibleProviderSettings {
                 &self.transform_request_body.is_some(),
             )
             .field("metadata_extractor", &self.metadata_extractor.is_some())
+            .field("supported_urls", &self.supported_urls.is_some())
+            .field("convert_usage", &self.convert_usage.is_some())
             .finish()
     }
 }
@@ -160,20 +164,11 @@ pub fn create_openai_compatible(
     dialect.supported_urls = settings.supported_urls;
     dialect.convert_usage = settings.convert_usage;
     let headers = compatible_headers(credential, user_headers);
-    provider.headers = Resolvable::from_async_fn(move || {
-        let headers = headers.clone();
-        async move {
-            let mut headers = headers.resolve().await?;
-            let suffix = concat!("ai-sdk-openai-compatible/", env!("CARGO_PKG_VERSION"));
-            let user_agent = headers
-                .get("user-agent")
-                .and_then(Option::as_deref)
-                .filter(|value| !value.is_empty())
-                .map_or_else(|| suffix.to_string(), |value| format!("{value} {suffix}"));
-            headers.insert("user-agent".into(), Some(user_agent));
-            Ok(headers)
-        }
-    });
+    provider.headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
+        headers,
+        "openai-compatible",
+        "3.0.59",
+    );
     Ok(provider)
 }
 
@@ -244,10 +239,14 @@ impl OpenAICompatibleProvider {
             name,
             base_url: assembly.base_url,
             query_params,
-            headers: provider_headers(
-                assembly.credential,
-                assembly.fixed_headers,
-                assembly.headers,
+            headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+                provider_headers(
+                    assembly.credential,
+                    assembly.fixed_headers,
+                    assembly.headers,
+                ),
+                "openai-compatible",
+                "3.0.59",
             ),
             fetch: assembly.fetch,
             transform_request_body: assembly.transform_request_body,
@@ -267,7 +266,11 @@ impl OpenAICompatibleProvider {
             query_params: self.query_params.clone(),
             headers: self.headers.clone(),
             fetch: self.fetch.clone(),
-            transform_request_body: self.transform_request_body.clone(),
+            transform_request_body: if method == "chat" {
+                self.transform_request_body.clone()
+            } else {
+                None
+            },
             chat: self.chat.clone(),
         }
     }

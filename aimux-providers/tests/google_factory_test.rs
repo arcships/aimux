@@ -7,10 +7,9 @@
 //! the transport is the one the settings name. The expected request comes from
 //! the fixture; the inputs are rebuilt from the fixture's recorded `sdk.input`.
 //!
-//! Two differences from the recording are deliberate and asserted around: the
-//! `user-agent` header is the SDK's own identifier and aimux sends none, and
-//! the recorded `x-goog-api-key` is redacted, so the key the case used is
-//! substituted back.
+//! The recorded `x-goog-api-key` is redacted, so the key the case used is
+//! substituted back. The recorded SDK and runtime user-agent identifiers are
+//! replaced with the pinned provider package's user-agent suffix.
 
 #[path = "common/mock_fetch.rs"]
 mod mock_fetch;
@@ -110,7 +109,7 @@ impl Fixture {
     }
 
     /// The recorded request must equal what went out: method, URL, headers
-    /// (names case-insensitively, `user-agent` aside) and body.
+    /// (names case-insensitively, with the pinned user-agent) and body.
     fn assert_request(&self, seen: &Seen) {
         let recorded = &self.json["request"];
         assert_eq!(
@@ -127,7 +126,10 @@ impl Fixture {
             .iter()
             .map(|(k, v)| (k.to_ascii_lowercase(), v.as_str().unwrap().to_string()))
             .collect();
-        expected.remove("user-agent");
+        expected.insert(
+            "user-agent".to_string(),
+            "ai-sdk-google/4.0.85 ai-sdk-provider-utils/5.0.51".to_string(),
+        );
         assert_eq!(
             expected.get("x-goog-api-key").map(String::as_str),
             Some("<redacted>"),
@@ -178,7 +180,11 @@ fn call_options_from(input: &Value) -> CallOptions {
         Some("required") => Some(ToolChoice::Required),
         Some("none") => Some(ToolChoice::None),
         Some("auto") => Some(ToolChoice::Auto),
-        None => None,
+        None => options
+            .tools
+            .as_ref()
+            .filter(|tools| !tools.is_empty())
+            .map(|_| ToolChoice::Auto),
         Some(other) => panic!("unmapped toolChoice {other}"),
     };
     options.provider_options = input

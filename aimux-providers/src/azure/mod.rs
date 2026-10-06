@@ -40,21 +40,21 @@ use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt, HeadersFn,
-    HttpRequest, Resolvable, default_fetch, load_setting, normalize_headers, validate_base_url,
+    HttpRequest, Resolvable, default_fetch, load_setting, validate_base_url,
     without_trailing_slash,
 };
 
 use crate::openai::config::OpenAIModelConfig;
 use crate::openai::responses::ResponsesProfile;
 use crate::openai::{
-    OpenAIChatModel, OpenAIEmbeddingModel, OpenAIImageModel, OpenAIResponsesModel,
-    OpenAISpeechModel, OpenAITranscriptionModel,
+    OpenAIEmbeddingModel, OpenAIImageModel, OpenAIModel, OpenAIResponsesModel, OpenAISpeechModel,
+    OpenAITranscriptionModel,
 };
 use crate::shared::{AuthScheme, Credential, credential_headers, is_valid_hostname_part};
 
 /// The chat-completions model of the Azure package (`provider.chat(id)`): the
 /// OpenAI one, configured for Azure.
-pub type AzureChatModel = OpenAIChatModel;
+pub type AzureChatModel = OpenAIModel;
 /// The Responses model of the Azure package: the OpenAI one, configured for
 /// Azure.
 pub type AzureResponsesModel = OpenAIResponsesModel;
@@ -231,15 +231,18 @@ pub fn create_azure(
         resource_name: settings.resource_name,
         base_url,
         speech_base_url,
-        speech_headers: crate::openai::config::headers_with_user_agent(
+        speech_headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
             speech_headers,
-            "ai-sdk-azure",
+            "azure",
+            "4.0.84",
         ),
         info,
         api_version: settings.api_version,
         use_deployment_based_urls: settings.use_deployment_based_urls,
         fetch,
-        headers: crate::openai::config::headers_with_user_agent(headers, "ai-sdk-azure"),
+        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+            headers, "azure", "4.0.84",
+        ),
     })
 }
 
@@ -406,6 +409,7 @@ impl AzureOpenAIProvider {
             provider: provider.to_string(),
             url: Arc::new(move |path| rules.url(path, &deployment)),
             headers: self.headers.clone(),
+            token_provider: None,
             fetch: self.fetch.clone(),
             supported_urls: crate::openai::config::supported_urls(provider),
             transform_request_body: None,
@@ -417,7 +421,7 @@ impl AzureOpenAIProvider {
     /// `"azure.chat"`.
     #[must_use]
     pub fn chat(&self, deployment: &str) -> AzureChatModel {
-        OpenAIChatModel::from_config(
+        OpenAIModel::from_config(
             deployment.to_string(),
             self.model_config("azure.chat", deployment),
         )
@@ -550,7 +554,7 @@ impl ProviderDiscovery for AzureOpenAIProvider {
         if self.api_version.is_none() {
             rules.api_version = DEPLOYMENTS_API_VERSION.to_string();
         }
-        let headers = self.headers.clone();
+        let config = self.model_config("azure.responses", "");
         let fetch = self.fetch.clone();
         Box::pin(async move {
             // Azure response: { data: [{ id, model, modelName, ... }] }
@@ -568,7 +572,7 @@ impl ProviderDiscovery for AzureOpenAIProvider {
                 model_name: Option<String>,
             }
 
-            let provider_headers = normalize_headers(headers.resolve().await?);
+            let provider_headers = config.request_headers(None).await?;
             let mut url = url::Url::parse(&format!("{}/deployments", rules.prefix()?))
                 .map_err(|e| AiMuxError::InvalidArgument(format!("invalid Azure URL: {e}")))?;
             set_query_param(&mut url, "api-version", &rules.api_version);

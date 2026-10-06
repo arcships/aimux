@@ -280,6 +280,12 @@ impl Files for GoogleFiles {
         })?;
 
         let mut file = upload_resp.value.file;
+        let mut raw_file = upload_resp
+            .raw_value
+            .as_ref()
+            .and_then(|value| value.get("file"))
+            .cloned()
+            .unwrap_or(Value::Null);
 
         // Step 3: Poll if file is PROCESSING.
         let poll_interval_ms = google_options.poll_interval_ms.unwrap_or(2000.0);
@@ -321,6 +327,7 @@ impl Files for GoogleFiles {
             .await?;
 
             file = poll_resp.value;
+            raw_file = poll_resp.raw_value.clone().unwrap_or(Value::Null);
             last_poll_body = poll_resp.raw_value.map(|value| value.to_string());
             last_poll_status = Some(200);
             last_poll_url = poll_url;
@@ -344,9 +351,13 @@ impl Files for GoogleFiles {
         // Build provider metadata.
         let mut metadata = serde_json::Map::new();
         metadata.insert("name".to_string(), json!(file.name));
-        metadata.insert("displayName".to_string(), json!(file.display_name));
+        if file.display_name.is_some() || raw_file.get("displayName").is_some() {
+            metadata.insert("displayName".to_string(), json!(file.display_name));
+        }
         metadata.insert("mimeType".to_string(), json!(file.mime_type));
-        metadata.insert("sizeBytes".to_string(), json!(file.size_bytes));
+        if file.size_bytes.is_some() || raw_file.get("sizeBytes").is_some() {
+            metadata.insert("sizeBytes".to_string(), json!(file.size_bytes));
+        }
         metadata.insert("state".to_string(), json!(file.state));
         metadata.insert("uri".to_string(), json!(file.uri));
         if let Some(ref create_time) = file.create_time {

@@ -531,6 +531,23 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
             .map_err(|_| AiMuxError::InvalidArgument(format!("invalid header value for {name}")))?;
         headers.insert(header_name, header_value);
     }
+    let suffix = "ai-sdk-provider-utils/5.0.51";
+    let current = request
+        .headers
+        .iter()
+        .rev()
+        .find_map(|(name, value)| {
+            name.eq_ignore_ascii_case("user-agent")
+                .then_some(value.as_str())
+        })
+        .unwrap_or_default();
+    let user_agent = crate::headers::user_agent_value(current, suffix);
+    headers.insert(
+        http::header::USER_AGENT,
+        http::HeaderValue::try_from(user_agent).map_err(|_| {
+            AiMuxError::InvalidArgument("invalid header value for user-agent".to_string())
+        })?,
+    );
     let body = match &request.body {
         HttpBody::Json(value) => {
             if !headers.contains_key(http::header::CONTENT_TYPE) {

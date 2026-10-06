@@ -38,9 +38,10 @@ its own, ...), it is case 2: add its own package next to `groq/` and
    (`{param}` placeholders, each declared with an optional `env` list and
    `default`; a derived parameter takes `derive: {from, map, otherwise}`);
    `profile.max_tokens_key` (`"max_tokens"` or `"max_completion_tokens"`: the
-   only max-token key the vendor accepts). Anything beyond that rides in a
-   `transform_request_body` closure on the factory; if the quirk changes auth
-   or error shapes, it is case 2.
+   only max-token key the vendor accepts). Per-call body fields can use the
+   provider's options namespace. The OpenAI-compatible factory also exposes
+   its upstream `transform_request_body` hook; if the quirk changes auth or
+   error shapes, it is case 2.
 
 2. Regenerate what is generated from the registry and commit its output:
 
@@ -73,17 +74,19 @@ its own, ...), it is case 2: add its own package next to `groq/` and
 1. New directory `aimux-providers/src/<name>/`:
 
    - `mod.rs` — the factory, modelled on the vendor's `@ai-sdk/<name>`
-     package: `<Name>ProviderSettings` (every field optional: `base_url`,
-     `api_key: Option<Resolvable<String>>`, `headers`, `name`, `fetch`,
-     `transform_request_body`), `create_<name>(settings)` (fails only for an
-     unusable `base_url`), an infallible default instance `<name>()`, and
+     package: `<Name>ProviderSettings` with exactly that package's fields
+     (OpenAI and Anthropic use `api_key: Option<String>`,
+     `headers: Option<HeaderMapOpt>` and `fetch: Option<FetchFunction>`,
+     with no body-transform hook), `create_<name>(settings)` (validates
+     package-specific settings, including base URLs and mutually exclusive
+     credentials), a default instance `<name>()` where upstream provides one, and
      `<Name>Provider` with one method per model (`chat(id)`, `embedding(id)`,
-     …) plus the `Provider` trait impl. The key is resolved **on every request**
-     (`None` reads the environment variable, `Some("")` is sent verbatim, a
-     missing key fails the call with `AiMuxError::LoadApiKey`); a required
-     setting that is missing fails the call with `LoadSetting`. Each model
-     reports `provider()` as `"{name}.{method}"` with `name` defaulting to the
-     package name. There is no `Config` type, no `from_env`, no `with_*`
+     …) plus the `Provider` trait impl. For packages using the API-key loader,
+     `None` reads the environment variable **on every request**,
+     `Some("")` is sent verbatim and a missing key fails the call with
+     `AiMuxError::LoadApiKey`; a required setting that is missing fails the
+     call with `LoadSetting`. Model identity and custom-name handling follow
+     the package; do not impose a universal `"{name}.{method}"` rule. There is no `Config` type, no `from_env`, no `with_*`
      builder, and no retry setting: the model reads a private config built by
      the factory, and retry belongs to the caller (`max_retries` on the call);
    - `model.rs` — the model implementing `LanguageModel`:

@@ -1,7 +1,7 @@
 //! AWS Signature Version 4 request signing, as a [`Fetch`] decorator.
 //!
 //! [`SigV4Fetch`] wraps another transport and signs each request's *final*
-//! body bytes just before they are sent, so Bedrock and Claude Platform on AWS
+//! body bytes just before they are sent, so AWS-hosted providers
 //! can authenticate through ordinary provider settings (`fetch`) instead of
 //! each model re-implementing header construction.
 //!

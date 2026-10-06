@@ -434,6 +434,28 @@ impl LanguageModel for VertexModel {
                                         provider_metadata: tool_metadata,
                                     }));
                                     has_tool_calls = true;
+                                } else if let Some(inline) = part.get("inlineData") {
+                                    if let Some(id) = text_id.take() {
+                                        yield Ok(StreamPart::TextEnd { id, provider_metadata: None });
+                                    }
+                                    if let Some(id) = reasoning_id.take() {
+                                        yield Ok(StreamPart::ReasoningEnd { id, provider_metadata: None });
+                                    }
+                                    if let (Some(data), Some(media_type)) = (
+                                        inline.get("data").and_then(Value::as_str),
+                                        inline.get("mimeType").and_then(Value::as_str),
+                                    ) {
+                                        let file = GeneratedFile {
+                                            data: GeneratedFileData::Data { data: FileBytes::Base64(data.to_string()) },
+                                            media_type: media_type.to_string(),
+                                            provider_metadata: thought_metadata(part),
+                                        };
+                                        yield Ok(if part.get("thought").and_then(Value::as_bool) == Some(true) {
+                                            StreamPart::ReasoningFile(file)
+                                        } else {
+                                            StreamPart::File(file)
+                                        });
+                                    }
                                 } else if let Some(ec) = part.get("executableCode") {
                                     // Provider-executed code execution.
                                     let has_code = ec

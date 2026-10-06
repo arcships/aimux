@@ -15,7 +15,7 @@ use aimux_providers::{OpenAIProviderSettings, create_openai};
 #[tokio::main]
 async fn main() -> Result<(), AiMuxError> {
     let provider = create_openai(OpenAIProviderSettings {
-        api_key: Some("sk-...".to_string().into()),
+        api_key: Some("sk-...".to_string()),
         ..Default::default()
     })?;
     let model = provider.chat("gpt-4o");
@@ -27,11 +27,13 @@ async fn main() -> Result<(), AiMuxError> {
 
 ## Providers
 
-Every provider package follows the AI SDK shape: `XxxProviderSettings`
-(all fields optional), `create_xxx(settings)` and an infallible default
-instance `xxx()`. Models are taken from the provider (`provider.chat(id)`,
-`provider.language_model(id)?`, `provider.embedding_model(id)?`, …); each
-reports `provider()` as `"{name}.{method}"` (`openai.chat`, `anthropic.messages`).
+Provider packages follow the AI SDK shape: `XxxProviderSettings`,
+`create_xxx(settings)` and a default instance `xxx()` where the package
+provides one. Required fields follow the package: OpenAI-compatible settings
+require `name` and `base_url`. Models are taken from the provider (`provider.chat(id)`,
+`provider.language_model(id)?`, `provider.embedding_model(id)?`, …). Model
+identity follows the package (`openai.chat`, `anthropic.messages`); custom
+name handling is package-specific.
 
 ```rust
 use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
@@ -43,16 +45,24 @@ let model = openai().chat("gpt-4o");
 
 // Explicit settings. `api_key: Some(..)` is used as given (`""` included).
 let anthropic = create_anthropic(AnthropicProviderSettings {
-    api_key: Some("sk-ant-...".to_string().into()),
+    api_key: Some("sk-ant-...".to_string()),
     base_url: Some("https://relay.example/v1".into()),
     ..Default::default()
 })?;
 let model = anthropic.messages("claude-sonnet-4-5");
 ```
 
-Settings that need a function (a rotating key, headers, a custom transport)
-take a `Resolvable` (`Resolvable::from_fn`, `from_async_fn`) or a `Fetch`; a
-provider-level rewrite of the request body is `transform_request_body`.
+Settings are package-specific. OpenAI, Anthropic and Google take
+`api_key: Option<String>` and `headers: Option<HeaderMapOpt>`; these are fixed
+values, not callbacks. `fetch: Option<FetchFunction>` supplies a custom
+transport. These packages have no `transform_request_body` setting;
+OpenAI-compatible settings expose that hook, plus `supported_urls` and
+`convert_usage` callbacks for chat models. Cohere and Mistral expose
+`generate_id` for generated ids. Settings only expose `name` where the upstream
+package does. Every request includes the package user-agent suffix
+`ai-sdk-<package>/<version>`.
+OpenAI defaults to Responses through `call` and `language_model`; `chat`
+selects Chat Completions explicitly.
 Retry is not a provider setting: `max_retries` on the call options (default
 2, 2000 ms initial delay, factor 2).
 
@@ -74,7 +84,7 @@ let model = provider.language_model("model-id")?;
 
 // Explicit key and base URL override.
 let provider = create_provider("groq", PresetSettings {
-    api_key: Some("sk-...".to_string().into()),
+    api_key: Some("sk-...".to_string()),
     base_url: Some("https://relay.example/v1".into()),
     ..Default::default()
 })?;
@@ -90,10 +100,20 @@ if let Some(discovery) = provider.discovery() {
 }
 ```
 
-Unknown names fail with `AiMuxError::NoSuchProvider { provider_id }`.
+Unknown names fail with `AiMuxError::NoSuchProvider { provider_id, model_id,
+model_type, available_providers }`.
 Custom endpoints use `PresetSettings::base_url` or the vendor's settings.
 The bindings retain their compatibility API in `aimux_providers::provider`;
 its helpers and option types are not re-exported from the Rust crate root.
+
+## Middleware
+
+`wrap_language_model(model, middleware, model_id, provider_id)` applies the
+first middleware as the outermost wrapper. Hooks can override provider id,
+model id and supported URLs, transform call parameters, and wrap generation
+or streaming with callbacks for both operations. Explicit id arguments take
+precedence over middleware overrides. `wrap_image_model` provides the image
+model hooks and the same explicit id overrides.
 
 ## Text Generation
 
@@ -136,7 +156,9 @@ let result = task.await.unwrap()?;
 
 ## Streaming Generation
 
-Returns generated content as a stream, output chunk by chunk.
+Returns generated content as `TextStreamPart` items, output chunk by chunk.
+Provider-layer `StreamPart::ResponseMetadata` events are consumed by the call
+layer; they are not emitted by `stream_text`.
 
 ```rust
 use futures::StreamExt;
@@ -145,8 +167,8 @@ let result = stream_text(&model, "Write a haiku.", GenerateTextOptions::default(
 let mut stream = result.stream;
 while let Some(part) = stream.next().await {
     match part? {
-        StreamPart::TextDelta { delta, .. } => print!("{}", delta),
-        StreamPart::Finish { .. } => println!("\n[done]"),
+        TextStreamPart::TextDelta { delta, .. } => print!("{}", delta),
+        TextStreamPart::Finish { .. } => println!("\n[done]"),
         _ => {}
     }
 }
@@ -156,7 +178,7 @@ Streaming honors the same `timeout` / `abort_signal` options as
 [text generation](#text-generation); streamed timeouts surface as an
 `Err(AiMuxError::Timeout(..))` stream item, and aborting the signal ends the
 stream with `Err(AiMuxError::Aborted(..))`. Provider-reported error events
-remain `Ok(StreamPart::Error { .. })` data.
+remain `Ok(TextStreamPart::Error { .. })` data.
 
 > Stream part variants are documented in the [API overview](../API.md#streaming-generation).
 
@@ -352,7 +374,7 @@ Rust types are the canonical definitions — one module per feature in
 |------|------|
 | `generate` | `generate_text` / `stream_text` functions, `GenerateResult` |
 | `language_model` | `LanguageModel`, `GenerateTextResult` |
-| `stream_part` | `StreamPart` (18 variants) |
+| `stream_part` | `StreamPart` (provider layer), `TextStreamPart` (call layer) |
 | `options` | `GenerateTextOptions`, `CallOptions`, `ResponseFormat`, `ToolChoice`, `ReasoningEffort` |
 | `message` / `language_model_message` | `ModelMessage`, `ModelPrompt`, `MessageContent`, `Role` |
 | `content` | `ContentPart` (Text / Image / File / Reasoning / ToolCall / ToolResult) |

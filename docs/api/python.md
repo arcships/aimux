@@ -44,7 +44,8 @@ result = generate_text(model, "Hello")
 `max_retries` (a per-call option) and `body_overrides` (removed) in `config`
 raise `InvalidArgumentError`. A missing key or setting raises `LoadAPIKeyError`
 (`env_var`, `description`) / `LoadSettingError` (`env_var`, `setting_name`). `openai` / `anthropic` / `deepseek` factories
-remain; DeepSeek now uses its own vendor chat model.
+remain; DeepSeek now uses its own vendor chat model. `openai` and by-name
+`provider("openai", …)` select the Responses API.
 
 > **Scope:** `provider(name)` reaches vendor packages and the 281 preset rows;
 > typed factories remain available. Custom endpoints use the `base_url` param.
@@ -434,7 +435,8 @@ permitted attempt failed with a retryable error — or `"errorNotRetryable"` —
 a later attempt failed non-retryably), `errors` — the per-attempt history,
 oldest first, each itself an exception from this hierarchy — and
 `last_error`. `TokenExpiredError` has `status == 401`, `NoSuchModelError` has
-`model_id` / `model_type`, `NoSuchProviderError` has `provider_id`, and
+`model_id` / `model_type`, `NoSuchProviderError` has `provider_id`,
+`model_id`, `model_type` and `available_providers`, and
 `LoadAPIKeyError` / `LoadSettingError` have `env_var` (the environment variable
 consulted) plus `description` / `setting_name`.
 
@@ -472,9 +474,16 @@ class GenerateTextResult(BaseModel):
     usage: Usage
     warnings: list[Warning]
     raw: GenerateResult
+    request: RequestInfo
+    response: ResponseInfo
 ```
 
-`StreamPart` is a `RootModel` over the external-tagged union dict, e.g.
+`stream_text` emits the Rust call-layer `TextStreamPart` JSON. The Python
+wrapper calls its validating `RootModel` `StreamPart`, over the external-tagged
+union dict, e.g.
 `{"TextDelta": {"id": ..., "delta": ...}}`. Iterate dicts with
 `if "TextDelta" in part:` (as in [Streaming Generation](#streaming-generation))
 or validate them with `parse_stream_part(part)` for attribute access.
+
+Provider-layer `StreamPart::ResponseMetadata` events are consumed internally
+and are not emitted by `stream_text`.

@@ -23,7 +23,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, generate_id,
+    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker,
 };
 
 use crate::shared::EndpointConfig;
@@ -47,7 +47,8 @@ impl MistralModel {
         Self {
             model_id,
             config,
-            generate_id: generate_id_fn.unwrap_or_else(|| Arc::new(generate_id)),
+            generate_id: generate_id_fn
+                .unwrap_or_else(|| Arc::new(aimux_provider_utils::generate_id)),
         }
     }
 }

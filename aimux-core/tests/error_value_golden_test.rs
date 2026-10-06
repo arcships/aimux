@@ -182,8 +182,11 @@ fn error_value_snapshots_plain_variants() {
         (
             AiMuxError::NoSuchProvider {
                 provider_id: "acme".into(),
+                model_id: "acme".into(),
+                model_type: "languageModel".into(),
+                available_providers: vec!["other".into()],
             },
-            r#"{"NoSuchProvider":{"provider_id":"acme"}}"#,
+            r#"{"NoSuchProvider":{"provider_id":"acme","model_id":"acme","model_type":"languageModel","available_providers":["other"]}}"#,
         ),
         (
             AiMuxError::Timeout("total timeout".into()),

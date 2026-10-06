@@ -452,13 +452,9 @@ fn convert_responses_input_with_conversation(
                     if let ToolResultOutput::ExecutionDenied {
                         provider_options, ..
                     } = output
-                        && openai_sub_option(
-                            ResponsesNamespace::OPENAI,
-                            provider_options,
-                            "approvalId",
-                        )
-                        .and_then(|id| id.as_str().map(|id| !id.is_empty()))
-                        .unwrap_or(false)
+                        && openai_sub_option(ns, provider_options, "approvalId")
+                            .and_then(|id| id.as_str().map(|id| !id.is_empty()))
+                            .unwrap_or(false)
                     {
                         continue;
                     }

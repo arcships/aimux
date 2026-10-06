@@ -115,9 +115,8 @@ pub struct MistralProviderSettings {
     /// The API key. `None` loads `MISTRAL_API_KEY` when a request is made and
     /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
     /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
+    /// the environment.
+    pub api_key: Option<String>,
     /// Extra headers on every request. A `None` value removes the header,
     /// including `Authorization`. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
@@ -133,7 +132,7 @@ impl std::fmt::Debug for MistralProviderSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MistralProviderSettings")
             .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
+            .field("api_key", &self.api_key.is_some())
             .field(
                 "headers",
                 &self.headers.as_ref().map(std::collections::HashMap::len),
@@ -156,25 +155,19 @@ pub fn create_mistral(settings: MistralProviderSettings) -> Result<MistralProvid
         Some(url) => validate_base_url(url)?,
         None => DEFAULT_BASE_URL.to_string(),
     };
-    let headers = provider_headers(
-        Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Mistral"),
-        Vec::new(),
-        settings.headers,
+    let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
+        provider_headers(
+            Credential::explicit_or_env(
+                settings.api_key.map(Resolvable::Value),
+                API_KEY_ENV_VAR,
+                "Mistral",
+            ),
+            Vec::new(),
+            settings.headers,
+        ),
+        "mistral",
+        "4.0.54",
     );
-    let headers = Resolvable::from_async_fn(move || {
-        let headers = headers.clone();
-        async move {
-            let mut headers = headers.resolve().await?;
-            let suffix = concat!("ai-sdk-mistral/", env!("CARGO_PKG_VERSION"));
-            let user_agent = headers.get("user-agent").and_then(|value| value.as_deref());
-            let user_agent = match user_agent {
-                Some(value) => format!("{value} {suffix}"),
-                None => suffix.to_string(),
-            };
-            headers.insert("user-agent".into(), Some(user_agent));
-            Ok(headers)
-        }
-    });
     Ok(MistralProvider {
         base_url,
         headers,

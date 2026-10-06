@@ -249,37 +249,42 @@ impl VideoModel for GoogleVideoModel {
                 ..ApiCallError::new(msg, poll_url, serde_json::json!({}))
             })));
         }
+        let outputs = raw_body
+            .get("response")
+            .and_then(|r| r.get("generateVideoResponse"))
+            .and_then(|r| r.get("generatedSamples"))
+            .and_then(Value::as_array)
+            .filter(|outputs| !outputs.is_empty())
+            .ok_or_else(|| {
+                AiMuxError::InvalidResponseData(format!(
+                    "No videos in response. Response: {raw_body}"
+                ))
+            })?;
         let endpoint = (self.config.endpoint)().await?;
         let api_key = endpoint
             .headers
             .iter()
             .find(|(name, _)| name.eq_ignore_ascii_case("x-goog-api-key"))
             .and_then(|(_, value)| value.as_deref());
-        // Extract videos from response.
-        let videos: Vec<VideoData> = raw_body
-            .get("response")
-            .and_then(|r| r.get("generateVideoResponse"))
-            .and_then(|r| r.get("generatedSamples"))
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| {
-                        v.get("video")
-                            .and_then(|v| v.get("uri"))
-                            .and_then(|u| u.as_str())
-                            .filter(|uri| !uri.is_empty())
-                            .map(|url| VideoData::Url {
-                                url: authenticated_video_url(url, &endpoint.base_url, api_key),
-                                media_type: "video/mp4".to_string(),
-                            })
-                    })
-                    .collect()
+        let mut video_metadata = Vec::new();
+        let videos: Vec<VideoData> = outputs
+            .iter()
+            .filter_map(|sample| {
+                let uri = sample
+                    .get("video")?
+                    .get("uri")?
+                    .as_str()
+                    .filter(|uri| !uri.is_empty())?;
+                video_metadata.push(json!({"uri": uri}));
+                Some(VideoData::Url {
+                    url: authenticated_video_url(uri, &endpoint.base_url, api_key),
+                    media_type: "video/mp4".to_string(),
+                })
             })
-            .unwrap_or_default();
-
+            .collect();
         if videos.is_empty() {
             return Err(AiMuxError::InvalidResponseData(
-                "No videos in response".to_string(),
+                "No valid videos in response".to_string(),
             ));
         }
 
@@ -287,7 +292,7 @@ impl VideoModel for GoogleVideoModel {
             videos,
             warnings: Vec::new(),
             provider_metadata: Some(super::options::google_metadata(
-                json!({"videos": raw_body["response"]["generateVideoResponse"]["generatedSamples"].as_array().into_iter().flatten().filter_map(|sample| sample.get("video").and_then(|v| v.get("uri")).and_then(Value::as_str).map(|uri| json!({"uri": uri}))).collect::<Vec<_>>()}),
+                json!({"videos": video_metadata}),
             )),
             response: VideoResponse {
                 timestamp: Some(chrono::Utc::now().to_rfc3339()),

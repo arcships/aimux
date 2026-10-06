@@ -431,7 +431,7 @@ pub type FetchFunction = Arc<dyn Fetch>;
 - 30 秒非流式 whole-response 上限留在 helper，覆盖注入 fetch 后的完整响应处理；streaming 不套用该上限。
 - helper 不执行完整 model operation 的 retry。
 
-设置解析：
+设置解析按包定义，不把动态 key、动态 headers 或 body-transform hook 作为所有 provider 的通用设置。OpenAI、Anthropic、Google 的 key 是固定字符串，headers 是固定 map；自定义传输使用 `fetch`。OpenAI-compatible 包保留上游的 `transformRequestBody` 对应 hook。工具层的 `Resolvable<T>` 仅用于实际暴露该类型的设置：
 
 ```rust
 pub enum Resolvable<T> {
@@ -1118,7 +1118,7 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 |---|---|---|
 | 语言适配 | 可调用 provider | Rust 使用 `.call()`；支持的绑定恢复调用语法 |
 | 语言适配 | 可选方法 | `Option<Result<...>>` 或可选 future，区分能力缺失与执行失败 |
-| 语言适配 | 同步/异步设置联合类型 | `Resolvable<T>` |
+| 语言适配 | 同步/异步设置联合类型 | 仅在包的 settings 实际暴露时使用 `Resolvable<T>`；OpenAI、Anthropic、Google 的 key 是 `Option<String>`，headers 是固定 map，不是动态回调 |
 | 语言适配 | WHATWG Request/Response | Rust FetchRequest/FetchResponse；请求体以 bytes 表达 |
 | 语言适配 | AsyncLocalStorage | task-local 加显式 spawn/stream 生命周期传播 |
 | 语言适配 | 泛型 telemetry wrapper | `Box<dyn Any + Send>` 擦除结果类型，保留所有权 |
@@ -1143,7 +1143,7 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | ABI 范围外 | C 宿主异步 fetch/model/headers/telemetry | 由独立异步 ABI 设计处理；本期提供 Rust 内建句柄 |
 | 语言适配 | `specification_version` / `Provider.name()` | `Provider` 与各模型 trait 不带 `specification_version`，`Provider` 不带 `name()`（D-c）：Rust trait 本身就是版本边界，注册名归持有 registry 的一方，身份由模型自己的 `provider()`（`"{name}.{method}"`）承担 |
 | 语言适配 | Rust `.call()` 的具体形式 | 每个包的 provider 提供 `call(model_id) -> Arc<dyn LanguageModel>`，与 `Provider::language_model` 返回同一个模型；Rust 无可调用对象，绑定侧在语言允许处恢复调用语法 |
-| 产品选择 | OpenAI 默认 `language_model` | 本期保持 chat（`openai.chat`）；上游 `openai(id)` 默认 Responses，对齐延后（S4-7，不在本 PR）。`responses(id)` 显式可用；xAI、Hugging Face、Azure 的默认已是 Responses |
+| 上游对齐 | OpenAI 默认 `language_model` | `language_model` 和 `call` 返回 Responses（`openai.responses`），与上游 `openai(id)` 一致；`chat(id)` 显式选择 Chat Completions。xAI、Hugging Face、Azure 的默认也为 Responses |
 | 产品选择 | Bedrock 上的 Anthropic InvokeModel | aimux 没有 `bedrock.anthropic.messages` 对应的 provider（`anthropic_aws` 是 Claude Platform on AWS，不是 Bedrock InvokeModel）；属新增能力，不在本期 |
 | 产品选择 | Azure 未移植的模型 | deepseek、completion、MAI speech 端点和 Foundry item type 未移植 |
 | 产品选择 | 视频轮询节奏 | provider 没有 poll 设置；`VideoModel::poll_config()` 保留在 core，作为包内常量的来源，调用级 `VideoCallOptions.poll` 逐字段覆盖 |

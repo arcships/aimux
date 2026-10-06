@@ -125,7 +125,7 @@ async fn cassette_cohere_embedding_query() {
 
     use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
     let provider = create_cohere(CohereProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(base_url),
         ..Default::default()
     })

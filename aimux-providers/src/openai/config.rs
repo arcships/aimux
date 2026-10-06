@@ -40,6 +40,7 @@ pub(crate) struct OpenAIModelConfig {
     /// Provider headers (credential, organization, project, user headers),
     /// resolved on every request.
     pub(crate) headers: HeadersFn,
+    pub(crate) token_provider: Option<Resolvable<String>>,
     /// Transport; `None` uses the process default, resolved per request.
     pub(crate) fetch: Option<FetchFunction>,
     /// URLs the model fetches itself. Empty: the caller downloads them.
@@ -64,6 +65,7 @@ impl OpenAIModelConfig {
             provider,
             url: Arc::new(move |path| Ok(format!("{base_url}{path}"))),
             headers,
+            token_provider: None,
             fetch,
             supported_urls: SupportedUrls::default(),
             transform_request_body,
@@ -121,7 +123,18 @@ impl OpenAIModelConfig {
                     .collect()
             })
             .unwrap_or_default();
-        Ok(normalize_headers(combine_headers(&[&provider, &call])))
+        let mut headers = combine_headers(&[&provider, &call]);
+        if let Some(token) = &self.token_provider
+            && !headers
+                .iter()
+                .any(|(name, value)| name.eq_ignore_ascii_case("authorization") && value.is_some())
+        {
+            headers.insert(
+                "authorization".to_string(),
+                Some(format!("Bearer {}", token.resolve().await?)),
+            );
+        }
+        Ok(normalize_headers(headers))
     }
 
     /// An exchange that inherits the operation's cancellation and recording
@@ -163,31 +176,4 @@ pub(crate) fn supported_urls(method: &str) -> SupportedUrls {
         }
     }
     SupportedUrls(urls)
-}
-
-/// Append the native package identity after resolving provider headers.
-pub(crate) fn headers_with_user_agent(headers: HeadersFn, package: &'static str) -> HeadersFn {
-    Resolvable::from_async_fn(move || {
-        let headers = headers.clone();
-        async move {
-            let mut values = headers.resolve().await?;
-            let previous = values
-                .keys()
-                .find(|key| key.eq_ignore_ascii_case("user-agent"))
-                .cloned()
-                .and_then(|key| values.remove(&key))
-                .flatten()
-                .unwrap_or_default();
-            let suffix = format!("{package}/{}", env!("CARGO_PKG_VERSION"));
-            values.insert(
-                "user-agent".to_string(),
-                Some(if previous.is_empty() {
-                    suffix
-                } else {
-                    format!("{previous} {suffix}")
-                }),
-            );
-            Ok(values)
-        }
-    })
 }

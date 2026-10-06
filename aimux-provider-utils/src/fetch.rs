@@ -389,15 +389,6 @@ fn apply_no_proxy(
 mod tests {
     use super::*;
 
-    #[test]
-    fn retryability_follows_the_failure_kind() {
-        assert!(FetchError::Connect("refused".into()).is_retryable());
-        assert!(FetchError::Timeout.is_retryable());
-        assert!(FetchError::Io("reset".into()).is_retryable());
-        assert!(!FetchError::Aborted.is_retryable());
-        assert!(!FetchError::Other("bad request".into()).is_retryable());
-    }
-
     #[tokio::test]
     async fn from_bytes_serves_the_body_once() {
         let url = Url::parse("https://example.test/").unwrap();

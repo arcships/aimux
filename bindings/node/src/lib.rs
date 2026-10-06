@@ -997,6 +997,7 @@ pub async fn openai(
 ) -> AimuxResult<Model> {
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
+            use aimux_core::provider::Provider;
             use aimux_providers::openai::create_openai;
 
             let mut settings = openai_settings(api_key, None);
@@ -1007,8 +1008,9 @@ pub async fn openai(
             settings.project = native.project;
             let provider = create_openai(settings).map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                // This constructor is the Chat Completions model.
-                inner: Arc::new(provider.chat(&model_id)),
+                inner: provider
+                    .language_model(&model_id)
+                    .map_err(|e| AiMuxBindingError::from(&e))?,
                 trace_store: None,
             })
         }
@@ -1122,7 +1124,7 @@ pub async fn cohere(
             use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
 
             let mut cfg = CohereProviderSettings {
-                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                api_key: Some(api_key),
                 ..Default::default()
             };
             let native = native_config(config)?;
@@ -1155,7 +1157,7 @@ pub async fn mistral(
             use aimux_providers::mistral::{MistralProviderSettings, create_mistral};
 
             let mut cfg = MistralProviderSettings {
-                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                api_key: Some(api_key),
                 ..Default::default()
             };
             let native = native_config(config)?;
@@ -1188,7 +1190,7 @@ pub async fn xai(
             use aimux_providers::xai::{XAIProviderSettings, create_xai};
 
             let mut cfg = XAIProviderSettings {
-                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                api_key: Some(api_key),
                 ..Default::default()
             };
             let native = native_config(config)?;

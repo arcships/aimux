@@ -655,10 +655,19 @@ fn validate_media_type(
                 | "text/markdown"
         ),
     };
-    if !supported
-        || (is_url
-            && (!url.is_some_and(|u| u.starts_with("s3://"))
-                || !(media_type.starts_with("image/") || media_type.starts_with("video/"))))
+    if !supported {
+        let kind = match media_type.split('/').next() {
+            Some("image") => "image",
+            Some("video") => "video",
+            _ => "file",
+        };
+        return Err(aimux_core::AiMuxError::UnsupportedFunctionality(format!(
+            "{kind} mime type: {media_type}"
+        )));
+    }
+    if is_url
+        && (!url.is_some_and(|u| u.starts_with("s3:"))
+            || !(media_type.starts_with("image/") || media_type.starts_with("video/")))
     {
         return Err(aimux_core::AiMuxError::UnsupportedFunctionality(format!(
             "file media type or data: {media_type}"

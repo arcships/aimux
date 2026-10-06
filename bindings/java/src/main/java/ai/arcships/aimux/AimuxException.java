@@ -11,7 +11,7 @@ import java.util.Map;
 /**
  * AiMuxError hierarchy (OpenAI Java / Vercel AI SDK style).
  *
- * <p>Raised when a fallible C ABI call returns an AiMuxError code (1–19).
+ * <p>Raised when a fallible C ABI call returns an AiMuxError code (1–20).
  * Recording failures use the
  * independent {@link RecordingException} type; C ABI failures (bad raw
  * wire JSON, use-after-close, re-entrant call) surface as plain
@@ -29,7 +29,7 @@ import java.util.Map;
  * }
  * }</pre>
  *
- * <p>Every instance carries {@link #getCode()} (C {@code aimux_error_code_t} 1–19),
+ * <p>Every instance carries {@link #getCode()} (C {@code aimux_error_code_t} 1–20),
  * {@link #getStatusCode()} (HTTP or {@code -1}), {@link #getRetryMs()} (hint
  * or {@code -1}; {@code 0} = retry now) and {@link #isRetryable()}. Message
  * text comes from the C layer.
@@ -42,7 +42,7 @@ public class AimuxException extends RuntimeException {
     private static final long serialVersionUID = 1L;
 
     // ── aimux_error_code_t (aimux-error.h) ──────────────────────────────────
-    // 18 variant codes (1–19; 1 is the catch-all OTHER; 4 is retired — the
+    // 19 variant codes (1–20; 1 is the catch-all OTHER; 4 is retired — the
     // legacy Tool variant; 14 = RETRY; 18 / 19 = missing API key / setting);
     // every HTTP-shaped failure
     // arrives as AIMUX_E_API_CALL. A code outside that set is a header/library
@@ -66,6 +66,7 @@ public class AimuxException extends RuntimeException {
     public static final int AIMUX_E_TOOL_CALL_REPAIR = 17;
     public static final int AIMUX_E_LOAD_API_KEY = 18;
     public static final int AIMUX_E_LOAD_SETTING = 19;
+    public static final int AIMUX_E_NO_OUTPUT_GENERATED = 20;
     public static final int AIMUX_E_OTHER = 1;
     public static final int AIMUX_E_RETRY = 14;
 
@@ -106,7 +107,7 @@ public class AimuxException extends RuntimeException {
 
     // ── Accessors ───────────────────────────────────────────────────────────
 
-    /** C {@code aimux_error_code_t} value (1–19). */
+    /** C {@code aimux_error_code_t} value (1–20). */
     public int getCode() {
         return code;
     }
@@ -143,7 +144,7 @@ public class AimuxException extends RuntimeException {
      * every returned string. Does not own the pointer: the caller
      * ({@link AimuxResult#expectAimuxError}) frees the returned error afterwards
      * (retry attempt errors are new owned copies and are freed here).
-     * A code outside 1–19 is a header/library mismatch →
+     * A code outside 1–20 is a header/library mismatch →
      * {@link IllegalStateException}.
      */
     static AimuxException fromC(Pointer error, String prefix) {
@@ -340,6 +341,8 @@ public class AimuxException extends RuntimeException {
                 return new InvalidToolInputError(message, status, retryMs);
             case AIMUX_E_TOOL_CALL_REPAIR:
                 return new ToolCallRepairError(message, status, retryMs);
+            case AIMUX_E_NO_OUTPUT_GENERATED:
+                return new NoOutputGeneratedError(message, status, retryMs);
             case AIMUX_E_OTHER:
                 return new OtherError(message, status, retryMs);
             default:
@@ -384,6 +387,8 @@ public class AimuxException extends RuntimeException {
                 return "InvalidToolInput";
             case AIMUX_E_TOOL_CALL_REPAIR:
                 return "ToolCallRepair";
+            case AIMUX_E_NO_OUTPUT_GENERATED:
+                return "NoOutputGenerated";
             case AIMUX_E_OTHER:
                 return "Other";
             case AIMUX_E_RETRY:
@@ -394,6 +399,12 @@ public class AimuxException extends RuntimeException {
     }
 
     // ── Subclasses (mirror Node error.ts / Python hierarchy) ────────────────
+
+    public static class NoOutputGeneratedError extends AimuxException {
+        public NoOutputGeneratedError(String message, int status, long retryMs) {
+            super(message, AIMUX_E_NO_OUTPUT_GENERATED, status, retryMs);
+        }
+    }
 
     public static class JSONParseError extends AimuxException {
         public JSONParseError(String message, int status, long retryMs) {

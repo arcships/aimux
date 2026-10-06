@@ -258,13 +258,19 @@ impl VideoModel for VertexVideoModel {
                 ..ApiCallError::new(msg, poll_url, serde_json::json!({}))
             })));
         }
-        let mut video_metadata = Vec::new();
-        let videos: Vec<VideoData> = raw_body
+        let outputs = raw_body
             .get("response")
             .and_then(|r| r.get("videos"))
             .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
+            .filter(|outputs| !outputs.is_empty())
+            .ok_or_else(|| {
+                AiMuxError::InvalidResponseData(format!(
+                    "No videos in response. Response: {raw_body}"
+                ))
+            })?;
+        let mut video_metadata = Vec::new();
+        let videos: Vec<VideoData> = outputs
+            .iter()
             .filter_map(|video| {
                 let media_type = video
                     .get("mimeType")
@@ -315,7 +321,7 @@ impl VideoModel for VertexVideoModel {
 
         if videos.is_empty() {
             return Err(AiMuxError::InvalidResponseData(
-                "Vertex video operation completed without any video output".to_string(),
+                "No valid videos in response".to_string(),
             ));
         }
 

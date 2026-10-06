@@ -1568,7 +1568,7 @@ pub(crate) async fn anthropic_stream_core(
             provider_metadata: Some({
                 let mut metadata = super::usage::result_provider_metadata(
                     options_name.as_str(),
-                    &raw_usage,
+                                &raw_usage,
                     stop_sequence.as_deref(),
                     container.as_ref(),
                     context_management.as_ref(),

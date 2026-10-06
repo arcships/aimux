@@ -140,7 +140,7 @@ pub fn convert_anthropic_usage(usage: &Value, raw_usage: Option<&Value>) -> Anth
 
 /// The result-level `providerMetadata` of a response, as `@ai-sdk/anthropic`
 /// builds it: under the canonical `anthropic` key and, for a provider created
-/// with another `name`, under that key too.
+/// with another `name`, under that key too when the request used custom options.
 ///
 /// `usage` is the raw usage object (for a stream: `message_start`'s, updated
 /// by `message_delta`'s). `iterations`, `container` and `contextManagement`

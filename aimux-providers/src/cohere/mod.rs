@@ -17,7 +17,6 @@ pub(crate) mod options;
 pub mod reranking;
 mod types;
 
-pub use crate::shared::TransformRequestBody;
 pub use embedding::CohereEmbeddingModel;
 pub use model::CohereModel;
 pub use reranking::CohereRerankingModel;
@@ -71,9 +70,8 @@ pub struct CohereProviderSettings {
     /// The API key. `None` loads `COHERE_API_KEY` when a request is made and
     /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
     /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
+    /// the environment.
+    pub api_key: Option<String>,
     /// Extra headers on every request. A `None` value removes the header,
     /// including `Authorization`. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
@@ -82,9 +80,6 @@ pub struct CohereProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for CohereProviderSettings {
@@ -92,17 +87,13 @@ impl std::fmt::Debug for CohereProviderSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CohereProviderSettings")
             .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
+            .field("api_key", &self.api_key.is_some())
             .field(
                 "headers",
                 &self.headers.as_ref().map(std::collections::HashMap::len),
             )
             .field("generate_id", &self.generate_id.is_some())
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -121,29 +112,21 @@ pub fn create_cohere(settings: CohereProviderSettings) -> Result<CohereProvider,
         None => DEFAULT_BASE_URL.to_string(),
     };
     let headers = provider_headers(
-        Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Cohere"),
+        Credential::explicit_or_env(
+            settings.api_key.map(Resolvable::Value),
+            API_KEY_ENV_VAR,
+            "Cohere",
+        ),
         Vec::new(),
         settings.headers,
     );
-    let headers = Resolvable::from_async_fn(move || {
-        let headers = headers.clone();
-        async move {
-            let mut headers = headers.resolve().await?;
-            let suffix = concat!("ai-sdk-cohere/", env!("CARGO_PKG_VERSION"));
-            let user_agent = headers.entry("user-agent".to_string()).or_default();
-            *user_agent = Some(match user_agent.take() {
-                Some(value) if !value.is_empty() => format!("{value} {suffix}"),
-                _ => suffix.to_string(),
-            });
-            Ok(headers)
-        }
-    });
+    let headers =
+        aimux_provider_utils::headers::with_user_agent_suffix_fn(headers, "cohere", "4.0.52");
     Ok(CohereProvider {
         generate_id: settings.generate_id,
         base_url,
         headers,
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -165,7 +148,6 @@ pub struct CohereProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl CohereProvider {
@@ -175,7 +157,7 @@ impl CohereProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
+            None,
         )
     }
 

@@ -251,20 +251,14 @@ impl Resolver {
             Publisher::Anthropic => None,
         };
         let base_url = self.base_url(express_key.is_some(), publisher)?;
-        let mut headers = self.headers(express_key.as_deref()).await?;
-        let suffix = concat!("ai-sdk-google-vertex/", env!("CARGO_PKG_VERSION"));
-        let existing = headers
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
-            .and_then(|(_, value)| value.clone());
-        headers.retain(|name, _| !name.eq_ignore_ascii_case("user-agent"));
-        headers.insert(
-            "user-agent".to_string(),
-            Some(match existing {
-                Some(value) => format!("{value} {suffix}"),
-                None => suffix.to_string(),
-            }),
-        );
+        let headers = self.headers(express_key.as_deref()).await?;
+        let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
+            Resolvable::Value(headers),
+            "google-vertex",
+            "5.0.98",
+        )
+        .resolve()
+        .await?;
         Ok(Endpoint { base_url, headers })
     }
 }

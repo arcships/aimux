@@ -4458,25 +4458,19 @@ public final class Types {
             @JsonProperty("reason") private String reason;
             @JsonProperty("is_automatic") private Boolean isAutomatic;
             @JsonProperty("signature") private String signature;
-            @JsonProperty("tool_call_id") private String toolCallId;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
             @JsonCreator ToolApprovalRequest() {}
-            public ToolApprovalRequest(String approvalId, Types.ToolCall toolCall, String reason, Boolean isAutomatic, String signature, String toolCallId, JsonNode providerMetadata) {
+            public ToolApprovalRequest(String approvalId, Types.ToolCall toolCall, String reason, Boolean isAutomatic, String signature) {
                 this.approvalId = approvalId;
                 this.toolCall = toolCall;
                 this.reason = reason;
                 this.isAutomatic = isAutomatic;
                 this.signature = signature;
-                this.toolCallId = toolCallId;
-                this.providerMetadata = providerMetadata;
             }
             public String getApprovalId() { return approvalId; }
             public Types.ToolCall getToolCall() { return toolCall; }
             public String getReason() { return reason; }
             public Boolean getIsAutomatic() { return isAutomatic; }
             public String getSignature() { return signature; }
-            public String getToolCallId() { return toolCallId; }
-            public JsonNode getProviderMetadata() { return providerMetadata; }
             public static Builder builder() { return new Builder(); }
             public static class Builder {
                 private String approvalId;
@@ -4484,23 +4478,19 @@ public final class Types {
                 private String reason;
                 private Boolean isAutomatic;
                 private String signature;
-                private String toolCallId;
-                private JsonNode providerMetadata;
                 public Builder approvalId(String value) { this.approvalId = value; return this; }
                 public Builder toolCall(Types.ToolCall value) { this.toolCall = value; return this; }
                 public Builder reason(String value) { this.reason = value; return this; }
                 public Builder isAutomatic(Boolean value) { this.isAutomatic = value; return this; }
                 public Builder signature(String value) { this.signature = value; return this; }
-                public Builder toolCallId(String value) { this.toolCallId = value; return this; }
-                public Builder providerMetadata(JsonNode value) { this.providerMetadata = value; return this; }
-                public ToolApprovalRequest build() { return new ToolApprovalRequest(approvalId, toolCall, reason, isAutomatic, signature, toolCallId, providerMetadata); }
+                public ToolApprovalRequest build() { return new ToolApprovalRequest(approvalId, toolCall, reason, isAutomatic, signature); }
             }
             @Override public boolean equals(Object value) {
                 if (!(value instanceof ToolApprovalRequest)) return false;
                 ToolApprovalRequest other = (ToolApprovalRequest) value;
-                return Objects.equals(approvalId, other.approvalId) && Objects.equals(toolCall, other.toolCall) && Objects.equals(reason, other.reason) && Objects.equals(isAutomatic, other.isAutomatic) && Objects.equals(signature, other.signature) && Objects.equals(toolCallId, other.toolCallId) && Objects.equals(providerMetadata, other.providerMetadata);
+                return Objects.equals(approvalId, other.approvalId) && Objects.equals(toolCall, other.toolCall) && Objects.equals(reason, other.reason) && Objects.equals(isAutomatic, other.isAutomatic) && Objects.equals(signature, other.signature);
             }
-            @Override public int hashCode() { return Objects.hash(approvalId, toolCall, reason, isAutomatic, signature, toolCallId, providerMetadata); }
+            @Override public int hashCode() { return Objects.hash(approvalId, toolCall, reason, isAutomatic, signature); }
         }
         /** Fallback for variants introduced after this wrapper was written. */
         public static class Unknown extends StreamPart {

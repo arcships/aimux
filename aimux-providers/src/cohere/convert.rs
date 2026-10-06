@@ -186,7 +186,7 @@ pub fn convert_prompt_to_cohere(
                                     FileData::Text { text } => text.clone(),
                                     FileData::Url { .. } => {
                                         return Err(AiMuxError::UnsupportedFunctionality(
-                                            "File URL data".into(),
+                                            "File URL data: URLs should be downloaded by the AI SDK and not reach this point. This indicates a configuration issue.".into(),
                                         ));
                                     }
                                     FileData::Reference { .. } => {

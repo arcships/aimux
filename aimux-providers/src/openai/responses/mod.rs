@@ -296,7 +296,7 @@ impl LanguageModel for OpenAIResponsesModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.request_headers(options.headers.as_ref()).await?;
-        let request_result = self.request_body(options, true)?;
+        let request_result = self.request_body(options, false)?;
         let body = request_result.body;
         let warnings = request_result.warnings;
         let provider_key = self.provider_options_name().to_string();
@@ -312,9 +312,11 @@ impl LanguageModel for OpenAIResponsesModel {
             == Some(true);
 
         let endpoint = self.endpoint()?;
+        let mut stream_body = body.clone();
+        stream_body["stream"] = Value::Bool(true);
         let resp = aimux_provider_utils::post_json_to_api(
             self.config.http_request(endpoint.clone(), headers, options),
-            body.clone(),
+            stream_body,
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             super::openai_failed_response_handler(),
         )

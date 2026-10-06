@@ -1,24 +1,24 @@
 # Provider Config 用户手册（思考开关 + 字段差异）
 
-> **原则**：aimux **不内置任何厂商映射**（RFC-0017 v3）。用户只有两个入口：
-> - `reasoning`（7 档，直传 `reasoning_effort`，厂商自决——支持则生效，不支持则忽略/报错）
+> **原则**：配置按 provider 包解释；OpenAI-compatible 的透传规则不适用于所有原生厂商包。用户有两个调用级入口：
+> - `reasoning`（由 provider 包映射为其 wire 参数；不支持的设置产生 warning）
 > - `provider_options.<provider>`（per-call；OpenAI-compatible 家族里，厂商自己命名空间下 schema 不认识的字段**原样写入请求体**，用户定义一切厂商差异）
 >
-> 声明式 `bodyOverrides`（provider 级 + per-call 的 JSON deep-merge）已删除，`ProviderConfig` / `config_json` 里传 `body_overrides` 会报 `InvalidArgument`。Rust 里需要 provider 级的整体改写时，在 settings 里传 `transform_request_body` 闭包（对最终 JSON 体改一次）。
+> 声明式 `bodyOverrides`（provider 级 + per-call 的 JSON deep-merge）已删除，`ProviderConfig` / `config_json` 里传 `body_overrides` 会报 `InvalidArgument`。OpenAI-compatible settings 保留上游的 `transform_request_body` 闭包；OpenAI、Anthropic、Google settings 没有这个字段。
 >
 > 本手册是"知识"的归宿：各厂商的 wire 参数、配置示例、核实日期。知识会过期——以厂商官方文档为准，本手册仅作参考。
 > 数据来源：[model-config-research/](internal/model-config-research/)（2026-08-01 全网调研，250 家）。
 
 ---
 
-## 1. reasoning：7 档直传
+## 1. reasoning：按包映射
 
 ```ts
 await generateText(model, prompt, { reasoning: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' })
 // 注：枚举另有 provider-default（不传档位），实际可设档位 6 个
 ```
 
-- aimux 把档位原样写成 `reasoning_effort` 字段（**无归一化**）
+- OpenAI-compatible 默认把档位写成 `reasoning_effort`；原生 provider 按包规则映射。例如 Groq 将 minimal 映射为 low、xhigh 映射为 high；DeepSeek 将 minimal/low 映射为 low、medium/high 映射为 high、xhigh 映射为 max。
 - 厂商认识哪个档位是厂商的事：
   - OpenAI 官方：minimal/low/medium/high 等（官方 API 枚举）
   - DeepSeek V4：官方接受 low/high/max/**xhigh**（自行映射，见 §2）
@@ -39,7 +39,7 @@ await generateText(model, prompt, { reasoning: 'none' | 'minimal' | 'low' | 'med
 | 无效参数 | temperature/top_p/penalty 在思考模式下无效 | 不报错但无效果 |
 
 ```ts
-// 关思考（v3 迁移：旧版 reasoning:'none' 自动注入已退役）
+// 显式关思考（优先于 reasoning）
 await generateText(model, p, { provider_options: { deepseek: { thinking: { type: 'disabled' } } } })
 
 // 开思考 + xhigh 档（官方样例：两参数独立）
@@ -49,11 +49,11 @@ await generateText(model, p, {
 })
 ```
 
-> ⚠️ 迁移说明：0.1.x 旧版对 DeepSeek 有内置特化（`reasoning:'none'` → 自动注入 `thinking:{type:"disabled"}`）。该内置已退役（2026-08），现在需要显式写 `provider_options.deepseek.thinking`。
+> 当前 DeepSeek 包中，未显式指定 `thinking.type` 时，`reasoning: 'none'` 会关闭思考，其他显式档位会开启思考；`thinking.type` 优先。`reasoningEffort` 是该包的 option key，不能用 wire 字段名 `reasoning_effort` 替代。
 
 ## 3. 思考开关配置示例（按调研，来源见各 batch 文件）
 
-配置示例写在 `provider_options.<key>` 里，`<key>` 是 provider 名的 camelCase 形式（`zhipu_v4` → `zhipuV4`，单词名不变）；snake_case 原名仍可用但会收到 deprecation warning。
+配置示例写在 `provider_options.<key>` 里。OpenAI-compatible 的 `<key>` 接受 provider 名及其 camelCase 形式（`zhipu_v4` → `zhipuV4`），原名含下划线时会收到 deprecation warning；原生包的 namespace 和 option key 按各包 schema 定义。
 
 | 厂商 | 关思考 wire | 配置示例 | 备注/来源 |
 |---|---|---|---|
@@ -65,7 +65,7 @@ await generateText(model, p, {
 | **DeepInfra** | `reasoning:{enabled:false}` | `provider_options: { deepinfra: { reasoning: { enabled: false } } }` | 非 thinking 对象（batch-02） |
 | **SiliconFlow** | `thinking_budget`（思维链 token 上限，Qwen3 系强制截断；**无 0=关 语义**，关思考走 qwen 系 `enable_thinking`） | `provider_options: { siliconflow: { thinking_budget: 1024 } }`（调低预算） | batch-05 |
 | **Perplexity** | `reasoning_effort` 四档 + `stream_mode`；推理 token **不可强制关闭** | `provider_options: { perplexity: { stream_mode: 'concise' } }` | batch-05 |
-| **Groq** | `reasoning_format`（如 raw）+ effort **直传**（无归一化） | `provider_options: { groq: { reasoning_format: 'raw' } }` | batch-03 |
+| **Groq** | `reasoning_format`（如 raw）；effort 按包映射 | `provider_options: { groq: { reasoningFormat: 'raw' } }` | `reasoningEffort` 接受 none/default/low/medium/high |
 | **Heroku** | `extended_thinking:{enabled,budget_tokens,include_reasoning}`；未知参数需 `allow_ignored_params` | `provider_options: { heroku: { extended_thinking: { enabled: true, budget_tokens: 2000 } } }`；非标准参数一并 `provider_options: { heroku: { allow_ignored_params: true, ... } }` | batch-03 |
 | **Hetzner** | `chat_template_kwargs:{enable_thinking:false}` | `provider_options: { hetzner: { chat_template_kwargs: { enable_thinking: false } } }` | 社区实测（batch-03） |
 | **Venice** | `venice_parameters:{disable_thinking:true}` | `provider_options: { venice: { venice_parameters: { disable_thinking: true } } }` | 封闭字段（batch-06） |
@@ -74,10 +74,11 @@ await generateText(model, p, {
 
 ## 4. max_tokens_key（内置修复，用户无感）
 
-aimux 内置了 8 家厂商的 max tokens 字段名差异（**纯内部数据，用户不需要配置**）：
+registry 内置了 7 家兼容厂商的 max tokens 字段名差异（**纯内部数据，用户不需要配置**）：
 
 - 只认 `max_tokens`：stepfun / siliconflow / sarvam / reka_ai / publicai / perplexity
-- 只认 `max_completion_tokens`：groq（max_tokens 已弃用）/ heroku（官方要求）
+- 只认 `max_completion_tokens`：heroku（官方要求）
+- 原生 Groq 和 DeepSeek 使用 `max_tokens`，不走 registry 推断。
 
 ```ts
 // 用户始终写 max_output_tokens，aimux 按厂商自动选字段名
@@ -86,30 +87,28 @@ await generateText(model, prompt, { max_output_tokens: 4096 })
 // stepfun → {"max_tokens":4096}
 ```
 
-> ⚠️ **不要用 `provider_options.maxCompletionTokens` 显式指定**：对只认 `max_tokens`
-> 的厂商（stepfun / siliconflow / sarvam / reka_ai / publicai / perplexity），该
-> 选项会被**静默丢弃**（不报错、无 warning，backlog B10）。请改用顶层
-> `max_output_tokens`——它会被自动映射到正确字段名。
+> 使用顶层 `max_output_tokens`，由包选择 wire 字段名。`provider_options`
+> 必须是 namespace → object 的结构；`provider_options.maxCompletionTokens`
+> 直接放数字不符合结构，不能作为 max tokens 的配置入口。
 >
-> 未内置 `max_tokens_key` 的厂商（含 **DeepSeek**）走默认推断：推理模型发
-> `max_completion_tokens`，非推理发 `max_tokens`。DeepSeek 对
-> `max_completion_tokens` 的接受性**尚未实测**（backlog B6）——当前行为
-> 由默认推断路径决定，实测结论落地前请勿依赖其行为。
+> 未内置 `max_tokens_key` 的兼容厂商走默认推断：推理模型发
+> `max_completion_tokens`，非推理发 `max_tokens`。原生 DeepSeek 始终将
+> `max_output_tokens` 写为 `max_tokens`。
 
 ## 5. `provider_options` 透传用法速查
 
 ```ts
-// per-call：厂商命名空间下 schema 不认识的字段原样进入请求体
+// OpenAI-compatible per-call：厂商命名空间下 schema 不认识的字段原样进入请求体
 await generateText(model, prompt, {
   provider_options: { alibaba: { enable_thinking: false } },
 })
 
-// 已知字段（user / reasoningEffort / textVerbosity / strictJsonSchema）由 aimux 按 schema 处理，
+// OpenAI-compatible 已知字段（user / reasoningEffort / textVerbosity / strictJsonSchema）按 schema 处理，
 // 其余字段（thinking、enable_thinking、extended_thinking …）直接透传。
 // 通用命名空间 openaiCompatible 只认 schema 字段，未知字段会被丢弃——厂商专属字段请写在厂商自己的命名空间下。
 ```
 
-Rust 里要对**最终**请求体做整体改写（provider 级、每次请求生效、可删字段），用 settings 的 `transform_request_body`：
+Rust 的 OpenAI-compatible 包支持对**最终**请求体做整体改写（provider 级、每次请求生效、可删字段），用该包 settings 的 `transform_request_body`：
 
 ```rust
 let provider = create_openai_compatible(OpenAICompatibleProviderSettings {

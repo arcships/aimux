@@ -33,7 +33,7 @@ use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, TransformRequestBody, provider_headers};
+use crate::shared::{Credential, EndpointConfig, provider_headers};
 use model::DeepSeekChatConfig;
 
 const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
@@ -55,16 +55,11 @@ pub struct DeepSeekProviderSettings {
     /// The API key. `None` loads `DEEPSEEK_API_KEY` when a request is made and
     /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
     /// explicit value is used as given, `""` included.
-    pub api_key: Option<Resolvable<String>>,
+    pub api_key: Option<String>,
     /// Extra headers on every request; a `None` value removes the header.
     pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of every model's `provider()` string and
-    /// the providerOptions namespace. Default `"deepseek"`.
-    pub name: Option<String>,
     /// The transport. `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for DeepSeekProviderSettings {
@@ -72,17 +67,12 @@ impl std::fmt::Debug for DeepSeekProviderSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DeepSeekProviderSettings")
             .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
+            .field("api_key", &self.api_key.is_some())
             .field(
                 "headers",
                 &self.headers.as_ref().map(std::collections::HashMap::len),
             )
-            .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -92,23 +82,29 @@ impl std::fmt::Debug for DeepSeekProviderSettings {
 /// # Errors
 ///
 /// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
-/// URL with a host or `name` is empty / contains `.`. The key is not read
-/// here.
+/// URL with a host. The key is not read here.
 pub fn create_deepseek(settings: DeepSeekProviderSettings) -> Result<DeepSeekProvider, AiMuxError> {
     let base_url = match settings.base_url.as_deref() {
         Some(url) => validate_base_url(url)?,
         None => DEFAULT_BASE_URL.to_string(),
     };
     Ok(DeepSeekProvider {
-        name: settings.name.unwrap_or_else(|| "deepseek".to_string()),
+        name: "deepseek".to_string(),
         base_url,
-        headers: provider_headers(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "DeepSeek"),
-            Vec::new(),
-            settings.headers,
+        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+            provider_headers(
+                Credential::explicit_or_env(
+                    settings.api_key.map(Resolvable::Value),
+                    API_KEY_ENV_VAR,
+                    "DeepSeek",
+                ),
+                Vec::new(),
+                settings.headers,
+            ),
+            "deepseek",
+            "3.0.56",
         ),
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -129,7 +125,6 @@ pub struct DeepSeekProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl DeepSeekProvider {
@@ -139,7 +134,7 @@ impl DeepSeekProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
+            None,
         )
     }
 
