@@ -78,6 +78,7 @@ export class RetryError extends AimuxError {
 
 export class JSONParseError extends AimuxError {}
 export class InvalidResponseDataError extends AimuxError {}
+export class NoOutputGeneratedError extends AimuxError {}
 /** The model called a tool that was not provided (AI SDK `NoSuchToolError`). */
 export class NoSuchToolError extends AimuxError {
   /** The tool name the model tried to call. */

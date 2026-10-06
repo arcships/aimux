@@ -10,7 +10,7 @@ use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::message::{MessageContent, ModelMessage, Role};
-use aimux_core::stream_part::StreamPart;
+use aimux_core::stream_part::TextStreamPart;
 use aimux_core::tool::{FunctionTool, Tool, ToolCall, ToolChoice};
 use aimux_core::types::FinishReasonUnified;
 use aimux_providers::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
@@ -372,25 +372,24 @@ async fn e2e_openai_stream_part_sequence() {
         parts.push(part.expect("stream part should be ok"));
     }
 
-    // Expected sequence: StreamStart, TextStart, TextDelta, TextEnd, Finish
-    // (ResponseMetadata may or may not be present depending on implementation)
+    // Expected sequence: StreamStart, TextStart, TextDelta, TextEnd, FinishStep, Finish
     assert!(
-        parts.len() >= 5,
-        "expected at least 5 parts, got {}",
+        parts.len() >= 6,
+        "expected at least 6 parts, got {}",
         parts.len()
     );
 
     // First part must be StreamStart
-    assert!(matches!(parts[0], StreamPart::StreamStart { .. }));
+    assert!(matches!(parts[0], TextStreamPart::StreamStart { .. }));
 
     // Last part must be Finish
     let last = parts.last().unwrap();
-    assert!(matches!(last, StreamPart::Finish { .. }));
+    assert!(matches!(last, TextStreamPart::Finish { .. }));
 
     // Must contain at least one TextDelta
     let has_text_delta = parts
         .iter()
-        .any(|p| matches!(p, StreamPart::TextDelta { delta, .. } if delta == "Hi"));
+        .any(|p| matches!(p, TextStreamPart::TextDelta { delta, .. } if delta == "Hi"));
     assert!(has_text_delta, "expected a TextDelta with 'Hi'");
 }
 
@@ -437,16 +436,16 @@ async fn e2e_anthropic_stream_part_sequence() {
     }
 
     // First part must be StreamStart
-    assert!(matches!(parts[0], StreamPart::StreamStart { .. }));
+    assert!(matches!(parts[0], TextStreamPart::StreamStart { .. }));
 
     // Last part must be Finish
     let last = parts.last().unwrap();
-    assert!(matches!(last, StreamPart::Finish { .. }));
+    assert!(matches!(last, TextStreamPart::Finish { .. }));
 
     // Must contain at least one TextDelta
     let has_text_delta = parts
         .iter()
-        .any(|p| matches!(p, StreamPart::TextDelta { delta, .. } if delta == "Hi"));
+        .any(|p| matches!(p, TextStreamPart::TextDelta { delta, .. } if delta == "Hi"));
     assert!(has_text_delta, "expected a TextDelta with 'Hi'");
 }
 
@@ -855,10 +854,10 @@ async fn e2e_openai_stream_tool_calls() {
     let has_tool_part = parts.iter().any(|p| {
         matches!(
             p,
-            StreamPart::ToolCall(_)
-                | StreamPart::ToolInputStart { .. }
-                | StreamPart::ToolInputDelta { .. }
-                | StreamPart::ToolInputEnd { .. }
+            TextStreamPart::ToolCall(_)
+                | TextStreamPart::ToolInputStart { .. }
+                | TextStreamPart::ToolInputDelta { .. }
+                | TextStreamPart::ToolInputEnd { .. }
         )
     });
     assert!(
@@ -867,12 +866,14 @@ async fn e2e_openai_stream_tool_calls() {
     );
 
     // Must contain a Finish part
-    let has_finish = parts.iter().any(|p| matches!(p, StreamPart::Finish { .. }));
+    let has_finish = parts
+        .iter()
+        .any(|p| matches!(p, TextStreamPart::Finish { .. }));
     assert!(has_finish, "expected a Finish StreamPart");
 
     // If a complete ToolCall part exists, verify its fields
     let tool_call = parts.iter().find_map(|p| match p {
-        StreamPart::ToolCall(ToolCall {
+        TextStreamPart::ToolCall(ToolCall {
             tool_name, input, ..
         }) => Some((tool_name, input)),
         _ => None,

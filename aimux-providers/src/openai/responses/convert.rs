@@ -340,6 +340,15 @@ pub fn convert_to_responses_input(
                     else {
                         continue;
                     };
+                    if let ToolResultOutput::ExecutionDenied {
+                        provider_options, ..
+                    } = output
+                        && openai_sub_option(ns, provider_options, "approvalId")
+                            .and_then(|value| value.as_str().map(|id| !id.is_empty()))
+                            == Some(true)
+                    {
+                        continue;
+                    }
                     let mut content_value = convert_tool_result_output(ns, output, &mut warnings)?;
                     if !matches!(output, ToolResultOutput::Content { .. })
                         && let Some(breakpoint) = match output {
@@ -401,54 +410,68 @@ pub fn convert_to_responses_input(
 fn convert_user_part(ns: ResponsesNamespace, part: &UserPart) -> Result<Value, AiMuxError> {
     Ok(match part {
         UserPart::Text(part) => json!({ "type": "input_text", "text": part.text }),
-        UserPart::File(file) => match &file.data {
-            FileData::Data { data } => {
-                let b64 = match data {
-                    FileBytes::Binary(bytes) => {
-                        use base64::Engine;
-                        base64::engine::general_purpose::STANDARD.encode(bytes)
+        UserPart::File(file) => {
+            let mut item = match &file.data {
+                FileData::Data { data } => {
+                    let b64 = match data {
+                        FileBytes::Binary(bytes) => {
+                            use base64::Engine;
+                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                        }
+                        FileBytes::Base64(data) => data.clone(),
+                    };
+                    if get_top_level_media_type(&file.media_type) == "image" {
+                        let mut img = json!({
+                            "type": "input_image",
+                            "image_url": format!("data:{};base64,{}", resolve_full_media_type(file)?, b64),
+                        });
+                        if let Some(detail) =
+                            openai_sub_option(ns, &file.provider_options, "imageDetail")
+                        {
+                            img["detail"] = detail;
+                        }
+                        img
+                    } else {
+                        let fname = file
+                            .filename
+                            .clone()
+                            .unwrap_or_else(|| "part.pdf".to_string());
+                        json!({
+                            "type": "input_file",
+                            "filename": fname,
+                            "file_data": format!("data:{};base64,{}", file.media_type, b64),
+                        })
                     }
-                    FileBytes::Base64(data) => data.clone(),
-                };
-                if get_top_level_media_type(&file.media_type) == "image" {
-                    let mut img = json!({
-                        "type": "input_image",
-                        "image_url": format!("data:{};base64,{}", resolve_full_media_type(file)?, b64),
-                    });
-                    if let Some(detail) =
-                        openai_sub_option(ns, &file.provider_options, "imageDetail")
-                    {
-                        img["detail"] = detail;
+                }
+                FileData::Url { url, .. } => {
+                    if get_top_level_media_type(&file.media_type) == "image" {
+                        json!({ "type": "input_image", "image_url": url })
+                    } else {
+                        json!({ "type": "input_file", "file_url": url })
                     }
-                    img
-                } else {
-                    let fname = file
-                        .filename
-                        .clone()
-                        .unwrap_or_else(|| "part.pdf".to_string());
-                    json!({
-                        "type": "input_file",
-                        "filename": fname,
-                        "file_data": format!("data:{};base64,{}", file.media_type, b64),
-                    })
                 }
-            }
-            FileData::Url { url, .. } => {
-                if get_top_level_media_type(&file.media_type) == "image" {
-                    json!({ "type": "input_image", "image_url": url })
-                } else {
-                    json!({ "type": "input_file", "file_url": url })
+                FileData::Text { .. } => {
+                    return Err(AiMuxError::UnsupportedFunctionality(
+                        "text file parts".into(),
+                    ));
                 }
+                FileData::Reference { reference } => {
+                    let file_id = reference.get(ns.write_key()).ok_or_else(|| {
+                        AiMuxError::InvalidArgument(format!(
+                            "missing file reference for provider {}",
+                            ns.write_key()
+                        ))
+                    })?;
+                    json!({ "type": if get_top_level_media_type(&file.media_type) == "image" { "input_image" } else { "input_file" }, "file_id": file_id })
+                }
+            };
+            if item["type"] == "input_image"
+                && let Some(detail) = openai_sub_option(ns, &file.provider_options, "imageDetail")
+            {
+                item["detail"] = detail;
             }
-            FileData::Text { .. } => {
-                return Err(AiMuxError::UnsupportedFunctionality(
-                    "text file parts".into(),
-                ));
-            }
-            FileData::Reference { .. } => {
-                json!({ "type": "input_text", "text": "" })
-            }
-        },
+            item
+        }
     })
 }
 
@@ -476,12 +499,6 @@ fn convert_tool_result_output(
                     continue;
                 }
                 let mut converted = convert_user_part(ns, &UserPart::File(part.clone()))?;
-                if let FileData::Reference { reference } = &part.data {
-                    let file_id = reference.get(ns.write_key()).ok_or_else(|| {
-                        AiMuxError::InvalidArgument("missing file reference for provider".into())
-                    })?;
-                    converted = json!({"type": if part.media_type.starts_with("image/") { "input_image" } else { "input_file" }, "file_id":file_id});
-                }
                 if converted["type"] == "input_file" && converted.get("file_data").is_some() {
                     converted["filename"] = json!(part.filename.as_deref().unwrap_or("data"));
                 }

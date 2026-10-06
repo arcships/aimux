@@ -175,6 +175,9 @@ pub enum AiMuxError {
     #[error("JSON parse error: {0}")]
     JsonParse(String),
 
+    #[error("{0}")]
+    NoOutputGenerated(String),
+
     #[error("invalid response data: {0}")]
     InvalidResponseData(String),
 

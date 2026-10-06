@@ -9,7 +9,7 @@ import type { RetryError } from "./RetryError";
  * failure came from. `ApiCallError` is boxed only to keep the Rust enum
  * compact; serde and every binding still observe the same object shape.
  */
-export type AiMuxError = { "ApiCall": ApiCallError } | { "Retry": RetryError } | { "JsonParse": string } | { "InvalidResponseData": string } | { "ToolCallNotFoundForApproval": { tool_call_id: string, approval_id: string, } } | { "NoSuchTool": { tool_name: string, available_tools?: Array<string> | null,
+export type AiMuxError = { "ApiCall": ApiCallError } | { "Retry": RetryError } | { "JsonParse": string } | { "NoOutputGenerated": string } | { "InvalidResponseData": string } | { "ToolCallNotFoundForApproval": { tool_call_id: string, approval_id: string, } } | { "NoSuchTool": { tool_name: string, available_tools?: Array<string> | null,
 /**
  * Original argument text, when supplied by the provider. Absent in
  * older serialized errors and errors constructed without a call.

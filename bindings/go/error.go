@@ -10,7 +10,7 @@ import (
 )
 
 // Code is the machine-readable Aimux error code. Values match
-// aimux-ffi aimux_error_code_t (1..3, 5..19; 4 is retired). Retry is 14;
+// aimux-ffi aimux_error_code_t (1..3, 5..20; 4 is retired). Retry is 14;
 // tool-call errors occupy 15..17; a missing API key / provider setting are
 // 18 / 19. A code outside that set is a header/library
 // mismatch and expectAimuxError
@@ -48,6 +48,7 @@ const (
 	// CodeLoadSetting: a required provider setting was not passed and its
 	// fallback environment variable is unset (LoadSettingError).
 	CodeLoadSetting Code = 19
+	CodeNoOutputGenerated Code = 20
 )
 
 // String returns the core error_type name (e.g. "ApiCall", "TokenExpired").
@@ -82,6 +83,8 @@ func (c Code) String() string {
 		return "NoSuchTool"
 	case CodeInvalidToolInput:
 		return "InvalidToolInput"
+	case CodeNoOutputGenerated:
+		return "NoOutputGenerated"
 	case CodeToolCallRepair:
 		return "ToolCallRepair"
 	case CodeLoadAPIKey:
@@ -97,10 +100,10 @@ func (c Code) String() string {
 	}
 }
 
-// codeFromC maps a C aimux_error_code_t (1..3, 5..19); false for any other
+// codeFromC maps a C aimux_error_code_t (1..3, 5..20); false for any other
 // value, including retired code 4.
 func codeFromC(code int) (Code, bool) {
-	if code >= int(CodeOther) && code <= int(CodeLoadSetting) && code != 4 {
+	if code >= int(CodeOther) && code <= int(CodeNoOutputGenerated) && code != 4 {
 		return Code(code), true
 	}
 	return 0, false

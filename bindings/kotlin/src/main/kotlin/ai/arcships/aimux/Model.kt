@@ -8,7 +8,7 @@
  * Errors: every fallible C call returns an `aimux_error_t *` ([Pointer]?):
  * null = success, result written to the trailing out-parameter
  * ([LongByReference] for handles, [PointerByReference] for JSON strings);
- * non-null = failure. Its unified code identifies [AimuxException] (1..19),
+ * non-null = failure. Its unified code identifies [AimuxException] (1..20),
  * [RecordingException] (100..105), or a C ABI failure (200..206). The last
  * range maps to `IllegalStateException("aimux ffi: …")`. A decoder releases
  * the returned pointer with `aimux_error_free`.
@@ -285,7 +285,7 @@ private fun ffiError(e: Pointer, prefix: String): IllegalStateException {
 }
 
 /**
- * Decode an error from a call that may return `AiMuxError`: 1..19 →
+ * Decode an error from a call that may return `AiMuxError`: 1..20 →
  * [AimuxException]; 200..206 → [IllegalStateException]. Frees [e].
  */
 internal fun expectAimuxError(e: Pointer, context: String = ""): RuntimeException {
@@ -295,7 +295,7 @@ internal fun expectAimuxError(e: Pointer, context: String = ""): RuntimeExceptio
         if (isFfiCode(code)) return ffiError(e, prefix)
         // Code 4 is retired; Retry is 14, tool errors are 15..17 and a missing
         // API key / setting are 18 / 19.
-        check(code in AIMUX_E_OTHER..AIMUX_E_LOAD_SETTING && code != 4) {
+        check(code in AIMUX_E_OTHER..AIMUX_E_NO_OUTPUT_GENERATED && code != 4) {
             "${prefix}aimux ffi: expected AiMuxError code, got $code"
         }
         return AimuxException.fromC(e, prefix)

@@ -15,8 +15,6 @@
 //! Every test builds the model through the Groq package
 //! (`create_groq(..).chat(model)`), so it exercises `GroqChatLanguageModel`.
 
-mod common;
-
 use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -2130,7 +2128,6 @@ mod package {
     use serial_test::serial;
 
     use aimux_core::AiMuxError;
-    use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
     use aimux_core::provider::Provider;
 
     fn groq_at(server: &MockServer) -> aimux_providers::groq::GroqProvider {
@@ -2311,39 +2308,5 @@ mod package {
                 None => std::env::remove_var("GROQ_API_KEY"),
             }
         }
-    }
-
-    /// The recorded Groq exchanges (`tests/cassettes/groq`) replayed through
-    /// the package: generate and stream both parse, and usage is read.
-    #[tokio::test]
-    async fn recorded_groq_cassettes_replay_through_the_package() {
-        let server = MockServer::start().await;
-        let n = common::replay::mount_cassettes(&server, "tests/cassettes/groq").await;
-        assert!(n > 0, "no groq cassettes");
-        let model = create_groq(GroqProviderSettings {
-            base_url: Some(format!("{}/openai/v1", server.uri())),
-            api_key: Some("test-key".to_string()),
-            ..Default::default()
-        })
-        .unwrap()
-        .chat("llama-3.3-70b-versatile");
-
-        let result = generate_text(&model, "Hello", GenerateTextOptions::default())
-            .await
-            .expect("generate_text should succeed with cassette replay");
-        assert!(!result.text.is_empty() || !result.tool_calls.is_empty());
-        assert!(result.usage.input_tokens.total.is_some());
-
-        let result = stream_text(&model, "Hello", GenerateTextOptions::default())
-            .await
-            .expect("stream_text should succeed");
-        let mut stream = result.stream;
-        let mut finished = false;
-        while let Some(part) = stream.next().await {
-            if let StreamPart::Finish { .. } = part.expect("stream part") {
-                finished = true;
-            }
-        }
-        assert!(finished, "stream should finish");
     }
 }

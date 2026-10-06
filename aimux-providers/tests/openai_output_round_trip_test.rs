@@ -27,11 +27,11 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::generate::{
-    GenerateTextOptions, generate_text, generate_text_as_openai, stream_text, stream_text_as_openai,
+    GenerateTextOptions, generate_text, generate_text_as_openai,
+    generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
 };
 use aimux_core::openai_output::{
-    ChatCompletionChunk, OpenAiStreamOptions, encode_chunk_sse, to_chat_completion,
-    to_chat_completion_stream,
+    ChatCompletionChunk, OpenAiStreamOptions, encode_chunk_sse, to_chat_completion_stream,
 };
 use aimux_providers::deepseek::{DeepSeekProviderSettings, create_deepseek};
 use aimux_providers::openai::{OpenAIModel, OpenAIProviderSettings, create_openai};
@@ -110,7 +110,7 @@ async fn round_trip_text_only() {
         .await
         .expect("generate_text should succeed");
 
-    let completion = to_chat_completion(&result.raw, "gpt-4o");
+    let completion = generate_text_result_to_chat_completion(&result, "gpt-4o");
 
     // ── Exact field round-trip ──
     assert_eq!(completion.id, "chatcmpl-test-001");
@@ -168,7 +168,7 @@ async fn round_trip_with_tool_calls() {
         .await
         .expect("generate_text should succeed");
 
-    let completion = to_chat_completion(&result.raw, "gpt-4o");
+    let completion = generate_text_result_to_chat_completion(&result, "gpt-4o");
 
     // content should be null (tool_calls only).
     assert_eq!(completion.choices[0].message.content, None);
@@ -230,7 +230,7 @@ async fn round_trip_with_reasoning() {
     .await
     .expect("generate_text should succeed");
 
-    let completion = to_chat_completion(&result.raw, "gpt-4o");
+    let completion = generate_text_result_to_chat_completion(&result, "gpt-4o");
 
     assert_eq!(
         completion.choices[0].message.content.as_deref(),
@@ -284,7 +284,7 @@ async fn round_trip_with_cached_tokens() {
         .await
         .expect("generate_text should succeed");
 
-    let completion = to_chat_completion(&result.raw, "gpt-4o");
+    let completion = generate_text_result_to_chat_completion(&result, "gpt-4o");
 
     // KV cache token should round-trip — this is the critical assertion for
     // cache-hit preservation across the conversion.
@@ -336,7 +336,7 @@ async fn round_trip_multiple_tool_calls() {
         .await
         .expect("generate_text should succeed");
 
-    let completion = to_chat_completion(&result.raw, "gpt-4o");
+    let completion = generate_text_result_to_chat_completion(&result, "gpt-4o");
 
     let tool_calls = completion.choices[0]
         .message
@@ -378,7 +378,7 @@ async fn cross_protocol_anthropic_to_openai_non_streaming() {
         .await
         .expect("anthropic generate_text should succeed");
 
-    let completion = to_chat_completion(&result.raw, "claude-sonnet-4-6");
+    let completion = generate_text_result_to_chat_completion(&result, "claude-sonnet-4-6");
 
     // ── Validate OpenAI structure ──
     assert_eq!(completion.object, "chat.completion");
@@ -862,7 +862,7 @@ async fn cross_protocol_deepseek_with_reasoning() {
     .await
     .expect("generate_text should succeed");
 
-    let completion = to_chat_completion(&result.raw, "deepseek-chat");
+    let completion = generate_text_result_to_chat_completion(&result, "deepseek-chat");
 
     assert_eq!(completion.object, "chat.completion");
     assert_eq!(
@@ -918,7 +918,7 @@ async fn kv_cache_tokens_preserved_with_cache_write() {
         .await
         .expect("generate_text should succeed");
 
-    let completion = to_chat_completion(&result.raw, "gpt-4o");
+    let completion = generate_text_result_to_chat_completion(&result, "gpt-4o");
 
     let details = completion
         .usage

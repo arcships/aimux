@@ -16,7 +16,7 @@ use wiremock::MockServer;
 
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
-use aimux_core::stream_part::StreamPart;
+use aimux_core::stream_part::TextStreamPart;
 use aimux_providers::deepseek::{DeepSeekProviderSettings, create_deepseek};
 use aimux_providers::groq::{GroqProviderSettings, create_groq};
 use aimux_providers::openai_compatible::{
@@ -93,8 +93,8 @@ async fn replay_openai_compat(cassette_dir: &str, model_id: &str, base_path: &st
     let mut got_finish = false;
     while let Some(part) = stream.next().await {
         match part.expect("{cassette_dir}: stream part should be ok") {
-            StreamPart::StreamStart { .. } => got_stream_start = true,
-            StreamPart::Finish { .. } => got_finish = true,
+            TextStreamPart::StreamStart { .. } => got_stream_start = true,
+            TextStreamPart::Finish { .. } => got_finish = true,
             _ => {}
         }
     }

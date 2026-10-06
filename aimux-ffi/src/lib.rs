@@ -12,7 +12,7 @@
 //! value on failure (the out-parameter is left at its sentinel: handle 0,
 //! pointer NULL). Every non-NULL error has one code from [`aimux_error_code`]
 //! and one message from [`aimux_error_message`], and is released exactly once
-//! with [`aimux_error_free`]. Codes 1..19 come from `AiMuxError`, 100..105
+//! with [`aimux_error_free`]. Codes 1..20 come from `AiMuxError`, 100..105
 //! from `RecordingError`, and 200..206 identify failures detected while
 //! crossing the C ABI.
 //!
@@ -453,6 +453,7 @@ pub const AIMUX_E_TOOL_CALL_REPAIR: i32 = 17;
 // getters: `env_var` and the description (key) or setting name.
 pub const AIMUX_E_LOAD_API_KEY: i32 = 18;
 pub const AIMUX_E_LOAD_SETTING: i32 = 19;
+pub const AIMUX_E_NO_OUTPUT_GENERATED: i32 = 20;
 
 // 100..105 preserve `RecordingError` as a separate high-level type while C
 // uses one code space for every returned error.
@@ -483,6 +484,7 @@ fn aimux_error_code_of(err: &AiMuxError) -> i32 {
         AiMuxError::ApiCall { .. } => AIMUX_E_API_CALL,
         AiMuxError::Retry(_) => AIMUX_E_RETRY,
         AiMuxError::JsonParse(_) => AIMUX_E_JSON_PARSE,
+        AiMuxError::NoOutputGenerated(_) => AIMUX_E_NO_OUTPUT_GENERATED,
         AiMuxError::InvalidResponseData(_) | AiMuxError::ToolCallNotFoundForApproval { .. } => {
             AIMUX_E_INVALID_RESPONSE_DATA
         }
@@ -3604,7 +3606,7 @@ mod tests {
     fn expect_aimux_error(e: *mut aimux_error_t) -> (i32, String) {
         assert!(!e.is_null(), "expected a returned error");
         let code = aimux_error_code(e);
-        if !(AIMUX_E_OTHER..=AIMUX_E_LOAD_SETTING).contains(&code) {
+        if !(AIMUX_E_OTHER..=AIMUX_E_NO_OUTPUT_GENERATED).contains(&code) {
             panic!("expected an AiMuxError code, got {code}: {}", msg(e));
         }
         let out = (code, take(aimux_error_message(e)).unwrap());

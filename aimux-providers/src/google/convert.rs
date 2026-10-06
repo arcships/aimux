@@ -200,9 +200,14 @@ fn convert_user_parts(content: &[UserPart], namespace: Namespace) -> Vec<Value> 
                     FileData::Data {
                         data: FileBytes::Base64(data),
                     } => data.clone(),
-                    FileData::Url { url, .. } => {
+                    FileData::Url { url, original_url } => {
+                        let uri = if url.starts_with("gs:") {
+                            original_url.as_deref().unwrap_or(url)
+                        } else {
+                            url
+                        };
                         parts.push(json!({
-                            "fileData": { "mimeType": media_type, "fileUri": url }
+                            "fileData": { "mimeType": media_type, "fileUri": uri }
                         }));
                         continue;
                     }
@@ -524,6 +529,24 @@ fn convert_tool_parts(
                                             .to_string(),
                                         );
                                     }
+                                }
+                                FileData::Url { url, original_url }
+                                    if namespace == Namespace::Vertex
+                                        && url.starts_with("gs:")
+                                        && original_url
+                                            .as_deref()
+                                            .unwrap_or(url)
+                                            .starts_with("gs://")
+                                        && matches!(
+                                            file.media_type.as_str(),
+                                            "image/png"
+                                                | "image/jpeg"
+                                                | "image/webp"
+                                                | "application/pdf"
+                                                | "text/plain"
+                                        ) =>
+                                {
+                                    files.push(json!({ "fileData": { "mimeType": file.media_type, "fileUri": original_url.as_deref().unwrap_or(url) } }));
                                 }
                                 _ => texts.push(
                                     crate::openai::convert::tool_result_content_value(
@@ -1250,7 +1273,13 @@ fn build_request_body_with_warnings_for_namespace(
         && let ResponseFormat::Json { schema, .. } = rf
     {
         generation_config.insert("responseMimeType".to_string(), json!("application/json"));
-        if let Some(s) = schema {
+        if let Some(s) = schema
+            && namespace
+                .read_in(options.provider_options.as_ref())
+                .and_then(|options| options.get("structuredOutputs"))
+                .and_then(Value::as_bool)
+                .unwrap_or(true)
+        {
             let openapi = convert_json_schema_to_openapi_schema(s, true);
             if !openapi.is_null() {
                 generation_config.insert("responseSchema".to_string(), openapi);
@@ -1416,7 +1445,7 @@ pub fn extract_sources(
     };
 
     for chunk in chunks {
-        if let Some(web) = chunk.get("web") {
+        if let Some(web) = chunk.get("web").filter(|value| !value.is_null()) {
             sources.push(GenerateContent::Source(Source::Url {
                 id: next_id(id_counter),
                 url: web
@@ -1430,7 +1459,7 @@ pub fn extract_sources(
                     .map(std::string::ToString::to_string),
                 provider_metadata: None,
             }));
-        } else if let Some(image) = chunk.get("image") {
+        } else if let Some(image) = chunk.get("image").filter(|value| !value.is_null()) {
             sources.push(GenerateContent::Source(Source::Url {
                 id: next_id(id_counter),
                 url: image
@@ -1444,7 +1473,10 @@ pub fn extract_sources(
                     .map(std::string::ToString::to_string),
                 provider_metadata: None,
             }));
-        } else if let Some(rc) = chunk.get("retrievedContext") {
+        } else if let Some(rc) = chunk
+            .get("retrievedContext")
+            .filter(|value| !value.is_null())
+        {
             let uri = rc
                 .get("uri")
                 .and_then(|v| v.as_str())
@@ -1496,8 +1528,11 @@ pub fn extract_sources(
                 }));
             }
             // else: no uri and no fileSearchStore → no source.
-        } else if let Some(maps) = chunk.get("maps")
-            && let Some(uri) = maps.get("uri").and_then(|v| v.as_str())
+        } else if let Some(maps) = chunk.get("maps").filter(|value| !value.is_null())
+            && let Some(uri) = maps
+                .get("uri")
+                .and_then(|v| v.as_str())
+                .filter(|uri| !uri.is_empty())
         {
             sources.push(GenerateContent::Source(Source::Url {
                 id: next_id(id_counter),

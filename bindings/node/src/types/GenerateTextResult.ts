@@ -6,7 +6,8 @@ import type { GeneratedFile } from "./GeneratedFile";
 import type { ModelMessage } from "./ModelMessage";
 import type { ReasoningFileOutput } from "./ReasoningFileOutput";
 import type { ReasoningPart } from "./ReasoningPart";
-import type { ResponseMetadata } from "./ResponseMetadata";
+import type { RequestInfo } from "./RequestInfo";
+import type { ResponseInfo } from "./ResponseInfo";
 import type { Source } from "./Source";
 import type { ToolApprovalRequestOutput } from "./ToolApprovalRequestOutput";
 import type { ToolCall } from "./ToolCall";
@@ -78,10 +79,13 @@ raw_finish_reason: string | null,
  */
 provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null,
 /**
- * Response metadata (id, timestamp, model_id). Mirrored from
- * `raw.response` for top-level convenience.
+ * Request information from the provider.
  */
-response: ResponseMetadata,
+request: RequestInfo,
+/**
+ * Response metadata, headers, and body from the provider.
+ */
+response: ResponseInfo,
 /**
  * Total token usage across all steps. In single-step mode (aimux's
  * default), `total_usage` equals `usage`. Provided for AI SDK parity.
