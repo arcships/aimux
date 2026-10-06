@@ -199,7 +199,12 @@ impl LanguageModel for OpenAICompatibleChatModel {
     }
 
     fn supported_urls(&self) -> SupportedUrls {
-        self.config.chat.supported_urls.clone()
+        self.config
+            .chat
+            .supported_urls
+            .as_ref()
+            .map(|urls| urls())
+            .unwrap_or_default()
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
@@ -295,7 +300,13 @@ impl LanguageModel for OpenAICompatibleChatModel {
             });
 
         let dialect = &self.config.chat.dialect;
-        let usage = usage_from_raw(raw.get("usage"));
+        let usage = self
+            .config
+            .chat
+            .convert_usage
+            .as_ref()
+            .map(|convert| convert(raw.get("usage").unwrap_or(&Value::Null)))
+            .unwrap_or_else(|| usage_from_raw(raw.get("usage")));
 
         let mut namespace = Map::new();
         prediction_tokens(data.usage.as_ref(), &mut namespace);
@@ -377,6 +388,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
             .metadata_extractor
             .as_ref()
             .map(|extractor| extractor.create_stream_extractor());
+        let convert_usage = self.config.chat.convert_usage.clone();
         let emit_raw_chunks = options.include_raw_chunks == Some(true);
         let stream_error_url = endpoint;
         let stream_error_body = body.clone();
@@ -389,7 +401,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
             let mut text_started = false;
             let reasoning_id = "reasoning-0".to_string();
             let mut reasoning_started = false;
-            let mut final_usage = Usage::default();
+            let mut final_usage_raw: Option<Value> = None;
             let mut final_usage_parsed: Option<UsageResponse> = None;
             let mut final_finish_reason: Option<FinishReason> = None;
             let mut response_metadata_emitted = false;
@@ -470,7 +482,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                         }
 
                         if let Some(raw_usage) = &chunk_usage_raw {
-                            final_usage = usage_from_raw(Some(raw_usage));
+                            final_usage_raw = Some(raw_usage.clone());
                             final_usage_parsed = serde_json::from_value(raw_usage.clone()).ok();
                         }
 
@@ -680,7 +692,10 @@ impl LanguageModel for OpenAICompatibleChatModel {
                         raw: None,
                     })
                 },
-                usage: if stream_errored { Usage::default() } else { final_usage },
+                usage: if stream_errored { Usage::default() } else {
+                    convert_usage.as_ref().map(|convert| convert(final_usage_raw.as_ref().unwrap_or(&Value::Null)))
+                        .unwrap_or_else(|| usage_from_raw(final_usage_raw.as_ref()))
+                },
                 provider_metadata: Some(metadata),
             });
         };
@@ -801,6 +816,8 @@ mod tests {
                 supports_structured_outputs: false,
                 supports_multi_part_tool_content: false,
                 dialect,
+                supported_urls: None,
+                convert_usage: None,
             },
         })
         .unwrap()

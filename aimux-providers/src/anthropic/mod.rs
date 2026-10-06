@@ -184,11 +184,15 @@ pub fn create_anthropic(
     Ok(AnthropicProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: credential_headers(
-            credential,
-            scheme,
-            vec![("anthropic-version".to_string(), API_VERSION.to_string())],
-            settings.headers,
+        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+            credential_headers(
+                credential,
+                scheme,
+                vec![("anthropic-version".to_string(), API_VERSION.to_string())],
+                settings.headers,
+            ),
+            "anthropic",
+            "4.0.68",
         ),
         fetch: settings.fetch,
         supported_urls: supported_urls(),

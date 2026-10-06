@@ -283,7 +283,7 @@ impl Fixture {
             .collect();
         expected.insert(
             "user-agent".to_string(),
-            "ai-sdk-openai-compatible/3.0.59".to_string(),
+            "ai-sdk-openai-compatible/3.0.59 ai-sdk-provider-utils/5.0.51".to_string(),
         );
         match authorization {
             Some(value) => {

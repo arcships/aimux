@@ -25,11 +25,26 @@ use super::types::{ChatResponse, StreamEvent, TokenPair};
 pub struct CohereModel {
     model_id: String,
     config: EndpointConfig,
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 }
 
 impl CohereModel {
+    pub(crate) fn with_generate_id(
+        mut self,
+        generate_id: Option<std::sync::Arc<dyn Fn() -> String + Send + Sync>>,
+    ) -> Self {
+        if let Some(generate_id) = generate_id {
+            self.generate_id = generate_id;
+        }
+        self
+    }
+
     pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
-        Self { model_id, config }
+        Self {
+            model_id,
+            config,
+            generate_id: std::sync::Arc::new(aimux_provider_utils::generate_id),
+        }
     }
 }
 
@@ -132,7 +147,7 @@ impl LanguageModel for CohereModel {
         // item. The per-citation metadata (start/end/text/sources/citationType)
         // is preserved in `provider_metadata`.
         if let Some(citations) = &data.message.citations {
-            for (i, citation) in citations.iter().enumerate() {
+            for citation in citations {
                 let title = citation
                     .get("sources")
                     .and_then(|s| s.as_array())
@@ -163,7 +178,7 @@ impl LanguageModel for CohereModel {
                     cohere_meta.insert("citationType".to_string(), Value::String(t.to_string()));
                 }
                 content.push(GenerateContent::Source(Source::Document {
-                    id: format!("citation-{i}"),
+                    id: (self.generate_id)(),
                     media_type: "text/plain".to_string(),
                     title,
                     filename: None,

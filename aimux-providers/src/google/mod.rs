@@ -223,15 +223,19 @@ pub fn create_google(settings: GoogleProviderSettings) -> Result<GoogleProvider,
     Ok(GoogleProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: credential_headers(
-            Credential::explicit_or_env(
-                settings.api_key.map(Resolvable::Value),
-                API_KEY_ENV_VAR,
-                "Google Generative AI",
+        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+            credential_headers(
+                Credential::explicit_or_env(
+                    settings.api_key.map(Resolvable::Value),
+                    API_KEY_ENV_VAR,
+                    "Google Generative AI",
+                ),
+                AuthScheme::Header("x-goog-api-key"),
+                Vec::new(),
+                settings.headers,
             ),
-            AuthScheme::Header("x-goog-api-key"),
-            Vec::new(),
-            settings.headers,
+            "google",
+            "4.0.85",
         ),
         fetch: settings.fetch,
     })

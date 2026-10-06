@@ -317,16 +317,11 @@ fn to_assistant_part(
         ),
         ContentPart::Reasoning {
             text,
-            signature,
             provider_options,
+            ..
         } => AssistantPart::Reasoning(ReasoningPart {
             text: text.clone(),
-            provider_options: with_signature(
-                provider_options,
-                &["amazonBedrock", "bedrock", "anthropic"],
-                "signature",
-                signature,
-            ),
+            provider_options: provider_options.clone(),
         }),
         ContentPart::ToolCall {
             tool_call_id,
@@ -403,32 +398,6 @@ fn to_assistant_part(
             ));
         }
     })
-}
-
-fn with_signature(
-    options: &Option<SharedProviderOptions>,
-    namespaces: &[&str],
-    key: &str,
-    signature: &Option<String>,
-) -> Option<SharedProviderOptions> {
-    let Some(signature) = signature else {
-        return options.clone();
-    };
-    let mut options = options.clone().unwrap_or_default();
-    let namespace = namespaces
-        .iter()
-        .find(|name| options.contains_key(**name))
-        .copied()
-        .unwrap_or(if key == "signature" {
-            "anthropic"
-        } else {
-            "google"
-        });
-    options
-        .entry(namespace.to_owned())
-        .or_default()
-        .insert(key.to_owned(), Value::String(signature.clone()));
-    Some(options)
 }
 
 /// Convert user-facing `ModelMessage`s into a `LanguageModelPrompt`.

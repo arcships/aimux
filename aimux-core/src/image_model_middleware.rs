@@ -74,14 +74,18 @@ struct WrappedImageModel {
 pub fn wrap_image_model(
     model: Arc<dyn ImageModel>,
     middleware: &[Arc<dyn ImageModelMiddleware>],
+    model_id: Option<&str>,
+    provider_id: Option<&str>,
 ) -> Arc<dyn ImageModel> {
     middleware.iter().rev().fold(model, |model, middleware| {
         Arc::new(WrappedImageModel {
-            provider: middleware
-                .override_provider(model.as_ref())
+            provider: provider_id
+                .map(str::to_string)
+                .or_else(|| middleware.override_provider(model.as_ref()))
                 .unwrap_or_else(|| model.provider().to_string()),
-            model_id: middleware
-                .override_model_id(model.as_ref())
+            model_id: model_id
+                .map(str::to_string)
+                .or_else(|| middleware.override_model_id(model.as_ref()))
                 .unwrap_or_else(|| model.model_id().to_string()),
             max_images_per_call: middleware
                 .override_max_images_per_call(model.as_ref())

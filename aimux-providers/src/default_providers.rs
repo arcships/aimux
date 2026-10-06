@@ -142,7 +142,7 @@ pub fn create_provider(
         }};
     }
     macro_rules! package_with_string_key {
-        ($module:ident, $create:ident, $settings:ident) => {{
+        ($module:ident, $create:ident, $settings:ident $(, $defaults:expr)?) => {{
             if transform_request_body.is_some() {
                 return unsupported("transform_request_body");
             }
@@ -157,7 +157,7 @@ pub fn create_provider(
                     base_url,
                     headers,
                     fetch,
-                    ..Default::default()
+                    $(..$defaults)?
                 },
             )?))
         }};
@@ -169,19 +169,44 @@ pub fn create_provider(
             AmazonBedrockProviderSettings
         ),
         "anthropic" => {
-            package_with_string_key!(anthropic, create_anthropic, AnthropicProviderSettings)
+            package_with_string_key!(
+                anthropic,
+                create_anthropic,
+                AnthropicProviderSettings,
+                Default::default()
+            )
         }
         "azure" => package!(azure, create_azure, AzureOpenAIProviderSettings),
-        "cohere" => package!(cohere, create_cohere, CohereProviderSettings),
-        "deepseek" => package!(deepseek, create_deepseek, DeepSeekProviderSettings),
+        "cohere" => package_with_string_key!(
+            cohere,
+            create_cohere,
+            CohereProviderSettings,
+            Default::default()
+        ),
+        "deepseek" => package_with_string_key!(deepseek, create_deepseek, DeepSeekProviderSettings),
         "elevenlabs" => package!(elevenlabs, create_elevenlabs, ElevenLabsProviderSettings),
-        "google" => package_with_string_key!(google, create_google, GoogleProviderSettings),
-        "groq" => package!(groq, create_groq, GroqProviderSettings),
+        "google" => package_with_string_key!(
+            google,
+            create_google,
+            GoogleProviderSettings,
+            Default::default()
+        ),
+        "groq" => package_with_string_key!(groq, create_groq, GroqProviderSettings),
         "huggingface" => package!(huggingface, create_huggingface, HuggingFaceProviderSettings),
-        "mistral" => package!(mistral, create_mistral, MistralProviderSettings),
-        "openai" => package_with_string_key!(openai, create_openai, OpenAIProviderSettings),
+        "mistral" => package_with_string_key!(
+            mistral,
+            create_mistral,
+            MistralProviderSettings,
+            Default::default()
+        ),
+        "openai" => package_with_string_key!(
+            openai,
+            create_openai,
+            OpenAIProviderSettings,
+            Default::default()
+        ),
         "voyage" => package!(voyage, create_voyage, VoyageProviderSettings),
-        "xai" => package!(xai, create_xai, XAIProviderSettings),
+        "xai" => package_with_string_key!(xai, create_xai, XAIProviderSettings),
         "assemblyai" => package_without_transform!(
             assemblyai,
             create_assemblyai,

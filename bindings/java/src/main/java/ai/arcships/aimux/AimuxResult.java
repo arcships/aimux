@@ -9,7 +9,7 @@ import com.sun.jna.ptr.PointerByReference;
  *
  * <p>Every fallible C call returns an {@code aimux_error_t *} ({@code null}
  * = success, result in the out-parameter). Its code identifies an AiMuxError
- * (1–19), RecordingError (100–105), or a failure detected by the C ABI
+ * (1–20), RecordingError (100–105), or a failure detected by the C ABI
  * (200–206). The last range collapses to {@link IllegalStateException}
  * ({@code "aimux ffi: "} + message); Java does not expose seven additional
  * exception types. Each helper frees the pointer exactly once. User-triggerable
@@ -64,7 +64,7 @@ final class AimuxResult {
     }
 
     /**
-     * Decode an error from a call that may return {@code AiMuxError}: 1–19 →
+     * Decode an error from a call that may return {@code AiMuxError}: 1–20 →
      * {@link AimuxException}; 200–206 → {@link IllegalStateException}.
      * Frees {@code e}.
      */
@@ -82,7 +82,7 @@ final class AimuxResult {
             // Code 4 is retired; Retry is 14, tool errors are 15..17, and a missing
             // API key / setting are 18 / 19.
             if (code < AimuxException.AIMUX_E_OTHER
-                    || code > AimuxException.AIMUX_E_LOAD_SETTING
+                    || code > AimuxException.AIMUX_E_NO_OUTPUT_GENERATED
                     || code == 4) {
                 return codeMismatch(code, prefix, "AiMuxError");
             }

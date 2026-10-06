@@ -73,10 +73,17 @@ impl ProviderRegistry {
     ///
     /// [`AiMuxError::NoSuchProvider`] for an id that is not registered.
     pub fn provider(&self, id: &str) -> Result<&Arc<dyn Provider>, AiMuxError> {
+        self.get_provider(id, "")
+    }
+
+    fn get_provider(&self, id: &str, model_type: &str) -> Result<&Arc<dyn Provider>, AiMuxError> {
         self.providers
             .get(id)
             .ok_or_else(|| AiMuxError::NoSuchProvider {
                 provider_id: id.to_string(),
+                model_id: id.to_string(),
+                model_type: model_type.to_string(),
+                available_providers: self.providers.keys().cloned().collect(),
             })
     }
 
@@ -94,7 +101,7 @@ impl ProviderRegistry {
         let (provider_id, model_id) = id
             .split_once(self.separator.as_str())
             .ok_or_else(|| AiMuxError::no_such_model(id, model_type))?;
-        Ok((self.provider(provider_id)?, model_id))
+        Ok((self.get_provider(provider_id, model_type)?, model_id))
     }
 
     /// The language model `"{provider}{separator}{model}"`.
@@ -109,6 +116,8 @@ impl ProviderRegistry {
         Ok(wrap_language_model(
             provider.language_model(model_id)?,
             &self.language_model_middleware,
+            None,
+            None,
         ))
     }
 
@@ -132,6 +141,8 @@ impl ProviderRegistry {
         Ok(wrap_image_model(
             provider.image_model(model_id)?,
             &self.image_model_middleware,
+            None,
+            None,
         ))
     }
 

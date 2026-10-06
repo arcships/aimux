@@ -30,6 +30,7 @@ use pyo3::types::{PyAnyMethods, PyList};
 create_exception!(aimux, AimuxError, PyException, "AiMux failure");
 
 create_exception!(aimux, APICallError, AimuxError, "API call failure");
+create_exception!(aimux, NoOutputGeneratedError, AimuxError, "No output generated");
 create_exception!(aimux, RetryError, AimuxError, "Operation retry failure");
 create_exception!(
     aimux,
@@ -252,6 +253,7 @@ fn variant_instance<'py>(py: Python<'py>, e: &AiMuxError) -> PyResult<Bound<'py,
         AiMuxError::ApiCall(_) => py.get_type_bound::<APICallError>(),
         AiMuxError::Retry(_) => py.get_type_bound::<RetryError>(),
         AiMuxError::JsonParse(_) => py.get_type_bound::<JSONParseError>(),
+        AiMuxError::NoOutputGenerated(_) => py.get_type_bound::<NoOutputGeneratedError>(),
         AiMuxError::InvalidResponseData(_) | AiMuxError::ToolCallNotFoundForApproval { .. } => {
             py.get_type_bound::<InvalidResponseDataError>()
         }
@@ -340,8 +342,16 @@ fn variant_instance<'py>(py: Python<'py>, e: &AiMuxError) -> PyResult<Bound<'py,
                 (!model_type.is_empty()).then_some(model_type.as_str()),
             )?;
         }
-        AiMuxError::NoSuchProvider { provider_id } => {
+        AiMuxError::NoSuchProvider {
+            provider_id,
+            model_id,
+            model_type,
+            available_providers,
+        } => {
             inst.setattr("provider_id", provider_id.as_str())?;
+            inst.setattr("model_id", model_id.as_str())?;
+            inst.setattr("model_type", model_type.as_str())?;
+            inst.setattr("available_providers", available_providers.clone())?;
         }
         AiMuxError::LoadApiKey {
             env_var,
@@ -396,6 +406,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("APICallError", py.get_type_bound::<APICallError>())?;
     m.add("RetryError", py.get_type_bound::<RetryError>())?;
     m.add("JSONParseError", py.get_type_bound::<JSONParseError>())?;
+    m.add("NoOutputGeneratedError", py.get_type_bound::<NoOutputGeneratedError>())?;
     m.add(
         "InvalidResponseDataError",
         py.get_type_bound::<InvalidResponseDataError>(),

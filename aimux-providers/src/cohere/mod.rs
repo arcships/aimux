@@ -17,7 +17,6 @@ pub(crate) mod options;
 pub mod reranking;
 mod types;
 
-pub use crate::shared::TransformRequestBody;
 pub use embedding::CohereEmbeddingModel;
 pub use model::CohereModel;
 pub use reranking::CohereRerankingModel;
@@ -59,7 +58,7 @@ const DEFAULT_NAME: &str = "cohere";
 /// Settings of [`create_cohere`] (the AI SDK's `CohereProviderSettings`).
 ///
 /// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are
+/// created except `base_url`; `api_key` and `headers` are
 /// evaluated on every request.
 #[derive(Clone, Default)]
 pub struct CohereProviderSettings {
@@ -69,22 +68,16 @@ pub struct CohereProviderSettings {
     /// The API key. `None` loads `COHERE_API_KEY` when a request is made and
     /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
     /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
+    /// the environment.
+    pub api_key: Option<String>,
     /// Extra headers on every request. A `None` value removes the header,
     /// including `Authorization`. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of the `provider()` strings
-    /// (`"{name}.chat"`, `"{name}.textEmbedding"`, `"{name}.reranking"`).
-    /// Default `"cohere"`. The providerOptions key stays `cohere`.
-    pub name: Option<String>,
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
+    /// Generates unique IDs for chat output.
+    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl std::fmt::Debug for CohereProviderSettings {
@@ -92,17 +85,13 @@ impl std::fmt::Debug for CohereProviderSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CohereProviderSettings")
             .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
+            .field("api_key", &self.api_key.is_some())
             .field(
                 "headers",
                 &self.headers.as_ref().map(std::collections::HashMap::len),
             )
-            .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
+            .field("generate_id", &self.generate_id.is_some())
             .finish()
     }
 }
@@ -120,15 +109,23 @@ pub fn create_cohere(settings: CohereProviderSettings) -> Result<CohereProvider,
         None => DEFAULT_BASE_URL.to_string(),
     };
     Ok(CohereProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        name: DEFAULT_NAME.to_string(),
         base_url,
-        headers: provider_headers(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Cohere"),
-            Vec::new(),
-            settings.headers,
+        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+            provider_headers(
+                Credential::explicit_or_env(
+                    settings.api_key.map(Resolvable::Value),
+                    API_KEY_ENV_VAR,
+                    "Cohere",
+                ),
+                Vec::new(),
+                settings.headers,
+            ),
+            "cohere",
+            "4.0.52",
         ),
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
+        generate_id: settings.generate_id,
     })
 }
 
@@ -150,7 +147,7 @@ pub struct CohereProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
+    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl CohereProvider {
@@ -160,7 +157,7 @@ impl CohereProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
+            None,
         )
     }
 
@@ -168,6 +165,7 @@ impl CohereProvider {
     #[must_use]
     pub fn chat(&self, model_id: &str) -> CohereModel {
         CohereModel::from_config(model_id.to_string(), self.model_config("chat"))
+            .with_generate_id(self.generate_id.clone())
     }
 
     /// An embedding model (e.g. `"embed-english-v3.0"`); `provider()` is

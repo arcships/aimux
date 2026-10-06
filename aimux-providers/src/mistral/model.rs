@@ -22,7 +22,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, generate_id,
+    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker,
 };
 
 use crate::shared::EndpointConfig;
@@ -34,11 +34,26 @@ use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
 pub struct MistralModel {
     model_id: String,
     config: EndpointConfig,
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 }
 
 impl MistralModel {
+    pub(crate) fn with_generate_id(
+        mut self,
+        generate_id: Option<std::sync::Arc<dyn Fn() -> String + Send + Sync>>,
+    ) -> Self {
+        if let Some(generate_id) = generate_id {
+            self.generate_id = generate_id;
+        }
+        self
+    }
+
     pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
-        Self { model_id, config }
+        Self {
+            model_id,
+            config,
+            generate_id: std::sync::Arc::new(aimux_provider_utils::generate_id),
+        }
     }
 }
 
@@ -315,13 +330,15 @@ impl LanguageModel for MistralModel {
         let stream_error_body = body.clone();
         let stream_response_headers = response_headers.clone();
 
+        let generate_id = self.generate_id.clone();
+        let tool_generate_id = generate_id.clone();
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: vec![] });
 
             let text_id = 0usize;
             let mut text_started = false;
             let mut reasoning_started = false;
-            let mut tool_calls = StreamingToolCallTracker::new().with_generate_id(generate_id);
+            let mut tool_calls = StreamingToolCallTracker::new().with_generate_id(move || tool_generate_id());
             let mut reasoning_id: Option<String> = None;
             let mut final_usage = Usage::default();
             let mut final_finish_reason: Option<FinishReason> = None;
@@ -398,13 +415,7 @@ impl LanguageModel for MistralModel {
                                             });
                                             text_started = false;
                                         }
-                                        let rid = format!(
-                                            "rc-{}",
-                                            std::time::SystemTime::now()
-                                                .duration_since(std::time::UNIX_EPOCH)
-                                                .map(|d| d.as_nanos())
-                                                .unwrap_or(0)
-                                        );
+                                        let rid = generate_id();
                                         reasoning_id = Some(rid.clone());
                                         reasoning_started = true;
                                         yield Ok(StreamPart::ReasoningStart { id: rid,

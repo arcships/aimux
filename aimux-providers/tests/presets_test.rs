@@ -180,7 +180,7 @@ fn an_unknown_name_has_no_fallback() {
     assert!(preset::lookup("no-such-preset").is_none());
     assert!(
         matches!(create_provider("no-such-preset", PresetSettings::default()),
-        Err(AiMuxError::NoSuchProvider { provider_id }) if provider_id == "no-such-preset")
+        Err(AiMuxError::NoSuchProvider { provider_id, .. }) if provider_id == "no-such-preset")
     );
 }
 

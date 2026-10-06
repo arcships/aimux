@@ -559,7 +559,7 @@ pub async fn cohere_embedding(
         let __r: crate::error::MResult<EmbeddingModel> = async {
             use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
             let provider = create_cohere(CohereProviderSettings {
-                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                api_key: Some(api_key),
                 base_url,
                 ..Default::default()
             })
@@ -585,7 +585,7 @@ pub async fn cohere_reranking(
         let __r: crate::error::MResult<RerankingModel> = async {
             use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
             let provider = create_cohere(CohereProviderSettings {
-                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                api_key: Some(api_key),
                 base_url,
                 ..Default::default()
             })

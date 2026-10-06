@@ -126,7 +126,10 @@ impl Fixture {
             .iter()
             .map(|(k, v)| (k.to_ascii_lowercase(), v.as_str().unwrap().to_string()))
             .collect();
-        expected.insert("user-agent".to_string(), "ai-sdk-google/4.0.85".to_string());
+        expected.insert(
+            "user-agent".to_string(),
+            "ai-sdk-google/4.0.85 ai-sdk-provider-utils/5.0.51".to_string(),
+        );
         assert_eq!(
             expected.get("x-goog-api-key").map(String::as_str),
             Some("<redacted>"),

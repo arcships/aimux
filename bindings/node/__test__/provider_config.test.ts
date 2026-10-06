@@ -45,14 +45,19 @@ function readBody(req: any): Promise<any> {
   })
 }
 
-const CHAT_RESPONSE = JSON.stringify({
-  id: 'chatcmpl-test',
-  model: 'gpt-4o',
-  choices: [{
-    message: { role: 'assistant', content: 'Done.' },
-    finish_reason: 'stop',
+const RESPONSES_RESPONSE = JSON.stringify({
+  id: 'resp-test',
+  model: 'm',
+  created_at: 1,
+  status: 'completed',
+  output: [{
+    type: 'message',
+    id: 'msg-test',
+    role: 'assistant',
+    status: 'completed',
+    content: [{ type: 'output_text', text: 'Done.', annotations: [] }],
   }],
-  usage: { prompt_tokens: 10, completion_tokens: 1, total_tokens: 11 },
+  usage: { input_tokens: 10, output_tokens: 1, total_tokens: 11 },
 })
 
 // ── removed: bodyOverrides ───────────────────────────────────────────────────
@@ -62,11 +67,11 @@ test('per-call body_overrides no longer reaches the request body', async (t) => 
   const { server, url } = await startMockServer(async (req, res) => {
     requestBody = await readBody(req)
     res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(CHAT_RESPONSE)
+    res.end(RESPONSES_RESPONSE)
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await openai('test-key', 'm', url)
     const opts = JSON.stringify({
       temperature: 0.9,
       body_overrides: { temperature: 0.1, enable_thinking: false },
@@ -82,7 +87,7 @@ test('per-call body_overrides no longer reaches the request body', async (t) => 
 
 test('factory config bodyOverrides is rejected, not ignored', async (t) => {
   const err = await t.throwsAsync(() =>
-    openai('test-key', 'gpt-4o', {
+    openai('test-key', 'm', {
       baseUrl: 'http://127.0.0.1:1',
       bodyOverrides: '{"X-Relay-Tag":"my-team"}',
     }),
@@ -93,7 +98,7 @@ test('factory config bodyOverrides is rejected, not ignored', async (t) => {
 
 test('factory config maxRetries is rejected, not ignored', async (t) => {
   const err = await t.throwsAsync(() =>
-    openai('test-key', 'gpt-4o', { baseUrl: 'http://127.0.0.1:1', maxRetries: 0 }),
+    openai('test-key', 'm', { baseUrl: 'http://127.0.0.1:1', maxRetries: 0 }),
   )
   t.true(err instanceof Error)
   t.regex(err!.message, /max_retries/)
@@ -176,11 +181,11 @@ test('factory config headers are sent on every request', async (t) => {
     // consume body
     await readBody(req)
     res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(CHAT_RESPONSE)
+    res.end(RESPONSES_RESPONSE)
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', {
+    const model = await openai('test-key', 'm', {
       baseUrl: url,
       headers: JSON.stringify({ 'X-Custom-Header': 'custom-value' }),
     })
@@ -196,14 +201,15 @@ test('factory config headers are sent on every request', async (t) => {
 
 test('factory accepts bare string baseUrl (backward compatible)', async (t) => {
   const { server, url } = await startMockServer(async (req, res) => {
+    t.is(req.url, '/responses')
     await readBody(req)
     res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(CHAT_RESPONSE)
+    res.end(RESPONSES_RESPONSE)
   })
 
   try {
     // 3rd param is a plain string (old API)
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await openai('test-key', 'm', url)
     const result = JSON.parse(await model.generateText(JSON.stringify('Hello')))
     t.is(result.text, 'Done.')
   } finally {
@@ -223,7 +229,7 @@ test('maxRetries: 0 disables retries (single request on 500)', async (t) => {
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await openai('test-key', 'm', url)
     const opts = JSON.stringify({ max_retries: 0 })
 
     await t.throwsAsync(

@@ -140,13 +140,14 @@ pub fn convert_anthropic_usage(usage: &Value, raw_usage: Option<&Value>) -> Anth
 
 /// The result-level `providerMetadata` of a response, as `@ai-sdk/anthropic`
 /// builds it: under the canonical `anthropic` key and, for a provider created
-/// with another `name`, under that key too.
+/// with another `name`, under that key too when the request used custom options.
 ///
 /// `usage` is the raw usage object (for a stream: `message_start`'s, updated
 /// by `message_delta`'s). `iterations`, `container` and `contextManagement`
 /// are re-keyed in camelCase; every absent piece is `null`.
 pub(crate) fn result_provider_metadata(
     options_name: &str,
+    used_custom_provider_key: bool,
     usage: &Value,
     stop_sequence: Option<&str>,
     container: Option<&Value>,
@@ -162,11 +163,25 @@ pub(crate) fn result_provider_metadata(
                     iterations
                         .iter()
                         .map(|i| {
-                            json!({
+                            let mut iteration = json!({
                                 "type": field(i, "type"),
                                 "inputTokens": field(i, "input_tokens"),
                                 "outputTokens": field(i, "output_tokens"),
-                            })
+                            });
+                            if let Some(model) = i.get("model").filter(|model| !model.is_null()) {
+                                iteration["model"] = model.clone();
+                            }
+                            for (source, target) in [
+                                ("cache_creation_input_tokens", "cacheCreationInputTokens"),
+                                ("cache_read_input_tokens", "cacheReadInputTokens"),
+                            ] {
+                                if let Some(tokens) = i.get(source).filter(|tokens| {
+                                    tokens.as_u64().is_some_and(|value| value != 0)
+                                }) {
+                                    iteration[target] = tokens.clone();
+                                }
+                            }
+                            iteration
                         })
                         .collect(),
                 )
@@ -220,7 +235,7 @@ pub(crate) fn result_provider_metadata(
     });
     let mut result =
         provider_namespace(CANONICAL_KEY, metadata).expect("provider metadata must be an object");
-    if options_name != CANONICAL_KEY {
+    if used_custom_provider_key && options_name != CANONICAL_KEY {
         result.insert(options_name.to_string(), result[CANONICAL_KEY].clone());
     }
     result

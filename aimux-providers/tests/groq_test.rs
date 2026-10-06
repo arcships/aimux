@@ -15,8 +15,6 @@
 //! Every test builds the model through the Groq package
 //! (`create_groq(..).chat(model)`), so it exercises `GroqChatLanguageModel`.
 
-mod common;
-
 use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -35,7 +33,6 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
-use aimux_provider_utils::Resolvable;
 use aimux_providers::groq::{GroqChatLanguageModel, GroqProviderSettings, create_groq, groq};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -54,7 +51,7 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 fn model_at(server: &MockServer, model_id: &str) -> GroqChatLanguageModel {
     create_groq(GroqProviderSettings {
         base_url: Some(server.uri()),
-        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        api_key: Some("test-api-key".to_string()),
         ..Default::default()
     })
     .expect("groq provider should build")
@@ -2131,13 +2128,12 @@ mod package {
     use serial_test::serial;
 
     use aimux_core::AiMuxError;
-    use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
     use aimux_core::provider::Provider;
 
     fn groq_at(server: &MockServer) -> aimux_providers::groq::GroqProvider {
         create_groq(GroqProviderSettings {
             base_url: Some(server.uri()),
-            api_key: Some(Resolvable::Value("test-api-key".to_string())),
+            api_key: Some("test-api-key".to_string()),
             ..Default::default()
         })
         .unwrap()
@@ -2164,16 +2160,6 @@ mod package {
                 .language_model("m")
                 .unwrap();
         assert_eq!(model.provider(), "groq.chat");
-    }
-
-    #[test]
-    fn a_custom_name_changes_identity_only() {
-        let provider = create_groq(GroqProviderSettings {
-            name: Some("groq_eu".to_string()),
-            ..Default::default()
-        })
-        .unwrap();
-        assert_eq!(provider.chat("m").provider(), "groq_eu.chat");
     }
 
     #[test]
@@ -2322,39 +2308,5 @@ mod package {
                 None => std::env::remove_var("GROQ_API_KEY"),
             }
         }
-    }
-
-    /// The recorded Groq exchanges (`tests/cassettes/groq`) replayed through
-    /// the package: generate and stream both parse, and usage is read.
-    #[tokio::test]
-    async fn recorded_groq_cassettes_replay_through_the_package() {
-        let server = MockServer::start().await;
-        let n = common::replay::mount_cassettes(&server, "tests/cassettes/groq").await;
-        assert!(n > 0, "no groq cassettes");
-        let model = create_groq(GroqProviderSettings {
-            base_url: Some(format!("{}/openai/v1", server.uri())),
-            api_key: Some(Resolvable::Value("test-key".to_string())),
-            ..Default::default()
-        })
-        .unwrap()
-        .chat("llama-3.3-70b-versatile");
-
-        let result = generate_text(&model, "Hello", GenerateTextOptions::default())
-            .await
-            .expect("generate_text should succeed with cassette replay");
-        assert!(!result.text.is_empty() || !result.tool_calls.is_empty());
-        assert!(result.usage.input_tokens.total.is_some());
-
-        let result = stream_text(&model, "Hello", GenerateTextOptions::default())
-            .await
-            .expect("stream_text should succeed");
-        let mut stream = result.stream;
-        let mut finished = false;
-        while let Some(part) = stream.next().await {
-            if let StreamPart::Finish { .. } = part.expect("stream part") {
-                finished = true;
-            }
-        }
-        assert!(finished, "stream should finish");
     }
 }

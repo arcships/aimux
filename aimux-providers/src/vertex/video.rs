@@ -5,7 +5,7 @@
 //!
 //! Uses the Long Running Operations API:
 //! 1. POST `{base_url}/models/{model}:predictLongRunning` → returns operation name
-//! 2. GET operation — polled by Core via `do_status` until `done: true`
+//! 2. POST `:fetchPredictOperation` — polled by Core until `done: true`
 //! 3. Return video URL(s)
 
 use async_trait::async_trait;
@@ -34,20 +34,6 @@ impl VertexVideoModel {
     }
 }
 
-/// The URL of a long-running operation: the API root plus the operation's
-/// resource name (`projects/.../operations/...`). The root is the base URL up
-/// to its `/projects/` segment, or without its `/publishers/google` suffix
-/// (Express mode, a local server).
-fn operation_url(base_url: &str, name: &str) -> String {
-    let root = match base_url.find("/projects/") {
-        Some(index) => &base_url[..index],
-        None => base_url
-            .strip_suffix("/publishers/google")
-            .unwrap_or(base_url),
-    };
-    format!("{root}/{name}")
-}
-
 #[async_trait]
 impl VideoModel for VertexVideoModel {
     fn provider(&self) -> &str {
@@ -57,7 +43,7 @@ impl VideoModel for VertexVideoModel {
         &self.model_id
     }
     fn max_videos_per_call(&self) -> Option<u32> {
-        Some(1)
+        Some(4)
     }
 
     async fn do_start(
@@ -72,6 +58,7 @@ impl VideoModel for VertexVideoModel {
         }
 
         let mut parameters = Map::new();
+        parameters.insert("sampleCount".to_string(), json!(options.n));
         if let Some(ar) = options.aspect_ratio {
             parameters.insert("aspectRatio".to_string(), json!(ar.to_string()));
         }
@@ -107,9 +94,7 @@ impl VideoModel for VertexVideoModel {
             .get("name")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                AiMuxError::InvalidResponseData(
-                    "Vertex video prediction missing operation name".to_string(),
-                )
+                AiMuxError::InvalidResponseData("No operation name returned from API".to_string())
             })?
             .to_string();
 
@@ -140,9 +125,11 @@ impl VideoModel for VertexVideoModel {
             })?;
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let poll_url = operation_url(exchange.base_url(), operation_name);
-        let resp = aimux_provider_utils::get_from_api(
+        let poll_url = exchange.url(&format!("/models/{}:fetchPredictOperation", self.model_id));
+        let body = json!({"operationName": operation_name});
+        let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(poll_url.clone(), options),
+            exchange.transform_body(body),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             crate::google::google_failed_response_handler(),
         )
@@ -151,8 +138,9 @@ impl VideoModel for VertexVideoModel {
         let response_headers = resp.response_headers;
         let response_body = resp.raw_value.as_ref().map(ToString::to_string);
         let raw_body: Value = resp.value;
-        // Check the in-band error first: a terminal response may carry both
-        // done:true and an error object (provider-declared failure).
+        if raw_body.get("done").and_then(serde_json::Value::as_bool) != Some(true) {
+            return Ok(VideoOperationStatus::Pending);
+        }
         if let Some(err) = raw_body.get("error") {
             let msg = err
                 .get("message")
@@ -168,39 +156,84 @@ impl VideoModel for VertexVideoModel {
                 ..ApiCallError::new(msg, poll_url, serde_json::json!({}))
             })));
         }
-        if raw_body.get("done").and_then(serde_json::Value::as_bool) != Some(true) {
-            return Ok(VideoOperationStatus::Pending);
-        }
 
-        let videos: Vec<VideoData> = raw_body
+        let mut videos = Vec::new();
+        let mut video_metadata = Vec::new();
+        let outputs = raw_body
             .get("response")
             .and_then(|r| r.get("videos"))
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| {
-                        v.get("gcsUri")
-                            .or_else(|| v.get("url"))
-                            .and_then(|u| u.as_str())
-                            .map(|url| VideoData::Url {
-                                url: url.to_string(),
-                                media_type: "video/mp4".to_string(),
-                            })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                AiMuxError::InvalidResponseData(format!(
+                    "No videos in response. Response: {raw_body}"
+                ))
+            })?;
+        if outputs.is_empty() {
+            return Err(AiMuxError::InvalidResponseData(format!(
+                "No videos in response. Response: {raw_body}"
+            )));
+        }
+        for video in outputs {
+            let mime_type = video.get("mimeType").cloned().unwrap_or(Value::Null);
+            let media_type = mime_type
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("video/mp4")
+                .to_string();
+            if let Some(data) = video
+                .get("bytesBase64Encoded")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+            {
+                videos.push(VideoData::Base64 {
+                    data: data.to_string(),
+                    media_type,
+                });
+                let mut metadata = Map::new();
+                if video.get("mimeType").is_some() {
+                    metadata.insert("mimeType".to_string(), mime_type);
+                }
+                video_metadata.push(Value::Object(metadata));
+            } else if let Some(url) = video
+                .get("gcsUri")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+            {
+                videos.push(VideoData::Url {
+                    url: url.to_string(),
+                    media_type,
+                });
+                let mut metadata = Map::new();
+                metadata.insert("gcsUri".to_string(), json!(url));
+                if video.get("mimeType").is_some() {
+                    metadata.insert("mimeType".to_string(), mime_type);
+                }
+                video_metadata.push(Value::Object(metadata));
+            }
+        }
 
         if videos.is_empty() {
             return Err(AiMuxError::InvalidResponseData(
-                "Vertex video operation completed without any video output".to_string(),
+                "No valid videos in response".to_string(),
             ));
         }
 
         Ok(VideoOperationStatus::Completed(VideoResult {
             videos,
             warnings: Vec::new(),
-            provider_metadata: None,
+            provider_metadata: Some(
+                ["googleVertex", "google-vertex", "vertex"]
+                    .into_iter()
+                    .map(|key| {
+                        (
+                            key.to_string(),
+                            [("videos".to_string(), json!(video_metadata))]
+                                .into_iter()
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            ),
             response: VideoResponse {
                 timestamp: Some(chrono::Utc::now().to_rfc3339()),
                 model_id: Some(self.model_id.clone()),

@@ -186,7 +186,7 @@ impl OpenAICompatibleCompletionModel {
 
     fn transform_body(&self, body: Value) -> Value {
         match &self.config {
-            CompletionConfig::Compatible(config) => config.transform_body(body),
+            CompletionConfig::Compatible(_) => body,
             CompletionConfig::Native(config) => match &config.transform_request_body {
                 Some(transform) => transform(body),
                 None => body,
@@ -387,7 +387,7 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
     }
     fn supported_urls(&self) -> SupportedUrls {
         match &self.config {
-            CompletionConfig::Compatible(config) => config.chat.supported_urls.clone(),
+            CompletionConfig::Compatible(_) => SupportedUrls::default(),
             CompletionConfig::Native(_) => SupportedUrls::default(),
         }
     }

@@ -970,7 +970,7 @@ async fn finding_25_cohere_citation_metadata_preserved_field_by_field() {
     mount(&server, &c).await;
 
     let provider = create_cohere(CohereProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(format!("{}/v2", server.uri())),
         ..Default::default()
     })
@@ -1030,7 +1030,7 @@ async fn finding_13_mistral_thinking_parts_become_reasoning_in_generate() {
     mount(&server, &c).await;
 
     let provider = create_mistral(MistralProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(format!("{}/v1", server.uri())),
         ..Default::default()
     })

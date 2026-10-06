@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use aimux_core::types::ProviderMetadata;
+use aimux_core::types::{ProviderMetadata, Usage};
 use serde_json::Value;
 
 use aimux_core::AiMuxError;
@@ -120,13 +120,19 @@ pub(crate) fn default_error_structure(data: &Value) -> ProviderErrorParts {
     }
 }
 
+/// Converts the upstream token usage object into language-model usage.
+pub type ConvertUsage = Arc<dyn Fn(&Value) -> Usage + Send + Sync>;
+/// Returns the URLs supported by chat models.
+pub type SupportedUrlsFn = Arc<dyn Fn() -> SupportedUrls + Send + Sync>;
+
 /// Chat-only settings of a provider.
 #[derive(Clone)]
 pub(crate) struct ChatSettings {
     pub include_usage: bool,
     pub supports_structured_outputs: bool,
     pub supports_multi_part_tool_content: bool,
-    pub supported_urls: SupportedUrls,
+    pub supported_urls: Option<SupportedUrlsFn>,
+    pub convert_usage: Option<ConvertUsage>,
     pub dialect: Arc<ChatDialect>,
 }
 

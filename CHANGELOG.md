@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Middleware wraps generation and streaming with callbacks for both operations,
+  parameter transforms and provider/model/supported-URL overrides. Explicit
+  model and provider ids take precedence over middleware overrides.
+  `NoSuchProvider` carries `provider_id`, `model_id`, `model_type` and
+  `available_providers`. Node and Python OpenAI constructors use Responses
+  by default.
+
 - Public surface (`aimux-core`, `aimux-provider-utils`): removed
   `recording::init_recording_from_env`; made private the retry preparation
   helpers and default constants, `composite::{add_usage,
@@ -23,8 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timestamp, model id, headers and body. `StreamResult` has `request` and
   `response: Option<StreamResponseInfo>`. The flat `request_body` and
   `response_headers` fields are removed and `response` is optional; the call
-  layer fills a missing id, timestamp and model id. The user-facing results and
-  their JSON are unchanged.
+  layer fills a missing id, timestamp and model id. `GenerateTextResult`
+  exposes `request: RequestInfo` and `response: ResponseInfo`, including
+  headers and body.
 
 - The prompt a provider receives is modelled by role (`aimux-core`), as the AI
   SDK's `LanguageModelV4Message`. `LanguageModelPrompt` is
@@ -56,11 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`aimux-core`). A provider emits `tool::RawToolCall` (`input` is the raw
   argument text) in `GenerateContent::ToolCall(..)` and
   `StreamPart::ToolCall(..)`, and `tool::ToolResult` in the `ToolResult`
-  variants; these variants are newtype variants now. `StreamPart` is generic
-  over the tool-call type: a provider's `do_stream` yields `StreamPart`
-  (= `StreamPart<RawToolCall>`), `stream_text` and everything after it yield
-  `TextStreamPart` (= `StreamPart<ToolCall>`, parsed input with `invalid` /
-  `error`). `RawToolCall` moved from `parse_tool_call` to `tool`. Wire format:
+  variants; these variants are newtype variants now. A provider's `do_stream`
+  yields `StreamPart` with raw tool-call input. `stream_text` and everything
+  after it yield `TextStreamPart` with parsed input and `invalid` / `error`.
+  Call-layer streams consume provider response-metadata events internally;
+  `TextStreamPart` has no `ResponseMetadata` variant. `RawToolCall` moved from `parse_tool_call` to `tool`. Wire format:
   enum variants keep their JSON shape; a provider-layer `StreamPart::ToolCall`
   has a string `input` and no `invalid` / `error`; a
   `GenerateContent::ToolCall` with a non-string `input` no longer
@@ -194,7 +202,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   snapshot. `Fetch` (HTTP) and package-specific WebSocket settings are
   transport injection points. OpenAI, Anthropic and Google use fixed string
   credentials and header maps, without a body-transform setting. The
-  OpenAI-compatible package exposes its upstream `transform_request_body` hook.
+  OpenAI-compatible package exposes its upstream `transform_request_body`,
+  `supported_urls` and `convert_usage` hooks. Cohere and Mistral expose
+  `generate_id` settings. Package settings omit `name` and body transforms
+  when the upstream package does not offer them. Every request carries
+  `ai-sdk-<package>/<version>` in its user-agent.
 - For packages using the API-key loader, environment fallbacks are evaluated
   on every request: `api_key: None` reads the package's environment variable, `Some("")` is
   sent verbatim and never falls back to the environment, and a missing key
@@ -227,8 +239,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `provider_id` through the caller-supplied registry, retaining its settings.
   If the default model method differs from the recorded one, pass the model
   to `replay_with_model`. Recorded provider strings change with the next item.
-- `model.provider()` is `"{name}.{method}"`, where `name` is
-  `settings.name` (default: the package name). Defaults: `openai.chat` /
+- `model.provider()` follows the package's fixed identity or, where offered,
+  its `settings.name` override. Defaults: `openai.chat` /
   `openai.responses` / `openai.embedding` / `openai.image` / `openai.speech` /
   `openai.transcription` / `openai.files`; `anthropic.messages` (a custom name
   is used verbatim; `{name}.files` derives from it), `anthropic-aws`,

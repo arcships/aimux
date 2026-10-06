@@ -25,7 +25,6 @@ mod prepare_tools;
 mod types;
 mod usage;
 
-pub use crate::shared::TransformRequestBody;
 pub use model::GroqChatLanguageModel;
 
 use std::sync::{Arc, OnceLock};
@@ -55,16 +54,11 @@ pub struct GroqProviderSettings {
     /// The API key. `None` loads `GROQ_API_KEY` when a request is made and
     /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
     /// explicit value is used as given, `""` included.
-    pub api_key: Option<Resolvable<String>>,
+    pub api_key: Option<String>,
     /// Extra headers on every request; a `None` value removes the header.
     pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of every model's `provider()` string
-    /// (`"{name}.chat"`). Default `"groq"`. The providerOptions key stays `groq`.
-    pub name: Option<String>,
     /// The transport. `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for GroqProviderSettings {
@@ -72,17 +66,12 @@ impl std::fmt::Debug for GroqProviderSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GroqProviderSettings")
             .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
+            .field("api_key", &self.api_key.is_some())
             .field(
                 "headers",
                 &self.headers.as_ref().map(std::collections::HashMap::len),
             )
-            .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -92,23 +81,29 @@ impl std::fmt::Debug for GroqProviderSettings {
 /// # Errors
 ///
 /// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
-/// URL with a host or `name` is empty / contains `.`. The key is not read
-/// here.
+/// URL with a host. The key is not read here.
 pub fn create_groq(settings: GroqProviderSettings) -> Result<GroqProvider, AiMuxError> {
     let base_url = match settings.base_url.as_deref() {
         Some(url) => validate_base_url(url)?,
         None => DEFAULT_BASE_URL.to_string(),
     };
     Ok(GroqProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        name: DEFAULT_NAME.to_string(),
         base_url,
-        headers: provider_headers(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Groq"),
-            Vec::new(),
-            settings.headers,
+        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+            provider_headers(
+                Credential::explicit_or_env(
+                    settings.api_key.map(Resolvable::Value),
+                    API_KEY_ENV_VAR,
+                    "Groq",
+                ),
+                Vec::new(),
+                settings.headers,
+            ),
+            "groq",
+            "4.0.52",
         ),
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -129,7 +124,6 @@ pub struct GroqProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl GroqProvider {
@@ -139,7 +133,7 @@ impl GroqProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
+            None,
         )
     }
 

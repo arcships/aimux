@@ -77,7 +77,7 @@ The language bindings retain:
 
 ```text
 provider(name, api_key?, model_id, config?)   // language bindings
-  name     — registry provider name as a string
+  name     — vendor package or registry preset name as a string
   api_key  — optional; omitted/None reads the provider's env var
   config   — optional overrides (base_url / headers / organization / project / params)
              `maxRetries` (a per-call option) and `bodyOverrides` (removed) are
@@ -131,6 +131,8 @@ for its own declaration):
 | `usage` | Token usage |
 | `warnings` | Warnings |
 | `raw` | Raw provider result (includes full content) |
+| `request` | Request information, including the sent body |
+| `response` | Response id, timestamp, model id, headers and body; missing identity metadata is filled by the call layer |
 
 > **Note**: `text` and `tool_calls` are convenience fields extracted from `raw.content`.
 > Extraction parses and validates each tool call per the AI SDK
@@ -169,7 +171,7 @@ Returns generated content as a stream, output chunk by chunk.
 
 Examples: [Node.js](api/node.md#streaming-generation) · [Python](api/python.md#streaming-generation) · [Rust](api/rust.md#streaming-generation) · [Go](api/go.md#streaming-generation) · [Swift](api/swift.md#streaming-generation) · [Kotlin](api/kotlin.md#streaming-generation) · [Flutter](api/flutter.md#streaming-generation) · [C ABI](api/c.md#language-model)
 
-#### StreamPart Types
+#### TextStreamPart Types
 
 | Variant | Description |
 |------|------|
@@ -179,11 +181,14 @@ Examples: [Node.js](api/node.md#streaming-generation) · [Python](api/python.md#
 | `ToolCall` | Complete tool call (same shape as a `tool_calls` entry, incl. `invalid?` / `error?`) |
 | `ToolResult` | Tool result executed by the provider |
 | `ReasoningStart` / `ReasoningDelta` / `ReasoningEnd` | Reasoning segment lifecycle |
-| `ResponseMetadata` | Response metadata (id, timestamp, model_id) |
 | `Source` | Reference/source |
 | `Finish` | Stream end (carries usage + finish_reason) |
 | `Error` | Stream error |
 | `Raw` | Provider raw chunk (for debugging, when `include_raw_chunks` is set) |
+
+`stream_text` emits the call-layer `TextStreamPart` type. Provider-layer
+`StreamPart::ResponseMetadata` events are consumed internally and do not
+appear in this stream.
 
 ### Request Cancellation (abort)
 
@@ -252,7 +257,7 @@ Per-call timeout limits, JSON-serializable in every binding:
 
 `None`/absent disables the corresponding limit. On expiry the call fails with
 `AiMuxError::Timeout` (not retryable); streaming timeouts surface as a
-`StreamPart::Error` item (`"first chunk timeout"` / `"chunk idle timeout"` /
+`TextStreamPart::Error` item (`"first chunk timeout"` / `"chunk idle timeout"` /
 `"total timeout"`). Unrepresentable values (e.g. `u64::MAX` ms on narrower
 platforms) are rejected with `AiMuxError::InvalidArgument` instead of
 panicking. When both abort and a deadline are in play, abort wins.

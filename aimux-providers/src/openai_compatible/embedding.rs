@@ -85,7 +85,7 @@ impl EmbeddingModel for OpenAICompatibleEmbeddingModel {
         if let Some(user) = user {
             body.insert("user".to_string(), json!(user));
         }
-        let body = self.config.transform_body(Value::Object(body));
+        let body = Value::Object(body);
 
         let headers = self
             .config

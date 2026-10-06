@@ -230,6 +230,12 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
         UserPart::Text(TextPart { text, .. }) => json!({ "type": "text", "text": text }),
         UserPart::File(file) => {
             use base64::Engine;
+            let is_image = file.media_type.split('/').next() == Some("image");
+            if !is_image && file.media_type != "application/pdf" {
+                return Err(AiMuxError::UnsupportedFunctionality(
+                    "Only images and PDF file parts are supported".to_string(),
+                ));
+            }
             let url = match &file.data {
                 FileData::Data { data } => {
                     let b64 = match data {
@@ -241,7 +247,11 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
                     format!("data:{};base64,{}", resolve_full_media_type(file)?, b64)
                 }
                 FileData::Url { url, .. } => url.clone(),
-                FileData::Reference { .. } => return Ok(Value::Null),
+                FileData::Reference { .. } => {
+                    return Err(AiMuxError::UnsupportedFunctionality(
+                        "file parts with provider references".into(),
+                    ));
+                }
                 FileData::Text { .. } => {
                     return Err(AiMuxError::UnsupportedFunctionality(
                         "text file parts".into(),
@@ -277,6 +287,16 @@ pub fn build_request_body(
 
     if stream {
         body["stream"] = json!(true);
+    }
+
+    if let Some(safe_prompt) = options
+        .provider_options
+        .as_ref()
+        .and_then(|namespaces| namespaces.get("mistral"))
+        .and_then(|options| options.get("safePrompt"))
+        .and_then(Value::as_bool)
+    {
+        body["safe_prompt"] = json!(safe_prompt);
     }
 
     if let Some(max_tokens) = options.max_output_tokens {

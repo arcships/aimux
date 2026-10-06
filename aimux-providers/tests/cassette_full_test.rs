@@ -16,8 +16,7 @@ use wiremock::MockServer;
 
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
-use aimux_core::stream_part::StreamPart;
-use aimux_provider_utils::Resolvable;
+use aimux_core::stream_part::TextStreamPart;
 use aimux_providers::deepseek::{DeepSeekProviderSettings, create_deepseek};
 use aimux_providers::groq::{GroqProviderSettings, create_groq};
 use aimux_providers::openai_compatible::{
@@ -34,7 +33,7 @@ enum Kind {
 }
 
 fn chat_model(kind: Kind, base_url: String, model_id: &str) -> std::sync::Arc<dyn LanguageModel> {
-    let api_key = Some(Resolvable::Value("test-key".to_string()));
+    let api_key = Some("test-key".to_string());
     match kind {
         Kind::Generic => create_openai_compatible(OpenAICompatibleProviderSettings {
             name: "compat".to_string(),
@@ -94,8 +93,8 @@ async fn replay_openai_compat(cassette_dir: &str, model_id: &str, base_path: &st
     let mut got_finish = false;
     while let Some(part) = stream.next().await {
         match part.expect("{cassette_dir}: stream part should be ok") {
-            StreamPart::StreamStart { .. } => got_stream_start = true,
-            StreamPart::Finish { .. } => got_finish = true,
+            TextStreamPart::StreamStart { .. } => got_stream_start = true,
+            TextStreamPart::Finish { .. } => got_finish = true,
             _ => {}
         }
     }
@@ -458,7 +457,7 @@ async fn replay_cohere() {
     assert!(n > 0);
 
     let provider = create_cohere(CohereProviderSettings {
-        api_key: Some("test-key".to_string().into()),
+        api_key: Some("test-key".to_string()),
         base_url: Some(format!("{}/v2", server.uri())),
         ..Default::default()
     })

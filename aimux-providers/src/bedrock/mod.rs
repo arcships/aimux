@@ -374,7 +374,11 @@ pub fn create_amazon_bedrock(
     Ok(AmazonBedrockProvider {
         auth,
         base_url: base_url.map(|url| without_trailing_slash(&url)),
-        headers,
+        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+            headers,
+            "amazon-bedrock",
+            "5.0.100",
+        ),
         fetch,
         transform_request_body: settings.transform_request_body,
     })

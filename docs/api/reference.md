@@ -16,9 +16,9 @@
 | `ReasoningEffort` | [types.rs](../../aimux-core/src/types.rs) | [ReasoningEffort.ts](../../bindings/node/src/types/ReasoningEffort.ts) | 7 levels, passed through verbatim |
 | `AbortSignal` | [abort_signal.rs](../../aimux-core/src/abort_signal.rs) | — (runtime handle) | Rust: options field; Node: `AbortBridge` + JS `AbortSignal` |
 | `aimux_providers::provider::ProviderOptions` (binding compatibility) | [provider.rs](../../aimux-providers/src/provider.rs) | `ProviderConfig` (per binding) | `base_url` / `headers` / `organization` / `project` / `params` (a `max_retries` or `body_overrides` key is rejected as `InvalidArgument`) |
-| `GenerateTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextResult.ts](../../bindings/node/src/types/GenerateTextResult.ts) | `text`, `tool_calls`, `usage`, `warnings`, `raw` |
-| `StreamTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | — | use `StreamPart` while iterating |
-| `StreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [StreamPart.ts](../../bindings/node/src/types/StreamPart.ts) | TextDelta / ToolCallDelta / Finish / … |
+| `GenerateTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextResult.ts](../../bindings/node/src/types/GenerateTextResult.ts) | `text`, `tool_calls`, `usage`, `warnings`, `raw`, `request`, `response` |
+| `StreamTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | — | use `TextStreamPart` while iterating |
+| `StreamPart` / `TextStreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [TextStreamPart.ts](../../bindings/node/src/types/TextStreamPart.ts) | Provider / call layer; only the provider layer emits ResponseMetadata |
 | `Usage` / `TokenUsage` | [types.rs](../../aimux-core/src/types.rs) | [Usage.ts](../../bindings/node/src/types/Usage.ts) | input/output/reasoning tokens |
 | `FinishReason` / `FinishReasonUnified` | [types.rs](../../aimux-core/src/types.rs) | [FinishReason.ts](../../bindings/node/src/types/FinishReason.ts) | |
 | `Warning` | [types.rs](../../aimux-core/src/types.rs) | [Warning.ts](../../bindings/node/src/types/Warning.ts) | non-fatal provider notices |

@@ -217,7 +217,7 @@ impl Fixture {
             .collect();
         expected.insert(
             "user-agent".to_string(),
-            "ai-sdk-anthropic/4.0.68".to_string(),
+            "ai-sdk-anthropic/4.0.68 ai-sdk-provider-utils/5.0.51".to_string(),
         );
         assert_eq!(
             expected.get("x-api-key").map(String::as_str),

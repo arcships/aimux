@@ -350,7 +350,7 @@ mod xai_conformance {
         // Cassettes are recorded against /v1/responses; the responses model
         // appends `/responses` to the base URL, so base must include `/v1`.
         create_xai(XAIProviderSettings {
-            api_key: Some("test-key".to_string().into()),
+            api_key: Some("test-key".to_string()),
             base_url: Some(format!("{}/v1", server.uri())),
             ..Default::default()
         })
@@ -444,7 +444,7 @@ mod mistral_conformance {
         // Cassettes record paths under /v1/chat/completions, matching Mistral's
         // default base URL https://api.mistral.ai/v1.
         create_mistral(MistralProviderSettings {
-            api_key: Some("test-key".to_string().into()),
+            api_key: Some("test-key".to_string()),
             base_url: Some(format!("{}/v1", server.uri())),
             ..Default::default()
         })
@@ -960,7 +960,7 @@ mod cohere_conformance {
         // Cassettes record paths under /v2/chat, matching Cohere's default base
         // URL https://api.cohere.com/v2; the model appends `/chat`.
         create_cohere(CohereProviderSettings {
-            api_key: Some("test-key".to_string().into()),
+            api_key: Some("test-key".to_string()),
             base_url: Some(format!("{}/v2", server.uri())),
             ..Default::default()
         })
