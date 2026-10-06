@@ -176,11 +176,11 @@ aimux_error_t *aimux_azure_new_with_base(const char *api_key, const char *base_u
  *                    var from the registry entry. Non-NULL but non-UTF-8 is
  *                    a C ABI failure.
  * @param model_id    NUL-terminated model ID.
- * @param config_json Optional JSON object of ProviderOptions
+ * @param config_json Optional JSON object of settings
  *                    ({"base_url": "...", "headers": {...}, "organization": "...",
- *                     "project": "..."}); "max_retries" (call-level) and
- *                    "body_overrides" (removed) are rejected as invalid
- *                    arguments. NULL / empty / "null" for defaults.
+ *                     "project": "...", "params": {...}}); any other key
+ *                    ("max_retries" is call-level, "body_overrides" is gone)
+ *                    is an invalid argument. NULL / empty / "null" for defaults.
  * @param out_handle  Receives the model handle. AiMuxError: unknown
  *                    provider, bad config, missing env key, invalid model id.
  */
@@ -695,13 +695,6 @@ void aimux_recording_flush(void);
      AIMUX_E_RECORDING_WRITER_GONE (4) — writer unavailable
      AIMUX_E_RECORDING_FLUSH_TIMEOUT (5) — no writer ack within 30s */
 aimux_error_t *aimux_recording_try_flush(void);
-
-/* [AiMuxError] Register external OpenAI-compatible providers from a JSON config
-   string (RFC-0020). config_json is { "providers": [ { "name", "base_url",
-   ... } ] }. Entries override same-named built-ins or add new ones. Malformed
-   JSON text is a C ABI failure; a well-formed document the registry
-   rejects (bad schema, unknown protocol) is AiMuxError AIMUX_E_INVALID_ARGUMENT. */
-aimux_error_t *aimux_register_providers(const char *config_json);
 
 /* [AiMuxError] Set the global proxy configuration (M6, RFC-0016). Must be called
    before the first generate_text / stream_text call; a no-op if the shared

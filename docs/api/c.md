@@ -483,7 +483,6 @@ Pass `"session_id": "..."` inside `opts_json` of generate/stream to group a call
 | Function | Description |
 |------|------|
 | `aimux_init_logging(level)` | [C ABI] `"off"…"trace"`, NULL = `"warn"` |
-| `aimux_register_providers(config_json)` | [AiMuxError] External OpenAI-compatible providers (RFC-0020) |
 | `aimux_init_proxy(config_json)` | [AiMuxError] Global proxy (before first call) |
 | `aimux_router_new(const uint64_t *handles, size_t len, config_json, uint64_t *out_handle)` | [AiMuxError] RouterModel (RFC-0021) |
 | `aimux_moa_new(const uint64_t *reference_handles, size_t ref_len, aggregator, config_json, uint64_t *out_handle)` | [AiMuxError] MoaModel (RFC-0022) |

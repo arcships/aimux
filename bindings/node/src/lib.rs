@@ -32,7 +32,7 @@ use aimux_core::message::ModelPrompt;
 use aimux_core::openai_output::OpenAiStreamOptions;
 use aimux_core::parse_tool_call::{ToolCallRepairReply, tool_call_repair_inputs};
 use aimux_core::tool::ToolCall;
-use aimux_providers::provider as providers;
+use aimux_providers::{PresetSettings, create_provider as create_named_provider};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
@@ -640,11 +640,18 @@ pub struct ProviderConfig {
 impl ProviderConfig {
     /// Fail on the two removed keys instead of dropping them silently.
     fn reject_removed_keys(&self) -> MResult<()> {
-        providers::reject_removed_provider_options(
-            self.max_retries.is_some(),
-            self.body_overrides.is_some(),
-        )
-        .map_err(|e| AiMuxBindingError::from(&e))
+        let removed = if self.max_retries.is_some() {
+            "`max_retries` is a call-level option: pass it in the call options (`maxRetries`), \
+             not in the provider configuration"
+        } else if self.body_overrides.is_some() {
+            "`body_overrides` is no longer supported: request-body overrides were removed from \
+             the provider configuration and the call options"
+        } else {
+            return Ok(());
+        };
+        Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
+            removed.into(),
+        )))
     }
 }
 
@@ -728,33 +735,6 @@ pub fn init_session_store() {
 #[napi]
 pub fn init_session_infer(enabled: bool) {
     aimux_core::session::init_session_infer(enabled);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// External provider config (RFC-0020)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Register external OpenAI-compatible providers from a JSON config string
-/// (RFC-0020). Entries override same-named built-ins or add new ones.
-///
-/// `configJson` shape: `{ "providers": [ { "name": "...", "base_url": "...", ... } ] }`.
-/// Malformed JSON text throws a plain `Error` (napi `InvalidArg`); a
-/// well-formed document the registry rejects (bad base_url scheme, empty
-/// name, unsupported protocol, wrong shape) throws `InvalidArgumentError`.
-#[napi]
-pub fn register_providers(config_json: String) -> error::AimuxResult<()> {
-    AimuxResult((|| -> error::MResult<()> {
-        // Malformed text is the binding's finding; the registry reports a
-        // schema mismatch as `JsonParse`, which is core's InvalidArgument
-        // here (the text already parsed) — JsonParse is for provider responses.
-        let _: serde_json::Value = parse_wire_json("config_json", &config_json)?;
-        providers::load_providers_from_json(&config_json).map_err(|e| match e {
-            AiMuxError::JsonParse(m) => crate::error::AiMuxBindingError::from(
-                &AiMuxError::InvalidArgument(format!("config_json: {m}")),
-            ),
-            e => crate::error::AiMuxBindingError::from(&e),
-        })
-    })())
 }
 
 /// Set the global proxy configuration (M6, RFC-0016). Must be called before
@@ -1061,8 +1041,9 @@ pub async fn deepseek(
 ) -> AimuxResult<Model> {
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
-            let options = provider_options_from_config(config)?;
-            let model = providers::provider("deepseek", Some(api_key), &model_id, options)
+            let settings = named_settings(Some(api_key), config)?;
+            let model = create_named_provider("deepseek", settings)
+                .and_then(|p| p.language_model(&model_id))
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: model,
@@ -1391,11 +1372,9 @@ pub async fn provider(
 ) -> AimuxResult<Model> {
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
-            let options = match config {
-                Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
-                None => None,
-            };
-            let model = providers::provider(&name, api_key, &model_id, options)
+            let settings = named_settings(api_key, config.map(Either::B))?;
+            let model = create_named_provider(&name, settings)
+                .and_then(|p| p.language_model(&model_id))
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: model,
@@ -1492,12 +1471,9 @@ pub async fn create_provider(
 ) -> AimuxResult<ProviderHandle> {
     AimuxResult({
         let __r: crate::error::MResult<ProviderHandle> = async {
-            let options = match config {
-                Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
-                None => None,
-            };
-            let inner = providers::provider_handle(&name, api_key, options)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
+            let settings = named_settings(api_key, config.map(Either::B))?;
+            let inner =
+                create_named_provider(&name, settings).map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(ProviderHandle { inner })
         }
         .await;
@@ -1522,36 +1498,35 @@ pub async fn get_model_specs(source_url: Option<String>) -> AimuxResult<String> 
     })
 }
 
-/// Build `ProviderOptions` from a Node `ProviderConfig` (3rd factory arg).
-fn provider_options_from_config(
+/// The settings of a by-name provider from a Node `ProviderConfig` (3rd
+/// factory arg). Organization and project become their headers, below the
+/// caller's own.
+fn named_settings(
+    api_key: Option<String>,
     config: Option<Either<String, ProviderConfig>>,
-) -> MResult<Option<providers::ProviderOptions>> {
-    let opts = match config {
-        None => None,
-        Some(Either::A(url)) => Some(providers::ProviderOptions {
-            base_url: Some(url),
-            ..Default::default()
-        }),
-        Some(Either::B(cfg)) => {
-            cfg.reject_removed_keys()?;
-            let mut o = providers::ProviderOptions::default();
-            if let Some(url) = cfg.base_url {
-                o.base_url = Some(url);
-            }
-            if let Some(ref json_str) = cfg.headers {
-                o.headers = Some(parse_wire_json("config.headers", json_str)?);
-            }
-            if let Some(org) = cfg.organization {
-                o.organization = Some(org);
-            }
-            if let Some(proj) = cfg.project {
-                o.project = Some(proj);
-            }
-            o.params = cfg.params;
-            Some(o)
-        }
+) -> MResult<PresetSettings> {
+    let params = match &config {
+        Some(Either::B(cfg)) => cfg.params.clone().unwrap_or_default(),
+        _ => Default::default(),
     };
-    Ok(opts)
+    let native = native_config(config)?;
+    let mut headers = aimux_provider_utils::HeaderMapOpt::new();
+    for (name, value) in [
+        ("OpenAI-Organization", native.organization),
+        ("OpenAI-Project", native.project),
+    ] {
+        if let Some(value) = value {
+            headers.insert(name.to_string(), Some(value));
+        }
+    }
+    headers.extend(native.headers.into_iter().flatten());
+    Ok(PresetSettings {
+        api_key: api_key.map(aimux_provider_utils::Resolvable::Value),
+        base_url: native.base_url,
+        headers: (!headers.is_empty()).then_some(headers),
+        params,
+        ..PresetSettings::default()
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

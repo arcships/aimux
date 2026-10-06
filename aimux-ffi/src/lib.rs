@@ -81,10 +81,10 @@ use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
 use aimux_providers::google::{GoogleProviderSettings, create_google};
 use aimux_providers::mistral::{MistralProviderSettings, create_mistral};
 use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
-use aimux_providers::provider::{ProviderOptions, provider, provider_handle};
 use aimux_providers::tavily::{TavilyProvider, TavilyProviderSettings, create_tavily};
 use aimux_providers::vertex::{VertexProviderSettings, create_google_vertex};
 use aimux_providers::xai::{XAIProviderSettings, create_xai};
+use aimux_providers::{PresetSettings, create_provider};
 
 use futures::StreamExt;
 use tokio::runtime::Runtime;
@@ -973,17 +973,52 @@ fn parse_opts_arg(opts_json: *const c_char) -> FfiResult<GenerateTextOptions> {
     }
 }
 
-/// Parse the optional `config_json` argument (`ProviderOptions`); NULL,
-/// empty or "null" means unset.
-fn parse_provider_options(config_json: *const c_char) -> FfiResult<Option<ProviderOptions>> {
-    match opt_str_arg(config_json, "config_json")? {
-        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
-            serde_json::from_str::<ProviderOptions>(&s)
-                .map(Some)
-                .map_err(|e| wire_err("config_json", e))
-        }
-        _ => Ok(None),
+/// The optional `config_json` of the by-name constructors, as the settings of
+/// the selected factory. NULL, empty or "null" means no settings. An unknown
+/// key (`max_retries`, `body_overrides`, ...) is `InvalidArgument`.
+fn parse_provider_settings(
+    api_key: Option<String>,
+    config_json: *const c_char,
+) -> FfiResult<PresetSettings> {
+    #[derive(serde::Deserialize, Default)]
+    #[serde(deny_unknown_fields)]
+    struct Config {
+        base_url: Option<String>,
+        headers: Option<HashMap<String, String>>,
+        organization: Option<String>,
+        project: Option<String>,
+        params: Option<HashMap<String, String>>,
     }
+    let config = match opt_str_arg(config_json, "config_json")? {
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
+            serde_json::from_str::<Config>(&s).map_err(|e| wire_err("config_json", e))?
+        }
+        _ => Config::default(),
+    };
+    // Organization and project become their headers, below the caller's own.
+    let mut headers = aimux_provider_utils::HeaderMapOpt::new();
+    for (name, value) in [
+        ("OpenAI-Organization", config.organization),
+        ("OpenAI-Project", config.project),
+    ] {
+        if let Some(value) = value {
+            headers.insert(name.to_string(), Some(value));
+        }
+    }
+    headers.extend(
+        config
+            .headers
+            .into_iter()
+            .flatten()
+            .map(|(k, v)| (k, Some(v))),
+    );
+    Ok(PresetSettings {
+        api_key: api_key.map(aimux_provider_utils::Resolvable::Value),
+        base_url: config.base_url,
+        headers: (!headers.is_empty()).then_some(headers),
+        params: config.params.unwrap_or_default(),
+        ..PresetSettings::default()
+    })
 }
 
 /// Read a config-style JSON C string and normalize it for lenient
@@ -1584,10 +1619,10 @@ pub extern "C" fn aimux_xai_new_with_base(
 /// - `api_key` — may be NULL to read the provider's env var from the registry
 ///   entry (replaces the retired `aimux_deepseek_new` etc.).
 /// - `model_id` — model id string.
-/// - `config_json` — optional JSON object of `ProviderOptions`
-///   (`{"base_url": "...", "headers": {...}, "organization": "...", "project": "..."}`);
-///   NULL / empty / "null" for defaults. `max_retries` (call-level) and
-///   `body_overrides` (removed) are rejected as invalid arguments.
+/// - `config_json` — optional JSON object of settings
+///   (`{"base_url": "...", "headers": {...}, "organization": "...", "project": "...", "params": {...}}`);
+///   NULL / empty / "null" for defaults. Any other key (`max_retries` is a
+///   call-level option, `body_overrides` is gone) is an invalid argument.
 ///
 /// AiMuxError: unknown provider, bad config shape, or invalid model id.
 #[unsafe(no_mangle)]
@@ -1603,8 +1638,8 @@ pub extern "C" fn aimux_provider_new(
         let model_id = str_arg(model_id, "model_id")?;
         // NULL => the registry entry's env var; a non-NULL key must be UTF-8.
         let key = opt_str_arg(api_key, "api_key")?;
-        let opts = parse_provider_options(config_json)?;
-        let m = provider(&name, key, &model_id, opts)?;
+        let settings = parse_provider_settings(key, config_json)?;
+        let m = create_provider(&name, settings)?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1620,7 +1655,7 @@ pub extern "C" fn aimux_provider_from_env(
     with_out_handle(out_handle, || {
         let name = str_arg(name, "name")?;
         let model_id = str_arg(model_id, "model_id")?;
-        let m = provider_handle(&name, None, None)?.language_model(&model_id)?;
+        let m = create_provider(&name, PresetSettings::default())?.language_model(&model_id)?;
         Ok(intern_model(m))
     })
 }
@@ -1636,7 +1671,7 @@ pub extern "C" fn aimux_provider_from_env(
 /// discovery) and `aimux_provider_model` (build a model from a discovered id).
 ///
 /// `api_key = null` reads the provider's env var from the registry entry.
-/// `config_json` is an optional `ProviderOptions` JSON string (same as
+/// `config_json` is an optional settings JSON string (same as
 /// `aimux_provider_new`).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_provider_handle_new(
@@ -1648,8 +1683,8 @@ pub extern "C" fn aimux_provider_handle_new(
     with_out_handle(out_handle, || {
         let name = str_arg(name, "name")?;
         let key = opt_str_arg(api_key, "api_key")?;
-        let opts = parse_provider_options(config_json)?;
-        let provider = provider_handle(&name, key, opts)?;
+        let settings = parse_provider_settings(key, config_json)?;
+        let provider = create_provider(&name, settings)?;
         Ok(intern_handle(HandleEntry::Provider(ProviderEntry {
             provider,
         })))
@@ -3355,29 +3390,6 @@ pub extern "C" fn aimux_recording_try_flush() -> *mut aimux_error_t {
         if let Some(rec) = aimux_core::recording::recorder() {
             rec.try_flush()?;
         }
-        Ok(())
-    })
-}
-
-/// Register external OpenAI-compatible providers from a JSON config string
-/// (RFC-0020). `config_json` is `{ "providers": [ { "name": ..., "base_url":
-/// ..., ... }, ... ] }`. Entries override same-named built-ins or add new
-/// ones. Malformed JSON text is `InvalidWireJson`; a well-formed document the
-/// registry rejects is `AiMuxError::InvalidArgument`.
-#[unsafe(no_mangle)]
-pub extern "C" fn aimux_register_providers(config_json: *const c_char) -> *mut aimux_error_t {
-    no_result(|| {
-        let json = str_arg(config_json, "config_json")?;
-        // Malformed JSON text is this layer's finding; a well-formed document
-        // that the registry rejects (bad schema, unknown protocol) is an AiMuxError.
-        serde_json::from_str::<serde_json::Value>(&json).map_err(|e| wire_err("config_json", e))?;
-        aimux_providers::provider::load_providers_from_json(&json).map_err(|e| match e {
-            // The registry reports a schema mismatch as `JsonParse`; the text
-            // already parsed above, so what it rejected is the shape —
-            // `AiMuxError::InvalidArgument`, not a provider-response parse failure.
-            AiMuxError::JsonParse(m) => AiMuxError::InvalidArgument(format!("config_json: {m}")),
-            e => e,
-        })?;
         Ok(())
     })
 }

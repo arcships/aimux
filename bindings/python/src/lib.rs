@@ -482,17 +482,14 @@ fn anthropic(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn deepseek(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
-    let options = base_url.map(|url| aimux_providers::provider::ProviderOptions {
-        base_url: Some(url.to_string()),
+    let settings = aimux_providers::PresetSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
         ..Default::default()
-    });
-    let model = aimux_providers::provider::provider(
-        "deepseek",
-        Some(api_key.to_string()),
-        model_id,
-        options,
-    )
-    .map_err(|e| to_py_err(&e))?;
+    };
+    let model = aimux_providers::create_provider("deepseek", settings)
+        .and_then(|p| p.language_model(model_id))
+        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -728,12 +725,58 @@ fn azure(
     })
 }
 
+/// The settings of a by-name provider: the optional `config_json` object, with
+/// the `base_url` parameter winning over its field. Organization and project
+/// become their headers, below the caller's own.
+fn named_settings(
+    api_key: Option<String>,
+    base_url: Option<&str>,
+    config_json: Option<&str>,
+) -> PyResult<aimux_providers::PresetSettings> {
+    #[derive(serde::Deserialize, Default)]
+    #[serde(deny_unknown_fields)]
+    struct Config {
+        base_url: Option<String>,
+        headers: Option<std::collections::HashMap<String, String>>,
+        organization: Option<String>,
+        project: Option<String>,
+        params: Option<std::collections::HashMap<String, String>>,
+    }
+    let config: Config = match config_json {
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => wire_json("config_json", s)?,
+        _ => Config::default(),
+    };
+    let mut headers = aimux_provider_utils::HeaderMapOpt::new();
+    for (name, value) in [
+        ("OpenAI-Organization", config.organization),
+        ("OpenAI-Project", config.project),
+    ] {
+        if let Some(value) = value {
+            headers.insert(name.to_string(), Some(value));
+        }
+    }
+    headers.extend(
+        config
+            .headers
+            .into_iter()
+            .flatten()
+            .map(|(k, v)| (k, Some(v))),
+    );
+    Ok(aimux_providers::PresetSettings {
+        api_key: api_key.map(aimux_provider_utils::Resolvable::Value),
+        base_url: base_url.map(str::to_string).or(config.base_url),
+        headers: (!headers.is_empty()).then_some(headers),
+        params: config.params.unwrap_or_default(),
+        ..Default::default()
+    })
+}
+
 /// Create a language model from the built-in registry by provider name
 /// (RFC-0017 phase 4). `api_key=None` reads the provider's env var.
-/// `config_json` is a serialized `ProviderOptions` object (`base_url` /
-/// `headers` / `organization` / `project` / `params`; `max_retries` and
-/// `body_overrides` are rejected as invalid arguments); the `base_url`
-/// parameter wins over the JSON field.
+/// `config_json` is a JSON object (`base_url` / `headers` / `organization` /
+/// `project` / `params`; any other key, `max_retries` and `body_overrides`
+/// included, is rejected as an invalid argument); the `base_url` parameter
+/// wins over the JSON field.
 #[pyfunction]
 #[pyo3(signature = (name, api_key, model_id, base_url=None, config_json=None))]
 fn provider(
@@ -743,14 +786,9 @@ fn provider(
     base_url: Option<&str>,
     config_json: Option<&str>,
 ) -> PyResult<Model> {
-    let mut options: Option<aimux_providers::provider::ProviderOptions> = match config_json {
-        Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(wire_json("config_json", s)?),
-        _ => None,
-    };
-    if let Some(url) = base_url {
-        options.get_or_insert_with(Default::default).base_url = Some(url.to_string());
-    }
-    let model = aimux_providers::provider::provider(name, api_key, model_id, options)
+    let settings = named_settings(api_key, base_url, config_json)?;
+    let model = aimux_providers::create_provider(name, settings)
+        .and_then(|p| p.language_model(model_id))
         .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
@@ -811,15 +849,8 @@ fn create_provider(
     base_url: Option<&str>,
     config_json: Option<&str>,
 ) -> PyResult<ProviderHandle> {
-    let mut options: Option<aimux_providers::provider::ProviderOptions> = match config_json {
-        Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(wire_json("config_json", s)?),
-        _ => None,
-    };
-    if let Some(url) = base_url {
-        options.get_or_insert_with(Default::default).base_url = Some(url.to_string());
-    }
-    let inner = aimux_providers::provider::provider_handle(name, api_key, options)
-        .map_err(|e| to_py_err(&e))?;
+    let settings = named_settings(api_key, base_url, config_json)?;
+    let inner = aimux_providers::create_provider(name, settings).map_err(|e| to_py_err(&e))?;
     Ok(ProviderHandle { inner })
 }
 
@@ -851,24 +882,6 @@ fn init_logging(level: &str) {
         level
     };
     aimux_providers::init_logging(level);
-}
-
-/// Register external OpenAI-compatible providers from a JSON config string
-/// (RFC-0020). Entries override same-named built-ins or add new ones.
-///
-/// `config_json` shape: `{ "providers": [ { "name": "...", "base_url": "...", ... } ] }`.
-/// Malformed JSON text raises `ValueError`; a well-formed document the
-/// registry rejects (bad base_url scheme, empty name, unsupported protocol,
-/// wrong shape) raises `InvalidArgumentError`.
-#[pyfunction]
-fn register_providers(config_json: &str) -> PyResult<()> {
-    let _: serde_json::Value = wire_json("config_json", config_json)?;
-    aimux_providers::provider::load_providers_from_json(config_json).map_err(|e| match e {
-        AiMuxError::JsonParse(m) => {
-            to_py_err(&AiMuxError::InvalidArgument(format!("config_json: {m}")))
-        }
-        e => to_py_err(&e),
-    })
 }
 
 /// Set the global proxy configuration (M6, RFC-0016). Must be called before the
@@ -1227,7 +1240,6 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_function(wrap_pyfunction!(start_transcription_session, m)?)?;
     }
     m.add_function(wrap_pyfunction!(moa, m)?)?;
-    m.add_function(wrap_pyfunction!(register_providers, m)?)?;
     m.add_function(wrap_pyfunction!(init_proxy, m)?)?;
     m.add_function(wrap_pyfunction!(openai, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic, m)?)?;
