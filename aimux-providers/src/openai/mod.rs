@@ -42,6 +42,7 @@ use serde_json::Value;
 
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
+use aimux_core::evaluation_model::EvaluationModel;
 use aimux_core::files_model::Files;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
@@ -50,7 +51,8 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, load_optional_setting, validate_base_url,
+    EvaluationLanguageModel, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable,
+    load_optional_setting, validate_base_url,
 };
 
 use crate::shared::{Credential, provider_headers};
@@ -398,6 +400,16 @@ impl Provider for OpenAIProvider {
 
     fn speech_model(&self, model_id: &str) -> Option<Result<Arc<dyn SpeechModel>, AiMuxError>> {
         Some(Ok(Arc::new(self.speech(model_id))))
+    }
+
+    fn evaluation_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
+        Some(Ok(Arc::new(EvaluationLanguageModel::new(
+            Arc::new(self.responses(model_id)),
+            Some(format!("{}.evaluation", self.name)),
+        ))))
     }
 
     fn files(&self) -> Option<Arc<dyn Files>> {

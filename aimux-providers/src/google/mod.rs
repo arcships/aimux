@@ -44,13 +44,16 @@ use serde_json::Value;
 
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
+use aimux_core::evaluation_model::EvaluationModel;
 use aimux_core::files_model::Files;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::video_model::VideoModel;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{
+    EvaluationLanguageModel, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url,
+};
 
 use crate::shared::{AuthScheme, Credential, Endpoint, EndpointConfig, credential_headers};
 
@@ -375,6 +378,20 @@ impl Provider for GoogleProvider {
 
     fn video_model(&self, model_id: &str) -> Option<Result<Arc<dyn VideoModel>, AiMuxError>> {
         Some(Ok(Arc::new(self.video(model_id))))
+    }
+
+    fn evaluation_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
+        let name = self
+            .name
+            .strip_suffix(".generative-ai")
+            .unwrap_or(&self.name);
+        Some(Ok(Arc::new(EvaluationLanguageModel::new(
+            Arc::new(self.chat(model_id)),
+            Some(format!("{name}.evaluation")),
+        ))))
     }
 
     fn files(&self) -> Option<Arc<dyn Files>> {
