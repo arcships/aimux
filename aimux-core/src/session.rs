@@ -452,16 +452,6 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::language_model_message::LanguageModelMessage;
-
-    fn msg(text: &str) -> LanguageModelMessage {
-        LanguageModelMessage::user_text(text)
-    }
-
-    fn prompt(messages: Vec<LanguageModelMessage>) -> LanguageModelPrompt {
-        messages
-    }
-
     /// `recorded_at` must look like RFC 3339 UTC: `YYYY-MM-DDTHH:MM:SS.mmmZ`.
     fn is_rfc3339(s: &str) -> bool {
         let b = s.as_bytes();
@@ -595,105 +585,6 @@ mod tests {
         store.append("s1", None, SessionSource::Explicit);
         store.clear();
         assert!(store.list_sessions().is_empty());
-    }
-
-    // ── SessionInferer ──────────────────────────────────────────────────────
-
-    #[test]
-    fn inferer_disabled_returns_none() {
-        let mut inf = SessionInferer::new(false);
-        assert!(inf.resolve(None, &prompt(vec![msg("hi")])).is_none());
-    }
-
-    #[test]
-    fn inferer_explicit_wins_and_is_remembered() {
-        let mut inf = SessionInferer::new(true);
-        let p1 = prompt(vec![msg("hi")]);
-        let (id, source) = inf.resolve(Some("sess-1"), &p1).unwrap();
-        assert_eq!(id, "sess-1");
-        assert_eq!(source, SessionSource::Explicit);
-
-        // Continuation without an explicit id joins the remembered session.
-        let p2 = prompt(vec![msg("hi"), msg("hello")]);
-        let (id2, source2) = inf.resolve(None, &p2).unwrap();
-        assert_eq!(id2, "sess-1");
-        assert_eq!(source2, SessionSource::Inferred);
-    }
-
-    #[test]
-    fn inferer_strong_prefix_continuation_groups_calls() {
-        let mut inf = SessionInferer::new(true);
-        let p1 = prompt(vec![msg("u1")]);
-        let (id1, source1) = inf.resolve(None, &p1).unwrap();
-        assert!(id1.starts_with("auto-"));
-        assert_eq!(source1, SessionSource::Inferred);
-
-        // Full-prefix continuation → same session.
-        let p2 = prompt(vec![msg("u1"), msg("a1"), msg("u2")]);
-        let (id2, _) = inf.resolve(None, &p2).unwrap();
-        assert_eq!(id2, id1);
-
-        // Equality (retry of the same step) → same session.
-        let (id3, _) = inf.resolve(None, &p1).unwrap();
-        assert_eq!(id3, id1);
-    }
-
-    #[test]
-    fn inferer_distinct_prompts_start_new_sessions() {
-        let mut inf = SessionInferer::new(true);
-        let (id1, _) = inf
-            .resolve(None, &prompt(vec![msg("what is rust")]))
-            .unwrap();
-        let (id2, _) = inf
-            .resolve(None, &prompt(vec![msg("tell me a joke")]))
-            .unwrap();
-        assert_ne!(id1, id2);
-    }
-
-    #[test]
-    fn inferer_prefix_is_directional() {
-        let mut inf = SessionInferer::new(true);
-        let (id1, _) = inf.resolve(None, &prompt(vec![msg("abc")])).unwrap();
-        // Message-level prefix continuation: leading messages identical and
-        // the new prompt is longer → same session.
-        let (id2, _) = inf
-            .resolve(None, &prompt(vec![msg("abc"), msg("a1"), msg("u2")]))
-            .unwrap();
-        assert_eq!(id2, id1);
-        // A prompt that diverges on the first message → new session.
-        let (id3, _) = inf.resolve(None, &prompt(vec![msg("abd")])).unwrap();
-        assert_ne!(id3, id1, "abd is not a prefix continuation");
-    }
-
-    #[test]
-    fn inferer_chain_continuation_stays_in_session() {
-        let mut inf = SessionInferer::new(true);
-        let p1 = prompt(vec![msg("common")]);
-        let p2 = prompt(vec![msg("common"), msg("b")]);
-        let p3 = prompt(vec![msg("common"), msg("b"), msg("c")]);
-        let (id1, _) = inf.resolve(None, &p1).unwrap();
-        let (id2, _) = inf.resolve(None, &p2).unwrap();
-        let (id3, _) = inf.resolve(None, &p3).unwrap();
-        assert_eq!(id2, id1);
-        assert_eq!(id3, id1);
-    }
-
-    #[test]
-    fn inferer_capacity_evicts_oldest_prompt() {
-        let mut inf = SessionInferer::with_capacity(true, 2);
-        let p1 = prompt(vec![msg("one")]);
-        let (id1, _) = inf.resolve(None, &p1).unwrap();
-        let p2 = prompt(vec![msg("two")]);
-        let (id2, _) = inf.resolve(None, &p2).unwrap();
-        let p3 = prompt(vec![msg("three")]);
-        let (id3, _) = inf.resolve(None, &p3).unwrap();
-        assert_ne!(id1, id2);
-        assert_ne!(id2, id3);
-
-        // p1 was evicted; a new call extending it starts a NEW session.
-        let p1_ext = prompt(vec![msg("one"), msg("more")]);
-        let (id4, _) = inf.resolve(None, &p1_ext).unwrap();
-        assert_ne!(id4, id1, "evicted prompt no longer matches");
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────

@@ -300,7 +300,7 @@ impl LanguageModel for AzureResponsesModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
-        let request_result = build_responses_request_body(&self.deployment, options, true)?;
+        let request_result = build_responses_request_body(&self.deployment, options, false)?;
         let mut body = request_result.body;
         let warnings = request_result.warnings;
         let provider_key = provider_key().to_string();
@@ -319,9 +319,11 @@ impl LanguageModel for AzureResponsesModel {
             == Some(true);
 
         let endpoint = self.endpoint();
+        let mut stream_body = body.clone();
+        stream_body["stream"] = Value::Bool(true);
         let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest::new(endpoint.clone(), build_header_list(&headers), options),
-            body.clone(),
+            stream_body,
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             crate::openai::openai_failed_response_handler(),
         )

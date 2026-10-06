@@ -10,7 +10,7 @@ import (
 )
 
 // Code is the machine-readable Aimux error code. Values match
-// aimux-ffi aimux_error_code_t (1..3, 5..17; 4 is retired). Retry is 14;
+// aimux-ffi aimux_error_code_t (1..3, 5..18; 4 is retired). Retry is 14;
 // tool-call errors occupy 15..17. A code outside that set is a header/library
 // mismatch and expectAimuxError
 // panics rather than inventing an "unknown" variant. Recording failures are
@@ -41,6 +41,7 @@ const (
 	CodeNoSuchTool               Code = 15
 	CodeInvalidToolInput         Code = 16
 	CodeToolCallRepair           Code = 17
+	CodeNoOutputGenerated        Code = 18
 )
 
 // String returns the core error_type name (e.g. "ApiCall", "TokenExpired").
@@ -77,6 +78,8 @@ func (c Code) String() string {
 		return "InvalidToolInput"
 	case CodeToolCallRepair:
 		return "ToolCallRepair"
+	case CodeNoOutputGenerated:
+		return "NoOutputGenerated"
 	case CodeOther:
 		return "Other"
 	case CodeRetry:
@@ -86,10 +89,10 @@ func (c Code) String() string {
 	}
 }
 
-// codeFromC maps a C aimux_error_code_t (1..3, 5..17); false for any other
+// codeFromC maps a C aimux_error_code_t (1..3, 5..18); false for any other
 // value, including retired code 4.
 func codeFromC(code int) (Code, bool) {
-	if code >= int(CodeOther) && code <= int(CodeToolCallRepair) && code != 4 {
+	if code >= int(CodeOther) && code <= int(CodeNoOutputGenerated) && code != 4 {
 		return Code(code), true
 	}
 	return 0, false

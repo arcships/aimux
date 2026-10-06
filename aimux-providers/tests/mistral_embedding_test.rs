@@ -10,6 +10,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
+use aimux_core::tool::FunctionTool;
+use aimux_providers::mistral::convert::prepare_tools;
 use aimux_providers::{MistralConfig, MistralProvider};
 
 const TEST_VALUES: &[&str] = &["sunny day at the beach", "rainy day in the city"];
@@ -210,4 +212,14 @@ async fn should_pass_headers() {
         h.get("custom-request-header").and_then(|v| v.to_str().ok()),
         Some("request-header-value")
     );
+}
+
+/// TS: "should include strict field when set"
+#[test]
+fn prepare_tools_function_tool_with_strict() {
+    let tool = FunctionTool::new("strictTool", json!({ "type": "object", "properties": {} }))
+        .with_strict(true);
+    let result = prepare_tools(&Some(vec![tool]), None);
+    let tools = result.tools.expect("tools should be Some");
+    assert_eq!(tools[0]["function"]["strict"], json!(true));
 }

@@ -6,7 +6,7 @@
  * trailing out-parameter, which remains at its documented sentinel on failure.
  *
  * Every non-NULL error has one non-zero `aimux_error_code_t` and one message.
- * Codes 1..17 come from `AiMuxError`, 100..105 from
+ * Codes 1..18 come from `AiMuxError`, 100..105 from
  * `RecordingError`, and 200..206 identify failures detected while crossing
  * the C ABI. Higher-level bindings reconstruct their native error types from
  * that code; they map all 200..206 codes to the language's existing
@@ -40,7 +40,7 @@ typedef struct aimux_error aimux_error_t;
 typedef enum aimux_error_code {
     AIMUX_OK = 0,
 
-    /* AiMuxError: 1..17, except retired code 4. */
+    /* AiMuxError: 1..18, except retired code 4. */
     AIMUX_E_OTHER = 1,
     AIMUX_E_JSON_PARSE = 2,
     AIMUX_E_INVALID_RESPONSE_DATA = 3,
@@ -60,6 +60,7 @@ typedef enum aimux_error_code {
     AIMUX_E_NO_SUCH_TOOL = 15,
     AIMUX_E_INVALID_TOOL_INPUT = 16,
     AIMUX_E_TOOL_CALL_REPAIR = 17,
+    AIMUX_E_NO_OUTPUT_GENERATED = 18,
 
     /* RecordingError: 100..105. */
     AIMUX_E_RECORDING_INIT = 100,

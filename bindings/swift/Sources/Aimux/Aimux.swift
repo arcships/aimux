@@ -11,7 +11,7 @@ import Foundation
 //
 // Every fallible C function returns `aimux_error_t *` (`OpaquePointer?`):
 // NULL = success (result in the trailing out-param), non-NULL = failure. The
-// unified code is AiMuxError (1...17), RecordingError (100...105), or a C ABI
+// unified code is AiMuxError (1...18), RecordingError (100...105), or a C ABI
 // failure (200...206). The three `expect*` decoders copy the relevant fields, release
 // it with `aimux_error_free` (exactly once) and return the Swift error
 // to throw. Errors are not handles: never `aimux_drop_handle` one.
@@ -44,7 +44,7 @@ func expectFfiError(_ e: OpaquePointer, context: String) -> any Error {
     return invariant("aimux ffi: \(context): \(message)")
 }
 
-/// Decode a returned error from an `[AiMuxError]` call: 1...17 becomes
+/// Decode a returned error from an `[AiMuxError]` call: 1...18 becomes
 /// `AimuxError`; 200...206 is decoded by `expectFfiError`. Frees `e` once.
 func expectAimuxError(_ e: OpaquePointer, context: String) -> any Error {
     let code = aimux_error_code(e)
@@ -141,6 +141,7 @@ public enum RetryErrorReason: String, Equatable, Sendable {
 /// }
 /// ```
 public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatable, Sendable {
+    case noOutputGenerated(message: String, status: Int, retryMs: Int64, retryable: Bool)
     case jsonParse(message: String, status: Int, retryMs: Int64, retryable: Bool)
     case invalidResponseData(message: String, status: Int, retryMs: Int64, retryable: Bool)
     case invalidArgument(message: String, status: Int, retryMs: Int64, retryable: Bool)
@@ -185,7 +186,8 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
     /// The C-derived payload.
     private var payload: (message: String, status: Int, retryMs: Int64, retryable: Bool) {
         switch self {
-        case .jsonParse(let m, let s, let r, let t),
+        case .noOutputGenerated(let m, let s, let r, let t),
+             .jsonParse(let m, let s, let r, let t),
              .invalidResponseData(let m, let s, let r, let t),
              .invalidArgument(let m, let s, let r, let t),
              .invalidPrompt(let m, let s, let r, let t),
@@ -212,6 +214,7 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
     public var code: Int32 {
         let c: aimux_error_code_t
         switch self {
+        case .noOutputGenerated: c = AIMUX_E_NO_OUTPUT_GENERATED
         case .jsonParse: c = AIMUX_E_JSON_PARSE
         case .invalidResponseData: c = AIMUX_E_INVALID_RESPONSE_DATA
         case .invalidArgument: c = AIMUX_E_INVALID_ARGUMENT
@@ -385,6 +388,8 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         let message = rawMsg.isEmpty ? "aimux: operation failed" : rawMsg
 
         switch code {
+        case AIMUX_E_NO_OUTPUT_GENERATED:
+            return .noOutputGenerated(message: message, status: status, retryMs: retryMs, retryable: retryable)
         case AIMUX_E_JSON_PARSE:
             return .jsonParse(message: message, status: status, retryMs: retryMs, retryable: retryable)
         case AIMUX_E_INVALID_RESPONSE_DATA:
