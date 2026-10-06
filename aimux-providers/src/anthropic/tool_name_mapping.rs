@@ -63,6 +63,7 @@ pub struct ToolNameMapping {
     custom_to_provider: HashMap<String, String>,
     provider_to_custom: HashMap<String, String>,
     mark_code_execution_dynamic: bool,
+    toolset_names: HashMap<String, String>,
 }
 
 impl ToolNameMapping {
@@ -74,6 +75,11 @@ impl ToolNameMapping {
         let mut has_code_execution = false;
         for tool in tools.unwrap_or(&[]) {
             if let Tool::Provider(pt) = tool {
+                if pt.id == "anthropic.computer_toolset_20260801" {
+                    mapping
+                        .toolset_names
+                        .insert(pt.name.clone(), "computer".to_string());
+                }
                 has_web_tool_20260209 |= matches!(
                     pt.id.as_str(),
                     "anthropic.web_search_20260209"
@@ -95,6 +101,10 @@ impl ToolNameMapping {
         }
         mapping.mark_code_execution_dynamic = has_web_tool_20260209 && !has_code_execution;
         mapping
+    }
+
+    pub(crate) fn toolset_name(&self, custom_name: &str) -> Option<&str> {
+        self.toolset_names.get(custom_name).map(String::as_str)
     }
 
     /// Caller's name → Anthropic's wire name. Unmapped names pass through.

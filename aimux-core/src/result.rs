@@ -9,20 +9,9 @@ use crate::error::AiMuxError;
 pub use crate::shared::GeneratedFileData;
 use crate::shared::{RequestInfo, ResponseInfo, StreamResponseInfo};
 
-pub use crate::shared::{ResponseInfo as GenerateResponse, StreamResponseInfo as StreamResponse};
 use crate::stream_part::StreamPart;
 use crate::tool::{RawToolCall, ToolResult};
 use crate::types::{FinishReason, ProviderMetadata, Usage, Warning};
-
-#[cfg(test)]
-#[derive(TS)]
-#[ts(export, rename = "GenerateResponse", as = "GenerateResponse")]
-struct GenerateResponseBinding;
-
-#[cfg(test)]
-#[derive(TS)]
-#[ts(export, rename = "StreamResponse", as = "StreamResponse")]
-struct StreamResponseBinding;
 
 /// A content item in the generation result.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

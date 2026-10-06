@@ -1292,6 +1292,13 @@ fn build_request_body_with_warnings_for_namespace(
 pub(crate) fn validate_call_options(
     options: &CallOptions,
 ) -> Result<(), aimux_core::error::AiMuxError> {
+    validate_call_options_for_namespace(options, Namespace::Google)
+}
+
+pub(crate) fn validate_call_options_for_namespace(
+    options: &CallOptions,
+    namespace: Namespace,
+) -> Result<(), aimux_core::error::AiMuxError> {
     use aimux_core::error::AiMuxError;
     let mut initial = true;
     for message in &options.prompt {
@@ -1309,6 +1316,13 @@ pub(crate) fn validate_call_options(
             LanguageModelMessage::User { content, .. } => {
                 for part in content {
                     if let UserPart::File(file) = part {
+                        if namespace == Namespace::Vertex
+                            && matches!(file.data, FileData::Reference { .. })
+                        {
+                            return Err(AiMuxError::UnsupportedFunctionality(
+                                "file parts with provider references".into(),
+                            ));
+                        }
                         validate_file_part(file, false)?;
                     }
                 }

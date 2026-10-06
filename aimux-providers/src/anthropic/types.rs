@@ -73,6 +73,8 @@ pub enum ContentBlock {
         name: String,
         input: Value,
         #[serde(default)]
+        toolset_name: Option<String>,
+        #[serde(default)]
         caller: Option<ToolCallCaller>,
     },
     /// Anthropic extended-thinking block. Carries the reasoning text and an

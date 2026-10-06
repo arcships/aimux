@@ -23,7 +23,7 @@ use aimux_core::types::{
 
 use crate::google::convert::{
     build_vertex_request_body, code_execution_tool_name, extract_sources, parse_finish_reason,
-    prepare_all_tools, validate_call_options,
+    prepare_all_tools, validate_call_options_for_namespace,
 };
 use crate::google::types::{Candidate, GenerateContentResponse, GoogleStreamEvent};
 use crate::google::utils::{GoogleJsonAccumulator, PartialArg};
@@ -958,7 +958,7 @@ fn vertex_call_options(options: &CallOptions) -> Result<CallOptions, AiMuxError>
             .unwrap()
             .insert(GOOGLE.into(), effective);
     }
-    validate_call_options(&options)?;
+    validate_call_options_for_namespace(&options, Namespace::Vertex)?;
     if let Some(provider_options) = Namespace::Vertex.read(options.provider_options.as_ref()) {
         let mut headers = options.headers.clone().unwrap_or_default();
         for (option, header) in [

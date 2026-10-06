@@ -528,7 +528,7 @@ impl LanguageModel for GoogleModel {
                                 if let Some(fc) = part.get("functionCall") {
                                     // Single-chunk complete function call (the
                                     // common case for the public Gemini API).
-                                    if fc.get("name").and_then(Value::as_str).is_none() || fc.get("partialArgs").is_some() || fc.get("willContinue").and_then(Value::as_bool) == Some(true) { continue; }
+                                    if fc.get("name").and_then(Value::as_str).is_none() || fc.get("partialArgs").is_some_and(|value| !value.is_null()) || fc.get("willContinue").and_then(Value::as_bool) == Some(true) { continue; }
                                     let name = fc
                                         .get("name")
                                         .and_then(|v| v.as_str())
@@ -540,7 +540,7 @@ impl LanguageModel for GoogleModel {
                                         .filter(|id| !id.is_empty())
                                         .map(std::string::ToString::to_string)
                                         .unwrap_or_else(|| generate_id());
-                                    let args = fc.get("args").cloned().unwrap_or(json!({}));
+                                    let args = fc.get("args").filter(|value| !value.is_null()).cloned().unwrap_or(json!({}));
 
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
@@ -551,7 +551,7 @@ impl LanguageModel for GoogleModel {
                                         provider_metadata: thought_sig_meta.clone(),
                                     });
                                     let args_str = args.as_str().map(str::to_owned).unwrap_or_else(|| args.to_string());
-                                    if fc.get("args").is_some() {
+                                    if fc.get("args").is_some_and(|value| !value.is_null()) {
                                     yield Ok(StreamPart::ToolInputDelta {
                                         id: id.clone(),
                                         delta: args_str.clone(),
@@ -775,7 +775,11 @@ fn extract_content_from_candidate(
                     .filter(|id| !id.is_empty())
                     .map(str::to_owned)
                     .unwrap_or_else(generate_id);
-                let input = fc.get("args").cloned().unwrap_or(json!({}));
+                let input = fc
+                    .get("args")
+                    .filter(|value| !value.is_null())
+                    .cloned()
+                    .unwrap_or(json!({}));
                 content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id,
                     tool_name: name,

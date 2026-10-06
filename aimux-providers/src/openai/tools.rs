@@ -431,7 +431,7 @@ pub struct LocalShellSkill {
     pub path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ShellEnvironment {
     ContainerAuto {
@@ -460,6 +460,39 @@ pub enum ShellEnvironment {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         skills: Option<Vec<LocalShellSkill>>,
     },
+}
+
+impl<'de> Deserialize<'de> for ShellEnvironment {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(remote = "ShellEnvironment", tag = "type", rename_all = "camelCase")]
+        enum TaggedEnvironment {
+            ContainerAuto {
+                #[serde(rename = "fileIds")]
+                file_ids: Option<Vec<String>>,
+                #[serde(rename = "memoryLimit")]
+                memory_limit: Option<ShellMemoryLimit>,
+                #[serde(rename = "networkPolicy")]
+                network_policy: Option<ShellNetworkPolicy>,
+                skills: Option<Vec<ShellSkill>>,
+            },
+            ContainerReference {
+                #[serde(rename = "containerId")]
+                container_id: String,
+            },
+            Local {
+                skills: Option<Vec<LocalShellSkill>>,
+            },
+        }
+
+        let mut value = Value::deserialize(deserializer)?;
+        if let Some(object) = value.as_object_mut() {
+            object
+                .entry("type")
+                .or_insert_with(|| Value::String("local".into()));
+        }
+        TaggedEnvironment::deserialize(value).map_err(serde::de::Error::custom)
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

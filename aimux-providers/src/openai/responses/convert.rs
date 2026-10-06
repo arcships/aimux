@@ -279,13 +279,20 @@ fn convert_responses_input_with_conversation(
                                     input.push(json!({"type":"item_reference", "id":id}));
                                     continue;
                                 }
-                                if let Some(item) = provider_tool_call_input(
+                                if let Some(mut item) = provider_tool_call_input(
                                     kind,
                                     tool_name,
                                     tool_call_id,
                                     id.as_deref(),
                                     tool_input,
                                 )? {
+                                    if kind == "custom"
+                                        && let Some(value) =
+                                            openai_sub_option(ns, provider_options, "async")
+                                                .filter(|value| !value.is_null())
+                                    {
+                                        item["async"] = value;
+                                    }
                                     input.push(item);
                                     continue;
                                 }

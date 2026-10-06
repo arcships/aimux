@@ -304,11 +304,12 @@ fn push_file_part(file: &FilePart, content: &mut Vec<Value>, doc_counter: &mut u
         FileData::Url { .. } => String::new(),
         FileData::Reference { .. } => return,
     };
+    let resolved_media_type = aimux_provider_utils::resolve_full_media_type(file).ok();
     let media_type =
         if matches!(file.data, FileData::Text { .. }) && !is_full_media_type(&file.media_type) {
             "text/plain"
         } else {
-            &file.media_type
+            resolved_media_type.as_deref().unwrap_or(&file.media_type)
         };
     push_file_block(
         &b64,
@@ -796,7 +797,10 @@ fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
             }
             validate_media_type(media_type, false, None)
         }
-        FileData::Data { .. } => validate_media_type(&file.media_type, false, None),
+        FileData::Data { .. } => {
+            let media_type = aimux_provider_utils::resolve_full_media_type(file)?;
+            validate_media_type(&media_type, false, None)
+        }
     }
 }
 

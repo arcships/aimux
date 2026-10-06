@@ -318,6 +318,28 @@ pub(crate) fn tool_call_caller_metadata(
     )
 }
 
+fn toolset_member_input(member_name: &str, input: &Value) -> Value {
+    let mut value = json!({ "action": member_name });
+    if let Some(input) = input.as_object() {
+        value.as_object_mut().unwrap().extend(input.clone());
+    }
+    value
+}
+
+fn tool_call_metadata(
+    caller: Option<&ToolCallCaller>,
+    toolset_name: Option<&str>,
+    options_name: &str,
+) -> Option<ProviderMetadata> {
+    let mut metadata = tool_call_caller_metadata(caller, options_name);
+    if let Some(name) = toolset_name {
+        let metadata =
+            metadata.get_or_insert_with(|| provider_namespace(options_name, json!({})).unwrap());
+        metadata.get_mut(options_name).unwrap()["toolsetName"] = json!(name);
+    }
+    metadata
+}
+
 fn is_tool_search_provider_name(name: &str) -> bool {
     matches!(name, "tool_search_tool_regex" | "tool_search_tool_bm25")
 }
@@ -672,15 +694,26 @@ pub(crate) fn parse_anthropic_content(
                 id,
                 name,
                 input,
+                toolset_name,
                 caller,
             } => {
                 content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id.clone(),
-                    tool_name: names.to_custom_tool_name(name).to_string(),
-                    input: input.to_string(),
+                    tool_name: toolset_name.as_deref().map_or_else(
+                        || name.clone(),
+                        |name| names.to_custom_tool_name(name).to_string(),
+                    ),
+                    input: toolset_name.as_ref().map_or_else(
+                        || input.to_string(),
+                        |_| toolset_member_input(name, input).to_string(),
+                    ),
                     provider_executed: None,
                     dynamic: None,
-                    provider_metadata: tool_call_caller_metadata(caller.as_ref(), options_name),
+                    provider_metadata: tool_call_metadata(
+                        caller.as_ref(),
+                        toolset_name.as_deref(),
+                        options_name,
+                    ),
                 }));
             }
             ContentBlock::Thinking {
@@ -1042,6 +1075,7 @@ enum BlockState {
         provider_tool_input_type: Option<String>,
         provider_metadata: Option<ProviderMetadata>,
         first_delta: bool,
+        toolset_member_name: Option<String>,
     },
     Thinking,
 }
@@ -1193,11 +1227,13 @@ pub(crate) async fn anthropic_stream_core(
                                     id,
                                     name,
                                     input,
+                                    toolset_name,
                                     caller,
                                 } => {
-                                    let custom_name = tool_names
-                                        .to_custom_tool_name(&name)
-                                        .to_string();
+                                    let custom_name = toolset_name.as_deref().map_or_else(
+                                        || name.clone(),
+                                        |name| tool_names.to_custom_tool_name(name).to_string(),
+                                    );
                                     let initial_input = initial_tool_input(&input);
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
@@ -1216,7 +1252,8 @@ pub(crate) async fn anthropic_stream_core(
                                         dynamic: None,
                                         provider_tool_name: None,
                                         provider_tool_input_type: None,
-                                        provider_metadata: tool_call_caller_metadata(caller.as_ref(), CANONICAL),
+                                        provider_metadata: tool_call_metadata(caller.as_ref(), toolset_name.as_deref(), CANONICAL),
+                                        toolset_member_name: toolset_name.map(|_| name),
                                     });
                                 }
                                 // Server-side tool use follows the same input
@@ -1260,6 +1297,7 @@ pub(crate) async fn anthropic_stream_core(
                                             _ => None,
                                         },
                                         provider_metadata: tool_call_caller_metadata(caller.as_ref(), CANONICAL),
+                                        toolset_member_name: None,
                                     });
                                 }
                                 // MCP tool use — provider-executed + dynamic.
@@ -1349,6 +1387,7 @@ pub(crate) async fn anthropic_stream_core(
                                                 accumulated_json,
                                                 provider_tool_input_type,
                                                 first_delta,
+                                                toolset_member_name,
                                                 ..
                                             }) if !partial.is_empty() => {
                                             let emitted_delta = if *first_delta {
@@ -1365,7 +1404,7 @@ pub(crate) async fn anthropic_stream_core(
                                             };
                                             accumulated_json.push_str(&emitted_delta);
                                             *first_delta = false;
-                                            Some((id.clone(), emitted_delta))
+                                            toolset_member_name.is_none().then(|| (id.clone(), emitted_delta))
                                         }
                                         _ => None,
                                     };
@@ -1412,14 +1451,30 @@ pub(crate) async fn anthropic_stream_core(
                                     BlockState::ToolUse {
                                         id,
                                         name,
-                                        accumulated_json,
+                                        mut accumulated_json,
                                         provider_executed,
                                         dynamic,
                                         provider_tool_name,
                                         provider_tool_input_type,
                                         provider_metadata,
+                                        toolset_member_name,
                                         ..
                                     } => {
+                                        if let Some(member_name) = toolset_member_name {
+                                            let parsed = if accumulated_json.is_empty() {
+                                                Ok(json!({}))
+                                            } else {
+                                                serde_json::from_str::<Value>(&accumulated_json)
+                                            };
+                                            if let Ok(input) = parsed {
+                                                accumulated_json = toolset_member_input(&member_name, &input).to_string();
+                                            }
+                                            yield Ok(StreamPart::ToolInputDelta {
+                                                id: id.clone(),
+                                                delta: accumulated_json.clone(),
+                                                provider_metadata: None,
+                                            });
+                                        }
                                         yield Ok(StreamPart::ToolInputEnd {
                                             id: id.clone(),
                                             provider_metadata: None,

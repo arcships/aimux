@@ -290,6 +290,7 @@ impl LanguageModel for OpenAIResponsesModel {
             body,
             response_headers,
             tool_name_mapping(options),
+            prompt_approval_tool_call_ids(options),
         )
     }
 
@@ -337,6 +338,7 @@ impl LanguageModel for OpenAIResponsesModel {
             response_headers.clone(),
             options.include_raw_chunks == Some(true),
             tool_name_mapping(options),
+            prompt_approval_tool_call_ids(options),
         )?;
 
         Ok(StreamResult {
@@ -372,4 +374,27 @@ fn tool_name_mapping(options: &CallOptions) -> HashMap<String, String> {
         names.insert("web_search".into(), name);
     }
     names
+}
+
+fn prompt_approval_tool_call_ids(options: &CallOptions) -> HashMap<String, String> {
+    use aimux_core::language_model_message::{AssistantPart, LanguageModelMessage};
+
+    let mut mapping = HashMap::new();
+    for message in &options.prompt {
+        if let LanguageModelMessage::Assistant { content, .. } = message {
+            for part in content {
+                if let AssistantPart::ToolCall(call) = part
+                    && let Some(id) = call
+                        .provider_options
+                        .as_ref()
+                        .and_then(|options| options.get("openai"))
+                        .and_then(|options| options.get("approvalRequestId"))
+                        .and_then(Value::as_str)
+                {
+                    mapping.insert(id.to_owned(), call.tool_call_id.clone());
+                }
+            }
+        }
+    }
+    mapping
 }

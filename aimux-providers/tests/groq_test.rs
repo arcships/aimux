@@ -1818,17 +1818,44 @@ mod do_stream {
     async fn handles_error_stream() {
         let server = MockServer::start().await;
         let body = sse_body(&[&sse_event(
-            r#"{"error":{"message":"The server had an error processing your request. Sorry about that!","type":"invalid_request_error"}}"#,
+            r#"{"error":{"message":"Rate limit reached","type":"rate_limit_error"}}"#,
         )]);
         mock_sse(&server, body).await;
 
         let model = make_provider(&server);
 
-        let result = model.do_stream(&default_options(test_prompt())).await;
-        // upstream emits an error part and finishes; this crate's convention
-        // (as in the Mistral, Cohere and OpenAI-compatible models) is to reject
-        // when the very first event is an error, inside Core's retry boundary.
-        assert!(result.is_err());
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let parts = collect_stream(result).await;
+        assert_eq!(parts.len(), 3);
+        assert!(matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty()));
+        match &parts[1] {
+            StreamPart::Error {
+                error: aimux_core::AiMuxError::ApiCall(error),
+            } => {
+                assert_eq!(error.message, "Rate limit reached");
+                assert_eq!(error.status_code, Some(429));
+                assert!(error.is_retryable);
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+        match &parts[2] {
+            StreamPart::Finish {
+                finish_reason,
+                usage,
+                ..
+            } => {
+                assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
+                assert_eq!(finish_reason.raw, None);
+                assert_eq!(
+                    serde_json::to_value(usage).unwrap(),
+                    serde_json::to_value(aimux_core::types::Usage::default()).unwrap()
+                );
+            }
+            other => panic!("expected Finish, got {other:?}"),
+        }
     }
 
     /// upstream: "should handle error stream parts" (an error chunk after the

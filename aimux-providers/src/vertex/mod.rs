@@ -469,25 +469,6 @@ impl VertexProvider {
         ))
     }
 
-    /// A Claude model served by Vertex AI through `rawPredict` (e.g.
-    /// `"claude-sonnet-4-20250514"`); `provider()` is
-    /// `"googleVertex.anthropic.messages"`. It uses this provider's
-    /// credentials, transport and location, and the shared Anthropic Messages
-    /// model.
-    #[must_use]
-    pub fn anthropic_model(&self, model_id: &str) -> VertexAnthropicModel {
-        let resolver = self.resolver.clone();
-        anthropic_model::model(
-            model_id,
-            Arc::new(move || {
-                let resolver = resolver.clone();
-                Box::pin(async move { resolver.endpoint(Publisher::Anthropic).await })
-            }),
-            self.fetch.clone(),
-            self.transform_request_body.clone(),
-        )
-    }
-
     /// The provider as a function: the default language model for an id. The
     /// AI SDK's callable provider; the same model as [`chat`](Self::chat).
     #[must_use]

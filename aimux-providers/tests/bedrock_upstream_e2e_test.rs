@@ -441,6 +441,7 @@ async fn generate_provider_defined_tool_with_input_schema() {
             args: serde_json::Map::new(),
         },
     )]);
+    call.tool_choice = Some(aimux_core::options::ToolChoice::Auto);
     let result = provider(&fetch)
         .chat("anthropic.model")
         .do_generate(&call)
@@ -449,7 +450,7 @@ async fn generate_provider_defined_tool_with_input_schema() {
     let body = fetch.seen()[0].json_body();
     assert_eq!(
         body["additionalModelRequestFields"],
-        json!({"anthropic_beta":["computer-use-2024-10-22"]})
+        json!({"tool_choice":{"type":"auto"},"anthropic_beta":["computer-use-2024-10-22"]})
     );
     assert_eq!(
         body["toolConfig"]["tools"],

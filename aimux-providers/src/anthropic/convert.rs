@@ -274,6 +274,7 @@ fn convert_prompt_with_validator(
                         idx + 1 == content.len(),
                         provider_options.as_ref(),
                         options_name,
+                        tool_names,
                     )?);
                 }
             }
@@ -566,9 +567,11 @@ fn convert_tool_result(
     is_last_part: bool,
     message_provider_options: Option<&SharedProviderOptions>,
     options_name: &str,
+    tool_names: &ToolNameMapping,
 ) -> Result<Value, AiMuxError> {
     let ToolResultPart {
         tool_call_id,
+        tool_name,
         output,
         provider_options,
         ..
@@ -580,6 +583,14 @@ fn convert_tool_result(
         "tool_use_id": tool_call_id,
         "content": content,
     });
+    if let Some(name) = toolset_name(
+        tool_names,
+        tool_name,
+        provider_options.as_ref(),
+        options_name,
+    ) {
+        block["toolset_name"] = json!(name);
+    }
     if is_error {
         block["is_error"] = json!(true);
     }
@@ -777,10 +788,37 @@ fn convert_assistant_part(
                 json!({ "rawInvalidInput": input })
             };
             let caller = tool_caller(provider_options.as_ref(), options_name);
+            if let Some(toolset_name) = toolset_name(
+                tool_names,
+                tool_name,
+                provider_options.as_ref(),
+                options_name,
+            ) {
+                let Some(action) = input_val.get("action").and_then(Value::as_str) else {
+                    warnings.push(Warning::Other {
+                        message: format!(
+                            "toolset tool call for tool {tool_name} is missing the action"
+                        ),
+                    });
+                    return Ok(None);
+                };
+                let mut block = json!({
+                    "type": "tool_use",
+                    "id": tool_call_id,
+                    "name": action,
+                    "toolset_name": toolset_name,
+                    "input": input_val,
+                });
+                block["input"].as_object_mut().unwrap().remove("action");
+                if let Some(caller) = caller {
+                    block["caller"] = caller;
+                }
+                return Ok(Some(apply_cc(block, cc)));
+            }
             let mut block = json!({
                 "type": "tool_use",
                 "id": tool_call_id,
-                "name": tool_names.to_provider_tool_name(tool_name),
+                "name": tool_name,
                 "input": input_val,
             });
             if let Some(caller) = caller {
@@ -828,6 +866,25 @@ fn collect_mcp_tool_use_ids<'a>(
         }
     }
     ids
+}
+
+fn toolset_name(
+    tool_names: &ToolNameMapping,
+    tool_name: &str,
+    provider_options: Option<&SharedProviderOptions>,
+    options_name: &str,
+) -> Option<String> {
+    tool_names
+        .toolset_name(tool_name)
+        .map(str::to_string)
+        .or_else(|| {
+            anthropic_options(provider_options, options_name).and_then(|options| {
+                options
+                    .get("toolsetName")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+        })
 }
 
 fn tool_caller(

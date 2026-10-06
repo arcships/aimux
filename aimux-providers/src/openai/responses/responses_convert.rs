@@ -90,6 +90,7 @@ pub fn build_responses_generate_result(
         body,
         response_headers,
         HashMap::new(),
+        HashMap::new(),
     )
 }
 
@@ -103,6 +104,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
     body: Value,
     response_headers: HashMap<String, String>,
     tool_names: HashMap<String, String>,
+    prompt_approval_tool_call_ids: HashMap<String, String>,
 ) -> Result<GenerateResult, AiMuxError> {
     // Top-level error field.
     if let Some(err_obj) = data.get("error")
@@ -296,7 +298,10 @@ pub(crate) fn build_responses_generate_result_with_tools(
                     &provider_key,
                     &tool_names,
                     shell_provider_executed,
-                    None,
+                    part.get("approval_request_id")
+                        .and_then(Value::as_str)
+                        .and_then(|id| prompt_approval_tool_call_ids.get(id))
+                        .map(String::as_str),
                 );
                 has_function_call |= part["type"] == "apply_patch_call"
                     || (part["type"] == "computer_call" && !part["call_id"].is_null());
@@ -556,6 +561,7 @@ where
         response_headers,
         include_raw_chunks,
         HashMap::new(),
+        HashMap::new(),
     )
 }
 
@@ -571,6 +577,7 @@ pub(crate) fn build_responses_event_stream_with_tools<S>(
     response_headers: HashMap<String, String>,
     include_raw_chunks: bool,
     tool_names: HashMap<String, String>,
+    prompt_approval_tool_call_ids: HashMap<String, String>,
 ) -> Result<ResponsesEventStream, AiMuxError>
 where
     S: Stream<Item = Result<Value, AiMuxError>> + Unpin + Send + 'static,
@@ -1103,7 +1110,7 @@ where
                                         }
                                         pair_tool_search_id(&mut item, &mut hosted_tool_search_ids);
                                         let mcp_tool_call_id = item.get("approval_request_id").and_then(Value::as_str)
-                                            .and_then(|id| approval_tool_call_ids.get(id)).cloned();
+                                            .and_then(|id| approval_tool_call_ids.get(id).or_else(|| prompt_approval_tool_call_ids.get(id))).cloned();
                                         for part in super::provider_events::provider_tool_content(&item, &provider_key, &tool_names, shell_provider_executed, mcp_tool_call_id.as_deref()) {
                                             match part {
                                                 GenerateContent::ToolCall(call) => {
