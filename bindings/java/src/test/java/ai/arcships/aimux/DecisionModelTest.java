@@ -1,0 +1,46 @@
+package ai.arcships.aimux;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
+import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class DecisionModelTest {
+    @Test void officialStructuredContractAndCapabilities() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode fixture = mapper.readTree(Paths.get("../../contract-tests/fixtures/decision-native.json").toFile());
+        AtomicReference<JsonNode> captured = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1/systemone", exchange -> {
+            captured.set(mapper.readTree(exchange.getRequestBody()));
+            byte[] body = fixture.get("response").toString().getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try (DecisionModel model = DecisionModel.jev("test-key", "jev-latest",
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/systemone", "native")) {
+            JsonNode caps = mapper.readTree(model.capabilities());
+            assertEquals(255, caps.get("max_choices").asInt());
+            assertEquals(2, caps.get("rounding").get("score_decimals").asInt());
+            assertNull(captured.get());
+            JsonNode result = mapper.readTree(model.decide(fixture.get("request").toString()));
+            assertEquals(0.9, result.get("answers").get("urgent").get("probability_true").asDouble());
+            assertEquals(fixture.get("request").get("questions").get(0).get("criteria"),
+                captured.get().get("questions").get("urgent").get("criteria"));
+            assertEquals(fixture.get("request").get("questions").get(2).get("levels"),
+                result.get("answers").get("severity").get("levels"));
+            assertThrows(IllegalArgumentException.class, () -> model.decide("{"));
+            model.close();
+            assertThrows(IllegalStateException.class, model::capabilities);
+        } finally { server.stop(0); }
+        assertThrows(AimuxException.class, () -> DecisionModel.jev("test-key", "jev-latest", null, "unknown"));
+    }
+}

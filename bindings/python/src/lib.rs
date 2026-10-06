@@ -7,8 +7,10 @@
 // edition-2024 lint. Suppress until pyo3 0.23+ lands.
 #![allow(unsafe_op_in_unsafe_fn)]
 
+mod decision;
 mod error;
 mod multimodal;
+pub use decision::*;
 pub use multimodal::*;
 
 use std::sync::Arc;
@@ -1202,6 +1204,8 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<RerankingModel>()?;
     m.add_class::<VideoModel>()?;
     m.add_class::<SearchModel>()?;
+    m.add_class::<DecisionModel>()?;
+    m.add_function(wrap_pyfunction!(jev_decision, m)?)?;
     m.add_class::<Files>()?;
 
     // Multimodal factory functions.

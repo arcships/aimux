@@ -1,4 +1,4 @@
-﻿//! The `Provider` trait — a factory that creates `LanguageModel` instances.
+//! The `Provider` trait — a factory that creates `LanguageModel` instances.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -13,6 +13,16 @@ use crate::model_catalogue::RuntimeModel;
 pub trait Provider: Send + Sync {
     /// Unique provider name (e.g. `"openai"`).
     fn name(&self) -> &str;
+
+    /// Create a typed decision model.
+    /// # Errors
+    /// Returns `UnsupportedFunctionality` unless the provider implements decisions.
+    fn decision_model(&self, _model_id: &str) -> Result<Box<dyn crate::DecisionModel>, AiMuxError> {
+        Err(AiMuxError::UnsupportedFunctionality(format!(
+            "provider '{}' does not provide decision models",
+            self.name()
+        )))
+    }
 
     /// Create a model instance by its name string (e.g. `"gpt-4o"`).
     ///

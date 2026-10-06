@@ -10,7 +10,7 @@
 | category | count |
 |----------|-------|
 | Registry-backed OpenAI-compatible (`provider(name, ...)` / `ProviderName`) | 251 |
-| Non-registry: Native protocol providers | 13 |
+| Non-registry: Native protocol providers | 14 |
 | Non-registry: OpenAI-compatible thin wrappers (second batch) | 5 |
 | Non-registry: Speech-only providers (TTS) | 4 |
 | Non-registry: Transcription-only providers (STT) | 5 |
@@ -26,9 +26,9 @@
 | Non-registry: P1 thin-wrapper providers (provider-research batch) | 1 |
 | Non-registry: Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers) | 10 |
 | Non-registry: Search-only providers (web search modality) | 11 |
-| **Total providers** | **327** |
+| **Total providers** | **328** |
 
-**251 registry-backed OpenAI-compatible providers** (construct via `provider(name, ...)` / `ProviderName`) + **76 non-registry providers** (construct via the typed factories listed below).
+**251 registry-backed OpenAI-compatible providers** (construct via `provider(name, ...)` / `ProviderName`) + **77 non-registry providers** (construct via the typed factories listed below).
 
 ## Registry-backed (OpenAI-compatible) — 251
 
@@ -290,7 +290,7 @@
 
 These providers are **not** name-addressable: `provider("anthropic", ...)` fails with `NoSuchProvider`. Use the typed entry points below (Rust type names; per-binding constructors: see [reference.md](reference.md)).
 
-### Native protocol providers — 13
+### Native protocol providers — 14
 
 | module | typed entry points |
 |--------|--------------------|
@@ -300,6 +300,7 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `bedrock` | `BedrockConfig` / `BedrockProvider` |
 | `cohere` | `CohereConfig` / `CohereProvider` |
 | `google` | `GoogleConfig` / `GoogleProvider` |
+| `jev` | `JevConfig` / `JevProvider` |
 | `mistral` | `MistralConfig` / `MistralProvider` |
 | `openai` | `OpenAIConfig` / `OpenAIProvider` |
 | `vertex` | `VertexConfig` / `VertexProvider` |
