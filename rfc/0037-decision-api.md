@@ -87,6 +87,14 @@ Node 测试同时发现并修复共享 AbortBridge 对已取消 signal 的处理
 
 Provider 精度规则与 Node/Python/C 的 capability 查询仍属后续完善范围。
 
-后续按调研顺序扩展 TypeSafe / wrapper 专用能力、SGLang scoring adapter，
-以及 Go/Java/Kotlin/Swift/Flutter 宿主包装。OpenAI 自有 Decisions endpoint
-待取得公开 preview wire schema 后实现；不以 Responses structured output 代替。
+第一优先级是完成 TypeSafe / Jev 的原生 System One 接入。当前实现仅覆盖
+`jev-ai.org` 文档 contract，尚不能宣称完成 TypeSafe 托管接口：其 AI SDK
+provider 使用 `https://api.typesafe.ai/v1/systemone`、`TYPESAFE_AI_API_KEY`
+和 `jev-latest`，字段能力与限制也需逐项核对。优先复用现有 System One
+编解码，补齐 endpoint、认证配置、模型、能力限制及 contract 测试；不将
+TypeSafe 另列为候选 provider，也不预设需要另写一套 adapter。
+
+完成首要接入后，再扩展 wrapper 专用能力、SGLang scoring adapter，
+以及 Go/Java/Kotlin/Swift/Flutter 宿主包装。Provider 精度规则和 capability
+查询按首要接入的实际需要推进。OpenAI 自有 Decisions endpoint 待取得
+公开 preview wire schema 后实现；不以 Responses structured output 代替。
