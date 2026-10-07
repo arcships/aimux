@@ -16,3 +16,5 @@ normalized result. Offline provider tests replay the wire exchange via the
 shared replay helper; Core and the CLI replay the normalized result.
 
 Stack integration migrates the recording envelope to schema 3: provider identity only, with decision capabilities under input. Recorded requests, responses and normalized outcomes are unchanged.
+
+The wire-format layer uses camelCase for the recording envelope and shared Usage/Timeout types. The original HTTP request and response body strings remain unchanged.
