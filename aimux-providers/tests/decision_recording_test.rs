@@ -109,7 +109,14 @@ async fn ring_records_one_complete_call_and_replays_exact_inputs_with_redaction(
 #[tokio::test]
 #[serial]
 async fn jsonl_flush_has_no_duplicate_placeholders_and_supports_offline_replay() {
-    let directory = std::env::temp_dir().join(recording::new_call_id());
+    let directory = std::env::temp_dir().join(format!(
+        "aimux-decision-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     let recorder = Arc::new(JsonlRecorder::new(&directory));
     recording::init_recording(Some(recorder.clone()));
     let _stop = StopRecording;
