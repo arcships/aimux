@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as its source instead of a `String`; `SseError::Utf8` holds a
   `str::Utf8Error`; `SseError::Decode` is added. Decoder errors (invalid
   UTF-8, transport failure) now end the stream after being reported.
+  The response handler propagates terminal SSE decoding failures as
+  non-retryable `ApiCall` errors, preventing a normal finish or tool-call
+  finalization after truncated input. Invalid JSON inside an otherwise valid
+  SSE event remains a recoverable `JsonParse` error.
   `SseStream` requires the body error type to implement `std::error::Error +
   Send + Sync + 'static`.
 - Removed `NdjsonStream` / `NdjsonError`: nothing in the workspace used them
