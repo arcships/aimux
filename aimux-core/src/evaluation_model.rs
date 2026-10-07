@@ -64,7 +64,7 @@ pub struct BooleanCriteria {
         deserialize_with = "present",
         skip_serializing_if = "Option::is_none"
     )]
-    #[ts(optional, type = "EvaluationInput | null")]
+    #[ts(optional)]
     pub true_: Option<Option<EvaluationInput>>,
     #[serde(
         rename = "false",
@@ -72,7 +72,7 @@ pub struct BooleanCriteria {
         deserialize_with = "present",
         skip_serializing_if = "Option::is_none"
     )]
-    #[ts(optional, type = "EvaluationInput | null")]
+    #[ts(optional)]
     pub false_: Option<Option<EvaluationInput>>,
 }
 
@@ -93,7 +93,7 @@ pub enum EvaluationQuestion {
         instructions: EvaluationInput,
         /// Nonempty map of option names to descriptions; `None` means no
         /// description. Insertion order is the option order.
-        #[ts(type = "Record<string, EvaluationInput | null>")]
+        #[ts(as = "std::collections::HashMap<String, Option<EvaluationInput>>")]
         criteria: IndexMap<String, Option<EvaluationInput>>,
     },
     Score {
@@ -128,7 +128,7 @@ pub struct EvaluationCallOptions {
     /// One shared state, even when the value is an array.
     pub state: EvaluationInput,
     /// Questions by id; insertion order is the question order.
-    #[ts(type = "Record<string, EvaluationQuestion>")]
+    #[ts(as = "std::collections::HashMap<String, EvaluationQuestion>")]
     pub questions: IndexMap<String, EvaluationQuestion>,
     /// Abort signal for cancelling the evaluation.
     #[serde(skip)]
@@ -187,7 +187,7 @@ pub struct EvaluationUsage {
 #[ts(export)]
 pub struct EvaluationResult {
     /// Exactly one answer per question, under the original question ids.
-    #[ts(type = "Record<string, EvaluationAnswer>")]
+    #[ts(as = "std::collections::HashMap<String, EvaluationAnswer>")]
     pub answers: IndexMap<String, EvaluationAnswer>,
     pub rounding: Option<EvaluationRounding>,
     pub usage: Option<EvaluationUsage>,

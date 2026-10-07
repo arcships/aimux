@@ -5,12 +5,12 @@ import type { EvaluationInput } from "./EvaluationInput";
 /**
  * A judgment to make about the shared state (`EvaluationModelV4Question`).
  */
-export type EvaluationQuestion = { "type": "choice", instructions: EvaluationInput, 
+export type EvaluationQuestion = { "type": "choice", instructions: EvaluationInput,
 /**
  * Nonempty map of option names to descriptions; `None` means no
  * description. Insertion order is the option order.
  */
-criteria: Record<string, EvaluationInput | null>, } | { "type": "score", instructions: EvaluationInput, 
+criteria: { [key in string]: EvaluationInput | null }, } | { "type": "score", instructions: EvaluationInput,
 /**
  * At least two ordered levels, indexed from zero.
  */
