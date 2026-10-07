@@ -18,28 +18,28 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * [`StreamPart`] (raw argument text); `stream_text` emits [`TextStreamPart`]
  * (parsed and validated [`ToolCall`]).
  */
-export type StreamPart = { "TextStart": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextDelta": { id: string, delta: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "StreamStart": { warnings: Array<Warning>, } } | { "Finish": { finish_reason: FinishReason, usage: Usage, provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "Error": { error: AiMuxError, } } | { "ToolInputStart": { id: string, tool_name: string, 
+export type StreamPart = { "type": "text-start", id: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "text-delta", id: string, delta: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "text-end", id: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "stream-start", warnings: Array<Warning>, } | { "type": "finish", finishReason: FinishReason, usage: Usage, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "error", error: AiMuxError, } | { "type": "tool-input-start", id: string, toolName: string, 
 /**
  * Whether the tool call will be executed by the provider.
  */
-provider_executed?: boolean | null, 
+providerExecuted?: boolean, 
 /**
  * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
  */
-dynamic?: boolean | null, 
+dynamic?: boolean, 
 /**
  * Optional title for the tool call.
  */
-title?: string | null, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolCall": RawToolCall } | { "ToolResult": ToolResult } | { "File": GeneratedFile } | { "ReasoningFile": GeneratedFile } | { "Custom": { kind: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolApprovalRequest": RawToolApprovalRequest } | { "ReasoningStart": { id: string, 
+title?: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-input-delta", id: string, delta: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-input-end", id: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-call" } & RawToolCall | { "type": "tool-result" } & ToolResult | { "type": "file" } & GeneratedFile | { "type": "reasoning-file" } & GeneratedFile | { "type": "custom", kind: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-approval-request" } & RawToolApprovalRequest | { "type": "reasoning-start", id: string, 
 /**
  * Provider-specific metadata (e.g. xAI `itemId`).
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningDelta": { id: string, delta: string, 
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "reasoning-delta", id: string, delta: string, 
 /**
  * Provider-specific metadata (e.g. xAI `itemId`).
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningEnd": { id: string, 
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "reasoning-end", id: string, 
 /**
  * Provider-specific metadata (e.g. xAI `itemId`, `reasoningEncryptedContent`).
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ResponseMetadata": ResponseMetadata } | { "Source": Source } | { "Raw": { raw_value: JsonValue, } };
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "response-metadata" } & ResponseMetadata | { "type": "source" } & Source | { "type": "raw", rawValue: JsonValue, };

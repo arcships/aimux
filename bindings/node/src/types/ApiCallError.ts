@@ -31,20 +31,20 @@ url: string,
 /**
  * Sanitized request values used to create the API request.
  */
-request_body_values: JsonValue, 
+requestBodyValues: JsonValue, 
 /**
  * HTTP status of the response, when it came from one
  * (`APICallError.statusCode`). Always the *observed* status: the HTTP
  * layer fills it for every response-derived error; errors built without
  * an HTTP exchange leave it `None`.
  */
-status_code: number | null, 
+statusCode?: number, 
 /**
  * Provider's machine-readable code (OpenAI's `code`/`type`,
  * e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
  * status. Our normalized take on `APICallError.data`.
  */
-provider_code: string | null, 
+providerCode?: string, 
 /**
  * Human-readable failure text. Provider text is verbatim when available;
  * locally detected transport/parse failures include their source detail.
@@ -56,19 +56,19 @@ message: string,
  * lossless evidence when `message`/`provider_code` are extractions.
  * `None` when the error did not come from a response body.
  */
-response_body: string | null, 
+responseBody?: string, 
 /**
  * Sanitized response headers.
  */
-response_headers: { [key in string]: string } | null, 
+responseHeaders?: { [key in string]: string }, 
 /**
  * Parsed provider error data.
  */
-data: JsonValue | null, 
+data?: JsonValue, 
 /**
  * Whether retrying can help (`APICallError.isRetryable`) — stored at
  * construction, exactly like the AI SDK: the response path computes it
  * from the status (408/409/429 or 5xx), and the transport path (no response, so
  * no status to compute from) sets it to `true` explicitly.
  */
-is_retryable: boolean, };
+isRetryable: boolean, };

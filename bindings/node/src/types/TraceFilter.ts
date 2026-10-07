@@ -3,4 +3,4 @@
 /**
  * Query filter (RFC-0015 §5.3).
  */
-export type TraceFilter = { provider: string | null, model: string | null, session_id: string | null, since_unix_ms: bigint | null, };
+export type TraceFilter = { provider?: string, model?: string, sessionId?: string, sinceUnixMs?: bigint, };

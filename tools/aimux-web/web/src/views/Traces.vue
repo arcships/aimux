@@ -42,7 +42,7 @@ async function load() {
       limit: 300,
     })
     if (searchCallId.value) {
-      traces.value = traces.value.filter((t) => t.call_id.includes(searchCallId.value))
+      traces.value = traces.value.filter((t) => t.callId.includes(searchCallId.value))
     }
   } finally {
     loading.value = false
@@ -73,35 +73,35 @@ function statusVariant(s: string): 'default' | 'success' | 'destructive' | 'warn
 }
 
 function recLatency(r: Recording): number {
-  return r.exchanges?.reduce((s, e) => s + (e.timing?.latency_ms ?? 0), 0) ?? 0
+  return r.exchanges?.reduce((s, e) => s + (e.timing?.latencyMs ?? 0), 0) ?? 0
 }
 
 function recTokens(r: Recording): number | null {
-  const u = r.outcome?.usage as { input_tokens?: { total?: number }; output_tokens?: { total?: number } } | null | undefined
+  const u = r.outcome?.usage as { inputTokens?: { total?: number }; outputTokens?: { total?: number } } | null | undefined
   if (!u) return null
-  const input = u.input_tokens?.total ?? 0
-  const output = u.output_tokens?.total ?? 0
+  const input = u.inputTokens?.total ?? 0
+  const output = u.outputTokens?.total ?? 0
   return input + output
 }
 
 function timeLabel(r: Recording): string {
-  return r.recorded_at.replace('T', ' ').replace('Z', '').slice(0, 19)
+  return r.recordedAt.replace('T', ' ').replace('Z', '').slice(0, 19)
 }
 
 function providerLabel(r: Recording): string {
-  return `${r.provider?.provider ?? '?'}/${r.provider?.model_id ?? '?'}`
+  return `${r.provider?.provider ?? '?'}/${r.provider?.modelId ?? '?'}`
 }
 
 const sessionItems = computed<WaterfallItem[]>(() => {
-  const sid = selected.value?.session_id
+  const sid = selected.value?.sessionId
   if (!sid) return []
   return traces.value
-    .filter((t) => t.session_id === sid)
+    .filter((t) => t.sessionId === sid)
     .map((t) => ({
       step: t.step ?? 0,
-      label: `${t.provider?.model_id ?? 'model'}`,
+      label: `${t.provider?.modelId ?? 'model'}`,
       ms: recLatency(t),
-      ttfb: t.exchanges?.[0]?.timing?.ttfb_ms ?? null,
+      ttfb: t.exchanges?.[0]?.timing?.ttfbMs ?? null,
       status: String(t.outcome?.status ?? '').toLowerCase(),
     }))
 })
@@ -131,9 +131,9 @@ async function doImport() {
 
 function traceMetaOf(r: Recording): WireMeta {
   return {
-    call_id: r.call_id,
-    session_id: r.session_id ?? null,
-    step: r.step ?? null,
+    callId: r.callId,
+    sessionId: r.sessionId,
+    step: r.step,
     outcome: String(r.outcome?.status ?? '').toLowerCase(),
   }
 }
@@ -173,15 +173,15 @@ function traceMetaOf(r: Recording): WireMeta {
             <template v-else>
               <tr
                 v-for="r in traces"
-                :key="r.call_id"
+                :key="r.callId"
                 class="cursor-pointer border-t transition-colors hover:bg-accent/40"
-                :class="{ 'bg-accent/60': selected?.call_id === r.call_id }"
+                :class="{ 'bg-accent/60': selected?.callId === r.callId }"
                 @click="selected = r"
               >
                 <td class="px-3 py-2 font-mono text-xs text-muted-foreground">{{ timeLabel(r) }}</td>
                 <td class="px-3 py-2 font-mono text-xs">{{ providerLabel(r) }}</td>
                 <td class="px-3 py-2 font-mono text-xs text-muted-foreground">
-                  {{ r.session_id ? `${r.session_id.slice(0, 16)}…` : '—' }}<span v-if="r.step != null"> / {{ r.step }}</span>
+                  {{ r.sessionId ? `${r.sessionId.slice(0, 16)}…` : '—' }}<span v-if="r.step != null"> / {{ r.step }}</span>
                 </td>
                 <td class="px-3 py-2 text-right font-mono text-xs">{{ recLatency(r) }}ms</td>
                 <td class="px-3 py-2 text-right font-mono text-xs">{{ recTokens(r) ?? '—' }}</td>
@@ -201,14 +201,14 @@ function traceMetaOf(r: Recording): WireMeta {
     <!-- detail -->
     <aside v-if="selected" class="flex w-[30rem] shrink-0 flex-col border-l">
       <div class="flex items-center gap-2 border-b px-3 py-2">
-        <span class="truncate font-mono text-xs">{{ selected.call_id }}</span>
+        <span class="truncate font-mono text-xs">{{ selected.callId }}</span>
         <div class="flex-1" />
         <Button variant="ghost" size="sm" @click="selected = null">✕</Button>
       </div>
 
       <div class="border-b p-3">
         <div class="mb-2 text-xs font-semibold text-muted-foreground">会话瀑布</div>
-        <Waterfall :items="sessionItems.length ? sessionItems : [{ step: selected.step ?? 0, label: providerLabel(selected), ms: recLatency(selected), ttfb: selected.exchanges?.[0]?.timing?.ttfb_ms ?? null, status: String(selected.outcome?.status ?? '').toLowerCase() }]" />
+        <Waterfall :items="sessionItems.length ? sessionItems : [{ step: selected.step ?? 0, label: providerLabel(selected), ms: recLatency(selected), ttfb: selected.exchanges?.[0]?.timing?.ttfbMs ?? null, status: String(selected.outcome?.status ?? '').toLowerCase() }]" />
       </div>
 
       <div class="flex-1 overflow-auto p-3">
@@ -232,14 +232,14 @@ function traceMetaOf(r: Recording): WireMeta {
               <Badge variant="secondary">attempt {{ ex.attempt }}</Badge>
               <span class="text-muted-foreground">{{ ex.request?.method }} {{ ex.request?.url }}</span>
               <span v-if="ex.response" class="text-muted-foreground">→ {{ ex.response.status }}</span>
-              <span class="ml-auto text-muted-foreground">{{ ex.timing?.latency_ms ?? '—' }}ms</span>
+              <span class="ml-auto text-muted-foreground">{{ ex.timing?.latencyMs ?? '—' }}ms</span>
             </div>
             <Card class="p-2 mb-1">
               <div class="mb-1 text-[11px] text-muted-foreground">请求 body</div>
               <JsonViewer :data="ex.request?.body" />
             </Card>
             <Card class="p-2">
-              <div class="mb-1 text-[11px] text-muted-foreground">响应 body{{ ex.response?.stream_chunks != null ? `（${ex.response.stream_chunks} chunks）` : '' }}</div>
+              <div class="mb-1 text-[11px] text-muted-foreground">响应 body{{ ex.response?.streamChunks != null ? `（${ex.response.streamChunks} chunks）` : '' }}</div>
               <JsonViewer :data="ex.response?.body" />
             </Card>
           </div>

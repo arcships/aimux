@@ -6,15 +6,15 @@ import type { VideoFileData } from "./VideoFileData";
  *
  * Aligned with V4 `VideoModelV4File`.
  */
-export type VideoFile = { "File": { 
+export type VideoFile = { "type": "file", 
 /**
  * IANA media type, e.g. `"video/mp4"` or `"image/png"`.
  */
-media_type: string, 
+mediaType: string, 
 /**
  * File data as a base64 string or binary bytes.
  */
-data: VideoFileData, } } | { "Url": { 
+data: VideoFileData, } | { "type": "url", 
 /**
  * The URL of the video or image file.
  */
@@ -22,4 +22,4 @@ url: string,
 /**
  * The media type of the referenced file, when known.
  */
-media_type: string | null, } };
+mediaType?: string, };

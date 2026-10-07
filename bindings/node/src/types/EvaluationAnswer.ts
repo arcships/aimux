@@ -12,7 +12,7 @@ choice: string,
 /**
  * Complete distribution over the question's options, when available.
  */
-probabilities?: { [key in string]: number } | null, } | { "type": "score", 
+probabilities?: { [key in string]: number }, } | { "type": "score", 
 /**
  * Fractional position in `[0, levels - 1]`.
  */
@@ -21,7 +21,7 @@ score: number,
  * Complete distribution keyed by zero-based level indices as
  * strings; when supplied, `score` is its probability-weighted mean.
  */
-probabilities?: { [key in string]: number } | null, } | { "type": "boolean", 
+probabilities?: { [key in string]: number }, } | { "type": "boolean", 
 /**
  * Model-estimated P(true), in `[0, 1]`. Not confidence in either
  * outcome.

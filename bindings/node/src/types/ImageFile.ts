@@ -6,16 +6,16 @@ import type { ImageFileData } from "./ImageFileData";
  *
  * Aligned with V4 `ImageModelV4File`.
  */
-export type ImageFile = { "File": { 
+export type ImageFile = { "type": "file", 
 /**
  * IANA media type, e.g. `"image/png"`.
  */
-media_type: string, 
+mediaType: string, 
 /**
  * File data as base64 string or binary bytes.
  */
-data: ImageFileData, } } | { "Url": { 
+data: ImageFileData, } | { "type": "url", 
 /**
  * The URL of the image file.
  */
-url: string, } };
+url: string, };

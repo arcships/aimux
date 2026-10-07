@@ -24,110 +24,144 @@ pub type LanguageModelPrompt = Vec<LanguageModelMessage>;
 /// `provider_options` is message-level (e.g. `anthropic.cacheControl`),
 /// mirroring `LanguageModelV4Message.providerOptions`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "role", rename_all = "snake_case")]
+#[serde(
+    tag = "role",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
 pub enum LanguageModelMessage {
     System {
         content: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     User {
         content: Vec<UserPart>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     Assistant {
         content: Vec<AssistantPart>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     Tool {
         content: Vec<ToolPart>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
 }
 
 /// Text content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct TextPart {
     pub text: String,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// File content part (the only file part; `data` is a tagged `FileData`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct FilePart {
     pub data: FileData,
     pub media_type: String,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filename: Option<String>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Reasoning / thinking content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 #[ts(rename = "LanguageModelReasoningPart")]
 pub struct ReasoningPart {
     pub text: String,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Tool call content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ToolCallPart {
     pub tool_call_id: String,
     pub tool_name: String,
     pub input: Value,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Tool result content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ToolResultPart {
     pub tool_call_id: String,
     pub tool_name: String,
     pub output: ToolResultOutput,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// The provider-facing result of a tool call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
 pub enum ToolResultOutput {
     Text {
         value: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     Json {
         value: Value,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     ExecutionDenied {
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     ErrorText {
         value: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     ErrorJson {
         value: Value,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -138,12 +172,17 @@ pub enum ToolResultOutput {
 
 /// Content within a tool result.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
 pub enum ToolResultContent {
     Text(TextPart),
     File(FilePart),
     Custom {
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -151,31 +190,38 @@ pub enum ToolResultContent {
 
 /// A file generated as part of reasoning.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ReasoningFilePart {
     pub data: GeneratedFileData,
     pub media_type: String,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Provider-specific content identified by its provider and kind.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct CustomPart {
     pub kind: String,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// The user's decision for a provider-executed tool approval request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ToolApprovalResponsePart {
     pub approval_id: String,
     pub approved: bool,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }

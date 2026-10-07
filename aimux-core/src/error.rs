@@ -29,6 +29,7 @@ use ts_rs::TS;
 /// This keeps transport and response failures self-contained and matches the
 /// AI SDK's `APICallError` contract.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ApiCallError {
     /// Sanitized request URL. Required for every API-derived failure.
@@ -39,12 +40,14 @@ pub struct ApiCallError {
     /// (`APICallError.statusCode`). Always the *observed* status: the HTTP
     /// layer fills it for every response-derived error; errors built without
     /// an HTTP exchange leave it `None`.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_code: Option<u16>,
     /// Provider's machine-readable code (OpenAI's `code`/`type`,
     /// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     /// status. Our normalized take on `APICallError.data`.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_code: Option<String>,
     /// Human-readable failure text. Provider text is verbatim when available;
     /// locally detected transport/parse failures include their source detail.
@@ -53,13 +56,16 @@ pub struct ApiCallError {
     /// The raw response body, verbatim (`APICallError.responseBody`) — the
     /// lossless evidence when `message`/`provider_code` are extractions.
     /// `None` when the error did not come from a response body.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_body: Option<String>,
     /// Sanitized response headers.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_headers: Option<HashMap<String, String>>,
     /// Parsed provider error data.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
     /// Whether retrying can help (`APICallError.isRetryable`) — stored at
     /// construction, exactly like the AI SDK: the response path computes it
@@ -103,6 +109,7 @@ pub enum RetryErrorReason {
 
 /// Complete error history for a retried model operation.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct RetryError {
     pub reason: RetryErrorReason,
@@ -164,7 +171,8 @@ impl std::fmt::Display for ApiCallError {
 /// failure came from. `ApiCallError` is boxed only to keep the Rust enum
 /// compact; serde and every binding still observe the same object shape.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, Error)]
-#[ts(export)]
+#[serde(from = "AiMuxErrorWire", into = "AiMuxErrorWire")]
+#[ts(export, as = "AiMuxErrorWire")]
 pub enum AiMuxError {
     #[error("API call error: {0}")]
     ApiCall(Box<ApiCallError>),
@@ -195,10 +203,12 @@ pub enum AiMuxError {
     #[error("Model tried to call unavailable tool '{tool_name}'. {}", no_such_tool_availability(.available_tools))]
     NoSuchTool {
         tool_name: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
         /// Original argument text, when supplied by the provider. Absent in
         /// older serialized errors and errors constructed without a call.
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool_input: Option<String>,
     },
@@ -296,6 +306,133 @@ pub enum AiMuxError {
 
     #[error("{0}")]
     Other(String),
+}
+
+/// The JSON form of [`AiMuxError`]: internally tagged by `name`, with the AI
+/// SDK's error names (`AI_APICallError`, ...). `AiMuxError` serializes through
+/// this mirror because its tuple variants cannot carry an internal tag.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "name", rename_all_fields = "camelCase")]
+pub enum AiMuxErrorWire {
+    #[serde(rename = "AI_APICallError")]
+    ApiCall(Box<ApiCallError>),
+    #[serde(rename = "AI_RetryError")]
+    Retry(RetryError),
+    #[serde(rename = "AI_JSONParseError")]
+    JsonParse { message: String },
+    #[serde(rename = "AI_NoOutputGeneratedError")]
+    NoOutputGenerated { message: String },
+    #[serde(rename = "AI_InvalidResponseDataError")]
+    InvalidResponseData { message: String },
+    #[serde(rename = "AI_ToolCallNotFoundForApprovalError")]
+    ToolCallNotFoundForApproval {
+        tool_call_id: String,
+        approval_id: String,
+    },
+    #[serde(rename = "AI_NoSuchToolError")]
+    NoSuchTool {
+        tool_name: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        available_tools: Option<Vec<String>>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_input: Option<String>,
+    },
+    #[serde(rename = "AI_InvalidToolInputError")]
+    InvalidToolInput {
+        tool_name: String,
+        tool_input: String,
+        cause: String,
+    },
+    #[serde(rename = "AI_ToolCallRepairError")]
+    ToolCallRepair {
+        original_error: Box<AiMuxError>,
+        cause: Box<AiMuxError>,
+    },
+    #[serde(rename = "AI_InvalidArgumentError")]
+    InvalidArgument { message: String },
+    #[serde(rename = "AI_InvalidPromptError")]
+    InvalidPrompt { message: String },
+    #[serde(rename = "AI_LoadAPIKeyError")]
+    LoadApiKey {
+        env_var: String,
+        description: String,
+    },
+    #[serde(rename = "AI_LoadSettingError")]
+    LoadSetting {
+        env_var: String,
+        /// `name` is the union's tag key, so the setting's name is `settingName`.
+        #[serde(rename = "settingName")]
+        name: String,
+    },
+    #[serde(rename = "AI_TokenExpiredError")]
+    TokenExpired { message: String },
+    #[serde(rename = "AI_UnsupportedFunctionalityError")]
+    UnsupportedFunctionality { message: String },
+    #[serde(rename = "AI_NoSuchModelError")]
+    NoSuchModel {
+        model_id: String,
+        #[serde(default)]
+        model_type: String,
+    },
+    #[serde(rename = "AI_NoSuchProviderError")]
+    NoSuchProvider {
+        provider_id: String,
+        model_id: String,
+        model_type: String,
+        available_providers: Vec<String>,
+    },
+    #[serde(rename = "TimeoutError")]
+    Timeout { message: String },
+    #[serde(rename = "AbortError")]
+    Aborted { message: String },
+    #[serde(rename = "AI_Error")]
+    Other { message: String },
+}
+
+/// Maps each `AiMuxError` variant to its `AiMuxErrorWire` twin and back:
+/// tuple variants carry their payload as `message`, struct variants keep
+/// their fields.
+macro_rules! wire_variants {
+    (
+        newtype: $($nv:ident),* ;
+        message: $($mv:ident),* ;
+        fields: $($fv:ident { $($f:ident),* }),*
+    ) => {
+        impl From<AiMuxError> for AiMuxErrorWire {
+            fn from(e: AiMuxError) -> Self {
+                match e {
+                    $(AiMuxError::$nv(v) => Self::$nv(v),)*
+                    $(AiMuxError::$mv(message) => Self::$mv { message },)*
+                    $(AiMuxError::$fv { $($f),* } => Self::$fv { $($f),* },)*
+                }
+            }
+        }
+        impl From<AiMuxErrorWire> for AiMuxError {
+            fn from(e: AiMuxErrorWire) -> Self {
+                match e {
+                    $(AiMuxErrorWire::$nv(v) => Self::$nv(v),)*
+                    $(AiMuxErrorWire::$mv { message } => Self::$mv(message),)*
+                    $(AiMuxErrorWire::$fv { $($f),* } => Self::$fv { $($f),* },)*
+                }
+            }
+        }
+    };
+}
+
+wire_variants! {
+    newtype: ApiCall, Retry;
+    message: JsonParse, NoOutputGenerated, InvalidResponseData, InvalidArgument,
+        InvalidPrompt, TokenExpired, UnsupportedFunctionality, Timeout, Aborted, Other;
+    fields: ToolCallNotFoundForApproval { tool_call_id, approval_id },
+        NoSuchTool { tool_name, available_tools, tool_input },
+        InvalidToolInput { tool_name, tool_input, cause },
+        ToolCallRepair { original_error, cause },
+        LoadApiKey { env_var, description },
+        LoadSetting { env_var, name },
+        NoSuchModel { model_id, model_type },
+        NoSuchProvider { provider_id, model_id, model_type, available_providers }
 }
 
 fn no_such_tool_availability(available_tools: &Option<Vec<String>>) -> String {

@@ -6,11 +6,14 @@ use ts_rs::TS;
 
 /// Unified finish reason (why the model stopped generating).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct FinishReason {
     /// The unified reason.
     pub unified: FinishReasonUnified,
     /// The raw provider-specific reason string.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<String>,
 }
 
@@ -29,43 +32,55 @@ pub enum FinishReasonUnified {
 
 /// Token usage statistics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct Usage {
     pub input_tokens: InputTokenUsage,
     pub output_tokens: OutputTokenUsage,
     /// Raw usage information from the provider (opaque, provider-specific).
+    #[ts(optional, type = "Record<string, unknown>")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(type = "Record<string, unknown> | null")]
     pub raw: Option<serde_json::Map<String, Value>>,
 }
 
 /// Input token usage detail.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct InputTokenUsage {
     /// Total tokens.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total: Option<u32>,
     /// Tokens that were not served from cache.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub no_cache: Option<u32>,
     /// Tokens served from cache (read).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_read: Option<u32>,
     /// Tokens written to cache.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_write: Option<u32>,
 }
 
 /// Output token usage detail.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct OutputTokenUsage {
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total: Option<u32>,
     /// Text (non-reasoning) tokens (output side).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<u32>,
     /// Reasoning tokens (output side).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<u32>,
 }
 
@@ -139,16 +154,25 @@ impl std::str::FromStr for ReasoningEffort {
 
 /// A warning issued by the provider (e.g. unsupported parameter).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
 pub enum Warning {
     /// A feature is not supported by this provider.
     Unsupported {
         feature: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         details: Option<String>,
     },
     /// A feature has compatibility issues.
     Compatibility {
         feature: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         details: Option<String>,
     },
     /// A deprecated setting was used.
@@ -159,10 +183,17 @@ pub enum Warning {
 
 /// Metadata about the API response.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ResponseMetadata {
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<String>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
 }
 

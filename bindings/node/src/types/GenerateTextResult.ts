@@ -30,11 +30,11 @@ text: string,
 /**
  * Tool calls requested by the model.
  */
-tool_calls: Array<ToolCall>, 
+toolCalls: Array<ToolCall>, 
 /**
  * Why generation stopped.
  */
-finish_reason: FinishReason, 
+finishReason: FinishReason, 
 /**
  * Token usage.
  */
@@ -54,7 +54,7 @@ reasoning: Array<ReasoningPart>,
 /**
  * Concatenated reasoning text (convenience for `reasoning.iter().map(text).join("")`).
  */
-reasoning_text: string, 
+reasoningText: string, 
 /**
  * Sources / citations (search-preview models).
  */
@@ -67,17 +67,17 @@ files: Array<GeneratedFile>,
  * Assistant messages ready to append to the prompt for the next turn
  * (solves the multi-turn "manually build assistant message" footgun).
  */
-response_messages: Array<ModelMessage>, 
+responseMessages: Array<ModelMessage>, 
 /**
  * The raw provider-specific finish reason string (e.g. "stop",
  * "end_turn", "safety"). Useful when `finish_reason.unified` is `Other`.
  */
-raw_finish_reason: string | null, 
+rawFinishReason?: string, 
 /**
  * Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
  * `raw.provider_metadata` for top-level convenience.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Request information from the provider.
  */
@@ -90,4 +90,4 @@ response: ResponseInfo,
  * Total token usage across all steps. In single-step mode (aimux's
  * default), `total_usage` equals `usage`. Provided for AI SDK parity.
  */
-total_usage: Usage, };
+totalUsage: Usage, };

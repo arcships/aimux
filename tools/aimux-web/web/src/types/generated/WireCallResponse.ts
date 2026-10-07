@@ -5,4 +5,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * Response for non-streaming calls.
  */
-export type WireCallResponse = { text: string, finish_reason: JsonValue, usage: JsonValue, meta?: WireMeta | null, error?: string | null, };
+export type WireCallResponse = { text: string, finishReason: JsonValue, usage: JsonValue, meta?: WireMeta, error?: string, };

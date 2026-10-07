@@ -96,7 +96,7 @@ fn main() {
         .nth(1)
         .unwrap_or_else(|| "demo.jsonl".to_string());
 
-    // OpenAI chat.completions SSE bodies so mock streaming emits TextDelta.
+    // OpenAI chat.completions SSE bodies so mock streaming emits text-delta parts.
     let sse_pg = r#"data: {"id":"chatcmpl-demo-pg","model":"gpt-4o-mini"}
 
 data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"1 + 1 = 2"}}]}
@@ -129,8 +129,8 @@ data: [DONE]"#;
             sse_pg,
             320,
             serde_json::json!({
-                "input_tokens": { "total": 12, "cache_read": 0 },
-                "output_tokens": { "total": 5 }
+                "inputTokens": { "total": 12, "cacheRead": 0 },
+                "outputTokens": { "total": 5 }
             }),
         ),
         // Agent mock target: [system (agent), user] — matches the Agent page's default def.
@@ -153,8 +153,8 @@ data: [DONE]"#;
             sse_agent,
             412,
             serde_json::json!({
-                "input_tokens": { "total": 64, "cache_read": 0 },
-                "output_tokens": { "total": 9 }
+                "inputTokens": { "total": 64, "cacheRead": 0 },
+                "outputTokens": { "total": 9 }
             }),
         ),
         // Enrichment: a multi-step session (steps 1 & 2) on deepseek.
@@ -177,8 +177,8 @@ data: [DONE]"#;
             "{\"choices\":[{\"message\":{\"content\":\"Prefix caching reuses the KV cache...\"}}]}",
             810,
             serde_json::json!({
-                "input_tokens": { "total": 2300, "cache_read": 0 },
-                "output_tokens": { "total": 210 }
+                "inputTokens": { "total": 2300, "cacheRead": 0 },
+                "outputTokens": { "total": 210 }
             }),
         ),
         recording(
@@ -208,8 +208,8 @@ data: [DONE]"#;
             "{\"choices\":[{\"message\":{\"content\":\"cache_read / input_total\"}}]}",
             796,
             serde_json::json!({
-                "input_tokens": { "total": 2650, "cache_read": 2300 },
-                "output_tokens": { "total": 18 }
+                "inputTokens": { "total": 2650, "cacheRead": 2300 },
+                "outputTokens": { "total": 18 }
             }),
         ),
         // Enrichment: an errored call (shows the error badge).
@@ -225,7 +225,7 @@ data: [DONE]"#;
             None,
             "{}",
             1200,
-            serde_json::json!({ "input_tokens": null, "output_tokens": null }),
+            serde_json::json!({ "inputTokens": null, "outputTokens": null }),
         ),
         // Enrichment: an older successful call on a different model.
         recording(
@@ -241,8 +241,8 @@ data: [DONE]"#;
             "{\"choices\":[{\"message\":{\"content\":\"Ownership, borrowing — memory safe by design...\"}}]}",
             540,
             serde_json::json!({
-                "input_tokens": { "total": 42, "cache_read": 0 },
-                "output_tokens": { "total": 24 }
+                "inputTokens": { "total": 42, "cacheRead": 0 },
+                "outputTokens": { "total": 24 }
             }),
         ),
     ];

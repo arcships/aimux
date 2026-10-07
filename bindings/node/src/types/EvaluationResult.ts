@@ -12,4 +12,4 @@ export type EvaluationResult = {
 /**
  * Exactly one answer per question, under the original question ids.
  */
-answers: Record<string, EvaluationAnswer>, rounding: EvaluationRounding | null, usage: EvaluationUsage | null, warnings: Array<Warning>, provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, response: ResponseInfo | null, };
+answers: Record<string, EvaluationAnswer>, rounding?: EvaluationRounding, usage?: EvaluationUsage, warnings: Array<Warning>, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, response?: ResponseInfo, };

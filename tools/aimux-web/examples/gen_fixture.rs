@@ -69,8 +69,8 @@ fn main() {
             error: None,
             error_value: None,
             usage: Some(serde_json::json!({
-                "input_tokens": { "total": 12, "cache_read": 0 },
-                "output_tokens": { "total": 5 }
+                "inputTokens": { "total": 12, "cacheRead": 0 },
+                "outputTokens": { "total": 5 }
             })),
         },
         complete: true,

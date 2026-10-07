@@ -4,4 +4,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * The user's decision for a provider-executed tool approval request.
  */
-export type ToolApprovalResponsePart = { approval_id: string, approved: boolean, reason?: string | null, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type ToolApprovalResponsePart = { approvalId: string, approved: boolean, reason?: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

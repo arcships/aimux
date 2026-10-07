@@ -15,12 +15,12 @@ data: UploadFileData,
 /**
  * The IANA media type of the file, e.g. `"application/pdf"`.
  */
-media_type: string, 
+mediaType: string, 
 /**
  * The filename of the file.
  */
-filename: string | null, 
+filename?: string, 
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: { [key in string]: JsonValue } } | null, };
+providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

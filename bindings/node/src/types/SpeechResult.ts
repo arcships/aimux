@@ -22,7 +22,7 @@ warnings: Array<Warning>,
 /**
  * Optional request information for telemetry and debugging.
  */
-request: SpeechRequest | null, 
+request?: SpeechRequest, 
 /**
  * Response information for telemetry and debugging.
  */
@@ -30,4 +30,4 @@ response: SpeechResponse,
 /**
  * Additional provider-specific metadata, keyed by provider name.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, };
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, };

@@ -13,6 +13,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::generate::GenerateTextOptions;
 use aimux_core::language_model_message::ToolResultOutput;
 use aimux_core::message::{MessageContent, ModelMessage, ModelPrompt, Role};
+use aimux_core::options::ResponseFormat;
 use aimux_core::tool::{FunctionTool, Tool};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ use aimux_core::tool::{FunctionTool, Tool};
 /// One model call from the console (RFC-0029 §5.3).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "ts-export", ts(export))]
+#[serde(rename_all = "camelCase")]
 pub struct WireCallRequest {
     /// Registry name or native protocol name ("openai", "deepseek", …).
     pub provider: String,
@@ -39,12 +41,14 @@ pub struct WireCallRequest {
     /// API key: `None` (Settings-saved key or the provider's registered env
     /// var), `Some("env:VAR")`, or a plaintext literal — the latter only
     /// while the console is loopback-bound (RFC-0029 §5.5).
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
     /// Base URL override (proxies / local endpoints).
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
-    /// Stream the response as SSE (`StreamPart` events). Default true.
+    /// Stream the response as SSE (`TextStreamPart` events). Default true.
     #[serde(default = "default_true")]
     pub stream: bool,
     /// Route through the loaded mock model (offline mode, RFC-0023 P3).
@@ -53,9 +57,11 @@ pub struct WireCallRequest {
     #[serde(default)]
     pub options: WireOptions,
     /// Session grouping id (RFC-0024). The console reuses one id per agent run.
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     /// Informational step marker (the backend assigns the authoritative step).
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step: Option<u32>,
     pub messages: Vec<WireMessage>,
@@ -67,24 +73,34 @@ fn default_true() -> bool {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "ts-export", ts(export))]
+#[serde(rename_all = "camelCase")]
 pub struct WireOptions {
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_output_tokens: Option<u32>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f64>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stop_sequences: Option<Vec<String>>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<WireTool>>,
-    /// `"text"` or `{"json": …}` — passed through as `ResponseFormat`.
+    /// A `ResponseFormat` object: `{"type":"text"}` or `{"type":"json",…}`.
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_format: Option<Value>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_raw_chunks: Option<bool>,
 }
@@ -92,8 +108,10 @@ pub struct WireOptions {
 /// A function tool definition (JSON Schema parameters).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "ts-export", ts(export))]
+#[serde(rename_all = "camelCase")]
 pub struct WireTool {
     pub name: String,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// JSON Schema describing the parameters.
@@ -103,6 +121,7 @@ pub struct WireTool {
 /// A chat message in the wire format.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "ts-export", ts(export))]
+#[serde(rename_all = "camelCase")]
 pub struct WireMessage {
     /// "system" | "user" | "assistant" | "tool".
     pub role: String,
@@ -112,7 +131,11 @@ pub struct WireMessage {
 /// A content part in the wire format.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "ts-export", ts(export))]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 pub enum WireContentPart {
     Text {
         text: String,
@@ -121,6 +144,7 @@ pub enum WireContentPart {
         tool_call_id: String,
         tool_name: String,
         input: Value,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_executed: Option<bool>,
     },
@@ -136,12 +160,15 @@ pub enum WireContentPart {
 /// Response for non-streaming calls.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "ts-export", ts(export))]
+#[serde(rename_all = "camelCase")]
 pub struct WireCallResponse {
     pub text: String,
     pub finish_reason: Value,
     pub usage: Value,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<WireMeta>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -149,10 +176,13 @@ pub struct WireCallResponse {
 /// SSE `meta` event payload — the frontend trace anchor (RFC-0029 §5.2).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "ts-export", ts(export))]
+#[serde(rename_all = "camelCase")]
 pub struct WireMeta {
     pub call_id: String,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step: Option<u32>,
     pub outcome: String,
@@ -241,27 +271,18 @@ pub fn to_generate_options(
     o: &WireOptions,
     session_id: Option<&str>,
 ) -> Result<GenerateTextOptions, AiMuxError> {
+    // `{"type":"text"}` is the default format, so it maps to "unset".
     let response_format = match &o.response_format {
         None => None,
-        Some(Value::String(s)) if s == "text" => None,
-        Some(Value::Object(obj)) => {
-            let schema = obj.get("schema").cloned();
-            let name = obj.get("name").and_then(Value::as_str).map(str::to_string);
-            let description = obj
-                .get("description")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            Some(aimux_core::options::ResponseFormat::Json {
-                schema,
-                name,
-                description,
-            })
-        }
-        Some(other) => {
-            return Err(AiMuxError::InvalidArgument(format!(
-                "response_format must be \"text\" or an object, got {other}"
-            )));
-        }
+        Some(v) => match serde_json::from_value::<ResponseFormat>(v.clone()) {
+            Ok(ResponseFormat::Text) => None,
+            Ok(json) => Some(json),
+            Err(e) => {
+                return Err(AiMuxError::InvalidArgument(format!(
+                    "invalid responseFormat: {e}"
+                )));
+            }
+        },
     };
 
     Ok(GenerateTextOptions {
@@ -282,7 +303,7 @@ pub fn to_generate_options(
     })
 }
 
-/// Validate and resolve the wire `api_key` field for one call (RFC-0029 §5.5).
+/// Validate and resolve the wire `apiKey` field for one call (RFC-0029 §5.5).
 ///
 /// Priority:
 /// 1. **explicit request spec** — `Some("env:VAR")` reads the environment

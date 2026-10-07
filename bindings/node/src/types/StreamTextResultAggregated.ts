@@ -35,11 +35,11 @@ reasoning: Array<ReasoningPart>,
 /**
  * Concatenated reasoning text.
  */
-reasoning_text: string, 
+reasoningText: string, 
 /**
  * Tool calls requested by the model.
  */
-tool_calls: Array<ToolCall>, 
+toolCalls: Array<ToolCall>, 
 /**
  * Sources / citations.
  */
@@ -51,11 +51,11 @@ files: Array<GeneratedFile>,
 /**
  * Why generation stopped.
  */
-finish_reason: FinishReason, 
+finishReason: FinishReason, 
 /**
  * Raw provider-specific finish reason string.
  */
-raw_finish_reason: string | null, 
+rawFinishReason?: string, 
 /**
  * Token usage.
  */
@@ -64,7 +64,7 @@ usage: Usage,
  * Total token usage across all steps. In single-step mode (aimux's
  * default), `total_usage` equals `usage`. Provided for AI SDK parity.
  */
-total_usage: Usage, 
+totalUsage: Usage, 
 /**
  * Warnings from the provider.
  */
@@ -72,7 +72,7 @@ warnings: Array<Warning>,
 /**
  * Provider-specific metadata from the Finish chunk.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Request information from the provider.
  */
@@ -84,4 +84,4 @@ response: ResponseInfo,
 /**
  * Assistant messages ready to append for the next turn.
  */
-response_messages: Array<ModelMessage>, };
+responseMessages: Array<ModelMessage>, };

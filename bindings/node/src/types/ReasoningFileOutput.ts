@@ -2,4 +2,4 @@
 import type { GeneratedFile } from "./GeneratedFile";
 import type { JsonValue } from "./serde_json/JsonValue";
 
-export type ReasoningFileOutput = { file: GeneratedFile, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type ReasoningFileOutput = { file: GeneratedFile, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, };

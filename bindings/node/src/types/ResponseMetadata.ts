@@ -3,4 +3,4 @@
 /**
  * Metadata about the API response.
  */
-export type ResponseMetadata = { id: string | null, timestamp: string | null, model_id: string | null, };
+export type ResponseMetadata = { id?: string, timestamp?: string, modelId?: string, };

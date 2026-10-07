@@ -16,8 +16,8 @@ id: string,
 /**
  * `owned_by` field from OpenAI-compatible `/models` responses.
  */
-owned_by?: string | null, 
+ownedBy?: string, 
 /**
  * `created` unix timestamp from OpenAI-compatible `/models` responses.
  */
-created?: number | null, };
+created?: number, };

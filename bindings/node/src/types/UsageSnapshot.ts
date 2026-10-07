@@ -4,9 +4,9 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * Token usage snapshot (7 flat fields + raw passthrough).
  */
-export type UsageSnapshot = { input_total: bigint | null, input_no_cache: bigint | null, cache_read: bigint | null, cache_write: bigint | null, output_total: bigint | null, output_text: bigint | null, output_reasoning: bigint | null, 
+export type UsageSnapshot = { inputTotal?: bigint, inputNoCache?: bigint, cacheRead?: bigint, cacheWrite?: bigint, outputTotal?: bigint, outputText?: bigint, outputReasoning?: bigint, 
 /**
  * Raw provider usage payload (opaque passthrough; numbers only — no
  * prompt text).
  */
-raw?: JsonValue | null, };
+raw?: JsonValue, };

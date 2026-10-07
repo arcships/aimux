@@ -3,4 +3,4 @@
 /**
  * A chunk of audio in a streaming transcription request.
  */
-export type AudioChunk = { "Binary": Array<number> } | { "Base64": string };
+export type AudioChunk = Array<number> | string;

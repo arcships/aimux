@@ -7,4 +7,4 @@
  * the upstream API returns base64, return [`FileBytes::Base64`]; if it
  * returns binary, return [`FileBytes::Binary`].
  */
-export type FileBytes = { "Binary": Array<number> } | { "Base64": string };
+export type FileBytes = Array<number> | string;

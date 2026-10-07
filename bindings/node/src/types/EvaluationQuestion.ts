@@ -14,4 +14,4 @@ criteria: Record<string, EvaluationInput | null>, } | { "type": "score", instruc
 /**
  * At least two ordered levels, indexed from zero.
  */
-criteria: Array<EvaluationInput | null>, } | { "type": "boolean", instructions: EvaluationInput, criteria?: BooleanCriteria | null, };
+criteria: Array<EvaluationInput | null>, } | { "type": "boolean", instructions: EvaluationInput, criteria?: BooleanCriteria, };

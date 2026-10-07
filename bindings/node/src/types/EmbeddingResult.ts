@@ -17,15 +17,15 @@ embeddings: Array<Array<number>>,
 /**
  * Token usage (input tokens only).
  */
-usage: EmbeddingUsage | null, 
+usage?: EmbeddingUsage, 
 /**
  * Additional provider-specific metadata.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Optional response information for debugging.
  */
-response: EmbeddingResponse | null, 
+response?: EmbeddingResponse, 
 /**
  * Warnings for the call, e.g. unsupported settings.
  */

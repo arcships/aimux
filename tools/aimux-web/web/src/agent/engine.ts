@@ -8,7 +8,7 @@
 
 import { api, callStream, parseStreamPart } from '../api/client'
 import type { WireCallRequest } from '@/types/generated/WireCallRequest'
-import type { StreamPart } from '@aimux/types/StreamPart'
+import type { TextStreamPart } from '@aimux/types/TextStreamPart'
 
 /** A chat message as sent to the backend (loose typing: the backend wire
  * schema's `JsonValue` is a recursive union that trips TS2589 inside
@@ -32,7 +32,7 @@ export interface AgentStepView {
   usage?: unknown
   latencyMs?: number
   error?: string
-  meta?: { call_id?: string; session_id?: string | null; step?: number | null; outcome?: string }
+  meta?: { callId?: string; sessionId?: string; step?: number; outcome?: string }
 }
 
 export interface AgentDef {
@@ -99,16 +99,16 @@ export async function runAgent(
       const body: WireCallRequest = {
         provider: def.provider,
         model: def.model,
-        api_key: def.api_key || null,
-        base_url: def.base_url || null,
+        apiKey: def.api_key || undefined,
+        baseUrl: def.base_url || undefined,
         stream: true,
         mock: def.mock,
         options: {
           temperature: def.temperature,
-          max_output_tokens: 2048,
+          maxOutputTokens: 2048,
           tools: def.tools.map((t) => toolSchemas.get(t)).filter(Boolean) as never[],
         },
-        session_id: def.session_id,
+        sessionId: def.session_id,
         step,
         messages: run.messages,
       }
@@ -116,7 +116,7 @@ export async function runAgent(
       try {
         for await (const ev of callStream(body, controller.signal)) {
           if (ev.event === 'stream_part') {
-            const part: StreamPart = parseStreamPart(ev.data)
+            const part: TextStreamPart = parseStreamPart(ev.data)
             applyPart(view, part)
           } else if (ev.event === 'meta') {
             view.meta = JSON.parse(ev.data)
@@ -147,9 +147,9 @@ export async function runAgent(
       if (view.text.trim()) assistantParts.push({ type: 'text', text: view.text })
       for (const tc of view.toolCalls) {
         assistantParts.push({
-          type: 'tool_call',
-          tool_call_id: tc.id,
-          tool_name: tc.name,
+          type: 'tool-call',
+          toolCallId: tc.id,
+          toolName: tc.name,
           input: tc.input,
         })
       }
@@ -163,18 +163,18 @@ export async function runAgent(
           tc.result = out.result
           tc.is_error = false
           toolResults.push({
-            type: 'tool_result',
-            tool_call_id: tc.id,
-            tool_name: tc.name,
+            type: 'tool-result',
+            toolCallId: tc.id,
+            toolName: tc.name,
             output: { type: typeof out.result === 'string' ? 'text' : 'json', value: out.result },
           })
         } catch (e) {
           tc.result = String(e)
           tc.is_error = true
           toolResults.push({
-            type: 'tool_result',
-            tool_call_id: tc.id,
-            tool_name: tc.name,
+            type: 'tool-result',
+            toolCallId: tc.id,
+            toolName: tc.name,
             output: { type: 'error-text', value: String(e) },
           })
         } finally {
@@ -191,22 +191,18 @@ export async function runAgent(
   }
 }
 
-function applyPart(view: AgentStepView, part: StreamPart): void {
-  if ('TextDelta' in part) {
-    view.text += part.TextDelta.delta
-  } else if ('ToolCall' in part) {
-    view.toolCalls.push({
-      id: part.ToolCall.tool_call_id,
-      name: part.ToolCall.tool_name,
-      input: part.ToolCall.input,
-    })
-  } else if ('ToolInputStart' in part) {
+function applyPart(view: AgentStepView, part: TextStreamPart): void {
+  if (part.type === 'text-delta') {
+    view.text += part.delta
+  } else if (part.type === 'tool-call') {
+    view.toolCalls.push({ id: part.toolCallId, name: part.toolName, input: part.input })
+  } else if (part.type === 'tool-input-start') {
     // Streamed tool input — collect into a pending call (rare path).
-    view.toolCalls.push({ id: part.ToolInputStart.id, name: part.ToolInputStart.tool_name, input: '' })
-  } else if ('ToolInputDelta' in part) {
-    const pending = view.toolCalls.find((t) => t.id === part.ToolInputDelta.id)
+    view.toolCalls.push({ id: part.id, name: part.toolName, input: '' })
+  } else if (part.type === 'tool-input-delta') {
+    const pending = view.toolCalls.find((t) => t.id === part.id)
     if (pending && typeof pending.input === 'string') {
-      pending.input += part.ToolInputDelta.delta
+      pending.input += part.delta
       // Best-effort parse of accumulated JSON arguments.
       try {
         pending.input = JSON.parse(pending.input)
@@ -214,7 +210,7 @@ function applyPart(view: AgentStepView, part: StreamPart): void {
         /* keep accumulating */
       }
     }
-  } else if ('Finish' in part) {
-    view.usage = part.Finish.usage
+  } else if (part.type === 'finish') {
+    view.usage = part.usage
   }
 }

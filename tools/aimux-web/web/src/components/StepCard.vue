@@ -16,7 +16,7 @@ const emit = defineEmits<{ trace: [] }>()
       </Badge>
       <span v-if="step.latencyMs != null">{{ step.latencyMs }}ms</span>
       <button
-        v-if="step.meta?.call_id"
+        v-if="step.meta?.callId"
         class="underline decoration-dotted hover:text-foreground cursor-pointer"
         @click="emit('trace')"
       >

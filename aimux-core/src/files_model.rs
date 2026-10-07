@@ -22,6 +22,11 @@ use crate::shared::{
 /// `SharedV4FileData` (URLs and provider references are not valid uploads), so
 /// this is a dedicated two-variant enum rather than the full [`crate::shared::FileData`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
 pub enum UploadFileData {
     /// Raw bytes (`Uint8Array`) or a base64-encoded string.
@@ -34,6 +39,7 @@ pub enum UploadFileData {
 ///
 /// Aligned with V4 `FilesV4UploadFileCallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct UploadFileCallOptions {
     /// The file data (raw bytes/base64 or inline text).
@@ -43,9 +49,13 @@ pub struct UploadFileCallOptions {
     pub media_type: String,
 
     /// The filename of the file.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filename: Option<String>,
 
     /// Additional provider-specific options, keyed by provider name.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 
     /// Abort signal for cancelling the upload operation.
@@ -71,6 +81,7 @@ impl UploadFileCallOptions {
 ///
 /// Aligned with V4 `FilesV4UploadFileResult`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct UploadFileResult {
     /// A provider reference mapping provider names to provider-specific file
@@ -79,12 +90,18 @@ pub struct UploadFileResult {
 
     /// The IANA media type of the uploaded file, if available from the
     /// provider.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media_type: Option<String>,
 
     /// The filename of the uploaded file, if available from the provider.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filename: Option<String>,
 
     /// Additional provider-specific metadata, keyed by provider name.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<SharedProviderMetadata>,
 
     /// Warnings from the provider.

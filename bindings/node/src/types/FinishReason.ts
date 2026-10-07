@@ -12,4 +12,4 @@ unified: FinishReasonUnified,
 /**
  * The raw provider-specific reason string.
  */
-raw: string | null, };
+raw?: string, };

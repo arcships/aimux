@@ -22,7 +22,7 @@ warnings: Array<Warning>,
 /**
  * Additional provider-specific metadata, keyed by provider name.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Response information for telemetry and debugging.
  */
@@ -30,4 +30,4 @@ response: ImageResponse,
 /**
  * Optional token usage for the call (if the provider reports it).
  */
-usage: ImageUsage | null, };
+usage?: ImageUsage, };

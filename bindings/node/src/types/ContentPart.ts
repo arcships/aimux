@@ -12,13 +12,13 @@ export type ContentPart = { "type": "text", text: string,
 /**
  * Provider-specific options for this part (e.g. `openai.promptCacheBreakpoint`).
  */
-provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "custom", kind: string, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "reasoning_file", data: GeneratedFileData, media_type: string, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "tool_approval_request", approval_id: string, tool_call_id: string, reason?: string | null, is_automatic?: boolean | null, signature?: string | null, input_schema_input?: JsonValue | null, } | { "type": "image", image: Array<number>, media_type: string, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "file", data: Array<number>, media_type: string, filename?: string | null, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "file_base64", data: string, media_type: string, filename?: string | null, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "file_url", url: string, media_type: string, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "file_reference", media_type: string, reference: JsonValue, filename?: string | null, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "reasoning", text: string, signature: string | null, 
+providerOptions?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "custom", kind: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "reasoning-file", data: GeneratedFileData, mediaType: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-approval-request", approvalId: string, toolCallId: string, reason?: string, isAutomatic?: boolean, signature?: string, inputSchemaInput?: JsonValue, } | { "type": "image", image: Array<number>, mediaType: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "file", data: Array<number>, mediaType: string, filename?: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "file-base64", data: string, mediaType: string, filename?: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "file-url", url: string, mediaType: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "file-reference", mediaType: string, reference: JsonValue, filename?: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "reasoning", text: string, signature?: string, 
 /**
  * Provider-specific options for this part (e.g.
  * `anthropic.signature`, `anthropic.redactedData`,
  * `anthropic.cacheControl`).
  */
-provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "tool_call", tool_call_id: string, tool_name: string, 
+providerOptions?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-call", toolCallId: string, toolName: string, 
 /**
  * Arguments as a JSON value (usually an object).
  */
@@ -28,14 +28,14 @@ input: JsonValue,
  * the client. This is part of the prompt contract because providers
  * need it to replay server tool calls on a later turn.
  */
-provider_executed?: boolean | null, 
+providerExecuted?: boolean, 
 /**
  * Provider-specific options for this part (e.g.
  * `anthropic.cacheControl`).
  */
-provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "type": "tool_result", tool_call_id: string, tool_name: string, output: ToolResultOutput, 
+providerOptions?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-result", toolCallId: string, toolName: string, output: ToolResultOutput, 
 /**
  * Provider-specific options for this part (e.g.
  * `anthropic.cacheControl`).
  */
-provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };
+providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

@@ -13,8 +13,8 @@ violated: Array<string>,
 /**
  * Expected upper bound U (tokens).
  */
-expected_max: bigint, claimed: bigint, 
+expectedMax: bigint, claimed: bigint, 
 /**
  * Client-side LCP (bytes).
  */
-lcp_bytes: bigint, notes: Array<string>, };
+lcpBytes: bigint, notes: Array<string>, };

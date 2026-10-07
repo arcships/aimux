@@ -4,4 +4,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * Text content part.
  */
-export type TextPart = { text: string, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type TextPart = { text: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

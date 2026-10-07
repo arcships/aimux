@@ -11,7 +11,7 @@ export type HttpExchange = {
  * Composite step this exchange belongs to (e.g. `router[0]:openai/gpt-4o`
  * or `moa.ref[1]:...`). `None` for a plain, non-composite operation.
  */
-step?: string | null, 
+step?: string, 
 /**
  * Core operation attempt, starting at 1. Attempt numbers are unique
  * across the whole call, including composite child steps, so
@@ -21,11 +21,11 @@ attempt: number,
 /**
  * HTTP exchange within the operation attempt, starting at 1.
  */
-exchange_index: number, request: HttpRecord, 
+exchangeIndex: number, request: HttpRecord, 
 /**
  * None = 请求失败未获响应。
  */
-response: ResponseRecord | null, timing: TimingRecord, error: string | null, 
+response?: ResponseRecord, timing: TimingRecord, error?: string, 
 /**
  * 流式:该 exchange 是否已终结(收到 response 补全)。非流式恒 true。
  */

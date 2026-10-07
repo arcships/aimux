@@ -4,8 +4,8 @@ export type ResponseRecord = { status: number, headers: Array<[string, string]>,
 /**
  * 非流式:完整 JSON;流式:原始 SSE 拼接文本(上限截断)。
  */
-body: string | null, stream_chunks: number | null, 
+body?: string, streamChunks?: number, 
 /**
  * 首字节延迟(流式)。
  */
-ttfb_ms?: number | null, };
+ttfbMs?: number, };

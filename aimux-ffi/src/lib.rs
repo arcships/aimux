@@ -975,13 +975,13 @@ fn parse_opts_arg(opts_json: *const c_char) -> FfiResult<GenerateTextOptions> {
 
 /// The optional `config_json` of the by-name constructors, as the settings of
 /// the selected factory. NULL, empty or "null" means no settings. An unknown
-/// key (`max_retries`, `body_overrides`, ...) is `InvalidArgument`.
+/// key (`maxRetries`, `bodyOverrides`, ...) is `InvalidArgument`.
 fn parse_provider_settings(
     api_key: Option<String>,
     config_json: *const c_char,
 ) -> FfiResult<PresetSettings> {
     #[derive(serde::Deserialize, Default)]
-    #[serde(deny_unknown_fields)]
+    #[serde(deny_unknown_fields, rename_all = "camelCase")]
     struct Config {
         base_url: Option<String>,
         headers: Option<HashMap<String, String>>,
@@ -1620,9 +1620,9 @@ pub extern "C" fn aimux_xai_new_with_base(
 ///   entry (replaces the retired `aimux_deepseek_new` etc.).
 /// - `model_id` — model id string.
 /// - `config_json` — optional JSON object of settings
-///   (`{"base_url": "...", "headers": {...}, "organization": "...", "project": "...", "params": {...}}`);
-///   NULL / empty / "null" for defaults. Any other key (`max_retries` is a
-///   call-level option, `body_overrides` is gone) is an invalid argument.
+///   (`{"baseUrl": "...", "headers": {...}, "organization": "...", "project": "...", "params": {...}}`);
+///   NULL / empty / "null" for defaults. Any other key (`maxRetries` is a
+///   call-level option, `bodyOverrides` is gone) is an invalid argument.
 ///
 /// AiMuxError: unknown provider, bad config shape, or invalid model id.
 #[unsafe(no_mangle)]
@@ -1694,7 +1694,7 @@ pub extern "C" fn aimux_provider_handle_new(
 /// List models on a provider handle (RFC-0027 runtime discovery).
 ///
 /// `handle` is from `aimux_provider_handle_new`. Writes a JSON array of
-/// sparse `RuntimeModel` (id / owned_by / created) — **no community
+/// sparse `RuntimeModel` (id / ownedBy / created) — **no community
 /// enrichment**. To supplement with model specs, call `aimux_get_model_specs`
 /// separately and merge in the host.
 #[unsafe(no_mangle)]
@@ -1789,8 +1789,8 @@ pub extern "C" fn aimux_generate_text(
 /// Generate a structured JSON object from the model (M12, RFC-0016).
 ///
 /// Same signature as [`aimux_generate_text`]; writes the serialized
-/// `GenerateObjectResult`. The caller passes `response_format: { "Json": {
-/// ... } }` via `opts_json` to control the schema; the function applies JSON
+/// `GenerateObjectResult`. The caller passes `responseFormat: { "type": "json",
+/// ... }` via `opts_json` to control the schema; the function applies JSON
 /// repair before parsing.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_generate_object(
@@ -1932,13 +1932,13 @@ pub extern "C" fn aimux_stream_text_with_abort(
 
 /// Build the repair argument for one invalid tool call (RFC-0035).
 ///
-/// `tool_call_json` is one entry of `GenerateTextResult.tool_calls` with
+/// `tool_call_json` is one entry of `GenerateTextResult.toolCalls` with
 /// `"invalid": true`. `prompt_json` and `opts_json` are **the same two
 /// strings the call was generated with** ([`aimux_generate_text`] /
 /// [`aimux_stream_text`]); messages, instructions, and the tool set are
 /// derived from them here, so no host repeats that derivation.
 ///
-/// Writes `{tool_call, error, input_schema, tools, messages, instructions}` —
+/// Writes `{toolCall, error, inputSchema, tools, messages, instructions}` —
 /// the AI SDK `repairToolCall` argument — to `*out_json`, or the JSON literal
 /// `null` when `opts_json` carried no tools: as in the AI SDK, a call made
 /// without a tool set is never repaired, and the host skips it. `null` is a
@@ -1970,7 +1970,7 @@ pub extern "C" fn aimux_tool_call_repair_context(
 /// Resolve one invalid tool call against a host's repair reply (RFC-0035).
 ///
 /// `opts_json` is the same string the call was generated with; the tool set
-/// comes from it. `reply_json` is `{"type":"repaired","tool_call":{…}}`,
+/// comes from it. `reply_json` is `{"type":"repaired","toolCall":{…}}`,
 /// `{"type":"unchanged"}`, or `{"type":"failed","message":"…"}`. Writes the
 /// resulting `ToolCall` — valid, or invalid with the AI SDK's nested
 /// `ToolCallRepairError` — to `*out_json`. Same purity as
@@ -2002,7 +2002,7 @@ pub extern "C" fn aimux_apply_tool_call_repair(
 ///
 /// `result_json` is a serialized `GenerateTextResult` or
 /// `GenerateObjectResult`; `opts_json` is the same string the call was
-/// generated with. Both `tool_calls` and the matching `response_messages`
+/// generated with. Both `toolCalls` and the matching `responseMessages`
 /// tool-call part are rewritten. The OpenAI-shaped
 /// `ChatCompletion` is not supported — it carries no `invalid`/`error`, so
 /// repair is driven from the native result, which
@@ -2038,7 +2038,7 @@ pub extern "C" fn aimux_apply_tool_call_repair_to_result(
 ///
 /// The conversion half of [`aimux_generate_text_as_openai`], for hosts that
 /// repair a native result themselves (RFC-0035) and then want the OpenAI
-/// shape: tool calls come from `result_json`'s `tool_calls`, so a patched
+/// shape: tool calls come from `result_json`'s `toolCalls`, so a patched
 /// result converts to a completion that reflects the repair. `handle` only
 /// supplies the model id fallback for `ChatCompletion.model`; no runtime work,
 /// so this is safe from inside a stream callback.
@@ -2658,9 +2658,10 @@ pub extern "C" fn aimux_transcription_generate(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// JSON options for `aimux_transcription_session_new` (all fields optional):
-/// `{ "input_audio_format": { "format_type": "audio/pcm", "rate": 24000 },
-///    "provider_options": { … }, "headers": { … }, "include_raw_chunks": false }`.
+/// `{ "inputAudioFormat": { "formatType": "audio/pcm", "rate": 24000 },
+///    "providerOptions": { … }, "headers": { … }, "includeRawChunks": false }`.
 #[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 struct TranscriptionSessionFfiOptions {
     input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
     provider_options: Option<aimux_core::shared::SharedProviderOptions>,
@@ -3540,9 +3541,9 @@ pub extern "C" fn aimux_router_new(
 /// `reference_handles` is an array of `ref_len` existing model handles (may be
 /// 0 — MoaModel then degrades to running just the aggregator). `aggregator`
 /// is a single existing model handle. `config_json` is a serialized `MoaConfig`
-/// (all fields optional): `{ "provider_name": "moa", "model_id": "moa",
-/// "aggregator_instructions": null, "strip_reference_tools": true,
-/// "fail_mode": "best_effort" | "fail_fast" }`.
+/// (all fields optional): `{ "providerName": "moa", "modelId": "moa",
+/// "aggregatorInstructions": null, "stripReferenceTools": true,
+/// "failMode": "best_effort" | "fail_fast" }`.
 ///
 /// Fails on: bad JSON, an unknown aggregator handle (references may be empty;
 /// aggregator may not).
@@ -3576,6 +3577,7 @@ pub extern "C" fn aimux_moa_new(
 
 /// FFI-side router config (lenient: all fields optional).
 #[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RouterFfiConfig {
     router: Option<String>,
     weights: Option<Vec<f64>>,
@@ -4431,15 +4433,15 @@ mod tests {
         // Pull parts: StreamStart, delta("3 "), delta("2 "), Final, Finish,
         // then ENDED.
         let p1 = pull_part(session);
-        assert!(p1.contains("StreamStart"), "part 1: {p1}");
+        assert!(p1.contains("\"type\":\"stream-start\""), "part 1: {p1}");
         let p2 = pull_part(session);
         assert!(p2.contains("3 "), "part 2: {p2}");
         let p3 = pull_part(session);
         assert!(p3.contains("2 "), "part 3: {p3}");
         let p4 = pull_part(session);
-        assert!(p4.contains("TranscriptFinal"), "part 4: {p4}");
+        assert!(p4.contains("\"type\":\"transcript-final\""), "part 4: {p4}");
         let p5 = pull_part(session);
-        assert!(p5.contains("Finish"), "part 5: {p5}");
+        assert!(p5.contains("\"type\":\"finish\""), "part 5: {p5}");
         assert!(p5.contains("3 2 "), "finish text: {p5}");
 
         // Stream ended: NULL error, ENDED state, no part.

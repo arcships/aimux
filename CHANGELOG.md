@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- aimux's public JSON equals the AI SDK's JSON. Struct fields serialize
+  camelCase (`toolCallId`, `providerOptions`, `inputTokens`); unions carry the
+  AI SDK's tag and strings (`{"type":"text-delta"}`, `"tool-call"`,
+  `"reasoning-file"`, Source `sourceType`, Warning/FileData/ResponseFormat/
+  stream parts no longer externally tagged); byte payloads are untagged
+  (array of numbers or base64 string); optional fields are omitted instead of
+  `null` and generate as `field?: T`; `AiMuxError` is tagged by `name`
+  (`AI_APICallError`, `AI_RetryError`, ...). Vendor request and response types
+  and the OpenAI chat-completion output keep their vendor wire formats.
+  Persisted recordings and trace records change with the same rule.
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.

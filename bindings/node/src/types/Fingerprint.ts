@@ -8,13 +8,13 @@ export type Fingerprint = {
 /**
  * 128-bit hash of the whole denoised body (hex).
  */
-body_hash: string, len_bytes: bigint, block_size: bigint, 
+bodyHash: string, lenBytes: bigint, blockSize: bigint, 
 /**
  * Block-hash chain (hex), one entry per block.
  */
-block_hashes: Array<string>, 
+blockHashes: Array<string>, 
 /**
  * Token estimate — byte proxy `len_bytes / 4` when no tokenizer is
  * attached (RFC-0015 §4.1: W capped at one block in this mode).
  */
-token_estimate: bigint, };
+tokenEstimate: bigint, };

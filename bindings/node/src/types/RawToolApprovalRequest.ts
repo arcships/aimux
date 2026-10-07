@@ -4,4 +4,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * Provider approval request for a provider-executed call.
  */
-export type RawToolApprovalRequest = { approval_id: string, tool_call_id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type RawToolApprovalRequest = { approvalId: string, toolCallId: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, };

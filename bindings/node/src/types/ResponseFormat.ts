@@ -4,4 +4,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * How the model should format its response.
  */
-export type ResponseFormat = "Text" | { "Json": { schema: JsonValue | null, name: string | null, description: string | null, } };
+export type ResponseFormat = { "type": "text" } | { "type": "json", schema?: JsonValue, name?: string, description?: string, };

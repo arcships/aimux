@@ -3,4 +3,4 @@
 /**
  * Token usage of an evaluation.
  */
-export type EvaluationUsage = { input_tokens: number | null, output_tokens: number | null, };
+export type EvaluationUsage = { inputTokens?: number, outputTokens?: number, };

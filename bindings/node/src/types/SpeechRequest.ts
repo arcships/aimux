@@ -8,4 +8,4 @@ export type SpeechRequest = {
 /**
  * Response body (HTTP providers only).
  */
-body: JsonValue | null, };
+body?: JsonValue, };

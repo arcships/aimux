@@ -73,7 +73,7 @@ fn provider_handle_new_with_config_json() {
     let e = aimux_provider_handle_new(
         c("deepseek").as_ptr(),
         c("sk-test-fake").as_ptr(),
-        c(r#"{"base_url":"https://example.com/v1"}"#).as_ptr(),
+        c(r#"{"baseUrl":"https://example.com/v1"}"#).as_ptr(),
         &mut h,
     );
     aimux_drop_handle(expect_handle(e, h, "provider_handle_new(deepseek, config)"));

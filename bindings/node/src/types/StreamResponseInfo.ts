@@ -3,4 +3,4 @@
 /**
  * Response information returned when starting a language-model stream.
  */
-export type StreamResponseInfo = { headers: { [key in string]: string } | null, };
+export type StreamResponseInfo = { headers?: { [key in string]: string }, };

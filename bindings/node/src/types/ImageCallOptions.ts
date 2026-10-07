@@ -15,7 +15,7 @@ export type ImageCallOptions = {
  * Prompt for the image generation. `None` for operations (e.g. upscaling)
  * that do not require a prompt.
  */
-prompt: string | null, 
+prompt?: string, 
 /**
  * Number of images to generate.
  */
@@ -24,37 +24,37 @@ n: number,
  * Size of the images, in `{width}x{height}` format.
  * `None` uses the provider's default size.
  */
-size: Size | null, 
+size?: Size, 
 /**
  * Aspect ratio of the images, in `{width}:{height}` format.
  * `None` uses the provider's default aspect ratio.
  */
-aspect_ratio: AspectRatio | null, 
+aspectRatio?: AspectRatio, 
 /**
  * Seed for deterministic generation. `None` uses the provider's default.
  */
-seed: number | null, 
+seed?: number, 
 /**
  * Images for image editing or variation generation.
  */
-files: Array<ImageFile> | null, 
+files?: Array<ImageFile>, 
 /**
  * Mask image for inpainting operations.
  */
-mask: ImageFile | null, 
+mask?: ImageFile, 
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: { [key in string]: JsonValue } }, 
+providerOptions: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Per-call retry override. `None` uses the model default.
  */
-max_retries: number | null, 
+maxRetries?: number, 
 /**
  * Per-call operation timeout.
  */
-timeout: TimeoutConfiguration | null, 
+timeout?: TimeoutConfiguration, 
 /**
  * Additional HTTP headers to send with the request.
  */
-headers: { [key in string]: string } | null, };
+headers?: { [key in string]: string }, };
