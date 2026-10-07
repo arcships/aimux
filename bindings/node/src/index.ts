@@ -59,6 +59,10 @@ import type {
   JsonValue,
   RawToolCall,
   ToolCallRepairReply,
+  DecisionCallOptions,
+  DecisionResult,
+  DecisionProbabilitySource,
+  DecisionCapabilities,
 } from './types'
 
 // Error hierarchy (throw/catch). Wire payload type `AiMuxError` lives under StreamPart only.
@@ -119,6 +123,7 @@ export {
   anthropicAws,
   azure,
   provider,
+  DecisionModel,
   type ProviderHandle,
 } from './native.ts'
 
@@ -159,6 +164,33 @@ export type {
   VideoPollOptions,
   RawToolCall,
   ToolCallRepairReply,
+  DecisionCallOptions,
+  DecisionResult,
+}
+
+/** Typed decisions with the same JSON contract as Rust and C. */
+export async function decide(
+  model: native.DecisionModel,
+  options: DecisionCallOptions,
+  signal?: AbortSignal,
+): Promise<DecisionResult> {
+  const bridge = signal ? new AbortBridge(signal) : undefined
+  return JSON.parse(await model.decide(JSON.stringify(options), bridge)) as DecisionResult
+}
+
+/** Query native decision capabilities without making a network request. */
+export function decisionCapabilities(model: native.DecisionModel): DecisionCapabilities {
+  return JSON.parse(model.capabilities()) as DecisionCapabilities
+}
+
+/** Declare how a hosted or self-hosted System One endpoint produces probabilities. */
+export async function jevDecision(
+  apiKey: string,
+  modelId: string,
+  endpoint?: string,
+  probabilitySource?: DecisionProbabilitySource,
+): Promise<native.DecisionModel> {
+  return native.jevDecision(apiKey, modelId, endpoint, probabilitySource)
 }
 
 /**
@@ -169,6 +201,18 @@ export type {
  * class instance type — pass the exact object a provider factory gives you.
  */
 export type RawModel = Model
+
+export type {
+  DecisionAnswer,
+  DecisionDescription,
+  DecisionBooleanCriteria,
+  DecisionRounding,
+  DecisionQuestion,
+  DecisionOption,
+  DecisionCapabilities,
+  DecisionProbabilitySource,
+  DecisionResponse,
+} from './types'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool-call repair (RFC-0035) — host-side, mirroring AI SDK `repairToolCall`

@@ -2,7 +2,7 @@
 
 > **性质**: [RFC-0036](../rfc/0036-positioning-and-layered-architecture.md)(定位与分层架构)之下的实施设计文档,不是独立 RFC,不占 RFC 编号。随本文件合入生效;§0.4 的四项决定、§0.7 对 ROADMAP 既有承诺的保留 / 调整 / 后置清单,以本文件为准,后续变更直接修改本文件并在 CHANGELOG 记录
 >
-> **Date**: 2026-09-29
+> **Date**: 2026-09-29 · 2026-10-04 修订（撤销切换后的 ABI 共存承诺、登记 xAI/HF chat 扩展、修复附录 §6.4-14 裁定缺失等评审问题）
 >
 > **Reference baseline**: `reference/aisdk-review/node_modules`(本地安装、带 `src/`):`ai` 7.0.122、`@ai-sdk/provider` 4.0.19、`@ai-sdk/provider-utils` 5.0.51、openai 4.0.80、anthropic 4.0.68、google 4.0.85、google-vertex 5.0.98、amazon-bedrock 5.0.100、azure 4.0.84、xai 5.0.12、mistral 4.0.54、cohere 4.0.52、deepseek 3.0.56、groq 4.0.52、openai-compatible 3.0.59、gateway 4.0.100
 >
@@ -107,7 +107,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 |---|---|---|
 | RFC-0036 §0 六条原则(性能体积门禁、行为统一、治理一等、数据真相下沉、harness 解耦、不做 agent) | 保留 | 本文是原则 2 / 4 在 provider → model → core 链路上的实施设计 |
 | L2 是"版本化投影",选型(AI SDK 形态 / Open Responses / 自有)另立调研 RFC(RFC-0036 §3;ROADMAP 0.7) | 调整 | 选型由本文第二部分定为 **AI SDK V4 形态**,调研 RFC 撤销。"投影不下的进 `provider_metadata` / `Raw`,不得静默丢弃"保留(第二部分 provider namespace 规则)。"不随 1.0 冻结"保留:V4 类型跟随头部锁定的上游基线演进,升级基线即 L2 的版本变更 |
-| 0.6 版本语义"binding wire 与 C ABI 不变";0.8 C1 "旧导出保留共存(#166 要求共存至少一个 minor 版本)";1.0 C4 删除旧导出 | 调整 | 本文的切换(§9.1 P1)是一次 **breaking 发布**:对象模型、wire、C ABI 同时替换,不提供旧导出共存、deprecated 别名或转发层(D31、§5"不采用")。发布为一个 0.x minor,CHANGELOG 给迁移说明。C1 ops 协议(见下一行)在本文切换**之后**引入时,是否与本文的 C ABI 共存一个 minor,由 ROADMAP 0.8 自行决定,本文不撤销该原则 |
+| 0.6 版本语义"binding wire 与 C ABI 不变";0.8 C1 "旧导出保留共存(#166 要求共存至少一个 minor 版本)";1.0 C4 删除旧导出 | 调整 | 本文的切换(§9.1 P1)是一次 **breaking 发布**:对象模型、wire、C ABI 同时替换,不提供旧导出共存、deprecated 别名或转发层(D31、§5"不采用")。发布为一个 0.x minor,CHANGELOG 给迁移说明。此后 ops 协议(见下一行)引入时的旧符号同样按切换门一次替换,不再承诺"共存一个 minor"(与 #207 §12.2 的 C2 / C4 行一致;切换门由 RFC-0039 定义) |
 | ops 协议(op 表 / 错误信封 / 二进制帧 / 版本协商)、stdio CLI 入口(RFC-0036 §4;ROADMAP 0.6 schema、0.8 C1) | 保留,后置到本文切换之后 | 本文 §6 替换的是现有 123 个 `extern "C"` 的句柄对象模型与错误传输;`dispatch(op, handle, json)` 应建立在 §6.1 的句柄种类与 §6.5 的 manifest 之上,因此排在 P1 之后。本文不设计 ops 协议 |
 | L0 native passthrough(RFC-0036 §3 原则 4;ROADMAP 0.6) | 保留,后置到本文切换之后 | 落点是 §3.2 的 `Fetch` / `WsConnector` 注入与 leaf 诊断:passthrough 复用同一传输边界即可获得 auth / 重试 / 录制。本文不实现它 |
 | B 轨 protocol registry = L1 协议层(RFC-0032,B1 "protocol 列 + `from_resolved`",B2–B8 "17 个 LanguageModel → ~7 个协议、33 个 wrapper 退役") | 保留方向,形式调整 | "协议"对应本文 §3.3 / §4.1 的模型实现家族(OpenAI chat / Responses、Anthropic Messages、Google、compat 等);251 个 registry preset 由 descriptor 生成独立厂商工厂并复用 compat 实现(D12、D20),wrapper 退役由此完成。RFC-0032 的 registry 列保留为 descriptor 的数据来源;`from_resolved` 式构造由 `create_xxx` 工厂替代;C2 "FFI 构造器转发 shim"不再需要(§6 一次切换) |
@@ -132,7 +132,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 >
 > **范围：**provider、model、调用运行时、传输、观测、录制回放、组合模型、catalogue、FFI、八种语言接口及工具。
 >
-> **证据约定：**`AX:` 相对仓库根；`AI:` 相对上述 `node_modules`。代码块是接口设计，省略辅助类型与实现。
+> **证据约定：**`AX:` 相对仓库根；`AI:` 相对上述 `node_modules`（本地检出的参考源码，`.gitignore` 排除 `reference/`，仓库内不含该目录，路径仅在本机有效）。代码块是接口设计，省略辅助类型与实现。
 >
 > 本次完成源码核验，未修改仓库文件，未运行构建或测试。文中的验收项均为实施要求。
 
@@ -198,7 +198,7 @@ settings
 
 model 可以持有 base URL、闭包、静态字段和厂商协议参数。必须禁止的是下游通过公开 config、`config_snapshot()` 等接口读取配置，再自行推导凭证、实例身份或重建方式。
 
-AI SDK 确实具有模型序列化机制。[serialize-model-options.ts](../reference/aisdk-review/node_modules/@ai-sdk/provider-utils/src/serialize-model-options.ts:26) 会同步解析 headers；这既证明模型可以包含可序列化数据，也说明该机制不适合作为本文的录制格式。
+AI SDK 确实具有模型序列化机制。`AI:@ai-sdk/provider-utils/src/serialize-model-options.ts:26` 会同步解析 headers；这既证明模型可以包含可序列化数据，也说明该机制不适合作为本文的录制格式。
 
 ### 1.2 blocker/major 逐条裁定
 
@@ -231,7 +231,7 @@ AI SDK 确实具有模型序列化机制。[serialize-model-options.ts](../refer
 
 ### 1.3 额外确认：录制和回放必须处于同一边界
 
-[Bedrock-Anthropic fetch](../reference/aisdk-review/node_modules/@ai-sdk/amazon-bedrock/src/anthropic/amazon-bedrock-anthropic-fetch.ts:18) 会转换错误响应，并将 AWS event-stream 转为 SSE。
+`AI:@ai-sdk/amazon-bedrock/src/anthropic/amazon-bedrock-anthropic-fetch.ts:18`（Bedrock-Anthropic fetch）会转换错误响应，并将 AWS event-stream 转为 SSE。
 
 因此，“helper 录到什么，leaf 就回放什么”不能成立。修订后：
 
@@ -389,7 +389,7 @@ fn do_stream<'a>(
 }
 ```
 
-本地 [ProviderV4](../reference/aisdk-review/node_modules/@ai-sdk/provider/src/provider/v4/provider-v4.ts:13) 没有 `evaluationModel`。Evaluation、Realtime、SpeechTranslation、Batch 的具体能力不在本文交付范围；不注册空实现，不宣称已支持。
+本地 `AI:@ai-sdk/provider/src/provider/v4/provider-v4.ts:13`（ProviderV4）没有 `evaluationModel`。Evaluation、Realtime、SpeechTranslation、Batch 的具体能力不在本文交付范围；不注册空实现，不宣称已支持。
 
 ### 3.2 provider-utils：传输、设置与诊断
 
@@ -492,7 +492,7 @@ pub fn create_openai(
 pub fn openai() -> &'static OpenAIProvider;
 ```
 
-具体 provider 暴露 `.call()`、`.chat()`、`.responses()` 和实际支持的模态方法。OpenAI 默认 LM 为 Responses；xAI 按本地源码只提供 Responses LM，不新增伪装成 SDK 能力的 `.chat()`。
+具体 provider 暴露 `.call()`、`.chat()`、`.responses()` 和实际支持的模态方法。OpenAI 默认 LM 为 Responses；xAI、Hugging Face 的 V4 入口按本地源码只提供 Responses LM，不新增伪装成 SDK 能力的 `.chat()`；既有 Chat Completions 实现保留为 `Provider` trait 之外的显式扩展方法 `chat_completions(id)`（上游没有该入口，登记为产品差异，见 §5）。
 
 config 只对该包及明确的 `internal` 复用接口开放。不得提供公开 config getter。
 
@@ -685,7 +685,7 @@ retry {
 完成 operation；流式操作在流终结或取消时完成
 ```
 
-LM 的 start/end 是逻辑调用事件，retry 内的 attempt spans 与传输事件逐次产生。这与 [generate-text.ts](../reference/aisdk-review/node_modules/ai/src/generate-text/generate-text.ts:1024) 的基本顺序一致。
+LM 的 start/end 是逻辑调用事件，retry 内的 attempt spans 与传输事件逐次产生。这与 `AI:ai/src/generate-text/generate-text.ts:1024` 的基本顺序一致。
 
 **关闭观测：**
 
@@ -1597,7 +1597,7 @@ P1 可以拆成多个审阅工作包，但这些工作包不被描述为独立�
 | 未覆盖项：补回 onStepFinish 转发 | **不接受历史兼容转发。**只保留 onStepEnd；Evaluation 等能力按完整范围处理，不为消除表面缺项增加空事件 |
 | 影响面 S0-2/S0-3：统一 `<optionsName>.<endpoint>` 和首段 namespace | **源码反例足够，不能作为全局规则。**Bedrock 身份不符合该模板，Google/Vertex 与 Responses 有包内分支，Anthropic 有 canonical/custom 合并。保留逐包规则 |
 | 影响面 S1-4：必须使用 RecordingFetch 装饰器 | **机制不必照搬。**需要的是可替换传输与同一录制/回放边界；provider-utils 的统一 leaf 诊断满足要求，且不要求用户手工排列录制包装器 |
-| 影响面 S4-7：xAI 同时保留 chat/responses | **不符合本地基线。**本地 xAI 工厂暴露 Responses LM，没有 chat LM 工厂；OpenAI 的 chat 选择继续提供 |
+| 影响面 S4-7：xAI 同时保留 chat/responses | **作为 SDK 入口不接受；作为显式扩展保留。**本地 xAI 工厂只暴露 Responses LM，没有 chat LM 工厂，`languageModel` / `.call()` 不提供 chat；既有 Chat Completions 实现只作 trait 外的 `chat_completions(id)` 扩展并登记为产品差异（§3.3、§5）。OpenAI 的 chat 选择继续提供 |
 | 影响面 S5 的旧数据映射、重建和归一化 | **全部排除。**schema 3 仅处理新录制；live replay 依赖宿主目标引用，不保存或重建 ProviderRecord |
 | 影响面 S7-3/S8-2：本期必须加入所有语言 credential callback ABI | **需求接受，指定机制不接受。**动态凭证可以由 Rust 内建 resolver 表达；任意 C 宿主回调涉及异步 ABI 和重入契约，不能靠函数指针加 ctx 宣称已经解决 |
 
@@ -2413,7 +2413,7 @@ timeBetweenOutputChunksMs?: { min, p10, median, avg, p90, max }
 - `StepResult.reasoning` 为输入形态 `ReasoningPart | ReasoningFilePart`，使用 `providerOptions`。
 - `GenerateTextResult.reasoning` 为输出形态 `ReasoningOutput | ReasoningFileOutput`，使用 `providerMetadata`。
 
-分别见 [step-result.ts:187](../reference/aisdk-review/node_modules/ai/src/generate-text/step-result.ts:187) 和 [generate-text-result.ts:54](../reference/aisdk-review/node_modules/ai/src/generate-text/generate-text-result.ts:54)。应共享转换函数，不能直接将两者定义为一个别名。
+分别见 `A/generate-text/step-result.ts:187` 和 `A/generate-text/generate-text-result.ts:54`。应共享转换函数，不能直接将两者定义为一个别名。
 
 最终 `GenerateTextResult` 持有 `steps`、累计 usage、初始审批响应消息及 output；其余通过 getter 或生成的 wire snapshot 派生：
 
@@ -2430,7 +2430,7 @@ timeBetweenOutputChunksMs?: { min, p10, median, avg, p90, max }
 | finalStep | 最后一步 |
 | output | 按 Output 配置得到的最终输出；没有输出时按 SDK 行为报错 |
 
-这不是旧版本常见的“usage 等于最后一步”。依据 [generate-text.ts:1714](../reference/aisdk-review/node_modules/ai/src/generate-text/generate-text.ts:1714)，尤其 `:1797`。
+这不是旧版本常见的“usage 等于最后一步”。依据 `A/generate-text/generate-text.ts:1714`，尤其 `:1797`。
 
 `StreamTextResult` 是拥有流及完成结果的运行时对象。流完成后使用相同 StepResult/最终聚合逻辑，不再维护 `StreamTextResultAggregated` 的另一套字段定义。对象输出使用同一 Output/结果机制；现有 `GenerateObjectResult` 的重复 raw 镜像结构应删除。
 
@@ -2677,7 +2677,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 - 不再手写第二份消息 enum、result struct 或字段名映射。
 - Schema 是生成物，不与 Rust 同时人工维护。
 - 自定义 serde 类型必须同时提供生成描述：Optional、base64、ToolChoice、受约束静态/动态工具调用、日期和错误。
-- `ts-rs` 可以继续生成原生 Rust DTO 的 TS 声明，但必须与同源 schema/serde fixture 校验；不能只靠 `derive(TS)` 推断所有自定义行为。
+- ~~`ts-rs` 可以继续生成原生 Rust DTO 的 TS 声明~~（**§0.5 已裁定不采纳**：ts-rs 与 `scripts/gen_*` 全部退役，第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源）。若日后重新引入任何 TS 生成器，必须与同源 schema/serde fixture 校验，不能只靠 `derive(TS)` 推断自定义行为。
 - Go 不再用 RawMessage 代替已知协议联合；opaque JSON 字段才使用通用 JSON 类型。
 - Java/Kotlin 不再为必填字段默认填空字符串、空对象。
 - Python/Dart 不再对同一 providerMetadata 字段一处接受 Any、一处强制字典。

@@ -2,8 +2,6 @@
 
 > 12 个模块只读扫描 + 逐模块对抗核验后保留的发现。主文档见 [aisdk-architecture-alignment.md](aisdk-architecture-alignment.md)。本附录中涉及旧数据迁移 / 兼容的建议(如 S5-1 的 schema 2→3 迁移表)已被主文档否决,以主文档为准。
 
-# aimux provider → model 重构：全仓库影响面地图
-
 > 输入是 12 个模块只读扫描后、经对抗核验保留的发现。本文只做重组和归并，不新增证据；file:line 全部取自材料。材料中标为"推断"的结论，在本文中仍标为推断。所有描述采用核验修正后的表述（被修正或部分证伪的原始说法见 §6.2）。
 
 ## 0. 编号约定与统计口径
@@ -450,8 +448,8 @@ aimux-stream ──► response_handler ──► StreamPart 流 ──► core�
 
 | 编号 | 改动 | 发现 id | 不改的后果 |
 |---|---|---|---|
-| S5-1 | RECORDING_SCHEMA 升到 3，并提供 2→3 的 provider 字符串迁移表（例如 "openai"→"openai.chat"，"google.vertex" 按 model 拆开）；ProviderRecord 不再保存 max_retries 和 profile，max_retries 只从 input.options 恢复 | sub:CORE-1、sub:CORE-3、cg:GEN-8、ce:RETRY-2、tl:TOOLS-5、cv:CONV-21、cv:补3 | 行为错误：旧录制全部失配；rebuild 按裸名查 registry 失败，返回 Unsupported（cg:补3） |
-| S5-2 | rebuild_provider 改为通过 registry 或工厂按 provider_id、model_id、端点种类（chat/responses）重建；不再回落到 api.openai.com；丢弃值为 "[REDACTED]" 的键 | tl:TOOLS-2、tl:TOOLS-5、tl:TOOLS-6、sub:REPLAY-2、cg:补3、bd:补7 | 编译失败（快照字段已删除），或行为错误（Responses 录制被重放到 chat） |
+| S5-1 | RECORDING_SCHEMA 升到 3，并提供 2→3 的 provider 字符串迁移表（例如 "openai"→"openai.chat"，"google.vertex" 按 model 拆开）；ProviderRecord 不再保存 max_retries 和 profile，max_retries 只从 input.options 恢复。**（已按主文档裁定收窄：schema 3 只处理新录制，不设 2→3 迁移表，也不保存任何 ProviderRecord——见 §6.4-4 与主文档 §4.3；本行其余内容仅为扫描期建议原文）** | sub:CORE-1、sub:CORE-3、cg:GEN-8、ce:RETRY-2、tl:TOOLS-5、cv:CONV-21、cv:补3 | 行为错误：旧录制全部失配；rebuild 按裸名查 registry 失败，返回 Unsupported（cg:补3） |
+| S5-2 | rebuild_provider 改为通过 registry 或工厂按 provider_id、model_id、端点种类（chat/responses）重建；不再回落到 api.openai.com；丢弃值为 "[REDACTED]" 的键。**（已按主文档 D24 / §4.4 裁定改写：不重建 provider——live replay 由宿主 registry 与录制中的 operation 目标引用驱动，direct model 缺引用时要求调用方显式指定目标；dry-run 不构造凭证、不联网）** | tl:TOOLS-2、tl:TOOLS-5、tl:TOOLS-6、sub:REPLAY-2、cg:补3、bd:补7 | 编译失败（快照字段已删除），或行为错误（Responses 录制被重放到 chat） |
 
 ### 步骤 6：ai 层
 
@@ -722,3 +720,4 @@ aimux-stream ──► response_handler ──► StreamPart 流 ──► core�
 13. **first_chunk 计时起点**：把 peek 下沉到 core，还是写进差异表。相关：cs:STREAM-14。
    **裁定**：主文档 §4.2 / §5 “SSE 预读”行——保留首事件错误预读并登记为产品差异；trace TTFT 从调用 `do_stream` 之前计时。
 14. **非 Node 绑定的异步形态与流式 ABI**：是否提供 pull 式的 `aimux_stream_open / next / close`，把线程模型留在 Rust 内部。相关：bd:BIND-5、bd:BIND-14。
+   **裁定**：主文档 §6.2 / §6.4 / §0.4 Q4——本期不提供 pull 式流式 ABI：C ABI 保持同步，流事件继续由 push callback（§6.2 `aimux_part_cb`）搬运，不允许同步嵌套模型操作；Flutter / Swift / Kotlin / Java / Go 按各自的后台执行器 / isolate / goroutine 包装同步 C 调用（§6.4 其余接口表），取消经 Abort 句柄传播。pull 式流入口与异步 C ABI（versioned vtable + completion）属同一后置项，随 §0.4 Q4 另立设计。
