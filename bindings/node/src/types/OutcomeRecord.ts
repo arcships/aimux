@@ -5,12 +5,16 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * 最终结果摘要。
  */
-export type OutcomeRecord = { status: OutcomeStatus, finishReason?: string, error?: string, 
+export type OutcomeRecord = {
+/**
+ * Normalized decision result, independent of a provider's wire format.
+ */
+decisionResult?: JsonValue | null, status: OutcomeStatus, finishReason?: string, error?: string,
 /**
  * Lossless structured domain error. In particular, `RetryError.errors`
  * keeps the complete attempt history rather than only its display text.
  */
-errorValue?: JsonValue, 
+errorValue?: JsonValue,
 /**
  * 序列化的 Usage。
  */
