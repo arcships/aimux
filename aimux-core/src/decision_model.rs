@@ -418,15 +418,9 @@ impl DecisionResult {
 
 #[async_trait]
 pub trait DecisionModel: Send + Sync {
-    fn specification_version(&self) -> &'static str {
-        "v4"
-    }
     fn provider(&self) -> &str;
     fn model_id(&self) -> &str;
     fn capabilities(&self) -> DecisionCapabilities;
-    fn config_snapshot(&self) -> crate::recording::ProviderRecord {
-        crate::recording::ProviderRecord::from_model(self.provider(), self.model_id())
-    }
     /// Perform one provider attempt.
     /// # Errors
     /// Returns provider, transport or invalid response errors.
@@ -502,8 +496,10 @@ pub async fn decide(
             model.model_id(),
             &capabilities,
         );
-        ctx.recorder
-            .record_provider(&ctx.call_id, &model.config_snapshot());
+        ctx.recorder.record_provider(
+            &ctx.call_id,
+            &crate::recording::ProviderRecord::from_model(model.provider(), model.model_id()),
+        );
         ctx
     });
     let result = timeout::run(
