@@ -81,6 +81,13 @@ async fn ring_records_one_complete_call_and_replays_exact_inputs_with_redaction(
     assert!(records[0].complete && records[0].transport_closed);
     assert_eq!(records[0].input.operation, RecordingOperation::Decision);
     assert!(records[0].input.prompt.is_empty());
+    assert!(records[0].input.decision_capabilities.is_some());
+    assert_eq!(
+        serde_json::to_value(&records[0].provider).unwrap(),
+        json!({
+            "provider_id": "jev", "provider": "jev", "model_id": "jev-latest"
+        })
+    );
     assert_eq!(records[0].exchanges.len(), 1);
     assert_eq!(records[0].exchanges[0].attempt, 1);
     assert_eq!(records[0].exchanges[0].exchange_index, 1);
