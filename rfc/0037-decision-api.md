@@ -117,12 +117,12 @@ server 验证；另于 2026-10-06 使用 Python binding 对官方 endpoint 完�
 CI 无需线上 key。
 
 `decide` 复用统一 JSONL/ring recorder，输入标记为 decision（旧记录默认
-language model），state/questions 存入 input.options，能力快照存入 provider.profile，
+language model），state/questions 存入 input.options，能力声明存入 input.decision_capabilities，provider 仅保留身份，
 规范化结果存入 outcome.decision_result。每次 retry 分配独立 attempt，
 录制器快照跨 HTTP、取消和收尾保持一致。覆盖成功、错误、超时、取消、
 脱敏、无重复占位记录、严格匹配和 recorder 替换。
 `aimux-replay --mock` 支持标准 JSONL 的离线 decision 回放；不带 --mock
-时可重建官方 Jev 执行请求回放。
+时通过调用方 registry 配置重建官方 Jev 执行请求回放。
 
 官方字段覆盖、Provider 精度规则、全语言 capability 查询和宿主包装均已实现。
 其他官方决策接口
