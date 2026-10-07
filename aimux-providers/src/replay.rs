@@ -19,6 +19,29 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::provider_registry::ProviderRegistry;
 use aimux_core::recording::ProviderRecord;
 
+/// Rebuild a decision model using the caller's registered provider configuration.
+/// # Errors
+/// Rejects missing identities, missing providers and a different model provider.
+pub fn rebuild_decision_provider(
+    p: &ProviderRecord,
+    registry: &ProviderRegistry,
+) -> Result<Box<dyn aimux_core::DecisionModel>, AiMuxError> {
+    if p.provider_id.is_empty() || p.model_id.is_empty() {
+        return Err(AiMuxError::InvalidArgument(
+            "decision replay: empty provider/model identity".into(),
+        ));
+    }
+    let model = registry
+        .provider(&p.provider_id)?
+        .decision_model(&p.model_id)?;
+    if model.provider() != p.provider {
+        return Err(AiMuxError::InvalidArgument(
+            "decision replay: registered model provider differs from recording".into(),
+        ));
+    }
+    Ok(model)
+}
+
 /// 按 `ProviderRecord` 的 `provider_id` + `model_id` 重建 model。
 ///
 /// 使用调用方 registry 中的 provider 配置。

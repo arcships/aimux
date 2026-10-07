@@ -78,6 +78,7 @@ fn finish_call(recorder: &dyn Recorder, call_id: &str) {
             finish_reason: Some("stop".into()),
             error: None,
             error_value: None,
+            decision_result: None,
             usage: None,
         },
     );

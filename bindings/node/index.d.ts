@@ -32,6 +32,11 @@ export declare class AbortBridge {
   aborted(): boolean
 }
 
+export declare class DecisionModel {
+  capabilities(): AimuxResult<string>
+  decide(optsJson: string, bridge?: AbortBridge | undefined | null): Promise<string>
+}
+
 export declare class EmbeddingModel {
   /**
    * Generate embeddings. `values_json` is a JSON array of strings.
@@ -424,6 +429,9 @@ export declare function initSessionInfer(enabled: boolean): void
  * empty results.
  */
 export declare function initSessionStore(): void
+
+/** Create a Jev model; endpoint overrides the complete POST URL. */
+export declare function jevDecision(apiKey: string, modelId: string, endpoint?: string | undefined | null, probabilitySource?: string | undefined | null): Promise<AimuxResult<DecisionModel>>
 
 /** Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`. */
 export declare function listSessions(): AimuxResult<string>

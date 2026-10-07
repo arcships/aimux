@@ -341,6 +341,9 @@ pub fn create_binary_response_handler() -> ResponseHandler<Bytes> {
 }
 
 /// Parse an SSE response and deserialize each `data:` field as `T`.
+///
+/// Invalid JSON in a complete event remains a recoverable frame error. SSE
+/// decoding failures terminate the byte stream and are non-retryable API errors.
 #[must_use]
 pub fn create_event_source_response_handler<T>()
 -> ResponseHandler<BoxStream<'static, Result<T, AiMuxError>>>
@@ -395,7 +398,7 @@ where
                     Ok(event) => yield serde_json::from_str::<T>(&event.data).map_err(AiMuxError::from),
                     Err(aimux_stream::SseError::Stream(error)) => {
                         // Preserve response transport failures as ApiCallError
-                        // items. Framing/parser failures remain JsonParse below.
+                        // items, eligible for retry before output is emitted.
                         yield Err(AiMuxError::ApiCall(Box::new(ApiCallError {
                             response_headers: Some(stream_headers.clone()),
                             is_retryable: true,
@@ -407,7 +410,21 @@ where
                         })));
                         break;
                     }
-                    Err(error) => yield Err(AiMuxError::JsonParse(error.to_string())),
+                    Err(error) => {
+                        // The SSE decoder ends after this error. Reporting a
+                        // recoverable JsonParse would let providers treat that
+                        // EOF as success and flush incomplete output/tool calls.
+                        yield Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                            response_headers: Some(stream_headers.clone()),
+                            is_retryable: false,
+                            ..ApiCallError::new(
+                                error.to_string(),
+                                stream_url.clone(),
+                                stream_request_body_values.clone(),
+                            )
+                        })));
+                        break;
+                    }
                 }
             }
         });
