@@ -42,9 +42,8 @@ fn response() -> Value {
     example().outcome.decision_result.unwrap()["response"]["body"].clone()
 }
 fn model(server: &MockServer) -> Box<dyn DecisionModel> {
-    let mut config =
+    let config =
         JevConfig::new("live-key-secret").with_endpoint(format!("{}/v1/systemone", server.uri()));
-    config.retry_config.initial_delay = Duration::ZERO;
     JevProvider::new(config)
         .decision_model("jev-latest")
         .unwrap()

@@ -427,9 +427,6 @@ pub trait DecisionModel: Send + Sync {
     fn config_snapshot(&self) -> crate::recording::ProviderRecord {
         crate::recording::ProviderRecord::from_model(self.provider(), self.model_id())
     }
-    fn retry_config(&self) -> crate::retry::RetryConfig {
-        crate::retry::RetryConfig::default()
-    }
     /// Perform one provider attempt.
     /// # Errors
     /// Returns provider, transport or invalid response errors.
@@ -493,11 +490,7 @@ pub async fn decide(
     }
     let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
     let abort_signal = options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
     let context = crate::recording::recorder().map(|recorder| {
         let ctx =
             crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);

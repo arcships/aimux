@@ -22,7 +22,6 @@ pub struct JevConfig {
     /// Full POST URL for the official API, or an explicitly configured proxy.
     pub endpoint: String,
     pub headers: HashMap<String, String>,
-    pub retry_config: aimux_core::retry::RetryConfig,
     pub probability_source: DecisionProbabilitySource,
 }
 
@@ -33,7 +32,6 @@ impl JevConfig {
             api_key: api_key.into(),
             endpoint: "https://api.typesafe.ai/v1/systemone".into(),
             headers: HashMap::new(),
-            retry_config: Default::default(),
             probability_source: DecisionProbabilitySource::Native,
         }
     }
@@ -303,9 +301,6 @@ impl DecisionModel for JevDecisionModel {
     }
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
     fn capabilities(&self) -> DecisionCapabilities {
         DecisionCapabilities {

@@ -1,6 +1,5 @@
 //! Offline contract tests using official examples and recorded live responses.
 //! No live credentials or external requests are needed to replay them.
-use std::time::Duration;
 
 use aimux_core::decision_model::*;
 use aimux_core::{AiMuxError, Provider};
@@ -152,9 +151,7 @@ fn options() -> DecisionCallOptions {
 }
 
 fn model(server: &MockServer) -> Box<dyn DecisionModel> {
-    let mut config =
-        JevConfig::new("test-key").with_endpoint(format!("{}/v1/systemone", server.uri()));
-    config.retry_config.initial_delay = Duration::ZERO;
+    let config = JevConfig::new("test-key").with_endpoint(format!("{}/v1/systemone", server.uri()));
     JevProvider::new(config)
         .decision_model("jev-latest")
         .unwrap()
