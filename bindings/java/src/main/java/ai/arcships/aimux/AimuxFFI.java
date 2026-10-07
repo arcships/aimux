@@ -49,6 +49,11 @@ import java.util.Collections;
  * {@code LD_LIBRARY_PATH} (tests) or the JAR's {@code native/} directory.
  */
 public interface AimuxFFI extends Library {
+    Pointer aimux_jev_decision_new_with_probability_source(String apiKey, String modelId,
+        String endpoint, String probabilitySource, LongByReference outHandle);
+    Pointer aimux_decide_with_abort(long handle, String optsJson, long abortHandle, PointerByReference outJson);
+    Pointer aimux_decision_capabilities(long handle, PointerByReference outJson);
+
 
     AimuxFFI INSTANCE = Native.load("aimux_ffi", AimuxFFI.class,
         Collections.singletonMap(Library.OPTION_STRING_ENCODING, "UTF-8"));
