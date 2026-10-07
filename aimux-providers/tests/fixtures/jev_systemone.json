@@ -1,0 +1,41 @@
+{
+  "source": "Official TypeSafe quick-start response from https://docs.typesafe.ai/introduction/quickstart (2026-10-06), not a recorded live call",
+  "response": {
+    "model": "jev-1.13.0",
+    "answers": {
+      "department": {
+        "type": "choice",
+        "choice": "technical",
+        "confidence": 0.78,
+        "probabilities": {
+          "technical": 0.85,
+          "sales": 0.0,
+          "billing": 0.15
+        }
+      },
+      "frustration": {
+        "type": "score",
+        "score": 1.0,
+        "confidence": 1.0,
+        "legend": {
+          "0": "Calm, just stating facts",
+          "1": "Frustrated but civil",
+          "2": "Very angry, strong language"
+        },
+        "probabilities": {
+          "0": 0.0,
+          "1": 1.0,
+          "2": 0.0
+        }
+      },
+      "is_urgent": {
+        "type": "noul",
+        "noul": 1.0
+      }
+    },
+    "usage": {
+      "input_tokens": 392,
+      "output_tokens": 65
+    }
+  }
+}

@@ -41,7 +41,7 @@ pub use provider::{
     load_providers_from_json, provider, provider_from_env, provider_handle, provider_names,
     provider_registry_entry, register_provider,
 };
-pub use replay::rebuild_provider;
+pub use replay::{rebuild_decision_provider, rebuild_provider};
 
 pub mod catalogue;
 pub use catalogue::{Catalogue, get_model_specs};
@@ -52,6 +52,7 @@ pub mod azure;
 pub mod bedrock;
 pub mod cohere;
 pub mod google;
+pub mod jev;
 pub mod mistral;
 pub mod openai;
 pub mod vertex;
@@ -128,6 +129,7 @@ pub use google::{
     GoogleConfig, GoogleEmbeddingModel, GoogleImageModel, GoogleImageSettings, GoogleProvider,
     GoogleVideoModel,
 };
+pub use jev::{JevConfig, JevDecisionModel, JevProvider};
 pub use mistral::{MistralConfig, MistralEmbeddingModel, MistralProvider};
 pub use openai::{
     OpenAIConfig, OpenAIEmbeddingModel, OpenAIImageModel, OpenAIProvider, OpenAIResponsesModel,
