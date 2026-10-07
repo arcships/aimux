@@ -206,7 +206,10 @@ async fn official_contract_round_trip_preserves_types_and_raw_metadata() {
         result.response.as_ref().unwrap().body.as_ref().unwrap(),
         &fixture()
     );
-    assert_eq!(result.provider_metadata.as_ref().unwrap()["jev"], fixture());
+    assert_eq!(
+        Value::Object(result.provider_metadata.as_ref().unwrap()["jev"].clone()),
+        fixture()
+    );
     assert_eq!(
         result.response.as_ref().unwrap().headers.as_ref().unwrap()["x-request-id"],
         "test-request"

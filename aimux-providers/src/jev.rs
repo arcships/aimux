@@ -283,7 +283,12 @@ fn convert_response(
         probability_source: source,
         usage,
         latency_ms: None,
-        provider_metadata: Some(HashMap::from([("jev".into(), raw.clone())])),
+        provider_metadata: Some(HashMap::from([(
+            "jev".into(),
+            raw.as_object().cloned().ok_or_else(|| {
+                AiMuxError::InvalidResponseData("Jev response must be an object".into())
+            })?,
+        )])),
         response: Some(DecisionResponse {
             headers: Some(headers),
             body: Some(raw),
