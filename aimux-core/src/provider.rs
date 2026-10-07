@@ -47,6 +47,15 @@ use crate::video_model::VideoModel;
 /// whoever holds the registry, and each model reports its own
 /// [`LanguageModel::provider`] string.
 pub trait Provider: Send + Sync {
+    /// Create a typed decision model (aimux extension).
+    /// # Errors
+    /// Returns `UnsupportedFunctionality` when decisions are not offered.
+    fn decision_model(&self, _id: &str) -> Result<Box<dyn crate::DecisionModel>, AiMuxError> {
+        Err(AiMuxError::UnsupportedFunctionality(
+            "provider does not provide decision models".into(),
+        ))
+    }
+
     /// Create a language model by its id (e.g. `"gpt-4o"`).
     ///
     /// # Errors
@@ -146,6 +155,10 @@ pub trait ProviderDiscovery: Send + Sync {
 /// A reference to a provider is a provider, so a `&'static` default instance
 /// (`openai()`, `anthropic()`, ...) can be registered as it is.
 impl<P: Provider + ?Sized> Provider for &P {
+    fn decision_model(&self, id: &str) -> Result<Box<dyn crate::DecisionModel>, AiMuxError> {
+        (**self).decision_model(id)
+    }
+
     fn language_model(&self, id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
         (**self).language_model(id)
     }

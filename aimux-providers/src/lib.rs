@@ -148,7 +148,7 @@ macro_rules! __optional_model {
 pub mod provider;
 pub mod replay;
 pub use preset::{AuthMode, PresetDescriptor, PresetEntry, PresetSettings};
-pub use replay::rebuild_provider;
+pub use replay::{rebuild_decision_provider, rebuild_provider};
 
 pub mod catalogue;
 pub use catalogue::{Catalogue, get_model_specs};
@@ -162,6 +162,8 @@ pub mod deepseek;
 mod default_providers;
 pub mod google;
 pub mod groq;
+pub mod jev;
+pub use jev::{JevConfig, JevDecisionModel, JevProvider};
 pub mod mistral;
 pub mod openai;
 pub mod openai_compatible;
