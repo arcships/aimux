@@ -20,6 +20,8 @@
 mod abort_signal;
 pub mod composite;
 pub mod content;
+pub mod decision_model;
+mod decision_replay;
 pub(crate) mod download;
 #[doc(hidden)]
 pub mod download_guard;
@@ -65,6 +67,12 @@ pub mod prelude {
     pub use crate::abort_signal::AbortSignal;
     pub use crate::composite::ChildModel;
     pub use crate::content::ContentPart;
+    pub use crate::decision_model::{
+        DecisionAnswer, DecisionBooleanCriteria, DecisionCallOptions, DecisionCapabilities,
+        DecisionDescription, DecisionModel, DecisionOption, DecisionProbabilitySource,
+        DecisionQuestion, DecisionResponse, DecisionResult, DecisionRounding, DecisionState,
+        decide,
+    };
     pub use crate::embedding_model::{
         EmbeddingCallOptions, EmbeddingModel, EmbeddingResult, embed,
     };
@@ -140,6 +148,7 @@ pub mod prelude {
 
 // Root-level re-exports for convenience.
 pub use abort_signal::AbortSignal;
+pub use decision_model::DecisionModel;
 pub use embedding_model::EmbeddingModel;
 pub use error::{AiMuxError, ApiCallError, RetryError, RetryErrorReason};
 pub use files_model::Files;
