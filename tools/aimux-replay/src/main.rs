@@ -1,14 +1,15 @@
 //! aimux-replay — RFC-0023 请求回放 CLI(层 2 消费端)。
 //!
 //! 读录制 jsonl(每行一个 `Recording`),按 `ProviderRecord` 自动重建
-//! provider(OpenAI 兼容族),再用录制输入经 `replay_with_model` **重发真实
+//! provider(语言模型 OpenAI 兼容族、官方 TypeSafe Jev decision),再用录制输入 **重发真实
 //! API**。用途:离线重跑线上流量、改 prompt 重发(A/B)、回归对比、CI 集成。
 //!
 //! 安全:
 //! - `--dry-run` 只打印重建后的 provider/prompt/目标 URL,**不发请求、
 //!   不输出任何凭据**(api_key 来源按 `api_key_source` 打印)。
 //! - 重发会消耗真实 token/费用,文档(§3.6.1)已有警示。
-//! - 原生协议 provider(anthropic/google/...)`rebuild_provider` 明确
+//! - `--mock` 使用统一录制的响应离线回放；decision 使用规范化结果。
+//! - 其他原生语言协议 provider(anthropic/google/...)`rebuild_provider` 明确
 //!   `Unsupported`——CLI 打印错误并跳过,需自行传 model 实例走库 API。
 
 use std::path::PathBuf;
@@ -43,6 +44,9 @@ struct Cli {
     /// dry-run:打印重建后的 provider/prompt/目标 URL,不发请求、不输出凭据。
     #[arg(long)]
     dry_run: bool,
+    /// Replay recorded responses offline instead of sending a live request.
+    #[arg(long)]
+    mock: bool,
 }
 
 fn main() -> Result<()> {
@@ -59,7 +63,7 @@ fn main() -> Result<()> {
         let result = if cli.dry_run {
             run_dry(rec)
         } else {
-            run_replay(rec, cli.api_key.as_deref(), cli.prompt.as_deref())
+            run_replay(rec, cli.api_key.as_deref(), cli.prompt.as_deref(), cli.mock)
         };
         match result {
             Ok(()) => {}
@@ -108,9 +112,18 @@ fn run_dry(rec: &Recording) -> Result<()> {
         rec.provider.base_url.as_deref().unwrap_or("(default)")
     );
     println!("  api_key_source: {}", rec.provider.api_key_source);
-    println!("  prompt: {} message(s)", rec.input.prompt.len());
-    if let Some(text) = rec.input.prompt.first().and_then(prompt_text) {
-        println!("  first message: {text:?}");
+    if rec.input.operation == aimux_core::recording::RecordingOperation::Decision {
+        println!(
+            "  decision: {} question(s)",
+            rec.input.options["questions"]
+                .as_array()
+                .map_or(0, Vec::len)
+        );
+    } else {
+        println!("  prompt: {} message(s)", rec.input.prompt.len());
+        if let Some(text) = rec.input.prompt.first().and_then(prompt_text) {
+            println!("  first message: {text:?}");
+        }
     }
     println!("  (dry-run — no request sent)");
     Ok(())
@@ -133,9 +146,50 @@ fn prompt_text(m: &LanguageModelMessage) -> Option<String> {
 }
 
 /// 真实回放:重建 provider → replay_with_model → 打印结果。
-fn run_replay(rec: &Recording, api_key: Option<&str>, prompt: Option<&str>) -> Result<()> {
-    let model = rebuild_provider(&rec.provider, api_key)
-        .with_context(|| format!("rebuild provider for '{}'", rec.provider.provider))?;
+fn run_replay(
+    rec: &Recording,
+    api_key: Option<&str>,
+    prompt: Option<&str>,
+    mock: bool,
+) -> Result<()> {
+    if rec.input.operation == aimux_core::recording::RecordingOperation::Decision {
+        if prompt.is_some() {
+            bail!(
+                "--prompt applies to language recordings; decision replay preserves state/questions"
+            );
+        }
+        let model: Box<dyn aimux_core::decision_model::DecisionModel> = if mock {
+            Box::new(aimux_core::replay::MockDecisionReplayModel::new(
+                &rec.provider.provider,
+                &rec.provider.model_id,
+                vec![rec.clone()],
+            )?)
+        } else {
+            aimux_providers::rebuild_decision_provider(&rec.provider, api_key)?
+        };
+        let result = Runtime::new()?.block_on(aimux_core::replay::replay_decision_with_model(
+            rec,
+            model.as_ref(),
+        ))?;
+        println!(
+            "[{}] {} / {} → {}",
+            rec.call_id,
+            result.provider,
+            result.model,
+            serde_json::to_string(&result.answers)?
+        );
+        return Ok(());
+    }
+    let model: Box<dyn aimux_core::LanguageModel> = if mock {
+        Box::new(aimux_core::replay::MockReplayModel::new(
+            &rec.provider.provider,
+            &rec.provider.model_id,
+            vec![rec.clone()],
+        ))
+    } else {
+        rebuild_provider(&rec.provider, api_key)
+            .with_context(|| format!("rebuild provider for '{}'", rec.provider.provider))?
+    };
 
     let overrides = prompt.map(|text| ReplayOverrides {
         prompt: Some(vec![LanguageModelMessage::user_text(text)]),

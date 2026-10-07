@@ -83,6 +83,8 @@ from .aimux import (
     google_image,
     google_video,
     tavily_search,
+    DecisionModel,
+    jev_decision,
 )
 
 __all__ = [
@@ -158,6 +160,10 @@ __all__ = [
     "google_image",
     "google_video",
     "tavily_search",
+    "DecisionModel",
+    "jev_decision",
+    "decision_capabilities",
+    "decide",
     "RepairToolCall",
     "generate_text",
     "generate_object",
@@ -166,6 +172,18 @@ __all__ = [
     "generate_text_as_openai",
     "stream_text_as_openai",
 ]
+
+
+def decision_capabilities(model: DecisionModel) -> Dict[str, Any]:
+    """Query question support, limits and rounding precision without HTTP."""
+    return json.loads(model.capabilities())
+
+
+def decide(model: DecisionModel, state: Any, questions: List[Dict[str, Any]],
+           **options: Any) -> Dict[str, Any]:
+    """Answer typed questions over shared state; Boolean returns P(true)."""
+    payload = dict(options, state=state, questions=questions)
+    return json.loads(model.decide(json.dumps(payload)))
 
 
 def session_calls(session_id: str) -> List[Dict[str, Any]]:

@@ -35,6 +35,7 @@ fn main() {
         call_id: "call-fixture-1".into(),
         recorded_at: "2026-08-14T00:00:00.000Z".into(),
         input: InputRecord {
+            operation: Default::default(),
             prompt: prompt.clone(),
             options: serde_json::to_value(&options).unwrap(),
         },
@@ -75,6 +76,7 @@ fn main() {
             finish_reason: Some("stop".into()),
             error: None,
             error_value: None,
+            decision_result: None,
             usage: Some(serde_json::json!({
                 "input_tokens": { "total": 12, "cache_read": 0 },
                 "output_tokens": { "total": 5 }

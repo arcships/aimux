@@ -1,6 +1,6 @@
 //! RFC-0023: 调用上下文录制(P1 — 数据模型 + Recorder trait + 门控 + JsonlRecorder)。
 //!
-//! 录制一次 `generate_text`/`stream_text` 调用的三层完整上下文:
+//! 录制一次 `generate_text`/`stream_text`/`decide` 调用的三层完整上下文:
 //! ① 输入侧(prompt + options)、② 配置侧(provider 身份)、③ HTTP 侧(wire 交换)。
 //!
 //! 关键性质(按 2026-08-06 定稿):
@@ -30,6 +30,22 @@ use ts_rs::TS;
 
 /// 录制格式版本(用于未来字段迁移与绑定层兼容)。
 pub const RECORDING_SCHEMA: u32 = 2;
+
+/// Operation stored in a unified recording. Older recordings are language calls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum RecordingOperation {
+    #[default]
+    LanguageModel,
+    Decision,
+}
+
+impl RecordingOperation {
+    fn is_language_model(&self) -> bool {
+        *self == Self::LanguageModel
+    }
+}
 
 /// 一次完整调用的录制记录(三层 + call_id 关联)。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -100,10 +116,16 @@ impl Recording {
     /// 权衡:合法的空 prompt 调用(`prompt: Vec::new()`)与"input 丢失"在此
     /// 不可区分,会落到 shutdown 兜底以 incomplete 写出——取证失真远轻于
     /// 反向错误(空占位被标 complete),可接受。
+    /// Decision input uses its explicit operation marker and question array;
+    /// it does not fabricate a language prompt to satisfy this barrier.
     fn ready(&self) -> bool {
         self.transport_closed
             && self.outcome.status != OutcomeStatus::Pending
-            && !self.input.prompt.is_empty()
+            && (!self.input.prompt.is_empty()
+                || (self.input.operation == RecordingOperation::Decision
+                    && self.input.options["questions"]
+                        .as_array()
+                        .is_some_and(|q| !q.is_empty())))
             && self.exchanges.iter().all(|e| e.finalized)
     }
 }
@@ -112,6 +134,8 @@ impl Recording {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct InputRecord {
+    #[serde(default, skip_serializing_if = "RecordingOperation::is_language_model")]
+    pub operation: RecordingOperation,
     /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
     pub prompt: LanguageModelPrompt,
     /// 序列化的 CallOptions(abort_signal/call_id 已 serde skip);
@@ -125,8 +149,18 @@ impl InputRecord {
     pub fn from_call_options(options: &CallOptions) -> Self {
         let value = serde_json::to_value(options).unwrap_or(serde_json::Value::Null);
         Self {
+            operation: RecordingOperation::LanguageModel,
             prompt: options.prompt.clone(),
             options: redact_json(value),
+        }
+    }
+
+    #[must_use]
+    pub fn from_decision_options(options: &crate::decision_model::DecisionCallOptions) -> Self {
+        Self {
+            operation: RecordingOperation::Decision,
+            prompt: Vec::new(),
+            options: redact_json(serde_json::to_value(options).unwrap_or_default()),
         }
     }
 }
@@ -249,6 +283,9 @@ pub enum OutcomeStatus {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct OutcomeRecord {
+    /// Normalized decision result, independent of a provider's wire format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_result: Option<serde_json::Value>,
     pub status: OutcomeStatus,
     pub finish_reason: Option<String>,
     pub error: Option<String>,
@@ -261,6 +298,12 @@ pub struct OutcomeRecord {
 }
 
 impl OutcomeRecord {
+    fn redacted(&self) -> Self {
+        let mut outcome = self.clone();
+        outcome.decision_result = outcome.decision_result.map(redact_json);
+        outcome.error_value = outcome.error_value.map(redact_json);
+        outcome
+    }
     /// 非流式成功。
     #[must_use]
     pub fn from_generate_result(r: &crate::result::GenerateResult) -> Self {
@@ -271,6 +314,7 @@ impl OutcomeRecord {
                 .and_then(|v| v.as_str().map(std::string::ToString::to_string)),
             error: None,
             error_value: None,
+            decision_result: None,
             usage: serde_json::to_value(&r.usage).ok(),
         }
     }
@@ -283,6 +327,7 @@ impl OutcomeRecord {
             finish_reason: None,
             error: Some(e.to_string()),
             error_value: serde_json::to_value(e).ok(),
+            decision_result: None,
             usage: None,
         }
     }
@@ -332,6 +377,16 @@ pub enum RecordingError {
 pub trait Recorder: Send + Sync {
     /// 录制输入侧 + 配置侧最小信息(层 A 入口调用)。
     fn record_input(&self, call_id: &str, options: &CallOptions, provider: &str, model_id: &str);
+    /// Custom recorders can opt into decision input capture. Built-in recorders
+    /// store it in the same Input event and completion barrier as language calls.
+    fn record_decision_input(
+        &self,
+        _call_id: &str,
+        _options: &crate::decision_model::DecisionCallOptions,
+        _provider: &str,
+        _model_id: &str,
+    ) {
+    }
     /// 录制会话归组信息(RFC-0024 P3):session_id + 会话内步号。
     ///
     /// 默认空实现(不参与录制的 Recorder 无需关心);开启录制且调用被归组
@@ -762,6 +817,19 @@ impl Drop for JsonlRecorder {
 }
 
 impl Recorder for JsonlRecorder {
+    fn record_decision_input(
+        &self,
+        call_id: &str,
+        options: &crate::decision_model::DecisionCallOptions,
+        provider: &str,
+        model_id: &str,
+    ) {
+        self.send_ev(RecordEvent::Input {
+            call_id: call_id.to_owned(),
+            input: InputRecord::from_decision_options(options),
+            provider: ProviderRecord::minimal(provider, model_id),
+        });
+    }
     fn record_input(&self, call_id: &str, options: &CallOptions, provider: &str, model_id: &str) {
         self.send_ev(RecordEvent::Input {
             call_id: call_id.to_string(),
@@ -817,7 +885,7 @@ impl Recorder for JsonlRecorder {
     fn record_outcome(&self, call_id: &str, outcome: &OutcomeRecord) {
         self.send_ev(RecordEvent::Outcome {
             call_id: call_id.to_string(),
-            outcome: outcome.clone(),
+            outcome: outcome.redacted(),
         });
     }
 
@@ -847,6 +915,7 @@ fn entry_or_init<'a>(
         Recording::new(
             call_id,
             InputRecord {
+                operation: Default::default(),
                 prompt: Vec::new(),
                 options: serde_json::Value::Null,
             },
@@ -1318,6 +1387,7 @@ impl RingInner {
                 Recording::new(
                     call_id,
                     InputRecord {
+                        operation: Default::default(),
                         prompt: Vec::new(),
                         options: serde_json::Value::Null,
                     },
@@ -1388,6 +1458,20 @@ impl Default for RingRecorder {
 }
 
 impl Recorder for RingRecorder {
+    fn record_decision_input(
+        &self,
+        call_id: &str,
+        options: &crate::decision_model::DecisionCallOptions,
+        provider: &str,
+        model_id: &str,
+    ) {
+        let mut inner = self.inner.lock().unwrap();
+        let rec = inner.entry_or_init_bounded(call_id);
+        rec.input = InputRecord::from_decision_options(options);
+        if rec.provider.provider.is_empty() {
+            rec.provider = ProviderRecord::minimal(provider, model_id);
+        }
+    }
     fn record_input(&self, call_id: &str, options: &CallOptions, provider: &str, model_id: &str) {
         let mut inner = self.inner.lock().unwrap();
         // C4-6 + A3:有界建条目;Input 仅在 provider 仍为空占位时填最小 provider,
@@ -1450,7 +1534,7 @@ impl Recorder for RingRecorder {
 
     fn record_outcome(&self, call_id: &str, outcome: &OutcomeRecord) {
         let mut inner = self.inner.lock().unwrap();
-        inner.entry_or_init_bounded(call_id).outcome = outcome.clone();
+        inner.entry_or_init_bounded(call_id).outcome = outcome.redacted();
         inner.finalize(call_id);
     }
 
@@ -1576,6 +1660,7 @@ where
                                     .and_then(|v| v.as_str().map(std::string::ToString::to_string)),
                                 error: None,
                                 error_value: None,
+                                decision_result: None,
                                 usage: serde_json::to_value(usage).ok(),
                             };
                             this.record(&outcome);
@@ -1589,6 +1674,7 @@ where
                                 finish_reason: None,
                                 error: Some(error.to_string()),
                                 error_value: serde_json::to_value(error).ok(),
+                                decision_result: None,
                                 usage: None,
                             });
                         }
@@ -1605,6 +1691,7 @@ where
                             finish_reason: None,
                             error: Some(e.to_string()),
                             error_value: serde_json::to_value(&e).ok(),
+                            decision_result: None,
                             usage: None,
                         });
                     }
@@ -1617,6 +1704,7 @@ where
                         finish_reason: None,
                         error: Some(e.to_string()),
                         error_value: serde_json::to_value(&e).ok(),
+                        decision_result: None,
                         usage: None,
                     };
                     this.record(&outcome);
@@ -1630,6 +1718,7 @@ where
                         finish_reason: None,
                         error: None,
                         error_value: None,
+                        decision_result: None,
                         usage: None,
                     };
                     this.record(&outcome);
@@ -1649,6 +1738,7 @@ impl<S> Drop for RecordingOutcomeStream<S> {
                 finish_reason: None,
                 error: None,
                 error_value: None,
+                decision_result: None,
                 usage: None,
             };
             self.record(&outcome);
@@ -1913,6 +2003,7 @@ mod tests {
                 finish_reason: Some("stop".into()),
                 error: None,
                 error_value: None,
+                decision_result: None,
                 usage: None,
             },
         );
@@ -1938,6 +2029,7 @@ mod tests {
         let mut rec = Recording::new(
             "call-x",
             InputRecord {
+                operation: Default::default(),
                 prompt: Vec::new(),
                 options: serde_json::Value::Null,
             },
@@ -1949,6 +2041,7 @@ mod tests {
             finish_reason: Some("stop".into()),
             error: None,
             error_value: None,
+            decision_result: None,
             usage: None,
         };
         assert!(!rec.ready(), "empty-prompt placeholder must not finalize");
@@ -1970,6 +2063,7 @@ mod tests {
                 finish_reason: Some("stop".into()),
                 error: None,
                 error_value: None,
+                decision_result: None,
                 usage: None,
             },
         );
@@ -2028,6 +2122,7 @@ mod tests {
                 finish_reason: Some("stop".into()),
                 error: None,
                 error_value: None,
+                decision_result: None,
                 usage: None,
             },
         })
@@ -2067,6 +2162,7 @@ mod tests {
                 finish_reason: Some("stop".into()),
                 error: None,
                 error_value: None,
+                decision_result: None,
                 usage: None,
             },
         );
@@ -2157,6 +2253,7 @@ mod tests {
                 finish_reason: None,
                 error: None,
                 error_value: None,
+                decision_result: None,
                 usage: None,
             },
         );
@@ -2227,6 +2324,7 @@ mod tests {
                 finish_reason: None,
                 error: Some("mid-stream".into()),
                 error_value: None,
+                decision_result: None,
                 usage: None,
             },
         );
@@ -2273,6 +2371,7 @@ mod tests {
                 finish_reason: None,
                 error: None,
                 error_value: None,
+                decision_result: None,
                 usage: None,
             },
         );
@@ -2353,6 +2452,7 @@ mod tests {
             finish_reason: Some("stop".into()),
             error: None,
             error_value: None,
+            decision_result: None,
             usage: None,
         }
     }
@@ -2714,6 +2814,7 @@ mod tests {
         Recording::new(
             call_id,
             InputRecord {
+                operation: Default::default(),
                 prompt: Vec::new(),
                 options: serde_json::Value::Null,
             },

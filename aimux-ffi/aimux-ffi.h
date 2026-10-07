@@ -585,6 +585,22 @@ aimux_error_t *aimux_tavily_search_new_with_base(const char *api_key, const char
    query — not just options); NULL or empty is a C ABI failure. */
 aimux_error_t *aimux_search(uint64_t handle, const char *opts_json, char **out_json);
 
+/* Typed decisions. endpoint is NULL for hosted Jev, or a complete POST URL.
+ * opts_json requires state and questions (array of tagged questions with IDs).
+ * Free model handles with aimux_drop_handle and results with aimux_free_string.
+ * abort_handle=0 means no caller cancellation. */
+aimux_error_t *aimux_jev_decision_new(const char *api_key, const char *model_id,
+                                    const char *endpoint, uint64_t *out_handle);
+/* probability_source: native, logit_scoring, model_estimate; NULL uses native. */
+aimux_error_t *aimux_jev_decision_new_with_probability_source(
+    const char *api_key, const char *model_id, const char *endpoint,
+    const char *probability_source, uint64_t *out_handle);
+aimux_error_t *aimux_decide(uint64_t handle, const char *opts_json, char **out_json);
+/* Owned DecisionCapabilities JSON; no network request. */
+aimux_error_t *aimux_decision_capabilities(uint64_t handle, char **out_json);
+aimux_error_t *aimux_decide_with_abort(uint64_t handle, const char *opts_json,
+                                     uint64_t abort_handle, char **out_json);
+
 /* Codex (RFC-0018) */
 
 /* [AiMuxError] Refresh a Codex subscription access token (stateless OAuth
