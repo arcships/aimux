@@ -143,8 +143,8 @@ pub enum GeneratedFileData {
 /// `resolution` options. Aligned with the TS template-literal type
 /// `` `${number}x${number}` ``.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[serde(into = "String", try_from = "String")]
+#[ts(export, type = "`${number}x${number}`")]
 pub struct Size {
     width: u32,
     height: u32,
@@ -195,6 +195,19 @@ impl std::fmt::Display for Size {
     }
 }
 
+impl From<Size> for String {
+    fn from(value: Size) -> Self {
+        value.to_string()
+    }
+}
+
+impl TryFrom<String> for Size {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(&value)
+    }
+}
+
 impl std::str::FromStr for Size {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -208,8 +221,8 @@ impl std::str::FromStr for Size {
 /// `aspectRatio` options. Aligned with the TS template-literal type
 /// `` `${number}:${number}` ``.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[serde(into = "String", try_from = "String")]
+#[ts(export, type = "`${number}:${number}`")]
 pub struct AspectRatio {
     width: u32,
     height: u32,
@@ -258,6 +271,19 @@ impl AspectRatio {
 impl std::fmt::Display for AspectRatio {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.width, self.height)
+    }
+}
+
+impl From<AspectRatio> for String {
+    fn from(value: AspectRatio) -> Self {
+        value.to_string()
+    }
+}
+
+impl TryFrom<String> for AspectRatio {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(&value)
     }
 }
 

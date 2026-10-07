@@ -7,4 +7,4 @@
  * `resolution` options. Aligned with the TS template-literal type
  * `` `${number}x${number}` ``.
  */
-export type Size = { width: number, height: number, };
+export type Size = `${number}x${number}`;
