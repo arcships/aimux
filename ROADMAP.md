@@ -31,7 +31,7 @@ aimux 是 **provider 接入与治理的运行时**：
 ├─ E 轨 内部清理（#164 已合入，改为 master 上独立 PR）+ 文档三层重组
 │
 ├── 新增（RFC-0036）：L0 native passthrough | ops 协议 schema | stdio CLI | 性能门禁 P
-├── 独立项：#185 ToolInput 类型化（tracker 改为对齐上游并移入 provider-utils，见 #204（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)））
+├── 独立项：#185 ToolInput 类型化 + tracker 对齐上游并移入 provider-utils（#204）；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)
 ├── 独立项：#170 registry 维护自动化 → #171 triage（前半：27 个 base_url 分歧）
 └── 小项（随时插空）：#181 session 后续 | #180 cache probe §10
 
@@ -50,9 +50,9 @@ aimux 是 **provider 接入与治理的运行时**：
 | **P** | 性能回归门禁：单请求开销、流式吞吐、RSS 增长 |
 | A2–A5 | 删 `ProviderName` 枚举及各语言副本；归档 `provider-inventory/`；aimux-web 类型副本；Flutter example 桌面脚手架 |
 | E1 | 内部清理 + 文档三层重组 |
-| #185 | `ToolInput{Raw,Parsed}`；tracker 不删，改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils（#204（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）） |
+| #185 | `ToolInput{Raw,Parsed}`；tracker 不删，改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils（#204）；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系) |
 | #170 / #171 前半 | sync/probe 脚本 + scheduled Action；27 个 base_url 分歧 triage |
-| **B1 + C2** | 解锁项：protocol 列 + `from_resolved`；40 个 FFI 构造器转发 shim |
+| **B1 + C2** | 解锁项：protocol 列 + `from_resolved`；40 个 FFI 构造器转发 shim（B1 形式由 descriptor 数据源 + `create_xxx` 工厂替代，C2 shim 已取消；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | **ops 协议 schema** | op 表、消息与错误信封、二进制帧、版本协商——先以文档 + 测试落地（RFC-0036 §4） |
 | **L0 passthrough** | 原样调用任意 provider 端点，享受 auth / 重试 / 录制 |
 
@@ -83,7 +83,7 @@ aimux 是 **provider 接入与治理的运行时**：
 | D8 | 类型镜像生成：serde → JSON Schema → 各语言，`--check` 门禁扩到全部输出 |
 | P | stdio 入口往返开销纳入性能门禁 |
 
-版本语义：新 ABI 加入，旧导出并存（#166 要求共存至少一个 minor 版本）；绑定按各自节奏迁移。此处的“旧导出”指全链路对齐切换后的 C ABI；该切换本身不提供共存期，C2 转发 shim 与 C4 旧导出清理随之取消（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）。
+版本语义：新 ABI 加入，旧导出并存（#166 要求共存至少一个 minor 版本）；绑定按各自节奏迁移。“共存至少一个 minor”不再作为承诺：全链路对齐切换本身没有共存期，之后 ops ABI 引入时的旧符号也按切换门一次替换；C2 转发 shim 与 C4 旧导出清理随之取消（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）。
 
 ### 0.9.0 ——「治理」（~3-4 周）
 
