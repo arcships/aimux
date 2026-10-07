@@ -11,7 +11,7 @@ description and structured Score levels. Each exercises Boolean, Choice and
 Score. Inputs are synthetic test data. Authorization is automatically redacted.
 
 These replace the earlier manually collected JSON fixture. Standard Recording
-schema 2 includes the actual HTTP exchange, timing, capability snapshot and
+The recording includes the actual HTTP exchange, timing, capability snapshot and
 normalized result. Offline provider tests replay the wire exchange via the
 shared replay helper; Core and the CLI replay the normalized result.
 
