@@ -10,8 +10,10 @@
 //! - `streamText` returns an AsyncGenerator yielding StreamPart JSON strings.
 //! - The TS wrapper layer (index.ts) parses JSON into typed objects.
 
+mod decision;
 mod error;
 mod multimodal;
+pub use decision::*;
 pub use multimodal::*;
 
 use std::future::Future;
@@ -65,14 +67,27 @@ pub struct AbortBridge {
 
 #[napi]
 impl AbortBridge {
-    #[napi(constructor)]
-    pub fn new(signal: napi::bindgen_prelude::AbortSignal) -> Self {
+    #[napi(constructor, ts_args_type = "signal: AbortSignal")]
+    pub fn new(env: napi::Env, signal: napi::bindgen_prelude::Object<'_>) -> napi::Result<Self> {
+        use napi::bindgen_prelude::FromNapiValue;
+
+        // napi's on_abort only observes future events. Read the original JS
+        // state before conversion so a previously aborted signal cancels too.
+        let already_aborted = signal.get::<bool>("aborted")?.unwrap_or(false);
+        // SAFETY: signal belongs to this callback's environment and remains
+        // live during conversion; napi validates and registers its own payload.
+        let signal = unsafe {
+            napi::bindgen_prelude::AbortSignal::from_napi_value(env.raw(), signal.raw())?
+        };
         let core = aimux_core::AbortSignal::new();
         let watcher = core.clone();
         signal.on_abort(move || watcher.abort());
-        Self {
-            signal: Arc::new(core),
+        if already_aborted {
+            core.abort();
         }
+        Ok(Self {
+            signal: Arc::new(core),
+        })
     }
 
     /// Returns `true` once the underlying JS signal has been aborted.

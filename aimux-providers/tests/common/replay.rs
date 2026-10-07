@@ -87,6 +87,58 @@ use serde_json::Value;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
+/// Replay the ordered HTTP exchanges of a unified runtime Recording. Request
+/// paths, methods and JSON bodies must match; redacted credentials are ignored.
+#[allow(dead_code)]
+pub async fn mount_recording(server: &MockServer, recording: &aimux_core::recording::Recording) {
+    struct RecordedExchanges {
+        exchanges: Vec<aimux_core::recording::HttpExchange>,
+        next: std::sync::atomic::AtomicUsize,
+    }
+    impl Respond for RecordedExchanges {
+        fn respond(&self, request: &Request) -> ResponseTemplate {
+            use std::sync::atomic::Ordering;
+            let index = self.next.load(Ordering::SeqCst);
+            let Some(exchange) = self.exchanges.get(index) else {
+                return ResponseTemplate::new(409);
+            };
+            let url = reqwest::Url::parse(&exchange.request.url).unwrap();
+            let expected: Value =
+                serde_json::from_str(exchange.request.body.as_deref().unwrap_or("null")).unwrap();
+            if request.method.as_str() != exchange.request.method
+                || request.url.path() != url.path()
+                || request.url.query() != url.query()
+                || serde_json::from_slice::<Value>(&request.body).ok().as_ref() != Some(&expected)
+            {
+                return ResponseTemplate::new(400);
+            }
+            self.next.fetch_add(1, Ordering::SeqCst);
+            let response = exchange
+                .response
+                .as_ref()
+                .expect("HTTP responses checked at mount");
+            let mut template = ResponseTemplate::new(response.status)
+                .set_body_string(response.body.clone().unwrap_or_default());
+            for (name, value) in &response.headers {
+                template = template.insert_header(name.as_str(), value.as_str());
+            }
+            template
+        }
+    }
+    assert!(recording.complete, "cannot replay an incomplete recording");
+    assert!(
+        recording.exchanges.iter().all(|e| e.response.is_some()),
+        "wire replay requires HTTP responses; replay transport failures through the normalized result/error"
+    );
+    Mock::given(wiremock::matchers::any())
+        .respond_with(RecordedExchanges {
+            exchanges: recording.exchanges.clone(),
+            next: std::sync::atomic::AtomicUsize::new(0),
+        })
+        .mount(server)
+        .await;
+}
+
 // ─── public API ─────────────────────────────────────────────────────────────
 
 /// Load every `*.json` cassette in `dir` (non-recursive) and mount them on

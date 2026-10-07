@@ -97,27 +97,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Rust (aimux-stream)**
 
-- `SseStream` is now a thin adapter over the `sse-stream` crate (WHATWG
-  event-stream parsing), mirroring how the AI SDK's `parseJsonEventStream`
-  wraps `eventsource-parser`: `\n`, `\r` and `\r\n` line endings in any
-  mix, a leading UTF-8 BOM is stripped, a field line without `:` counts as an
-  empty value, an empty `event:` is `None`, an `id` containing U+0000 is
-  ignored, `retry` must be all ASCII digits, and a block is dispatched only
-  when it had a `data` line. There is no event size limit any more (as
-  upstream): `with_max_event_size` and `SseError::FrameTooLarge` are gone,
-  which fixes streams carrying multi-megabyte events (OpenAI Responses and
-  Gemini image generation). `SseError::Stream` carries the transport error
-  as its source instead of a `String`; `SseError::Utf8` holds a
-  `str::Utf8Error`; `SseError::Decode` is added. Decoder errors (invalid
-  UTF-8, transport failure) now end the stream after being reported.
-  `SseStream` requires the body error type to implement `std::error::Error +
-  Send + Sync + 'static`.
-- Removed `NdjsonStream` / `NdjsonError`: nothing in the workspace used them
-  and the AI SDK has no counterpart. `tokio` is now a dev-dependency only and
-  the unused direct `serde` dependency is dropped.
-
-**Rust (aimux-stream)**
-
 - `StreamingToolCallTracker`, `ToolCallStreamPart` and `TrackerError` are no
   longer exported from `aimux-stream`; nothing in the workspace used them and
   the AI SDK keeps the tracker in `@ai-sdk/provider-utils`, next to the
@@ -154,6 +133,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Rust (provider factory, RFC-0036)**
 
+- The native Decision/Jev extension from master is retained. Its typed
+  `JevConfig` / `JevProvider::new` entry point and `Provider::decision_model`
+  remain available. Decision replay now takes the caller's registry;
+  recordings contain provider identity only and keep decision capabilities
+  separately under input. Decision retries use the core call-level policy.
+
 - `OpenAIProvider::language_model(id)` (and so `create_provider("openai", ..)`
   and the registry id `openai:<model>`) returns the **Responses** model, as
   `@ai-sdk/openai` does. It returned the Chat Completions model. Call
@@ -187,13 +172,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `NoSuchModel { model_id, model_type }` when a vendor has no such modality;
   `transcription_model`, `speech_model`, `reranking_model` and `files` are
   optional (`None` = not offered); video and search stay aimux extensions.
-  Every constructor returns an `Arc<dyn …>`. Removed: `Provider::name()`,
+  AI SDK model constructors return an `Arc<dyn …>`. Removed: `Provider::name()`,
   `specification_version()` (from `Provider` and the nine model traits),
   `LanguageModel::config_snapshot()` and `list_models` on `Provider`.
   Discovery is the separate `ProviderDiscovery` trait, accessed through
   `Provider::discovery()`; `supported_urls()` is added to `LanguageModel`.
-- Every `XxxConfig`, config builder, `from_env()`, `with_*` method and
-  `XxxProvider::new(...)` is gone, in every provider package. Each package
+- AI SDK-aligned packages remove `XxxConfig`, config builders, `from_env()`,
+  `with_*` methods and `XxxProvider::new(...)`. Each package
   has package-specific `XxxProviderSettings`, `create_xxx(settings)`
   (validating package-specific settings, including base URLs, conflicting
   credentials and template parameters) and a default instance `xxx()` where
@@ -383,6 +368,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   have been silently ignored). The provider `config_json` helpers
   (`ProviderConfig` in Go and Dart) drop `max_retries` / `body_overrides` and
   gain `params`; call-level `max_retries` is unchanged.
+
+**Rust (aimux-stream)**
+
+- `SseStream` is now a thin adapter over the `sse-stream` crate (WHATWG
+  event-stream parsing), mirroring how the AI SDK's `parseJsonEventStream`
+  wraps `eventsource-parser`: `\n`, `\r` and `\r\n` line endings in any
+  mix, a leading UTF-8 BOM is stripped, a field line without `:` counts as an
+  empty value, an empty `event:` is `None`, an `id` containing U+0000 is
+  ignored, `retry` must be all ASCII digits, and a block is dispatched only
+  when it had a `data` line. There is no event size limit any more (as
+  upstream): `with_max_event_size` and `SseError::FrameTooLarge` are gone,
+  which fixes streams carrying multi-megabyte events (OpenAI Responses and
+  Gemini image generation). `SseError::Stream` carries the transport error
+  as its source instead of a `String`; `SseError::Utf8` holds a
+  `str::Utf8Error`; `SseError::Decode` is added. Decoder errors (invalid
+  UTF-8, transport failure) now end the stream after being reported.
+  The response handler propagates terminal SSE decoding failures as
+  non-retryable `ApiCall` errors, preventing a normal finish or tool-call
+  finalization after truncated input. Invalid JSON inside an otherwise valid
+  SSE event remains a recoverable `JsonParse` error.
+  `SseStream` requires the body error type to implement `std::error::Error +
+  Send + Sync + 'static`.
+- Removed `NdjsonStream` / `NdjsonError`: nothing in the workspace used them
+  and the AI SDK has no counterpart. `tokio` is now a dev-dependency only and
+  the unused direct `serde` dependency is dropped.
 
 ## [0.5.0] - 2026-09-27
 

@@ -30,6 +30,8 @@ use crate::stream_part::StreamPart;
 use crate::tool::RawToolCall;
 use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
+pub use crate::decision_replay::{MockDecisionReplayModel, replay_decision_with_model};
+
 // ── 匹配策略 ────────────────────────────────────────────────────────────────
 
 /// 可插拔匹配策略:从录制集中选一次命中。
@@ -80,7 +82,8 @@ impl ReplayMatcher for ExactMatcher {
         recordings
             .iter()
             .find(|r| {
-                r.provider.provider == self.provider
+                r.input.operation == crate::recording::RecordingOperation::LanguageModel
+                    && r.provider.provider == self.provider
                     && r.provider.model_id == self.model_id
                     && canonical_keys_match(&canonical_recording_key(r), &needle)
             })
@@ -141,7 +144,7 @@ fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
 ///
 /// 注意:通配**仅对录制侧** `"[REDACTED]"` 生效——请求侧恰好等于 `"[REDACTED]"`
 /// 的字面值不触发通配(仍走精确比较),因为只有录制脱敏路径会产生该哨兵。
-fn redaction_aware_eq(rec: &serde_json::Value, req: &serde_json::Value) -> bool {
+pub(crate) fn redaction_aware_eq(rec: &serde_json::Value, req: &serde_json::Value) -> bool {
     // 1. 录制侧脱敏通配:匹配任意显式(非 null)请求值。
     if rec.as_str() == Some("[REDACTED]") {
         return !req.is_null();
@@ -226,7 +229,10 @@ impl ReplayMatcher for ScoreMatcher {
     ) -> Result<&'a Recording, AiMuxError> {
         let mut best: Option<(&Recording, u64)> = None;
         for r in recordings {
-            if r.provider.provider != self.provider || r.provider.model_id != self.model_id {
+            if r.input.operation != crate::recording::RecordingOperation::LanguageModel
+                || r.provider.provider != self.provider
+                || r.provider.model_id != self.model_id
+            {
                 continue;
             }
             let score = match_score(options, r);
@@ -359,7 +365,10 @@ impl ReplayMatcher for PrefixMatcher {
     ) -> Result<&'a Recording, AiMuxError> {
         let mut best: Option<(&Recording, usize)> = None;
         for r in recordings {
-            if r.provider.provider != self.provider || r.provider.model_id != self.model_id {
+            if r.input.operation != crate::recording::RecordingOperation::LanguageModel
+                || r.provider.provider != self.provider
+                || r.provider.model_id != self.model_id
+            {
                 continue;
             }
             // 公共前缀消息数;要求覆盖录制全部消息(录制是输入的前缀)。
@@ -953,6 +962,11 @@ pub async fn replay_with_model(
     model: &dyn LanguageModel,
     overrides: Option<&ReplayOverrides>,
 ) -> Result<GenerateTextResult, AiMuxError> {
+    if recording.input.operation != crate::recording::RecordingOperation::LanguageModel {
+        return Err(AiMuxError::InvalidArgument(
+            "language replay requires a language-model recording".into(),
+        ));
+    }
     // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)。
     let mut call_options: CallOptions = serde_json::from_value(recording.input.options.clone())
         .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
@@ -1047,6 +1061,8 @@ mod tests {
             call_id: trace_id.to_string(),
             recorded_at: "2026-08-06T00:00:00Z".to_string(),
             input: InputRecord {
+                decision_capabilities: None,
+                operation: Default::default(),
                 prompt: input_prompt,
                 options: serde_json::json!({ "temperature": 0.7 }),
             },
@@ -1080,6 +1096,7 @@ mod tests {
                 finish_reason: Some("stop".into()),
                 error: None,
                 error_value: None,
+                decision_result: None,
                 usage: None,
             },
             complete: true,

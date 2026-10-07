@@ -151,6 +151,20 @@ impl ExchangeContext for aimux_core::options::CallOptions {
     }
 }
 
+impl ExchangeContext for aimux_core::decision_model::DecisionCallOptions {
+    fn abort_signal(&self) -> Option<aimux_core::AbortSignal> {
+        self.abort_signal.clone()
+    }
+    fn call_id(&self) -> Option<String> {
+        self.recording_context
+            .as_ref()
+            .map(|ctx| ctx.call_id.clone())
+    }
+    fn recording_context(&self) -> Option<RecordingContext> {
+        self.recording_context.clone()
+    }
+}
+
 macro_rules! exchange_context_abort_only {
     ($($ty:path),* $(,)?) => {
         $(impl ExchangeContext for $ty {
