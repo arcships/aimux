@@ -45,6 +45,7 @@ fn recording(
         call_id: call_id.into(),
         recorded_at: recorded_at.into(),
         input: InputRecord {
+            operation: Default::default(),
             prompt: prompt.clone(),
             options: serde_json::to_value(&options).unwrap(),
         },
@@ -89,6 +90,7 @@ fn recording(
                 None
             },
             error_value: None,
+            decision_result: None,
             usage: Some(usage),
         },
         complete: true,
