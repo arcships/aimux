@@ -107,7 +107,7 @@ export declare class Model {
    * Generate a structured JSON object from the model (M12, RFC-0016).
    *
    * Same signature as [`Model::generate_text`]; returns a JSON-serialized
-   * `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }`
+   * `GenerateObjectResult`. Pass `responseFormat: { "type": "json", ... }`
    * via `options` for schema control; the function applies JSON repair
    * before parsing.
    */
@@ -291,7 +291,7 @@ export declare function anthropicAws(apiKey: string, region: string, modelId: st
  * Resolve one invalid tool call against a host's repair reply.
  *
  * `optsJson` is the same string the call was generated with; the tool set
- * comes from it. `replyJson` is `{"type":"repaired","tool_call":{…}}`,
+ * comes from it. `replyJson` is `{"type":"repaired","toolCall":{…}}`,
  * `{"type":"unchanged"}`, or `{"type":"failed","message":"…"}`. Returns the
  * resulting `ToolCall` JSON — valid, or invalid carrying a nested
  * `ToolCallRepairError`.
@@ -304,8 +304,8 @@ export declare function applyToolCallRepair(toolCallJson: string, optsJson: stri
 
 /**
  * Apply a repair reply to a serialized `GenerateTextResult` or
- * `GenerateObjectResult`, rewriting both `tool_calls` and the matching
- * `response_messages` tool-call part. `optsJson` is the same string the call
+ * `GenerateObjectResult`, rewriting both `toolCalls` and the matching
+ * `responseMessages` tool-call part. `optsJson` is the same string the call
  * was generated with.
  *
  * The OpenAI-shaped result has no equivalent: it carries no `invalid` /
@@ -543,14 +543,14 @@ export declare function tavilySearch(apiKey: string, baseUrl?: string | undefine
 /**
  * Build the repair argument for one invalid tool call.
  *
- * `toolCallJson` is a `GenerateTextResult.tool_calls` entry with
+ * `toolCallJson` is a `GenerateTextResult.toolCalls` entry with
  * `invalid: true`. `prompt` and `optsJson` are **the same two strings the
  * call was generated with** (`generateText` / `streamText`); messages,
  * instructions, and the tool set are derived from them here, so no caller
  * repeats that derivation.
  *
- * Returns `{tool_call, error, input_schema, tools, messages, instructions}`
- * — the AI SDK `repairToolCall` argument, with `tool_call.input` the
+ * Returns `{toolCall, error, inputSchema, tools, messages, instructions}`
+ * — the AI SDK `repairToolCall` argument, with `toolCall.input` the
  * provider's raw argument text — or the JSON literal `"null"` when the
  * options carried no tools: as in the AI SDK, a call made without a tool set
  * is never repaired, and the caller skips it. `"null"` is a success.

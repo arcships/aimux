@@ -66,7 +66,7 @@ test('stream error path yields a typed AimuxError', async (t) => {
     baseUrl: 'http://127.0.0.1:1',
   })
   const err = (await t.throwsAsync(async () => {
-    for await (const _part of streamText(model, 'hello', { max_retries: 0 })) {
+    for await (const _part of streamText(model, 'hello', { maxRetries: 0 })) {
       // never yields
     }
   })) as AimuxError
@@ -119,7 +119,7 @@ test('APICallError carries every field the response produced', async (t) => {
   try {
     const model = await native.openai('test-key', 'gpt-4o', { baseUrl: url })
     const err = (await t.throwsAsync(() =>
-      model.generateText(JSON.stringify('hi'), JSON.stringify({ max_retries: 0 })),
+      model.generateText(JSON.stringify('hi'), JSON.stringify({ maxRetries: 0 })),
     )) as APICallError
     t.true(err instanceof APICallError)
     t.true(err instanceof native.APICallError)
@@ -156,7 +156,7 @@ test('exhausted retries throw RetryError with the per-attempt history', async (t
   try {
     const model = await native.openai('test-key', 'gpt-4o', { baseUrl: url })
     const err = (await t.throwsAsync(() =>
-      model.generateText(JSON.stringify('hi'), JSON.stringify({ max_retries: 1 })),
+      model.generateText(JSON.stringify('hi'), JSON.stringify({ maxRetries: 1 })),
     )) as RetryError
     t.true(err instanceof RetryError)
     t.true(err instanceof AimuxError)
@@ -233,11 +233,14 @@ test('sync wire-JSON failure is napi InvalidArg; business validation stays core-
 
 // ── LoadAPIKeyError / LoadSettingError ───────────────────────────────────────
 
-test.serial('a missing API key is a LoadAPIKeyError carrying the environment variable', async (t) => {
+test.serial('a missing API key is a LoadAPIKeyError at call time carrying the environment variable', async (t) => {
   const saved = process.env.GROQ_API_KEY
   delete process.env.GROQ_API_KEY
   try {
-    const err = (await t.throwsAsync(() => provider('groq', null, 'some-model'))) as LoadAPIKeyError
+    const model = await provider('groq', null, 'some-model')
+    const err = (await t.throwsAsync(() =>
+      model.generateText(JSON.stringify('hi'), JSON.stringify({ maxRetries: 0 })),
+    )) as LoadAPIKeyError
     t.true(err instanceof LoadAPIKeyError)
     t.true(err instanceof AimuxError)
     t.false(err instanceof InvalidArgumentError)
@@ -266,7 +269,7 @@ test.serial('a missing provider setting is a LoadSettingError at call time', asy
   try {
     const model = await native.azure('test-key', '', 'some-deployment')
     const err = (await t.throwsAsync(() =>
-      model.generateText(JSON.stringify('hi'), JSON.stringify({ max_retries: 0 })),
+      model.generateText(JSON.stringify('hi'), JSON.stringify({ maxRetries: 0 })),
     )) as LoadSettingError
     t.true(err instanceof LoadSettingError)
     t.true(err instanceof AimuxError)

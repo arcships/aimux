@@ -2,22 +2,21 @@
 // reported against aimux 0.1.1 when driving OpenAI-compatible thinking models
 // (e.g. DeepSeek `deepseek-v4-flash`) in multi-turn tool-call conversations.
 //
-// Issue 1: a `tool`-role message carrying `ContentPart[]` with a `tool_result`
-//   part built from the legacy `output` field was rejected by `ModelPrompt`
-//   deserialization ("data did not match any variant of untagged enum
-//   ModelPrompt"). The Rust `ContentPart::ToolResult.result` field now accepts
-//   `output` as a serde alias, so both shapes round-trip.
+// Issue 1: a `tool`-role message carrying `ContentPart[]` with a `tool-result`
+//   part (the AI SDK `ToolResultPart` shape, with a structured `output`) was
+//   rejected by `ModelPrompt` deserialization ("data did not match any variant
+//   of untagged enum ModelPrompt").
 //
 // Issue 2: thinking models require prior assistant `reasoning_content` to be
 //   replayed on later turns. The OpenAI message converter now lifts
-//   `ContentPart::Reasoning` parts to a top-level `reasoning_content` string.
+//   `reasoning` content parts to a top-level `reasoning_content` string.
 //
 // These tests use a mock HTTP server (no real API) and assert the outbound
 // request body shape that the Rust engine produces.
 
 import test from 'ava'
 import { createServer, type Server } from 'node:http'
-import { openai } from '../src/native.ts'
+import { deepseek } from '../src/native.ts'
 
 function startMockServer(handler: (req: any, res: any) => void): Promise<{ server: Server; url: string }> {
   return new Promise((resolve) => {
@@ -54,7 +53,7 @@ const CHAT_RESPONSE = JSON.stringify({
 
 // ── Issue 1: tool role ContentPart[] with a structured `output` ─────────────
 
-test('issue 1: tool_result with a structured `output` is accepted and carries tool_call_id', async (t) => {
+test('issue 1: tool-result with a structured `output` is accepted and carries tool_call_id', async (t) => {
   let requestBody: any = null
   const { server, url } = await startMockServer(async (req, res) => {
     requestBody = await readBody(req)
@@ -63,7 +62,7 @@ test('issue 1: tool_result with a structured `output` is accepted and carries to
   })
 
   try {
-    const model = await openai('test-key', 'deepseek-v4-flash', url)
+    const model = await deepseek('test-key', 'deepseek-v4-flash', url)
 
     // A tool message whose ContentPart carries the AI SDK `ToolResultPart` shape.
     const messages = [
@@ -71,18 +70,18 @@ test('issue 1: tool_result with a structured `output` is accepted and carries to
       {
         role: 'assistant',
         content: [{
-          type: 'tool_call',
-          tool_call_id: 'tc1',
-          tool_name: 'write_file',
+          type: 'tool-call',
+          toolCallId: 'tc1',
+          toolName: 'write_file',
           input: { path: '/tmp/test.txt' },
         }],
       },
       {
         role: 'tool',
         content: [{
-          type: 'tool_result',
-          tool_call_id: 'tc1',
-          tool_name: 'write_file',
+          type: 'tool-result',
+          toolCallId: 'tc1',
+          toolName: 'write_file',
           output: { type: 'text', value: 'Successfully wrote to /tmp/test.txt' },
         }],
       },
@@ -105,7 +104,7 @@ test('issue 1: tool_result with a structured `output` is accepted and carries to
 
 // ── Issue 2: reasoning_content replay on the request side ───────────────────
 
-test('issue 2: assistant reasoning + tool_call lifts reasoning to reasoning_content', async (t) => {
+test('issue 2: assistant reasoning + tool-call lifts reasoning to reasoning_content', async (t) => {
   let requestBody: any = null
   const { server, url } = await startMockServer(async (req, res) => {
     requestBody = await readBody(req)
@@ -114,23 +113,28 @@ test('issue 2: assistant reasoning + tool_call lifts reasoning to reasoning_cont
   })
 
   try {
-    const model = await openai('test-key', 'deepseek-v4-flash', url)
+    const model = await deepseek('test-key', 'deepseek-v4-flash', url)
 
     // Reproduces the user's table row: assistant
-    // [{reasoning},{tool_call}] + tool string. The first turn produced a
+    // [{reasoning},{tool-call}] + tool result. The first turn produced a
     // reasoning_content + tool_call; the second turn must replay both.
     const messages = [
       { role: 'user', content: 'inspect the repo' },
       {
         role: 'assistant',
         content: [
-          { type: 'reasoning', text: 'I need to inspect files before answering.', signature: null },
-          { type: 'tool_call', tool_call_id: 'call_1', tool_name: 'read_file', input: { path: 'README.md' } },
+          { type: 'reasoning', text: 'I need to inspect files before answering.' },
+          { type: 'tool-call', toolCallId: 'call_1', toolName: 'read_file', input: { path: 'README.md' } },
         ],
       },
       {
         role: 'tool',
-        content: 'contents of README.md',
+        content: [{
+          type: 'tool-result',
+          toolCallId: 'call_1',
+          toolName: 'read_file',
+          output: { type: 'text', value: 'contents of README.md' },
+        }],
       },
     ]
 
@@ -160,14 +164,14 @@ test('issue 2: assistant reasoning + text (no tool calls) emits reasoning_conten
   })
 
   try {
-    const model = await openai('test-key', 'deepseek-v4-flash', url)
+    const model = await deepseek('test-key', 'deepseek-v4-flash', url)
 
     const messages = [
       { role: 'user', content: 'What is 2+2?' },
       {
         role: 'assistant',
         content: [
-          { type: 'reasoning', text: '2 plus 2 equals 4.', signature: null },
+          { type: 'reasoning', text: '2 plus 2 equals 4.' },
           { type: 'text', text: '4' },
         ],
       },
@@ -195,16 +199,16 @@ test('issue 2: assistant without reasoning omits reasoning_content', async (t) =
   })
 
   try {
-    const model = await openai('test-key', 'deepseek-v4-flash', url)
+    const model = await deepseek('test-key', 'deepseek-v4-flash', url)
 
     const messages = [
       { role: 'user', content: 'hi' },
       {
         role: 'assistant',
         content: [{
-          type: 'tool_call',
-          tool_call_id: 'call_1',
-          tool_name: 'write_file',
+          type: 'tool-call',
+          toolCallId: 'call_1',
+          toolName: 'write_file',
           input: { path: '/tmp/x' },
         }],
       },

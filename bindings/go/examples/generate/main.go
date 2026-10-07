@@ -41,9 +41,9 @@ func main() {
 		log.Fatalf("stream failed: %v", err)
 	}
 	for part := range stream.Parts() {
-		if part.Tag == "TextDelta" {
+		if part.Type == "text-delta" {
 			var td aimux.TextDeltaPayload
-			json.Unmarshal(part.Payload, &td)
+			json.Unmarshal(part.Raw, &td)
 			fmt.Print(td.Delta)
 		}
 	}

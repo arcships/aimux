@@ -18,7 +18,7 @@ func TestTypedGenerateString(t *testing.T) {
 	defer srv.Close()
 	srv.SetResponse(plainOpenAIResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	// Typed call with plain string prompt.
@@ -36,7 +36,7 @@ func TestTypedGenerateMessages(t *testing.T) {
 	defer srv.Close()
 	srv.SetResponse(plainOpenAIResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	msgs := []ModelMessage{
@@ -65,7 +65,7 @@ func TestTypedGenerateWithOptions(t *testing.T) {
 	defer srv.Close()
 	srv.SetResponse(toolCallOpenAIResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	temp := 0.7
@@ -111,7 +111,7 @@ func TestTypedStreamTextDeltas(t *testing.T) {
 	srv.SetContentType("text/event-stream")
 	srv.SetResponse(buildTextDeltaSSE())
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	stream, err := m.Stream("Say hello", nil)
@@ -122,12 +122,12 @@ func TestTypedStreamTextDeltas(t *testing.T) {
 	var textBuilder string
 	var gotFinish bool
 	for part := range stream.Parts() {
-		switch part.Tag {
-		case "TextDelta":
+		switch part.Type {
+		case "text-delta":
 			var td TextDeltaPayload
-			json.Unmarshal(part.Payload, &td)
+			json.Unmarshal(part.Raw, &td)
 			textBuilder += td.Delta
-		case "Finish":
+		case "finish":
 			gotFinish = true
 		}
 	}
@@ -148,7 +148,7 @@ func TestTypedStreamMessages(t *testing.T) {
 	srv.SetContentType("text/event-stream")
 	srv.SetResponse(buildTextDeltaSSE())
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	msgs := []ModelMessage{
@@ -207,7 +207,7 @@ func TestTypedStreamContextAlreadyCanceled(t *testing.T) {
 func TestTypedStreamCancelUnblocksFullPartsChannel(t *testing.T) {
 	srv, allSent, requestDone := newBackpressureSSEServer(1200)
 	defer srv.Close()
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	stream, err := m.Stream("fill the typed channel", nil)

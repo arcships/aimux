@@ -1,18 +1,16 @@
 // Structured end-to-end tests for the Go binding.
 //
 // These spin up a local mock HTTP server speaking the OpenAI chat-completions
-// wire format, point an OpenAI Model at it via the base_url constructor,
+// wire format, point a chat-completions Model at it via a base URL,
 // and assert that the binding correctly:
-//   1. parses text from a provider response,
-//   2. parses tool_calls out of a provider response,
-//   3. forwards multi-role messages,
-//   4. forwards tool_choice,
-//   5. parses tool-call stream parts from an SSE stream,
-//   6. yields text-delta stream parts.
+//  1. parses text from a provider response,
+//  2. parses tool_calls out of a provider response,
+//  3. forwards multi-role messages,
+//  4. forwards tool_choice,
+//  5. parses tool-call stream parts from an SSE stream,
+//  6. yields text-delta stream parts.
 //
 // No real network access is performed — every request hits 127.0.0.1.
-// Mirrors the Kotlin StructuredE2ETest.kt.
-
 package aimux
 
 import (
@@ -155,6 +153,18 @@ func waitForChannelFull[T any](t *testing.T, channel chan T) {
 	}
 }
 
+// chatModel is a model that speaks the OpenAI chat-completions wire format at
+// baseURL: the registry's OpenAI-compatible preset (the OpenAI constructors
+// talk to the Responses API).
+func chatModel(t *testing.T, baseURL string) *Model {
+	t.Helper()
+	m, err := ProviderWithBase("deepseek", "sk-test-fake-key", "gpt-4o", baseURL)
+	if err != nil {
+		t.Fatalf("ProviderWithBase: %v", err)
+	}
+	return m
+}
+
 // ── Canned OpenAI responses ────────────────────────────────────────────────────
 
 // plainOpenAIResponse is a plain OpenAI text response (no tool calls).
@@ -194,7 +204,7 @@ func weatherToolsOpts(toolChoice string) string {
 			{
 				"type": "function",
 				"name": "get_weather",
-				"input_schema": map[string]any{
+				"inputSchema": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"location": map[string]any{"type": "string"},
@@ -204,7 +214,7 @@ func weatherToolsOpts(toolChoice string) string {
 		},
 	}
 	if toolChoice != "" {
-		opts["tool_choice"] = toolChoice
+		opts["toolChoice"] = toolChoice
 	}
 	b, _ := json.Marshal(opts)
 	return string(b)
@@ -217,7 +227,7 @@ func TestE2E_GenerateTextParsesText(t *testing.T) {
 	defer srv.Close()
 	srv.SetResponse(plainOpenAIResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	result, err := m.GenerateText(`"What is Rust?"`, "")
@@ -243,7 +253,7 @@ func TestE2E_GenerateTextParsesToolCalls(t *testing.T) {
 	defer srv.Close()
 	srv.SetResponse(toolCallOpenAIResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	result, err := m.GenerateText(`"What is the weather in Tokyo?"`, weatherToolsOpts(""))
@@ -273,21 +283,23 @@ func TestE2E_GenerateTextParsesToolCalls(t *testing.T) {
 		t.Errorf("expected location Tokyo, got %v", input["location"])
 	}
 
-	// raw.content should contain a "ToolCall" variant.
+	// raw.content should contain a "tool-call" part.
 	var rawWrap struct {
 		Raw struct {
-			Content []map[string]json.RawMessage `json:"content"`
+			Content []struct {
+				Type string `json:"type"`
+			} `json:"content"`
 		} `json:"raw"`
 	}
 	json.Unmarshal([]byte(result), &rawWrap)
-	hasToolCallVariant := false
+	hasToolCallPart := false
 	for _, part := range rawWrap.Raw.Content {
-		if _, ok := part["ToolCall"]; ok {
-			hasToolCallVariant = true
+		if part.Type == "tool-call" {
+			hasToolCallPart = true
 		}
 	}
-	if !hasToolCallVariant {
-		t.Error("expected raw.content to contain a ToolCall variant")
+	if !hasToolCallPart {
+		t.Error("expected raw.content to contain a tool-call part")
 	}
 }
 
@@ -296,7 +308,7 @@ func TestE2E_MultiRoleMessagesReachProvider(t *testing.T) {
 	defer srv.Close()
 	srv.SetResponse(plainOpenAIResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	msgs := []ModelMessage{
@@ -343,7 +355,7 @@ func TestE2E_ToolChoiceReachesProvider(t *testing.T) {
 	defer srv.Close()
 	srv.SetResponse(toolCallOpenAIResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	_, err := m.GenerateText(`"What is the weather in Tokyo?"`, weatherToolsOpts("required"))
@@ -370,7 +382,7 @@ func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 	sseResponse := buildToolCallSSE()
 	srv.SetResponse(sseResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	stream := m.StreamText(`"What is the weather in Tokyo?"`, weatherToolsOpts(""))
@@ -386,17 +398,16 @@ func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 		t.Fatal("expected at least one stream part")
 	}
 
-	// The first part should be a StreamStart or ToolCall stream part.
-	// We just verify we got JSON objects with known tags.
+	// We just verify we got JSON objects tagged by "type".
 	for _, p := range parts {
 		sp, err := ParseStreamPart(p)
 		if err != nil {
 			t.Errorf("failed to parse stream part: %v", err)
 			continue
 		}
-		// Tags we expect: StreamStart, TextDelta, ToolCall, Finish, etc.
-		if sp.Tag == "" {
-			t.Error("expected non-empty stream part tag")
+		// Types we expect: stream-start, text-delta, tool-call, finish, etc.
+		if sp.Type == "" {
+			t.Error("expected non-empty stream part type")
 		}
 	}
 }
@@ -410,7 +421,7 @@ func TestE2E_StreamTextYieldsTextDeltas(t *testing.T) {
 	sseResponse := buildTextDeltaSSE()
 	srv.SetResponse(sseResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	stream := m.StreamText(`"Say hello"`, "")
@@ -423,12 +434,12 @@ func TestE2E_StreamTextYieldsTextDeltas(t *testing.T) {
 			t.Errorf("failed to parse: %v", err)
 			continue
 		}
-		switch sp.Tag {
-		case "TextDelta":
+		switch sp.Type {
+		case "text-delta":
 			var td TextDeltaPayload
-			json.Unmarshal(sp.Payload, &td)
+			json.Unmarshal(sp.Raw, &td)
 			textBuilder.WriteString(td.Delta)
-		case "Finish":
+		case "finish":
 			gotFinish = true
 		}
 	}
@@ -441,7 +452,7 @@ func TestE2E_StreamTextYieldsTextDeltas(t *testing.T) {
 		t.Errorf("expected 'Hello world', got %q", text)
 	}
 	if !gotFinish {
-		t.Error("expected a Finish part")
+		t.Error("expected a finish part")
 	}
 }
 
@@ -464,7 +475,7 @@ func TestStreamTextContextCancelsInFlightRequest(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := m.StreamTextContext(ctx, `"wait"`, "")
@@ -501,7 +512,7 @@ func TestStreamCancelUnblocksFullPartsChannel(t *testing.T) {
 	srv, allSent, requestDone := newBackpressureSSEServer(800)
 	defer srv.Close()
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 	stream := m.StreamText(`"fill the channel"`, "")
 	defer stream.Cancel()
@@ -567,8 +578,7 @@ func buildToolCallSSE() string {
 
 // ── Tool-call full round-trip ─────────────────────────────────────────────────
 
-// TestE2E_ToolCallFullRoundTrip mirrors Kotlin's `tool-call full round-trip`
-// scenario: the model requests a tool call, the client sends the tool result
+// TestE2E_ToolCallFullRoundTrip: the model requests a tool call, the client sends the tool result
 // back as a multi-part tool message, and the model produces a final answer.
 // This verifies ModelMessage multi-part content reaches the provider correctly.
 func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
@@ -578,7 +588,7 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 	// Queue: first call returns a tool_call, second call returns the final text.
 	srv.setResponses(toolCallOpenAIResponse, plainOpenAIResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	// 1. First call: model requests get_weather tool call.
@@ -596,15 +606,15 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 	}
 
 	// 2. Build a multi-part tool-result message using ModelMessage's Content
-	//    (any) field — this is the path that was previously unsupported.
+	//    (any) field.
 	toolResultMsg := ModelMessage{
 		Role: RoleTool,
 		Content: []map[string]any{
 			{
-				"type":         "tool_result",
-				"tool_call_id": call.ToolCallID,
-				"tool_name":    call.ToolName,
-				"result":       map[string]any{"temperature": "20C"},
+				"type":       "tool-result",
+				"toolCallId": call.ToolCallID,
+				"toolName":   call.ToolName,
+				"output":     map[string]any{"type": "json", "value": map[string]any{"temperature": "20C"}},
 			},
 		},
 	}
@@ -626,7 +636,7 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 	}
 
 	// Verify the second request carried the tool-result message correctly.
-	// The engine converts multi-part tool_result content into OpenAI's wire
+	// The engine converts a tool-result part into OpenAI's wire
 	// format: {"role":"tool","tool_call_id":"...","content":"<stringified result>"}.
 	reqBody := srv.LastRequestBody()
 	var body struct {

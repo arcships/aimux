@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from aimux import openai, generate_text, stream_text
+from aimux import deepseek, generate_text, stream_text
 
 CASSETTE_BASE = Path(__file__).resolve().parents[3] / "aimux-providers" / "tests" / "cassettes"
 
@@ -154,7 +154,7 @@ class TestExhaustiveCassette:
             prompt = _extract_prompt(cass)
 
             try:
-                model = openai("test-key", model_id, base_url)
+                model = deepseek("test-key", model_id, base_url)
                 if cass["is_stream"]:
                     parts = list(stream_text(model, prompt))
                     if len(parts) == 0:

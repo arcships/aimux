@@ -90,10 +90,10 @@ void main() {
     test('unknown code is rejected with StateError', () {
       // A code outside the published table is an ABI mismatch, not an error
       // kind. 1 is AIMUX_E_OTHER now because Other inherited the old UNKNOWN
-      // slot, so it resolves; 4 is retired and 20 is the first unassigned value.
+      // slot, so it resolves; 4 is retired and 21 is the first unassigned value.
       expect(() => AimuxException.fromCode(999, 'future'), throwsStateError);
       expect(() => AimuxException.fromCode(4, 'retired'), throwsStateError);
-      expect(() => AimuxException.fromCode(20, 'unassigned'), throwsStateError);
+      expect(() => AimuxException.fromCode(21, 'unassigned'), throwsStateError);
     });
 
     test('bare retry code synthesizes a single-attempt RetryError', () {

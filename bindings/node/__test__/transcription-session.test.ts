@@ -130,7 +130,7 @@ test.serial('nextPart timeout preserves the live session', async (t) => {
   const session = await startTranscriptionSession(model, null)
   try {
     const first = JSON.parse((await session.nextPart(3000)) as string)
-    t.truthy('StreamStart' in first)
+    t.is(first.type, 'stream-start')
 
     const err = (await t.throwsAsync(session.nextPart(250))) as AimuxError
     // Timeout is a spent budget, not a provider-call transport failure.
@@ -140,7 +140,7 @@ test.serial('nextPart timeout preserves the live session', async (t) => {
 
     // The session stayed live across the timeout.
     const late = JSON.parse((await session.nextPart(5000)) as string)
-    t.truthy('TranscriptDelta' in late)
+    t.is(late.type, 'transcript-delta')
   } finally {
     session.close()
   }
@@ -159,7 +159,7 @@ test.serial('server error event rejects with a typed APICallError', async (t) =>
   const session = await startTranscriptionSession(model, null)
   try {
     const first = JSON.parse((await session.nextPart(5000)) as string)
-    t.truthy('StreamStart' in first)
+    t.is(first.type, 'stream-start')
 
     const err = (await t.throwsAsync(session.nextPart(5000))) as AimuxError
     t.true(err instanceof APICallError)

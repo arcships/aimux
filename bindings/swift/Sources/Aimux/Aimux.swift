@@ -176,7 +176,7 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
     /// The model produced tool arguments that fail to parse or validate.
     case invalidToolInput(message: String, status: Int, retryMs: Int64, retryable: Bool, toolName: String, toolInput: String)
     /// A `repairToolCall` hook itself failed; `originalError` is the error it
-    /// was repairing, as externally-tagged wire JSON (the same encoding as
+    /// was repairing, as `AiMuxError` JSON tagged by `name` (the same encoding as
     /// `ToolCall.error`).
     case toolCallRepair(message: String, status: Int, retryMs: Int64, retryable: Bool, originalError: String)
     /// No API key was passed and the fallback environment variable is unset
@@ -367,7 +367,7 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
     }
 
     /// `.toolCallRepair` only: the original lookup/parse/validation error as
-    /// externally-tagged wire JSON (the same encoding as `ToolCall.error`).
+    /// `AiMuxError` JSON tagged by `name` (the same encoding as `ToolCall.error`).
     public var originalError: String? {
         if case .toolCallRepair(_, _, _, _, let v) = self { return v }
         return nil
@@ -752,10 +752,10 @@ public final class Model: @unchecked Sendable {
     ///     registry entry.
     ///   - modelId: Model id.
     ///   - configJson: Optional JSON object of `ProviderOptions`
-    ///     (`{"base_url": "...", "headers": {...}, "organization": "...",
-    ///     "project": "...", "params": {...}}`); `nil` for defaults.
-    ///     `max_retries` (a per-call option) and `body_overrides` (removed) are
-    ///     rejected as `.invalidArgument`.
+    ///     (`{"baseUrl": "...", "headers": {...}, "organization": "...",
+    ///     "project": "...", "params": {...}}`); `nil` for defaults. Any
+    ///     other key (`maxRetries` is a per-call option) is rejected as
+    ///     `.invalidArgument`.
     public static func provider(
         name: String, apiKey: String? = nil, modelId: String, configJson: String? = nil
     ) throws -> Model {
@@ -850,8 +850,8 @@ public final class Model: @unchecked Sendable {
     ///     it does not trap: the array is as likely to come from a `.filter`
     ///     as from a literal, so C's zero-children failure surfaces instead).
     ///   - configJson: optional config: `{"router": "rule"|"weighted",
-    ///     "weights": [...], "fallback": "on_error"|"none", "provider_name",
-    ///     "model_id"}`.
+    ///     "weights": [...], "fallback": "on_error"|"none", "providerName",
+    ///     "modelId"}`.
     /// - Returns: a new RouterModel wrapping the children.
     public static func router(
         _ models: [Model],
@@ -898,21 +898,6 @@ public final class Model: @unchecked Sendable {
             }
         }
         return Model(handle: handle)
-    }
-
-    /// Register external OpenAI-compatible providers from a JSON config string
-    /// (RFC-0020).
-    ///
-    /// `configJSON` is `{ "providers": [ { "name", "base_url", ... } ] }`.
-    /// Entries override same-named built-ins or add new ones. Like
-    /// `initRecording`, this mutates process-global registry state.
-    ///
-    /// - Parameter configJSON: Provider registry config JSON.
-    /// - Throws: `AimuxError` (`.invalidArgument`) when the registry rejects
-    ///   the document.
-    public static func registerProviders(_ configJSON: String) throws {
-        try validateJson(configJSON, parameter: "configJSON")
-        if let e = aimux_register_providers(configJSON) { throw expectAimuxError(e, context: "registerProviders") }
     }
 
     /// Set the global proxy configuration (M6, RFC-0016). Must be called before
@@ -963,7 +948,7 @@ public final class Model: @unchecked Sendable {
     /// Generate a structured JSON object (M12, RFC-0016).
     ///
     /// Same signature as `generateText`; returns a JSON-serialized
-    /// `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }`
+    /// `GenerateObjectResult`. Pass `responseFormat: { "type": "json", ... }`
     /// via `options` for schema control; aimux-core applies JSON repair
     /// before parsing.
     ///
@@ -1028,7 +1013,7 @@ public final class Model: @unchecked Sendable {
     /// - Parameters:
     ///   - prompt: A prompt string (serialized as JSON).
     ///   - options: Optional GenerateTextOptions (serialized as JSON).
-    ///   - onPart: Called for each StreamPart (JSON string).
+    ///   - onPart: Called for each TextStreamPart (JSON string).
     ///   - onDone: Called when the stream completes normally.
     ///   - onError: Called on stream failure with the decoded error unchanged
     ///     (`AimuxError`, or `DecodingError.dataCorrupted` for unparseable
@@ -1099,7 +1084,7 @@ public final class Model: @unchecked Sendable {
         }
     }
 
-    /// Stream text as an AsyncSequence of StreamPart JSON strings.
+    /// Stream text as an AsyncSequence of TextStreamPart JSON strings.
     ///
     /// Usage:
     /// ```swift

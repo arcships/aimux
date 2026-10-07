@@ -24,12 +24,12 @@ import (
 // argument *text*, not a parsed object. It is what a repair function reads
 // and what it returns.
 type RawToolCall struct {
-	ToolCallID       string          `json:"tool_call_id"`
-	ToolName         string          `json:"tool_name"`
+	ToolCallID       string          `json:"toolCallId"`
+	ToolName         string          `json:"toolName"`
 	Input            string          `json:"input"`
-	ProviderExecuted *bool           `json:"provider_executed,omitempty"`
+	ProviderExecuted *bool           `json:"providerExecuted,omitempty"`
 	Dynamic          *bool           `json:"dynamic,omitempty"`
-	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
+	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
 }
 
 // ToolCallRepairContext is the argument handed to a RepairToolCallFunc — the
@@ -39,13 +39,13 @@ type RawToolCall struct {
 // engine from the prompt and options of the call being repaired.
 type ToolCallRepairContext struct {
 	// ToolCall is the failed call, with its raw argument text.
-	ToolCall RawToolCall `json:"tool_call"`
-	// Error is the serialized AiMuxError the call carries (e.g.
-	// {"InvalidToolInput": {...}} or {"NoSuchTool": {...}}).
+	ToolCall RawToolCall `json:"toolCall"`
+	// Error is the serialized AiMuxError (AI SDK error JSON, tagged by "name" the call carries (e.g.
+	// {"name":"AI_InvalidToolInputError",...} or {"name":"AI_NoSuchToolError",...}).
 	Error json.RawMessage `json:"error"`
 	// InputSchema is the JSON schema of the named tool, or an empty-object
 	// schema when the name does not resolve to a tool.
-	InputSchema  json.RawMessage `json:"input_schema"`
+	InputSchema  json.RawMessage `json:"inputSchema"`
 	Tools        []Tool          `json:"tools"`
 	Messages     []ModelMessage  `json:"messages"`
 	Instructions *string         `json:"instructions"`
@@ -106,7 +106,7 @@ func applyToolCallRepairJSON(toolCallJSON, optsJSON, replyJSON string) (string, 
 }
 
 // applyToolCallRepairToResultJSON patches a whole result document: both
-// tool_calls and the matching response_messages tool-call part.
+// toolCalls and the matching responseMessages tool-call part.
 func applyToolCallRepairToResultJSON(resultJSON, optsJSON, toolCallID, replyJSON string) (string, error) {
 	cResult := C.CString(resultJSON)
 	defer C.free(unsafe.Pointer(cResult))
@@ -148,7 +148,7 @@ func repairReply(repair RepairToolCallFunc, contextJSON string) (string, error) 
 	}
 	reply, err := json.Marshal(struct {
 		Type     string       `json:"type"`
-		ToolCall *RawToolCall `json:"tool_call"`
+		ToolCall *RawToolCall `json:"toolCall"`
 	}{"repaired", replacement})
 	if err != nil {
 		return "", fmt.Errorf("aimux: failed to encode repaired tool call: %w", err)
@@ -158,14 +158,14 @@ func repairReply(repair RepairToolCallFunc, contextJSON string) (string, error) 
 
 // invalidToolCalls lists the invalid tool calls of a result document, in
 // order, as (id, JSON) pairs. A GenerateObjectResult carries the text result
-// under `raw`; a GenerateTextResult's own `raw` has no tool_calls, so the
-// same lookup covers both — and StreamTextResultAggregated, whose tool_calls
+// under `raw`; a GenerateTextResult's own `raw` has no toolCalls, so the
+// same lookup covers both — and StreamTextResultAggregated, whose toolCalls
 // are top-level.
 func invalidToolCalls(resultJSON string) [][2]string {
 	var doc struct {
-		ToolCalls []json.RawMessage `json:"tool_calls"`
+		ToolCalls []json.RawMessage `json:"toolCalls"`
 		Raw       struct {
-			ToolCalls []json.RawMessage `json:"tool_calls"`
+			ToolCalls []json.RawMessage `json:"toolCalls"`
 		} `json:"raw"`
 	}
 	if json.Unmarshal([]byte(resultJSON), &doc) != nil {
@@ -178,7 +178,7 @@ func invalidToolCalls(resultJSON string) [][2]string {
 	var invalid [][2]string
 	for _, call := range calls {
 		var head struct {
-			ToolCallID string `json:"tool_call_id"`
+			ToolCallID string `json:"toolCallId"`
 			Invalid    *bool  `json:"invalid"`
 		}
 		if json.Unmarshal(call, &head) != nil || head.Invalid == nil || !*head.Invalid {
@@ -217,7 +217,7 @@ func repairResultJSON(resultJSON, promptJSON, optsJSON string, repair RepairTool
 }
 
 // repairStreamToolCall is the streaming counterpart: it resolves one
-// {"ToolCall": …} stream part payload, returning the payload to deliver.
+// {"type":"tool-call",…} stream part, returning the payload to deliver.
 // A valid call, or one made without a tool set, passes through untouched.
 // Tool-input delta parts never reach here — they are forwarded immediately,
 // as the AI SDK does.

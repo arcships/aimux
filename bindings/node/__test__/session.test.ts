@@ -9,7 +9,7 @@ import test from 'ava'
 import { createServer, type Server } from 'node:http'
 
 import {
-  openai,
+  deepseek,
   generateText,
   initSessionStore,
   initSessionInfer,
@@ -54,32 +54,32 @@ test.serial('sessionId groups calls and query API returns typed results', async 
   initSessionStore()
   initSessionInfer(false) // explicit ids only
 
-  const model = await openai('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
+  const model = await deepseek('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
 
   // Two calls in the same session.
-  await generateText(model, 'first', { session_id: 'sess-1' })
-  await generateText(model, 'second', { session_id: 'sess-1' })
+  await generateText(model, 'first', { sessionId: 'sess-1' })
+  await generateText(model, 'second', { sessionId: 'sess-1' })
 
   const calls: SessionCall[] = getSessionCalls('sess-1')
   t.is(calls.length, 2)
   t.is(calls[0].step, 0)
   t.is(calls[1].step, 1)
-  t.truthy(calls[0].call_id)
-  t.truthy(calls[0].recorded_at)
-  t.not(calls[0].call_id, calls[1].call_id)
+  t.truthy(calls[0].callId)
+  t.truthy(calls[0].recordedAt)
+  t.not(calls[0].callId, calls[1].callId)
 
   // A call without a sessionId (inference off) is not grouped.
   await generateText(model, 'third')
   const sessions: SessionView[] = getSessions()
   t.is(sessions.length, 1)
-  t.is(sessions[0].session_id, 'sess-1')
+  t.is(sessions[0].sessionId, 'sess-1')
   t.is(sessions[0].source, 'Explicit')
 
   // Unknown session → empty.
   t.deepEqual(getSessionCalls('nope'), [])
 
   // Separate explicit session.
-  await generateText(model, 'other', { session_id: 'sess-2' })
+  await generateText(model, 'other', { sessionId: 'sess-2' })
   t.is(getSessions().length, 2)
   t.is(getSessionCalls('sess-2').length, 1)
 })
@@ -91,13 +91,13 @@ test.serial('opt-in inferer groups prefix continuations into auto sessions', asy
   initSessionStore()
   initSessionInfer(true)
 
-  const model = await openai('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
+  const model = await deepseek('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
 
   await generateText(model, 'u1')
   await generateText(model, [{ role: 'user', content: 'u1' }, { role: 'assistant', content: 'a1' }, { role: 'user', content: 'u2' }])
 
   const sessions = getSessions()
-  const autos = sessions.filter((s) => s.session_id.startsWith('auto-'))
+  const autos = sessions.filter((s) => s.sessionId.startsWith('auto-'))
   t.is(autos.length, 1, 'prefix continuation stays in one auto session')
   t.is(autos[0].source, 'Inferred')
   t.is(autos[0].calls.length, 2)

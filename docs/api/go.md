@@ -94,7 +94,7 @@ no Go type of their own; the binding maps them to native Go errors:
 |---------|----|
 | bad raw JSON in `promptJson` / `optsJson` / `configJSON` | plain `error` naming the parameter, e.g. `aimux: prompt_json: invalid JSON` — checked in Go before the C call with `json.Valid` **plus** a surrogate-pairing scan, because `json.Valid` accepts unpaired `\uD800`–`\uDFFF` escapes that serde_json rejects (required parameters reject `""`; optional `""` = default; JSONL by line) |
 | a string parameter that is not valid UTF-8, or contains a NUL | plain `error`: `aimux: <param>: must be valid UTF-8` / `aimux: <param>: must not contain NUL` — a Go string is an arbitrary byte sequence and `C.CString` passes it through verbatim (a NUL would truncate the argument silently), so every user-supplied string is checked before the C call. Two exceptions, both deliberate: the five `mustNew` constructors panic instead (see below), and `InitLogging` has no error channel and falls back to `"warn"` |
-| a typed option struct (`ProviderConfig`, `EmbeddingCallOptions`, `SpeechCallOptions`, … , `TranscriptionSessionOpts`) whose raw JSON field carries bad bytes | plain `error` naming the marshalled parameter, e.g. `aimux: opts: invalid JSON: unpaired high surrogate \uD800`, `aimux: config_json: must be valid UTF-8` — `json.Marshal` is **not** self-validating: it coerces invalid UTF-8 in a Go *string* field to U+FFFD and escapes NUL, but a `json.RawMessage` field (`ProviderOptions`, `Audio`, `Documents`, `Files`, `Mask`, `Data`, `InputSchema`) is emitted through `compact()`, which checks JSON *syntax only*. Raw non-UTF-8 bytes and lone `\uD800`–`\uDFFF` escapes therefore survive marshalling, so every marshalled C argument gets the same `checkJSON` as a raw-string parameter |
+| a typed option struct (`ProviderConfig`, `EmbeddingCallOptions`, `SpeechCallOptions`, … , `TranscriptionSessionOpts`) whose raw JSON field carries bad bytes | plain `error` naming the marshalled parameter, e.g. `aimux: opts: invalid JSON: unpaired high surrogate \uD800`, `aimux: config_json: must be valid UTF-8` — `json.Marshal` is **not** self-validating: it coerces invalid UTF-8 in a Go *string* field to U+FFFD and escapes NUL, but a `json.RawMessage` field (`ProviderOptions`, `Documents`, `Files`, `Mask`, `Data`, `InputSchema`) is emitted through `compact()`, which checks JSON *syntax only*. Raw non-UTF-8 bytes and lone `\uD800`–`\uDFFF` escapes therefore survive marshalling, so every marshalled C argument gets the same `checkJSON` as a raw-string parameter |
 | use-after-close (`Model`, `ProviderHandle`, multimodal models, `TranscriptionSession`) | `errors.Is(err, aimux.ErrClosed)` — guarded in Go before the C call |
 | a `nil` `*Model` handed to a composite constructor — a `NewRouter` child, a `NewMoa` reference, or the `NewMoa` aggregator | plain `error` naming the position: `aimux: router: models[2] is nil`, `aimux: moa: references[1] is nil`, `aimux: moa: aggregator is nil` — checked in Go before the C call, so a nil element is a returned error rather than the nil-pointer dereference that would otherwise take the process down |
 | trace query (`TraceAggregate`, `TraceSessionChain`, `TraceExportJsonl`, `TraceClear`) on a model that never went through `Trace` / `TraceAudited` | `errors.Is(err, aimux.ErrNotTraced)` — guarded in Go before the C call, ahead of argument validation; the trace store is keyed on the wrapper handle, so C can only report it as a missing handle |
@@ -143,7 +143,7 @@ fmt.Println(result)
 // streaming (typed: model.Stream(prompt, opts) yields *StreamPart values)
 stream := model.StreamText(`"Write a haiku"`, "")
 for part := range stream.Parts() {
-    fmt.Println(part) // StreamPart JSON
+    fmt.Println(part) // StreamPart JSON, e.g. {"type":"text-delta","id":"0","delta":"..."}
 }
 if err := stream.Err(); err != nil { // only after Parts has closed
     log.Fatal(err)
@@ -172,10 +172,10 @@ defer model.Close()
 model2, err := aimux.ProviderWithBase("groq", "sk-...", "llama-3.3-70b", "https://relay.example/v1")
 defer model2.Close()
 
-// Full ProviderOptions (base_url / headers / organization / project / params).
-// Retry is a per-call option (CallOptions.MaxRetries) and request-body overrides
-// no longer exist: a config_json carrying max_retries or body_overrides is
-// rejected as CodeInvalidArgument, so ProviderConfig has neither.
+// Full settings (baseUrl / headers / organization / project / params).
+// Retry is a per-call option (GenerateTextOptions.MaxRetries) and request-body
+// overrides no longer exist: any other key in config_json is rejected as
+// CodeInvalidArgument, so ProviderConfig has neither.
 model3, err := aimux.ProviderWithConfig("groq", "sk-...", "llama-3.3-70b", &aimux.ProviderConfig{
 	Headers: map[string]string{"X-Custom": "1"},
 })
@@ -226,6 +226,20 @@ if err := stream.Err(); err != nil {
 }
 ```
 
+Each part is an object tagged by `type` (`text-delta`, `tool-call`, `finish`,
+...). The typed `model.Stream(prompt, opts)` yields `*StreamPart{Type, Raw}`
+instead; decode `Raw` (the whole part) into the struct you need:
+
+```go
+for part := range typed.Parts() {
+    if part.Type == "text-delta" {
+        var td aimux.TextDeltaPayload
+        json.Unmarshal(part.Raw, &td)
+        fmt.Print(td.Delta)
+    }
+}
+```
+
 > Stream part variants are documented in the [API overview](../API.md#streaming-generation).
 > Drain `Parts()` before calling `Err()`. If you stop reading early, call
 > `Cancel()` so the native stream does not keep running.
@@ -270,7 +284,7 @@ itself call aimux — e.g. ask a model to rewrite the arguments. Each call is
 repaired at most once.
 
 It applies to the typed entry points `Generate`, `GenerateObj`,
-`ConsumeStream` and `Stream` (which delivers the repaired `ToolCall` part;
+`ConsumeStream` and `Stream` (which delivers the repaired `tool-call` part;
 input deltas are always forwarded verbatim), and to `GenerateAsOpenAI`: a
 `ChatCompletion` carries no invalid marker, so it repairs the native result
 and converts it (`Model.GenerateTextResultAsOpenAI`). `StreamAsOpenAI` does
@@ -329,7 +343,7 @@ result, err := aimux.ParseSpeechResult(resultJSON)
 if err != nil {
     log.Fatal(err)
 }
-// audio bytes: *result.Audio.Base64 (base64 string) or result.Audio.Binary
+// audio bytes: []byte(result.Audio) (base64 string or byte array on the wire)
 ```
 
 ## Speech to Text (STT)
@@ -361,7 +375,6 @@ fmt.Println(*result.Language)         // detected language
 
 ```go
 prompt := "A cute baby sea otter"
-n := 1
 
 imager, err := aimux.NewOpenAIImage("sk-...", "dall-e-3")
 if err != nil {
@@ -371,7 +384,7 @@ defer imager.Close()
 
 resultJSON, err := imager.Generate(&aimux.ImageCallOptions{
     Prompt: &prompt,
-    N:      &n,
+    N:      1, // required
 })
 if err != nil {
     log.Fatal(err)
@@ -380,7 +393,7 @@ result, err := aimux.ParseImageResult(resultJSON)
 if err != nil {
     log.Fatal(err)
 }
-// result.Images.Base64[0] (base64) or result.Images.Binary[0] (raw bytes)
+// []byte(result.Images[0]) — the image bytes
 ```
 
 ## Video Generation
@@ -414,7 +427,7 @@ result, err := aimux.ParseVideoResult(resultJSON)
 if err != nil {
     log.Fatal(err)
 }
-// result.Videos[0].Url.URL — video URL
+// result.Videos[0].URL — video URL (Type "url"; "base64"/"binary" carry Data)
 ```
 
 ## Reranking
@@ -432,7 +445,7 @@ defer reranker.Close()
 
 resultJSON, err := reranker.Rerank(&aimux.RerankingCallOptions{
     Query:     "What is Rust?",
-    Documents: json.RawMessage(`[{"text":"Rust is a systems programming language."},{"text":"Rust is a chemical element."}]`),
+    Documents: json.RawMessage(`{"type":"text","values":["Rust is a systems programming language.","Rust is a chemical element."]}`),
     TopN:      &topN,
 })
 if err != nil {
@@ -578,6 +591,37 @@ Typed structs live in `bindings/go/types.go` (text) and
 The multimodal methods return JSON strings through the C ABI; the
 `ParseXxxResult` functions decode them into the typed structs. All call-option
 pointer fields (`*string`, `*bool`, `*int`) are optional — pass `nil` to omit.
+Image `Size` and video `Resolution` are `"WxH"` strings (`"1024x1024"`);
+`AspectRatio` is `"W:H"` (`"16:9"`). Binary data (`Audio`, `Images`, `VideoData.Data`) is `aimux.Bytes`: a
+base64 string or a byte array on the wire, always `[]byte` in Go.
+
+### Wire format
+
+The JSON the binding reads and writes is the AI SDK JSON, the same as the
+generated TypeScript types in `bindings/node/src/types/`: camelCase field names
+(`toolCallId`, `finishReason`, `inputTokens`, `providerOptions`, ...), unions
+tagged by a `type` key (`"tool-call"`, `"text-delta"`, ...; errors by `name`),
+and optional fields absent rather than `null`. Go field tags follow it, so a
+typed struct marshals to exactly that JSON.
+
+A tool result goes back to the model as a `tool-result` content part in a
+`tool` message; its `output` is a union:
+
+```go
+msg := aimux.ModelMessage{
+    Role: aimux.RoleTool,
+    Content: []map[string]any{{
+        "type":       "tool-result",
+        "toolCallId": call.ToolCallID,
+        "toolName":   call.ToolName,
+        // {"type":"text"|"error-text","value":string},
+        // {"type":"json"|"error-json","value":any},
+        // {"type":"execution-denied","reason":string},
+        // {"type":"content","value":[...]}
+        "output": map[string]any{"type": "json", "value": map[string]any{"temp": "20C"}},
+    }},
+}
+```
 
 `ToolCall` carries `ProviderMetadata` plus `Invalid` (set by Core when tool
 lookup, input parse, or schema validation fails, even after repair) and `Error`

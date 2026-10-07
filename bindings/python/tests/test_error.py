@@ -100,7 +100,7 @@ def test_api_call_error_carries_every_field_the_response_produced():
         model = openai("test-key", "gpt-4o", f"http://127.0.0.1:{port}")
         # 429 is retryable; disable retries to observe the bare call failure.
         with pytest.raises(APICallError) as excinfo:
-            generate_text(model, "hi", {"max_retries": 0})
+            generate_text(model, "hi", {"maxRetries": 0})
         err = excinfo.value
 
         assert type(err) is APICallError
@@ -135,7 +135,7 @@ def test_retry_error_carries_reason_and_typed_attempt_history():
 
         model = openai("test-key", "gpt-4o", f"http://127.0.0.1:{port}")
         with pytest.raises(RetryError) as excinfo:
-            generate_text(model, "hi", {"max_retries": 1})
+            generate_text(model, "hi", {"maxRetries": 1})
         err = excinfo.value
 
         assert type(err) is RetryError
@@ -166,12 +166,13 @@ def test_malformed_wire_json_is_a_value_error_not_a_core_error():
 
 
 def test_missing_api_key_is_load_api_key_error(monkeypatch):
-    """No key passed and the env var unset: a typed LoadAPIKeyError, not InvalidArgument."""
-    from aimux import AimuxError, InvalidArgumentError, LoadAPIKeyError, provider
+    """No key passed and the env var unset: a typed LoadAPIKeyError at call time, not InvalidArgument."""
+    from aimux import AimuxError, InvalidArgumentError, LoadAPIKeyError, generate_text, provider
 
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    model = provider("groq", None, "some-model")
     with pytest.raises(LoadAPIKeyError) as excinfo:
-        provider("groq", None, "some-model")
+        generate_text(model, "hi", {"maxRetries": 0})
     err = excinfo.value
 
     assert type(err) is LoadAPIKeyError
@@ -199,7 +200,7 @@ def test_missing_setting_is_load_setting_error_at_call_time(monkeypatch):
     monkeypatch.delenv("AZURE_RESOURCE_NAME", raising=False)
     model = azure("test-key", "", "some-deployment")
     with pytest.raises(LoadSettingError) as excinfo:
-        generate_text(model, "hi", {"max_retries": 0})
+        generate_text(model, "hi", {"maxRetries": 0})
     err = excinfo.value
 
     assert type(err) is LoadSettingError

@@ -5,7 +5,7 @@
 //   Node.js → napi → Rust engine → single cassette → parse → result
 
 import test from 'ava'
-import { openai } from '../src/native.ts'
+import { deepseek } from '../src/native.ts'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -133,7 +133,7 @@ test(`exhaustive: ${cassettes.length} chat/completions cassettes replayed`, asyn
     const prompt = extractPrompt(cass)
 
     try {
-      const model = await openai('test-key', modelId, baseUrl)
+      const model = await deepseek('test-key', modelId, baseUrl)
       if (cass.isStream) {
         const gen = await model.streamText(JSON.stringify(prompt))
         let parts = 0

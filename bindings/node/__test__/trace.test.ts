@@ -8,7 +8,7 @@ import test from 'ava'
 import { createServer, type Server } from 'node:http'
 
 import {
-  openai,
+  deepseek,
   generateText,
   type GenerateTextResult,
 } from '../src/index.ts'
@@ -47,12 +47,12 @@ test('trace() records calls and query API returns typed results', async (t) => {
   const { server, url } = await startMockServer()
   t.teardown(() => server.close())
 
-  const raw = await openai('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
+  const raw = await deepseek('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
   const traced = raw.traceAudited(true) // strict mode
 
   // > 4 KiB user message so block-aligned prefixes actually match.
   const big = 'x'.repeat(5000)
-  await generateText(traced, [{ role: 'user', content: big }], { session_id: 'sess-1' })
+  await generateText(traced, [{ role: 'user', content: big }], { sessionId: 'sess-1' })
   await generateText(
     traced,
     [
@@ -60,7 +60,7 @@ test('trace() records calls and query API returns typed results', async (t) => {
       { role: 'assistant', content: 'a1' },
       { role: 'user', content: 'u2' },
     ],
-    { session_id: 'sess-1' },
+    { sessionId: 'sess-1' },
   )
 
   // Untraced models reject the query API.
@@ -69,37 +69,35 @@ test('trace() records calls and query API returns typed results', async (t) => {
   const statsJson = traced.traceAggregate()
   const stats = JSON.parse(statsJson) as any[]
   t.is(stats.length, 1)
-  t.is(stats[0].provider, 'openai.chat')
+  t.is(stats[0].provider, 'deepseek.chat')
   t.is(stats[0].requests, 2)
-  t.truthy(stats[0].reported_hit_rate)
-  t.truthy(stats[0].client_upper_bound_hit_rate)
-  t.truthy(stats[0].verdict_counts)
+  t.truthy(stats[0].verdictCounts)
 
   const chain = JSON.parse(traced.traceSessionChain('sess-1')) as any
-  t.is(chain.record_ids.length, 2)
-  t.truthy(chain.prefix_stability)
+  t.is(chain.recordIds.length, 2)
+  t.truthy(chain.prefixStability)
 
   const jsonl = traced.traceExportJsonl()
   const lines = jsonl.trim().split('\n')
   t.is(lines.length, 2, 'one TraceRecord per line')
   const first = JSON.parse(lines[0])
-  t.truthy(first.fingerprint.body_hash)
-  t.is(first.session_id, 'sess-1')
+  t.truthy(first.fingerprint.bodyHash)
+  t.is(first.sessionId, 'sess-1')
 
   traced.traceClear()
   t.is(traced.traceExportJsonl().trim(), '')
 })
 
-test('default streams carry no Raw parts (RFC-0016 M2 contract)', async (t) => {
+test('default streams carry no raw parts (RFC-0016 M2 contract)', async (t) => {
   // The RFC-0015 stream meta part was removed in favor of the M2 contract:
-  // Raw parts appear only when include_raw_chunks is set. Probing itself is
+  // raw parts appear only when includeRawChunks is set. Probing itself is
   // unaffected (TraceLayer records internally; request bodies remain
   // available on the non-streaming path — RFC-0023 runtime recording is the
   // planned (draft) mechanism for future streaming-side access).
   const { server, url } = await startMockServer()
   t.teardown(() => server.close())
 
-  const model = await openai('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
+  const model = await deepseek('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
   const gen = await model.streamText(JSON.stringify('hello'), undefined)
   const parts: string[] = []
   for await (const json of gen) {
@@ -107,10 +105,10 @@ test('default streams carry no Raw parts (RFC-0016 M2 contract)', async (t) => {
   }
 
   t.truthy(parts.length >= 1)
-  t.truthy(parts[0].includes('StreamStart'), `part[0] must be StreamStart: ${parts[0]}`)
+  t.is(JSON.parse(parts[0]).type, 'stream-start', `part[0] must be stream-start: ${parts[0]}`)
   t.true(
-    parts.every((p) => !p.includes('"Raw"')),
-    'no Raw parts by default',
+    parts.every((p) => JSON.parse(p).type !== 'raw'),
+    'no raw parts by default',
   )
 })
 
@@ -118,8 +116,8 @@ test('non-traced model still generates normally', async (t) => {
   const { server, url } = await startMockServer()
   t.teardown(() => server.close())
 
-  const model = await openai('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
+  const model = await deepseek('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
   const result: GenerateTextResult = await generateText(model, 'hello')
   t.truthy(result.text)
-  t.is(result.usage.input_tokens.total, 200)
+  t.is(result.usage.inputTokens.total, 200)
 })

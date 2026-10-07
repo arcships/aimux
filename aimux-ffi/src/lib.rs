@@ -3484,7 +3484,7 @@ fn model_handles(
 /// `handles` is an array of `len` existing model handles (e.g. from
 /// `aimux_openai_new`). `config_json` selects the router + fallback policy:
 /// `{ "router": "rule" | "weighted", "weights": [..], "fallback": "on_error" |
-/// "none", "provider_name": "router", "model_id": "router" }`. All keys are
+/// "none", "providerName": "router", "modelId": "router" }`. All keys are
 /// optional; defaults are `rule` / `on_error` / `"router"` / `"router"`.
 ///
 /// Fails on: NULL `handles` with `len > 0`, bad JSON, zero-length `handles`,

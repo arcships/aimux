@@ -8,14 +8,14 @@
 //
 // Important: the methods return the aimux *canonical* wire shape produced by
 // the FFI, NOT the raw provider response. The FFI converts provider shapes,
-// e.g. OpenAI `data[].b64_json` → `images.Base64[]`, an OpenAI file object →
-// `provider_reference.openai`, raw audio bytes → `audio.Binary[]`. The canned
-// responses below are the provider shapes (what the mock returns); the
-// assertions check the converted aimux shapes (what the FFI returns).
+// e.g. OpenAI `data[].b64_json` → `images` (base64 strings), an OpenAI file
+// object → `providerReference.openai`, raw audio bytes → `audio` (a byte
+// array). The canned responses below are the provider shapes (what the mock
+// returns); the assertions decode the result into the typed result structs
+// (what the FFI returns).
 //
-// Call-options JSON always includes `"provider_options":{}` because the Rust
-// SharedProviderOptions (HashMap) requires a map, not null — matching the Go
-// bindings' non-omitempty `jsonObj` (see bindings/go/multimodal_types.go).
+// Image, video and file call options carry `"providerOptions":{}` where the
+// generated options type requires it (`ImageCallOptions`, `VideoCallOptions`).
 
 import XCTest
 @testable import Aimux
@@ -36,19 +36,17 @@ final class MultimodalTests: XCTestCase {
         let model = try EmbeddingModel.openai(
             apiKey: "test", modelId: "text-embedding-3-small", baseUrl: server.baseURL
         )
-        let r = parseJSON(try model.embed(values: jsonEncode(["hello"])))
+        let r = try decode(EmbeddingResult.self, try model.embed(values: jsonEncode(["hello"])))
 
         // `embeddings` is [[float]]; verify one embedding vector of dimension 3.
-        let embeddings = (r["embeddings"] as? [Any]) ?? []
-        XCTAssertEqual(embeddings.count, 1)
-        let firstDims = (embeddings.first as? [Any]) ?? []
-        XCTAssertEqual(firstDims.count, 3, "first embedding should have 3 dimensions")
+        XCTAssertEqual(r.embeddings.count, 1)
+        XCTAssertEqual(r.embeddings.first?.count, 3, "first embedding should have 3 dimensions")
     }
 
     // MARK: - Image
 
     /// OpenAI image: mock returns `data[].b64_json`; the FFI exposes it as
-    /// `images.Base64[]`.
+    /// `images` (base64 strings).
     func testE2E_ImageViaMock() throws {
         let server = MockHTTPServer(response: jsonResponse(
             #"{"data":[{"b64_json":"aW1hZ2Ux"}]}"#
@@ -62,14 +60,11 @@ final class MultimodalTests: XCTestCase {
         let opts = jsonEncode([
             "prompt": "otter",
             "n": 1,
-            "provider_options": [String: Any](),
+            "providerOptions": [String: Any](),
         ])
-        let r = parseJSON(try model.generate(options: opts))
+        let r = try decode(ImageResult.self, try model.generate(options: opts))
 
-        let images = (r["images"] as? [String: Any]) ?? [:]
-        let base64 = (images["Base64"] as? [String]) ?? []
-        XCTAssertEqual(base64.count, 1)
-        XCTAssertEqual(base64[0], "aW1hZ2Ux")
+        XCTAssertEqual(r.images, .base64(["aW1hZ2Ux"]))
     }
 
     // MARK: - Transcription
@@ -86,15 +81,16 @@ final class MultimodalTests: XCTestCase {
         let model = try TranscriptionModel.openai(
             apiKey: "test", modelId: "whisper-1", baseUrl: server.baseURL
         )
-        let r = parseJSON(try model.generate(audioBase64: "dGVzdA==", mediaType: "audio/mp3"))
+        let r = try decode(TranscriptionResult.self,
+                           try model.generate(audioBase64: "dGVzdA==", mediaType: "audio/mp3"))
 
-        XCTAssertEqual(r["text"] as? String, "Hello world")
+        XCTAssertEqual(r.text, "Hello world")
     }
 
     // MARK: - Reranking
 
     /// Cohere reranking: mock returns `results[]`; the FFI exposes it as
-    /// `ranking[]` with `index` and `relevance_score`.
+    /// `ranking[]` with `index` and `relevanceScore`.
     func testE2E_RerankingViaMock() throws {
         let server = MockHTTPServer(response: jsonResponse(
             #"{"results":[{"index":1,"relevance_score":0.95},{"index":0,"relevance_score":0.3}]}"#
@@ -107,16 +103,14 @@ final class MultimodalTests: XCTestCase {
         )
         let opts = jsonEncode([
             "query": "which?",
-            "documents": ["Text": ["values": ["doc1", "doc2"]]],
-            "top_n": 2,
-            "provider_options": [String: Any](),
+            "documents": ["type": "text", "values": ["doc1", "doc2"]],
+            "topN": 2,
         ])
-        let r = parseJSON(try model.rerank(options: opts))
+        let r = try decode(RerankingResult.self, try model.rerank(options: opts))
 
-        let ranking = (r["ranking"] as? [[String: Any]]) ?? []
-        XCTAssertEqual(ranking.count, 2)
-        XCTAssertEqual(ranking[0]["index"] as? Int, 1)
-        XCTAssertEqual(ranking[0]["relevance_score"] as? Double, 0.95)
+        XCTAssertEqual(r.ranking.count, 2)
+        XCTAssertEqual(r.ranking[0].index, 1)
+        XCTAssertEqual(r.ranking[0].relevanceScore, 0.95)
     }
 
     // MARK: - Search
@@ -133,20 +127,18 @@ final class MultimodalTests: XCTestCase {
         let model = try SearchModel.tavily(apiKey: "test", baseUrl: server.baseURL)
         let opts = jsonEncode([
             "query": "What is Rust?",
-            "provider_options": [String: Any](),
         ])
-        let r = parseJSON(try model.search(options: opts))
+        let r = try decode(SearchResult.self, try model.search(options: opts))
 
-        let results = (r["results"] as? [[String: Any]]) ?? []
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results[0]["title"] as? String, "Rust")
-        XCTAssertEqual(r["answer"] as? String, "Rust is a systems language.")
+        XCTAssertEqual(r.results.count, 1)
+        XCTAssertEqual(r.results[0].title, "Rust")
+        XCTAssertEqual(r.answer, "Rust is a systems language.")
     }
 
     // MARK: - Files
 
     /// OpenAI files: mock returns an OpenAI file object; the FFI exposes the
-    /// file id as `provider_reference.openai`.
+    /// file id as `providerReference.openai`.
     func testE2E_FilesViaMock() throws {
         let server = MockHTTPServer(response: jsonResponse(
             #"{"id":"file-abc","object":"file","bytes":1024,"created_at":1234,"filename":"test.pdf","purpose":"assistants"}"#
@@ -155,10 +147,10 @@ final class MultimodalTests: XCTestCase {
         defer { server.stop() }
 
         let files = try Files.openai(apiKey: "test", baseUrl: server.baseURL)
-        let r = parseJSON(try files.upload(dataBase64: "dGVzdA==", mediaType: "application/pdf"))
+        let r = try decode(UploadFileResult.self,
+                           try files.upload(dataBase64: "dGVzdA==", mediaType: "application/pdf"))
 
-        let providerRef = (r["provider_reference"] as? [String: Any]) ?? [:]
-        XCTAssertEqual(providerRef["openai"] as? String, "file-abc")
+        XCTAssertEqual(r.providerReference["openai"], "file-abc")
     }
 
     // MARK: - Speech (TTS)
@@ -167,7 +159,7 @@ final class MultimodalTests: XCTestCase {
     /// `Content-Type: audio/mpeg`. Unlike a URLProtocol mock, this POSIX-socket
     /// MockHTTPServer supports arbitrary content-types via direct `MockResponse`
     /// construction, so we exercise the full round trip (Swift → FFI → reqwest →
-    /// mock). The FFI returns the bytes as `audio.Binary`.
+    /// mock). The FFI returns the bytes as `audio` (a byte array).
     func testE2E_SpeechViaMock() throws {
         // A non-empty binary payload (the literal bytes of a base64-looking
         // string, matching bindings/go/multimodal_withbase_test.go).
@@ -184,14 +176,14 @@ final class MultimodalTests: XCTestCase {
         let opts = jsonEncode([
             "text": "Hi",
             "voice": "alloy",
-            "output_format": "mp3",
-            "provider_options": [String: Any](),
+            "outputFormat": "mp3",
         ])
-        let r = parseJSON(try model.generate(options: opts))
+        let r = try decode(SpeechResult.self, try model.generate(options: opts))
 
-        let audio = (r["audio"] as? [String: Any]) ?? [:]
-        let binary = (audio["Binary"] as? [Any]) ?? []
-        XCTAssertFalse(binary.isEmpty, "speech audio should contain binary bytes")
+        guard case .binary(let bytes) = r.audio else {
+            return XCTFail("expected binary audio, got \(r.audio)")
+        }
+        XCTAssertFalse(bytes.isEmpty, "speech audio should contain binary bytes")
     }
 
     // MARK: - Video (construction + result parsing only)
@@ -199,22 +191,19 @@ final class MultimodalTests: XCTestCase {
     /// Google video uses a multi-step async API (POST predict → poll operation →
     /// fetch result) that a single-response mock server can't cover. We verify
     /// construction with a base URL (pointing at a non-listening port, never
-    /// contacted) and parse a canned VideoResult JSON, checking the `Url`
-    /// variant's `url`/`media_type` — mirroring the Go test.
+    /// contacted) and decode a canned VideoResult JSON, checking the `url`
+    /// variant's `url`/`mediaType` — mirroring the Go test.
     func testE2E_VideoConstructionAndParse() throws {
         let model = try VideoModel.google(
             apiKey: "test", modelId: "veo-3.0", baseUrl: "http://localhost:9999"
         )
         XCTAssertNotNil(model)
 
-        let r = parseJSON(
-            #"{"videos":[{"Url":{"url":"https://example.com/v.mp4","media_type":"video/mp4"}}]}"#
-        )
-        let videos = (r["videos"] as? [[String: Any]]) ?? []
-        XCTAssertEqual(videos.count, 1)
-        let urlData = (videos[0]["Url"] as? [String: Any]) ?? [:]
-        XCTAssertEqual(urlData["url"] as? String, "https://example.com/v.mp4")
-        XCTAssertEqual(urlData["media_type"] as? String, "video/mp4")
+        let r = try decode(VideoResult.self, """
+            {"videos":[{"type":"url","url":"https://example.com/v.mp4","mediaType":"video/mp4"}],
+             "warnings":[],"response":{}}
+            """)
+        XCTAssertEqual(r.videos, [.url(url: "https://example.com/v.mp4", mediaType: "video/mp4")])
     }
 
     // MARK: - TranscriptionSession use-after-close
@@ -296,11 +285,7 @@ private func jsonEncode(_ object: Any) -> String {
     return String(data: data, encoding: .utf8)!
 }
 
-/// Parse a JSON object string into `[String: Any]` (empty on failure).
-private func parseJSON(_ s: String) -> [String: Any] {
-    guard let data = s.data(using: .utf8),
-          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-        return [:]
-    }
-    return obj
+/// Decode a JSON result string into its typed result struct.
+private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
+    try JSONDecoder().decode(type, from: Data(json.utf8))
 }
