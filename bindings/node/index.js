@@ -701,6 +701,7 @@ if (!nativeBinding) {
 
 module.exports = nativeBinding
 module.exports.AbortBridge = nativeBinding.AbortBridge
+module.exports.DecisionModel = nativeBinding.DecisionModel
 module.exports.EmbeddingModel = nativeBinding.EmbeddingModel
 module.exports.Files = nativeBinding.Files
 module.exports.ImageModel = nativeBinding.ImageModel
@@ -736,6 +737,7 @@ module.exports.initRecording = nativeBinding.initRecording
 module.exports.initRecordingRing = nativeBinding.initRecordingRing
 module.exports.initSessionInfer = nativeBinding.initSessionInfer
 module.exports.initSessionStore = nativeBinding.initSessionStore
+module.exports.jevDecision = nativeBinding.jevDecision
 module.exports.listSessions = nativeBinding.listSessions
 module.exports.mistral = nativeBinding.mistral
 module.exports.moa = nativeBinding.moa

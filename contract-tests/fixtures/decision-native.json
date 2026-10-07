@@ -1,0 +1,121 @@
+{
+  "source": "Synthetic contract based on official TypeSafe API and SDK types; not a recorded live call",
+  "request": {
+    "state": {
+      "ticket": "Payments blocked"
+    },
+    "questions": [
+      {
+        "id": "urgent",
+        "type": "boolean",
+        "instructions": {
+          "question": "Is action urgent?",
+          "context": [
+            "payments"
+          ]
+        },
+        "criteria": {
+          "true": {
+            "includes": [
+              "blocked"
+            ]
+          },
+          "false": [
+            "routine",
+            "can wait"
+          ]
+        }
+      },
+      {
+        "id": "department",
+        "type": "choice",
+        "instructions": [
+          "Route the ticket",
+          {
+            "priority": "payments"
+          }
+        ],
+        "options": [
+          {
+            "label": "billing",
+            "description": {
+              "includes": [
+                "payments"
+              ],
+              "examples": [
+                "payout failure"
+              ]
+            }
+          },
+          {
+            "label": "technical"
+          }
+        ]
+      },
+      {
+        "id": "severity",
+        "type": "score",
+        "instructions": "Rate severity",
+        "levels": [
+          {
+            "label": "low",
+            "includes": [
+              "minor inconvenience"
+            ]
+          },
+          [
+            "blocking",
+            "No workaround"
+          ]
+        ]
+      }
+    ],
+    "max_retries": 0,
+    "timeout": {
+      "total_ms": 2000
+    }
+  },
+  "response": {
+    "model": "jev-1.13.0",
+    "answers": {
+      "urgent": {
+        "type": "noul",
+        "noul": 0.9
+      },
+      "department": {
+        "type": "choice",
+        "choice": "billing",
+        "probabilities": {
+          "billing": 0.8,
+          "technical": 0.2
+        },
+        "confidence": 0.6
+      },
+      "severity": {
+        "type": "score",
+        "score": 0.25,
+        "legend": {
+          "0": {
+            "label": "low",
+            "includes": [
+              "minor inconvenience"
+            ]
+          },
+          "1": [
+            "blocking",
+            "No workaround"
+          ]
+        },
+        "probabilities": {
+          "0": 0.75,
+          "1": 0.25
+        },
+        "confidence": 0.5
+      }
+    },
+    "usage": {
+      "input_tokens": 50,
+      "output_tokens": 10
+    }
+  }
+}

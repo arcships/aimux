@@ -33,6 +33,10 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal interface AimuxFFI : Library {
+    fun aimux_jev_decision_new_with_probability_source(apiKey: String, modelId: String, endpoint: String?, probabilitySource: String?, outHandle: LongByReference): Pointer?
+    fun aimux_decide_with_abort(handle: Long, optsJson: String, abortHandle: Long, outJson: PointerByReference): Pointer?
+    fun aimux_decision_capabilities(handle: Long, outJson: PointerByReference): Pointer?
+
     // apiKey nullable only so tests can exercise the NULL-argument C ABI failure; Model.openai never passes null.
     fun aimux_openai_new(apiKey: String?, modelId: String, outHandle: LongByReference): Pointer?
     fun aimux_anthropic_new(apiKey: String, modelId: String, outHandle: LongByReference): Pointer?

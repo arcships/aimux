@@ -10,7 +10,7 @@
 | category | count |
 |----------|-------|
 | Registry-backed OpenAI-compatible (`provider(name, ...)`) | 281 |
-| Non-registry: Native protocol providers | 13 |
+| Non-registry: Native protocol providers | 14 |
 | Non-registry: Speech-only providers (TTS) | 4 |
 | Non-registry: Transcription-only providers (STT) | 5 |
 | Non-registry: Image-only providers | 4 |
@@ -22,9 +22,9 @@
 | Non-registry: Stability image provider (image modality only) | 1 |
 | Non-registry: Video-only provider (runwayml) | 1 |
 | Non-registry: Search-only providers (web search modality) | 11 |
-| **Total providers** | **325** |
+| **Total providers** | **326** |
 
-**281 registry-backed OpenAI-compatible providers** (create presets by name via `provider(name, ...)`) + **44 non-registry providers** (construct via the typed factories listed below).
+**281 registry-backed OpenAI-compatible providers** (create presets by name via `provider(name, ...)`) + **45 non-registry providers** (construct via the typed factories listed below).
 
 ## Registry-backed (OpenAI-compatible) — 281
 
@@ -316,7 +316,7 @@
 
 These providers are **not** name-addressable: `provider("anthropic", ...)` fails with `NoSuchProvider`. Use the typed entry points below (Rust type names; per-binding constructors: see [reference.md](reference.md)).
 
-### Native protocol providers — 13
+### Native protocol providers — 14
 
 | module | typed entry points |
 |--------|--------------------|
@@ -326,6 +326,7 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `bedrock` | `AmazonBedrockProvider` / `AmazonBedrockProviderSettings` / `create_amazon_bedrock` |
 | `cohere` | `CohereProvider` / `CohereProviderSettings` / `create_cohere` |
 | `google` | `GoogleProvider` / `GoogleProviderSettings` / `create_google` |
+| `jev` | `JevConfig` / `JevProvider` |
 | `mistral` | `MistralProvider` / `MistralProviderSettings` / `create_mistral` |
 | `openai` | `OpenAIProvider` / `OpenAIProviderSettings` / `create_openai` |
 | `vertex` | `VertexAnthropicProvider` / `VertexAnthropicProviderSettings` / `VertexProvider` / `VertexProviderSettings` / `create_google_vertex` / `create_google_vertex_anthropic` |
