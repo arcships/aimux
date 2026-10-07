@@ -99,7 +99,7 @@ aimux/
 ├── aimux-core            # Core abstractions: LanguageModel / Provider / Message / StreamPart
 ├── aimux-providers       # Provider implementations — registry-backed + typed (docs/api/providers.md)
 ├── aimux-stream          # SSE / NDJSON stream parsing
-├── aimux-provider-utils  # One-exchange HTTP helpers, response handlers, API-key loading
+├── aimux-provider-utils  # One-exchange HTTP helpers, response handlers, API-key loading, streamed tool-call tracking
 ├── aimux-ffi             # C ABI (opaque handles + JSON results + owned aimux_error_t *) for non-native bindings
 └── tools/                # aimux-cli (cache probe) · aimux-replay · aimux-web (console)
 ```
@@ -123,7 +123,7 @@ cargo add aimux-core aimux-providers
 | `aimux-core` | Core abstractions: `LanguageModel` / `Provider` / `Message` / `StreamPart` | [crates.io](https://crates.io/crates/aimux-core) |
 | `aimux-providers` | Provider implementations — [registry-backed + typed](docs/api/providers.md) | [crates.io](https://crates.io/crates/aimux-providers) |
 | `aimux-stream` | SSE / NDJSON stream parsing | [crates.io](https://crates.io/crates/aimux-stream) |
-| `aimux-provider-utils` | One-exchange HTTP helpers and typed response handlers | [crates.io](https://crates.io/crates/aimux-provider-utils) |
+| `aimux-provider-utils` | One-exchange HTTP helpers, typed response handlers, streamed tool-call tracking | [crates.io](https://crates.io/crates/aimux-provider-utils) |
 | `aimux-ffi` | C ABI for non-native bindings | [crates.io](https://crates.io/crates/aimux-ffi) |
 
 **Node.js**:
