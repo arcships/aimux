@@ -1,6 +1,6 @@
 //! Rust translation of the Mistral transcription model tests.
 //!
-//! Source: `reference/ai/packages/mistral/src/mistral-transcription-model.test.ts`
+//! Source: `reference/aisdk-pinned/mistral/src/mistral-transcription-model.test.ts`
 //!
 //! The requests go through a scripted transport (`common/mock_fetch.rs`); the
 //! TS `createTestServer` has no counterpart here, and the multipart body is
