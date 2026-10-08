@@ -290,7 +290,11 @@ pub enum AiMuxError {
 
     /// Registry-level "provider name does not resolve" (the AI SDK's
     /// `NoSuchProviderError`).
-    #[error("No such provider: {provider_id} (available providers: {})", .available_providers.join(","))]
+    ///
+    /// The message adds up to three close names from `available_providers`
+    /// (an aimux addition to the upstream text; the fields are unchanged).
+    #[error("No such provider: {provider_id}{} (available providers: {})",
+        did_you_mean(.provider_id, .available_providers), .available_providers.join(","))]
     NoSuchProvider {
         provider_id: String,
         model_id: String,
@@ -435,6 +439,70 @@ wire_variants! {
         NoSuchProvider { provider_id, model_id, model_type, available_providers }
 }
 
+/// `". Did you mean 'a', 'b'?"` for the names in `candidates` closest to
+/// `name`, or `""` when none is close. Names compare case-insensitively with
+/// `-` read as `_` (the built-in names use `_`); a candidate is close when its
+/// edit distance (adjacent swaps count once) is at most 2 and at most a third
+/// of the longer name. At most three names, nearest first.
+fn did_you_mean(name: &str, candidates: &[String]) -> String {
+    fn normalize(name: &str) -> Vec<char> {
+        name.chars()
+            .map(|c| {
+                if c == '-' {
+                    '_'
+                } else {
+                    c.to_ascii_lowercase()
+                }
+            })
+            .collect()
+    }
+    let wanted = normalize(name);
+    let mut close: Vec<(usize, &str)> = candidates
+        .iter()
+        .filter_map(|candidate| {
+            let distance = edit_distance(&wanted, &normalize(candidate));
+            let longer = wanted.len().max(candidate.chars().count());
+            (distance <= 2 && distance * 3 <= longer).then_some((distance, candidate.as_str()))
+        })
+        .collect();
+    close.sort_unstable();
+    close.dedup_by(|a, b| a.1 == b.1);
+    if close.is_empty() {
+        return String::new();
+    }
+    let names: Vec<String> = close
+        .iter()
+        .take(3)
+        .map(|(_, name)| format!("'{name}'"))
+        .collect();
+    format!(". Did you mean {}?", names.join(", "))
+}
+
+/// Optimal-string-alignment distance: insertions, deletions, substitutions
+/// and swaps of two adjacent characters each cost one.
+fn edit_distance(a: &[char], b: &[char]) -> usize {
+    let mut rows = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for (i, row) in rows.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, cell) in rows[0].iter_mut().enumerate() {
+        *cell = j;
+    }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            let mut best = (rows[i - 1][j] + 1)
+                .min(rows[i][j - 1] + 1)
+                .min(rows[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                best = best.min(rows[i - 2][j - 2] + 1);
+            }
+            rows[i][j] = best;
+        }
+    }
+    rows[a.len()][b.len()]
+}
+
 fn no_such_tool_availability(available_tools: &Option<Vec<String>>) -> String {
     match available_tools {
         Some(tools) => format!("Available tools: {}.", tools.join(", ")),
@@ -571,6 +639,62 @@ impl AiMuxError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn no_such_provider(name: &str, available: &[&str]) -> String {
+        AiMuxError::NoSuchProvider {
+            provider_id: name.into(),
+            model_id: name.into(),
+            model_type: String::new(),
+            available_providers: available.iter().map(|n| (*n).to_string()).collect(),
+        }
+        .to_string()
+    }
+
+    /// A misspelled provider name gets the close built-in names first; the
+    /// full list still follows.
+    #[test]
+    fn no_such_provider_suggests_close_names() {
+        let available = ["anthropic", "google_vertex", "groq", "openai", "openrouter"];
+        assert_eq!(
+            no_such_provider("opeanai", &available),
+            "No such provider: opeanai. Did you mean 'openai'? \
+             (available providers: anthropic,google_vertex,groq,openai,openrouter)"
+        );
+        // An adjacent swap counts once.
+        assert!(no_such_provider("gorq", &available).contains("Did you mean 'groq'?"));
+        // Case and `-` versus `_` do not matter.
+        assert!(
+            no_such_provider("Google-Vertex", &available).contains("Did you mean 'google_vertex'?")
+        );
+        assert!(no_such_provider("antropic", &available).contains("Did you mean 'anthropic'?"));
+    }
+
+    /// No suggestion when nothing is close or there is nothing to suggest.
+    #[test]
+    fn no_such_provider_without_a_close_name_keeps_the_plain_message() {
+        assert_eq!(
+            no_such_provider("acme", &["anthropic", "openai"]),
+            "No such provider: acme (available providers: anthropic,openai)"
+        );
+        assert_eq!(
+            no_such_provider("p", &[]),
+            "No such provider: p (available providers: )"
+        );
+    }
+
+    /// At most three names, nearest first, then by name.
+    #[test]
+    fn no_such_provider_suggests_at_most_three_names() {
+        let candidates = ["abcdefxy", "abcdefgz", "abcdefgy", "abcdefgx"];
+        assert!(
+            no_such_provider("abcdefgh", &candidates)
+                .contains("Did you mean 'abcdefgx', 'abcdefgy', 'abcdefgz'?")
+        );
+        assert!(
+            no_such_provider("abcdefgh", &["abcdefxy", "abcdefgz"])
+                .contains("Did you mean 'abcdefgz', 'abcdefxy'?")
+        );
+    }
 
     fn api_error(message: &str) -> ApiCallError {
         ApiCallError::new(message, "https://example.test", serde_json::json!({}))

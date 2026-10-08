@@ -410,4 +410,27 @@ mod tests {
         assert_eq!(available_providers, provider_names());
         assert!(available_providers.iter().any(|name| name == "openai"));
     }
+
+    /// Against the real built-in names, common misspellings get the intended
+    /// name suggested.
+    #[test]
+    fn a_misspelled_name_suggests_the_built_in_one() {
+        for (typo, intended) in [
+            ("opeanai", "openai"),
+            ("antropic", "anthropic"),
+            ("gorq", "groq"),
+            ("google-vertex", "google_vertex"),
+            ("Amazon-Bedrock", "amazon_bedrock"),
+        ] {
+            let Err(error) = create_provider(typo, PresetSettings::default()) else {
+                panic!("{typo} should not resolve");
+            };
+            let message = error.to_string();
+            assert!(
+                message.contains(&format!("'{intended}'")) && message.contains("Did you mean"),
+                "{typo}: {}",
+                &message[..message.find(" (available").unwrap_or(message.len())]
+            );
+        }
+    }
 }
