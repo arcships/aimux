@@ -92,6 +92,16 @@ pub fn create_provider(
     settings: PresetSettings,
 ) -> Result<Arc<dyn Provider>, AiMuxError> {
     if !PACKAGES.contains(&name) {
+        // Checked here, not left to `preset::create`: its error lists only the
+        // registry rows, and a misspelled package name must list the packages.
+        if preset::lookup(name).is_none() {
+            return Err(AiMuxError::NoSuchProvider {
+                provider_id: name.to_string(),
+                model_id: name.to_string(),
+                model_type: String::new(),
+                available_providers: provider_names().into_iter().map(str::to_owned).collect(),
+            });
+        }
         return Ok(Arc::new(preset::create(name, settings)?));
     }
     let PresetSettings {
@@ -378,4 +388,26 @@ pub fn default_providers() -> BTreeMap<String, Arc<dyn Provider>> {
             (name.to_string(), provider)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A misspelled name lists every name `create_provider` accepts, the
+    /// vendor packages included, not only the registry rows.
+    #[test]
+    fn an_unknown_name_lists_every_built_in_provider() {
+        let Err(AiMuxError::NoSuchProvider {
+            provider_id,
+            available_providers,
+            ..
+        }) = create_provider("opeanai", PresetSettings::default())
+        else {
+            panic!("expected NoSuchProvider");
+        };
+        assert_eq!(provider_id, "opeanai");
+        assert_eq!(available_providers, provider_names());
+        assert!(available_providers.iter().any(|name| name == "openai"));
+    }
 }
