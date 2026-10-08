@@ -103,6 +103,11 @@ pub(crate) fn convert_response(
     profile: ResponseProfile<'_>,
 ) -> Result<DecisionResult, AiMuxError> {
     let provider = profile.provider;
+    if data.model.trim().is_empty() {
+        return Err(AiMuxError::InvalidResponseData(format!(
+            "{provider} omitted response model"
+        )));
+    }
     let mut answers = BTreeMap::new();
     for (id, answer) in data.answers {
         let answer = match answer {
@@ -114,6 +119,7 @@ pub(crate) fn convert_response(
                 probabilities,
                 confidence,
             } => DecisionAnswer::Choice {
+                value: None,
                 selected: choice,
                 probabilities: Some(probabilities),
                 confidence: Some(confidence),

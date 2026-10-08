@@ -113,6 +113,9 @@ impl DecisionModel for JevDecisionModel {
     }
     fn capabilities(&self) -> DecisionCapabilities {
         DecisionCapabilities {
+            supports_images: false,
+            max_images: None,
+            supports_typed_choices: false,
             rounding: JEV_ROUNDING,
             probability_source: self.config.probability_source,
             supports_boolean: true,

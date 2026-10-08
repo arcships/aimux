@@ -146,3 +146,52 @@ func TestDecisionContextCancelsNativeRequest(t *testing.T) {
 		t.Fatal("cancellation hung")
 	}
 }
+
+func TestOpenAIDecisionMediaAndNativeValues(t *testing.T) {
+	data, err := os.ReadFile("../../contract-tests/fixtures/decision-openai-full.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	requests := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/decisions" {
+			t.Errorf("wrong decision route: %s", r.URL.Path)
+		}
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		requests <- request
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(fixture["response"])
+	}))
+	defer server.Close()
+	provider, err := CreateProvider("openai", "test-key", &ProviderConfig{BaseURL: server.URL + "/v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Close()
+	model, err := provider.DecisionModel("gpt-6-luna")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer model.Close()
+	result, err := model.DecideJSONContext(context.Background(), string(fixture["options"]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded, expected map[string]any
+	json.Unmarshal([]byte(result), &decoded)
+	json.Unmarshal(fixture["request"], &expected)
+	if !reflect.DeepEqual(<-requests, expected) {
+		t.Fatal("native request changed across Go boundary")
+	}
+	choice := decoded["answers"].(map[string]any)["choice"].(map[string]any)
+	if choice["value"] != true || choice["selected"] != "boolean_true" {
+		t.Fatal(result)
+	}
+}

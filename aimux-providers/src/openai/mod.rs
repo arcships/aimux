@@ -394,10 +394,16 @@ impl Provider for OpenAIProvider {
         &self,
         model_id: &str,
     ) -> Result<Box<dyn aimux_core::DecisionModel>, AiMuxError> {
-        Ok(Box::new(OpenAIDecisionModel::new(
-            model_id,
-            self.config.clone(),
-        )?))
+        if self.config.provider == "openai" {
+            Ok(Box::new(OpenAIDecisionModel::new(
+                model_id,
+                self.config.clone(),
+            )?))
+        } else {
+            Ok(Box::new(
+                crate::runtime_decision::RuntimeDecisionModel::new(model_id, self.config.clone())?,
+            ))
+        }
     }
 
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {

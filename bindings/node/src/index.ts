@@ -210,6 +210,9 @@ export type RawModel = Model
 export type {
   DecisionAnswer,
   DecisionDescription,
+  DecisionImage,
+  DecisionValue,
+  DecisionScoreLevel,
   DecisionBooleanCriteria,
   DecisionRounding,
   DecisionQuestion,

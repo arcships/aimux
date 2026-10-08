@@ -32,8 +32,9 @@ pub fn rebuild_decision_provider(
     p: &ProviderRecord,
     api_key: Option<&str>,
 ) -> Result<Box<dyn aimux_core::decision_model::DecisionModel>, AiMuxError> {
-    if p.provider == "openai" {
+    if p.provider == "openai" || crate::runtime_decision::supported(&p.provider) {
         let mut config = OpenAIConfig::new(resolve_api_key(p, api_key)?)
+            .with_provider(&p.provider)
             .with_api_key_source(Some(&p.api_key_source));
         if let Some(base_url) = &p.base_url {
             config = config.with_base_url(base_url);

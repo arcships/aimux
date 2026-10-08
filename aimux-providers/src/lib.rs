@@ -277,4 +277,7 @@ pub use tavily::{TavilyConfig, TavilyProvider, TavilySearchModel};
 pub use tinyfish::{TinyfishConfig, TinyfishProvider, TinyfishSearchModel};
 pub use you_com::{YouComConfig, YouComProvider, YouComSearchModel};
 
+mod decision_scoring;
+mod decision_support;
+mod runtime_decision;
 mod systemone;

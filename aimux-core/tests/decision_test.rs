@@ -22,6 +22,9 @@ impl DecisionModel for TestModel {
     }
     fn capabilities(&self) -> DecisionCapabilities {
         DecisionCapabilities {
+            supports_images: false,
+            max_images: None,
+            supports_typed_choices: false,
             rounding: DecisionRounding::default(),
             probability_source: DecisionProbabilitySource::ModelEstimate,
             supports_boolean: true,
@@ -45,6 +48,7 @@ impl DecisionModel for TestModel {
                 (
                     "choice".into(),
                     DecisionAnswer::Choice {
+                        value: None,
                         selected: "yes".into(),
                         probabilities: None,
                         confidence: None,
@@ -269,4 +273,45 @@ fn structured_descriptions_reject_scalar_coercion_and_bad_levels() {
         let request: DecisionCallOptions = serde_json::from_value(request).unwrap();
         assert!(request.validate().is_err());
     }
+}
+
+#[tokio::test]
+async fn native_float32_softmax_noise_is_not_decimal_rounding() {
+    let model = TestModel {
+        calls: AtomicUsize::new(0),
+        pending: false,
+        distributions: false,
+    };
+    let mut request = options();
+    let levels: Vec<DecisionDescription> = vec!["low".into(), "middle".into(), "high".into()];
+    if let DecisionQuestion::Score {
+        levels: original, ..
+    } = &mut request.questions[1]
+    {
+        *original = levels.clone();
+    }
+    let mut result = model.do_decide(&request).await.unwrap();
+    let probabilities = vec![f64::from(0.1_f32), f64::from(0.2_f32), f64::from(0.7_f32)];
+    result.answers.insert(
+        "score".into(),
+        DecisionAnswer::Score {
+            expected_value: f64::from(1.6_f32),
+            levels,
+            probabilities: Some(probabilities.clone()),
+            confidence: None,
+        },
+    );
+    result.validate(&request).unwrap();
+    assert_eq!(result.rounding, DecisionRounding::default());
+    if let DecisionAnswer::Score {
+        probabilities: Some(actual),
+        ..
+    } = &result.answers["score"]
+    {
+        assert_eq!(*actual, probabilities);
+    }
+    if let DecisionAnswer::Score { expected_value, .. } = result.answers.get_mut("score").unwrap() {
+        *expected_value = 1.601;
+    }
+    assert!(result.validate(&request).is_err());
 }

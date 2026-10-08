@@ -10,9 +10,29 @@ use ts_rs::TS;
 use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions};
 use crate::{AbortSignal, AiMuxError, retry, timeout};
 
-/// Text or JSON context shared by all questions. Media requires a future
-/// explicit input contract; JSON objects are not interpreted as media parts.
+/// Text or JSON context shared by all questions. Images are supplied separately;
+/// JSON objects are not interpreted as media parts.
 pub type DecisionState = serde_json::Value;
+
+/// An inline image shared by all questions, placed before the textual state.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DecisionImage {
+    pub data: crate::shared::FileBytes,
+    pub media_type: String,
+    /// Provider image detail, for example OpenAI's `low`, `high`, `auto`, `original`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// A native choice value, distinct from the canonical option label used as a key.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+#[ts(export)]
+pub enum DecisionValue {
+    Text(String),
+    Boolean(bool),
+}
 
 /// Native question text or structured guidance, serialized without coercion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -33,6 +53,28 @@ impl From<String> for DecisionDescription {
 impl From<&str> for DecisionDescription {
     fn from(value: &str) -> Self {
         Self::Text(value.into())
+    }
+}
+
+/// A named score level with a separate description (OpenAI's native rubric).
+/// Convert into `DecisionDescription` to use it in `DecisionQuestion::Score`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct DecisionScoreLevel {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+impl From<DecisionScoreLevel> for DecisionDescription {
+    fn from(level: DecisionScoreLevel) -> Self {
+        let mut object = serde_json::Map::new();
+        object.insert("label".into(), level.label.into());
+        if let Some(description) = level.description {
+            object.insert("description".into(), description.into());
+        }
+        Self::Object(object)
     }
 }
 
@@ -60,6 +102,9 @@ pub struct DecisionBooleanCriteria {
 #[ts(export)]
 pub struct DecisionOption {
     pub label: String,
+    /// Native value; when omitted, the label is sent as the value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<DecisionValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<DecisionDescription>,
 }
@@ -112,6 +157,8 @@ pub struct DecisionCallOptions {
     #[ts(skip)]
     pub recording_context: Option<crate::recording::RecordingContext>,
     pub state: DecisionState,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<DecisionImage>,
     pub questions: Vec<DecisionQuestion>,
     #[serde(skip)]
     #[ts(skip)]
@@ -131,6 +178,7 @@ impl DecisionCallOptions {
     pub fn new(state: DecisionState, questions: Vec<DecisionQuestion>) -> Self {
         Self {
             state,
+            images: Vec::new(),
             questions,
             recording_context: None,
             abort_signal: None,
@@ -166,6 +214,19 @@ impl DecisionCallOptions {
                 DecisionQuestion::Choice { options, .. } => {
                     if options.is_empty() {
                         return Err(invalid(format!("question {id:?} requires choices")));
+                    }
+                    let mut values = HashSet::new();
+                    if options.iter().any(|option| {
+                        !values.insert(
+                            option
+                                .value
+                                .clone()
+                                .unwrap_or_else(|| DecisionValue::Text(option.label.clone())),
+                        )
+                    }) {
+                        return Err(invalid(format!(
+                            "question {id:?} has duplicate native values"
+                        )));
                     }
                     options.iter().map(|option| option.label.as_str()).collect()
                 }
@@ -234,10 +295,16 @@ impl std::str::FromStr for DecisionProbabilitySource {
 pub enum DecisionAnswer {
     /// The provider declined this question; other answers remain usable.
     Refusal,
+    /// A conditional question was not evaluated. Provider details remain in raw.
+    Skipped,
+    /// The provider abstained rather than selecting an answer.
+    Abstention,
     /// P(true); callers choose their own thresholds.
     Boolean { probability_true: f64 },
     Choice {
         selected: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value: Option<DecisionValue>,
         probabilities: Option<BTreeMap<String, f64>>,
         confidence: Option<f64>,
     },
@@ -252,6 +319,12 @@ pub enum DecisionAnswer {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DecisionCapabilities {
+    #[serde(default)]
+    pub supports_images: bool,
+    #[serde(default)]
+    pub max_images: Option<usize>,
+    #[serde(default)]
+    pub supports_typed_choices: bool,
     #[serde(default)]
     pub rounding: DecisionRounding,
     pub probability_source: DecisionProbabilitySource,
@@ -314,12 +387,14 @@ fn is_probability(value: f64) -> bool {
     value.is_finite() && (0.0..=1.0).contains(&value)
 }
 
-/// Allow independent rounding at the provider-declared precision.
+/// Allow independent rounding at the provider-declared precision and f32
+/// softmax noise. Many runtimes return f32 probabilities as JSON f64 values.
 /// Do not normalize them: preserve the provider's numbers and raw response.
 fn valid_distribution(values: &[f64], rounding: DecisionRounding) -> bool {
     values.iter().all(|p| is_probability(*p))
         && (values.iter().sum::<f64>() - 1.0).abs()
-            <= DecisionRounding::error(rounding.probability_decimals) * values.len() as f64 + 1e-9
+            <= DecisionRounding::error(rounding.probability_decimals) * values.len() as f64
+                + f64::from(f32::EPSILON) * 2.0
 }
 
 /// If the unrounded probabilities q sum to one, their expected index t
@@ -338,7 +413,7 @@ fn consistent_score(score: f64, probabilities: &[f64], rounding: DecisionRoundin
             * (0..probabilities.len())
                 .map(|index| (index as f64 - score).abs())
                 .sum::<f64>();
-    residual.abs() <= tolerance + 1e-9
+    residual.abs() <= tolerance + f64::from(f32::EPSILON) * 2.0 * probabilities.len() as f64
 }
 
 impl DecisionResult {
@@ -363,7 +438,10 @@ impl DecisionResult {
             let id = question.id();
             let answer = self.answers.get(id).ok_or_else(|| invalid(id))?;
             let valid = match (question, answer) {
-                (_, DecisionAnswer::Refusal) => true,
+                (
+                    _,
+                    DecisionAnswer::Refusal | DecisionAnswer::Skipped | DecisionAnswer::Abstention,
+                ) => true,
                 (
                     DecisionQuestion::Boolean { .. },
                     DecisionAnswer::Boolean { probability_true },
@@ -372,12 +450,20 @@ impl DecisionResult {
                     DecisionQuestion::Choice { options, .. },
                     DecisionAnswer::Choice {
                         selected,
+                        value,
                         probabilities,
                         confidence,
                     },
                 ) => {
-                    options.iter().any(|option| &option.label == selected)
-                        && confidence.is_none_or(is_probability)
+                    options.iter().any(|option| {
+                        &option.label == selected
+                            && match (&option.value, value) {
+                                (Some(expected), Some(actual)) => expected == actual,
+                                (None, None) => true,
+                                (None, Some(DecisionValue::Text(actual))) => actual == selected,
+                                _ => false,
+                            }
+                    }) && confidence.is_none_or(is_probability)
                         && probabilities.as_ref().is_none_or(|distribution| {
                             distribution.len() == options.len()
                                 && options
@@ -452,6 +538,27 @@ pub async fn decide(
 ) -> Result<DecisionResult, AiMuxError> {
     options.validate()?;
     let capabilities = model.capabilities();
+    if !options.images.is_empty() && !capabilities.supports_images {
+        return Err(AiMuxError::UnsupportedFunctionality(format!(
+            "{} decisions do not support images",
+            model.provider()
+        )));
+    }
+    if capabilities
+        .max_images
+        .is_some_and(|max| options.images.len() > max)
+    {
+        return Err(AiMuxError::InvalidArgument(
+            "too many decision images".into(),
+        ));
+    }
+    if !capabilities.supports_typed_choices && options.questions.iter().any(|q| {
+        matches!(q, DecisionQuestion::Choice { options, .. } if options.iter().any(|o| o.value.is_some()))
+    }) {
+        return Err(AiMuxError::UnsupportedFunctionality(format!(
+            "{} decisions do not support native typed choice values", model.provider()
+        )));
+    }
     if !capabilities.rounding.is_valid() {
         return Err(AiMuxError::InvalidArgument(
             "invalid provider rounding precision".into(),

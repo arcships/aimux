@@ -1,0 +1,141 @@
+{
+  "provenance": "Synthetic contract fixture based on the official OpenAI Decisions reference, checked 2026-10-08. Not a live recording.",
+  "source": "https://developers.openai.com/api/reference/resources/decisions/methods/create",
+  "options": {
+    "state": "Classify the picture",
+    "images": [
+      {
+        "media_type": "image/png",
+        "data": {
+          "Base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1sAAAAASUVORK5CYII="
+        },
+        "detail": "low"
+      }
+    ],
+    "questions": [
+      {
+        "id": "choice",
+        "type": "choice",
+        "instructions": "Select a native value",
+        "options": [
+          {
+            "label": "boolean_true",
+            "value": true
+          },
+          {
+            "label": "text_true",
+            "value": "true"
+          }
+        ]
+      },
+      {
+        "id": "score",
+        "type": "score",
+        "instructions": "Rate it",
+        "levels": [
+          {
+            "label": "low",
+            "description": "Small amount"
+          },
+          {
+            "label": "high",
+            "description": "Large amount"
+          }
+        ]
+      }
+    ],
+    "max_retries": 0
+  },
+  "request": {
+    "model": "gpt-6-luna",
+    "input": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "input_image",
+            "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1sAAAAASUVORK5CYII=",
+            "detail": "low"
+          },
+          {
+            "type": "input_text",
+            "text": "Classify the picture"
+          }
+        ]
+      }
+    ],
+    "questions": [
+      {
+        "name": "choice",
+        "type": "choice",
+        "instructions": "Select a native value",
+        "choices": [
+          {
+            "value": true
+          },
+          {
+            "value": "true"
+          }
+        ]
+      },
+      {
+        "name": "score",
+        "type": "score",
+        "instructions": "Rate it",
+        "levels": [
+          {
+            "label": "low",
+            "description": "Small amount"
+          },
+          {
+            "label": "high",
+            "description": "Large amount"
+          }
+        ]
+      }
+    ]
+  },
+  "response": {
+    "model": "gpt-6-luna",
+    "answers": [
+      {
+        "name": "choice",
+        "type": "choice",
+        "choice": true,
+        "confidence": 0.7,
+        "probabilities": [
+          {
+            "value": true,
+            "probability": 0.75
+          },
+          {
+            "value": "true",
+            "probability": 0.25
+          }
+        ]
+      },
+      {
+        "name": "score",
+        "type": "score",
+        "score": 0.75,
+        "confidence": 0.6,
+        "probabilities": [
+          {
+            "value": 0,
+            "label": "low",
+            "probability": 0.25
+          },
+          {
+            "value": 1,
+            "label": "high",
+            "probability": 0.75
+          }
+        ]
+      }
+    ],
+    "usage": {
+      "input_tokens": 10,
+      "output_tokens": 0
+    }
+  }
+}

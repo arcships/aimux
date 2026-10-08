@@ -11,6 +11,8 @@ use crate::recording::{OutcomeStatus, Recording, RecordingOperation};
 fn key(options: &Value) -> Value {
     json!({
         "state": options["state"],
+        // Missing images in older recordings are equivalent to an empty list.
+        "images": options.get("images").cloned().unwrap_or_else(|| json!([])),
         "questions": options["questions"],
         "headers": options["headers"],
         "provider_options": options["provider_options"],

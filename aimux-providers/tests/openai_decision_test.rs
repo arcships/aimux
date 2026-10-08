@@ -211,7 +211,7 @@ async fn unsupported_native_fields_and_limits_fail_before_http() {
     criteria["questions"][0]["criteria"] = json!({"true":"yes"});
     cases.push(criteria);
     let mut levels = fixture()["options"].clone();
-    levels["questions"][2]["levels"][0] = json!({"label":"low"});
+    levels["questions"][2]["levels"][0] = json!({"label":"low", "unsupported":true});
     cases.push(levels);
     let mut choice = fixture()["options"].clone();
     choice["questions"][1]["options"]
@@ -333,4 +333,84 @@ async fn unified_recording_replays_refusals_and_rebuilds_the_same_provider_confi
     assert_eq!(request.headers["authorization"], "Bearer replacement-key");
     assert_eq!(request.headers["openai-project"], "proj-test");
     assert_eq!(request.headers["x-client"], "decision-tests");
+}
+
+#[tokio::test]
+#[serial]
+async fn images_typed_choices_and_score_descriptions_roundtrip_and_key_replay() {
+    let contract: Value = serde_json::from_str(include_str!(
+        "../../contract-tests/fixtures/decision-openai-full.json"
+    ))
+    .unwrap();
+    let server = MockServer::start().await;
+    Mock::given(path("/v1/decisions"))
+        .and(body_json(contract["request"].clone()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&contract["response"]))
+        .mount(&server)
+        .await;
+    let request: DecisionCallOptions = serde_json::from_value(contract["options"].clone()).unwrap();
+    let recorder = Arc::new(RingRecorder::new());
+    recording::init_recording(Some(recorder.clone()));
+    let _stop = StopRecording;
+    let result = decide(model(&server).as_ref(), request.clone())
+        .await
+        .unwrap();
+    recording::init_recording(None);
+    assert!(
+        matches!(&result.answers["choice"],DecisionAnswer::Choice{selected,value:Some(DecisionValue::Boolean(true)),..} if selected=="boolean_true")
+    );
+    assert!(
+        matches!(&result.answers["score"],DecisionAnswer::Score{levels,..} if serde_json::to_value(levels).unwrap()==contract["options"]["questions"][1]["levels"])
+    );
+    let records = recorder.completed();
+    let mock = MockDecisionReplayModel::new("openai", "gpt-6-luna", records.clone()).unwrap();
+    decide(&mock, request.clone()).await.unwrap();
+    let mut changed = request.clone();
+    changed.images.clear();
+    assert!(decide(&mock, changed).await.is_err());
+    let mut changed = request.clone();
+    changed.images[0].detail = Some("high".into());
+    assert!(decide(&mock, changed).await.is_err());
+    let replay_server = MockServer::start().await;
+    common::replay::mount_recording(&replay_server, &records[0]).await;
+    let mut config = records[0].provider.clone();
+    config.base_url = Some(format!("{}/v1", replay_server.uri()));
+    let rebuilt =
+        aimux_providers::rebuild_decision_provider(&config, Some("replacement-key")).unwrap();
+    let again = replay_decision_with_model(&records[0], rebuilt.as_ref())
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(result.answers).unwrap(),
+        serde_json::to_value(again.answers).unwrap()
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn bad_media_and_duplicate_native_values_are_rejected_before_http() {
+    let contract: Value = serde_json::from_str(include_str!(
+        "../../contract-tests/fixtures/decision-openai-full.json"
+    ))
+    .unwrap();
+    let server = MockServer::start().await;
+    for (pointer, value) in [
+        ("/images/0/data", json!({"Base64":"bad!"})),
+        ("/images/0/detail", json!("unknown")),
+        ("/images/0/media_type", json!("text/plain")),
+        ("/questions/0/options/1/value", json!(true)),
+        ("/questions/1/levels/1/label", json!("low")),
+    ] {
+        let mut request = contract["options"].clone();
+        *request.pointer_mut(pointer).unwrap() = value;
+        assert!(
+            decide(
+                model(&server).as_ref(),
+                serde_json::from_value(request).unwrap()
+            )
+            .await
+            .is_err()
+        );
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
 }

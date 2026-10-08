@@ -1,0 +1,118 @@
+{
+  "provenance": "Synthetic official-contract fixtures, checked 2026-10-08; not live recordings. Shared numeric examples exercise the common wire; provider-specific options, envelopes and media are tested separately.",
+  "sources": {
+    "ollama": "https://github.com/ollama/ollama/blob/e3cddc3e897d8414a60a46e23f5ef3a99be2eb81/decision/systemone.go",
+    "llamacpp": "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md#post-v1systemone-typesafe-compatible-system-one-api",
+    "localai": "https://localai.io/docs/features/decisions/",
+    "laya": "https://github.com/NandhaKishorM/laya/blob/3cf26cbcb18725dbc2d127bb8bb2c4c43243ae63/laya/serve.py",
+    "vllm": "https://github.com/vllm-project/vllm/blob/ba77c4c13018aa19244545cdc7ae8e016d66955e/examples/features/structured_diffusion/structured_server.py",
+    "sglang": "https://github.com/sgl-project/sglang/blob/45abea0269c4fce45ae811aabacb5bdf2aacd355/docs/docs/supported-models/decision_models.mdx",
+    "cloudflare": "https://developers.cloudflare.com/workers-ai/models/clef/"
+  },
+  "options": {
+    "state": {
+      "message": "Checkout is broken"
+    },
+    "questions": [
+      {
+        "id": "urgent",
+        "type": "boolean",
+        "instructions": "Needs a response today?"
+      },
+      {
+        "id": "team",
+        "type": "choice",
+        "instructions": "Select a team",
+        "options": [
+          {
+            "label": "billing",
+            "description": "Invoices"
+          },
+          {
+            "label": "support"
+          }
+        ]
+      },
+      {
+        "id": "severity",
+        "type": "score",
+        "instructions": "How severe?",
+        "levels": [
+          "minor",
+          "major",
+          "critical"
+        ]
+      }
+    ],
+    "max_retries": 0
+  },
+  "request": {
+    "model": "served-decision",
+    "state": {
+      "message": "Checkout is broken"
+    },
+    "questions": {
+      "urgent": {
+        "type": "noul",
+        "instructions": "Needs a response today?"
+      },
+      "team": {
+        "type": "choice",
+        "instructions": "Select a team",
+        "criteria": {
+          "billing": "Invoices",
+          "support": null
+        }
+      },
+      "severity": {
+        "type": "score",
+        "instructions": "How severe?",
+        "criteria": [
+          "minor",
+          "major",
+          "critical"
+        ]
+      }
+    }
+  },
+  "response": {
+    "model": "served-decision",
+    "answers": {
+      "urgent": {
+        "type": "noul",
+        "noul": 0.75
+      },
+      "team": {
+        "type": "choice",
+        "choice": "support",
+        "probabilities": {
+          "billing": 0.25,
+          "support": 0.75
+        },
+        "confidence": 0.2
+      },
+      "severity": {
+        "type": "score",
+        "score": 1.5,
+        "legend": {
+          "0": "minor",
+          "1": "major",
+          "2": "critical"
+        },
+        "probabilities": {
+          "0": 0.125,
+          "1": 0.25,
+          "2": 0.625
+        },
+        "confidence": 0.1
+      }
+    },
+    "usage": {
+      "input_tokens": 20,
+      "output_tokens": 0
+    },
+    "extra": {
+      "retained": true
+    }
+  }
+}
