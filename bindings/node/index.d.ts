@@ -168,6 +168,8 @@ export declare class Model {
  * ```
  */
 export declare class ProviderHandle {
+  /** Build a native decision model with this provider's existing config. */
+  decisionModel(modelId: string): Promise<AimuxResult<DecisionModel>>
   /**
    * List models available on this provider (runtime discovery via the
    * provider's `/models` endpoint). Returns a JSON array of sparse

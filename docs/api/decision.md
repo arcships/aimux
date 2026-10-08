@@ -1,8 +1,47 @@
 # Decision API
 
 `decide` 对同一个文本或 JSON state 回答多道 typed questions，结果按问题 ID
-索引。当前接入 TypeSafe 官方 Jev System One；[RFC-0037](../../rfc/0037-decision-api.md)
-记录 contract 和后续范围。
+索引。当前接入 TypeSafe 官方 Jev System One 和 OpenAI 原生 Decisions 文本接口。
+[RFC-0037](../../rfc/0037-decision-api.md) 记录基础 contract，
+[RFC-0038](../../rfc/0038-decision-provider-expansion.md) 记录官方 provider 扩展与剩余范围。
+
+## OpenAI 原生 Decisions
+
+复用现有 provider 连接配置，显式创建 decision model。模型是否可用由服务验证；
+创建句柄和查询能力均不发网络请求。
+
+```ts
+import { createProvider, decide } from '@arcships/aimux'
+
+const provider = await createProvider('openai', process.env.OPENAI_API_KEY)
+const model = await provider.decisionModel('gpt-6-luna')
+const result = await decide(model, {
+  state: 'Please refund the duplicate charge',
+  questions: [{ id: 'refund', type: 'boolean', instructions: 'Is a refund requested?' }],
+  provider_options: { openai: { safety_identifier: 'app-user-123' } },
+})
+console.log(result.answers.refund) // boolean 概率或 { type: 'refusal' }
+```
+
+Python 对应 `create_provider('openai', key).decision_model('gpt-6-luna')`，随后
+调用下文的 `decide`。Rust 使用 `OpenAIProvider::new(OpenAIConfig::new(key))`
+和 `Provider::decision_model`。服务地址为 `{base_url}/decisions`，默认使用
+`https://api.openai.com/v1`；继承 provider 的认证、headers、organization/project 和重试配置。
+
+文本 state 原样发送；JSON 对象／数组序列化为文本。Boolean 映射 predicate，
+Choice 字符串 label 映射 choices.value，Score 文本等级映射 levels.label。
+Choice 支持 2–255 项，Score 至少两级。响应按题目 ID 匹配，逐题拒答保留为
+`{"type":"refusal"}`，不会丢弃其他题目的正常答案。
+
+本阶段尚未暴露 OpenAI 的图片输入、boolean 类型候选值及独立 Score description。
+对象／数组形式的题目描述、Boolean criteria 和生成接口 body overrides 会返回
+Unsupported。`openai` options 当前仅接受可选 `safety_identifier`（最多 128 字符）；
+其他 provider namespace 不参与本次请求。
+
+原生概率和 confidence 保留原值，不套用 Jev 两位小数规则。usage 为统计信息，
+缺失或不一致的计数不影响有效答案；保留原始响应，无法推导的规范化计数保持未知。
+本地契约 fixture 依据[官方 API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create)
+构造，并非线上实测录制。
 
 ## Rust
 
@@ -71,10 +110,10 @@ print(decision_capabilities(model))
 
 可选第四个参数 `probability_source` 缺省为 `'native'`，结果保留声明的来源。
 
-## 官方结构化题目字段
+## Jev 原生题目描述字段
 
 instructions、Choice description 和 Score levels 的每一级均支持字符串、对象、
-数组。Boolean 可提供 `criteria.true` / `criteria.false` 描述。对象/数组以原生
+数组。这里描述 Jev 能力，OpenAI 当前仅接受文本描述。Boolean 可提供 `criteria.true` / `criteria.false` 描述。对象/数组以原生
 JSON 发送，Score 返回的 levels 保留结构化描述。下面的 questions 可用于所有绑定：
 
 ```json
@@ -96,8 +135,11 @@ Boolean criteria 使用 `DecisionBooleanCriteria`。顶层数字、布尔值或 
 
 ## Go / Java / Kotlin / Swift / Flutter
 
-五种绑定复用相同请求/结果 JSON contract，默认均访问 TypeSafe 官方服务。
-模型支持能力查询、可选 endpoint 和概率来源配置，以及原有错误传输。
+五种绑定复用相同请求/结果 JSON contract。OpenAI 通过已有的 provider 工厂创建
+`openai` 句柄后，调用 Go `provider.DecisionModel("gpt-6-luna")`，或
+Java/Kotlin/Swift/Flutter `provider.decisionModel("gpt-6-luna")`。
+模型独立持有连接配置，关闭 provider 后仍可使用；模型需按下表释放。
+下表保留 Jev 快捷工厂，默认访问 TypeSafe 官方服务。
 
 | 语言 | 创建模型 | 调用 | 能力查询 | 释放 |
 |---|---|---|---|---|
@@ -113,6 +155,10 @@ Java/Kotlin/Swift 的调用及能力查询返回 JSON 字符串；Flutter 返回
 无显式取消。C ABI 调用同步阻塞，Flutter 可将 HTTP 调用放入 worker isolate。
 
 ## C ABI
+
+`aimux_provider_handle_new("openai", key, config_json, &provider_handle)` 和
+`aimux_provider_decision_model(provider_handle, model_id, &handle)` 创建 OpenAI
+决策模型。不支持决策的 provider 返回 UnsupportedFunctionality。
 
 `aimux_jev_decision_new(key, model_id, endpoint_or_NULL, &handle)` 创建模型，
 `aimux_decide(handle, opts_json, &out_json)` 返回 JSON，
@@ -134,7 +180,8 @@ structured-output 模拟或生成式 fallback。`model_estimate` 仅用于如实
 
 Boolean probability_true 表示 P(true)，调用方设置业务阈值。Choice selected
 是 label，Score expected_value 是零起点的浮点位置，可能为小数。
-Choice/Score probabilities 可为空，Jev adapter 会返回完整分布。
+Choice/Score probabilities 可为空，Jev 和 OpenAI adapter 对正常答案返回完整分布。
+`type: "refusal"` 表示该题拒答，不含概率，不应作为 false 或零分处理。
 Jev 的 selected 必须是最大概率选项，允许并列最高，由 adapter 按官方协议校验。
 有分布的 Score 必须与概率加权的平均位置一致。provider 在 capabilities 和
 结果的 `rounding` 中分别声明 `probability_decimals` 和 `score_decimals`。TypeSafe
@@ -186,9 +233,11 @@ Rust 可用 `aimux_core::replay::MockDecisionReplayModel::from_jsonl` 加载录�
 再通过 `decide` 或 `replay_decision_with_model` 离线回放。匹配 provider/model、
 state/questions、headers 和 provider_options；timeout/retry 控制不参与匹配。
 输入未命中或记录不完整时返回错误。请求回放可通过
-`aimux_providers::rebuild_decision_provider` 重建官方 Jev，再调用
+`aimux_providers::rebuild_decision_provider` 重建官方 Jev 或 OpenAI，再调用
 `replay_decision_with_model` 发出真实请求；CLI 不带 `--mock` 时也走这条路径。
 
 实测录制在 `aimux-providers/tests/fixtures/jev_systemone_live.jsonl`。
 Provider 回归测试通过共享 HTTP replay helper 重放实际 wire 交换；另有
 规范化结果回放测试。两者均离线执行。
+OpenAI 使用 `aimux-providers/tests/fixtures/openai_decisions.json` 的 synthetic
+契约样本，覆盖本地 HTTP、录制→mock replay、重建 provider→HTTP replay。

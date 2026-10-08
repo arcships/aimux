@@ -7,11 +7,11 @@ import java.io.Closeable;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** Official TypeSafe Jev decisions. Requests, results and capabilities use the core JSON contract. */
+/** Native decisions. Requests, results and capabilities use the core JSON contract. */
 public final class DecisionModel implements Closeable {
     private final AtomicLong handle;
 
-    private DecisionModel(long handle) { this.handle = new AtomicLong(handle); }
+    DecisionModel(long handle) { this.handle = new AtomicLong(handle); }
 
     public static DecisionModel jev(String apiKey, String modelId) {
         return jev(apiKey, modelId, null, null);

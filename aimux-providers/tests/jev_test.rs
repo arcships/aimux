@@ -379,7 +379,7 @@ async fn official_provider_failures_use_standard_retry_rules_and_preserve_codes(
 
 #[test]
 fn non_decision_provider_returns_unsupported() {
-    let provider = aimux_providers::OpenAIProvider::new(aimux_providers::OpenAIConfig::new("test"));
+    let provider = aimux_providers::VllmProvider::new(aimux_providers::VllmConfig::new("test"));
     assert!(matches!(
         provider.decision_model("gpt-test"),
         Err(AiMuxError::UnsupportedFunctionality(_))

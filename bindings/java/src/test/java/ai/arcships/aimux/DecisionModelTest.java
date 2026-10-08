@@ -11,6 +11,15 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DecisionModelTest {
+    @Test void providerDecisionModelOwnsItsHandle() throws Exception {
+        ProviderHandle provider = Model.createProvider("openai", "test-key", null);
+        try (DecisionModel model = provider.decisionModel("gpt-6-luna")) {
+            provider.close();
+            assertEquals(2, new ObjectMapper().readTree(model.capabilities()).get("min_choices").asInt());
+            assertThrows(IllegalStateException.class, () -> provider.decisionModel("gpt-6-luna"));
+        } finally { provider.close(); }
+    }
+
     @Test void officialStructuredContractAndCapabilities() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode fixture = mapper.readTree(Paths.get("../../contract-tests/fixtures/decision-native.json").toFile());

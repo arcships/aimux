@@ -11,6 +11,41 @@ import pytest
 from aimux import APICallError, InvalidArgumentError, decide, jev_decision, decision_capabilities
 
 
+def test_provider_handle_openai_decisions_preserve_partial_refusals():
+    from aimux import create_provider
+    contract = json.loads((Path(__file__).resolve().parents[3] /
+        'aimux-providers/tests/fixtures/openai_decisions.json').read_text())
+    captured = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            captured.append((self.path, self.headers['Authorization'],
+                json.loads(self.rfile.read(int(self.headers['Content-Length'])))))
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(contract['response']).encode())
+
+        def log_message(self, *_):
+            pass
+
+    http = HTTPServer(('127.0.0.1', 0), Handler)
+    worker = threading.Thread(target=http.serve_forever, daemon=True)
+    worker.start()
+    try:
+        provider = create_provider('openai', 'test-key', base_url=f'http://127.0.0.1:{http.server_port}/v1')
+        model = provider.decision_model('gpt-6-luna')
+        assert decision_capabilities(model)['min_choices'] == 2
+        result = decide(model, **contract['options'])
+        assert captured == [('/v1/decisions', 'Bearer test-key', contract['request'])]
+        assert result['answers']['restricted'] == {'type': 'refusal'}
+        assert result['answers']['urgent']['probability_true'] == 0.925
+    finally:
+        http.shutdown()
+        worker.join()
+        http.server_close()
+
+
 def test_decision_uses_unified_runtime_recording(server, tmp_path):
     from aimux import init_recording, recording_flush, recording_stop
     base, _ = server

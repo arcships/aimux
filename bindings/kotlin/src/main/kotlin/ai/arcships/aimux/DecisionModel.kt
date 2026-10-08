@@ -3,8 +3,8 @@ package ai.arcships.aimux
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicLong
 
-/** Official TypeSafe Jev decisions using the core JSON request/result contract. */
-class DecisionModel private constructor(handle: Long) : Closeable {
+/** Native decisions using the core JSON request/result contract. */
+class DecisionModel internal constructor(handle: Long) : Closeable {
     private val handle = AtomicLong(handle)
 
     companion object {

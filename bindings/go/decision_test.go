@@ -12,6 +12,34 @@ import (
 	"time"
 )
 
+func TestProviderDecisionModelOwnsHandle(t *testing.T) {
+	provider, err := CreateProvider("openai", "test-key", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Close()
+	model, err := provider.DecisionModel("gpt-6-luna")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer model.Close()
+	provider.Close()
+	caps, err := model.Capabilities()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(caps), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["min_choices"] != float64(2) {
+		t.Fatal(caps)
+	}
+	if _, err := provider.DecisionModel("gpt-6-luna"); !errors.Is(err, ErrClosed) {
+		t.Fatalf("closed provider: %v", err)
+	}
+}
+
 func TestDecisionNativeContract(t *testing.T) {
 	data, err := os.ReadFile("../../contract-tests/fixtures/decision-native.json")
 	if err != nil {

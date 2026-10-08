@@ -232,6 +232,8 @@ impl std::str::FromStr for DecisionProbabilitySource {
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(export)]
 pub enum DecisionAnswer {
+    /// The provider declined this question; other answers remain usable.
+    Refusal,
     /// P(true); callers choose their own thresholds.
     Boolean { probability_true: f64 },
     Choice {
@@ -361,6 +363,7 @@ impl DecisionResult {
             let id = question.id();
             let answer = self.answers.get(id).ok_or_else(|| invalid(id))?;
             let valid = match (question, answer) {
+                (_, DecisionAnswer::Refusal) => true,
                 (
                     DecisionQuestion::Boolean { .. },
                     DecisionAnswer::Boolean { probability_true },

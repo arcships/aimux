@@ -116,4 +116,17 @@ public class ProviderHandle implements AutoCloseable {
             lock.readLock().unlock();
         }
     }
+    /** Build a decision model using this provider's connection configuration. */
+    public DecisionModel decisionModel(String modelId) {
+        Objects.requireNonNull(modelId, "modelId");
+        lock.readLock().lock();
+        try {
+            LongByReference out = new LongByReference();
+            Pointer error = AimuxFFI.INSTANCE.aimux_provider_decision_model(requireHandleLocked(), modelId, out);
+            return new DecisionModel(AimuxResult.extractHandle(error, out, "decision model"));
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
 }

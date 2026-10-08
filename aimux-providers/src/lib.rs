@@ -133,8 +133,8 @@ pub use google::{
 pub use jev::{JevConfig, JevDecisionModel, JevProvider};
 pub use mistral::{MistralConfig, MistralEmbeddingModel, MistralProvider};
 pub use openai::{
-    OpenAIConfig, OpenAIEmbeddingModel, OpenAIImageModel, OpenAIProvider, OpenAIResponsesModel,
-    OpenAISpeechModel, OpenAITranscriptionModel,
+    OpenAIConfig, OpenAIDecisionModel, OpenAIEmbeddingModel, OpenAIImageModel, OpenAIProvider,
+    OpenAIResponsesModel, OpenAISpeechModel, OpenAITranscriptionModel,
 };
 pub use vertex::{
     VertexAuth, VertexEmbeddingModel, VertexImageModel, VertexProvider, VertexProviderConfig,
@@ -276,3 +276,5 @@ pub use serper::{SerperConfig, SerperProvider, SerperSearchModel};
 pub use tavily::{TavilyConfig, TavilyProvider, TavilySearchModel};
 pub use tinyfish::{TinyfishConfig, TinyfishProvider, TinyfishSearchModel};
 pub use you_com::{YouComConfig, YouComProvider, YouComSearchModel};
+
+mod systemone;

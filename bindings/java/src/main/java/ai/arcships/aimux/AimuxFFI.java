@@ -128,6 +128,7 @@ public interface AimuxFFI extends Library {
 
     Pointer aimux_provider_list_models(long handle, PointerByReference outJson);
 
+    Pointer aimux_provider_decision_model(long handle, String modelId, LongByReference outHandle);
     Pointer aimux_provider_model(long handle, String modelId, LongByReference outHandle);
 
     Pointer aimux_get_model_specs(String sourceUrl, PointerByReference outJson);

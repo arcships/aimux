@@ -16,6 +16,57 @@ use aimux_ffi::{
 };
 use common::{c, expect_aimux_error, expect_ffi_error, ok};
 
+#[test]
+fn provider_decision_factory_keeps_model_alive_after_provider_drop() {
+    use aimux_ffi::{
+        aimux_decision_capabilities, aimux_free_string, aimux_provider_decision_model,
+    };
+    let mut provider = 0;
+    ok(
+        aimux_provider_handle_new(
+            c("openai").as_ptr(),
+            c("key").as_ptr(),
+            ptr::null(),
+            &mut provider,
+        ),
+        "openai provider",
+    );
+    let mut model = 0;
+    ok(
+        aimux_provider_decision_model(provider, c("gpt-6-luna").as_ptr(), &mut model),
+        "decision factory",
+    );
+    aimux_drop_handle(provider);
+    let mut capabilities = ptr::null_mut();
+    ok(
+        aimux_decision_capabilities(model, &mut capabilities),
+        "decision capabilities",
+    );
+    let json: serde_json::Value = unsafe {
+        serde_json::from_str(std::ffi::CStr::from_ptr(capabilities).to_str().unwrap()).unwrap()
+    };
+    assert_eq!(json["min_choices"], 2);
+    // SAFETY: capabilities was allocated by aimux_decision_capabilities above.
+    unsafe { aimux_free_string(capabilities) };
+    let mut invalid = 0;
+    assert!(
+        expect_ffi_error(
+            aimux_provider_decision_model(model, c("x").as_ptr(), &mut invalid),
+            "wrong handle"
+        )
+        .contains("provider")
+    );
+    assert_eq!(invalid, 0);
+    aimux_drop_handle(model);
+    let other = deepseek();
+    let error = expect_aimux_error(
+        aimux_provider_decision_model(other, c("x").as_ptr(), &mut invalid),
+        "unsupported provider",
+    );
+    assert_eq!(error.0, aimux_ffi::AIMUX_E_UNSUPPORTED_FUNCTIONALITY);
+    aimux_drop_handle(other);
+}
+
 fn expect_handle(e: *mut aimux_error_t, h: u64, name: &str) -> u64 {
     ok(e, name);
     assert_ne!(h, 0, "{name}: expected non-zero handle");

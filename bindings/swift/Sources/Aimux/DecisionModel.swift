@@ -1,12 +1,12 @@
 import CAimuxFFI
 import Foundation
 
-/// Official TypeSafe Jev decisions using the core JSON request/result contract.
+/// Native decisions using the core JSON request/result contract.
 public final class DecisionModel: @unchecked Sendable {
     private let lock = NSLock()
     private var handle: UInt64
 
-    private init(handle: UInt64) { self.handle = handle }
+    init(handle: UInt64) { self.handle = handle }
     deinit { close() }
 
     /// Endpoint is a complete POST URL; nil uses the official API.

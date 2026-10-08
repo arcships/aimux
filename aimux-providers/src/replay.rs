@@ -25,13 +25,35 @@ use aimux_core::recording::ProviderRecord;
 use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
 use crate::provider::ProviderOptions;
 
-/// Rebuild the official TypeSafe decision model from a unified recording.
+/// Rebuild an official decision model from a unified recording.
 /// # Errors
 /// Rejects unsupported providers, invalid model IDs and missing credentials.
 pub fn rebuild_decision_provider(
     p: &ProviderRecord,
     api_key: Option<&str>,
 ) -> Result<Box<dyn aimux_core::decision_model::DecisionModel>, AiMuxError> {
+    if p.provider == "openai" {
+        let mut config = OpenAIConfig::new(resolve_api_key(p, api_key)?)
+            .with_api_key_source(Some(&p.api_key_source));
+        if let Some(base_url) = &p.base_url {
+            config = config.with_base_url(base_url);
+        }
+        if let Some(options) = &p.provider_options {
+            let options: ProviderOptions = serde_json::from_value(options.clone())
+                .map_err(|e| AiMuxError::InvalidArgument(format!("decision replay config: {e}")))?;
+            config.org_id = options.organization;
+            config.project = options.project;
+            config.headers = options.headers.map(|mut headers| {
+                headers.retain(|_, value| value != "[REDACTED]");
+                headers
+            });
+            config.body_overrides = options.body_overrides;
+            if let Some(max_retries) = options.max_retries {
+                config.retry_config.max_retries = max_retries;
+            }
+        }
+        return OpenAIProvider::new(config).decision_model(&p.model_id);
+    }
     if p.provider != "jev" {
         return Err(AiMuxError::UnsupportedFunctionality(format!(
             "decision replay: unsupported provider {}",

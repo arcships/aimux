@@ -358,12 +358,13 @@ impl ResolvedEntry {
 /// Build a **provider handle** for a built-in or externally-registered provider
 /// by name (RFC-0027 + RFC-0020 overlay).
 ///
-/// Lookup order: runtime overlay (RFC-0020) → built-in registry → NoSuchProvider.
+/// Lookup order: runtime overlay (RFC-0020) → native OpenAI / built-in registry
+/// → NoSuchProvider.
 ///
 /// Unlike [`provider`] (which binds to a single `model_id` and returns a
 /// `LanguageModel`), this returns the [`Provider`] itself, so callers can call
 /// [`Provider::list_models`] for runtime discovery, then
-/// [`Provider::language_model`] on a chosen id.
+/// [`Provider::language_model`] or [`Provider::decision_model`] on a chosen id.
 ///
 /// Same key/options semantics as [`provider`].
 ///
@@ -382,6 +383,16 @@ pub fn provider_handle(
     // 1. Runtime overlay (RFC-0020) — registered entries take precedence.
     let resolved = if let Some(ext) = overlays().read().unwrap().get(name) {
         ResolvedEntry::from_external(ext)
+    } else if name == "openai" {
+        // Native OpenAI is not in the compatibility registry. Expose the same
+        // provider handle/config path for its language and decision factories.
+        ResolvedEntry::from_registry(&RegistryEntry {
+            name: "openai".into(),
+            display: "OpenAI".into(),
+            base_url: OpenAIConfig::new("").base_url,
+            env_var: "OPENAI_API_KEY".into(),
+            profile: ProviderProfile::default(),
+        })
     } else {
         // 2. Built-in registry.
         let entry = registry().iter().find(|e| e.name == name).ok_or_else(|| {

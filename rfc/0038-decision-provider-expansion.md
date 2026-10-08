@@ -56,11 +56,12 @@ Cloudflare provider；llama.cpp 部署的 Laya 使用 `llamacpp`。
 
 `list_models()` 只返回服务实际给出的发现数据。模型出现在 `/models` 中，
 或静态目录称其为 decision model，都不能证明当前部署开放了 decision endpoint。
-目录可增加 `Decision` 分类用于展示；执行能力仍以具体任务句柄为准。
+当前无需新增目录分类或能力注册中心；执行能力以具体任务句柄为准。
 不将静态目录信息自动合并进请求配置。
 
-vLLM 决策 endpoint 可能与生成 endpoint 使用不同端口，配置需允许显式指定。
-未启用对应协议时工厂返回 Unsupported，禁止探测失败后退回 JSON 生成。
+vLLM 决策 endpoint 可能与生成 endpoint 使用不同端口，接入该部署时允许显式指定。
+工厂不发网络探测，也不要求服务证明版本。adapter 尚未实现时返回 Unsupported；
+已选择 adapter 后由服务正常返回模型／endpoint 错误，不退回 JSON 生成。
 
 ## 协议实现
 
@@ -93,17 +94,45 @@ HTTP 传输继续使用 `HttpRequest` 与既有 JSON/error handler。共享 wire
 - Choice 2–255 项；Score 至少两级，上限只在官方资料明确时设置。
 - 保留逐题 refusal：增加 `DecisionAnswer::Refusal`，序列化为
   `{"type":"refusal"}`。拒答是该题的结果，其他正常答案仍返回。
-- 响应按 name 与请求顺序校验；拒绝重复／缺失／额外答案、错误类型、重复概率项、
+- 响应按 name 关联；不再额外要求数组位置相同。拒绝重复／缺失／额外答案、错误类型、重复概率项、
   Score 索引或 label 不符。原生概率、confidence 和 usage/raw 均保留。
 - 不继承 Jev 的两位小数规则。未见 OpenAI 承诺十进制舍入，先仅容忍既有
   浮点误差；线上证据若表明不同规则，应记录证据并调整该 provider。
 - 本阶段仅接受明确列出的 provider options，例如 `openai.safety_identifier`；
-  拒绝无定义参数和生成接口的 body overrides，避免请求语义漂移。
+  不解释其他 provider 的 namespace。拒绝本 namespace 中无定义参数和生成接口的
+  body overrides，避免默默丢弃用户要求。服务响应中的新增字段保留在 raw 中。
+- usage 是统计信息，不参与答案有效性判断。缺失、未知或不一致的计数保留 raw；
+  无法计算的规范化计数留空，不因 `total_tokens` 对不上或 details 缺失丢弃答案。
+
+### OpenAI wire 契约与映射完整性
+
+接口为同步 JSON POST，Bearer 认证；本阶段不提供 stream 选项。使用共享的
+HTTP 错误解析、Retry-After、重试、超时和取消机制，不新增决策专用重试器。
+模型公开名称目前为 `gpt-6-luna`，它是示例值而非客户端允许名单。
+
+| 原生字段／行为 | canonical 映射或处理 |
+|---|---|
+| `model` | 请求使用 model_id；响应保留实际 model，不要求与别名相等 |
+| `input: string` | state 文本；JSON state 做确定的 JSON 序列化 |
+| `input: user messages`，文本／内嵌图片 | 官方支持；本阶段暂不暴露，不从 state 数组猜测 |
+| `questions[].name` | 始终发送 canonical 非空 ID；因而响应 name 缺失／null 是无效匹配 |
+| `predicate.instructions`、响应 `probability` | Boolean instructions、P(true)，调用方自行定阈值 |
+| `choice.choices[].value/description` | 字符串 label／可选文本 description；原生 boolean value 待扩展 |
+| `score.levels[].label/description` | 首批文本 level → label；独立 description 待扩展 |
+| `choice.probabilities[]` | 检查重复 value 后转换为 label map；不重算 confidence |
+| `score.probabilities[].value/label/probability` | 按零起点 index 排列，核对 label；保留期望分数 |
+| `answers[].type=refusal` | 逐题 Refusal，无概率；不丢弃其他题目 |
+| `safety_identifier` | `provider_options.openai.safety_identifier`，最多 128 字符 |
+| `usage` 与 details | 保留 raw 和可读取计数；未承诺信息保持未知 |
+
+机制边界：官方定义有限候选上的决策概率与 Score 期望值；公开 API 文档未披露
+内部网络结构、是否恰好一次 forward pass、校准训练方法或十进制舍入规则。
+设计不把这些未知机制当作事实。HTTP 200 中的拒答与 HTTP 错误分开处理。
 
 ### vLLM 与 SGLang 候选评分
 
 接 typed endpoint 时由服务器完成题目编码；接 scoring primitive 时，adapter
-必须有明确的模型编码 profile，包含 tokenizer/revision、prompt encoder 版本、
+必须明确模型编码，包含 tokenizer/revision、prompt encoder 版本、
 候选标签与 token ID 映射、归一化／temperature 规则。
 
 SGLang 的能力先限定 single-token 候选。多个问题可能需要多次真实 HTTP
@@ -111,6 +140,9 @@ SGLang 的能力先限定 single-token 候选。多个问题可能需要多次�
 Boolean 的 P(true)、Choice 的候选分布、Score 的零起点期望值分别校验。
 未经验证的多 token 候选直接拒绝。返回来源为 `logit_scoring`；该标记不等于
 概率已针对用户数据校准。
+
+先为首个已验证模型实现普通的编码函数和必要配置，不预建可插拔 strategy/profile
+框架、模型别名注册表或任意 prompt DSL。出现第二种实际实现差异时再提取接口。
 
 官方示例中的 SemIf 编码可作为考察对象，但它不是 SGLang 的通用题目 schema；
 不能因为 `/v1/score` 存在就替任意权重选择一套 prompt 并宣称已支持 decide。
@@ -135,8 +167,29 @@ scoring profile 的版本及映射进入快照；每次 HTTP exchange 如实记�
 record→mock replay、provider 重建→HTTP replay。手写 fixture 明确标为 synthetic；
 只有实际 API 调用产生的录制才标为 live。没有 key 时不得把离线验证说成实测。
 
-各语言继续共用 DecisionCallOptions/DecisionResult；新增模型工厂不另建一套
-decide 或录制 API。Refusal 同步到 TypeScript 类型，其余 JSON 宿主原样保留。
+各语言继续共用 DecisionCallOptions/DecisionResult。在已有 ProviderHandle 上增加
+`decisionModel(model_id)`／`decision_model(model_id)`，复用地址、key、headers 等配置。
+C ABI 增加 `aimux_provider_decision_model`。不再逐厂商增加一组语言构造器。
+已有 Jev 快捷工厂保持兼容。Refusal 同步到 TypeScript 类型，其余 JSON 宿主原样保留。
+
+## 自审结论与剩余契约工作
+
+2026-10-08 自审删去两种多余校验：按题目 ID 关联后再校验数组位置、用 token
+统计自洽性决定答案成败。保留身份／类型／完整分布等业务语义校验。
+共享 SystemOne 仅抽取实际 wire 代码；Jev argmax 规则留在 Jev，不增加通用策略开关。
+复用 ProviderHandle，暂不增加目录类型、运行时探测或评分插件体系。
+
+官方清单不代表所有服务的 wire 设计已经完整。OpenAI 首批映射已列明；其他 adapter
+开始实现前还需补充各自的版本、完整样本、认证／封装、题型限制和以下差异：
+
+| 接口 | 已确认机制 | 仍须落实的契约细节 |
+|---|---|---|
+| SystemOne 家族 | state + question map → answer map；Boolean 概率、Choice 分布、Score 期望 | 各实现限制、confidence 定义、usage 缺省行为，不继承 Jev 常量 |
+| vLLM diffusion 示例 | 固定答案槽、去噪后读取候选分布，可多次读取 | samples/steps/think、条件跳题、diagnostics、单 token 标签、图像封装 |
+| SGLang score | 候选 token 评分、温度缩放，可返回未缩放词表 logprobs | 逐项请求字段、归一化轴、批量维度、模型编码和版本固定 |
+| vLLM generative scoring | 同一 prompt 下候选 token 概率，返回首项评分 | 能否取得完整分布及请求成本；先不承诺三种题型 |
+
+这些缺项作为对应阶段的进入条件，不用猜测值补齐，也不阻塞已明确契约的首批实现。
 
 ## 实施计划与验收
 
@@ -145,8 +198,8 @@ decide 或录制 API。Refusal 同步到 TypeScript 类型，其余 JSON 宿主�
 | 阶段 | 任务 | 当前状态 | 验收条件 |
 |---|---|---|---|
 | 0 | TypeSafe 官方 Jev | 已完成 | PR #221、统一 live 录制与回放 |
-| 1 | 本 RFC、共享 SystemOne codec | 实施中 | Jev 全部已有 fixture／录制回归保持通过 |
-| 1 | OpenAI 文本 decision 与逐题 refusal | 实施中 | 三题型、坏响应、错误／重试、真实 HTTP 录制回放、各宿主工厂 |
+| 1 | 本 RFC、共享 SystemOne codec | 已实现，待 PR 合入 | Jev 全部已有 fixture／录制回归保持通过 |
+| 1 | OpenAI 文本 decision 与逐题 refusal | 已实现，待 PR 合入 | 三题型、坏响应、错误／重试、本地 HTTP 录制回放、各宿主工厂 |
 | 2 | Ollama、llama.cpp | 待开发 | 官方版本／模型约束、各自 profile 与统一回放 |
 | 2 | Cloudflare、LocalAI、Laya 官方服务 | 待开发 | 路由／认证／响应封装、原生语义、各自回放 |
 | 2 | vLLM DiffusionGemma 官方示例 | 待开发 | 显式部署 endpoint、真实 slot 分布与 diagnostics |
@@ -157,6 +210,10 @@ decide 或录制 API。Refusal 同步到 TypeScript 类型，其余 JSON 宿主�
 | 跟踪 | vLLM 核心两个 typed endpoint | 等待上游合并 | 固定已发布版本后接入，替换／扩展原有配置 |
 
 第一阶段 PR 完成不代表本表整体完成。后续 PR 按此表推进并更新状态。
+
+第一阶段使用官方 reference 构造的 `openai_decisions.json` synthetic fixture，
+覆盖拒答、乱序答案、未知响应字段、可选 usage、HTTP 错误／重试和统一回放。
+没有执行 OpenAI 线上调用，不将这些样本称为 live 录制。
 
 ## 官方来源
 

@@ -3,6 +3,17 @@ import Foundation
 @testable import Aimux
 
 final class DecisionTests: XCTestCase {
+    func testProviderDecisionModelOwnsItsHandle() throws {
+        let provider = try Model.createProvider(name: "openai", apiKey: "test-key")
+        defer { provider.close() }
+        let model = try provider.decisionModel("gpt-6-luna")
+        defer { model.close() }
+        provider.close()
+        let caps = try JSONSerialization.jsonObject(with: Data(model.capabilities().utf8)) as! [String: Any]
+        XCTAssertEqual(caps["min_choices"] as? Int, 2)
+        XCTAssertThrowsError(try provider.decisionModel("gpt-6-luna"))
+    }
+
     func testOfficialStructuredContractAndCapabilities() throws {
         var root = URL(fileURLWithPath: #filePath)
         for _ in 0..<5 { root.deleteLastPathComponent() }

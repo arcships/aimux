@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
-import 'package:aimux/decision.dart';
+import 'package:aimux/aimux.dart';
 import 'package:aimux/errors.dart';
 import 'package:test/test.dart';
 
@@ -20,6 +20,16 @@ Future<Map<String, dynamic>> runDecision(
 });
 
 void main() {
+  test('provider decision model owns its handle', () {
+    final provider = createProvider('openai', 'test-key', null);
+    final model = provider.decisionModel('gpt-6-luna');
+    addTearDown(provider.close);
+    addTearDown(model.close);
+    provider.close();
+    expect(model.capabilities()['min_choices'], 2);
+    expect(() => provider.decisionModel('gpt-6-luna'), throwsStateError);
+  });
+
   test('official structured contract and capabilities cross the C ABI', () async {
     final fixture = jsonDecode(File('../../contract-tests/fixtures/decision-native.json').readAsStringSync()) as Map;
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

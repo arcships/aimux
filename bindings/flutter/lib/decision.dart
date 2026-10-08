@@ -12,17 +12,28 @@ typedef _DecideD = Pointer<Void> Function(
 typedef _CapabilitiesC = Pointer<Void> Function(Uint64, Pointer<Pointer<Utf8>>);
 typedef _CapabilitiesD = Pointer<Void> Function(int, Pointer<Pointer<Utf8>>);
 
+typedef _ProviderDecisionC = Pointer<Void> Function(Uint64, Pointer<Utf8>, Pointer<Uint64>);
+typedef _ProviderDecisionD = Pointer<Void> Function(int, Pointer<Utf8>, Pointer<Uint64>);
+
 final _lib = openAimuxLibrary();
+final _providerDecision = _lib.lookupFunction<_ProviderDecisionC, _ProviderDecisionD>(
+    'aimux_provider_decision_model');
 final _newDecision = _lib.lookupFunction<_New, _New>(
     'aimux_jev_decision_new_with_probability_source');
 final _decide = _lib.lookupFunction<_DecideC, _DecideD>('aimux_decide_with_abort');
 final _capabilities = _lib.lookupFunction<_CapabilitiesC, _CapabilitiesD>(
     'aimux_decision_capabilities');
 
-/// Official TypeSafe Jev decisions using the shared core JSON contract.
+/// Native decisions using the shared core JSON contract.
 class DecisionModel {
   int _handle;
   DecisionModel._(this._handle);
+
+  /// Native interop used by ProviderHandle.decisionModel; owns the returned handle.
+  factory DecisionModel.fromProviderHandle(int providerHandle, String modelId) {
+    return withUtf8(modelId, (id) => DecisionModel._(takeHandle(
+        (out) => _providerDecision(providerHandle, id, out), 'decision model')));
+  }
 
   /// Endpoint is a complete POST URL; null uses the official API.
   factory DecisionModel.jev(String apiKey, String modelId,

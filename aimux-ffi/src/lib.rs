@@ -2844,6 +2844,26 @@ pub extern "C" fn aimux_video_generate(
 // C ABI: Decisions
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Build a decision model using an existing provider's connection config.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_provider_decision_model(
+    handle: u64,
+    model_id: *const c_char,
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let HandleEntry::Provider(provider) = entry_of(handle, "provider")? else {
+            return Err(FfiError::InvalidHandle {
+                expected: "provider",
+            }
+            .into());
+        };
+        let model_id = str_arg(model_id, "model_id")?;
+        let model = provider.decision_model(&model_id)?;
+        Ok(intern_handle(HandleEntry::Decision(Arc::from(model))))
+    })
+}
+
 /// Create a Jev decision model. Optional endpoint is a complete POST URL.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_jev_decision_new(

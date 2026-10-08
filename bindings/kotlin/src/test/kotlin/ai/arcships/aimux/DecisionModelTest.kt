@@ -10,6 +10,16 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 
 class DecisionModelTest {
+    @Test fun providerDecisionModelOwnsItsHandle() {
+        Model.createProvider("openai", "test-key").use { provider ->
+            provider.decisionModel("gpt-6-luna").use { model ->
+                provider.close()
+                assertEquals(2, JSONObject(model.capabilities()).getInt("min_choices"))
+                assertThrows(IllegalStateException::class.java) { provider.decisionModel("gpt-6-luna") }
+            }
+        }
+    }
+
     @Test fun officialStructuredContractAndCapabilities() {
         val fixture = JSONObject(String(Files.readAllBytes(Paths.get("../../contract-tests/fixtures/decision-native.json"))))
         val captured = AtomicReference<JSONObject>()

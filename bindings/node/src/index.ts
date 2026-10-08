@@ -540,6 +540,11 @@ export class ProviderHandleTyped {
   async model(modelId: string): Promise<RawModel> {
     return this.raw.model(modelId)
   }
+
+  /** Build a native decision model using this provider's connection config. */
+  async decisionModel(modelId: string): Promise<native.DecisionModel> {
+    return this.raw.decisionModel(modelId)
+  }
 }
 
 /**
