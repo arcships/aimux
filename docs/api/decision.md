@@ -107,6 +107,9 @@ vLLM 上游 SystemOne wrapper 的 ask 子集参数存在答案索引问题，本
 Laya 低置信度弃答返回 `{type:'abstention'}`，门限、原始分布和 action head 在 raw 中。
 vLLM 条件跳题返回 `{type:'skipped'}`，diagnostics 保留跳题原因。
 SGLang decisions 的 label_mass 不等于 confidence；canonical confidence 留空。
+SGLang SystemOne 普通生成模型返回 `x_label_mass`，来源记为 `logit_scoring`；
+专用决策 checkpoint 的响应省略该字段，来源为 `native`。SystemOne 原有 confidence
+保持原值。静态 capabilities 按普通生成模型声明，实际来源以每次 result 为准。
 
 各支持图片的 runtime 使用同一 images 输入，由 adapter 转成本地协议。Cloudflare
 最多 4 张 PNG/JPEG/WebP、单图 4 MiB、合计 8 MiB；LocalAI 最多 8 张 PNG/JPEG、

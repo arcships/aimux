@@ -143,6 +143,11 @@ PR #41208 已合入 SystemOne route，#42183 又补专用 checkpoint；不能仅
 - label_mass 是候选在未缩放全词表的概率质量，**不是 confidence**。canonical
   confidence 留空；label_mass、prompt/label token IDs、实际 model、usage 保留 raw。
 
+SystemOne 的普通生成模型路径复用同一候选评分机制，每题返回 `x_label_mass`，
+即使值为 0，来源也记 `logit_scoring`；专用决策 checkpoint 显式省略该字段，
+来源记 `native`。按上游响应区分，不凭 endpoint 名称断言概率来源；SystemOne 的
+原生 confidence 保留不变。[SGLang serving 源码](https://github.com/sgl-project/sglang/blob/45abea0269c4fce45ae811aabacb5bdf2aacd355/python/sglang/srt/entrypoints/systemone/serving.py)
+
 ## 直接候选评分
 
 SGLang `protocol:"score"` 和 vLLM `protocol:"generative_scoring"` 面向已编码请求，
@@ -195,7 +200,7 @@ choices、协议 options、token IDs 与 encoder provenance；provider snapshot 
 连接/能力和默认协议，实际选定协议以 call options 为准。
 SGLang/vLLM 的题数/候选上限随协议变化，静态 capabilities 不填写统一上限；
 相应 native endpoint 在请求映射时校验自己的限制。probability_source 静态值描述
-默认协议，实际来源以每次 result 为准。旧录制缺 images 等价于
+默认协议（SGLang 按普通生成模型的 logit_scoring 声明），实际来源以每次 result 为准。旧录制缺 images 等价于
 空列表。mock 匹配包含图片及 detail；变更媒体不会误命中旧结果。
 
 每个适配器具备：synthetic official-contract fixture、本地 HTTP 测试、

@@ -9,8 +9,8 @@ use std::time::Duration;
 use aimux_core::decision_model::*;
 use aimux_core::recording::{self, RingRecorder};
 use aimux_core::replay::{MockDecisionReplayModel, replay_decision_with_model};
-use aimux_core::{AbortSignal, AiMuxError};
-use aimux_providers::{ProviderOptions, provider_handle};
+use aimux_core::{AbortSignal, AiMuxError, Provider};
+use aimux_providers::{JevConfig, JevProvider, ProviderOptions, provider_handle};
 use serde_json::{Value, json};
 use serial_test::serial;
 use wiremock::matchers::{body_json, header, method, path};
@@ -72,6 +72,7 @@ async fn replay(
     let offline =
         MockDecisionReplayModel::new(provider, model.model_id(), recordings.clone()).unwrap();
     let replayed = decide(&offline, request).await.unwrap();
+    assert_eq!(replayed.probability_source, result.probability_source);
     assert_eq!(
         serde_json::to_value(&replayed.answers).unwrap(),
         serde_json::to_value(&result.answers).unwrap()
@@ -84,6 +85,7 @@ async fn replay(
     let again = replay_decision_with_model(&recordings[0], rebuilt.as_ref())
         .await
         .unwrap();
+    assert_eq!(again.probability_source, result.probability_source);
     assert_eq!(
         serde_json::to_value(again.answers).unwrap(),
         serde_json::to_value(&result.answers).unwrap()
@@ -256,6 +258,45 @@ async fn sglang_native_decisions_keeps_label_mass_separate_from_confidence() {
     assert_eq!(wire["temperature"], 0.7);
 }
 
+#[tokio::test]
+#[serial]
+async fn sglang_systemone_reports_the_actual_readout_source_through_replay() {
+    for label_mass in [None, Some(0.0), Some(0.2)] {
+        let server = MockServer::start().await;
+        let mut response = fixture()["response"].clone();
+        if let Some(mass) = label_mass {
+            for answer in response["answers"].as_object_mut().unwrap().values_mut() {
+                answer["x_label_mass"] = json!(mass);
+            }
+        }
+        Mock::given(path("/v1/systemone"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&response))
+            .mount(&server)
+            .await;
+        assert_eq!(
+            model("sglang", &server).capabilities().probability_source,
+            DecisionProbabilitySource::LogitScoring
+        );
+        let result = replay("sglang", &server, options(), 1).await;
+        assert_eq!(
+            result.probability_source,
+            if label_mass.is_some() {
+                DecisionProbabilitySource::LogitScoring
+            } else {
+                DecisionProbabilitySource::Native
+            }
+        );
+        assert_eq!(result.response.unwrap().body.unwrap(), response);
+        let DecisionAnswer::Choice { confidence, .. } = &result.answers["team"] else {
+            panic!("expected choice");
+        };
+        assert_eq!(
+            *confidence,
+            response["answers"]["team"]["confidence"].as_f64()
+        );
+    }
+}
+
 fn scoring_options(provider: &str) -> DecisionCallOptions {
     let mut request = options();
     request.provider_options = Some(HashMap::from([(
@@ -340,6 +381,92 @@ async fn malformed_native_answers_keep_http_context_and_never_fall_back() {
             Err(AiMuxError::ApiCall(_))
         ));
         assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn decision_conversion_errors_use_transport_redaction_without_changing_wire_requests() {
+    for provider in ["sglang", "jev"] {
+        for failure in ["schema", "semantic", "http"] {
+            let server = MockServer::start().await;
+            let mut response = match failure {
+                "schema" => json!({"unexpected":true}),
+                "http" => json!({"error":{"message":"bad request","code":"invalid_request"}}),
+                _ => {
+                    let mut response = fixture()["response"].clone();
+                    response["answers"]["team"]["probabilities"]["support"] = json!(0.3);
+                    response
+                }
+            };
+            response["metadata"] = json!({"api_key":"response-secret","large":"界".repeat(30_000)});
+            let status = if failure == "http" { 400 } else { 200 };
+            Mock::given(method("POST"))
+                .respond_with(
+                    ResponseTemplate::new(status)
+                        .insert_header("x-request-id", "review-request")
+                        .insert_header("set-cookie", "session=secret")
+                        .set_body_json(&response),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let model = if provider == "jev" {
+                JevProvider::new(JevConfig::new("dummy").with_endpoint(format!(
+                    "{}/v1/systemone?api_key=query-secret",
+                    server.uri()
+                )))
+                .decision_model("served-decision")
+                .unwrap()
+            } else {
+                model(provider, &server)
+            };
+            let mut request = options();
+            request.state = json!({
+                "api_key":"request-secret",
+                "nested":[{"accessToken":"nested-secret","Authorization":"auth-secret"}],
+                "large":"x".repeat(5000),
+                "message":"route this ticket"
+            });
+            let error = decide(model.as_ref(), request.clone()).await.unwrap_err();
+            let AiMuxError::ApiCall(error) = error else {
+                panic!("expected contextual API error");
+            };
+            assert_eq!(error.status_code, Some(status));
+            assert!(!error.is_retryable);
+            assert_eq!(error.url, format!("{}/v1/systemone", server.uri()));
+            let state = &error.request_body_values["state"];
+            assert_eq!(state["api_key"], "[REDACTED]");
+            assert_eq!(state["nested"][0]["accessToken"], "[REDACTED]");
+            assert_eq!(state["nested"][0]["Authorization"], "[REDACTED]");
+            assert_eq!(state["large"], "[STRING 5000 bytes]");
+            assert_eq!(state["message"], "route this ticket");
+            assert_eq!(error.request_body_values["model"], "served-decision");
+            assert_eq!(
+                error.response_headers.as_ref().unwrap()["x-request-id"],
+                "review-request"
+            );
+            assert_eq!(
+                error.response_headers.as_ref().unwrap()["set-cookie"],
+                "[REDACTED]"
+            );
+            // Jev's schema failure is already handled by the typed transport parser.
+            if failure != "schema" || provider != "jev" {
+                let data = error.data.as_ref().unwrap();
+                assert_eq!(data["metadata"]["api_key"], "[REDACTED]");
+                assert_eq!(data["metadata"]["large"], "[STRING 90000 bytes]");
+                let raw_body = error.response_body.as_ref().unwrap();
+                assert!(raw_body.ends_with("…(truncated)"));
+                assert!(raw_body.len() <= 64 * 1024 + "…(truncated)".len());
+            }
+            let calls = server.received_requests().await.unwrap();
+            assert_eq!(calls.len(), 1);
+            let wire: Value = calls[0].body_json().unwrap();
+            assert_eq!(wire["state"], request.state);
+            if provider == "jev" {
+                assert_eq!(calls[0].url.query(), Some("api_key=query-secret"));
+            }
+        }
     }
 }
 

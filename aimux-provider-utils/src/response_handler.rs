@@ -184,6 +184,36 @@ fn error_body_string(body: &[u8], read_truncated: bool) -> String {
     value
 }
 
+/// A successful JSON response failed provider-specific validation.
+///
+/// Callers may hold the original request after the transport has returned.
+/// Apply the same URL sanitization and structured-context bounds as transport
+/// errors; keep bounded raw response evidence and the observed HTTP status.
+#[must_use]
+pub fn invalid_response_api_call(
+    message: impl Into<String>,
+    status_code: u16,
+    url: &str,
+    request_body_values: serde_json::Value,
+    response_body: serde_json::Value,
+    response_headers: std::collections::HashMap<String, String>,
+) -> AiMuxError {
+    AiMuxError::ApiCall(Box::new(ApiCallError {
+        status_code: Some(status_code),
+        response_body: Some(error_body_string(
+            response_body.to_string().as_bytes(),
+            false,
+        )),
+        response_headers: Some(response_headers),
+        data: Some(crate::logging::redact_error_context(response_body)),
+        ..ApiCallError::new(
+            message,
+            crate::http::sanitized_request_url(url),
+            crate::logging::redact_error_context(request_body_values),
+        )
+    }))
+}
+
 /// Handler for the `{ "error": { "message", "type" | "code" } }` error shape,
 /// which several providers share verbatim. Providers whose error JSON differs
 /// keep their own mapping via [`create_json_error_response_handler`].

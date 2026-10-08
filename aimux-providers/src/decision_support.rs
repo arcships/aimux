@@ -1,9 +1,9 @@
 //! Shared transport and inline image handling for native decision adapters.
 use std::collections::HashMap;
 
+use aimux_core::AiMuxError;
 use aimux_core::decision_model::{DecisionCallOptions, DecisionImage};
 use aimux_core::shared::FileBytes;
-use aimux_core::{AiMuxError, ApiCallError};
 use aimux_provider_utils::HttpRequest;
 use base64::Engine;
 use serde_json::Value;
@@ -90,13 +90,14 @@ pub(crate) async fn post<T>(
     let raw = response.value;
     let headers = response.response_headers;
     convert(raw.clone(), headers.clone()).map_err(|error| {
-        AiMuxError::ApiCall(Box::new(ApiCallError {
-            status_code: Some(200),
-            response_body: Some(raw.to_string()),
-            response_headers: Some(headers),
-            data: Some(raw),
-            ..ApiCallError::new(error.to_string(), url, body)
-        }))
+        aimux_provider_utils::invalid_response_api_call(
+            error.to_string(),
+            200,
+            url,
+            body,
+            raw,
+            headers,
+        )
     })
 }
 

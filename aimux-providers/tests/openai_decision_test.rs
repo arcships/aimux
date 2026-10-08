@@ -388,6 +388,53 @@ async fn images_typed_choices_and_score_descriptions_roundtrip_and_key_replay() 
 
 #[tokio::test]
 #[serial]
+async fn malformed_image_answers_bound_error_context_but_preserve_wire_and_response_evidence() {
+    use aimux_core::shared::FileBytes;
+    use base64::Engine;
+
+    let bytes = vec![42; 8192];
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    for data in [FileBytes::Binary(bytes), FileBytes::Base64(encoded.clone())] {
+        let server = MockServer::start().await;
+        let raw =
+            json!({"model":"gpt-6-luna","answers":[],"metadata":{"api_key":"response-secret"}});
+        mount(&server, raw.clone()).await;
+        let mut request = options();
+        request.images = vec![DecisionImage {
+            data,
+            media_type: "image/png".into(),
+            detail: Some("low".into()),
+        }];
+        let error = decide(model(&server).as_ref(), request).await.unwrap_err();
+        let AiMuxError::ApiCall(error) = error else {
+            panic!("expected contextual API error");
+        };
+        let data_url = format!("data:image/png;base64,{encoded}");
+        assert_eq!(error.status_code, Some(200));
+        assert!(!error.is_retryable);
+        assert_eq!(
+            error.request_body_values["input"][0]["content"][0]["image_url"],
+            format!("[STRING {} bytes]", data_url.len())
+        );
+        assert_eq!(error.request_body_values["model"], "gpt-6-luna");
+        assert_eq!(
+            error.data.as_ref().unwrap()["metadata"]["api_key"],
+            "[REDACTED]"
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(error.response_body.as_ref().unwrap()).unwrap(),
+            raw
+        );
+        let calls = server.received_requests().await.unwrap();
+        assert_eq!(calls.len(), 1);
+        let wire: Value = calls[0].body_json().unwrap();
+        assert_eq!(wire["input"][0]["content"][0]["image_url"], data_url);
+        assert_eq!(wire["input"][0]["content"][0]["detail"], "low");
+    }
+}
+
+#[tokio::test]
+#[serial]
 async fn bad_media_and_duplicate_native_values_are_rejected_before_http() {
     let contract: Value = serde_json::from_str(include_str!(
         "../../contract-tests/fixtures/decision-openai-full.json"

@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use serde_json::{Value, json};
 
 use aimux_core::decision_model::*;
-use aimux_core::{AiMuxError, ApiCallError, Provider};
+use aimux_core::{AiMuxError, Provider};
 use aimux_provider_utils::{HttpRequest, load_api_key};
 
 use crate::systemone::{ResponseProfile, WireResponse};
@@ -207,13 +207,14 @@ impl DecisionModel for JevDecisionModel {
             Ok(result)
         });
         result.map_err(|error| {
-            AiMuxError::ApiCall(Box::new(ApiCallError {
-                status_code: Some(200),
-                response_body: Some(raw.to_string()),
-                response_headers: Some(response_headers),
-                data: Some(raw),
-                ..ApiCallError::new(error.to_string(), self.config.endpoint.clone(), body)
-            }))
+            aimux_provider_utils::invalid_response_api_call(
+                error.to_string(),
+                200,
+                &self.config.endpoint,
+                body,
+                raw,
+                response_headers,
+            )
         })
     }
 }

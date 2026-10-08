@@ -290,6 +290,18 @@ impl RuntimeDecisionModel {
                 }
             }
         }
+        // SGLang's generation-model path reports full-vocabulary label mass;
+        // its dedicated decision checkpoint readout explicitly omits it.
+        let probability_source = if self.provider() == "sglang"
+            && data["answers"].as_object().is_some_and(|answers| {
+                answers
+                    .values()
+                    .any(|answer| answer.get("x_label_mass").is_some())
+            }) {
+            DecisionProbabilitySource::LogitScoring
+        } else {
+            DecisionProbabilitySource::Native
+        };
         let mut result = crate::systemone::convert_response(
             serde_json::from_value(data)
                 .map_err(|e| invalid(format!("{} SystemOne: {e}", self.provider())))?,
@@ -298,7 +310,7 @@ impl RuntimeDecisionModel {
             crate::systemone::ResponseProfile {
                 provider: self.provider(),
                 rounding: DecisionRounding::default(),
-                probability_source: DecisionProbabilitySource::Native,
+                probability_source,
             },
         )?;
         for id in skipped {
@@ -620,7 +632,11 @@ impl DecisionModel for RuntimeDecisionModel {
             },
             supports_typed_choices: false,
             rounding: DecisionRounding::default(),
-            probability_source: DecisionProbabilitySource::Native,
+            probability_source: if provider == "sglang" {
+                DecisionProbabilitySource::LogitScoring
+            } else {
+                DecisionProbabilitySource::Native
+            },
             supports_boolean: true,
             supports_choice: true,
             supports_score: true,
