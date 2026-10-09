@@ -6,11 +6,11 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * ① 输入侧:完整调用参数,足以重建 generate_text 调用。
  */
-export type InputRecord = { operation?: RecordingOperation,
+export type InputRecord = { operation?: RecordingOperation, 
 /**
  * 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
  */
-prompt: Array<LanguageModelPromptMessage>,
+prompt: Array<LanguageModelPromptMessage>, 
 /**
  * 序列化的 CallOptions(abort_signal/call_id 已 serde skip);
  * headers/provider_options/body_overrides 已递归脱敏。
