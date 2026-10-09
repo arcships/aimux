@@ -177,6 +177,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tool-call-N` id instead of an empty string; a new call without a function
   name ends the stream with `InvalidResponseData` (previously it started a
   call with an empty name). `DeltaToolCall.index` is now `Option<usize>`.
+- Once compatible servers moved to `openai_compatible`, the OpenAI (and
+  Azure) chat stream drives the tracker with `@ai-sdk/openai`'s options:
+  `type` is validated when present, ids missing from the wire come from
+  `generate_id` instead of `tool-call` / `tool-call-N`, and
+  `DeltaToolCall.index` is required again, so a chunk without it fails to
+  parse.
 
 **Rust (provider factory, RFC-0036)**
 
