@@ -155,9 +155,8 @@ fn f(meta: Option<ProviderMetadata>) -> StreamPart { ... }
 ```
 
 Local variables typed `Option<Value>` / `HashMap<String, Value>` that end up in these fields: retype them.
-Intermediate scratch values that are not themselves stored (e.g. `StreamingToolCallTracker::with_extract_metadata`
-closures, which still return `Option<Value>`) stay `Value`; `with_build_provider_metadata` still takes `Option<&Value>`
-and returns `Option<ProviderMetadata>`, so build with `provider_namespace("google", json!({...}))`.
+This includes `StreamingToolCallDelta::provider_metadata`, which is an `Option<ProviderMetadata>`: build it
+with `provider_namespace("google", json!({...}))`.
 
 ### 7. Tests comparing against `json!`
 

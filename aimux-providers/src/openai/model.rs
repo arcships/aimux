@@ -20,9 +20,7 @@ use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::{
-    HttpRequest, StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker,
-};
+use aimux_provider_utils::{HttpRequest, StreamingToolCallDelta, StreamingToolCallTracker};
 
 use super::config::{OpenAIModelConfig, TransformRequestBody};
 use super::convert::{
@@ -419,6 +417,7 @@ pub(crate) async fn execute_stream(
         // Streamed tool calls, correlated by wire id, index and function name
         // (the AI SDK's StreamingToolCallTracker) and finalized on flush.
         let mut tool_calls = StreamingToolCallTracker::new();
+        let mut tool_parts = Vec::new();
 
         // Process the first event (already peeked) then the rest.
         let mut event_iter =
@@ -558,30 +557,24 @@ pub(crate) async fn execute_stream(
             });
                                 reasoning_started = false;
                             }
-                            for dtc in tool_call_deltas {
+                            for dtc in &tool_call_deltas {
+                                let function = dtc.function.as_ref();
                                 let delta = StreamingToolCallDelta {
                                     index: dtc.index,
-                                    id: dtc.id,
-                                    r#type: None,
-                                    function: dtc.function.map(|f| StreamingToolCallFunction {
-                                        name: f.name,
-                                        arguments: f.arguments,
-                                    }),
-                                    extra: Value::Null,
+                                    id: dtc.id.as_deref(),
+                                    name: function.and_then(|f| f.name.as_deref()),
+                                    arguments: function.and_then(|f| f.arguments.as_deref()),
+                                    ..Default::default()
                                 };
-                                match tool_calls.process_delta(&delta) {
-                                    Ok(parts) => {
-                                        for part in parts {
-                                            yield Ok(part);
-                                        }
-                                    }
-                                    // A malformed delta (new call without a
-                                    // function name) is invalid response
-                                    // data, as in the AI SDK; the stream ends.
-                                    Err(error) => {
-                                        yield Err(error.into());
-                                        return;
-                                    }
+                                // A malformed delta (new call without a
+                                // function name) is invalid response data,
+                                // as in the AI SDK; the stream ends.
+                                if let Err(error) = tool_calls.process(delta, &mut tool_parts) {
+                                    yield Err(error.into());
+                                    return;
+                                }
+                                for part in tool_parts.drain(..) {
+                                    yield Ok(part);
                                 }
                             }
                         }
@@ -655,7 +648,8 @@ pub(crate) async fn execute_stream(
 
         // A parsable argument buffer can still be a prefix of a longer input:
         // like the AI SDK's tracker, finalize only when the stream flushes.
-        for part in tool_calls.flush() {
+        tool_calls.finish(&mut tool_parts);
+        for part in tool_parts.drain(..) {
             yield Ok(part);
         }
 
