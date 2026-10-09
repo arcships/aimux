@@ -1,8 +1,7 @@
 ﻿//! # aimux-stream
 //!
-//! Low-level streaming primitives for SSE (Server-Sent Events) parsing and
-//! streamed tool-call tracking,
-//! used by provider implementations to decode model API response streams.
+//! Low-level SSE (Server-Sent Events) parsing, used by provider
+//! implementations to decode model API response streams.
 
 pub mod lines;
 pub mod sse;
