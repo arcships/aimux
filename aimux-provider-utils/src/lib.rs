@@ -51,7 +51,6 @@ pub use streaming_tool_call_argument_state::{
     StreamingToolCallArgumentState, starts_with_structured_value,
 };
 pub use streaming_tool_call_tracker::{
-    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, TrackerError,
-    TypeValidation,
+    StreamingToolCallDelta, StreamingToolCallTracker, TrackerError, TypeValidation,
 };
 pub use url::{validate_base_url, without_trailing_slash, without_trailing_slash_opt};
