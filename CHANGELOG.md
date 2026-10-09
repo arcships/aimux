@@ -49,19 +49,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Rust (aimux-provider-utils)**
 
 - Gains `StreamingToolCallTracker` (plus `StreamingToolCallDelta`,
-  `StreamingToolCallFunction`, `TypeValidation`, `TrackerError`,
-  `StreamingToolCallArgumentState` and `starts_with_structured_value`),
-  a port of the current `@ai-sdk/provider-utils` tracker. The previous
-  `aimux-stream` version was a port of an older, index-only tracker. Deltas
-  are correlated by wire `id`, `index` and function name (ambiguous deltas
-  are dropped), ids are de-duplicated with bounded suffixes, blank function
-  names are ignored, and `flush` orders calls by index only when every call
-  has one. It emits `aimux_core::StreamPart` tool-input parts directly
-  (`ToolInputStart` / `ToolInputDelta` / `ToolInputEnd` / `ToolCall`); there
-  is no separate `ToolCallStreamPart` event type. `TrackerError` converts
-  into `AiMuxError::InvalidResponseData`. Metadata hooks are typed with
-  `serde_json::Value` / `ProviderMetadata`, and the builder closures must be
-  `Send + Sync`.
+  `TypeValidation`, `TrackerError`, `StreamingToolCallArgumentState` and
+  `starts_with_structured_value`), a port of the current
+  `@ai-sdk/provider-utils` tracker. The previous `aimux-stream` version was
+  a port of an older, index-only tracker. Deltas are correlated by wire
+  `id`, `index` and function name (ambiguous deltas are dropped), ids are
+  de-duplicated with `-N` suffixes, blank function names are ignored, and
+  `finish` orders calls by index only when every call has one. It emits
+  `aimux_core::StreamPart` tool-input parts directly (`ToolInputStart` /
+  `ToolInputDelta` / `ToolInputEnd` / `ToolCall`); there is no separate
+  `ToolCallStreamPart` event type. `StreamingToolCallDelta` borrows from the
+  provider's wire type and flattens upstream's `function` object;
+  `process` and `finish` append to a caller-owned `Vec<StreamPart>`, and
+  `finish` consumes the tracker. The upstream `extractMetadata` /
+  `buildToolCallProviderMetadata` hooks are replaced by
+  `StreamingToolCallDelta::provider_metadata`, read from the delta that
+  starts a call. `TrackerError` converts into
+  `AiMuxError::InvalidResponseData`.
 
 **Rust (aimux-providers)**
 
