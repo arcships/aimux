@@ -22,9 +22,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Strea
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker,
-};
+use aimux_provider_utils::{StreamingToolCallDelta, StreamingToolCallTracker};
 
 use crate::shared::EndpointConfig;
 
@@ -307,6 +305,7 @@ impl LanguageModel for MistralModel {
             let mut reasoning_started = false;
             let tool_generate_id = generate_id_fn.clone();
             let mut tool_calls = StreamingToolCallTracker::new().with_generate_id(move || tool_generate_id());
+            let mut tool_parts = Vec::new();
             let mut reasoning_id: Option<String> = None;
             let mut final_usage = Usage::default();
             let mut final_finish_reason: Option<FinishReason> = None;
@@ -421,30 +420,23 @@ impl LanguageModel for MistralModel {
 
                             // Tool calls: assembled by the shared tracker.
                             if let Some(tool_call_deltas) = choice.delta.tool_calls {
-                                for dtc in tool_call_deltas {
+                                for dtc in &tool_call_deltas {
                                     let delta = StreamingToolCallDelta {
                                         index: dtc.index,
-                                        id: dtc.id,
-                                        r#type: None,
-                                        function: Some(StreamingToolCallFunction {
-                                            name: dtc.function.name,
-                                            arguments: dtc.function.arguments,
-                                        }),
-                                        extra: Value::Null,
+                                        id: dtc.id.as_deref(),
+                                        name: dtc.function.name.as_deref(),
+                                        arguments: dtc.function.arguments.as_deref(),
+                                        ..Default::default()
                                     };
-                                    match tool_calls.process_delta(&delta) {
-                                        Ok(parts) => {
-                                            for part in parts {
-                                                yield Ok(part);
-                                            }
-                                        }
-                                        // A new call without a function name
-                                        // is invalid response data, as in the
-                                        // AI SDK; the stream ends.
-                                        Err(error) => {
-                                            yield Err(error.into());
-                                            return;
-                                        }
+                                    // A new call without a function name is
+                                    // invalid response data, as in the AI SDK;
+                                    // the stream ends.
+                                    if let Err(error) = tool_calls.process(delta, &mut tool_parts) {
+                                        yield Err(error.into());
+                                        return;
+                                    }
+                                    for part in tool_parts.drain(..) {
+                                        yield Ok(part);
                                     }
                                 }
                             }
@@ -479,7 +471,8 @@ impl LanguageModel for MistralModel {
             });
                 }
 
-            for part in tool_calls.flush() {
+            tool_calls.finish(&mut tool_parts);
+            for part in tool_parts.drain(..) {
                 yield Ok(part);
             }
 
