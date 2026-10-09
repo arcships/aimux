@@ -20,9 +20,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage,
 };
-use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, generate_id,
-};
+use aimux_provider_utils::{StreamingToolCallDelta, StreamingToolCallTracker, generate_id};
 
 use super::config::CompatModelConfig;
 use super::convert::{ChatBodySpec, RequestBodyResult, build_request_body, parse_finish_reason};
@@ -406,17 +404,14 @@ impl LanguageModel for OpenAICompatibleChatModel {
             let mut final_finish_reason: Option<FinishReason> = None;
             let mut response_metadata_emitted = false;
 
-            let signature_key = metadata_key.clone();
-            let mut tool_calls = StreamingToolCallTracker::new()
-                .with_generate_id(generate_id)
-                .with_extract_metadata(|delta| {
-                    thought_signature(Some(&delta.extra)).map(Value::String)
+            let mut tool_calls = StreamingToolCallTracker::new().with_generate_id(generate_id);
+            let mut tool_parts = Vec::new();
+            let signature_metadata = |extra: Option<&Value>| {
+                thought_signature(extra).map(|signature| {
+                    provider_namespace(&metadata_key, json!({ "thoughtSignature": signature }))
+                        .expect("provider metadata must be an object")
                 })
-                .with_build_provider_metadata(move |signature| {
-                    signature
-                        .and_then(Value::as_str)
-                        .map(|signature| provider_namespace(&signature_key, json!({ "thoughtSignature": signature })).expect("provider metadata must be an object"))
-                });
+            };
 
             // Some compatible servers send the first delta of a call without
             // `function.name`; buffer by index until the name is known.
@@ -539,64 +534,54 @@ impl LanguageModel for OpenAICompatibleChatModel {
                                     });
                                     reasoning_started = false;
                                 }
-                                for dtc in deltas {
-                                    let name = dtc
-                                        .function
-                                        .as_ref()
-                                        .and_then(|f| f.name.clone())
+                                for dtc in &deltas {
+                                    let function = dtc.function.as_ref();
+                                    let name = function
+                                        .and_then(|f| f.name.as_deref())
                                         .filter(|n| !n.trim().is_empty());
-                                    let arguments =
-                                        dtc.function.as_ref().and_then(|f| f.arguments.clone());
-                                    let extra = dtc.extra_content.clone().unwrap_or(Value::Null);
+                                    let arguments = function.and_then(|f| f.arguments.as_deref());
+                                    let buffered;
                                     let delta = match dtc.index {
                                         Some(index) if !forwarded.contains(&index) => {
                                             let entry = pending.entry(index).or_default();
                                             if entry.id.is_none() {
-                                                entry.id = dtc.id.clone();
+                                                entry.id.clone_from(&dtc.id);
                                             }
-                                            if entry.extra.is_null() {
-                                                entry.extra = extra;
+                                            if entry.extra.is_null()
+                                                && let Some(extra) = &dtc.extra_content
+                                            {
+                                                entry.extra = extra.clone();
                                             }
-                                            if let Some(arguments) = &arguments {
+                                            if let Some(arguments) = arguments {
                                                 entry.arguments.push_str(arguments);
                                             }
                                             let Some(name) = name else { continue };
-                                            let entry = pending.remove(&index).unwrap_or_default();
+                                            buffered = pending.remove(&index).unwrap_or_default();
                                             forwarded.insert(index);
                                             StreamingToolCallDelta {
                                                 index: Some(index),
-                                                id: entry.id,
-                                                r#type: None,
-                                                function: Some(StreamingToolCallFunction {
-                                                    name: Some(name),
-                                                    arguments: Some(entry.arguments),
-                                                }),
-                                                extra: entry.extra,
+                                                id: buffered.id.as_deref(),
+                                                name: Some(name),
+                                                arguments: Some(&buffered.arguments),
+                                                provider_metadata: signature_metadata(Some(&buffered.extra)),
+                                                ..Default::default()
                                             }
                                         }
                                         _ => StreamingToolCallDelta {
                                             index: dtc.index,
-                                            id: dtc.id.clone(),
-                                            r#type: None,
-                                            function: dtc.function.as_ref().map(|f| {
-                                                StreamingToolCallFunction {
-                                                    name: f.name.clone(),
-                                                    arguments: f.arguments.clone(),
-                                                }
-                                            }),
-                                            extra,
+                                            id: dtc.id.as_deref(),
+                                            name: function.and_then(|f| f.name.as_deref()),
+                                            arguments,
+                                            provider_metadata: signature_metadata(dtc.extra_content.as_ref()),
+                                            ..Default::default()
                                         },
                                     };
-                                    match tool_calls.process_delta(&delta) {
-                                        Ok(parts) => {
-                                            for part in parts {
-                                                yield Ok(part);
-                                            }
-                                        }
-                                        Err(error) => {
-                                            yield Err(error.into());
-                                            return;
-                                        }
+                                    if let Err(error) = tool_calls.process(delta, &mut tool_parts) {
+                                        yield Err(error.into());
+                                        return;
+                                    }
+                                    for part in tool_parts.drain(..) {
+                                        yield Ok(part);
                                     }
                                 }
                             }
@@ -667,7 +652,8 @@ impl LanguageModel for OpenAICompatibleChatModel {
             }
             // A parsable argument buffer can still be a prefix of a longer
             // input: finalize only when the stream flushes.
-            for part in tool_calls.flush() {
+            tool_calls.finish(&mut tool_parts);
+            for part in tool_parts.drain(..) {
                 yield Ok(part);
             }
 

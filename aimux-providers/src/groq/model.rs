@@ -21,8 +21,7 @@ use aimux_core::types::{
     FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning,
 };
 use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, TypeValidation,
-    generate_id,
+    StreamingToolCallDelta, StreamingToolCallTracker, TypeValidation, generate_id,
 };
 
 use crate::shared::EndpointConfig;
@@ -395,6 +394,7 @@ impl LanguageModel for GroqChatLanguageModel {
             let mut tool_calls = StreamingToolCallTracker::new()
                 .with_generate_id(generate_id)
                 .with_type_validation(TypeValidation::Required);
+            let mut tool_parts = Vec::new();
 
             let mut finish_reason = FinishReason {
                 unified: FinishReasonUnified::Other,
@@ -537,27 +537,21 @@ impl LanguageModel for GroqChatLanguageModel {
                         });
                         is_active_reasoning = false;
                     }
-                    for tool_call in deltas {
+                    for tool_call in &deltas {
                         let delta = StreamingToolCallDelta {
                             index: Some(tool_call.index),
-                            id: tool_call.id,
-                            r#type: tool_call.r#type,
-                            function: Some(StreamingToolCallFunction {
-                                name: tool_call.function.name,
-                                arguments: tool_call.function.arguments,
-                            }),
-                            extra: Value::Null,
+                            id: tool_call.id.as_deref(),
+                            r#type: tool_call.r#type.as_deref(),
+                            name: tool_call.function.name.as_deref(),
+                            arguments: tool_call.function.arguments.as_deref(),
+                            provider_metadata: None,
                         };
-                        match tool_calls.process_delta(&delta) {
-                            Ok(parts) => {
-                                for part in parts {
-                                    yield Ok(part);
-                                }
-                            }
-                            Err(error) => {
-                                yield Err(error.into());
-                                return;
-                            }
+                        if let Err(error) = tool_calls.process(delta, &mut tool_parts) {
+                            yield Err(error.into());
+                            return;
+                        }
+                        for part in tool_parts.drain(..) {
+                            yield Ok(part);
                         }
                     }
                 }
@@ -575,7 +569,8 @@ impl LanguageModel for GroqChatLanguageModel {
                     provider_metadata: None,
                 });
             }
-            for part in tool_calls.flush() {
+            tool_calls.finish(&mut tool_parts);
+            for part in tool_parts.drain(..) {
                 yield Ok(part);
             }
 
