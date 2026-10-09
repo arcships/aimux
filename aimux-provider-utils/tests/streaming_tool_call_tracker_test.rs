@@ -9,8 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use aimux_core::stream_part::StreamPart;
 use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallFunction, StreamingToolCallTracker, TrackerError,
-    TypeValidation,
+    StreamingToolCallDelta, StreamingToolCallTracker, TrackerError, TypeValidation,
 };
 use serde_json::{Value, json};
 
@@ -84,7 +83,8 @@ fn project(part: StreamPart) -> Part {
 
 /// Tracker plus the parts it has emitted so far (the TS `createCollector`).
 struct Harness {
-    tracker: StreamingToolCallTracker,
+    /// `None` once flushed: `finish` consumes the tracker.
+    tracker: Option<StreamingToolCallTracker>,
     parts: Vec<Part>,
 }
 
@@ -95,19 +95,25 @@ impl Harness {
 
     fn with(tracker: StreamingToolCallTracker) -> Self {
         Self {
-            tracker,
+            tracker: Some(tracker),
             parts: Vec::new(),
         }
     }
 
-    fn delta(&mut self, delta: StreamingToolCallDelta) -> Result<(), TrackerError> {
-        let parts = self.tracker.process_delta(&delta)?;
+    fn delta(&mut self, delta: StreamingToolCallDelta<'_>) -> Result<(), TrackerError> {
+        let mut parts = Vec::new();
+        let tracker = self.tracker.as_mut().expect("delta after flush");
+        let result = tracker.process(delta, &mut parts);
         self.parts.extend(parts.into_iter().map(project));
-        Ok(())
+        result
     }
 
     fn flush(&mut self) {
-        let parts = self.tracker.flush();
+        let mut parts = Vec::new();
+        self.tracker
+            .take()
+            .expect("flushed twice")
+            .finish(&mut parts);
         self.parts.extend(parts.into_iter().map(project));
     }
 
@@ -133,27 +139,30 @@ impl Harness {
 }
 
 /// A delta with an explicit `function` object (as every TS test passes one).
-fn delta(
+fn delta<'a>(
     index: Option<usize>,
-    id: Option<&str>,
-    ty: Option<&str>,
-    name: Option<&str>,
-    arguments: Option<&str>,
-) -> StreamingToolCallDelta {
+    id: Option<&'a str>,
+    ty: Option<&'a str>,
+    name: Option<&'a str>,
+    arguments: Option<&'a str>,
+) -> StreamingToolCallDelta<'a> {
     StreamingToolCallDelta {
         index,
-        id: id.map(str::to_string),
-        r#type: ty.map(str::to_string),
-        function: Some(StreamingToolCallFunction {
-            name: name.map(str::to_string),
-            arguments: arguments.map(str::to_string),
-        }),
-        extra: Value::Null,
+        id,
+        r#type: ty,
+        name,
+        arguments,
+        provider_metadata: None,
     }
 }
 
 /// Full call start: index, id, `type: 'function'`, name and arguments.
-fn start(index: usize, id: &str, name: &str, arguments: &str) -> StreamingToolCallDelta {
+fn start<'a>(
+    index: usize,
+    id: &'a str,
+    name: &'a str,
+    arguments: &'a str,
+) -> StreamingToolCallDelta<'a> {
     delta(
         Some(index),
         Some(id),
@@ -164,7 +173,7 @@ fn start(index: usize, id: &str, name: &str, arguments: &str) -> StreamingToolCa
 }
 
 /// Continuation carrying only arguments (plus an optional index).
-fn cont(index: Option<usize>, arguments: &str) -> StreamingToolCallDelta {
+fn cont(index: Option<usize>, arguments: &str) -> StreamingToolCallDelta<'_> {
     delta(index, None, None, None, Some(arguments))
 }
 
@@ -392,18 +401,6 @@ mod process_delta {
         h.flush();
 
         assert_eq!(h.tool_calls(), vec![tc("call_1", "fn", "{\"value\":1}")]);
-    }
-
-    #[test]
-    fn skips_deltas_for_already_finished_tool_calls() {
-        let mut h = Harness::new();
-
-        h.delta(start(0, "call_1", "fn", "{}")).unwrap();
-        h.flush();
-        h.clear();
-
-        h.delta(cont(Some(0), "extra")).unwrap();
-        assert_eq!(h.parts, vec![]);
     }
 
     #[test]
@@ -964,7 +961,7 @@ mod process_delta {
 mod type_validation {
     use super::*;
 
-    fn custom_type() -> StreamingToolCallDelta {
+    fn custom_type() -> StreamingToolCallDelta<'static> {
         delta(
             Some(0),
             Some("call_1"),
@@ -974,7 +971,7 @@ mod type_validation {
         )
     }
 
-    fn no_type() -> StreamingToolCallDelta {
+    fn no_type() -> StreamingToolCallDelta<'static> {
         delta(Some(0), Some("call_1"), None, Some("fn"), Some(""))
     }
 
@@ -1036,74 +1033,23 @@ mod flush {
             ]
         );
     }
-
-    #[test]
-    fn does_not_re_finalize_already_finished_tool_calls() {
-        let mut h = Harness::new();
-
-        h.delta(start(0, "call_1", "fn", "{}")).unwrap();
-        h.flush();
-        h.clear();
-
-        h.flush();
-
-        assert_eq!(h.parts, vec![]);
-    }
 }
 
 mod metadata {
     use super::*;
 
-    fn google_tracker() -> StreamingToolCallTracker {
-        StreamingToolCallTracker::new()
-            .with_extract_metadata(|delta| {
-                delta.extra["extra_content"]["google"]["thought_signature"]
-                    .as_str()
-                    .map(|sig| json!({ "thoughtSignature": sig }))
-            })
-            .with_build_provider_metadata(|metadata| {
-                metadata
-                    .and_then(|m| m.get("thoughtSignature"))
-                    .map(|sig| json!({ "google": { "thoughtSignature": sig } }))
-            })
-    }
+    // The upstream `extractMetadata` / `buildToolCallProviderMetadata` hooks
+    // become `provider_metadata` on the delta that starts a call.
 
     #[test]
-    fn extracts_and_includes_provider_metadata_in_tool_call_parts() {
-        let mut h = Harness::with(google_tracker());
+    fn includes_the_starting_delta_metadata_in_the_tool_call() {
+        let mut h = Harness::new();
 
-        h.delta(
-            start(0, "call_1", "fn", "{}")
-                .extra(json!({ "extra_content": { "google": { "thought_signature": "sig123" } } })),
-        )
+        h.delta(StreamingToolCallDelta {
+            provider_metadata: Some(json!({ "google": { "thoughtSignature": "sig123" } })),
+            ..start(0, "call_1", "fn", "{\"incomplete")
+        })
         .unwrap();
-        h.flush();
-
-        let tool_call = h.parts.iter().find(|p| matches!(p, Part::ToolCall { .. }));
-        assert_eq!(
-            tool_call,
-            Some(&Part::ToolCall {
-                tool_call_id: "call_1".into(),
-                tool_name: "fn".into(),
-                input: "{}".into(),
-                provider_metadata: Some(json!({ "google": { "thoughtSignature": "sig123" } })),
-            })
-        );
-    }
-
-    #[test]
-    fn includes_provider_metadata_for_unfinished_tool_calls_finalized_in_flush() {
-        let mut h = Harness::with(
-            StreamingToolCallTracker::new()
-                .with_extract_metadata(|_| Some(json!({ "custom": { "key": "value" } })))
-                .with_build_provider_metadata(|metadata| {
-                    metadata.map(|m| json!({ "provider": m }))
-                }),
-        );
-
-        h.delta(start(0, "call_1", "fn", "{\"incomplete")).unwrap();
-        h.clear();
-
         h.flush();
 
         assert_eq!(
@@ -1112,24 +1058,24 @@ mod metadata {
                 tool_call_id: "call_1".into(),
                 tool_name: "fn".into(),
                 input: "{\"incomplete".into(),
-                provider_metadata: Some(json!({ "provider": { "custom": { "key": "value" } } })),
+                provider_metadata: Some(json!({ "google": { "thoughtSignature": "sig123" } })),
             })
         );
     }
 
     #[test]
-    fn omits_provider_metadata_when_the_builder_returns_none() {
-        let mut h = Harness::with(
-            StreamingToolCallTracker::new()
-                .with_extract_metadata(|_| None)
-                .with_build_provider_metadata(|_| None),
-        );
+    fn ignores_metadata_on_continuations() {
+        let mut h = Harness::new();
 
-        h.delta(start(0, "call_1", "fn", "{}")).unwrap();
+        h.delta(start(0, "call_1", "fn", "{")).unwrap();
+        h.delta(StreamingToolCallDelta {
+            provider_metadata: Some(json!({ "custom": { "key": "value" } })),
+            ..cont(Some(0), "}")
+        })
+        .unwrap();
         h.flush();
 
-        let tool_call = h.parts.iter().find(|p| matches!(p, Part::ToolCall { .. }));
-        assert_eq!(tool_call, Some(&super::tool_call("call_1", "fn", "{}")));
+        assert_eq!(h.parts.last(), Some(&tool_call("call_1", "fn", "{}")));
     }
 }
 
