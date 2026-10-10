@@ -31,9 +31,9 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders, SupportedUrlsSource};
 use model::DeepSeekChatConfig;
 
 const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
@@ -91,19 +91,16 @@ pub fn create_deepseek(settings: DeepSeekProviderSettings) -> Result<DeepSeekPro
     Ok(DeepSeekProvider {
         name: "deepseek".to_string(),
         base_url,
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            provider_headers(
-                Credential::explicit_or_env(
-                    settings.api_key.map(Resolvable::Value),
-                    API_KEY_ENV_VAR,
-                    "DeepSeek",
-                ),
-                Vec::new(),
-                settings.headers,
+        headers: ProviderHeaders::bearer(
+            Credential::explicit_or_env(
+                settings.api_key.map(Resolvable::Value),
+                API_KEY_ENV_VAR,
+                "DeepSeek",
             ),
-            "deepseek",
-            "3.0.56",
-        ),
+            Vec::new(),
+            settings.headers,
+        )
+        .with_user_agent("deepseek", "3.0.56"),
         fetch: settings.fetch,
     })
 }
@@ -123,7 +120,7 @@ pub fn deepseek() -> &'static DeepSeekProvider {
 pub struct DeepSeekProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
@@ -145,7 +142,7 @@ impl DeepSeekProvider {
             DeepSeekChatConfig {
                 endpoint: self
                     .endpoint_config("chat")
-                    .with_supported_urls(Arc::new(|_| chat_supported_urls())),
+                    .with_supported_urls(SupportedUrlsSource::Fixed(chat_supported_urls())),
                 supports_assistant_prefix_completion: self.base_url.ends_with("/beta"),
                 supports_strict_tool_calls: self.base_url.ends_with("/beta"),
             },

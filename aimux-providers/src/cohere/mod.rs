@@ -33,11 +33,9 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::reranking_model::RerankingModel;
-use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, without_trailing_slash,
-};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, without_trailing_slash};
 
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
 pub(crate) fn cohere_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {
@@ -111,7 +109,7 @@ pub fn create_cohere(settings: CohereProviderSettings) -> Result<CohereProvider,
         Some(url) => without_trailing_slash(url),
         None => DEFAULT_BASE_URL.to_string(),
     };
-    let headers = provider_headers(
+    let headers = ProviderHeaders::bearer(
         Credential::explicit_or_env(
             settings.api_key.map(Resolvable::Value),
             API_KEY_ENV_VAR,
@@ -120,11 +118,7 @@ pub fn create_cohere(settings: CohereProviderSettings) -> Result<CohereProvider,
         Vec::new(),
         settings.headers,
     );
-    let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
-        headers,
-        options::NAMESPACE,
-        "4.0.52",
-    );
+    let headers = headers.with_user_agent(options::NAMESPACE, "4.0.52");
     Ok(CohereProvider {
         generate_id: settings.generate_id,
         base_url,
@@ -149,7 +143,7 @@ pub fn cohere() -> &'static CohereProvider {
 pub struct CohereProvider {
     generate_id: Option<aimux_provider_utils::IdGenerator>,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 

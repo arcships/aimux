@@ -163,7 +163,7 @@ impl LanguageModel for MistralModel {
     }
 
     fn supported_urls(&self) -> aimux_core::language_model::SupportedUrls {
-        (self.config.supported_urls)(&self.model_id)
+        self.config.supported_urls(&self.model_id)
     }
 
     fn model_id(&self) -> &str {

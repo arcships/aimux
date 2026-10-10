@@ -58,10 +58,10 @@ use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_core::video_model::VideoModel;
 use aimux_provider_utils::{
-    EvaluationLanguageModel, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url,
+    EvaluationLanguageModel, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
 };
 
-use crate::shared::{AuthScheme, Credential, Endpoint, EndpointConfig, credential_headers};
+use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders, SupportedUrlsSource};
 
 pub(crate) fn google_stream_error(
     error: &types::GoogleError,
@@ -151,7 +151,7 @@ fn supports_external_file_urls(model_id: &str) -> bool {
 /// The URL patterns the API fetches itself (`getSupportedUrls` in
 /// `createGoogle`): Files API URLs and YouTube links for every media type,
 /// plus external `https` URLs for the models that accept them.
-fn supported_urls(base_url: &str, model_id: Option<&str>) -> SupportedUrls {
+pub(crate) fn supported_urls(base_url: &str, model_id: Option<&str>) -> SupportedUrls {
     let include_external = model_id.is_none_or(supports_external_file_urls);
     let pattern = |source: &str| regex::Regex::new(source).expect("static pattern");
     let mut urls = std::collections::HashMap::new();
@@ -243,20 +243,17 @@ pub fn create_google(settings: GoogleProviderSettings) -> Result<GoogleProvider,
     Ok(GoogleProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            credential_headers(
-                Credential::explicit_or_env(
-                    settings.api_key.map(Resolvable::Value),
-                    API_KEY_ENV_VAR,
-                    "Google Generative AI",
-                ),
-                AuthScheme::Header("x-goog-api-key"),
-                Vec::new(),
-                settings.headers,
+        headers: ProviderHeaders::new(
+            Credential::explicit_or_env(
+                settings.api_key.map(Resolvable::Value),
+                API_KEY_ENV_VAR,
+                "Google Generative AI",
             ),
-            options::GOOGLE,
-            "4.0.85",
-        ),
+            AuthScheme::Header("x-goog-api-key"),
+            Vec::new(),
+            settings.headers,
+        )
+        .with_user_agent(options::GOOGLE, "4.0.85"),
         fetch: settings.fetch,
         generate_id: settings.generate_id,
         #[cfg(feature = "realtime")]
@@ -280,7 +277,7 @@ pub fn google() -> &'static GoogleProvider {
 pub struct GoogleProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
     generate_id: Option<aimux_provider_utils::IdGenerator>,
     #[cfg(feature = "realtime")]
@@ -290,24 +287,15 @@ pub struct GoogleProvider {
 impl GoogleProvider {
     /// The model configuration reporting `provider` as its identity.
     fn model_config(&self, provider: String) -> EndpointConfig {
-        let base_url = self.base_url.clone();
-        let headers = self.headers.clone();
-        let urls_base = self.base_url.clone();
-        EndpointConfig {
+        EndpointConfig::fixed(
             provider,
-            endpoint: Arc::new(move || {
-                let base_url = base_url.clone();
-                let headers = headers.clone();
-                Box::pin(async move {
-                    Ok(Endpoint {
-                        base_url,
-                        headers: headers.resolve().await?,
-                    })
-                })
-            }),
-            fetch: self.fetch.clone(),
-            supported_urls: Arc::new(move |model_id| supported_urls(&urls_base, Some(model_id))),
-        }
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+        )
+        .with_supported_urls(SupportedUrlsSource::Google {
+            base_url: self.base_url.clone(),
+        })
     }
 
     /// A language model; `provider()` is the provider name

@@ -28,9 +28,9 @@ use aimux_core::transcription_model::{
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::HttpBody;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
+use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
 
 /// Deepgram errors: `{"err_code": "...", "err_msg": "...", "request_id": ...}`
 /// on most endpoints; some return `{"category": "...", "message": "...",
@@ -131,7 +131,7 @@ pub fn create_deepgram(settings: DeepgramProviderSettings) -> Result<DeepgramPro
     Ok(DeepgramProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: credential_headers(
+        headers: ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Deepgram"),
             AuthScheme::Scheme("Token"),
             Vec::new(),
@@ -157,7 +157,7 @@ pub fn deepgram() -> &'static DeepgramProvider {
 pub struct DeepgramProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 

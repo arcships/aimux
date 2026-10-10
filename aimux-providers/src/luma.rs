@@ -24,11 +24,11 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::Warning;
 use aimux_provider_utils::HttpRequest;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    Credential, EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, is_poll_control_key,
-    poll_interval_ms, poll_until, provider_headers, retry_download,
+    Credential, EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, ProviderHeaders,
+    is_poll_control_key, poll_interval_ms, poll_until, retry_download,
 };
 
 fn luma_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -118,7 +118,7 @@ pub fn create_luma(settings: LumaProviderSettings) -> Result<LumaProvider, AiMux
     Ok(LumaProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: provider_headers(
+        headers: ProviderHeaders::bearer(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Luma"),
             Vec::new(),
             settings.headers,
@@ -143,7 +143,7 @@ pub fn luma() -> &'static LumaProvider {
 pub struct LumaProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 

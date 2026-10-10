@@ -27,12 +27,12 @@ use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 use aimux_provider_utils::{MultipartForm, media_type_to_extension};
 
 use crate::shared::{
-    Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, poll_interval_ms, poll_until,
-    provider_headers, retry_download,
+    Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, ProviderHeaders, poll_interval_ms,
+    poll_until, retry_download,
 };
 
 fn revai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -128,7 +128,7 @@ pub fn create_revai(settings: RevaiProviderSettings) -> Result<RevaiProvider, Ai
     Ok(RevaiProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: provider_headers(
+        headers: ProviderHeaders::bearer(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Rev.ai"),
             Vec::new(),
             settings.headers,
@@ -153,7 +153,7 @@ pub fn revai() -> &'static RevaiProvider {
 pub struct RevaiProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 

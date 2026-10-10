@@ -29,10 +29,10 @@ use aimux_core::transcription_model::{
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::HttpBody;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    AuthScheme, Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, credential_headers,
+    AuthScheme, Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, ProviderHeaders,
     is_poll_control_key, poll_interval_ms, poll_until,
 };
 
@@ -142,7 +142,7 @@ pub fn create_assemblyai(
     Ok(AssemblyAIProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: credential_headers(
+        headers: ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "AssemblyAI"),
             AuthScheme::Header("Authorization"),
             Vec::new(),
@@ -168,7 +168,7 @@ pub fn assemblyai() -> &'static AssemblyAIProvider {
 pub struct AssemblyAIProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 

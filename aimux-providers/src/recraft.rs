@@ -26,10 +26,10 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::Warning;
 use aimux_provider_utils::HttpRequest;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, poll_interval_ms, provider_headers,
+    Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, ProviderHeaders, poll_interval_ms,
     retry_download,
 };
 
@@ -119,7 +119,7 @@ pub fn create_recraft(settings: RecraftProviderSettings) -> Result<RecraftProvid
     Ok(RecraftProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: provider_headers(
+        headers: ProviderHeaders::bearer(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Recraft"),
             Vec::new(),
             settings.headers,
@@ -144,7 +144,7 @@ pub fn recraft() -> &'static RecraftProvider {
 pub struct RecraftProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 

@@ -358,7 +358,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
     }
 
     fn supported_urls(&self) -> SupportedUrls {
-        (self.config.endpoint.supported_urls)(&self.model_id)
+        self.config.endpoint.supported_urls(&self.model_id)
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {

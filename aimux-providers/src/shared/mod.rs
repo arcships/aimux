@@ -1,14 +1,18 @@
 //! Helpers the native packages and the presets share.
 //!
-//! Only transport plumbing lives here: how the provider-level request headers
-//! are produced. Nothing in this module knows a vendor.
+//! Only transport plumbing lives here: where the base URL and the
+//! provider-level request headers of a request come from, as data. The few
+//! vendors whose endpoint is decided by more than a URL and a credential
+//! (Vertex, Bedrock, Polly) keep that logic in their own modules.
 
 mod discovery;
 mod exchange;
 mod poll;
 
 pub(crate) use discovery::list_data_models;
-pub(crate) use exchange::{Endpoint, EndpointConfig};
+pub(crate) use exchange::{
+    BaseUrl, Endpoint, EndpointConfig, EndpointHeaders, EndpointSource, SupportedUrlsSource,
+};
 pub(crate) use poll::{
     POLL_INTERVAL_MILLIS_KEY, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key,
     poll_interval_ms, poll_until, retry_download,
@@ -113,6 +117,49 @@ pub(crate) struct ProviderHeaders {
 }
 
 impl ProviderHeaders {
+    /// Headers with `credential` put on the wire by `scheme`, no user-agent
+    /// suffix.
+    pub(crate) fn new(
+        credential: Credential,
+        scheme: AuthScheme,
+        fixed: Vec<(String, String)>,
+        user: Option<HeaderMapOpt>,
+    ) -> Self {
+        Self {
+            credential,
+            scheme,
+            fixed,
+            user,
+            user_agent: None,
+        }
+    }
+
+    /// Headers with a bearer credential, no user-agent suffix.
+    pub(crate) fn bearer(
+        credential: Credential,
+        fixed: Vec<(String, String)>,
+        user: Option<HeaderMapOpt>,
+    ) -> Self {
+        Self::new(credential, AuthScheme::Bearer, fixed, user)
+    }
+
+    /// The same headers with the `ai-sdk-{package}/{version}` user-agent
+    /// suffix.
+    #[must_use]
+    pub(crate) fn with_user_agent(mut self, package: &'static str, version: &'static str) -> Self {
+        self.user_agent = Some((package, version));
+        self
+    }
+
+    /// These headers as a [`HeadersFn`], for the configs that still take
+    /// one; it resolves them on every request.
+    pub(crate) fn into_headers_fn(self) -> HeadersFn {
+        Resolvable::from_async_fn(move || {
+            let headers = self.clone();
+            async move { headers.resolve().await }
+        })
+    }
+
     pub(crate) async fn resolve(&self) -> Result<HeaderMapOpt, AiMuxError> {
         let mut layer = HeaderMapOpt::new();
         if let Some(secret) = self.credential.secret().await? {
@@ -150,15 +197,5 @@ pub(crate) fn credential_headers(
     fixed: Vec<(String, String)>,
     user: Option<HeaderMapOpt>,
 ) -> HeadersFn {
-    let headers = ProviderHeaders {
-        credential,
-        scheme,
-        fixed,
-        user,
-        user_agent: None,
-    };
-    Resolvable::from_async_fn(move || {
-        let headers = headers.clone();
-        async move { headers.resolve().await }
-    })
+    ProviderHeaders::new(credential, scheme, fixed, user).into_headers_fn()
 }

@@ -43,9 +43,9 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_core::video_model::VideoModel;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable};
 
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
 const DEFAULT_BASE_URL: &str = "https://api.x.ai/v1";
 const API_KEY_ENV_VAR: &str = "XAI_API_KEY";
@@ -323,19 +323,16 @@ pub fn create_xai(settings: XAIProviderSettings) -> Result<XAIProvider, AiMuxErr
     let base_url = base_url.strip_suffix('/').unwrap_or(&base_url).to_string();
     Ok(XAIProvider {
         base_url,
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            provider_headers(
-                Credential::explicit_or_env(
-                    settings.api_key.map(Resolvable::Value),
-                    API_KEY_ENV_VAR,
-                    "xAI API key",
-                ),
-                Vec::new(),
-                settings.headers,
+        headers: ProviderHeaders::bearer(
+            Credential::explicit_or_env(
+                settings.api_key.map(Resolvable::Value),
+                API_KEY_ENV_VAR,
+                "xAI API key",
             ),
-            options::NAMESPACE,
-            "5.0.12",
-        ),
+            Vec::new(),
+            settings.headers,
+        )
+        .with_user_agent(options::NAMESPACE, "5.0.12"),
         fetch: settings.fetch,
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
@@ -356,7 +353,7 @@ pub fn xai() -> &'static XAIProvider {
 /// of; it holds no HTTP client.
 pub struct XAIProvider {
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
     #[cfg(feature = "realtime")]
     web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,

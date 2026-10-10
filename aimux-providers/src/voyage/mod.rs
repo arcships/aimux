@@ -25,9 +25,9 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_core::reranking_model::RerankingModel;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
 pub(crate) fn voyage_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {
@@ -106,7 +106,7 @@ pub fn create_voyage(settings: VoyageProviderSettings) -> Result<VoyageProvider,
     Ok(VoyageProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: provider_headers(
+        headers: ProviderHeaders::bearer(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Voyage"),
             Vec::new(),
             settings.headers,
@@ -131,7 +131,7 @@ pub fn voyage() -> &'static VoyageProvider {
 pub struct VoyageProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 

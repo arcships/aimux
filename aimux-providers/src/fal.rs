@@ -26,10 +26,10 @@ use aimux_core::transcription_model::{
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::HttpRequest;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    AuthScheme, Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, credential_headers,
+    AuthScheme, Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, ProviderHeaders,
     is_poll_control_key, poll_interval_ms, poll_until, retry_download,
 };
 
@@ -146,7 +146,7 @@ pub fn create_fal(settings: FalProviderSettings) -> Result<FalProvider, AiMuxErr
     Ok(FalProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: credential_headers(
+        headers: ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Fal"),
             AuthScheme::Scheme("Key"),
             Vec::new(),
@@ -171,7 +171,7 @@ pub fn fal() -> &'static FalProvider {
 pub struct FalProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
