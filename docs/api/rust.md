@@ -55,10 +55,12 @@ let model = anthropic.messages("claude-sonnet-4-5");
 Settings are package-specific. OpenAI, Anthropic and Google take
 `api_key: Option<String>` and `headers: Option<HeaderMapOpt>`; these are fixed
 values, not callbacks. `fetch: Option<FetchFunction>` supplies a custom
-transport. These packages have no `transform_request_body` setting;
-OpenAI-compatible settings expose that hook, plus `supported_urls` and
-`convert_usage` callbacks for chat models. Cohere and Mistral expose
-`generate_id` for generated ids. Settings only expose `name` where the upstream
+transport. Settings hold data, not callbacks: there is no
+`transform_request_body`; OpenAI-compatible settings take `supported_urls`
+as a `SupportedUrls` value and `convert_usage` as a `ConvertUsage` choice
+(`OpenAICompatible`, `Alibaba`, `MoonshotAI`) for chat models. Anthropic,
+Google, Cohere and Mistral take `generate_id` as an `IdGenerator`
+(`fn() -> String`, a plain function, no captured state). Settings only expose `name` where the upstream
 package does. Every request includes the package user-agent suffix
 `ai-sdk-<package>/<version>`.
 OpenAI defaults to Responses through `call` and `language_model`; `chat`
