@@ -31,6 +31,15 @@ impl<O> TransformStreamController<O> {
         }
     }
 
+    /// Emit `error` and keep the stream open: the next chunk is transformed
+    /// as usual. For errors a consumer may skip (a malformed event inside an
+    /// otherwise valid stream).
+    pub fn enqueue_error(&mut self, error: AiMuxError) {
+        if !self.closed {
+            self.queue.push(Err(error));
+        }
+    }
+
     /// Emit `error` and end the stream: no further chunk is transformed and
     /// `flush` is not called.
     pub fn error(&mut self, error: AiMuxError) {
@@ -109,8 +118,8 @@ where
 mod tests {
     use super::*;
 
-    /// Doubles each number, stops with an error on a negative one, and
-    /// emits the running total on flush.
+    /// Doubles each number, reports a skippable error for zero, stops with an
+    /// error on a negative one, and emits the running total on flush.
     #[derive(Default)]
     struct Doubler {
         total: i32,
@@ -125,6 +134,10 @@ mod tests {
         }
 
         fn transform(&mut self, chunk: i32, controller: &mut TransformStreamController<i32>) {
+            if chunk == 0 {
+                controller.enqueue_error(AiMuxError::InvalidResponseData("zero".into()));
+                return;
+            }
             if chunk < 0 {
                 controller.error(AiMuxError::InvalidResponseData("negative".into()));
                 return;
@@ -148,6 +161,15 @@ mod tests {
     #[tokio::test]
     async fn start_transform_then_flush_in_order() {
         assert_eq!(run(vec![1, 2]).await, vec![Ok(0), Ok(2), Ok(4), Ok(3)]);
+    }
+
+    #[tokio::test]
+    async fn enqueue_error_keeps_transforming_and_flushes() {
+        let out = run(vec![1, 0, 2]).await;
+        assert_eq!(out.len(), 5);
+        assert_eq!(out[..2], [Ok(0), Ok(2)]);
+        assert!(out[2].is_err());
+        assert_eq!(out[3..], [Ok(4), Ok(3)]);
     }
 
     #[tokio::test]
