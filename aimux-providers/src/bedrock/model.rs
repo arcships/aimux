@@ -18,16 +18,17 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage, Warning,
 };
 
 use serde_json::json;
 
-use aimux_provider_utils::HttpBody;
+use aimux_provider_utils::{HttpBody, TransformStreamController, Transformer, pipe_through};
 
 use super::convert::{
     build_request_body_checked, convert_usage, map_finish_reason, normalize_tool_call_id,
 };
+use super::event_stream::EventStreamMessage;
 use super::options;
 use super::types::{BedrockContentBlock, BedrockConverseResponse};
 use crate::shared::EndpointConfig;
@@ -276,297 +277,29 @@ impl LanguageModel for BedrockModel {
         // (RFC1123). Keeps stream/non-stream timestamps consistent.
         let response_timestamp = response_headers.get("date").cloned();
 
-        let model_id = self.model_id.clone();
-
-        let stream = async_stream::stream! {
-            yield Ok(StreamPart::StreamStart { warnings });
-
-            yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
-                id: request_id,
-                timestamp: response_timestamp,
-                model_id: Some(model_id.clone()),
-            }));
-
-            let mut messages = super::event_stream::decode_stream(body_stream);
-
-            let mut extractor = uses_json_instruction.then(JsonObjectTextExtractor::default);
-            let mut is_json_response_from_tool = false;
-            let mut text_blocks = HashSet::new();
-            let mut reasoning_blocks: HashMap<usize, Option<String>> = HashMap::new();
-            let mut block_counter = 0usize;
-            // Tool call state: block_index → (id, name, accumulated_json)
-            let mut tool_blocks: HashMap<usize, (String, String, String)> = HashMap::new();
-            let mut final_usage: Usage = Usage::default();
-            let mut final_finish_reason: Option<FinishReason> = None;
-            // Provider metadata accumulated for the Finish chunk from `metadata`
-            // and `messageStop` events (findings #26, #27). Mirrors the TS
-            // `providerMetadata` / `stopSequence` accumulation in
-            // `amazon-bedrock-chat-language-model.ts` (`doStream`).
-            let mut finish_meta: serde_json::Map<String, serde_json::Value> =
-                serde_json::Map::new();
-            let mut stop_sequence: Option<String> = None;
-
-            while let Some(message) = messages.next().await {
-                let msg = match message {
-                    Ok(msg) => msg,
-                    Err(error) => { yield Err(error); return; }
-                };
-                let payload: serde_json::Value = match serde_json::from_str(&msg.data) {
-                    Ok(v) => v,
-                    Err(error) => {
-                        final_finish_reason = Some(FinishReason { unified: FinishReasonUnified::Error, raw: None });
-                        yield Ok(StreamPart::Error { error: AiMuxError::from(error) });
-                        continue;
-                    }
-                };
-                if include_raw_chunks {
-                    yield Ok(StreamPart::Raw { raw_value: json!({ msg.event_type.clone(): payload.clone() }) });
-                }
-                if msg.message_type != "event" || msg.event_type.ends_with("Exception") {
-                    final_finish_reason = Some(FinishReason { unified: FinishReasonUnified::Error, raw: None });
-                    let (status_code, is_retryable) = match msg.event_type.as_str() {
-                        "internalServerException" | "InternalServerException" => (Some(500), true),
-                        "modelStreamErrorException" | "ModelStreamErrorException" => (Some(424), true),
-                        "serviceUnavailableException" | "ServiceUnavailableException" => (Some(503), true),
-                        "throttlingException" | "ThrottlingException" => (Some(429), true),
-                        "validationException" | "ValidationException" => (Some(400), false),
-                        _ => (None, false),
-                    };
-                    let message = payload.get("message").and_then(|v| v.as_str()).map(str::to_string)
-                        .unwrap_or_else(|| format!("Amazon Bedrock stream failed with {}", msg.event_type));
-                    yield Ok(StreamPart::Error { error: AiMuxError::ApiCall(Box::new(aimux_core::ApiCallError {
-                        status_code, is_retryable, provider_code: Some(msg.event_type.clone()),
-                        data: Some(json!({msg.event_type.clone(): payload.clone()})),
-                        ..aimux_core::ApiCallError::new(message, error_url.clone(), error_body.clone())
-                    })) });
-                    continue;
-                }
-                match msg.event_type.as_str() {
-                    "messageStart" => {
-                        // Nothing to emit; response metadata already sent.
-                    }
-                    "contentBlockStart" => {
-                        let idx = payload
-                            .get("contentBlockIndex")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(block_counter as u64) as usize;
-
-                        // Check if this is a tool use block.
-                        if let Some(start) = payload.get("start") {
-                            if let Some(tool_use) = start.get("toolUse") {
-                                let name = tool_use
-                                    .get("name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let id = tool_use
-                                    .get("toolUseId")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let id = normalize_tool_call_id(&if id.is_empty() {
-                                    aimux_provider_utils::generate_id()
-                                } else {
-                                    id
-                                }, model_id.contains("mistral."));
-                                if !(uses_json_tool && name == "json") {
-                                yield Ok(StreamPart::ToolInputStart {
-                                    id: id.clone(),
-                                    tool_name: name.clone(),
-                                    provider_executed: None,
-                                    dynamic: None,
-                                    title: None,
-                                    provider_metadata: None,
-                                });
-                                }
-                                tool_blocks.insert(idx, (id, name, String::new()));
-                            } else {
-                                // Text block.
-                                block_counter = idx + 1;
-                                let id = idx.to_string();
-                                text_blocks.insert(idx);
-                                yield Ok(StreamPart::TextStart { id, provider_metadata: None});
-                            }
-                        } else {
-                            // Default: text block.
-                            let id = idx.to_string();
-                            text_blocks.insert(idx);
-                            yield Ok(StreamPart::TextStart { id, provider_metadata: None});
-                        }
-                    }
-                    "contentBlockDelta" => {
-                        let idx = payload
-                            .get("contentBlockIndex")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0) as usize;
-
-                        if let Some(delta) = payload.get("delta") {
-                            // Text delta
-                            if let Some(text) = delta.get("text").and_then(|v| v.as_str())
-                                && !text.is_empty() {
-                                    if text_blocks.insert(idx) {
-                                        let id = idx.to_string();
-                                        text_blocks.insert(idx);
-                                        yield Ok(StreamPart::TextStart { id, provider_metadata: None});
-                                    }
-                                    let delta = extractor.as_mut().map(|extractor| extractor.process(text)).unwrap_or_else(|| text.to_string());
-                                    if !delta.is_empty() {
-                                        yield Ok(StreamPart::TextDelta { id: idx.to_string(), delta, provider_metadata: None });
-                                    }
-                                }
-                            // Tool use input delta
-                            if let Some(partial) =
-                                delta.get("toolUse").and_then(|t| t.get("input"))
-                                && let Some(partial_str) = partial.as_str()
-                                    && let Some((id, name, acc)) = tool_blocks.get_mut(&idx)
-                                        && !partial_str.is_empty() {
-                                            acc.push_str(partial_str);
-                                            if !(uses_json_tool && name == "json") {
-                                            let id = id.clone();
-                                            yield Ok(StreamPart::ToolInputDelta {
-                                                id,
-                                                delta: partial_str.to_string(),
-                                                provider_metadata: None,
-                                            });
-                                            }
-                                        }
-                            if let Some(rc) = delta.get("reasoningContent") {
-                                if !["text", "signature", "data", "redactedContent"].iter().any(|key| rc.get(key).and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty())) { continue; }
-                                let id = idx.to_string();
-                                if let std::collections::hash_map::Entry::Vacant(entry) = reasoning_blocks.entry(idx) {
-                                    entry.insert(None);
-                                    yield Ok(StreamPart::ReasoningStart { id: id.clone(), provider_metadata: None });
-                                }
-                                if let Some(text) = rc.get("text").and_then(|v| v.as_str()) {
-                                    yield Ok(StreamPart::ReasoningDelta { id: id.clone(), delta: text.to_string(), provider_metadata: None });
-                                } else if let Some(sig) = rc.get("signature").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
-                                    yield Ok(StreamPart::ReasoningDelta { id: id.clone(), delta: String::new(), provider_metadata: Some(options::metadata(json!({"signature": sig}))) });
-                                } else if let Some(data) = rc.get("data").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
-                                    yield Ok(StreamPart::ReasoningDelta { id: id.clone(), delta: String::new(), provider_metadata: Some(options::metadata(json!({"redactedData": data}))) });
-                                } else if let Some(data) = rc.get("redactedContent").and_then(|v| v.as_str()) {
-                                    reasoning_blocks.entry(idx).or_default().get_or_insert_with(String::new).push_str(data);
-                                }
-                            }
-                        }
-                    }
-                    "contentBlockStop" => {
-                        let idx = payload
-                            .get("contentBlockIndex")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0) as usize;
-
-                        if let Some((id, name, acc)) = tool_blocks.remove(&idx) {
-                            if uses_json_tool && name == "json" {
-                                is_json_response_from_tool = true;
-                                let id = idx.to_string();
-                                yield Ok(StreamPart::TextStart { id: id.clone(), provider_metadata: None });
-                                yield Ok(StreamPart::TextDelta { id: id.clone(), delta: acc, provider_metadata: None });
-                                yield Ok(StreamPart::TextEnd { id, provider_metadata: None });
-                            } else {
-                            yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
-                            // Empty input normalizes to "{}" per the upstream
-                            // provider.
-                            let input = if acc.is_empty() {
-                                "{}".to_string()
-                            } else {
-                                acc
-                            };
-                            yield Ok(StreamPart::ToolCall(RawToolCall {
-                                tool_call_id: normalize_tool_call_id(&id, model_id.contains("mistral.")),
-                                tool_name: name,
-                                input,
-                                provider_executed: None,
-                                dynamic: None,
-                                provider_metadata: None,
-                            }));
-                            }
-                        } else if let Some(redacted) = reasoning_blocks.remove(&idx) {
-                            yield Ok(StreamPart::ReasoningEnd { id: idx.to_string(), provider_metadata: reasoning_redacted_meta(redacted) });
-                        } else if text_blocks.remove(&idx) {
-                            yield Ok(StreamPart::TextEnd { id: idx.to_string(), provider_metadata: None });
-                        }
-                    }
-                    "messageStop" => {
-                        if let Some(reason) =
-                            payload.get("stopReason").and_then(|v| v.as_str())
-                        {
-                            let mut finish_reason = map_finish_reason(reason);
-                            if is_json_response_from_tool && finish_reason.unified == FinishReasonUnified::ToolCalls { finish_reason.unified = FinishReasonUnified::Stop; }
-                            final_finish_reason = Some(finish_reason);
-                        }
-                        // #26: surface which stop sequence sentinel fired
-                        // (additionalModelResponseFields.delta.stop_sequence), if any.
-                        if let Some(seq) = payload
-                            .get("additionalModelResponseFields")
-                            .and_then(|f| f.get("delta"))
-                            .and_then(|d| d.get("stop_sequence"))
-                            .and_then(|v| v.as_str())
-                        {
-                            stop_sequence = Some(seq.to_string());
-                        }
-                    }
-                    "metadata" => {
-                        if let Some(usage) = payload.get("usage") {
-                            let bedrock_usage: super::types::BedrockUsage =
-                                match serde_json::from_value(usage.clone()) {
-                                    Ok(usage) => usage,
-                                    Err(error) => {
-                                        final_finish_reason = Some(FinishReason { unified: FinishReasonUnified::Error, raw: None });
-                                        yield Ok(StreamPart::Error { error: AiMuxError::InvalidResponseData(format!("{error}; usage: {usage}")) });
-                                        continue;
-                                    }
-                                };
-                            final_usage = convert_usage(Some(&bedrock_usage));
-                            final_usage.raw = usage.as_object().cloned();
-                            if let Some(cache_usage) = cache_usage_metadata(Some(&bedrock_usage)) { finish_meta.insert("usage".into(), cache_usage); }
-                        }
-                        // #27: surface guardrails trace, performanceConfig, and
-                        // serviceTier into the Finish chunk's provider_metadata
-                        // (mirrors TS `doStream` metadata handling).
-                        if let Some(trace) = payload.get("trace") {
-                            finish_meta.insert("trace".to_string(), trace.clone());
-                        }
-                        if let Some(pc) = payload.get("performanceConfig") {
-                            finish_meta
-                                .insert("performanceConfig".to_string(), pc.clone());
-                        }
-                        if let Some(st) = payload.get("serviceTier") {
-                            finish_meta.insert("serviceTier".to_string(), st.clone());
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            // #26: merge the stop sentinel into the metadata payload, then build
-            // the Finish provider_metadata under `amazonBedrock` (mirrors the
-            // TS `doStream` flush handler).
-            if is_json_response_from_tool {
-                finish_meta.insert("isJsonResponseFromTool".into(), json!(true));
-                finish_meta.insert("stopSequence".into(), serde_json::Value::Null);
-            }
-            if let Some(seq) = stop_sequence {
-                finish_meta.insert(
-                    "stopSequence".to_string(),
-                    serde_json::Value::String(seq),
-                );
-            }
-            let provider_metadata = if finish_meta.is_empty() {
-                None
-            } else {
-                let payload = serde_json::Value::Object(finish_meta);
-                Some(options::metadata(payload))
-            };
-
-            yield Ok(StreamPart::Finish {
-                finish_reason: final_finish_reason.unwrap_or(FinishReason {
-                    unified: FinishReasonUnified::Other,
-                    raw: None,
-                }),
-                usage: final_usage,
-                provider_metadata,
-            });
-        };
+        let stream = pipe_through(
+            super::event_stream::decode_stream(body_stream),
+            AmazonBedrockChatStream {
+                warnings,
+                request_id,
+                response_timestamp,
+                model_id: self.model_id.clone(),
+                uses_json_tool,
+                include_raw_chunks,
+                error_url,
+                error_body,
+                extractor: uses_json_instruction.then(JsonObjectTextExtractor::default),
+                is_json_response_from_tool: false,
+                text_blocks: HashSet::new(),
+                reasoning_blocks: HashMap::new(),
+                block_counter: 0,
+                tool_blocks: HashMap::new(),
+                final_usage: Usage::default(),
+                final_finish_reason: None,
+                finish_meta: serde_json::Map::new(),
+                stop_sequence: None,
+            },
+        );
 
         Ok(StreamResult {
             stream: Box::pin(stream),
@@ -575,6 +308,460 @@ impl LanguageModel for BedrockModel {
                 headers: Some(response_headers),
             }),
         })
+    }
+}
+
+/// The `TransformStream` of `BedrockChatLanguageModel.doStream`.
+struct AmazonBedrockChatStream {
+    warnings: Vec<Warning>,
+    request_id: Option<String>,
+    response_timestamp: Option<String>,
+    model_id: String,
+    uses_json_tool: bool,
+    include_raw_chunks: bool,
+    error_url: String,
+    error_body: serde_json::Value,
+    extractor: Option<JsonObjectTextExtractor>,
+    is_json_response_from_tool: bool,
+    text_blocks: HashSet<usize>,
+    reasoning_blocks: HashMap<usize, Option<String>>,
+    block_counter: usize,
+    /// Tool call state: block_index → (id, name, accumulated_json)
+    tool_blocks: HashMap<usize, (String, String, String)>,
+    final_usage: Usage,
+    final_finish_reason: Option<FinishReason>,
+    /// Provider metadata accumulated for the Finish chunk from `metadata`
+    /// and `messageStop` events (findings #26, #27). Mirrors the TS
+    /// `providerMetadata` / `stopSequence` accumulation in
+    /// `amazon-bedrock-chat-language-model.ts` (`doStream`).
+    finish_meta: serde_json::Map<String, serde_json::Value>,
+    stop_sequence: Option<String>,
+}
+
+impl AmazonBedrockChatStream {
+    fn content_block_start(
+        &mut self,
+        payload: &serde_json::Value,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        let idx = payload
+            .get("contentBlockIndex")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(self.block_counter as u64) as usize;
+
+        // Check if this is a tool use block.
+        if let Some(start) = payload.get("start") {
+            if let Some(tool_use) = start.get("toolUse") {
+                let name = tool_use
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let id = tool_use
+                    .get("toolUseId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let id = normalize_tool_call_id(
+                    &if id.is_empty() {
+                        aimux_provider_utils::generate_id()
+                    } else {
+                        id
+                    },
+                    self.model_id.contains("mistral."),
+                );
+                if !(self.uses_json_tool && name == "json") {
+                    controller.enqueue(StreamPart::ToolInputStart {
+                        id: id.clone(),
+                        tool_name: name.clone(),
+                        provider_executed: None,
+                        dynamic: None,
+                        title: None,
+                        provider_metadata: None,
+                    });
+                }
+                self.tool_blocks.insert(idx, (id, name, String::new()));
+            } else {
+                // Text block.
+                self.block_counter = idx + 1;
+                let id = idx.to_string();
+                self.text_blocks.insert(idx);
+                controller.enqueue(StreamPart::TextStart {
+                    id,
+                    provider_metadata: None,
+                });
+            }
+        } else {
+            // Default: text block.
+            let id = idx.to_string();
+            self.text_blocks.insert(idx);
+            controller.enqueue(StreamPart::TextStart {
+                id,
+                provider_metadata: None,
+            });
+        }
+    }
+
+    fn content_block_delta(
+        &mut self,
+        payload: &serde_json::Value,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        let idx = payload
+            .get("contentBlockIndex")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0) as usize;
+
+        let Some(delta) = payload.get("delta") else {
+            return;
+        };
+        // Text delta
+        if let Some(text) = delta.get("text").and_then(|v| v.as_str())
+            && !text.is_empty()
+        {
+            if self.text_blocks.insert(idx) {
+                let id = idx.to_string();
+                self.text_blocks.insert(idx);
+                controller.enqueue(StreamPart::TextStart {
+                    id,
+                    provider_metadata: None,
+                });
+            }
+            let delta = self
+                .extractor
+                .as_mut()
+                .map(|extractor| extractor.process(text))
+                .unwrap_or_else(|| text.to_string());
+            if !delta.is_empty() {
+                controller.enqueue(StreamPart::TextDelta {
+                    id: idx.to_string(),
+                    delta,
+                    provider_metadata: None,
+                });
+            }
+        }
+        // Tool use input delta
+        if let Some(partial) = delta.get("toolUse").and_then(|t| t.get("input"))
+            && let Some(partial_str) = partial.as_str()
+            && let Some((id, name, acc)) = self.tool_blocks.get_mut(&idx)
+            && !partial_str.is_empty()
+        {
+            acc.push_str(partial_str);
+            if !(self.uses_json_tool && name == "json") {
+                let id = id.clone();
+                controller.enqueue(StreamPart::ToolInputDelta {
+                    id,
+                    delta: partial_str.to_string(),
+                    provider_metadata: None,
+                });
+            }
+        }
+        if let Some(rc) = delta.get("reasoningContent") {
+            if !["text", "signature", "data", "redactedContent"]
+                .iter()
+                .any(|key| {
+                    rc.get(key)
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty())
+                })
+            {
+                return;
+            }
+            let id = idx.to_string();
+            if let std::collections::hash_map::Entry::Vacant(entry) =
+                self.reasoning_blocks.entry(idx)
+            {
+                entry.insert(None);
+                controller.enqueue(StreamPart::ReasoningStart {
+                    id: id.clone(),
+                    provider_metadata: None,
+                });
+            }
+            if let Some(text) = rc.get("text").and_then(|v| v.as_str()) {
+                controller.enqueue(StreamPart::ReasoningDelta {
+                    id: id.clone(),
+                    delta: text.to_string(),
+                    provider_metadata: None,
+                });
+            } else if let Some(sig) = rc
+                .get("signature")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                controller.enqueue(StreamPart::ReasoningDelta {
+                    id: id.clone(),
+                    delta: String::new(),
+                    provider_metadata: Some(options::metadata(json!({"signature": sig}))),
+                });
+            } else if let Some(data) = rc
+                .get("data")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                controller.enqueue(StreamPart::ReasoningDelta {
+                    id: id.clone(),
+                    delta: String::new(),
+                    provider_metadata: Some(options::metadata(json!({"redactedData": data}))),
+                });
+            } else if let Some(data) = rc.get("redactedContent").and_then(|v| v.as_str()) {
+                self.reasoning_blocks
+                    .entry(idx)
+                    .or_default()
+                    .get_or_insert_with(String::new)
+                    .push_str(data);
+            }
+        }
+    }
+
+    fn content_block_stop(
+        &mut self,
+        payload: &serde_json::Value,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        let idx = payload
+            .get("contentBlockIndex")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0) as usize;
+
+        if let Some((id, name, acc)) = self.tool_blocks.remove(&idx) {
+            if self.uses_json_tool && name == "json" {
+                self.is_json_response_from_tool = true;
+                let id = idx.to_string();
+                controller.enqueue(StreamPart::TextStart {
+                    id: id.clone(),
+                    provider_metadata: None,
+                });
+                controller.enqueue(StreamPart::TextDelta {
+                    id: id.clone(),
+                    delta: acc,
+                    provider_metadata: None,
+                });
+                controller.enqueue(StreamPart::TextEnd {
+                    id,
+                    provider_metadata: None,
+                });
+            } else {
+                controller.enqueue(StreamPart::ToolInputEnd {
+                    id: id.clone(),
+                    provider_metadata: None,
+                });
+                // Empty input normalizes to "{}" per the upstream
+                // provider.
+                let input = if acc.is_empty() {
+                    "{}".to_string()
+                } else {
+                    acc
+                };
+                controller.enqueue(StreamPart::ToolCall(RawToolCall {
+                    tool_call_id: normalize_tool_call_id(&id, self.model_id.contains("mistral.")),
+                    tool_name: name,
+                    input,
+                    provider_executed: None,
+                    dynamic: None,
+                    provider_metadata: None,
+                }));
+            }
+        } else if let Some(redacted) = self.reasoning_blocks.remove(&idx) {
+            controller.enqueue(StreamPart::ReasoningEnd {
+                id: idx.to_string(),
+                provider_metadata: reasoning_redacted_meta(redacted),
+            });
+        } else if self.text_blocks.remove(&idx) {
+            controller.enqueue(StreamPart::TextEnd {
+                id: idx.to_string(),
+                provider_metadata: None,
+            });
+        }
+    }
+
+    fn message_stop(&mut self, payload: &serde_json::Value) {
+        if let Some(reason) = payload.get("stopReason").and_then(|v| v.as_str()) {
+            let mut finish_reason = map_finish_reason(reason);
+            if self.is_json_response_from_tool
+                && finish_reason.unified == FinishReasonUnified::ToolCalls
+            {
+                finish_reason.unified = FinishReasonUnified::Stop;
+            }
+            self.final_finish_reason = Some(finish_reason);
+        }
+        // #26: surface which stop sequence sentinel fired
+        // (additionalModelResponseFields.delta.stop_sequence), if any.
+        if let Some(seq) = payload
+            .get("additionalModelResponseFields")
+            .and_then(|f| f.get("delta"))
+            .and_then(|d| d.get("stop_sequence"))
+            .and_then(|v| v.as_str())
+        {
+            self.stop_sequence = Some(seq.to_string());
+        }
+    }
+
+    fn metadata(
+        &mut self,
+        payload: &serde_json::Value,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        if let Some(usage) = payload.get("usage") {
+            let bedrock_usage: super::types::BedrockUsage =
+                match serde_json::from_value(usage.clone()) {
+                    Ok(usage) => usage,
+                    Err(error) => {
+                        self.final_finish_reason = Some(FinishReason {
+                            unified: FinishReasonUnified::Error,
+                            raw: None,
+                        });
+                        controller.enqueue(StreamPart::Error {
+                            error: AiMuxError::InvalidResponseData(format!(
+                                "{error}; usage: {usage}"
+                            )),
+                        });
+                        return;
+                    }
+                };
+            self.final_usage = convert_usage(Some(&bedrock_usage));
+            self.final_usage.raw = usage.as_object().cloned();
+            if let Some(cache_usage) = cache_usage_metadata(Some(&bedrock_usage)) {
+                self.finish_meta.insert("usage".into(), cache_usage);
+            }
+        }
+        // #27: surface guardrails trace, performanceConfig, and
+        // serviceTier into the Finish chunk's provider_metadata
+        // (mirrors TS `doStream` metadata handling).
+        if let Some(trace) = payload.get("trace") {
+            self.finish_meta.insert("trace".to_string(), trace.clone());
+        }
+        if let Some(pc) = payload.get("performanceConfig") {
+            self.finish_meta
+                .insert("performanceConfig".to_string(), pc.clone());
+        }
+        if let Some(st) = payload.get("serviceTier") {
+            self.finish_meta
+                .insert("serviceTier".to_string(), st.clone());
+        }
+    }
+}
+
+impl Transformer for AmazonBedrockChatStream {
+    type Input = Result<EventStreamMessage, AiMuxError>;
+    type Output = StreamPart;
+
+    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+        controller.enqueue(StreamPart::StreamStart {
+            warnings: std::mem::take(&mut self.warnings),
+        });
+
+        controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
+            id: self.request_id.take(),
+            timestamp: self.response_timestamp.take(),
+            model_id: Some(self.model_id.clone()),
+        }));
+    }
+
+    fn transform(
+        &mut self,
+        message: Result<EventStreamMessage, AiMuxError>,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        let msg = match message {
+            Ok(msg) => msg,
+            Err(error) => {
+                controller.error(error);
+                return;
+            }
+        };
+        let payload: serde_json::Value = match serde_json::from_str(&msg.data) {
+            Ok(v) => v,
+            Err(error) => {
+                self.final_finish_reason = Some(FinishReason {
+                    unified: FinishReasonUnified::Error,
+                    raw: None,
+                });
+                controller.enqueue(StreamPart::Error {
+                    error: AiMuxError::from(error),
+                });
+                return;
+            }
+        };
+        if self.include_raw_chunks {
+            controller.enqueue(StreamPart::Raw {
+                raw_value: json!({ msg.event_type.clone(): payload.clone() }),
+            });
+        }
+        if msg.message_type != "event" || msg.event_type.ends_with("Exception") {
+            self.final_finish_reason = Some(FinishReason {
+                unified: FinishReasonUnified::Error,
+                raw: None,
+            });
+            let (status_code, is_retryable) = match msg.event_type.as_str() {
+                "internalServerException" | "InternalServerException" => (Some(500), true),
+                "modelStreamErrorException" | "ModelStreamErrorException" => (Some(424), true),
+                "serviceUnavailableException" | "ServiceUnavailableException" => (Some(503), true),
+                "throttlingException" | "ThrottlingException" => (Some(429), true),
+                "validationException" | "ValidationException" => (Some(400), false),
+                _ => (None, false),
+            };
+            let message = payload
+                .get("message")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("Amazon Bedrock stream failed with {}", msg.event_type));
+            controller.enqueue(StreamPart::Error {
+                error: AiMuxError::ApiCall(Box::new(aimux_core::ApiCallError {
+                    status_code,
+                    is_retryable,
+                    provider_code: Some(msg.event_type.clone()),
+                    data: Some(json!({msg.event_type.clone(): payload.clone()})),
+                    ..aimux_core::ApiCallError::new(
+                        message,
+                        self.error_url.clone(),
+                        self.error_body.clone(),
+                    )
+                })),
+            });
+            return;
+        }
+        match msg.event_type.as_str() {
+            "messageStart" => {
+                // Nothing to emit; response metadata already sent.
+            }
+            "contentBlockStart" => self.content_block_start(&payload, controller),
+            "contentBlockDelta" => self.content_block_delta(&payload, controller),
+            "contentBlockStop" => self.content_block_stop(&payload, controller),
+            "messageStop" => self.message_stop(&payload),
+            "metadata" => self.metadata(&payload, controller),
+            _ => {}
+        }
+    }
+
+    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+        // #26: merge the stop sentinel into the metadata payload, then build
+        // the Finish provider_metadata under `amazonBedrock` (mirrors the
+        // TS `doStream` flush handler).
+        if self.is_json_response_from_tool {
+            self.finish_meta
+                .insert("isJsonResponseFromTool".into(), json!(true));
+            self.finish_meta
+                .insert("stopSequence".into(), serde_json::Value::Null);
+        }
+        if let Some(seq) = self.stop_sequence {
+            self.finish_meta
+                .insert("stopSequence".to_string(), serde_json::Value::String(seq));
+        }
+        let provider_metadata = if self.finish_meta.is_empty() {
+            None
+        } else {
+            let payload = serde_json::Value::Object(self.finish_meta);
+            Some(options::metadata(payload))
+        };
+
+        controller.enqueue(StreamPart::Finish {
+            finish_reason: self.final_finish_reason.unwrap_or(FinishReason {
+                unified: FinishReasonUnified::Other,
+                raw: None,
+            }),
+            usage: self.final_usage,
+            provider_metadata,
+        });
     }
 }
 
