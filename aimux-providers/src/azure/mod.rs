@@ -30,6 +30,7 @@ use std::sync::{Arc, OnceLock};
 
 use futures::future::BoxFuture;
 
+use crate::shared::ProviderHeaders;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
@@ -39,9 +40,8 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt, HeadersFn,
-    HttpRequest, Resolvable, default_fetch, load_setting, validate_base_url,
-    without_trailing_slash,
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt, HttpRequest,
+    Resolvable, default_fetch, load_setting, validate_base_url, without_trailing_slash,
 };
 
 use crate::openai::config::{OpenAIModelConfig, OpenAIUrl};
@@ -50,7 +50,7 @@ use crate::openai::{
     OpenAIEmbeddingModel, OpenAIImageModel, OpenAIModel, OpenAIResponsesModel, OpenAISpeechModel,
     OpenAITranscriptionModel,
 };
-use crate::shared::{AuthScheme, Credential, credential_headers, is_valid_hostname_part};
+use crate::shared::{AuthScheme, Credential, is_valid_hostname_part};
 
 /// The chat-completions model of the Azure package (`provider.chat(id)`): the
 /// OpenAI one, configured for Azure.
@@ -210,8 +210,8 @@ pub fn create_azure(
         })
         .or(settings.fetch);
     let speech_headers = match &settings.token_provider {
-        Some(_) => Resolvable::Value(settings.headers.clone().unwrap_or_default()),
-        None => credential_headers(
+        Some(_) => ProviderHeaders::bearer(Credential::None, Vec::new(), settings.headers.clone()),
+        None => ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key.clone(), API_KEY_ENV_VAR, "Azure Speech"),
             AuthScheme::Header("Ocp-Apim-Subscription-Key"),
             Vec::new(),
@@ -219,8 +219,8 @@ pub fn create_azure(
         ),
     };
     let headers = match settings.token_provider {
-        Some(_) => Resolvable::Value(settings.headers.unwrap_or_default()),
-        None => credential_headers(
+        Some(_) => ProviderHeaders::bearer(Credential::None, Vec::new(), settings.headers),
+        None => ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Azure OpenAI"),
             AuthScheme::Header("api-key"),
             Vec::new(),
@@ -231,20 +231,12 @@ pub fn create_azure(
         resource_name: settings.resource_name,
         base_url,
         speech_base_url,
-        speech_headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            speech_headers,
-            options::NAMESPACE,
-            "4.0.84",
-        ),
+        speech_headers: speech_headers.with_user_agent(options::NAMESPACE, "4.0.84"),
         info,
         api_version: settings.api_version,
         use_deployment_based_urls: settings.use_deployment_based_urls,
         fetch,
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            headers,
-            options::NAMESPACE,
-            "4.0.84",
-        ),
+        headers: headers.with_user_agent(options::NAMESPACE, "4.0.84"),
     })
 }
 
@@ -298,11 +290,11 @@ pub struct AzureOpenAIProvider {
     resource_name: Option<String>,
     base_url: Option<String>,
     speech_base_url: Option<String>,
-    speech_headers: HeadersFn,
+    speech_headers: ProviderHeaders,
     info: BaseUrlInfo,
     api_version: Option<String>,
     use_deployment_based_urls: bool,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 

@@ -18,6 +18,7 @@ use std::sync::{Arc, OnceLock};
 
 use futures::future::BoxFuture;
 
+use crate::shared::ProviderHeaders;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
@@ -25,7 +26,7 @@ use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{
-    AwsCredentials, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url,
+    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
 };
 
 use crate::anthropic::AnthropicMessagesModel;
@@ -187,7 +188,7 @@ pub struct AnthropicAwsProvider {
     name: String,
     provider_options_name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 

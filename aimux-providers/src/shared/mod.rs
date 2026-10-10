@@ -20,7 +20,7 @@ pub(crate) use poll::{
 
 use aimux_core::AiMuxError;
 use aimux_provider_utils::{
-    HeaderMapOpt, HeadersFn, Resolvable, combine_headers, load_api_key, normalize_headers,
+    HeaderMapOpt, Resolvable, combine_headers, load_api_key, normalize_headers,
     with_user_agent_suffix,
 };
 
@@ -91,16 +91,6 @@ pub(crate) enum AuthScheme {
     Scheme(&'static str),
 }
 
-/// Provider headers with a bearer credential: [`credential_headers`] with
-/// [`AuthScheme::Bearer`].
-pub(crate) fn provider_headers(
-    credential: Credential,
-    fixed: Vec<(String, String)>,
-    user: Option<HeaderMapOpt>,
-) -> HeadersFn {
-    credential_headers(credential, AuthScheme::Bearer, fixed, user)
-}
-
 /// The provider-level request headers, as data. They are produced on every
 /// request: the credential first, then the fixed headers (organization,
 /// project, version, ...), then the user's headers, which may override or
@@ -151,15 +141,6 @@ impl ProviderHeaders {
         self
     }
 
-    /// These headers as a [`HeadersFn`], for the configs that still take
-    /// one; it resolves them on every request.
-    pub(crate) fn into_headers_fn(self) -> HeadersFn {
-        Resolvable::from_async_fn(move || {
-            let headers = self.clone();
-            async move { headers.resolve().await }
-        })
-    }
-
     pub(crate) async fn resolve(&self) -> Result<HeaderMapOpt, AiMuxError> {
         let mut layer = HeaderMapOpt::new();
         if let Some(secret) = self.credential.secret().await? {
@@ -187,15 +168,4 @@ impl ProviderHeaders {
             .map(|(name, value)| (name, Some(value)))
             .collect())
     }
-}
-
-/// [`ProviderHeaders`] without a user-agent suffix, as a [`HeadersFn`] for
-/// the packages that still take one.
-pub(crate) fn credential_headers(
-    credential: Credential,
-    scheme: AuthScheme,
-    fixed: Vec<(String, String)>,
-    user: Option<HeaderMapOpt>,
-) -> HeadersFn {
-    ProviderHeaders::new(credential, scheme, fixed, user).into_headers_fn()
 }

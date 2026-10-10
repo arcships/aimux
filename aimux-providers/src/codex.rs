@@ -48,8 +48,9 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_core::types::Warning;
 
+use crate::shared::ProviderHeaders;
 use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, Resolvable, validate_base_url,
+    FetchFunction, HeaderMapOpt, HttpRequest, Resolvable, validate_base_url,
 };
 
 use crate::openai::config::OpenAIModelConfig;
@@ -59,7 +60,7 @@ use crate::openai::responses::responses_convert::{
 use crate::openai::responses::{
     OpenAIResponsesModel, ResponsesNamespace, build_responses_request_body,
 };
-use crate::shared::{AuthScheme, Credential, credential_headers};
+use crate::shared::{AuthScheme, Credential};
 
 /// Default API-key base URL (official OpenAI Responses endpoint).
 pub const CODEX_API_BASE_URL: &str = "https://api.openai.com/v1";
@@ -200,7 +201,7 @@ pub fn create_codex(settings: CodexProviderSettings) -> Result<CodexProvider, Ai
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         channel,
         base_url,
-        headers: credential_headers(credential, AuthScheme::Bearer, fixed, settings.headers),
+        headers: ProviderHeaders::new(credential, AuthScheme::Bearer, fixed, settings.headers),
         fetch: settings.fetch,
     })
 }
@@ -223,7 +224,7 @@ pub struct CodexProvider {
     name: String,
     channel: Channel,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 

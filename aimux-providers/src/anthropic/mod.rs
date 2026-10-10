@@ -35,6 +35,7 @@ use std::sync::{Arc, OnceLock};
 use futures::future::BoxFuture;
 use serde_json::Value;
 
+use crate::shared::ProviderHeaders;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::files_model::Files;
@@ -43,10 +44,10 @@ use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, load_optional_setting, validate_base_url,
+    FetchFunction, HeaderMapOpt, Resolvable, load_optional_setting, validate_base_url,
 };
 
-use crate::shared::{AuthScheme, Credential, credential_headers};
+use crate::shared::{AuthScheme, Credential};
 
 use config::{AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks};
 
@@ -194,16 +195,13 @@ pub fn create_anthropic(
     Ok(AnthropicProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            credential_headers(
-                credential,
-                scheme,
-                vec![("anthropic-version".to_string(), API_VERSION.to_string())],
-                settings.headers,
-            ),
-            options::CANONICAL,
-            "4.0.68",
-        ),
+        headers: ProviderHeaders::new(
+            credential,
+            scheme,
+            vec![("anthropic-version".to_string(), API_VERSION.to_string())],
+            settings.headers,
+        )
+        .with_user_agent(options::CANONICAL, "4.0.68"),
         fetch: settings.fetch,
         supported_urls: supported_urls(),
         generate_id: settings.generate_id,
@@ -227,7 +225,7 @@ pub fn anthropic() -> &'static AnthropicProvider {
 pub struct AnthropicProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
     supported_urls: SupportedUrls,
     generate_id: Option<aimux_provider_utils::IdGenerator>,

@@ -130,7 +130,7 @@ fn location_host(location: &str) -> String {
 
 /// Which publisher's models a base URL addresses.
 #[derive(Clone, Copy)]
-enum Publisher {
+pub(crate) enum Publisher {
     Google,
     Anthropic,
 }
@@ -200,7 +200,7 @@ impl GeminiEndpoint {
 
 /// The settings that decide, per request, which mode applies, where requests
 /// go and what authenticates them.
-struct Resolver {
+pub(crate) struct Resolver {
     api_key: Option<Resolvable<String>>,
     express_mode: bool,
     location: Option<String>,
@@ -293,7 +293,7 @@ impl Resolver {
     }
 
     /// The endpoint of `publisher`'s models for one request.
-    async fn endpoint(&self, publisher: Publisher) -> Result<Endpoint, AiMuxError> {
+    pub(crate) async fn endpoint(&self, publisher: Publisher) -> Result<Endpoint, AiMuxError> {
         let express_key = match publisher {
             Publisher::Google => self.express_key().await?,
             Publisher::Anthropic => None,

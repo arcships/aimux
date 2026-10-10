@@ -20,20 +20,19 @@
 
 use std::sync::Arc;
 
-use futures::future::BoxFuture;
 use serde_json::{Value, json};
 
-use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
-use aimux_provider_utils::{FetchFunction, Resolvable};
+use aimux_provider_utils::FetchFunction;
 
-use super::{Publisher, Resolver};
+use crate::shared::{Credential, ProviderHeaders};
+
+use super::Resolver;
 use crate::anthropic::AnthropicMessagesModel;
 use crate::anthropic::config::{
-    AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks, MessagesUrl, ResolveEndpoint,
+    AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks, MessagesUrl,
 };
 use crate::anthropic::options::options_name_of;
-use crate::shared::Endpoint;
 
 /// `anthropic_version` envelope value required by the Vertex AI `rawPredict` /
 /// `streamRawPredict` endpoints.
@@ -59,16 +58,6 @@ fn raw_predict_envelope(body: Value) -> Value {
     Value::Object(envelope)
 }
 
-/// The Vertex endpoint of Anthropic's models, resolved for each request: the
-/// `.../publishers/anthropic/models` base URL and the provider headers.
-struct VertexAnthropicEndpoint(Arc<Resolver>);
-
-impl ResolveEndpoint for VertexAnthropicEndpoint {
-    fn endpoint(&self) -> BoxFuture<'_, Result<Endpoint, AiMuxError>> {
-        Box::pin(self.0.endpoint(Publisher::Anthropic))
-    }
-}
-
 /// The model `model_id` on the Vertex endpoint `resolver` resolves for each
 /// request.
 pub(super) fn model(
@@ -80,7 +69,7 @@ pub(super) fn model(
     // every request uses the endpoint resolved for it.
     let config = AnthropicModelConfig {
         provider: PROVIDER.to_string(),
-        headers: Resolvable::Value(Default::default()),
+        headers: ProviderHeaders::bearer(Credential::None, Vec::new(), None),
         fetch,
         supported_urls: SupportedUrls::default(),
         base_url: String::new(),
@@ -92,7 +81,7 @@ pub(super) fn model(
             supports_native_structured_output: false,
             supports_strict_tools: false,
         },
-        endpoint: AnthropicEndpoint::PerRequest(Arc::new(VertexAnthropicEndpoint(resolver))),
+        endpoint: AnthropicEndpoint::Vertex(resolver),
     };
     AnthropicMessagesModel::with_config(model_id.to_string(), config)
 }

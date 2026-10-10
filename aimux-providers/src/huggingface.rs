@@ -143,7 +143,7 @@ impl HuggingFaceProvider {
         OpenAIModelConfig::fixed(
             format!("{}.{method}", self.name),
             self.base_url.clone(),
-            self.headers.clone().into_headers_fn(),
+            self.headers.clone(),
             self.fetch.clone(),
         )
     }

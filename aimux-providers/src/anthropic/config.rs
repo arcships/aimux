@@ -12,14 +12,14 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-use futures::future::BoxFuture;
 use serde_json::Value;
 
+use crate::shared::{Credential, ProviderHeaders};
 use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
 use aimux_provider_utils::{
-    ExchangeContext, FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, Resolvable,
-    ResponseHandler, combine_headers, normalize_headers,
+    ExchangeContext, FetchFunction, HeaderMapOpt, HttpRequest, ResponseHandler, combine_headers,
+    normalize_headers,
 };
 
 use super::convert::RequestProfile;
@@ -42,17 +42,11 @@ pub(crate) enum AnthropicEndpoint {
     /// The config's own `base_url` and `headers`.
     #[default]
     Fixed,
-    /// Resolved for every request, for hosts whose endpoint or credentials (a
-    /// Vertex project and location, say) can only be known when a call is
+    /// The Vertex endpoint of Anthropic's models, resolved for every request:
+    /// the project, location and credentials are only known when a call is
     /// made. The config's own `base_url` and `headers` then only describe the
     /// model's static identity.
-    PerRequest(Arc<dyn ResolveEndpoint>),
-}
-
-/// A host's per-request endpoint lookup (the Vertex resolver, for instance).
-pub(crate) trait ResolveEndpoint: Send + Sync {
-    /// The base URL and provider headers of one request.
-    fn endpoint(&self) -> BoxFuture<'_, Result<Endpoint, AiMuxError>>;
+    Vertex(Arc<crate::vertex::Resolver>),
 }
 
 /// Builds the host's error handler for non-2xx responses.
@@ -97,7 +91,7 @@ pub(crate) struct AnthropicModelConfig {
     pub(crate) provider: String,
     /// Provider headers (credential, `anthropic-version`, user headers),
     /// resolved on every request.
-    pub(crate) headers: HeadersFn,
+    pub(crate) headers: ProviderHeaders,
     /// Transport; `None` uses the process default, resolved per request.
     pub(crate) fetch: Option<FetchFunction>,
     /// URLs the model fetches itself. Empty: the caller downloads them.
@@ -125,11 +119,13 @@ impl AnthropicModelConfig {
     pub(crate) async fn resolved(&self) -> Result<Self, AiMuxError> {
         match &self.endpoint {
             AnthropicEndpoint::Fixed => Ok(self.clone()),
-            AnthropicEndpoint::PerRequest(resolver) => {
-                let Endpoint { base_url, headers } = resolver.endpoint().await?;
+            AnthropicEndpoint::Vertex(resolver) => {
+                let Endpoint { base_url, headers } = resolver
+                    .endpoint(crate::vertex::Publisher::Anthropic)
+                    .await?;
                 Ok(Self {
                     base_url,
-                    headers: Resolvable::Value(headers),
+                    headers: ProviderHeaders::bearer(Credential::None, Vec::new(), Some(headers)),
                     endpoint: AnthropicEndpoint::Fixed,
                     ..self.clone()
                 })

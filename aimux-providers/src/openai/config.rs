@@ -10,11 +10,12 @@
 
 use std::collections::HashMap;
 
+use crate::shared::ProviderHeaders;
 use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
 use aimux_provider_utils::{
-    ExchangeContext, FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, Resolvable,
-    combine_headers, normalize_headers,
+    ExchangeContext, FetchFunction, HeaderMapOpt, HttpRequest, Resolvable, combine_headers,
+    normalize_headers,
 };
 
 use super::responses::ResponsesProfile;
@@ -66,7 +67,7 @@ pub(crate) struct OpenAIModelConfig {
     pub(crate) url: OpenAIUrl,
     /// Provider headers (credential, organization, project, user headers),
     /// resolved on every request.
-    pub(crate) headers: HeadersFn,
+    pub(crate) headers: ProviderHeaders,
     pub(crate) token_provider: Option<Resolvable<String>>,
     /// Transport; `None` uses the process default, resolved per request.
     pub(crate) fetch: Option<FetchFunction>,
@@ -83,7 +84,7 @@ impl OpenAIModelConfig {
     pub(crate) fn fixed(
         provider: String,
         base_url: String,
-        headers: HeadersFn,
+        headers: ProviderHeaders,
         fetch: Option<FetchFunction>,
     ) -> Self {
         Self {
