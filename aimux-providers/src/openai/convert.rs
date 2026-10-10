@@ -520,6 +520,9 @@ fn convert_message_to_openai(
                         text_parts.push(convert_text_part_to_openai(part));
                     }
                     AssistantPart::ToolCall(part) => {
+                        // Upstream `serializeToolCallArguments` (@ai-sdk/openai
+                        // 4.0.49+) replays any non-object input as `{}` on
+                        // purpose; OpenAI function arguments are always objects.
                         let arguments = if !part.input.is_object() {
                             "{}".to_string()
                         } else {
@@ -1219,5 +1222,41 @@ pub fn parse_finish_reason(s: &str) -> FinishReason {
     FinishReason {
         unified,
         raw: Some(s.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aimux_core::language_model_message::ToolCallPart;
+
+    fn replayed_arguments(input: Value) -> Value {
+        let prompt = vec![LanguageModelMessage::Assistant {
+            content: vec![AssistantPart::ToolCall(ToolCallPart {
+                tool_call_id: "call-1".to_string(),
+                tool_name: "echo".to_string(),
+                input,
+                provider_executed: None,
+                provider_options: None,
+            })],
+            provider_options: None,
+        }];
+        let messages = convert_prompt_to_openai_messages_with_mode_fallible(
+            &prompt,
+            SystemMessageMode::System,
+        )
+        .unwrap();
+        messages[0]["tool_calls"][0]["function"]["arguments"].clone()
+    }
+
+    #[test]
+    fn replayed_tool_arguments_follow_upstream() {
+        assert_eq!(
+            replayed_arguments(json!({ "city": "Tokyo" })),
+            json!(r#"{"city":"Tokyo"}"#)
+        );
+        for input in [json!("Tokyo"), json!(7), json!(["Tokyo"]), Value::Null] {
+            assert_eq!(replayed_arguments(input), json!("{}"));
+        }
     }
 }
