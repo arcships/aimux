@@ -95,7 +95,9 @@
     "display": "Alibaba Cloud (DashScope)",
     "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
     "env_var": "ALIBABA_API_KEY",
-    "profile": {}
+    "profile": {
+      "convert_usage": "alibaba"
+    }
   },
   {
     "name": "alibaba_coding_plan",
@@ -1157,7 +1159,9 @@
     "display": "Moonshot AI",
     "base_url": "https://api.moonshot.cn/v1",
     "env_var": "MOONSHOT_API_KEY",
-    "profile": {}
+    "profile": {
+      "convert_usage": "moonshotai"
+    }
   },
   {
     "name": "moonshotai_cn",

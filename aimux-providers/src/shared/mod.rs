@@ -19,7 +19,10 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use aimux_core::AiMuxError;
-use aimux_provider_utils::{HeaderMapOpt, HeadersFn, Resolvable, combine_headers, load_api_key};
+use aimux_provider_utils::{
+    HeaderMapOpt, HeadersFn, Resolvable, combine_headers, load_api_key, normalize_headers,
+    with_user_agent_suffix,
+};
 
 /// A host part (a Vertex location, an Azure resource name) is one DNS label: letters, digits and hyphens, not starting or
 /// ending with a hyphen (`isValidHostnamePart`).
@@ -102,48 +105,68 @@ pub(crate) fn provider_headers(
     credential_headers(credential, AuthScheme::Bearer, fixed, user)
 }
 
-/// Provider headers, evaluated on every request: the credential first, then
-/// the fixed headers (organization, project, version, ...), then the user's
-/// headers, which may override or remove any of them (case-insensitively,
-/// `None` removes).
+/// The provider-level request headers, as data. They are produced on every
+/// request: the credential first, then the fixed headers (organization,
+/// project, version, ...), then the user's headers, which may override or
+/// remove any of them (case-insensitively, `None` removes), and finally the
+/// `ai-sdk-{package}/{version}` user-agent suffix when one is set.
+#[derive(Clone, Debug)]
+pub(crate) struct ProviderHeaders {
+    pub credential: Credential,
+    pub scheme: AuthScheme,
+    pub fixed: Vec<(String, String)>,
+    pub user: Option<HeaderMapOpt>,
+    /// `(package, version)` of the user-agent suffix.
+    pub user_agent: Option<(&'static str, &'static str)>,
+}
+
+impl ProviderHeaders {
+    pub(crate) async fn resolve(&self) -> Result<HeaderMapOpt, AiMuxError> {
+        let mut layer = HeaderMapOpt::new();
+        if let Some(secret) = self.credential.secret().await? {
+            let (name, value) = match self.scheme {
+                AuthScheme::Bearer => ("Authorization", format!("Bearer {secret}")),
+                AuthScheme::Header(name) => (name, secret),
+                AuthScheme::Scheme(scheme) => ("Authorization", format!("{scheme} {secret}")),
+            };
+            layer.insert(name.to_string(), Some(value));
+        }
+        for (name, value) in &self.fixed {
+            layer.insert(name.clone(), Some(value.clone()));
+        }
+        let headers = match &self.user {
+            Some(user) => combine_headers(&[&layer, user]),
+            None => layer,
+        };
+        let Some((package, version)) = self.user_agent else {
+            return Ok(headers);
+        };
+        let mut headers = normalize_headers(headers).into_iter().collect();
+        with_user_agent_suffix(&mut headers, &format!("ai-sdk-{package}/{version}"));
+        Ok(headers
+            .into_iter()
+            .map(|(name, value)| (name, Some(value)))
+            .collect())
+    }
+}
+
+/// [`ProviderHeaders`] without a user-agent suffix, as a [`HeadersFn`] for
+/// the packages that still take one.
 pub(crate) fn credential_headers(
     credential: Credential,
     scheme: AuthScheme,
     fixed: Vec<(String, String)>,
     user: Option<HeaderMapOpt>,
 ) -> HeadersFn {
+    let headers = ProviderHeaders {
+        credential,
+        scheme,
+        fixed,
+        user,
+        user_agent: None,
+    };
     Resolvable::from_async_fn(move || {
-        let credential = credential.clone();
-        let fixed = fixed.clone();
-        let user = user.clone();
-        async move {
-            let mut layer = HeaderMapOpt::new();
-            if let Some(secret) = credential.secret().await? {
-                match scheme {
-                    AuthScheme::Bearer => {
-                        layer.insert(
-                            "Authorization".to_string(),
-                            Some(format!("Bearer {secret}")),
-                        );
-                    }
-                    AuthScheme::Header(name) => {
-                        layer.insert(name.to_string(), Some(secret));
-                    }
-                    AuthScheme::Scheme(scheme) => {
-                        layer.insert(
-                            "Authorization".to_string(),
-                            Some(format!("{scheme} {secret}")),
-                        );
-                    }
-                }
-            }
-            for (name, value) in fixed {
-                layer.insert(name, Some(value));
-            }
-            Ok(match &user {
-                Some(user) => combine_headers(&[&layer, user]),
-                None => layer,
-            })
-        }
+        let headers = headers.clone();
+        async move { headers.resolve().await }
     })
 }
