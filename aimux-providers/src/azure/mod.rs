@@ -44,7 +44,7 @@ use aimux_provider_utils::{
     without_trailing_slash,
 };
 
-use crate::openai::config::OpenAIModelConfig;
+use crate::openai::config::{OpenAIModelConfig, OpenAIUrl};
 use crate::openai::responses::ResponsesProfile;
 use crate::openai::{
     OpenAIEmbeddingModel, OpenAIImageModel, OpenAIModel, OpenAIResponsesModel, OpenAISpeechModel,
@@ -306,9 +306,9 @@ pub struct AzureOpenAIProvider {
     fetch: Option<FetchFunction>,
 }
 
-/// Everything the URL of a request depends on, owned so a closure can hold it.
+/// Everything the URL of a request depends on.
 #[derive(Clone)]
-struct UrlRules {
+pub(crate) struct UrlRules {
     resource_name: Option<String>,
     base_url: Option<String>,
     info: BaseUrlInfo,
@@ -340,7 +340,7 @@ impl UrlRules {
     }
 
     /// The AI SDK's `url({ path, modelId })`.
-    fn url(&self, path: &str, model_id: &str) -> Result<String, AiMuxError> {
+    pub(crate) fn url(&self, path: &str, model_id: &str) -> Result<String, AiMuxError> {
         let prefix = self.prefix()?;
         let info = self.info;
         let full = if self.use_deployment_based_urls {
@@ -360,6 +360,25 @@ impl UrlRules {
             set_query_param(&mut url, "api-version", &self.api_version);
         }
         Ok(url.to_string())
+    }
+
+    /// The Azure AI Speech transcription URL: `speech_base_url`, or the
+    /// resource's Cognitive Services host.
+    pub(crate) fn speech_url(&self, speech_base_url: Option<&str>) -> Result<String, AiMuxError> {
+        let prefix = match speech_base_url {
+            Some(prefix) => without_trailing_slash(prefix),
+            None => {
+                // Reuse the resource-name validation and lazy environment lookup.
+                let mut rules = self.clone();
+                rules.base_url = None;
+                rules
+                    .prefix()?
+                    .replace(".openai.azure.com/openai", ".cognitiveservices.azure.com")
+            }
+        };
+        Ok(format!(
+            "{prefix}/speechtotext/transcriptions:transcribe?api-version=2025-10-15"
+        ))
     }
 }
 
@@ -405,11 +424,12 @@ impl AzureOpenAIProvider {
     /// The model configuration of a deployment, reporting `provider` as its
     /// identity.
     fn model_config(&self, provider: &str, deployment: &str) -> OpenAIModelConfig {
-        let rules = self.url_rules();
-        let deployment = deployment.to_string();
         OpenAIModelConfig {
             provider: provider.to_string(),
-            url: Arc::new(move |path| rules.url(path, &deployment)),
+            url: OpenAIUrl::AzureDeployment {
+                rules: self.url_rules(),
+                deployment: deployment.to_string(),
+            },
             headers: self.headers.clone(),
             token_provider: None,
             fetch: self.fetch.clone(),
@@ -470,24 +490,10 @@ impl AzureOpenAIProvider {
     #[must_use]
     pub fn transcription(&self, deployment: &str) -> AzureTranscriptionModel {
         let mut speech = self.model_config("azure.transcription", deployment);
-        let rules = self.url_rules();
-        let base_url = self.speech_base_url.clone();
-        speech.url = Arc::new(move |_| {
-            let prefix = match &base_url {
-                Some(prefix) => without_trailing_slash(prefix),
-                None => {
-                    // Reuse the resource-name validation and lazy environment lookup.
-                    let mut rules = rules.clone();
-                    rules.base_url = None;
-                    rules
-                        .prefix()?
-                        .replace(".openai.azure.com/openai", ".cognitiveservices.azure.com")
-                }
-            };
-            Ok(format!(
-                "{prefix}/speechtotext/transcriptions:transcribe?api-version=2025-10-15"
-            ))
-        });
+        speech.url = OpenAIUrl::AzureSpeech {
+            rules: self.url_rules(),
+            speech_base_url: self.speech_base_url.clone(),
+        };
         speech.headers = self.speech_headers.clone();
         AzureTranscriptionModel::new(
             deployment.to_string(),

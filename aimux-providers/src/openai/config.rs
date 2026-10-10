@@ -9,7 +9,6 @@
 //! refuses to send credentialed headers to any other origin after a redirect.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
@@ -19,11 +18,43 @@ use aimux_provider_utils::{
 };
 
 use super::responses::ResponsesProfile;
+use crate::azure::UrlRules;
 
-/// Maps an endpoint path (`"/chat/completions"`) to the full request URL. It
-/// can fail because a host may only know the address when a call is made (an
-/// Azure resource name read from the environment).
-pub(crate) type UrlFn = Arc<dyn Fn(&str) -> Result<String, AiMuxError> + Send + Sync>;
+/// How an endpoint path (`"/chat/completions"`) becomes the full request URL.
+/// Building it can fail because a host may only know the address when a call
+/// is made (an Azure resource name read from the environment).
+#[derive(Clone)]
+pub(crate) enum OpenAIUrl {
+    /// The base URL followed by the endpoint path.
+    Base(String),
+    /// Azure OpenAI's URL rules for a deployment.
+    AzureDeployment { rules: UrlRules, deployment: String },
+    /// The Azure AI Speech transcription endpoint, whatever the path: the
+    /// speech base URL, or the resource's Cognitive Services host.
+    AzureSpeech {
+        rules: UrlRules,
+        speech_base_url: Option<String>,
+    },
+}
+
+impl OpenAIUrl {
+    /// The full URL of an endpoint path.
+    ///
+    /// # Errors
+    ///
+    /// Returns the host's setting error (`AiMuxError::LoadSetting` for an
+    /// unset Azure resource name).
+    pub(crate) fn url(&self, path: &str) -> Result<String, AiMuxError> {
+        match self {
+            Self::Base(base_url) => Ok(format!("{base_url}{path}")),
+            Self::AzureDeployment { rules, deployment } => rules.url(path, deployment),
+            Self::AzureSpeech {
+                rules,
+                speech_base_url,
+            } => rules.speech_url(speech_base_url.as_deref()),
+        }
+    }
+}
 
 /// What a model needs to talk to the API. Built by the provider that owns the
 /// model: `OpenAIProvider`, Azure, Codex and the Hugging Face chat extension.
@@ -32,7 +63,7 @@ pub(crate) struct OpenAIModelConfig {
     /// The identity the model reports from `provider()`.
     pub(crate) provider: String,
     /// Endpoint path to full URL.
-    pub(crate) url: UrlFn,
+    pub(crate) url: OpenAIUrl,
     /// Provider headers (credential, organization, project, user headers),
     /// resolved on every request.
     pub(crate) headers: HeadersFn,
@@ -57,7 +88,7 @@ impl OpenAIModelConfig {
     ) -> Self {
         Self {
             provider,
-            url: Arc::new(move |path| Ok(format!("{base_url}{path}"))),
+            url: OpenAIUrl::Base(base_url),
             headers,
             token_provider: None,
             fetch,
@@ -74,7 +105,7 @@ impl OpenAIModelConfig {
     /// Returns the host's setting error (`AiMuxError::LoadSetting` for an
     /// unset Azure resource name).
     pub(crate) fn url(&self, path: &str) -> Result<String, AiMuxError> {
-        (self.url)(path)
+        self.url.url(path)
     }
 
     /// The WebSocket form of an endpoint path: `https` becomes `wss` and
