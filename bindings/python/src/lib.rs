@@ -723,6 +723,17 @@ struct ProviderHandle {
 
 #[pymethods]
 impl ProviderHandle {
+    /// Build a native decision model with this provider's existing config.
+    fn decision_model(&self, model_id: &str) -> PyResult<DecisionModel> {
+        let model = self
+            .inner
+            .decision_model(model_id)
+            .map_err(|error| to_py_err(&error))?;
+        Ok(DecisionModel {
+            inner: Arc::from(model),
+        })
+    }
+
     /// List models available on this provider (runtime discovery + anya2a spec).
     /// Returns a JSON array of RuntimeModel.
     fn list_models(&self) -> PyResult<String> {

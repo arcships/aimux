@@ -210,6 +210,9 @@ export type RawModel = Model
 export type {
   DecisionAnswer,
   DecisionDescription,
+  DecisionImage,
+  DecisionValue,
+  DecisionScoreLevel,
   DecisionBooleanCriteria,
   DecisionRounding,
   DecisionQuestion,
@@ -539,6 +542,11 @@ export class ProviderHandleTyped {
   /** Build a language model from a discovered model id. */
   async model(modelId: string): Promise<RawModel> {
     return this.raw.model(modelId)
+  }
+
+  /** Build a native decision model using this provider's connection config. */
+  async decisionModel(modelId: string): Promise<native.DecisionModel> {
+    return this.raw.decisionModel(modelId)
   }
 }
 

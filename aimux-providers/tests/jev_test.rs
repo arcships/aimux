@@ -130,6 +130,7 @@ fn options() -> DecisionCallOptions {
                 options: ["billing", "technical", "sales"]
                     .into_iter()
                     .map(|label| DecisionOption {
+                        value: None,
                         label: label.into(),
                         description: None,
                     })
@@ -310,6 +311,7 @@ async fn invalid_requests_never_reach_http() {
     if let DecisionQuestion::Choice { options, .. } = &mut too_many_choices.questions[1] {
         *options = (0..256)
             .map(|index| DecisionOption {
+                value: None,
                 label: format!("option{index}"),
                 description: None,
             })
@@ -379,7 +381,7 @@ async fn official_provider_failures_use_standard_retry_rules_and_preserve_codes(
 
 #[test]
 fn non_decision_provider_returns_unsupported() {
-    let provider = aimux_providers::OpenAIProvider::new(aimux_providers::OpenAIConfig::new("test"));
+    let provider = aimux_providers::provider_handle("deepseek", Some("test".into()), None).unwrap();
     assert!(matches!(
         provider.decision_model("gpt-test"),
         Err(AiMuxError::UnsupportedFunctionality(_))
@@ -414,6 +416,7 @@ async fn official_requests_accept_single_and_255_choices_and_more_than_20_questi
                 options: labels
                     .iter()
                     .map(|label| DecisionOption {
+                        value: None,
                         label: label.clone(),
                         description: None,
                     })

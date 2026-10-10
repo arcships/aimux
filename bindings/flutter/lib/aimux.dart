@@ -21,6 +21,7 @@
 // library, so the plugin registration class must be visible here.
 export 'aimux_plugin.dart';
 export 'decision.dart';
+import 'decision.dart';
 export 'errors.dart'
     hide
         openAimuxLibrary,
@@ -820,6 +821,12 @@ class ProviderHandle implements Finalizable {
     _checkOpen();
     return takeString(
         (out) => _ffi.providerListModels(_handle, out), 'provider_list_models');
+  }
+
+  /// Build a native decision model with this provider's connection configuration.
+  DecisionModel decisionModel(String modelId) {
+    _checkOpen();
+    return DecisionModel.fromProviderHandle(_handle, modelId);
   }
 
   /// Build a language [Model] from a discovered [modelId].

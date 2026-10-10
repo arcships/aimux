@@ -1,5 +1,7 @@
 # 原始接口文档材料（摘录）
 
+> 2026-10-08 更新：OpenAI 已有公开 beta `/v1/decisions` 和请求／响应 schema。本文保留 10 月 6 日的调研历史，旧的 limited-preview／schema 未公开结论已过时；当前字段映射、官方运行时清单和开发阶段见 [RFC-0038](../../../rfc/0038-decision-provider-expansion.md)。
+
 > 来源页面和接口随服务迭代。以下为截至 2026-10-06 的一手文档要点与最小化请求/响应材料，保留字段名和路径；不是对网页的逐字转载。报告见 [report.zh-CN.md](report.zh-CN.md)。
 
 ## 1. Jev / TypeSafe 的 System One API

@@ -1,10 +1,36 @@
 import test from 'ava'
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
-import { APICallError, InvalidArgumentError, RequestAbortedError, jevDecision, decide, decisionCapabilities } from '../src/index.ts'
+import { APICallError, InvalidArgumentError, RequestAbortedError, jevDecision, decide, decisionCapabilities, createProvider } from '../src/index.ts'
 import type { DecisionCallOptions } from '../src/index.ts'
 
 const fixture = JSON.parse(readFileSync(new URL('../../../aimux-providers/tests/fixtures/jev_systemone.json', import.meta.url), 'utf8')).response
+
+test('provider handle creates native OpenAI decisions and preserves partial refusals', async t => {
+  const contract = JSON.parse(readFileSync(new URL('../../../aimux-providers/tests/fixtures/openai_decisions.json', import.meta.url), 'utf8'))
+  let captured: any
+  const server = createServer((req, res) => {
+    t.is(req.url, '/v1/decisions')
+    t.is(req.headers.authorization, 'Bearer test-key')
+    let data = ''
+    req.on('data', chunk => { data += chunk })
+    req.on('end', () => {
+      captured = JSON.parse(data)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(contract.response))
+    })
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.teardown(() => server.close())
+  const address = server.address() as { port: number }
+  const provider = await createProvider('openai', 'test-key', { baseUrl: `http://127.0.0.1:${address.port}/v1` })
+  const model = await provider.decisionModel('gpt-6-luna')
+  t.is(decisionCapabilities(model).min_choices, 2)
+  const result = await decide(model, contract.options)
+  t.deepEqual(captured, contract.request)
+  t.deepEqual(result.answers.restricted, { type: 'refusal' })
+  t.deepEqual(result.answers.urgent, { type: 'boolean', probability_true: 0.925 })
+})
 const options: DecisionCallOptions = {
   state: { message: 'Billed twice' },
   questions: [
@@ -148,4 +174,48 @@ test('official structured fields and capabilities preserve the native contract',
   t.deepEqual(requests[0].questions.department.instructions, fixture.request.questions[1].instructions)
   t.like(result.answers.severity, { levels: fixture.request.questions[2].levels })
   t.deepEqual(result.rounding, caps.rounding)
+})
+
+test('OpenAI media, boolean choice values and score descriptions cross the typed boundary', async t => {
+  const contract = JSON.parse(readFileSync(new URL('../../../contract-tests/fixtures/decision-openai-full.json', import.meta.url), 'utf8'))
+  let captured: unknown
+  const server = createServer((req, res) => {
+    let data = ''
+    req.on('data', chunk => { data += chunk })
+    req.on('end', () => {
+      captured = JSON.parse(data)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(contract.response))
+    })
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.teardown(() => server.close())
+  const address = server.address() as { port: number }
+  const provider = await createProvider('openai', 'test-key', { baseUrl: `http://127.0.0.1:${address.port}/v1` })
+  const model = await provider.decisionModel('gpt-6-luna')
+  const request: DecisionCallOptions = contract.options
+  const result = await decide(model, request)
+  t.deepEqual(captured, contract.request)
+  t.true(decisionCapabilities(model).supports_images)
+  if (result.answers.choice.type !== 'choice') return t.fail('choice result required')
+  t.is(result.answers.choice.value, true)
+  t.is(result.answers.choice.selected, 'boolean_true')
+  t.deepEqual(result.answers.choice.probabilities, { boolean_true: 0.75, text_true: 0.25 })
+  t.like(result.answers.score, { levels: contract.options.questions[1].levels })
+})
+
+test('local runtime factory preserves provider identity with no API key', async t => {
+  const contract = JSON.parse(readFileSync(new URL('../../../aimux-providers/tests/fixtures/runtime_decisions.json', import.meta.url), 'utf8'))
+  const server = createServer((req, res) => {
+    t.is(req.url, '/v1/systemone')
+    req.resume()
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(contract.response))
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.teardown(() => server.close())
+  const address = server.address() as { port: number }
+  const provider = await createProvider('ollama', undefined, { baseUrl: `http://127.0.0.1:${address.port}/v1` })
+  const result = await decide(await provider.decisionModel('served-decision'), contract.options)
+  t.is(result.provider, 'ollama')
 })

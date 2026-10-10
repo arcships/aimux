@@ -1,8 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
-import 'package:aimux/decision.dart';
-import 'package:aimux/errors.dart';
+import 'package:aimux/aimux.dart';
 import 'package:test/test.dart';
 
 // Keep the worker closure outside the server's lexical scope so Dart cannot
@@ -19,7 +18,44 @@ Future<Map<String, dynamic>> runDecision(
   } finally { model.close(); }
 });
 
+Future<Map<String, dynamic>> runOpenAIDecision(
+    String baseUrl, Map<String, dynamic> options) => Isolate.run(() {
+  final provider = createProvider('openai', 'test-key', ProviderConfig(baseUrl: baseUrl));
+  final model = provider.decisionModel('gpt-6-luna');
+  try { return model.decide(options); }
+  finally { model.close(); provider.close(); }
+});
+
 void main() {
+  test('OpenAI media and typed values cross the C ABI', () async {
+    final fixture = jsonDecode(File('../../contract-tests/fixtures/decision-openai-full.json').readAsStringSync()) as Map;
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final captures = <dynamic>[];
+    server.listen((request) async {
+      expect(request.uri.path, '/v1/decisions');
+      captures.add(jsonDecode(await utf8.decoder.bind(request).join()));
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(jsonEncode(fixture['response']));
+      await request.response.close();
+    });
+    addTearDown(() => server.close(force: true));
+    final options = (fixture['options'] as Map).cast<String, dynamic>();
+    final result = await runOpenAIDecision('http://127.0.0.1:${server.port}/v1', options);
+    expect(captures, [fixture['request']]);
+    expect(result['answers']['choice']['value'], isTrue);
+    expect(result['answers']['score']['levels'], options['questions'][1]['levels']);
+  });
+
+  test('provider decision model owns its handle', () {
+    final provider = createProvider('openai', 'test-key', null);
+    final model = provider.decisionModel('gpt-6-luna');
+    addTearDown(provider.close);
+    addTearDown(model.close);
+    provider.close();
+    expect(model.capabilities()['min_choices'], 2);
+    expect(() => provider.decisionModel('gpt-6-luna'), throwsStateError);
+  });
+
   test('official structured contract and capabilities cross the C ABI', () async {
     final fixture = jsonDecode(File('../../contract-tests/fixtures/decision-native.json').readAsStringSync()) as Map;
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

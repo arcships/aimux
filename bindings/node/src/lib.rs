@@ -1447,6 +1447,19 @@ pub struct ProviderHandle {
 
 #[napi]
 impl ProviderHandle {
+    /// Build a native decision model with this provider's existing config.
+    #[napi]
+    pub async fn decision_model(&self, model_id: String) -> AimuxResult<DecisionModel> {
+        AimuxResult(
+            self.inner
+                .decision_model(&model_id)
+                .map(|model| DecisionModel {
+                    inner: Arc::from(model),
+                })
+                .map_err(|error| AiMuxBindingError::from(&error)),
+        )
+    }
+
     /// List models available on this provider (runtime discovery via the
     /// provider's `/models` endpoint). Returns a JSON array of sparse
     /// `RuntimeModel` (id / owned_by / created) — **no community enrichment**.

@@ -14,7 +14,7 @@ import (
 	"unsafe"
 )
 
-// DecisionModel calls the official TypeSafe Jev API. Close releases its handle.
+// DecisionModel calls a native decision API. Close releases its handle.
 // Like other model handles, it must not be copied after first use.
 type DecisionModel struct{ h multimodalHandle }
 
@@ -47,6 +47,28 @@ func NewJevDecisionWithEndpoint(apiKey, modelID, endpoint, probabilitySource str
 	}
 	model := &DecisionModel{}
 	model.h.handle.Store(uint64(handle))
+	runtime.SetFinalizer(model, func(m *DecisionModel) { m.Close() })
+	return model, nil
+}
+
+// DecisionModel builds a native decision handle with the provider's existing configuration.
+func (p *ProviderHandle) DecisionModel(modelID string) (*DecisionModel, error) {
+	if err := checkUTF8("model_id", modelID); err != nil {
+		return nil, err
+	}
+	handle, err := p.handle()
+	if err != nil {
+		return nil, err
+	}
+	defer runtime.KeepAlive(p)
+	id := C.CString(modelID)
+	defer C.free(unsafe.Pointer(id))
+	var out C.uint64_t
+	if err := expectAimuxError(C.aimux_provider_decision_model(C.uint64_t(handle), id, &out)); err != nil {
+		return nil, err
+	}
+	model := &DecisionModel{}
+	model.h.handle.Store(uint64(out))
 	runtime.SetFinalizer(model, func(m *DecisionModel) { m.Close() })
 	return model, nil
 }

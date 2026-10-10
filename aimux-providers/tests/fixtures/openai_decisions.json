@@ -1,0 +1,35 @@
+{
+  "provenance": "Synthetic contract fixture based on the official OpenAI Decisions reference, checked 2026-10-08. Not a live recording.",
+  "source": "https://developers.openai.com/api/reference/resources/decisions/methods/create",
+  "options": {
+    "state": "Our checkout is broken and we need help today.",
+    "questions": [
+      {"id": "urgent", "type": "boolean", "instructions": "Is a response needed today?"},
+      {"id": "team", "type": "choice", "instructions": "Which team should respond?", "options": [{"label": "billing", "description": "Invoices"}, {"label": "support"}]},
+      {"id": "severity", "type": "score", "instructions": "How severe is the issue?", "levels": ["minor", "major", "critical"]},
+      {"id": "restricted", "type": "boolean", "instructions": "A question the service declines."}
+    ],
+    "max_retries": 0
+  },
+  "request": {
+    "model": "gpt-6-luna",
+    "input": "Our checkout is broken and we need help today.",
+    "questions": [
+      {"name": "urgent", "type": "predicate", "instructions": "Is a response needed today?"},
+      {"name": "team", "type": "choice", "instructions": "Which team should respond?", "choices": [{"value": "billing", "description": "Invoices"}, {"value": "support"}]},
+      {"name": "severity", "type": "score", "instructions": "How severe is the issue?", "levels": [{"label": "minor"}, {"label": "major"}, {"label": "critical"}]},
+      {"name": "restricted", "type": "predicate", "instructions": "A question the service declines."}
+    ]
+  },
+  "response": {
+    "model": "gpt-6-luna",
+    "answers": [
+      {"name": "urgent", "type": "predicate", "probability": 0.925},
+      {"name": "team", "type": "choice", "choice": "support", "confidence": 0.9, "probabilities": [{"value": "billing", "probability": 0.0625}, {"value": "support", "probability": 0.9375}]},
+      {"name": "severity", "type": "score", "score": 1.5, "confidence": 0.6, "probabilities": [{"value": 0, "label": "minor", "probability": 0.125}, {"value": 1, "label": "major", "probability": 0.25}, {"value": 2, "label": "critical", "probability": 0.625}]},
+      {"name": "restricted", "type": "refusal"}
+    ],
+    "usage": {"input_tokens": 100, "output_tokens": 0, "total_tokens": 100, "input_tokens_details": {"cached_tokens": 20, "cache_write_tokens": 10}, "output_tokens_details": {"reasoning_tokens": 0}},
+    "future_metadata": {"preserved": true}
+  }
+}

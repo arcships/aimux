@@ -1,5 +1,7 @@
 # aimux Decision Model / Decision API 调研报告
 
+> 2026-10-08 更新：OpenAI 已有公开 beta `/v1/decisions` 和请求／响应 schema。本文保留 10 月 6 日的调研历史，旧的 limited-preview／schema 未公开结论已过时；当前字段映射、官方运行时清单和开发阶段见 [RFC-0038](../../../rfc/0038-decision-provider-expansion.md)。
+
 调研日期：2026-10-06。范围：OpenAI、Jev、vLLM、SGLang 的公开决策接口资料，以及 aimux 的接口设计建议。
 
 ## 结论

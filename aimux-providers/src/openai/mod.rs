@@ -5,6 +5,7 @@
 
 pub mod convert;
 mod convert_common;
+pub mod decision;
 pub mod embedding;
 pub mod files;
 pub mod image;
@@ -14,6 +15,7 @@ pub mod speech;
 pub mod transcription;
 mod types;
 
+pub use decision::OpenAIDecisionModel;
 pub use embedding::OpenAIEmbeddingModel;
 pub use image::OpenAIImageModel;
 pub use model::OpenAIModel;
@@ -386,6 +388,22 @@ impl OpenAIProvider {
 impl Provider for OpenAIProvider {
     fn name(&self) -> &str {
         "openai"
+    }
+
+    fn decision_model(
+        &self,
+        model_id: &str,
+    ) -> Result<Box<dyn aimux_core::DecisionModel>, AiMuxError> {
+        if self.config.provider == "openai" {
+            Ok(Box::new(OpenAIDecisionModel::new(
+                model_id,
+                self.config.clone(),
+            )?))
+        } else {
+            Ok(Box::new(
+                crate::runtime_decision::RuntimeDecisionModel::new(model_id, self.config.clone())?,
+            ))
+        }
     }
 
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {

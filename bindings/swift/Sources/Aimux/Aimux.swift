@@ -1126,6 +1126,12 @@ public final class ProviderHandle: @unchecked Sendable {
         return try ffiStringCall { aimux_provider_list_models(handle, $0) }
     }
 
+    /// Build a native decision model with this provider's connection configuration.
+    public func decisionModel(_ modelId: String) throws -> DecisionModel {
+        let h = try Model.wrapHandle { aimux_provider_decision_model(handle, modelId, $0) }
+        return DecisionModel(handle: h)
+    }
+
     /// Build a language model from a discovered model id.
     public func model(_ modelId: String) throws -> Model {
         let h = try Model.wrapHandle { aimux_provider_model(handle, modelId, $0) }

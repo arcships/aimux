@@ -2,4 +2,4 @@
 import type { DecisionProbabilitySource } from "./DecisionProbabilitySource";
 import type { DecisionRounding } from "./DecisionRounding";
 
-export type DecisionCapabilities = { rounding: DecisionRounding, probability_source: DecisionProbabilitySource, supports_boolean: boolean, supports_choice: boolean, supports_score: boolean, returns_distributions: boolean, max_questions: number | null, min_choices: number | null, max_choices: number | null, max_score_levels: number | null, };
+export type DecisionCapabilities = { supports_images: boolean, max_images: number | null, supports_typed_choices: boolean, rounding: DecisionRounding, probability_source: DecisionProbabilitySource, supports_boolean: boolean, supports_choice: boolean, supports_score: boolean, returns_distributions: boolean, max_questions: number | null, min_choices: number | null, max_choices: number | null, max_score_levels: number | null, };

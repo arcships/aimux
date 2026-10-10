@@ -125,6 +125,6 @@ language model），state/questions 存入 input.options，能力快照存入 pr
 时可重建官方 Jev 执行请求回放。
 
 官方字段覆盖、Provider 精度规则、全语言 capability 查询和宿主包装均已实现。
-其他官方决策接口
-另按其正式 contract 接入；OpenAI Decisions 待取得公开 preview wire schema，
-不以 Responses structured output 代替。
+其他官方决策接口按 [RFC-0038](0038-decision-provider-expansion.md) 接入。
+2026-10-08 已核实 OpenAI Decisions 的公开 beta wire schema，首批实现其文本
+子集和逐题拒答，不以 Responses structured output 代替。

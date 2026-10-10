@@ -78,6 +78,7 @@ internal interface AimuxFFI : Library {
     // ── Provider handles (RFC-0027) ─────────────────────────────────────────
     fun aimux_provider_handle_new(name: String, apiKey: String?, configJson: String?, outHandle: LongByReference): Pointer?
     fun aimux_provider_list_models(handle: Long, outModelsJson: PointerByReference): Pointer?
+    fun aimux_provider_decision_model(handle: Long, modelId: String, outHandle: LongByReference): Pointer?
     fun aimux_provider_model(handle: Long, modelId: String, outHandle: LongByReference): Pointer?
     fun aimux_get_model_specs(sourceUrl: String?, outSpecsJson: PointerByReference): Pointer?
 
@@ -1076,6 +1077,19 @@ class ProviderHandle internal constructor(handle: Long) : AutoCloseable {
             return stringResult { out ->
                 FFI.lib.aimux_provider_list_models(h, out)
             }
+        } finally {
+            lock.readLock().unlock()
+        }
+    }
+
+    /** Build a decision model with the provider's connection configuration. */
+    fun decisionModel(modelId: String): DecisionModel {
+        lock.readLock().lock()
+        try {
+            val h = requireHandleLocked()
+            return DecisionModel(handleResult("decision model") { out ->
+                FFI.lib.aimux_provider_decision_model(h, modelId, out)
+            })
         } finally {
             lock.readLock().unlock()
         }

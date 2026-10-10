@@ -8,7 +8,7 @@ use crate::error::{AiMuxBindingError, AimuxResult, parse_wire_json, serialize_re
 
 #[napi]
 pub struct DecisionModel {
-    inner: Arc<dyn DecisionModelTrait>,
+    pub(crate) inner: Arc<dyn DecisionModelTrait>,
 }
 
 #[napi]

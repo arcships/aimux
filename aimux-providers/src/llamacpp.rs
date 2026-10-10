@@ -25,8 +25,7 @@ impl LlamacppConfig {
             OpenAIConfig::new(api_key)
                 .with_base_url(DEFAULT_BASE_URL)
                 .with_provider(PROVIDER_NAME)
-                .with_profile(OpenAICompatProfile::full())
-                .with_api_key_source(Some("none")),
+                .with_profile(OpenAICompatProfile::full()),
         )
     }
 
@@ -38,7 +37,8 @@ impl LlamacppConfig {
     /// Never returns an error; an unset or empty variable falls back to the
     /// default local endpoint.
     pub fn from_env() -> Result<Self, AiMuxError> {
-        let config = Self::new(PLACEHOLDER_API_KEY);
+        let mut config = Self::new(PLACEHOLDER_API_KEY);
+        config.0 = config.0.with_api_key_source(Some("none"));
         match std::env::var(ENV_VAR) {
             Ok(url) if !url.trim().is_empty() => Ok(config.with_base_url(url)),
             _ => Ok(config),
@@ -73,6 +73,13 @@ impl Provider for LlamacppProvider {
 
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
+    }
+
+    fn decision_model(
+        &self,
+        model_id: &str,
+    ) -> Result<Box<dyn aimux_core::DecisionModel>, AiMuxError> {
+        self.0.decision_model(model_id)
     }
 
     crate::delegate_list_models!();

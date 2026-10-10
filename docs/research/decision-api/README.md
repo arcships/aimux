@@ -1,5 +1,7 @@
 # Decision model / Decision API 调研
 
+> 2026-10-08 更新：OpenAI 已有公开 beta `/v1/decisions` 和请求／响应 schema。本文保留 10 月 6 日的调研历史，旧的 limited-preview／schema 未公开结论已过时；SGLang 主分支也已合入 `/v1/decisions` 与 `/v1/systemone`（#41208、#42183），不再只有评分原语。当前字段映射、官方运行时清单和实施状态见 [RFC-0038](../../../rfc/0038-decision-provider-expansion.md)。
+
 调研日期：2026-10-06。
 
 aimux 支持范围限于原生决策接口和候选评分能力。不实现 structured-output

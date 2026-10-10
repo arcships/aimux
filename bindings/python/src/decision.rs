@@ -8,7 +8,7 @@ use crate::error::{serialize_result, to_py_err, wire_json};
 
 #[pyclass]
 pub struct DecisionModel {
-    inner: Arc<dyn DecisionModelTrait>,
+    pub(crate) inner: Arc<dyn DecisionModelTrait>,
 }
 
 #[pymethods]

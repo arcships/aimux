@@ -585,10 +585,15 @@ aimux_error_t *aimux_tavily_search_new_with_base(const char *api_key, const char
    query — not just options); NULL or empty is a C ABI failure. */
 aimux_error_t *aimux_search(uint64_t handle, const char *opts_json, char **out_json);
 
-/* Typed decisions. endpoint is NULL for hosted Jev, or a complete POST URL.
+/* Typed decisions.
  * opts_json requires state and questions (array of tagged questions with IDs).
  * Free model handles with aimux_drop_handle and results with aimux_free_string.
  * abort_handle=0 means no caller cancellation. */
+/* Build a decision model using an existing provider handle. */
+aimux_error_t *aimux_provider_decision_model(uint64_t handle, const char *model_id,
+                                           uint64_t *out_handle);
+
+/* endpoint is NULL for hosted Jev, or a complete POST URL. */
 aimux_error_t *aimux_jev_decision_new(const char *api_key, const char *model_id,
                                     const char *endpoint, uint64_t *out_handle);
 /* probability_source: native, logit_scoring, model_estimate; NULL uses native. */

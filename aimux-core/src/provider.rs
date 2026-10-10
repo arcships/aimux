@@ -1,4 +1,4 @@
-//! The `Provider` trait — a factory that creates `LanguageModel` instances.
+//! The `Provider` trait — a factory for model task interfaces.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -9,7 +9,8 @@ use crate::model_catalogue::RuntimeModel;
 
 /// A provider factory.
 ///
-/// Holds API keys / config and creates `LanguageModel` instances by model name.
+/// Holds connection configuration and creates task interfaces by model name.
+/// A deployment may expose both language generation and decisions.
 pub trait Provider: Send + Sync {
     /// Unique provider name (e.g. `"openai"`).
     fn name(&self) -> &str;

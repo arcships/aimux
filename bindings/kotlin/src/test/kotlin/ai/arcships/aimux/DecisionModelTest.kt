@@ -10,6 +10,16 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 
 class DecisionModelTest {
+    @Test fun providerDecisionModelOwnsItsHandle() {
+        Model.createProvider("openai", "test-key").use { provider ->
+            provider.decisionModel("gpt-6-luna").use { model ->
+                provider.close()
+                assertEquals(2, JSONObject(model.capabilities()).getInt("min_choices"))
+                assertThrows(IllegalStateException::class.java) { provider.decisionModel("gpt-6-luna") }
+            }
+        }
+    }
+
     @Test fun officialStructuredContractAndCapabilities() {
         val fixture = JSONObject(String(Files.readAllBytes(Paths.get("../../contract-tests/fixtures/decision-native.json"))))
         val captured = AtomicReference<JSONObject>()
@@ -42,5 +52,32 @@ class DecisionModelTest {
             }
         } finally { server.stop(0) }
         assertThrows(AimuxException::class.java) { DecisionModel.jev("test-key", "jev-latest", probabilitySource = "unknown") }
+    }
+
+    @Test fun openaiMediaAndTypedValues() {
+        val fixture = JSONObject(String(Files.readAllBytes(Paths.get("../../contract-tests/fixtures/decision-openai-full.json"))))
+        val captured = AtomicReference<JSONObject>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/v1/decisions") { exchange ->
+            captured.set(JSONObject(exchange.requestBody.bufferedReader().readText()))
+            val bytes = fixture.getJSONObject("response").toString().toByteArray()
+            exchange.responseHeaders.set("Content-Type", "application/json")
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+            exchange.close()
+        }
+        server.start()
+        try {
+            val config = JSONObject().put("base_url", "http://127.0.0.1:${server.address.port}/v1").toString()
+            Model.createProvider("openai", "test-key", config).use { provider ->
+                provider.decisionModel("gpt-6-luna").use { model ->
+                    val result = JSONObject(model.decide(fixture.getJSONObject("options").toString()))
+                    assertTrue(fixture.getJSONObject("request").similar(captured.get()))
+                    assertEquals(true, result.getJSONObject("answers").getJSONObject("choice").get("value"))
+                    assertTrue(fixture.getJSONObject("options").getJSONArray("questions").getJSONObject(1).getJSONArray("levels")
+                        .similar(result.getJSONObject("answers").getJSONObject("score").getJSONArray("levels")))
+                }
+            }
+        } finally { server.stop(0) }
     }
 }

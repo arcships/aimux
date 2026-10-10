@@ -358,12 +358,13 @@ impl ResolvedEntry {
 /// Build a **provider handle** for a built-in or externally-registered provider
 /// by name (RFC-0027 + RFC-0020 overlay).
 ///
-/// Lookup order: runtime overlay (RFC-0020) → built-in registry → NoSuchProvider.
+/// Lookup order: runtime overlay (RFC-0020) → native OpenAI / built-in registry
+/// → NoSuchProvider.
 ///
 /// Unlike [`provider`] (which binds to a single `model_id` and returns a
 /// `LanguageModel`), this returns the [`Provider`] itself, so callers can call
 /// [`Provider::list_models`] for runtime discovery, then
-/// [`Provider::language_model`] on a chosen id.
+/// [`Provider::language_model`] or [`Provider::decision_model`] on a chosen id.
 ///
 /// Same key/options semantics as [`provider`].
 ///
@@ -382,6 +383,35 @@ pub fn provider_handle(
     // 1. Runtime overlay (RFC-0020) — registered entries take precedence.
     let resolved = if let Some(ext) = overlays().read().unwrap().get(name) {
         ResolvedEntry::from_external(ext)
+    } else if let Some((default_url, url_env)) = match name {
+        "ollama" => Some(("http://127.0.0.1:11434/v1", "OLLAMA_BASE_URL")),
+        "llamacpp" => Some(("http://127.0.0.1:8080/v1", "LLAMACPP_BASE_URL")),
+        "localai" => Some(("http://127.0.0.1:8080/v1", "LOCALAI_BASE_URL")),
+        "vllm" => Some(("http://127.0.0.1:8000/v1", "VLLM_BASE_URL")),
+        "sglang" => Some(("http://127.0.0.1:30000/v1", "SGLANG_BASE_URL")),
+        "laya" => Some(("http://127.0.0.1:8000/v1", "LAYA_BASE_URL")),
+        _ => None,
+    } {
+        ResolvedEntry::from_registry(&RegistryEntry {
+            name: name.into(),
+            display: name.into(),
+            base_url: std::env::var(url_env)
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| default_url.into()),
+            env_var: String::new(),
+            profile: ProviderProfile::default(),
+        })
+    } else if name == "openai" {
+        // Native OpenAI is not in the compatibility registry. Expose the same
+        // provider handle/config path for its language and decision factories.
+        ResolvedEntry::from_registry(&RegistryEntry {
+            name: "openai".into(),
+            display: "OpenAI".into(),
+            base_url: OpenAIConfig::new("").base_url,
+            env_var: "OPENAI_API_KEY".into(),
+            profile: ProviderProfile::default(),
+        })
     } else {
         // 2. Built-in registry.
         let entry = registry().iter().find(|e| e.name == name).ok_or_else(|| {
@@ -410,7 +440,21 @@ pub fn provider_handle(
 
     // Resolve the api key. Priority: explicit parameter > entry-level api_key
     // (supports "env:VAR" references) > entry env_var (read from environment).
-    let (key, source) = resolve_key(&resolved, api_key)?;
+    let (key, source) = if api_key.is_none()
+        && resolved.env_var.is_empty()
+        && resolved.api_key.is_none()
+        && matches!(
+            name,
+            "ollama" | "llamacpp" | "localai" | "vllm" | "sglang" | "laya"
+        ) {
+        let key_env = format!("{}_API_KEY", name.to_uppercase());
+        match std::env::var(&key_env).ok().filter(|key| !key.is_empty()) {
+            Some(key) => (key, Some(format!("env:{key_env}"))),
+            None => ("not-needed".into(), Some("none".into())),
+        }
+    } else {
+        resolve_key(&resolved, api_key)?
+    };
 
     let mut config = build_resolved_config(&resolved, key, options);
     config = config.with_api_key_source(source.as_deref());
