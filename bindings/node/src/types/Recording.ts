@@ -16,11 +16,11 @@ schema: number,
 /**
  * 暴露逻辑调用 ID,关联三层。
  */
-call_id: string, 
+callId: string, 
 /**
  * ISO 8601 时间戳。
  */
-recorded_at: string, 
+recordedAt: string, 
 /**
  * ① 输入侧:调用参数(prompt + options)。
  */
@@ -45,14 +45,14 @@ complete: boolean,
  * 传输层封闭信号:层 B 声明"不再有 exchange"(P1:层 A 收尾自动发;
  * P2:由层 B 发送)。false = 仍可能来 exchange(记录暂不可定稿)。
  */
-transport_closed: boolean, 
+transportClosed: boolean, 
 /**
  * 会话归组(RFC-0024 P3):所在会话 id。None = 未归组(无 session_id 且
  * 推断关闭)。由 `Recorder::record_session` 填充,写入 InputRecord 之前
  * 或之后均可(writer 端按 call_id 合并)。
  */
-session_id?: string | null, 
+sessionId?: string, 
 /**
  * 会话内步号(0 起,由 SessionStore 分配)。与 `session_id` 同生命周期。
  */
-step?: number | null, };
+step?: number, };

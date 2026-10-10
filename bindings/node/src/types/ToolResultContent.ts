@@ -6,4 +6,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * Content within a tool result.
  */
-export type ToolResultContent = { "type": "text" } & TextPart | { "type": "file" } & FilePart | { "type": "custom", provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type ToolResultContent = { "type": "text" } & TextPart | { "type": "file" } & FilePart | { "type": "custom", providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

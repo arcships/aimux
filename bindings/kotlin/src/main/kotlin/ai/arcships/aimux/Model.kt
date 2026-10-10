@@ -220,9 +220,6 @@ internal interface AimuxFFI : Library {
     fun aimux_recording_try_flush(): Pointer?
     fun aimux_mock_replay_new(recordingsJsonl: String, outHandle: LongByReference): Pointer?
 
-    // [AiMuxError] Register external providers from JSON config (RFC-0020).
-    fun aimux_register_providers(configJson: String): Pointer?
-
     // [AiMuxError] Set the global proxy configuration (M6, RFC-0016).
     fun aimux_init_proxy(configJson: String): Pointer?
 
@@ -533,7 +530,7 @@ class Model internal constructor(handle: Long) : Closeable {
      * Generate a structured JSON object (M12, RFC-0016).
      *
      * Same signature as [generateText]; returns a JSON-serialized
-     * `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }` via
+     * `GenerateObjectResult`. Pass `responseFormat: { "type": "json", "schema": { ... } }` via
      * [optsJson] for schema control; aimux-core applies JSON repair before
      * parsing.
      *
@@ -580,7 +577,7 @@ class Model internal constructor(handle: Long) : Closeable {
      * Stream text from the model.
      *
      * Blocks the calling thread until the stream completes. Recoverable
-     * frame errors (a malformed SSE frame) arrive as `StreamPart::Error`
+     * frame errors (a malformed SSE frame) arrive as `error` stream parts
      * data parts and the stream continues; only transport/Core failures
      * throw [AimuxException] (on_done is not invoked on failure), after any
      * parts already delivered to [onPart].
@@ -892,7 +889,9 @@ class Model internal constructor(handle: Long) : Closeable {
          * @param apiKey     API key, or null to read the provider's env var from
          *                   the registry entry.
          * @param modelId    Model id.
-         * @param configJson Optional JSON object of ProviderOptions; null for defaults.
+         * @param configJson Optional JSON object of settings (`baseUrl`, `headers`,
+         *                   `organization`, `project`, `params`); any other key is
+         *                   rejected as an invalid argument. Null for defaults.
          */
         fun provider(name: String, apiKey: String? = null, modelId: String, configJson: String? = null): Model {
             requireJson("configJson", configJson)
@@ -942,7 +941,7 @@ class Model internal constructor(handle: Long) : Closeable {
          * @param models     child models (must be non-empty).
          * @param configJson optional config: `{"router": "rule"|"weighted",
          *                   "weights": [...], "fallback": "on_error"|"none",
-         *                   "provider_name", "model_id"}` — all optional.
+         *                   "providerName", "modelId"}` — all optional.
          * @throws IllegalArgumentException if `configJson` is malformed JSON.
          * @throws AimuxException on AiMuxError.
          */
@@ -979,22 +978,6 @@ class Model internal constructor(handle: Long) : Closeable {
             return Model(handleResult { out ->
                 FFI.lib.aimux_moa_new(refHandles, refLen, aggregator.handle(), configJson, out)
             })
-        }
-
-        /**
-         * Register external OpenAI-compatible providers from a JSON config string
-         * (RFC-0020).
-         *
-         * `configJson` is `{ "providers": [ { "name", "base_url", ... } ] }`.
-         * Entries override same-named built-ins or add new ones. Like
-         * `initRecording`, this mutates process-global registry state.
-         *
-         * @throws IllegalArgumentException if `configJson` is blank or malformed JSON.
-         * @throws AimuxException on AiMuxError (bad schema / unknown protocol).
-         */
-        fun registerProviders(configJson: String) {
-            requireJsonRequired("configJson", configJson)
-            FFI.lib.aimux_register_providers(configJson)?.let { throw expectAimuxError(it, "registerProviders") }
         }
 
         /**

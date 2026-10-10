@@ -7,4 +7,4 @@
  * `aspectRatio` options. Aligned with the TS template-literal type
  * `` `${number}:${number}` ``.
  */
-export type AspectRatio = { width: number, height: number, };
+export type AspectRatio = `${number}:${number}`;

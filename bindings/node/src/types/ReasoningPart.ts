@@ -5,4 +5,4 @@ import type { ReasoningOutput } from "./ReasoningOutput";
 /**
  * Text or a generated file produced during reasoning.
  */
-export type ReasoningPart = ReasoningOutput | ReasoningFileOutput;
+export type ReasoningPart = { "type": "reasoning" } & ReasoningOutput | { "type": "reasoning-file" } & ReasoningFileOutput;

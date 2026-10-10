@@ -19,12 +19,12 @@ ranking: Array<RerankingRank>,
 /**
  * Additional provider-specific metadata, keyed by provider name.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Warnings for the call, e.g. unsupported settings.
  */
-warnings: Array<Warning> | null, 
+warnings?: Array<Warning>, 
 /**
  * Optional response information for debugging.
  */
-response: RerankingResponse | null, };
+response?: RerankingResponse, };

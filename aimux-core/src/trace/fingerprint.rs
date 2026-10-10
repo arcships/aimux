@@ -126,6 +126,7 @@ fn denoise_at(value: &Value, depth: usize) -> Value {
 /// Serialized-wire fingerprint stored in a `TraceRecord` (hex strings —
 /// `u128` is not JSON-serializable).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct Fingerprint {
     /// 128-bit hash of the whole denoised body (hex).
@@ -240,6 +241,6 @@ mod tests {
         assert_eq!(f.body_hash.len(), 32); // 128-bit hex
         assert!(f.block_hashes.iter().all(|h| h.len() == 32));
         let json = serde_json::to_string(&f).unwrap();
-        assert!(json.contains("\"body_hash\":\""));
+        assert!(json.contains("\"bodyHash\":\""));
     }
 }

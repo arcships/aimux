@@ -8,4 +8,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * or URL. The payload of both `GenerateContent::File` and
  * `StreamPart::File`, and the element of the text results' `files`.
  */
-export type GeneratedFile = { data: GeneratedFileData, media_type: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type GeneratedFile = { data: GeneratedFileData, mediaType: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, };

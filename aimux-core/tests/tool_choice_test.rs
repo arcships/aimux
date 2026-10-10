@@ -1,97 +1,36 @@
-//! Wire-format tests for `ToolChoice`.
-//!
-//! The serialized shape aligns with Vercel AI SDK `toolChoice`:
-//! `"auto" | "none" | "required" | { "type": "tool", "toolName": "..." }`.
-//! These tests lock the cross-language wire contract so refactors on the
-//! Rust side cannot silently break the bindings.
+//! Ported from upstream `ai/src/prompt/prepare-tool-choice.test.ts`: the user
+//! facing `toolChoice` values (`"auto" | "none" | "required" | { type: "tool",
+//! toolName }`) and their wire shape.
 
 use aimux_core::tool::ToolChoice;
 use serde_json::json;
 
-#[test]
-fn serialize_unit_variants_as_bare_strings() {
-    assert_eq!(
-        serde_json::to_value(ToolChoice::Auto).unwrap(),
-        json!("auto")
-    );
-    assert_eq!(
-        serde_json::to_value(ToolChoice::None).unwrap(),
-        json!("none")
-    );
-    assert_eq!(
-        serde_json::to_value(ToolChoice::Required).unwrap(),
-        json!("required")
-    );
+fn assert_wire(choice: ToolChoice, wire: serde_json::Value) {
+    assert_eq!(serde_json::to_value(&choice).unwrap(), wire);
+    assert_eq!(serde_json::from_value::<ToolChoice>(wire).unwrap(), choice);
 }
 
+/// TS: returns auto when tool choice is not provided
 #[test]
-fn serialize_tool_variant_as_tagged_object_with_camelcase_field() {
-    let tc = ToolChoice::Tool {
-        tool_name: "get_weather".into(),
-    };
-    assert_eq!(
-        serde_json::to_value(tc).unwrap(),
-        json!({ "type": "tool", "toolName": "get_weather" })
-    );
+fn defaults_to_auto() {
+    assert_eq!(ToolChoice::default(), ToolChoice::Auto);
 }
 
+/// TS: handles string tool choice: auto / none / required
 #[test]
-fn deserialize_bare_strings() {
-    assert_eq!(
-        serde_json::from_str::<ToolChoice>("\"auto\"").unwrap(),
-        ToolChoice::Auto
-    );
-    assert_eq!(
-        serde_json::from_str::<ToolChoice>("\"none\"").unwrap(),
-        ToolChoice::None
-    );
-    assert_eq!(
-        serde_json::from_str::<ToolChoice>("\"required\"").unwrap(),
-        ToolChoice::Required
-    );
+fn string_tool_choices() {
+    assert_wire(ToolChoice::Auto, json!("auto"));
+    assert_wire(ToolChoice::None, json!("none"));
+    assert_wire(ToolChoice::Required, json!("required"));
 }
 
+/// TS: handles object tool choice
 #[test]
-fn deserialize_tool_object() {
-    let v = json!({ "type": "tool", "toolName": "get_weather" });
-    assert_eq!(
-        serde_json::from_value::<ToolChoice>(v).unwrap(),
+fn object_tool_choice() {
+    assert_wire(
         ToolChoice::Tool {
-            tool_name: "get_weather".into()
-        }
-    );
-}
-
-#[test]
-fn round_trip_all_variants() {
-    let cases = [
-        ToolChoice::Auto,
-        ToolChoice::None,
-        ToolChoice::Required,
-        ToolChoice::Tool {
-            tool_name: "search".into(),
+            tool_name: "tool2".into(),
         },
-    ];
-    for tc in cases {
-        let j = serde_json::to_string(&tc).unwrap();
-        let back: ToolChoice = serde_json::from_str(&j).unwrap();
-        assert_eq!(back, tc, "round-trip failed for {j}");
-    }
-}
-
-#[test]
-fn reject_unknown_string() {
-    assert!(serde_json::from_str::<ToolChoice>("\"always\"").is_err());
-}
-
-#[test]
-fn reject_tool_object_missing_tool_name() {
-    let v = json!({ "type": "tool" });
-    assert!(serde_json::from_value::<ToolChoice>(v).is_err());
-}
-
-#[test]
-fn reject_unknown_tool_type() {
-    let v = json!({ "type": "function", "toolName": "x" });
-    assert!(serde_json::from_value::<ToolChoice>(v).is_err());
+        json!({ "type": "tool", "toolName": "tool2" }),
+    );
 }

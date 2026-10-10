@@ -15,4 +15,4 @@ image: VideoFile,
 /**
  * Which frame this image represents.
  */
-frame_type: VideoFrameType, };
+frameType: VideoFrameType, };

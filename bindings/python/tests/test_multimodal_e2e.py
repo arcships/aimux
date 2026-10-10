@@ -141,7 +141,7 @@ FILES_RESP = json.dumps({
 # Google Video uses a multi-step async API; we only parse a canned result here.
 VIDEO_RESULT_JSON = json.dumps({
     "videos": [
-        {"Url": {"url": "https://example.com/v.mp4", "media_type": "video/mp4"}},
+        {"type": "url", "url": "https://example.com/v.mp4", "mediaType": "video/mp4"},
     ],
 })
 
@@ -167,23 +167,23 @@ class TestMultimodalE2E:
         # Mock returns raw binary with content-type audio/mpeg.
         with MockServer(SPEECH_RESP, content_type='audio/mpeg') as mock:
             speaker = openai_speech("test-key", "tts-1", base_url=mock.url)
-            opts = json.dumps({"text": "Hi", "voice": "alloy", "output_format": "mp3"})
+            opts = json.dumps({"text": "Hi", "voice": "alloy", "outputFormat": "mp3"})
             result = json.loads(speaker.generate(opts))
-            # Binary audio comes back as AudioData::Binary -> {"Binary": [bytes...]}
-            assert "Binary" in result["audio"]
-            assert len(result["audio"]["Binary"]) > 0
+            # Binary audio comes back as AudioData::Binary -> a JSON array of bytes.
+            assert isinstance(result["audio"], list)
+            assert len(result["audio"]) > 0
 
     def test_image(self):
         with MockServer(IMAGE_RESP) as mock:
             imager = openai_image("test-key", "dall-e-3", base_url=mock.url)
-            # ImageCallOptions.provider_options is a required (non-Option) field,
+            # ImageCallOptions.providerOptions is a required (non-Option) field,
             # so it must be present in the serialized options.
             opts = json.dumps(
-                {"prompt": "otter", "n": 1, "provider_options": {}}
+                {"prompt": "otter", "n": 1, "providerOptions": {}}
             )
             result = json.loads(imager.generate(opts))
-            assert len(result["images"]["Base64"]) == 1
-            assert result["images"]["Base64"][0] == "aW1hZ2Ux"
+            assert len(result["images"]) == 1
+            assert result["images"][0] == "aW1hZ2Ux"
 
     def test_transcription(self):
         with MockServer(TRANSCRIPTION_RESP) as mock:
@@ -198,12 +198,12 @@ class TestMultimodalE2E:
             reranker = cohere_reranking(
                 "test-key", "rerank-v3.0", base_url=mock.url
             )
-            # RerankingDocuments is an externally-tagged enum; the text-documents
-            # variant is {"Text": {"values": [...]}} (a bare array is rejected).
-            docs = json.dumps({"Text": {"values": ["doc1", "doc2"]}})
+            # RerankingDocuments is tagged by ``type``; the text-documents
+            # variant is {"type": "text", "values": [...]} (a bare array is rejected).
+            docs = json.dumps({"type": "text", "values": ["doc1", "doc2"]})
             result = json.loads(reranker.rerank("which?", docs))
             assert len(result["ranking"]) == 2
-            assert result["ranking"][0]["relevance_score"] == 0.95
+            assert result["ranking"][0]["relevanceScore"] == 0.95
 
     def test_search(self):
         with MockServer(SEARCH_RESP) as mock:
@@ -217,7 +217,7 @@ class TestMultimodalE2E:
         with MockServer(FILES_RESP) as mock:
             files = openai_files("test-key", base_url=mock.url)
             result = json.loads(files.upload_file("dGVzdA==", "application/pdf"))
-            assert result["provider_reference"]["openai"] == "file-abc"
+            assert result["providerReference"]["openai"] == "file-abc"
 
     def test_video_construction_and_result_parsing(self):
         # Google Video uses a multi-step async API (POST predict → poll operation
@@ -230,5 +230,5 @@ class TestMultimodalE2E:
 
         result = json.loads(VIDEO_RESULT_JSON)
         assert len(result["videos"]) == 1
-        assert result["videos"][0]["Url"]["url"] == "https://example.com/v.mp4"
-        assert result["videos"][0]["Url"]["media_type"] == "video/mp4"
+        assert result["videos"][0]["url"] == "https://example.com/v.mp4"
+        assert result["videos"][0]["mediaType"] == "video/mp4"

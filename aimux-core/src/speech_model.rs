@@ -16,6 +16,7 @@ use crate::{AbortSignal, retry, timeout};
 /// The TS result type is `string | Uint8Array`. Providers should return data
 /// without unnecessary conversion.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(untagged)]
 #[ts(export)]
 pub enum AudioData {
     /// Audio as a base64-encoded string.
@@ -28,6 +29,7 @@ pub enum AudioData {
 ///
 /// Aligned with V4 `SpeechModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SpeechCallOptions {
     /// Text to convert to speech.
@@ -35,23 +37,35 @@ pub struct SpeechCallOptions {
 
     /// The voice to use (provider-specific voice ID, name, or other
     /// identifier).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice: Option<String>,
 
     /// The desired output format for the audio, e.g. `"mp3"`, `"wav"`.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_format: Option<String>,
 
     /// Instructions for the speech generation, e.g.
     /// `"Speak in a slow and steady tone"`.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
 
     /// The speed of the speech generation.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speed: Option<f64>,
 
     /// The language for speech generation (ISO 639-1 code, e.g. `"en"`, or
     /// `"auto"` for automatic detection). Provider support varies.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
 
     /// Additional provider-specific options, keyed by provider name.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 
     /// Abort signal for cancelling the operation.
@@ -60,12 +74,18 @@ pub struct SpeechCallOptions {
     pub abort_signal: Option<AbortSignal>,
 
     /// Per-call retry override. `None` uses the model default.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
 
     /// Per-call operation timeout.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<crate::options::TimeoutConfiguration>,
 
     /// Additional HTTP headers to send with the request.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
 }
 
@@ -92,6 +112,7 @@ impl SpeechCallOptions {
 ///
 /// Aligned with V4 `SpeechModelV4Result`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SpeechResult {
     /// Generated audio (base64 string or binary data).
@@ -101,34 +122,50 @@ pub struct SpeechResult {
     pub warnings: Vec<Warning>,
 
     /// Optional request information for telemetry and debugging.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<SpeechRequest>,
 
     /// Response information for telemetry and debugging.
     pub response: SpeechResponse,
 
     /// Additional provider-specific metadata, keyed by provider name.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<SharedProviderMetadata>,
 }
 
 /// Optional request information for a speech call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SpeechRequest {
     /// Response body (HTTP providers only).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<serde_json::Value>,
 }
 
 /// Response information for a speech call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SpeechResponse {
     /// Timestamp for the start of the generated response (ISO 8601 string).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<String>,
     /// The ID of the model that was used to generate the response.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
     /// Response headers.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
     /// Response body (opaque JSON).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<serde_json::Value>,
 }
 

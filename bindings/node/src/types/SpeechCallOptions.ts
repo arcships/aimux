@@ -16,38 +16,38 @@ text: string,
  * The voice to use (provider-specific voice ID, name, or other
  * identifier).
  */
-voice: string | null, 
+voice?: string, 
 /**
  * The desired output format for the audio, e.g. `"mp3"`, `"wav"`.
  */
-output_format: string | null, 
+outputFormat?: string, 
 /**
  * Instructions for the speech generation, e.g.
  * `"Speak in a slow and steady tone"`.
  */
-instructions: string | null, 
+instructions?: string, 
 /**
  * The speed of the speech generation.
  */
-speed: number | null, 
+speed?: number, 
 /**
  * The language for speech generation (ISO 639-1 code, e.g. `"en"`, or
  * `"auto"` for automatic detection). Provider support varies.
  */
-language: string | null, 
+language?: string, 
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: { [key in string]: JsonValue } } | null, 
+providerOptions?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Per-call retry override. `None` uses the model default.
  */
-max_retries: number | null, 
+maxRetries?: number, 
 /**
  * Per-call operation timeout.
  */
-timeout: TimeoutConfiguration | null, 
+timeout?: TimeoutConfiguration, 
 /**
  * Additional HTTP headers to send with the request.
  */
-headers: { [key in string]: string } | null, };
+headers?: { [key in string]: string }, };

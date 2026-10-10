@@ -4,4 +4,4 @@
  * Pricing (advisory, read-only metadata). Units follow the source catalog
  * (anya2a uses USD per 1M tokens).
  */
-export type ModelCost = { input?: number | null, output?: number | null, cache_read?: number | null, cache_write?: number | null, };
+export type ModelCost = { input?: number, output?: number, cacheRead?: number, cacheWrite?: number, };

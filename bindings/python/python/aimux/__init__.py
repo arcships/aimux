@@ -61,7 +61,6 @@ from .aimux import (
     recording_flush,
     recording_try_flush,
     mock_replay,
-    register_providers,
     init_proxy,
     router,
     moa,
@@ -141,7 +140,6 @@ __all__ = [
     "recording_flush",
     "recording_try_flush",
     "mock_replay",
-    "register_providers",
     "init_proxy",
     "router",
     "moa",
@@ -270,12 +268,12 @@ def _prompt_to_json(prompt: Union[str, List[Dict[str, Any]]]) -> str:
     return json.dumps({"prompt": prompt})
 
 
-#: The ``options["repair_tool_call"]`` function (RFC-0035), the equivalent of
+#: The ``options["repairToolCall"]`` function (RFC-0035), the equivalent of
 #: the AI SDK ``repairToolCall``.
 #:
 #: It is called once per tool call that came back ``invalid``, with the repair
-#: context ``{tool_call, error, input_schema, tools, messages, instructions}``
-#: — ``tool_call["input"]`` being the provider's raw argument text. Return a
+#: context ``{toolCall, error, inputSchema, tools, messages, instructions}``
+#: — ``toolCall["input"]`` being the provider's raw argument text. Return a
 #: replacement raw tool call (same shape, ``input`` a string) to re-validate,
 #: or ``None`` to leave the call invalid. Raising marks the repair failed: the
 #: call keeps its original error with the exception message as the cause.
@@ -291,16 +289,16 @@ RepairToolCall = Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]
 def _opts_to_json(options: Optional[Dict[str, Any]]) -> Optional[str]:
     """Convert options dict to JSON string.
 
-    ``repair_tool_call`` is a Python callable and stays on this side of the
+    ``repairToolCall`` is a Python callable and stays on this side of the
     boundary; everything else is passed through to the native layer.
     """
     if options is None:
         return None
-    return json.dumps({k: v for k, v in options.items() if k != "repair_tool_call"})
+    return json.dumps({k: v for k, v in options.items() if k != "repairToolCall"})
 
 
 def _repair_fn(options: Optional[Dict[str, Any]]) -> Optional[_repair.RepairAdapter]:
-    fn = options.get("repair_tool_call") if options else None
+    fn = options.get("repairToolCall") if options else None
     if fn is None:
         return None
     return lambda context: _repair.run_hook(fn, context)
@@ -319,7 +317,7 @@ def generate_text(
         options: Optional generation options.
 
     Returns:
-        Dict with keys: text, tool_calls, finish_reason, usage, warnings, raw.
+        Dict with keys: text, toolCalls, finishReason, usage, warnings, raw.
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
@@ -338,17 +336,17 @@ def generate_object(
     """Generate a structured JSON object from the model (M12, RFC-0016).
 
     Same signature as ``generate_text``. Pass
-    ``response_format: {"Json": {...}}`` via options for schema control; the
+    ``responseFormat: {"type": "json", ...}`` via options for schema control; the
     function applies JSON repair before parsing.
 
     Args:
         model: A model instance from openai(), anthropic(), etc.
         prompt: A string or a list of message dicts.
-        options: Optional generation options (incl. response_format).
+        options: Optional generation options (incl. responseFormat).
 
     Returns:
-        Dict with keys: object, finish_reason, raw_finish_reason, usage,
-        warnings, reasoning, provider_metadata, response, raw.
+        Dict with keys: object, finishReason, rawFinishReason, usage,
+        warnings, reasoning, providerMetadata, response, raw.
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
@@ -392,12 +390,12 @@ def stream_text(
     prompt: Union[str, List[Dict[str, Any]]],
     options: Optional[Dict[str, Any]] = None,
 ):
-    """Stream text from a model. Yields StreamPart dicts.
+    """Stream text from a model. Yields StreamPart dicts (tagged by ``type``).
 
     Usage:
         for part in stream_text(model, "Write a haiku about Rust."):
-            if "TextDelta" in part:
-                print(part["TextDelta"]["delta"], end="")
+            if part["type"] == "text-delta":
+                print(part["delta"], end="")
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
@@ -448,7 +446,7 @@ def stream_text_as_openai(
     ``chat.completion.chunk`` object. Works with any provider.
 
     Stream options (include_usage, include_reasoning) are read from
-    options["provider_options"]["openai"]["stream_options"] (both default True).
+    options["providerOptions"]["openai"]["stream_options"] (both default True).
 
     Usage:
         for chunk in stream_text_as_openai(model, "Write a haiku."):

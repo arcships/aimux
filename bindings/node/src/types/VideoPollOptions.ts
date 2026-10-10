@@ -7,8 +7,8 @@ export type VideoPollOptions = {
 /**
  * Delay between consecutive status checks, in milliseconds.
  */
-interval_ms: number | null, 
+intervalMs?: number, 
 /**
  * Maximum total time to wait for completion, in milliseconds.
  */
-timeout_ms: number | null, };
+timeoutMs?: number, };

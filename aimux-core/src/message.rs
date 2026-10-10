@@ -34,6 +34,7 @@ pub enum MessageContent {
 
 /// A single user-facing chat message.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ModelMessage {
     pub role: Role,

@@ -12,17 +12,17 @@ step: number,
 /**
  * The call's id (association key into Recording / replay, RFC-0023).
  */
-call_id: string, 
+callId: string, 
 /**
  * Reported hit rate for this step (`cache_read / input_total`); `None`
  * when the call carried no input/cache-read usage.
  */
-hit_rate?: number | null, 
+hitRate?: number, 
 /**
  * Audit verdict (present only when an auditor is attached).
  */
-verdict?: Verdict | null, 
+verdict?: Verdict, 
 /**
  * Error string for failed calls (failures are part of the session).
  */
-error?: string | null, };
+error?: string, };

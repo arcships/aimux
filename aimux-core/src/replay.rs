@@ -104,13 +104,13 @@ fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {
     serde_json::json!({
         "prompt": serde_json::to_value(&opts.prompt).unwrap_or_default(),
         "temperature": opts.temperature,
-        "max_output_tokens": opts.max_output_tokens,
+        "maxOutputTokens": opts.max_output_tokens,
         "seed": opts.seed,
-        "response_format": serde_json::to_value(&opts.response_format).unwrap_or_default(),
+        "responseFormat": serde_json::to_value(&opts.response_format).unwrap_or_default(),
         "tools": serde_json::to_value(&opts.tools).unwrap_or_default(),
-        "tool_choice": serde_json::to_value(&opts.tool_choice).unwrap_or_default(),
+        "toolChoice": serde_json::to_value(&opts.tool_choice).unwrap_or_default(),
         "headers": serde_json::to_value(&opts.headers).unwrap_or_default(),
-        "provider_options": serde_json::to_value(&opts.provider_options).unwrap_or_default(),
+        "providerOptions": serde_json::to_value(&opts.provider_options).unwrap_or_default(),
     })
 }
 
@@ -120,13 +120,13 @@ fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
     serde_json::json!({
         "prompt": serde_json::to_value(&rec.input.prompt).unwrap_or_default(),
         "temperature": o.get("temperature").cloned().unwrap_or_default(),
-        "max_output_tokens": o.get("max_output_tokens").cloned().unwrap_or_default(),
+        "maxOutputTokens": o.get("maxOutputTokens").cloned().unwrap_or_default(),
         "seed": o.get("seed").cloned().unwrap_or_default(),
-        "response_format": o.get("response_format").cloned().unwrap_or_default(),
+        "responseFormat": o.get("responseFormat").cloned().unwrap_or_default(),
         "tools": o.get("tools").cloned().unwrap_or_default(),
-        "tool_choice": o.get("tool_choice").cloned().unwrap_or_default(),
+        "toolChoice": o.get("toolChoice").cloned().unwrap_or_default(),
         "headers": o.get("headers").cloned().unwrap_or_default(),
-        "provider_options": o.get("provider_options").cloned().unwrap_or_default(),
+        "providerOptions": o.get("providerOptions").cloned().unwrap_or_default(),
     })
 }
 
@@ -180,7 +180,7 @@ pub(crate) fn redaction_aware_eq(rec: &serde_json::Value, req: &serde_json::Valu
 /// 被脱敏为 `"[REDACTED]"` 而请求值为数值,精确比较会 miss(保守:宁可 miss
 /// 不可误 hit,因为 max_output_tokens 影响响应,通配会引入伪命中)。
 fn canonical_keys_match(rec_key: &serde_json::Value, call_key: &serde_json::Value) -> bool {
-    const REDACTED_FIELDS: [&str; 2] = ["headers", "provider_options"];
+    const REDACTED_FIELDS: [&str; 2] = ["headers", "providerOptions"];
     let (ro, co) = match (rec_key.as_object(), call_key.as_object()) {
         (Some(a), Some(b)) => (a, b),
         _ => return rec_key == call_key,

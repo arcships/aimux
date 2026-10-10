@@ -5,4 +5,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * File content part (the only file part; `data` is a tagged `FileData`).
  */
-export type FilePart = { data: FileData, media_type: string, filename?: string | null, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type FilePart = { data: FileData, mediaType: string, filename?: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

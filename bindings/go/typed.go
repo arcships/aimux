@@ -71,7 +71,7 @@ func (m *Model) Generate(prompt any, opts *GenerateTextOptions) (*GenerateTextRe
 // GenerateObj is the typed object-generation method (M12, RFC-0016).
 //
 // Same signature as Generate; returns a typed *GenerateObjectResult. Pass
-// response_format: { "Json": { ... } } via opts for schema control; the
+// ResponseFormat {"type":"json","schema":{...}} via opts for schema control; the
 // engine applies JSON repair before parsing.
 func (m *Model) GenerateObj(prompt any, opts *GenerateTextOptions) (*GenerateObjectResult, error) {
 	promptJSON, err := marshalPrompt(prompt)
@@ -144,9 +144,9 @@ func (s *TypedStream) Cancel() { s.raw.Cancel() }
 //
 //	stream, err := model.Stream("Write a haiku", nil)
 //	for part := range stream.Parts() {
-//	    if part.Tag == "TextDelta" {
+//	    if part.Type == "text-delta" {
 //	        var td TextDeltaPayload
-//	        json.Unmarshal(part.Payload, &td)
+//	        json.Unmarshal(part.Raw, &td)
 //	        fmt.Print(td.Delta)
 //	    }
 //	}
@@ -198,14 +198,14 @@ func (m *Model) StreamContext(
 			}
 			// Only a complete tool call can be repaired; input deltas are
 			// forwarded untouched, as the AI SDK does (RFC-0035 §4).
-			if sp.Tag == "ToolCall" && opts != nil && opts.RepairToolCall != nil {
-				payload, err := repairStreamToolCall(sp.Payload, promptJSON, optsJSON, opts.RepairToolCall)
+			if sp.Type == "tool-call" && opts != nil && opts.RepairToolCall != nil {
+				raw, err := repairStreamToolCall(sp.Raw, promptJSON, optsJSON, opts.RepairToolCall)
 				if err != nil {
 					ts.err = err
 					rawStream.cancel(err)
 					return
 				}
-				sp.Payload = payload
+				sp.Raw = raw
 			}
 			select {
 			case ts.parts <- sp:

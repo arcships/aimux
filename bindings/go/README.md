@@ -43,13 +43,19 @@ func main() {
     }
     defer p.Close()
 
-    text, err := p.GenerateText(`"Explain Rust ownership in one sentence."`, "")
+    result, err := p.Generate("Explain Rust ownership in one sentence.", nil)
     if err != nil {
         log.Fatal(err)
     }
-    fmt.Println(text)
+    fmt.Println(result.Text)
 }
 ```
+
+`GenerateText` / `StreamText` take and return raw JSON strings; `Generate` /
+`Stream` are the typed wrappers. The JSON is the AI SDK JSON: camelCase field
+names, unions tagged by `type` (`"tool-call"`, `"text-delta"`, ...), optional
+fields absent. A tool result is a `tool-result` content part
+(`toolCallId`, `toolName`, `output`). See [docs/api/go.md](../../docs/api/go.md).
 
 ## Features
 

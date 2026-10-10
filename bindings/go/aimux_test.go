@@ -242,13 +242,19 @@ func TestProviderWithConfigParams(t *testing.T) {
 }
 
 // A registry provider with no key and no env var fails with CodeLoadAPIKey and
-// names the variable it consulted.
+// names the variable it consulted. The key is read when a call is made (as in
+// the AI SDK), not when the model is built.
 func TestMissingAPIKeyIsLoadAPIKey(t *testing.T) {
 	if old, ok := os.LookupEnv("GROQ_API_KEY"); ok {
 		os.Unsetenv("GROQ_API_KEY")
 		defer os.Setenv("GROQ_API_KEY", old)
 	}
-	_, err := Provider("groq", "", "llama-3.3-70b")
+	m, err := Provider("groq", "", "llama-3.3-70b")
+	if err != nil {
+		t.Fatalf("Provider: %v", err)
+	}
+	defer m.Close()
+	_, err = m.GenerateText(`"hi"`, "")
 	var e *Error
 	if !errors.As(err, &e) || e.Code != CodeLoadAPIKey {
 		t.Fatalf("want CodeLoadAPIKey, got %v", err)

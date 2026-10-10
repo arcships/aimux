@@ -117,7 +117,7 @@ typedef _DropHandleC = Void Function(Uint64);
 typedef _DropHandleDart = void Function(int);
 
 // (const char *) → error: aimux_init_logging, aimux_init_recording,
-// aimux_register_providers, aimux_init_proxy.
+// aimux_init_proxy.
 typedef _StrC = _Err Function(Pointer<Utf8>);
 typedef _StrDart = _Err Function(Pointer<Utf8>);
 
@@ -291,8 +291,6 @@ final class _AimuxFFI {
           'aimux_recording_try_flush');
   late final mockReplayNew = _lib
       .lookupFunction<_MockReplayC, _MockReplayDart>('aimux_mock_replay_new');
-  late final registerProviders =
-      _lib.lookupFunction<_StrC, _StrDart>('aimux_register_providers');
   late final initProxy =
       _lib.lookupFunction<_StrC, _StrDart>('aimux_init_proxy');
   late final routerNew = _lib
@@ -498,9 +496,10 @@ class Model implements Finalizable {
   ///
   /// [apiKey] may be null to read the provider's env var from the registry
   /// entry. [configJson] is an optional JSON object of ProviderOptions
-  /// (`{"base_url": "...", "headers": {...}, "organization": "...",
-  /// "project": "...", "params": {...}}`). `max_retries` (a per-call option)
-  /// and `body_overrides` (removed) are rejected as [InvalidArgumentError].
+  /// (`{"baseUrl": "...", "headers": {...}, "organization": "...",
+  /// "project": "...", "params": {...}}`). Any other key (`maxRetries` is a
+  /// per-call option, `bodyOverrides` is gone) is rejected as
+  /// [InvalidArgumentError].
   factory Model.provider(String name, String modelId,
       {String? apiKey, String? configJson}) {
     checkJson(configJson, 'config_json', emptyIsDefault: true);
@@ -536,7 +535,7 @@ class Model implements Finalizable {
   /// Generate a structured JSON object (M12, RFC-0016).
   ///
   /// Same signature as [generateText]; returns the parsed
-  /// GenerateObjectResult as a Map. Pass `response_format: { "Json": { ... } }`
+  /// GenerateObjectResult as a Map. Pass `responseFormat: {"type": "json", ...}`
   /// via [options] for schema control; aimux-core applies JSON repair before
   /// parsing.
   ///
@@ -622,7 +621,7 @@ class Model implements Finalizable {
   /// Stream text from the model.
   ///
   /// Returns a Stream of StreamPart maps. Recoverable frame errors arrive
-  /// as `Error` stream-part maps and the stream continues; only
+  /// as `error` stream-part maps and the stream continues; only
   /// transport/Core failures throw [AimuxException] via [Stream.addError]
   /// (and do not call on_done).
   ///
@@ -645,7 +644,7 @@ class Model implements Finalizable {
   /// Returns a Stream of ChatCompletionChunk maps (OpenAI
   /// `chat.completion.chunk` objects). Stream options (`include_usage`,
   /// `include_reasoning`) are passed via
-  /// `options['provider_options']['openai']['stream_options']`.
+  /// `options['providerOptions']['openai']['stream_options']`.
   ///
   /// NOTE: like [streamText], this blocks the calling isolate until the
   /// stream completes and effectively buffers all parts until then.
@@ -747,8 +746,8 @@ class ProviderConfig {
   /// only the ones the preset declares are accepted.
   ///
   /// Retry is a per-call setting ([GenerateTextOptions.maxRetries]) and
-  /// request-body overrides no longer exist: a `max_retries` or
-  /// `body_overrides` key in the config is rejected as [InvalidArgumentError],
+  /// request-body overrides no longer exist: a `maxRetries` or
+  /// `bodyOverrides` key in the config is rejected as [InvalidArgumentError],
   /// so this class has neither.
   final Map<String, String>? params;
 
@@ -760,12 +759,12 @@ class ProviderConfig {
     this.params,
   });
 
-  /// Serialize to the `ProviderOptions` JSON wire format (snake_case keys,
-  /// null fields omitted). Returns null when no field is set, so callers can
+  /// Serialize to the `config_json` wire format (camelCase keys, null fields
+  /// omitted). Returns null when no field is set, so callers can
   /// pass null to the FFI for defaults.
   String? toJson() {
     final map = <String, dynamic>{};
-    if (baseUrl != null) map['base_url'] = baseUrl;
+    if (baseUrl != null) map['baseUrl'] = baseUrl;
     if (headers != null) map['headers'] = headers;
     if (organization != null) map['organization'] = organization;
     if (project != null) map['project'] = project;
@@ -816,7 +815,7 @@ class ProviderHandle implements Finalizable {
   /// (anya2a) when available.
   ///
   /// Returns a JSON array string of `ResolvedModel`
-  /// (`[{"id":"...","owned_by":"...","created":<u64>,"spec":{...}}, ...]`).
+  /// (`[{"id":"...","ownedBy":"...","created":<u64>,"spec":{...}}, ...]`).
   /// Synchronous: blocks the calling isolate until the network call completes.
   String listModels() {
     _checkOpen();
@@ -996,19 +995,6 @@ Model mockReplay(String recordingsJsonl) {
   return Model._(handle);
 }
 
-/// Register external OpenAI-compatible providers from a JSON config string
-/// (RFC-0020).
-///
-/// `configJSON` is `{ "providers": [ { "name", "base_url", ... } ] }`. Entries
-/// override same-named built-ins or add new ones. Like `initRecording`, this
-/// mutates process-global registry state. A well-formed document the registry
-/// rejects throws [InvalidArgumentError].
-void registerProviders(String configJSON) {
-  checkJson(configJSON, 'config_json');
-  withUtf8(configJSON,
-      (p) => expectAimuxError(_ffi.registerProviders(p), 'register_providers'));
-}
-
 /// Set the global proxy configuration (M6, RFC-0016). Must be called before
 /// the first `generateText` / `streamText` call; a no-op if the shared HTTP
 /// client is already initialised.
@@ -1025,7 +1011,7 @@ void initProxy(String configJSON) {
 /// (per `configJson`).
 ///
 /// `configJson` (optional): `{"router": "rule"|"weighted", "weights": [...],
-/// "fallback": "on_error"|"none", "provider_name", "model_id"}`.
+/// "fallback": "on_error"|"none", "providerName", "modelId"}`.
 Model router(List<Model> models, {String? configJson}) {
   if (models.isEmpty) {
     throw ArgumentError('router: models must be non-empty');

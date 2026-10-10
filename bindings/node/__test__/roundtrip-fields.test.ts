@@ -6,7 +6,7 @@
 //     `signature` is echoed as a thinking block on the wire (input
 //     round-trip), and a thinking-block response surfaces `signature` on
 //     the result (response visibility, #131).
-//   - google: a tool_result's `toolName` reaches the request as
+//   - google: a tool-result's `toolName` reaches the request as
 //     functionResponse.name (#127).
 
 import test from 'ava'
@@ -69,14 +69,14 @@ test('roundtrip: anthropic echoes prompt reasoning signature and surfaces respon
       {
         role: 'assistant',
         content: [
-          { type: 'reasoning', text: 'pondering', signature: 'sig-prompt-1' },
+          { type: 'reasoning', text: 'pondering', providerOptions: { anthropic: { signature: 'sig-prompt-1' } } },
           { type: 'text', text: 'answer' },
         ],
       },
       { role: 'user', content: [{ type: 'text', text: 'go on' }] },
     ]
     const opts = JSON.stringify({
-      provider_options: {
+      providerOptions: {
         anthropic: { thinking: { type: 'enabled', budgetTokens: 1024 } },
       },
     })
@@ -120,12 +120,12 @@ test('roundtrip: google toolName reaches functionResponse.name', async (t) => {
       {
         role: 'assistant',
         content: [
-          { type: 'tool_call', tool_call_id: 'call-1', tool_name: 'weather', input: { location: 'SF' } },
+          { type: 'tool-call', toolCallId: 'call-1', toolName: 'weather', input: { location: 'SF' } },
         ],
       },
       {
         role: 'tool',
-        content: [{ type: 'tool_result', tool_call_id: 'call-1', tool_name: 'weather', result: { temp: 70 } }],
+        content: [{ type: 'tool-result', toolCallId: 'call-1', toolName: 'weather', output: { type: 'json', value: { temp: 70 } } }],
       },
     ]
     await model.generateText(JSON.stringify(prompt))

@@ -29,6 +29,7 @@ use ts_rs::TS;
 /// This keeps transport and response failures self-contained and matches the
 /// AI SDK's `APICallError` contract.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ApiCallError {
     /// Sanitized request URL. Required for every API-derived failure.
@@ -39,12 +40,14 @@ pub struct ApiCallError {
     /// (`APICallError.statusCode`). Always the *observed* status: the HTTP
     /// layer fills it for every response-derived error; errors built without
     /// an HTTP exchange leave it `None`.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_code: Option<u16>,
     /// Provider's machine-readable code (OpenAI's `code`/`type`,
     /// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     /// status. Our normalized take on `APICallError.data`.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_code: Option<String>,
     /// Human-readable failure text. Provider text is verbatim when available;
     /// locally detected transport/parse failures include their source detail.
@@ -53,13 +56,16 @@ pub struct ApiCallError {
     /// The raw response body, verbatim (`APICallError.responseBody`) — the
     /// lossless evidence when `message`/`provider_code` are extractions.
     /// `None` when the error did not come from a response body.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_body: Option<String>,
     /// Sanitized response headers.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_headers: Option<HashMap<String, String>>,
     /// Parsed provider error data.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
     /// Whether retrying can help (`APICallError.isRetryable`) — stored at
     /// construction, exactly like the AI SDK: the response path computes it
@@ -103,6 +109,7 @@ pub enum RetryErrorReason {
 
 /// Complete error history for a retried model operation.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct RetryError {
     pub reason: RetryErrorReason,
@@ -164,7 +171,8 @@ impl std::fmt::Display for ApiCallError {
 /// failure came from. `ApiCallError` is boxed only to keep the Rust enum
 /// compact; serde and every binding still observe the same object shape.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, Error)]
-#[ts(export)]
+#[serde(from = "AiMuxErrorWire", into = "AiMuxErrorWire")]
+#[ts(export, as = "AiMuxErrorWire")]
 pub enum AiMuxError {
     #[error("API call error: {0}")]
     ApiCall(Box<ApiCallError>),
@@ -195,10 +203,12 @@ pub enum AiMuxError {
     #[error("Model tried to call unavailable tool '{tool_name}'. {}", no_such_tool_availability(.available_tools))]
     NoSuchTool {
         tool_name: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
         /// Original argument text, when supplied by the provider. Absent in
         /// older serialized errors and errors constructed without a call.
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool_input: Option<String>,
     },
@@ -280,7 +290,11 @@ pub enum AiMuxError {
 
     /// Registry-level "provider name does not resolve" (the AI SDK's
     /// `NoSuchProviderError`).
-    #[error("No such provider: {provider_id} (available providers: {})", .available_providers.join(","))]
+    ///
+    /// The message adds up to three close names from `available_providers`
+    /// (an aimux addition to the upstream text; the fields are unchanged).
+    #[error("No such provider: {provider_id}{} (available providers: {})",
+        did_you_mean(.provider_id, .available_providers), .available_providers.join(","))]
     NoSuchProvider {
         provider_id: String,
         model_id: String,
@@ -296,6 +310,197 @@ pub enum AiMuxError {
 
     #[error("{0}")]
     Other(String),
+}
+
+/// The JSON form of [`AiMuxError`]: internally tagged by `name`, with the AI
+/// SDK's error names (`AI_APICallError`, ...). `AiMuxError` serializes through
+/// this mirror because its tuple variants cannot carry an internal tag.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "name", rename_all_fields = "camelCase")]
+pub enum AiMuxErrorWire {
+    #[serde(rename = "AI_APICallError")]
+    ApiCall(Box<ApiCallError>),
+    #[serde(rename = "AI_RetryError")]
+    Retry(RetryError),
+    #[serde(rename = "AI_JSONParseError")]
+    JsonParse { message: String },
+    #[serde(rename = "AI_NoOutputGeneratedError")]
+    NoOutputGenerated { message: String },
+    #[serde(rename = "AI_InvalidResponseDataError")]
+    InvalidResponseData { message: String },
+    #[serde(rename = "AI_ToolCallNotFoundForApprovalError")]
+    ToolCallNotFoundForApproval {
+        tool_call_id: String,
+        approval_id: String,
+    },
+    #[serde(rename = "AI_NoSuchToolError")]
+    NoSuchTool {
+        tool_name: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        available_tools: Option<Vec<String>>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_input: Option<String>,
+    },
+    #[serde(rename = "AI_InvalidToolInputError")]
+    InvalidToolInput {
+        tool_name: String,
+        tool_input: String,
+        cause: String,
+    },
+    #[serde(rename = "AI_ToolCallRepairError")]
+    ToolCallRepair {
+        original_error: Box<AiMuxError>,
+        cause: Box<AiMuxError>,
+    },
+    #[serde(rename = "AI_InvalidArgumentError")]
+    InvalidArgument { message: String },
+    #[serde(rename = "AI_InvalidPromptError")]
+    InvalidPrompt { message: String },
+    #[serde(rename = "AI_LoadAPIKeyError")]
+    LoadApiKey {
+        env_var: String,
+        description: String,
+    },
+    #[serde(rename = "AI_LoadSettingError")]
+    LoadSetting {
+        env_var: String,
+        /// `name` is the union's tag key, so the setting's name is `settingName`.
+        #[serde(rename = "settingName")]
+        name: String,
+    },
+    #[serde(rename = "AI_TokenExpiredError")]
+    TokenExpired { message: String },
+    #[serde(rename = "AI_UnsupportedFunctionalityError")]
+    UnsupportedFunctionality { message: String },
+    #[serde(rename = "AI_NoSuchModelError")]
+    NoSuchModel {
+        model_id: String,
+        #[serde(default)]
+        model_type: String,
+    },
+    #[serde(rename = "AI_NoSuchProviderError")]
+    NoSuchProvider {
+        provider_id: String,
+        model_id: String,
+        model_type: String,
+        available_providers: Vec<String>,
+    },
+    #[serde(rename = "TimeoutError")]
+    Timeout { message: String },
+    #[serde(rename = "AbortError")]
+    Aborted { message: String },
+    #[serde(rename = "AI_Error")]
+    Other { message: String },
+}
+
+/// Maps each `AiMuxError` variant to its `AiMuxErrorWire` twin and back:
+/// tuple variants carry their payload as `message`, struct variants keep
+/// their fields.
+macro_rules! wire_variants {
+    (
+        newtype: $($nv:ident),* ;
+        message: $($mv:ident),* ;
+        fields: $($fv:ident { $($f:ident),* }),*
+    ) => {
+        impl From<AiMuxError> for AiMuxErrorWire {
+            fn from(e: AiMuxError) -> Self {
+                match e {
+                    $(AiMuxError::$nv(v) => Self::$nv(v),)*
+                    $(AiMuxError::$mv(message) => Self::$mv { message },)*
+                    $(AiMuxError::$fv { $($f),* } => Self::$fv { $($f),* },)*
+                }
+            }
+        }
+        impl From<AiMuxErrorWire> for AiMuxError {
+            fn from(e: AiMuxErrorWire) -> Self {
+                match e {
+                    $(AiMuxErrorWire::$nv(v) => Self::$nv(v),)*
+                    $(AiMuxErrorWire::$mv { message } => Self::$mv(message),)*
+                    $(AiMuxErrorWire::$fv { $($f),* } => Self::$fv { $($f),* },)*
+                }
+            }
+        }
+    };
+}
+
+wire_variants! {
+    newtype: ApiCall, Retry;
+    message: JsonParse, NoOutputGenerated, InvalidResponseData, InvalidArgument,
+        InvalidPrompt, TokenExpired, UnsupportedFunctionality, Timeout, Aborted, Other;
+    fields: ToolCallNotFoundForApproval { tool_call_id, approval_id },
+        NoSuchTool { tool_name, available_tools, tool_input },
+        InvalidToolInput { tool_name, tool_input, cause },
+        ToolCallRepair { original_error, cause },
+        LoadApiKey { env_var, description },
+        LoadSetting { env_var, name },
+        NoSuchModel { model_id, model_type },
+        NoSuchProvider { provider_id, model_id, model_type, available_providers }
+}
+
+/// `". Did you mean 'a', 'b'?"` for the names in `candidates` closest to
+/// `name`, or `""` when none is close. Names compare case-insensitively with
+/// `-` read as `_` (the built-in names use `_`); a candidate is close when its
+/// edit distance (adjacent swaps count once) is at most 2 and at most a third
+/// of the longer name. At most three names, nearest first.
+fn did_you_mean(name: &str, candidates: &[String]) -> String {
+    fn normalize(name: &str) -> Vec<char> {
+        name.chars()
+            .map(|c| {
+                if c == '-' {
+                    '_'
+                } else {
+                    c.to_ascii_lowercase()
+                }
+            })
+            .collect()
+    }
+    let wanted = normalize(name);
+    let mut close: Vec<(usize, &str)> = candidates
+        .iter()
+        .filter_map(|candidate| {
+            let distance = edit_distance(&wanted, &normalize(candidate));
+            let longer = wanted.len().max(candidate.chars().count());
+            (distance <= 2 && distance * 3 <= longer).then_some((distance, candidate.as_str()))
+        })
+        .collect();
+    close.sort_unstable();
+    close.dedup_by(|a, b| a.1 == b.1);
+    if close.is_empty() {
+        return String::new();
+    }
+    let names: Vec<String> = close
+        .iter()
+        .take(3)
+        .map(|(_, name)| format!("'{name}'"))
+        .collect();
+    format!(". Did you mean {}?", names.join(", "))
+}
+
+/// Optimal-string-alignment distance: insertions, deletions, substitutions
+/// and swaps of two adjacent characters each cost one.
+fn edit_distance(a: &[char], b: &[char]) -> usize {
+    let mut rows = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for (i, row) in rows.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, cell) in rows[0].iter_mut().enumerate() {
+        *cell = j;
+    }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            let mut best = (rows[i - 1][j] + 1)
+                .min(rows[i][j - 1] + 1)
+                .min(rows[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                best = best.min(rows[i - 2][j - 2] + 1);
+            }
+            rows[i][j] = best;
+        }
+    }
+    rows[a.len()][b.len()]
 }
 
 fn no_such_tool_availability(available_tools: &Option<Vec<String>>) -> String {
@@ -434,6 +639,62 @@ impl AiMuxError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn no_such_provider(name: &str, available: &[&str]) -> String {
+        AiMuxError::NoSuchProvider {
+            provider_id: name.into(),
+            model_id: name.into(),
+            model_type: String::new(),
+            available_providers: available.iter().map(|n| (*n).to_string()).collect(),
+        }
+        .to_string()
+    }
+
+    /// A misspelled provider name gets the close built-in names first; the
+    /// full list still follows.
+    #[test]
+    fn no_such_provider_suggests_close_names() {
+        let available = ["anthropic", "google_vertex", "groq", "openai", "openrouter"];
+        assert_eq!(
+            no_such_provider("opeanai", &available),
+            "No such provider: opeanai. Did you mean 'openai'? \
+             (available providers: anthropic,google_vertex,groq,openai,openrouter)"
+        );
+        // An adjacent swap counts once.
+        assert!(no_such_provider("gorq", &available).contains("Did you mean 'groq'?"));
+        // Case and `-` versus `_` do not matter.
+        assert!(
+            no_such_provider("Google-Vertex", &available).contains("Did you mean 'google_vertex'?")
+        );
+        assert!(no_such_provider("antropic", &available).contains("Did you mean 'anthropic'?"));
+    }
+
+    /// No suggestion when nothing is close or there is nothing to suggest.
+    #[test]
+    fn no_such_provider_without_a_close_name_keeps_the_plain_message() {
+        assert_eq!(
+            no_such_provider("acme", &["anthropic", "openai"]),
+            "No such provider: acme (available providers: anthropic,openai)"
+        );
+        assert_eq!(
+            no_such_provider("p", &[]),
+            "No such provider: p (available providers: )"
+        );
+    }
+
+    /// At most three names, nearest first, then by name.
+    #[test]
+    fn no_such_provider_suggests_at_most_three_names() {
+        let candidates = ["abcdefxy", "abcdefgz", "abcdefgy", "abcdefgx"];
+        assert!(
+            no_such_provider("abcdefgh", &candidates)
+                .contains("Did you mean 'abcdefgx', 'abcdefgy', 'abcdefgz'?")
+        );
+        assert!(
+            no_such_provider("abcdefgh", &["abcdefxy", "abcdefgz"])
+                .contains("Did you mean 'abcdefgz', 'abcdefxy'?")
+        );
+    }
 
     fn api_error(message: &str) -> ApiCallError {
         ApiCallError::new(message, "https://example.test", serde_json::json!({}))

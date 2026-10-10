@@ -8,7 +8,7 @@
 // are excluded (not tested here), not faked.
 
 import test from 'ava'
-import { openai, anthropic } from '../src/native.ts'
+import { openai, deepseek, anthropic } from '../src/native.ts'
 import { CassetteServer } from './cassette-replay.ts'
 
 // ── OpenAI ──────────────────────────────────────────────────────────────────
@@ -27,7 +27,7 @@ test('cassette: OpenAI generate', async (t) => {
     t.is(typeof result.text, 'string', 'should have text field')
     t.true(result.text.length > 0, 'text should be non-empty')
     t.truthy(result.usage, 'should have usage')
-    t.truthy(result.finish_reason, 'should have finish_reason')
+    t.truthy(result.finishReason, 'should have finishReason')
   } finally {
     await srv.stop()
   }
@@ -46,9 +46,9 @@ test('cassette: OpenAI stream', async (t) => {
     }
     t.true(parts.length > 0, 'should receive stream parts')
 
-    const types = parts.map((p) => Object.keys(p)[0])
-    t.true(types.includes('StreamStart'), 'should have StreamStart')
-    t.true(types.includes('Finish'), 'should have Finish')
+    const types = parts.map((p) => p.type)
+    t.true(types.includes('stream-start'), 'should have stream-start')
+    t.true(types.includes('finish'), 'should have finish')
   } finally {
     await srv.stop()
   }
@@ -62,7 +62,7 @@ test('cassette: DeepSeek generate', async (t) => {
   t.true(srv.count > 0)
 
   try {
-    const model = await openai('test-key', 'deepseek-chat', srv.url)
+    const model = await deepseek('test-key', 'deepseek-chat', srv.url)
     const resultJson = await model.generateText(JSON.stringify('Hello'))
     const result = JSON.parse(resultJson)
     t.false(!!result.error, `unexpected error: ${result.error}`)
@@ -80,7 +80,7 @@ test('cassette: DeepSeek usage.raw carries vendor fields', async (t) => {
   t.true(srv.count > 0)
 
   try {
-    const model = await openai('test-key', 'deepseek-chat', srv.url)
+    const model = await deepseek('test-key', 'deepseek-chat', srv.url)
     const resultJson = await model.generateText(JSON.stringify('Hello'))
     const result = JSON.parse(resultJson)
     const raw = result.usage?.raw
@@ -137,7 +137,7 @@ test('cassette: Groq generate', async (t) => {
   t.true(srv.count > 0)
 
   try {
-    const model = await openai('test-key', 'llama-3.3-70b-versatile', `${srv.url}/openai/v1`)
+    const model = await deepseek('test-key', 'llama-3.3-70b-versatile', `${srv.url}/openai/v1`)
     const resultJson = await model.generateText(JSON.stringify('Hello'))
     const result = JSON.parse(resultJson)
     t.false(!!result.error, `unexpected error: ${result.error}`)
@@ -155,7 +155,7 @@ test('cassette: Mistral generate', async (t) => {
   t.true(srv.count > 0)
 
   try {
-    const model = await openai('test-key', 'ministral-8b-latest', `${srv.url}/v1`)
+    const model = await deepseek('test-key', 'ministral-8b-latest', `${srv.url}/v1`)
     const resultJson = await model.generateText(JSON.stringify('Hello'))
     const result = JSON.parse(resultJson)
     t.false(!!result.error, `unexpected error: ${result.error}`)
@@ -173,7 +173,7 @@ test('cassette: Ollama generate', async (t) => {
   t.true(srv.count > 0)
 
   try {
-    const model = await openai('test-key', 'qwen3:4b', `${srv.url}/v1`)
+    const model = await deepseek('test-key', 'qwen3:4b', `${srv.url}/v1`)
     const resultJson = await model.generateText(JSON.stringify('Hello'))
     const result = JSON.parse(resultJson)
     t.false(!!result.error, `unexpected error: ${result.error}`)
@@ -191,7 +191,7 @@ test('cassette: Perplexity generate', async (t) => {
   t.true(srv.count > 0)
 
   try {
-    const model = await openai('test-key', 'sonar', srv.url)
+    const model = await deepseek('test-key', 'sonar', srv.url)
     const resultJson = await model.generateText(JSON.stringify('Hello'))
     const result = JSON.parse(resultJson)
     t.false(!!result.error, `unexpected error: ${result.error}`)

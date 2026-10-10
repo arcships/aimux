@@ -11,11 +11,22 @@
 // close` so each FFI call maps to exactly one connection.
 
 import Foundation
+@testable import Aimux
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
 import Darwin
 #endif
+
+/// A model that speaks the OpenAI chat-completions wire format at `baseURL`:
+/// the registry's OpenAI-compatible preset (`Model.openai` talks to the
+/// Responses API).
+func chatModel(_ baseURL: String) throws -> Model {
+    try Model.provider(
+        name: "deepseek", apiKey: "test-key", modelId: "gpt-4o",
+        configJson: #"{"baseUrl":"\#(baseURL)"}"#
+    )
+}
 
 /// A preset HTTP response returned by `MockHTTPServer`.
 struct MockResponse {

@@ -4,4 +4,4 @@ import type { ToolCall } from "./ToolCall";
 /**
  * Approval request exposed by text generation.
  */
-export type ToolApprovalRequestOutput = { approval_id: string, tool_call: ToolCall, reason?: string | null, is_automatic?: boolean | null, signature?: string | null, };
+export type ToolApprovalRequestOutput = { approvalId: string, toolCall: ToolCall, reason?: string, isAutomatic?: boolean, signature?: string, };

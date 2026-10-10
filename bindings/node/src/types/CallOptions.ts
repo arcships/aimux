@@ -22,70 +22,70 @@ prompt: Array<LanguageModelMessage>,
 /**
  * Maximum tokens to generate.
  */
-max_output_tokens: number | null, 
+maxOutputTokens?: number, 
 /**
  * Sampling temperature.
  */
-temperature: number | null, 
+temperature?: number, 
 /**
  * Stop sequences.
  */
-stop_sequences: Array<string> | null, 
+stopSequences?: Array<string>, 
 /**
  * Nucleus sampling `top_p`.
  */
-top_p: number | null, 
+topP?: number, 
 /**
  * Top-k sampling.
  */
-top_k: number | null, 
+topK?: number, 
 /**
  * Presence penalty.
  */
-presence_penalty: number | null, 
+presencePenalty?: number, 
 /**
  * Frequency penalty.
  */
-frequency_penalty: number | null, 
+frequencyPenalty?: number, 
 /**
  * Response format (text or JSON).
  */
-response_format: ResponseFormat | null, 
+responseFormat?: ResponseFormat, 
 /**
  * Seed for reproducibility.
  */
-seed: number | null, 
+seed?: number, 
 /**
  * Tools available to the model (function tools and/or provider-defined tools).
  */
-tools: Array<Tool> | null, 
+tools?: Array<Tool>, 
 /**
  * How the model should choose tools.
  */
-tool_choice: ToolChoice | null, 
+toolChoice?: ToolChoice, 
 /**
  * Extra HTTP headers.
  */
-headers: { [key in string]: string } | null, 
+headers?: { [key in string]: string }, 
 /**
  * Provider-specific options (keyed by provider name).
  */
-provider_options: { [key in string]: { [key in string]: JsonValue } } | null, 
+providerOptions?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Top-level reasoning effort. Maps to OpenAI `reasoning_effort` and
  * Anthropic `thinking` config.
  */
-reasoning: ReasoningEffort | null, 
+reasoning?: ReasoningEffort, 
 /**
  * Per-call retry count override. `None` uses the provider's configured
  * Core operation retry. `Some(0)` disables retries.
  */
-max_retries: number | null, 
+maxRetries?: number, 
 /**
  * Per-call timeout configuration (total / first-chunk / chunk idle).
  * `None` = no timeouts (provider defaults still apply at the HTTP layer).
  */
-timeout: TimeoutConfiguration | null, 
+timeout?: TimeoutConfiguration, 
 /**
  * Session identifier, for grouping consecutive calls into a session
  * (observability, see RFC-0024). Explicit values take precedence; when
@@ -94,7 +94,7 @@ timeout: TimeoutConfiguration | null,
  * local grouping, while session headers in `headers` are for upstream
  * routing — both may share an id value but travel different paths.
  */
-session_id: string | null, 
+sessionId?: string, 
 /**
  * Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
  * When `Some(true)`, streaming providers yield one `Raw` part per JSON
@@ -105,4 +105,4 @@ session_id: string | null,
  * openai-compatible registry providers); other provider families ignore
  * it for now (RFC-0016 M2).
  */
-include_raw_chunks: boolean | null, };
+includeRawChunks?: boolean, };

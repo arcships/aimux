@@ -5,7 +5,7 @@ import type { SessionSource } from "./SessionSource";
 /**
  * Aggregated view of one session (session_id → ordered calls).
  */
-export type SessionView = { session_id: string, 
+export type SessionView = { sessionId: string, 
 /**
  * Where the session id came from (first call's source).
  */

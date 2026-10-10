@@ -20,7 +20,7 @@ test('native module loads and exports functions', (t) => {
 })
 
 test('video poll options are exported from the public type barrel', (t) => {
-  const poll: VideoPollOptions = { interval_ms: 1_000, timeout_ms: 120_000 }
+  const poll: VideoPollOptions = { intervalMs: 1_000, timeoutMs: 120_000 }
   const options: Pick<VideoCallOptions, 'poll'> = { poll }
   t.deepEqual(options.poll, poll)
 })
@@ -41,13 +41,20 @@ test('provider() creates a registry model instance (RFC-0017 phase 4)', async (t
   t.is(typeof model.streamText, 'function')
 })
 
-test('provider() with undefined apiKey reads the registry env var', async (t) => {
-  // GROQ_API_KEY is unset in CI — the construction must fail with a clear
-  // error (missing env key), proving the env-var path is wired.
-  await t.throwsAsync(
-    () => provider('abacus', undefined, 'm'),
-    { message: /api key/i },
-  )
+test.serial('provider() with undefined apiKey reads the registry env var', async (t) => {
+  // The key is resolved at call time: with the env var unset the call must
+  // fail with a clear error (missing env key), proving the env-var path is wired.
+  const saved = process.env.GROQ_API_KEY
+  delete process.env.GROQ_API_KEY
+  try {
+    const model = await provider('groq', undefined, 'm')
+    await t.throwsAsync(
+      () => model.generateText(JSON.stringify('hi'), JSON.stringify({ maxRetries: 0 })),
+      { message: /api key/i },
+    )
+  } finally {
+    if (saved !== undefined) process.env.GROQ_API_KEY = saved
+  }
 })
 
 test('provider() rejects unknown provider names with the available list', async (t) => {

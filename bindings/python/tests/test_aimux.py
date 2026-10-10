@@ -101,7 +101,7 @@ def test_provider_invalid_config_raises():
 
     with pytest.raises(Exception, match="invalid config"):
         provider(
-            "groq",
+            "abacus",
             "sk-test-fake-key",
             "llama-3.3-70b",
             config={"headers": "not-a-map"},
@@ -109,22 +109,24 @@ def test_provider_invalid_config_raises():
 
 
 def test_provider_missing_env_key_raises(monkeypatch):
-    """provider() with api_key=None reads the env var and fails clearly when unset."""
-    from aimux import LoadAPIKeyError, provider
+    """provider() with api_key=None reads the env var at call time and fails clearly when unset."""
+    from aimux import LoadAPIKeyError, generate_text, provider
 
     monkeypatch.delenv("ABACUS_API_KEY", raising=False)
+    model = provider("abacus", None, "m")
     with pytest.raises(LoadAPIKeyError, match="(?i)api key"):
-        provider("abacus", None, "m")
+        generate_text(model, "hi", {"maxRetries": 0})
 
 
 def test_provider_params_fill_a_preset_template(monkeypatch):
     """config["params"] reaches the preset's template parameters."""
-    from aimux import InvalidArgumentError, provider
+    from aimux import InvalidArgumentError, generate_text, provider
 
     monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
-    # Without the parameter the preset cannot build its base URL.
+    # Without the parameter the preset cannot build its base URL (reported at call time).
+    unfilled = provider("cloudflare_workers_ai", "sk-test-fake-key", "m")
     with pytest.raises(InvalidArgumentError, match="account_id"):
-        provider("cloudflare_workers_ai", "sk-test-fake-key", "m")
+        generate_text(unfilled, "hi", {"maxRetries": 0})
     model = provider(
         "cloudflare_workers_ai",
         "sk-test-fake-key",
@@ -139,7 +141,7 @@ def test_provider_params_the_preset_does_not_declare_are_rejected():
 
     with pytest.raises(InvalidArgumentError, match="no template parameter `account_id`"):
         provider(
-            "groq",
+            "abacus",
             "sk-test-fake-key",
             "m",
             config={"params": {"account_id": "acct123"}},

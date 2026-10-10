@@ -31,12 +31,12 @@ const result = shallowRef<ResultView | null>(null)
 
 async function load() {
   traces.value = await api.traces({ limit: 200 })
-  if (!callId.value && traces.value.length) callId.value = traces.value[0].call_id
+  if (!callId.value && traces.value.length) callId.value = traces.value[0].callId
 }
 onMounted(load)
 
 function recLatency(r: Recording): number {
-  return r.exchanges?.reduce((s, e) => s + (e.timing?.latency_ms ?? 0), 0) ?? 0
+  return r.exchanges?.reduce((s, e) => s + (e.timing?.latencyMs ?? 0), 0) ?? 0
 }
 
 function oldText(r: Recording): string {
@@ -57,14 +57,14 @@ async function replay() {
   error.value = null
   running.value = true
   try {
-    const old = traces.value.find((t) => t.call_id === callId.value)
+    const old = traces.value.find((t) => t.callId === callId.value)
     if (!old) throw new Error('recording not found')
     const res = await api.replay({
-      call_id: callId.value,
-      api_key: apiKey.value || null,
+      callId: callId.value,
+      apiKey: apiKey.value || null,
       overrides: {
         temperature: temperature.value,
-        max_output_tokens: maxTokens.value,
+        maxOutputTokens: maxTokens.value,
       },
     })
     result.value = {
@@ -89,7 +89,7 @@ async function replay() {
       <span class="pb-2 text-sm font-semibold">Replay</span>
       <div class="w-72">
         <Label>选择录制（请求回放，重发真实 API）</Label>
-        <Combobox v-model="callId" :options="traces.map((t) => t.call_id)" class="mt-1" placeholder="call_id…" />
+        <Combobox v-model="callId" :options="traces.map((t) => t.callId)" class="mt-1" placeholder="call_id…" />
       </div>
       <div class="w-44">
         <Label>API key（env，explicit 源需要）</Label>
@@ -113,7 +113,7 @@ async function replay() {
 
       <template v-if="result">
         <div class="mb-3 flex items-center gap-3 text-xs text-muted-foreground">
-          <span class="font-mono">{{ result.old.call_id.slice(0, 24) }}…</span>
+          <span class="font-mono">{{ result.old.callId.slice(0, 24) }}…</span>
           <span>旧延迟 {{ recLatency(result.old) }}ms</span>
           <span>·</span>
           <span>新延迟 <span v-if="result.newLatencyMs != null">{{ result.newLatencyMs }}ms</span><span v-else>—</span></span>

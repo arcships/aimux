@@ -17,8 +17,8 @@ use aimux_ffi::{
     aimux_consume_stream_text, aimux_drop_handle, aimux_error_t, aimux_generate_object,
     aimux_generate_text, aimux_google_image_new, aimux_google_video_new, aimux_init_proxy,
     aimux_openai_embedding_new, aimux_openai_files_new, aimux_openai_image_new, aimux_openai_new,
-    aimux_openai_speech_new, aimux_openai_transcription_new, aimux_provider_new,
-    aimux_register_providers, aimux_stream_text, aimux_tavily_search_new,
+    aimux_openai_speech_new, aimux_openai_transcription_new, aimux_provider_new, aimux_stream_text,
+    aimux_tavily_search_new,
 };
 use common::{c, expect_aimux_error, expect_ffi_error, ok};
 
@@ -185,20 +185,6 @@ fn azure_null_deployment_is_an_ffi_error() {
         expect_ffi_error(e, "azure_new"),
         "deployment: must not be NULL"
     );
-}
-
-/// `register_providers`: malformed text is a C ABI failure; a well-formed
-/// document the registry rejects is AiMuxError::InvalidArgument.
-#[test]
-fn register_providers_wire_vs_schema() {
-    let e = aimux_register_providers(c("{not json").as_ptr());
-    assert!(
-        expect_ffi_error(e, "register_providers (wire)").starts_with("config_json: invalid JSON:")
-    );
-    let e = aimux_register_providers(c(r#"{"providers": 42}"#).as_ptr());
-    let (code, m) = expect_aimux_error(e, "register_providers (schema)");
-    assert_eq!(code, AIMUX_E_INVALID_ARGUMENT);
-    assert!(m.contains("config_json:"), "{m}");
 }
 
 // Keep abort helpers linked (smoke).

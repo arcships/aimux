@@ -10,6 +10,7 @@ use base64::Engine;
 use serde_json::Value;
 
 use crate::content::ContentPart;
+use crate::language_model_message::ToolResultOutput;
 use crate::message::{MessageContent, ModelMessage, Role};
 use crate::result::{
     GenerateContent, GeneratedFile, ReasoningFileOutput, ReasoningOutput, ReasoningPart, Source,
@@ -254,11 +255,8 @@ impl ResponseMessageBuilder {
                 },
                 GenerateContent::ToolResult(result) => ContentPart::ToolResult {
                     tool_call_id: result.tool_call_id.clone(),
-                    tool_name: Some(result.tool_name.clone()),
-                    result: result.result.clone(),
-                    is_error: result.is_error,
-                    preliminary: result.preliminary,
-                    dynamic: result.dynamic,
+                    tool_name: result.tool_name.clone(),
+                    output: tool_model_output(&result.result, result.is_error == Some(true)),
                     provider_options: result.provider_metadata.clone(),
                 },
                 GenerateContent::Source(_) => continue,
@@ -277,6 +275,34 @@ impl ResponseMessageBuilder {
             content: self.content,
             reasoning,
         }
+    }
+}
+
+/// TS: `createToolModelOutput` without a `toModelOutput` hook: errors become
+/// `error-text` with the error message, other strings `text`, the rest `json`.
+fn tool_model_output(result: &Value, is_error: bool) -> ToolResultOutput {
+    let provider_options = None;
+    match (result, is_error) {
+        (Value::String(value), false) => ToolResultOutput::Text {
+            value: value.clone(),
+            provider_options,
+        },
+        (_, false) => ToolResultOutput::Json {
+            value: result.clone(),
+            provider_options,
+        },
+        (Value::Null, true) => ToolResultOutput::ErrorText {
+            value: "unknown error".into(),
+            provider_options,
+        },
+        (Value::String(value), true) => ToolResultOutput::ErrorText {
+            value: value.clone(),
+            provider_options,
+        },
+        (_, true) => ToolResultOutput::ErrorText {
+            value: result.to_string(),
+            provider_options,
+        },
     }
 }
 

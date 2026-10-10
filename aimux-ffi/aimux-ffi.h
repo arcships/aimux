@@ -48,7 +48,7 @@
  * ## Concurrency
  *
  * All functions are synchronous (block until the operation completes).
- * `opts_json.timeout` (`{"total_ms","step_ms","first_chunk_ms","chunk_ms"}`,
+ * `opts_json.timeout` (`{"totalMs","stepMs","firstChunkMs","chunkMs"}`,
  * milliseconds; the latter two streaming-only) bounds a call from the callee
  * side; `aimux_abort_signal_*` plus the `*_with_abort` entry points cancel a
  * running call from another thread.
@@ -67,7 +67,7 @@
  * - Malformed JSON text is a C ABI failure; well-formed JSON of the wrong
  *   shape is AiMuxError AIMUX_E_INVALID_ARGUMENT.
  * - Results: serialized JSON of GenerateTextResult on success
- * - Stream parts: serialized JSON of StreamPart
+ * - Stream parts: serialized JSON of TextStreamPart
  */
 
 #ifndef AIMUX_FFI_H
@@ -176,11 +176,11 @@ aimux_error_t *aimux_azure_new_with_base(const char *api_key, const char *base_u
  *                    var from the registry entry. Non-NULL but non-UTF-8 is
  *                    a C ABI failure.
  * @param model_id    NUL-terminated model ID.
- * @param config_json Optional JSON object of ProviderOptions
- *                    ({"base_url": "...", "headers": {...}, "organization": "...",
- *                     "project": "..."}); "max_retries" (call-level) and
- *                    "body_overrides" (removed) are rejected as invalid
- *                    arguments. NULL / empty / "null" for defaults.
+ * @param config_json Optional JSON object of settings
+ *                    ({"baseUrl": "...", "headers": {...}, "organization": "...",
+ *                     "project": "...", "params": {...}}); any other key
+ *                    ("maxRetries" is call-level)
+ *                    is an invalid argument. NULL / empty / "null" for defaults.
  * @param out_handle  Receives the model handle. AiMuxError: unknown
  *                    provider, bad config, missing env key, invalid model id.
  */
@@ -206,7 +206,7 @@ aimux_error_t *aimux_provider_handle_new(const char *name, const char *api_key,
 
 /**
  * [AiMuxError] List models on a provider handle (RFC-0027 runtime discovery).
- * Writes a JSON array of sparse RuntimeModel (id / owned_by / created) —
+ * Writes a JSON array of sparse RuntimeModel (id / ownedBy / created) —
  * no community enrichment. To supplement with model specs, call
  * aimux_get_model_specs separately and merge in the host.
  */
@@ -262,7 +262,7 @@ aimux_error_t *aimux_consume_stream_text(uint64_t handle,
  * @param handle      Model handle from aimux_*_new.
  * @param prompt_json JSON prompt (see wire format above).
  * @param opts_json   JSON options (NULL or empty for defaults).
- * @param on_part     Called for each StreamPart (JSON string, valid during
+ * @param on_part     Called for each TextStreamPart (JSON string, valid during
  *                    the call only). Required: NULL is a C ABI failure
  *                    ("on_part: must not be NULL").
  * @param on_done     Called once when the stream ends normally. Required.
@@ -310,7 +310,7 @@ void aimux_abort_signal_drop(uint64_t abort_handle);
  * @param abort_handle Handle from aimux_abort_signal_new.
  * @param prompt_json  JSON prompt.
  * @param opts_json    JSON options. NULL or empty uses defaults.
- * @param on_part      Called for each StreamPart.
+ * @param on_part      Called for each TextStreamPart.
  * @param on_done      Called once after normal completion.
  * @param stream_ctx   Opaque pointer passed through to callbacks.
  */
@@ -393,7 +393,7 @@ aimux_error_t *aimux_generate_text_result_as_openai(uint64_t handle, const char 
  * defaults.
  *
  * reply_json is one of:
- *   {"type":"repaired","tool_call":{"tool_call_id":…,"tool_name":…,"input":"<raw text>"}}
+ *   {"type":"repaired","toolCall":{"toolCallId":…,"toolName":…,"input":"<raw text>"}}
  *   {"type":"unchanged"}
  *   {"type":"failed","message":"…"}
  *
@@ -521,9 +521,9 @@ typedef enum aimux_transcription_next_part_state {
    parts with aimux_transcription_next_part. model_handle must support
    streaming (models without do_stream fail on the first next_part).
    abort_handle: 0 = no cancellation, or an aimux_abort_signal_new handle.
-   opts_json (all optional): { "input_audio_format": {"format_type","rate"},
-   "provider_options", "headers", "include_raw_chunks", "timeout":
-   {"total_ms","first_chunk_ms","chunk_ms"} }; NULL/empty/"null" = defaults
+   opts_json (all optional): { "inputAudioFormat": {"formatType","rate"},
+   "providerOptions", "headers", "includeRawChunks", "timeout":
+   {"totalMs","firstChunkMs","chunkMs"} }; NULL/empty/"null" = defaults
    (wrong shape → AiMuxError AIMUX_E_INVALID_ARGUMENT). Writes the session handle. */
 aimux_error_t *aimux_transcription_session_new(uint64_t model_handle, uint64_t abort_handle,
                                                    const char *opts_json, uint64_t *out_handle);
@@ -712,13 +712,6 @@ void aimux_recording_flush(void);
      AIMUX_E_RECORDING_FLUSH_TIMEOUT (5) — no writer ack within 30s */
 aimux_error_t *aimux_recording_try_flush(void);
 
-/* [AiMuxError] Register external OpenAI-compatible providers from a JSON config
-   string (RFC-0020). config_json is { "providers": [ { "name", "base_url",
-   ... } ] }. Entries override same-named built-ins or add new ones. Malformed
-   JSON text is a C ABI failure; a well-formed document the registry
-   rejects (bad schema, unknown protocol) is AiMuxError AIMUX_E_INVALID_ARGUMENT. */
-aimux_error_t *aimux_register_providers(const char *config_json);
-
 /* [AiMuxError] Set the global proxy configuration (M6, RFC-0016). Must be called
    before the first generate_text / stream_text call; a no-op if the shared
    HTTP client is already initialised. config_json is a serialized
@@ -744,7 +737,7 @@ aimux_error_t *aimux_mock_replay_new(const char *recordings_jsonl, uint64_t *out
    dropped; len == 0 (no children) is a C ABI failure too; NULL with len > 0
    is a C ABI failure. config_json selects the router + fallback policy:
    { "router": "rule"|"weighted", "weights": [..], "fallback": "on_error"|"none",
-     "provider_name": "router", "model_id": "router" } — all optional; defaults
+     "providerName": "router", "modelId": "router" } — all optional; defaults
    are rule / on_error / "router" / "router" (wrong shape → AiMuxError
    AIMUX_E_INVALID_ARGUMENT). */
 aimux_error_t *aimux_router_new(const uint64_t *handles, size_t len,
@@ -759,8 +752,8 @@ aimux_error_t *aimux_router_new(const uint64_t *handles, size_t len,
    with ref_len > 0 is a C ABI failure). aggregator: a single live handle.
    Any dead reference or aggregator handle is a C ABI failure — nothing is
    silently dropped. config_json is a serialized MoaConfig (all fields
-   optional): { "provider_name", "model_id", "aggregator_instructions",
-   "strip_reference_tools", "fail_mode": "best_effort"|"fail_fast" } (wrong shape →
+   optional): { "providerName", "modelId", "aggregatorInstructions",
+   "stripReferenceTools", "failMode": "best_effort"|"fail_fast" } (wrong shape →
    AiMuxError AIMUX_E_INVALID_ARGUMENT). */
 aimux_error_t *aimux_moa_new(const uint64_t *reference_handles, size_t ref_len,
                                  uint64_t aggregator, const char *config_json,

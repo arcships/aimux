@@ -1,7 +1,7 @@
 // trace_test.go — RFC-0015 wire-contract tests (pure JSON, no FFI).
 //
 // Verifies Go can parse the probe wire types exactly as Rust serializes them
-// (snake_case fields, hex fingerprints, optional verdicts).
+// (camelCase fields, hex fingerprints, optional verdicts).
 
 package aimux
 
@@ -13,34 +13,34 @@ import (
 const traceRecordJSON = `{
   "provider": "openai",
   "model": "gpt-4o",
-  "request_id": "req-1",
-  "session_id": "sess-1",
-  "call_id": "trace-1",
-  "sent_at_unix_ms": 1785900000000,
-  "ttft_ms": 42,
+  "requestId": "req-1",
+  "sessionId": "sess-1",
+  "callId": "trace-1",
+  "sentAtUnixMs": 1785900000000,
+  "ttftMs": 42,
   "fingerprint": {
-    "body_hash": "0123456789abcdef0123456789abcdef",
-    "len_bytes": 10240,
-    "block_size": 4096,
-    "block_hashes": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
-    "token_estimate": 2560
+    "bodyHash": "0123456789abcdef0123456789abcdef",
+    "lenBytes": 10240,
+    "blockSize": 4096,
+    "blockHashes": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+    "tokenEstimate": 2560
   },
   "usage": {
-    "input_total": 2560,
-    "input_no_cache": 1536,
-    "cache_read": 1024,
-    "cache_write": 0,
-    "output_total": 10,
-    "output_text": 10
+    "inputTotal": 2560,
+    "inputNoCache": 1536,
+    "cacheRead": 1024,
+    "cacheWrite": 0,
+    "outputTotal": 10,
+    "outputText": 10
   },
-  "request_cache_hints": {"requested_write": true},
+  "requestCacheHints": {"requestedWrite": true},
   "verdict": {
     "kind": "Trusted",
     "confidence": "High",
     "violated": [],
-    "expected_max": 1024,
+    "expectedMax": 1024,
     "claimed": 1024,
-    "lcp_bytes": 4096,
+    "lcpBytes": 4096,
     "notes": []
   }
 }`
@@ -54,19 +54,19 @@ func TestTraceRecordParses(t *testing.T) {
 		t.Errorf("provider/model mismatch: %s / %s", rec.Provider, rec.Model)
 	}
 	if rec.SessionID == nil || *rec.SessionID != "sess-1" {
-		t.Errorf("session_id mismatch: %v", rec.SessionID)
+		t.Errorf("sessionId mismatch: %v", rec.SessionID)
 	}
 	if rec.Fingerprint.BodyHash != "0123456789abcdef0123456789abcdef" {
-		t.Errorf("body_hash mismatch: %s", rec.Fingerprint.BodyHash)
+		t.Errorf("bodyHash mismatch: %s", rec.Fingerprint.BodyHash)
 	}
 	if len(rec.Fingerprint.BlockHashes) != 2 {
 		t.Errorf("expected 2 block hashes, got %d", len(rec.Fingerprint.BlockHashes))
 	}
 	if rec.Usage.CacheRead == nil || *rec.Usage.CacheRead != 1024 {
-		t.Errorf("cache_read mismatch: %v", rec.Usage.CacheRead)
+		t.Errorf("cacheRead mismatch: %v", rec.Usage.CacheRead)
 	}
 	if rec.RequestCacheHints == nil || !rec.RequestCacheHints.RequestedWrite {
-		t.Error("request_cache_hints mismatch")
+		t.Error("requestCacheHints mismatch")
 	}
 	if rec.Verdict == nil {
 		t.Fatal("verdict must be present")
@@ -85,11 +85,11 @@ func TestTraceRecordParses(t *testing.T) {
 func TestTraceStatsAndChainParse(t *testing.T) {
 	statsJSON := `{
 	  "provider": "openai", "model": "gpt-4o",
-	  "requests": 3, "input_tokens_total": 7680,
-	  "claimed_cache_read_total": 2048, "claimed_cache_write_total": 0,
-	  "reported_hit_rate": 0.26666666666666666,
-	  "client_upper_bound_hit_rate": 0.4,
-	  "verdict_counts": {"Trusted": 2, "SuspectOverclaim": 1},
+	  "requests": 3, "inputTokensTotal": 7680,
+	  "claimedCacheReadTotal": 2048, "claimedCacheWriteTotal": 0,
+	  "reportedHitRate": 0.26666666666666666,
+	  "clientUpperBoundHitRate": 0.4,
+	  "verdictCounts": {"Trusted": 2, "SuspectOverclaim": 1},
 	  "errors": 0
 	}`
 	var stats TraceStats
@@ -100,16 +100,16 @@ func TestTraceStatsAndChainParse(t *testing.T) {
 		t.Errorf("stats mismatch: %+v", stats)
 	}
 	if stats.VerdictCounts["Trusted"] != 2 {
-		t.Errorf("verdict_counts mismatch: %v", stats.VerdictCounts)
+		t.Errorf("verdictCounts mismatch: %v", stats.VerdictCounts)
 	}
 
 	chainJSON := `{
-	  "session_id": "sess-1",
-	  "record_ids": ["trace-1", "trace-2"],
-	  "prefix_stability": 0.8,
+	  "sessionId": "sess-1",
+	  "recordIds": ["trace-1", "trace-2"],
+	  "prefixStability": 0.8,
 	  "breaks": [{
-	    "at_record_id": "trace-2", "prev_record_id": "trace-1",
-	    "lcp_bytes": 1024, "expected_break": false, "kind": "Unknown"
+	    "atRecordId": "trace-2", "prevRecordId": "trace-1",
+	    "lcpBytes": 1024, "expectedBreak": false, "kind": "Unknown"
 	  }]
 	}`
 	var chain SessionChainView

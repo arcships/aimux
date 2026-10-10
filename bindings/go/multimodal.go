@@ -779,19 +779,20 @@ type TranscriptionSession struct {
 }
 
 // InputAudioFormat is the input audio format for streaming transcription
-// (RFC-0028): e.g. {"format_type": "audio/pcm", "rate": 24000}.
+// (RFC-0028): e.g. {"formatType": "audio/pcm", "rate": 24000}.
 type InputAudioFormat struct {
-	FormatType string  `json:"format_type"`
+	FormatType string  `json:"formatType"`
 	Rate       *uint32 `json:"rate,omitempty"`
 }
 
 // TranscriptionSessionOpts are the optional session options (RFC-0028):
-// input audio format, provider options, headers, include_raw_chunks.
+// input audio format, provider options, headers, includeRawChunks, timeout.
 type TranscriptionSessionOpts struct {
-	InputAudioFormat *InputAudioFormat          `json:"input_audio_format,omitempty"`
-	ProviderOptions  map[string]json.RawMessage `json:"provider_options,omitempty"`
+	InputAudioFormat *InputAudioFormat          `json:"inputAudioFormat,omitempty"`
+	ProviderOptions  map[string]json.RawMessage `json:"providerOptions,omitempty"`
 	Headers          map[string]string          `json:"headers,omitempty"`
-	IncludeRawChunks *bool                      `json:"include_raw_chunks,omitempty"`
+	IncludeRawChunks *bool                      `json:"includeRawChunks,omitempty"`
+	Timeout          *TimeoutConfiguration      `json:"timeout,omitempty"`
 }
 
 // ErrTranscriptionEnded is returned by NextPart when the stream ended

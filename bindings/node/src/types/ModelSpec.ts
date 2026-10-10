@@ -14,12 +14,12 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * All fields are advisory — aimux never auto-applies them in the request path.
  * The caller reads them to decide how to configure `GenerateTextOptions`.
  */
-export type ModelSpec = { display_name?: string | null, type: ModelType, limits: ModelLimits, modalities: ModelModalities, capabilities: ModelCapabilities, reasoning?: ReasoningSpec | null, cost?: ModelCost | null, source: CatalogueSource, 
+export type ModelSpec = { displayName?: string, type: ModelType, limits: ModelLimits, modalities: ModelModalities, capabilities: ModelCapabilities, reasoning?: ReasoningSpec, cost?: ModelCost, source: CatalogueSource, 
 /**
  * Provider name (normalized to aimux registry spelling).
  */
-provider?: string | null, 
+provider?: string, 
 /**
  * Verbatim source entry, preserved for forward compatibility / debugging.
  */
-raw?: JsonValue | null, };
+raw?: JsonValue, };

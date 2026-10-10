@@ -16,11 +16,11 @@ results: Array<SearchResultItem>,
  * An optional direct answer / summary (some providers return
  * an AI-generated answer alongside results).
  */
-answer: string | null, 
+answer?: string, 
 /**
  * Additional provider-specific metadata.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Warnings for the call.
  */
@@ -28,4 +28,4 @@ warnings: Array<Warning>,
 /**
  * Optional response information for debugging.
  */
-response: SearchResponse | null, };
+response?: SearchResponse, };

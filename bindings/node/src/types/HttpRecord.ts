@@ -8,4 +8,4 @@ headers: Array<[string, string]>,
 /**
  * 明文(脱敏后);None = 无 body。
  */
-body: string | null, };
+body?: string, };

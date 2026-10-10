@@ -170,10 +170,10 @@ finally:
 ```
 
 标准 `recordings.jsonl` 每行记录一次逻辑调用：`input.operation = "decision"`，
-`input.options` 保留 state/questions，`input.decision_capabilities` 保留能力声明；
-provider 只记录 provider_id/provider/model_id，endpoint 与凭证来自调用方配置；
+`input.options` 保留 state/questions，`input.decisionCapabilities` 保留能力声明；
+provider 只记录 providerId/provider/modelId，endpoint 与凭证来自调用方配置；
 exchanges 记录各重试 attempt 的 HTTP 请求、响应和时延；
-`outcome.decision_result` 保存规范化结果。凭据沿用统一脱敏规则。
+`outcome.decisionResult` 保存规范化结果。凭据沿用统一脱敏规则。
 录制使用 schema 3；语言录制缺少 operation 时仍按 language model 解析。
 
 CLI 离线回放不需要 key：

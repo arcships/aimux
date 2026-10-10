@@ -257,28 +257,32 @@ async fn responses_stream() {
     assert_eq!(
         serde_json::to_value(parts).unwrap(),
         json!([
-            {"StreamStart": {"warnings": []}},
-            {"ResponseMetadata": {
+            {"type": "stream-start", "warnings": []},
+            {
+                "type": "response-metadata",
                 "id": "resp_67c9a81b6a048190a9ee441c5755a4e8",
-                "model_id": "test-model",
+                "modelId": "test-model",
                 "timestamp": "2025-03-06T13:50:19+00:00"
-            }},
-            {"TextStart": {
+            },
+            {
+                "type": "text-start",
                 "id": "msg_67c9a81dea8c8190b79651a2b3adf91e",
-                "provider_metadata": {"openai": {"itemId": "msg_67c9a81dea8c8190b79651a2b3adf91e"}}
-            }},
-            {"TextDelta": {"id": "msg_67c9a81dea8c8190b79651a2b3adf91e", "delta": "Hello,"}},
-            {"TextDelta": {"id": "msg_67c9a81dea8c8190b79651a2b3adf91e", "delta": " World!"}},
-            {"TextEnd": {
+                "providerMetadata": {"openai": {"itemId": "msg_67c9a81dea8c8190b79651a2b3adf91e"}}
+            },
+            {"type": "text-delta", "id": "msg_67c9a81dea8c8190b79651a2b3adf91e", "delta": "Hello,"},
+            {"type": "text-delta", "id": "msg_67c9a81dea8c8190b79651a2b3adf91e", "delta": " World!"},
+            {
+                "type": "text-end",
                 "id": "msg_67c9a81dea8c8190b79651a2b3adf91e",
-                "provider_metadata": {"openai": {"itemId": "msg_67c9a81dea8c8190b79651a2b3adf91e"}}
-            }},
-            {"Finish": {
-                "finish_reason": {"unified": "stop", "raw": null},
-                "provider_metadata": {"openai": {"responseId": "resp_67c9a81b6a048190a9ee441c5755a4e8"}},
+                "providerMetadata": {"openai": {"itemId": "msg_67c9a81dea8c8190b79651a2b3adf91e"}}
+            },
+            {
+                "type": "finish",
+                "finishReason": {"unified": "stop"},
+                "providerMetadata": {"openai": {"responseId": "resp_67c9a81b6a048190a9ee441c5755a4e8"}},
                 "usage": {
-                    "input_tokens": {"total": 543, "no_cache": 309, "cache_read": 234},
-                    "output_tokens": {"total": 478, "reasoning": 123, "text": 355},
+                    "inputTokens": {"total": 543, "noCache": 309, "cacheRead": 234},
+                    "outputTokens": {"total": 478, "reasoning": 123, "text": 355},
                     "raw": {
                         "input_tokens": 543,
                         "input_tokens_details": {"cached_tokens": 234},
@@ -287,7 +291,7 @@ async fn responses_stream() {
                         "total_tokens": 512
                     }
                 }
-            }}
+            }
         ])
     );
 }
@@ -562,13 +566,13 @@ async fn responses_web_search_stream() {
     assert_eq!(
         serde_json::to_value(parts).unwrap(),
         json!([
-            {"StreamStart":{"warnings":[]}},
-            {"ResponseMetadata":{"id":"resp_missing_action","model_id":"test-model","timestamp":"2025-03-10T18:10:55+00:00"}},
-            {"ToolInputStart":{"id":"ws_missing_action","tool_name":"webSearch","provider_executed":true}},
-            {"ToolInputEnd":{"id":"ws_missing_action"}},
-            {"ToolCall":{"tool_call_id":"ws_missing_action","tool_name":"webSearch","input":"{}","provider_executed":true}},
-            {"ToolResult":{"tool_call_id":"ws_missing_action","tool_name":"webSearch","result":{}}},
-            {"Finish":{"finish_reason":{"unified":"stop","raw":null},"usage":{"input_tokens":{"total":10,"no_cache":10,"cache_read":0},"output_tokens":{"total":2,"reasoning":0,"text":2},"raw":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":12}},"provider_metadata":{"openai":{"responseId":"resp_missing_action"}}}}
+            {"type":"stream-start","warnings":[]},
+            {"type":"response-metadata","id":"resp_missing_action","modelId":"test-model","timestamp":"2025-03-10T18:10:55+00:00"},
+            {"type":"tool-input-start","id":"ws_missing_action","toolName":"webSearch","providerExecuted":true},
+            {"type":"tool-input-end","id":"ws_missing_action"},
+            {"type":"tool-call","toolCallId":"ws_missing_action","toolName":"webSearch","input":"{}","providerExecuted":true},
+            {"type":"tool-result","toolCallId":"ws_missing_action","toolName":"webSearch","result":{}},
+            {"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{"total":10,"noCache":10,"cacheRead":0},"outputTokens":{"total":2,"reasoning":0,"text":2},"raw":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":12}},"providerMetadata":{"openai":{"responseId":"resp_missing_action"}}}
         ])
     );
 }

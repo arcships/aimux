@@ -13,23 +13,23 @@ name: string,
 /**
  * Human-readable description.
  */
-description: string | null, 
+description?: string, 
 /**
  * JSON Schema describing the tool's parameters.
  */
-input_schema: JsonValue, 
+inputSchema: JsonValue, 
 /**
  * Whether the tool supports strict schema enforcement (OpenAI strict mode).
  */
-strict: boolean | null, 
+strict?: boolean, 
 /**
  * Provider-specific options, keyed by provider name
  * (e.g. `{"anthropic": {"eagerInputStreaming": true}}`). Aligned with the
  * V4 `providerOptions` field on function tools.
  */
-provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, 
+providerOptions?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Example inputs for the tool (V4 `inputExamples`), used by some providers
  * to emit `input_examples` in the request body.
  */
-input_examples?: Array<FunctionToolInputExample> | null, };
+inputExamples?: Array<FunctionToolInputExample>, };

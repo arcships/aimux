@@ -14,20 +14,20 @@ export type ResponseInfo = {
 /**
  * ID of the generated response, when supplied by the provider.
  */
-id?: string | null, 
+id?: string, 
 /**
  * Timestamp for the start of the generated response (ISO 8601 string).
  */
-timestamp: string | null, 
+timestamp?: string, 
 /**
  * The ID of the model that was used to generate the response.
  */
-model_id: string | null, 
+modelId?: string, 
 /**
  * Response headers.
  */
-headers: { [key in string]: string } | null, 
+headers?: { [key in string]: string }, 
 /**
  * The response body (opaque JSON).
  */
-body: JsonValue | null, };
+body?: JsonValue, };

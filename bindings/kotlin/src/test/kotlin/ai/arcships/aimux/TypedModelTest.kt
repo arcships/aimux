@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test
 // (OpenAI chat-completions wire format) and assert that the typed wrapper:
 //   1. returns a [GenerateTextResult] object (no manual JSON parsing),
 //   2. surfaces `.text`, `.toolCalls[0].toolName`, and `.raw.content`,
-//   3. forwards typed `tools` / `tool_choice` onto the provider request,
+//   3. forwards typed `tools` / `toolChoice` onto the provider request,
 //   4. forwards multi-role [ModelMessage] conversations.
 //
 // No real network access — every request hits 127.0.0.1.
@@ -140,7 +140,7 @@ class TypedModelTest {
     fun `generateText returns a typed GenerateTextResult with text and raw content`() {
         server.responseBody = plainOpenAiResponse
 
-        TypedModel.openai("sk-test-fake-key", "gpt-4o", server.baseUrl).use { model ->
+        TypedModel(chatCompletionsModel(server.baseUrl), ownsModel = true).use { model ->
             val result = model.generateText("What is Rust?")
 
             // No manual parsing: the wrapper returned a typed object.
@@ -166,7 +166,7 @@ class TypedModelTest {
             toolChoice = ToolChoice.AUTO,
         )
 
-        TypedModel.openai("sk-test-fake-key", "gpt-4o", server.baseUrl).use { model ->
+        TypedModel(chatCompletionsModel(server.baseUrl), ownsModel = true).use { model ->
             val result = model.generateText("What is the weather in Tokyo?", options)
 
             // .toolCalls[0].toolName / .toolCallId / .input — all typed.
@@ -178,8 +178,8 @@ class TypedModelTest {
             assertThat(call.input.jsonObject["location"]!!.jsonPrimitive.content)
                 .isEqualTo("Tokyo")
 
-            // .raw.content carries the ToolCall variant tag.
-            assertThat(result.raw.hasContentVariant("ToolCall")).isTrue()
+            // .raw.content carries the tool-call item (input is the raw argument text).
+            assertThat(result.raw.content.any { it is GenerateContent.ToolCall }).isTrue()
         }
     }
 
@@ -192,11 +192,11 @@ class TypedModelTest {
             toolChoice = ToolChoice.REQUIRED,
         )
 
-        TypedModel.openai("sk-test-fake-key", "gpt-4o", server.baseUrl).use { model ->
+        TypedModel(chatCompletionsModel(server.baseUrl), ownsModel = true).use { model ->
             model.generateText("What is the weather in Tokyo?", options)
 
-            // The serialized options crossed the JSON boundary as the engine's
-            // snake_case shape with only the fields the caller set.
+            // The serialized options crossed the JSON boundary in the engine's
+            // camelCase shape with only the fields the caller set.
             val reqBody = JSONObject(server.lastRequestBody)
             assertThat(reqBody.getString("tool_choice")).isEqualTo("required")
             assertThat(reqBody.has("tools")).isTrue()
@@ -221,7 +221,7 @@ class TypedModelTest {
             ModelMessage.text(Role.USER, "What is Rust?"),
         )
 
-        TypedModel.openai("sk-test-fake-key", "gpt-4o", server.baseUrl).use { model ->
+        TypedModel(chatCompletionsModel(server.baseUrl), ownsModel = true).use { model ->
             val result = model.generateText(messages)
 
             assertThat(result.text).isEqualTo("Rust is a systems programming language.")
@@ -248,11 +248,9 @@ class TypedModelTest {
 // asserts the round-tripped value equals the original. They also pin down the
 // wire-format quirks the typed wrappers rely on:
 //   - [GenerateContent.File] carries no `filename` (unlike [ContentPart.File]),
-//   - [GenerateContent.ToolResult] / [ContentPart.ToolResult] use the `result`
-//     field (never `output`) and carry `tool_name` / `is_error` / `preliminary`
-//     / `dynamic`,
-//   - [GenerateContent.Unknown] preserves an unrecognized external tag (forward
-//     compatibility).
+//   - [GenerateContent.ToolResult] keeps the executed-tool `result` shape, while
+//     [ContentPart.ToolResult] carries a [ToolResultOutput] under `output`,
+//   - every union is tagged on `type` with the AI SDK's kebab-case names.
 // ─────────────────────────────────────────────────────────────────────────────
 class TypedModelRoundTripTest {
 
@@ -262,17 +260,15 @@ class TypedModelRoundTripTest {
             toolCallId = "call_1",
             toolName = "get_weather",
             input = JsonObject(mapOf("city" to JsonPrimitive("Paris"))),
-            providerMetadata = JsonObject(
-                mapOf("openai" to JsonObject(mapOf("itemId" to JsonPrimitive("item_1")))),
-            ),
+            providerMetadata = mapOf("openai" to mapOf("itemId" to JsonPrimitive("item_1"))),
         )
         val json = AimuxJson.encodeToString(ToolCall.serializer(), original)
-        assertThat(json).contains("\"provider_metadata\"")
+        assertThat(json).contains("\"providerMetadata\"")
         val decoded = AimuxJson.decodeFromString(ToolCall.serializer(), json)
         assertThat(decoded).isEqualTo(original)
     }
 
-    // ── GenerateContent (externally tagged) ──────────────────────────────
+    // ── GenerateContent (tagged on `type`) ──────────────────────────────
 
     @Test
     fun `GenerateContent Text round-trips`() {
@@ -287,12 +283,13 @@ class TypedModelRoundTripTest {
         val original = GenerateContent.ToolCall(
             toolCallId = "call_1",
             toolName = "get_weather",
-            input = JsonObject(mapOf("location" to JsonPrimitive("Tokyo"))),
+            input = """{"location":"Tokyo"}""",
             providerExecuted = false,
             dynamic = true,
             providerMetadata = null,
         )
         val json = AimuxJson.encodeToString(GenerateContent.serializer(), original)
+        assertThat(json).contains("\"type\":\"tool-call\"")
         val decoded = AimuxJson.decodeFromString(GenerateContent.serializer(), json)
         assertThat(decoded).isEqualTo(original)
     }
@@ -325,23 +322,7 @@ class TypedModelRoundTripTest {
         assertThat(decoded).isEqualTo(original)
     }
 
-    @Test
-    fun `GenerateContent Unknown preserves an unrecognized external tag`() {
-        val payload = JsonObject(mapOf("future" to JsonPrimitive("data")))
-        val original = GenerateContent.Unknown(tag = "FutureVariant", data = payload)
-        val json = AimuxJson.encodeToString(GenerateContent.serializer(), original)
-        val decoded = AimuxJson.decodeFromString(GenerateContent.serializer(), json)
-
-        // The whole value round-trips intact.
-        assertThat(decoded).isEqualTo(original)
-        // The unrecognized variant survives as Unknown and keeps its tag.
-        assertThat(decoded).isInstanceOf(GenerateContent.Unknown::class.java)
-        assertThat((decoded as GenerateContent.Unknown).tag).isEqualTo("FutureVariant")
-        assertThat(decoded.variantTag).isEqualTo("FutureVariant")
-        assertThat(json).contains("\"FutureVariant\"")
-    }
-
-    // ── ContentPart (internally tagged on `type`) ───────────────────────
+    // ── ContentPart (tagged on `type`) ───────────────────────
 
     @Test
     fun `ContentPart Text round-trips`() {
@@ -364,36 +345,30 @@ class TypedModelRoundTripTest {
         val json = AimuxJson.encodeToString(ContentPart.serializer(), original)
         val decoded = AimuxJson.decodeFromString(ContentPart.serializer(), json)
         assertThat(decoded).isEqualTo(original)
-        assertThat(json).contains("\"tool_call\"")
-        assertThat(json).contains("\"provider_executed\":true")
+        assertThat(json).contains("\"type\":\"tool-call\"")
+        assertThat(json).contains("\"providerExecuted\":true")
     }
 
     @Test
-    fun `ContentPart ToolResult round-trips with result not output`() {
+    fun `ContentPart ToolResult round-trips with a typed output`() {
         val original = ContentPart.ToolResult(
             toolCallId = "call_1",
-            result = JsonObject(mapOf("temp" to JsonPrimitive("20"))),
             toolName = "get_weather",
-            isError = true,
-            preliminary = true,
-            dynamic = false,
+            output = ToolResultOutput.JsonValue(JsonObject(mapOf("temp" to JsonPrimitive("20")))),
             providerOptions = null,
         )
         val json = AimuxJson.encodeToString(ContentPart.serializer(), original)
 
-        // `result` field, never `output`; carries the full ToolResult field set.
-        assertThat(json).contains("\"result\"").doesNotContain("\"output\"")
-        assertThat(json).contains("\"tool_name\"")
-        assertThat(json).contains("\"is_error\"")
-        assertThat(json).contains("\"preliminary\"")
-        assertThat(json).contains("\"dynamic\"")
-        assertThat(json).contains("\"tool_result\"")
+        // `output` is a tagged union; the old result / isError fields are gone.
+        assertThat(json).contains("\"type\":\"tool-result\"")
+        assertThat(json).contains("\"output\":{\"type\":\"json\",\"value\":{\"temp\":\"20\"}}")
+        assertThat(json).doesNotContain("\"result\"").doesNotContain("\"isError\"")
 
         val decoded = AimuxJson.decodeFromString(ContentPart.serializer(), json)
         assertThat(decoded).isEqualTo(original)
     }
 
-    // ── FileBytes / FileData (externally tagged) ────────────────────────
+    // ── FileBytes (untagged) / FileData (tagged on `type`) ────────────────────────
 
     @Test
     fun `FileBytes Binary round-trips`() {
@@ -401,7 +376,7 @@ class TypedModelRoundTripTest {
         val json = AimuxJson.encodeToString(FileBytes.serializer(), original)
         val decoded = AimuxJson.decodeFromString(FileBytes.serializer(), json)
         assertThat(decoded).isEqualTo(original)
-        assertThat(json).contains("\"Binary\"")
+        assertThat(json).isEqualTo("[1,2,3,255]")
     }
 
     @Test
@@ -410,7 +385,7 @@ class TypedModelRoundTripTest {
         val json = AimuxJson.encodeToString(FileBytes.serializer(), original)
         val decoded = AimuxJson.decodeFromString(FileBytes.serializer(), json)
         assertThat(decoded).isEqualTo(original)
-        assertThat(json).contains("\"Base64\"")
+        assertThat(json).isEqualTo("\"aGVsbG8=\"")
     }
 
     @Test
@@ -419,7 +394,7 @@ class TypedModelRoundTripTest {
         val json = AimuxJson.encodeToString(FileData.serializer(), original)
         val decoded = AimuxJson.decodeFromString(FileData.serializer(), json)
         assertThat(decoded).isEqualTo(original)
-        assertThat(json).contains("\"Data\"")
+        assertThat(json).contains("\"type\":\"data\"")
     }
 
     @Test
@@ -428,7 +403,7 @@ class TypedModelRoundTripTest {
         val json = AimuxJson.encodeToString(FileData.serializer(), original)
         val decoded = AimuxJson.decodeFromString(FileData.serializer(), json)
         assertThat(decoded).isEqualTo(original)
-        assertThat(json).contains("\"Url\"")
+        assertThat(json).contains("\"type\":\"url\"")
     }
 
     // ── GenerateResult (integration: mixed content variants) ───────────
@@ -441,7 +416,7 @@ class TypedModelRoundTripTest {
                 GenerateContent.ToolCall(
                     toolCallId = "call_1",
                     toolName = "get_weather",
-                    input = JsonObject(mapOf("location" to JsonPrimitive("Tokyo"))),
+                    input = """{"location":"Tokyo"}""",
                 ),
                 GenerateContent.ToolResult(
                     toolCallId = "call_1",
@@ -459,11 +434,9 @@ class TypedModelRoundTripTest {
         // The whole structure round-trips intact.
         assertThat(decoded).isEqualTo(original)
 
-        // Variant order and tags are preserved.
-        assertThat(decoded.contentVariantTags)
+        // Variant order is preserved.
+        assertThat(decoded.content.map { it::class.simpleName })
             .containsExactly("Text", "ToolCall", "ToolResult")
-        assertThat(decoded.hasContentVariant("ToolCall")).isTrue()
-        assertThat(decoded.hasContentVariant("Reasoning")).isFalse()
 
         // Spot-check the decoded content variants by type and field.
         assertThat(decoded.content[0]).isInstanceOf(GenerateContent.Text::class.java)
@@ -476,8 +449,9 @@ class TypedModelRoundTripTest {
         assertThat((decoded.content[2] as GenerateContent.ToolResult).result.toString())
             .isEqualTo("""{"temp":"20"}""")
 
-        // The external tags are present on the wire, and there is no `output`.
-        assertThat(json).contains("\"Text\"").contains("\"ToolCall\"").contains("\"ToolResult\"")
+        // The tags are present on the wire, and there is no `output`.
+        assertThat(json).contains("\"type\":\"text\"").contains("\"type\":\"tool-call\"")
+            .contains("\"type\":\"tool-result\"")
         assertThat(json).contains("\"result\"").doesNotContain("\"output\"")
     }
 }

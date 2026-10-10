@@ -13,7 +13,7 @@ family: ProviderFamily,
 /**
  * Token quantization granularity; `None` = no quantization.
  */
-gran: bigint | null, 
+gran?: bigint, 
 /**
  * Minimum cache threshold (tokens): below it `claimed` must be 0.
  */
@@ -21,7 +21,7 @@ threshold: bigint,
 /**
  * TTL_idle (ms), conservative upper bound.
  */
-ttl_ms: bigint, 
+ttlMs: bigint, 
 /**
  * gpt-5.6+ semantics (no quantization, implicit-breakpoint whitelist,
  * write/read equality).
@@ -31,4 +31,4 @@ model56plus: boolean,
  * Claimed-hit ceiling: above this multiple of the client upper bound
  * the verdict is overclaim (W) even in shared mode. `None` = use U+τ.
  */
-shared_ceiling_mult: number | null, };
+sharedCeilingMult?: number, };

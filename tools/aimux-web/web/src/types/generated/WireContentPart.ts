@@ -4,4 +4,8 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * A content part in the wire format.
  */
-export type WireContentPart = { "type": "text", text: string, } | { "type": "tool_call", tool_call_id: string, tool_name: string, input: JsonValue, provider_executed?: boolean | null, } | { "type": "tool_result", tool_call_id: string, result: JsonValue, is_error?: boolean | null, };
+export type WireContentPart = { "type": "text", text: string, } | { "type": "tool-call", toolCallId: string, toolName: string, input: JsonValue, providerExecuted?: boolean, } | { "type": "tool-result", toolCallId: string, toolName: string,
+/**
+ * The core type, imported by the frontend through the `@aimux/types` alias.
+ */
+output: import("@aimux/types/ToolResultOutput").ToolResultOutput, };

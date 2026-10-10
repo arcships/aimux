@@ -3,12 +3,12 @@
 /**
  * Output token usage detail.
  */
-export type OutputTokenUsage = { total: number | null, 
+export type OutputTokenUsage = { total?: number, 
 /**
  * Text (non-reasoning) tokens (output side).
  */
-text: number | null, 
+text?: number, 
 /**
  * Reasoning tokens (output side).
  */
-reasoning: number | null, };
+reasoning?: number, };

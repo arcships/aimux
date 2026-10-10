@@ -73,7 +73,7 @@ interface ChatItem {
   text: string
   toolCalls: Array<{ id: string; name: string; input: unknown }>
   final: boolean
-  meta?: { call_id?: string; session_id?: string | null; step?: number | null; outcome?: string }
+  meta?: { callId?: string; sessionId?: string; step?: number; outcome?: string }
   error?: string
 }
 const chat = ref<ChatItem[]>([])
@@ -96,7 +96,7 @@ function wirePart(role: 'user' | 'assistant', item: ChatItem): WireMessage {
   const content: any[] = []
   if (item.text.trim()) content.push({ type: 'text', text: item.text })
   for (const tc of item.toolCalls) {
-    content.push({ type: 'tool_call', tool_call_id: tc.id, tool_name: tc.name, input: tc.input })
+    content.push({ type: 'tool-call', toolCallId: tc.id, toolName: tc.name, input: tc.input })
   }
   return { role, content } as WireMessage
 }
@@ -123,18 +123,18 @@ async function send() {
   const body = {
     provider: provider.value,
     model: model.value,
-    api_key: apiKey.value || null,
-    base_url: baseUrl.value || null,
+    apiKey: apiKey.value || undefined,
+    baseUrl: baseUrl.value || undefined,
     stream: stream.value,
     mock: mock.value,
     options: {
       temperature: temperature.value,
-      max_output_tokens: maxTokens.value,
+      maxOutputTokens: maxTokens.value,
       tools,
-      response_format: responseFormat.value === 'json' ? { json: {} } : null,
-      headers: safeJson(headersJson.value),
+      responseFormat: { type: responseFormat.value },
+      headers: safeJson(headersJson.value) ?? undefined,
     },
-    session_id: sessionId.value,
+    sessionId: sessionId.value,
     messages: wireMessages.value,
   } as unknown as WireCallRequest
 
@@ -143,9 +143,9 @@ async function send() {
       for await (const ev of callStream(body, controller.signal)) {
         if (ev.event === 'stream_part') {
           const part = parseStreamPart(ev.data)
-          if ('TextDelta' in part) assistant.text += part.TextDelta.delta
-          else if ('ToolCall' in part)
-            assistant.toolCalls.push({ id: part.ToolCall.tool_call_id, name: part.ToolCall.tool_name, input: part.ToolCall.input })
+          if (part.type === 'text-delta') assistant.text += part.delta
+          else if (part.type === 'tool-call')
+            assistant.toolCalls.push({ id: part.toolCallId, name: part.toolName, input: part.input })
         } else if (ev.event === 'meta') {
           assistant.meta = JSON.parse(ev.data)
         } else if (ev.event === 'error') {
@@ -189,8 +189,8 @@ function safeJson(s: string): unknown | null {
 }
 
 function openTrace(item: ChatItem) {
-  if (item.meta?.call_id) {
-    router.push({ path: '/traces', query: { call: item.meta.call_id } })
+  if (item.meta?.callId) {
+    router.push({ path: '/traces', query: { call: item.meta.callId } })
   }
 }
 </script>
@@ -229,7 +229,7 @@ function openTrace(item: ChatItem) {
 
               <div v-if="item.error" class="mt-1 text-xs text-destructive">{{ item.error }}</div>
               <button
-                v-if="item.meta?.call_id"
+                v-if="item.meta?.callId"
                 class="mt-1 text-xs text-muted-foreground underline decoration-dotted hover:text-foreground cursor-pointer"
                 @click="openTrace(item)"
               >

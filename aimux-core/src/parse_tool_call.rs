@@ -163,7 +163,9 @@ fn apply_repair_outcome(
     let cause = match outcome {
         RepairOutcome::Repaired(repaired) => match parse_and_validate_tool_call(&repaired, tools) {
             Ok((input, dynamic)) => return parsed_tool_call(repaired, input, dynamic),
-            Err(repaired_error) => repaired_error,
+            // Upstream rethrows the parse error of the repaired call as is;
+            // only a failing repair function is wrapped.
+            Err(repaired_error) => return invalid_tool_call(tool_call, repaired_error),
         },
         RepairOutcome::Unchanged => return invalid_tool_call(tool_call, original_error),
         RepairOutcome::Failed(repair_error) => repair_error,
@@ -317,10 +319,15 @@ fn invalid_tool_call(tool_call: RawToolCall, error: AiMuxError) -> ToolCall {
 /// The bindings cannot carry a [`ToolCallRepair`] closure, so a host instead
 /// reads the invalid call off the result, repairs it in its own language, and
 /// hands the answer back as this value. Wire shape:
-/// `{"type":"repaired","tool_call":{…}}`, `{"type":"unchanged"}`, or
+/// `{"type":"repaired","toolCall":{…}}`, `{"type":"unchanged"}`, or
 /// `{"type":"failed","message":"…"}`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
 #[ts(export)]
 pub enum ToolCallRepairReply {
     /// Re-validate this replacement call, exactly as the closure path does
@@ -435,9 +442,9 @@ pub fn tool_call_repair_inputs(
 /// Build the repair argument a host needs, as JSON, or `None` when the call
 /// was made without a tool set.
 ///
-/// Mirrors the AI SDK `repairToolCall` argument: `{tool_call, error,
-/// input_schema, tools, messages, instructions}`. `tool_call` is the
-/// provider-facing call (raw argument *text*), `input_schema` the schema of
+/// Mirrors the AI SDK `repairToolCall` argument: `{toolCall, error,
+/// inputSchema, tools, messages, instructions}`. `toolCall` is the
+/// provider-facing call (raw argument *text*), `inputSchema` the schema of
 /// the named tool (an empty-object schema when the name does not resolve),
 /// and `error` the serialized failure the call already carries.
 ///
@@ -468,9 +475,9 @@ pub fn tool_call_repair_context(
         error,
     };
     Ok(Some(serde_json::json!({
-        "tool_call": context.tool_call,
+        "toolCall": context.tool_call,
         "error": context.error,
-        "input_schema": context.input_schema(&context.tool_call.tool_name),
+        "inputSchema": context.input_schema(&context.tool_call.tool_name),
         "tools": context.tools,
         "messages": context.messages,
         "instructions": context.instructions,
@@ -502,7 +509,7 @@ pub fn apply_tool_call_repair(
 /// `GenerateObjectResult`, or `StreamTextResultAggregated`, returning the
 /// patched result.
 ///
-/// Both `tool_calls[]` and the matching `response_messages[]` tool-call part
+/// Both `toolCalls[]` and the matching `responseMessages[]` tool-call part
 /// are rewritten, the latter under the same rule `to_response_messages` uses
 /// (malformed primitive input is not replayed as a prompt input). A
 /// `GenerateObjectResult` is recognised by its nested `raw` result; `object`
@@ -521,7 +528,7 @@ pub fn apply_tool_call_repair(
 /// # Errors
 ///
 /// [`AiMuxError::InvalidArgument`] when `tools` is `None`, when the document
-/// has no `tool_calls` array, when `tool_call_id` is missing or ambiguous,
+/// has no `toolCalls` array, when `toolCallId` is missing or ambiguous,
 /// when the matched call is not invalid, or when a replacement id conflicts
 /// with another call.
 pub fn apply_tool_call_repair_to_result(
@@ -532,43 +539,43 @@ pub fn apply_tool_call_repair_to_result(
 ) -> Result<Value, AiMuxError> {
     let mut patched = result.clone();
     // `GenerateObjectResult` carries the whole text result under `raw`.
-    let target = if patched.get("tool_calls").is_some() {
+    let target = if patched.get("toolCalls").is_some() {
         &mut patched
     } else {
         patched.get_mut("raw").ok_or_else(|| {
-            AiMuxError::InvalidArgument("result: neither tool_calls nor raw".to_string())
+            AiMuxError::InvalidArgument("result: neither toolCalls nor raw".to_string())
         })?
     };
 
     let calls = target
-        .get_mut("tool_calls")
+        .get_mut("toolCalls")
         .and_then(Value::as_array_mut)
-        .ok_or_else(|| AiMuxError::InvalidArgument("result: no tool_calls array".to_string()))?;
-    // Both `tool_calls` and the transcript are keyed by id here, so a
+        .ok_or_else(|| AiMuxError::InvalidArgument("result: no toolCalls array".to_string()))?;
+    // Both `toolCalls` and the transcript are keyed by id here, so a
     // duplicated id cannot be patched unambiguously; refuse rather than
     // rewrite the first entry twice.
     let target_index = calls
         .iter()
-        .position(|call| call.get("tool_call_id").and_then(Value::as_str) == Some(tool_call_id))
+        .position(|call| call.get("toolCallId").and_then(Value::as_str) == Some(tool_call_id))
         .ok_or_else(|| {
             AiMuxError::InvalidArgument(format!("result: no tool call '{tool_call_id}'"))
         })?;
     if calls[target_index + 1..]
         .iter()
-        .any(|call| call.get("tool_call_id").and_then(Value::as_str) == Some(tool_call_id))
+        .any(|call| call.get("toolCallId").and_then(Value::as_str) == Some(tool_call_id))
     {
         return Err(AiMuxError::InvalidArgument(format!(
             "result: tool call id '{tool_call_id}' is not unique"
         )));
     }
     let original: ToolCall = serde_json::from_value(calls[target_index].clone())
-        .map_err(|error| AiMuxError::InvalidArgument(format!("result.tool_calls: {error}")))?;
+        .map_err(|error| AiMuxError::InvalidArgument(format!("result.toolCalls: {error}")))?;
 
     let repaired = apply_tool_call_repair(&original, tools, reply)?;
     if repaired.tool_call_id != tool_call_id
         && calls.iter().enumerate().any(|(index, call)| {
             index != target_index
-                && call.get("tool_call_id").and_then(Value::as_str)
+                && call.get("toolCallId").and_then(Value::as_str)
                     == Some(repaired.tool_call_id.as_str())
         })
     {
@@ -580,20 +587,20 @@ pub fn apply_tool_call_repair_to_result(
     calls[target_index] = serde_json::to_value(&repaired)
         .map_err(|error| AiMuxError::InvalidArgument(format!("tool call: {error}")))?;
 
-    // The replayed transcript must agree with `tool_calls`, or the next turn
+    // The replayed transcript must agree with `toolCalls`, or the next turn
     // sends the model the unrepaired arguments.
     let replay_input =
         crate::response_messages::response_tool_call_input(&repaired.input, repaired.invalid);
     for part in target
-        .get_mut("response_messages")
+        .get_mut("responseMessages")
         .and_then(Value::as_array_mut)
         .into_iter()
         .flatten()
         .filter_map(|message| message.get_mut("content")?.as_array_mut())
         .flatten()
     {
-        if part.get("type").and_then(Value::as_str) != Some("tool_call")
-            || part.get("tool_call_id").and_then(Value::as_str) != Some(tool_call_id)
+        if part.get("type").and_then(Value::as_str) != Some("tool-call")
+            || part.get("toolCallId").and_then(Value::as_str) != Some(tool_call_id)
         {
             continue;
         }
@@ -601,17 +608,17 @@ pub fn apply_tool_call_repair_to_result(
             continue;
         };
         // A repair may rename the call; the transcript must keep pointing at
-        // the same entry as `tool_calls`.
+        // the same entry as `toolCalls`.
         part.insert(
-            "tool_call_id".to_string(),
+            "toolCallId".to_string(),
             repaired.tool_call_id.clone().into(),
         );
-        part.insert("tool_name".to_string(), repaired.tool_name.clone().into());
+        part.insert("toolName".to_string(), repaired.tool_name.clone().into());
         part.insert("input".to_string(), replay_input.clone());
     }
 
     // `content` carries the same call, and an approval request embeds it, so
-    // both must agree with `tool_calls` too. `raw` stays as is: it is the
+    // both must agree with `toolCalls` too. `raw` stays as is: it is the
     // provider's output, which a repair does not change.
     for entry in target
         .get_mut("content")
@@ -636,7 +643,7 @@ pub fn apply_tool_call_repair_to_result(
     }
     if repaired.tool_call_id != tool_call_id {
         for part in target
-            .get_mut("response_messages")
+            .get_mut("responseMessages")
             .and_then(Value::as_array_mut)
             .into_iter()
             .flatten()

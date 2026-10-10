@@ -2,4 +2,4 @@
 import type { SkillFile } from "./SkillFile";
 import type { JsonValue } from "./serde_json/JsonValue";
 
-export type UploadSkillCallOptions = { files: Array<SkillFile>, display_title: string | null, provider_options: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type UploadSkillCallOptions = { files: Array<SkillFile>, displayTitle?: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

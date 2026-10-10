@@ -16,28 +16,39 @@ use crate::{AbortSignal, retry, timeout};
 
 /// Options passed to [`SearchModel::do_search`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SearchCallOptions {
     /// The search query string.
     pub query: String,
 
     /// Maximum number of results to return.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_results: Option<u32>,
 
     /// Whether to include raw page content in results.
     ///
     /// Provider support varies; providers that cannot honor this should
     /// issue a warning rather than erroring.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_raw_content: Option<bool>,
 
     /// Optional time range filter (e.g. `"day"`, `"week"`, `"month"`,
     /// `"year"`). Provider support varies.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_range: Option<String>,
 
     /// Optional list of domains to include in results.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_domains: Option<Vec<String>>,
 
     /// Optional list of domains to exclude from results.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude_domains: Option<Vec<String>>,
 
     /// Abort signal for cancelling the operation.
@@ -46,15 +57,23 @@ pub struct SearchCallOptions {
     pub abort_signal: Option<AbortSignal>,
 
     /// Per-call retry override. `None` uses the model default.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
 
     /// Per-call operation timeout.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<crate::options::TimeoutConfiguration>,
 
     /// Additional provider-specific options, keyed by provider name.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 
     /// Additional HTTP headers to send with the request.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
 }
 
@@ -79,30 +98,44 @@ impl SearchCallOptions {
 
 /// A single search result item.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SearchResultItem {
     /// The title of the result (e.g. page title).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
 
     /// The URL of the result.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
 
     /// A snippet/summary of the result content.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
 
     /// Raw page content (when `include_raw_content` is requested and
     /// supported by the provider).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_content: Option<String>,
 
     /// A relevance score (0.0–1.0) if the provider returns one.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub score: Option<f64>,
 
     /// Provider-specific metadata for this result.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<SharedProviderMetadata>,
 }
 
 /// The result of [`SearchModel::do_search`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SearchResult {
     /// Ordered list of search results.
@@ -110,25 +143,36 @@ pub struct SearchResult {
 
     /// An optional direct answer / summary (some providers return
     /// an AI-generated answer alongside results).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answer: Option<String>,
 
     /// Additional provider-specific metadata.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<SharedProviderMetadata>,
 
     /// Warnings for the call.
     pub warnings: Vec<Warning>,
 
     /// Optional response information for debugging.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<SearchResponse>,
 }
 
 /// Optional response information for a search call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SearchResponse {
     /// Response headers.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
     /// The response body (opaque JSON).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<serde_json::Value>,
 }
 

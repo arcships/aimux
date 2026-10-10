@@ -1,28 +1,30 @@
-// types.dart — typed models mirroring bindings/node/src/types/*.ts (ts-rs).
+// types.dart — typed models for the JSON the Rust core exchanges across the
+// C ABI. Mirrors the ts-rs generated types in `bindings/node/src/types/*.ts`:
+// camelCase field names, unions tagged with a `type` key (kebab-case values;
+// `sourceType` for sources), optional fields **absent** rather than `null`.
 //
-// Hand-written Dart classes with json_serializable. Field names are
-// camelCase; `@JsonKey(name: ...)` maps to the snake_case wire format
-// produced by the Rust core (serde). These wrap the raw
-// `Map<String, dynamic>` boundary exposed by the dart:ffi binding in
-// `aimux.dart`, so callers get compile-time types instead of dynamic maps.
+// The classes are hand-written: every `fromJson` reads exactly that JSON and
+// every `toJson` writes it back (nested values are plain maps, ready for
+// `jsonEncode`). Only the OpenAI Chat Completions family at the bottom keeps
+// OpenAI's own snake_case and uses `json_serializable`.
 //
-// Wire shapes are derived from the Rust structs in aimux-core
-// (`types.rs`, `tool.rs`, `generate.rs`, `result.rs`, `stream_part.rs`,
-// `shared.rs`):
-//   - GenerateTextResult  (generate.rs:90)
-//   - GenerateContent      (result.rs)        — sealed, externally-tagged
-//   - StreamPart           (stream_part.rs)   — sealed, externally-tagged
-//   - ContentPart          (content.rs)       — sealed, internally-tagged (type)
-//   - FileData/FileBytes   (shared.rs)        — sealed, externally-tagged
-//   - ToolCall             (tool.rs:102)
-//   - Usage / InputTokenUsage / OutputTokenUsage   (types.rs:33, types.rs:44)
-//   - FinishReason         (types.rs:10)
+// Weak-typed fields (`Map<String, dynamic>`) are the ones the TS types leave
+// open (`JsonValue`, provider metadata, warnings, errors).
 
 import 'dart:async';
 
 import 'package:json_annotation/json_annotation.dart';
 
 part 'types.g.dart';
+
+typedef Json = Map<String, dynamic>;
+
+List<T> _list<T>(Object? v, T Function(Json) f) =>
+    [for (final e in (v as List? ?? const <Object?>[])) f(e as Json)];
+List<Json> _maps(Object? v) => _list(v, (m) => m);
+Json? _opt(Object? v) => v as Json?;
+List<T>? _optList<T>(Object? v, T Function(Json) f) =>
+    v == null ? null : _list(v, f);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared enums
@@ -73,98 +75,103 @@ enum ReasoningEffort {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Token usage
+// Token usage, finish reason
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Input token usage detail with cache breakdown.
-///
-/// All fields are nullable: `total` is always serialized by the Rust core
-/// (null when unknown), the rest are omitted when `None`.
-@JsonSerializable()
+/// Input token usage detail with cache breakdown. Mirrors `InputTokenUsage.ts`.
 class InputTokenUsage {
   final int? total;
-  @JsonKey(name: 'no_cache') final int? noCache;
-  @JsonKey(name: 'cache_read') final int? cacheRead;
-  @JsonKey(name: 'cache_write') final int? cacheWrite;
-  InputTokenUsage({this.total, this.noCache, this.cacheRead, this.cacheWrite});
-  factory InputTokenUsage.fromJson(Map<String, dynamic> json) => _$InputTokenUsageFromJson(json);
-  Map<String, dynamic> toJson() => _$InputTokenUsageToJson(this);
+  final int? noCache;
+  final int? cacheRead;
+  final int? cacheWrite;
+  const InputTokenUsage({this.total, this.noCache, this.cacheRead, this.cacheWrite});
+  factory InputTokenUsage.fromJson(Json j) => InputTokenUsage(
+      total: j['total'] as int?,
+      noCache: j['noCache'] as int?,
+      cacheRead: j['cacheRead'] as int?,
+      cacheWrite: j['cacheWrite'] as int?);
+  Json toJson() => {
+        if (total != null) 'total': total,
+        if (noCache != null) 'noCache': noCache,
+        if (cacheRead != null) 'cacheRead': cacheRead,
+        if (cacheWrite != null) 'cacheWrite': cacheWrite,
+      };
 }
 
-@JsonSerializable()
+/// Mirrors `OutputTokenUsage.ts`.
 class OutputTokenUsage {
   final int? total;
   final int? text;
   final int? reasoning;
-  OutputTokenUsage({this.total, this.text, this.reasoning});
-  factory OutputTokenUsage.fromJson(Map<String, dynamic> json) => _$OutputTokenUsageFromJson(json);
-  Map<String, dynamic> toJson() => _$OutputTokenUsageToJson(this);
+  const OutputTokenUsage({this.total, this.text, this.reasoning});
+  factory OutputTokenUsage.fromJson(Json j) => OutputTokenUsage(
+      total: j['total'] as int?,
+      text: j['text'] as int?,
+      reasoning: j['reasoning'] as int?);
+  Json toJson() => {
+        if (total != null) 'total': total,
+        if (text != null) 'text': text,
+        if (reasoning != null) 'reasoning': reasoning,
+      };
 }
 
 /// Token usage statistics. Mirrors `Usage.ts`.
-@JsonSerializable()
 class Usage {
-  @JsonKey(name: 'input_tokens')
   final InputTokenUsage inputTokens;
-  @JsonKey(name: 'output_tokens')
   final OutputTokenUsage outputTokens;
+
   /// Raw usage information from the provider (opaque JSON).
-  final Map<String, dynamic>? raw;
+  final Json? raw;
 
-  Usage({required this.inputTokens, required this.outputTokens, this.raw});
-
-  factory Usage.fromJson(Map<String, dynamic> json) => _$UsageFromJson(json);
-  Map<String, dynamic> toJson() => _$UsageToJson(this);
+  const Usage({required this.inputTokens, required this.outputTokens, this.raw});
+  factory Usage.fromJson(Json j) => Usage(
+      inputTokens: InputTokenUsage.fromJson(j['inputTokens'] as Json),
+      outputTokens: OutputTokenUsage.fromJson(j['outputTokens'] as Json),
+      raw: _opt(j['raw']));
+  Json toJson() => {
+        'inputTokens': inputTokens.toJson(),
+        'outputTokens': outputTokens.toJson(),
+        if (raw != null) 'raw': raw,
+      };
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Finish reason
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Why generation stopped. Mirrors `FinishReason.ts`.
 ///
-/// `unified` is the kebab-case unified reason (`"stop"`, `"length"`,
-/// `"content-filter"`, `"tool-calls"`, `"error"`, `"other"`); `raw` is the
-/// provider-specific reason string (nullable).
-@JsonSerializable()
+/// [unified] is the kebab-case unified reason ([FinishReasonUnified]);
+/// [raw] is the provider-specific reason string.
 class FinishReason {
   final String unified;
   final String? raw;
-
-  FinishReason({required this.unified, this.raw});
-
-  factory FinishReason.fromJson(Map<String, dynamic> json) =>
-      _$FinishReasonFromJson(json);
-  Map<String, dynamic> toJson() => _$FinishReasonToJson(this);
+  const FinishReason({required this.unified, this.raw});
+  factory FinishReason.fromJson(Json j) =>
+      FinishReason(unified: j['unified'] as String, raw: j['raw'] as String?);
+  Json toJson() => {'unified': unified, if (raw != null) 'raw': raw};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool calls
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A tool call requested by the model. Mirrors `ToolCall.ts`.
-@JsonSerializable()
+/// A parsed tool call requested by the model. Mirrors `ToolCall.ts`.
+///
+/// [error] is the typed lookup, parse, schema or repair failure of an invalid
+/// call: an `AiMuxError` object keyed by `name` (`{"name":"AI_NoSuchToolError",
+/// "toolName":...}`).
 class ToolCall {
-  @JsonKey(name: 'tool_call_id')
   final String toolCallId;
-  @JsonKey(name: 'tool_name')
   final String toolName;
   final dynamic input;
-  @JsonKey(name: 'provider_executed')
   final bool? providerExecuted;
-  // `dynamic` is a Dart built-in identifier — field is named `isDynamic`
-  // and mapped to the `dynamic` JSON key.
-  @JsonKey(name: 'dynamic')
-  final bool? isDynamic;
-  /// Additional provider-specific metadata associated with this call.
-  @JsonKey(name: 'provider_metadata', includeIfNull: false)
-  final dynamic providerMetadata;
-  /// Set by Core when the tool call stays invalid after optional repair.
-  final bool? invalid;
-  /// The typed lookup, parse, schema, or repair failure for an invalid call.
-  final dynamic error;
 
-  ToolCall({
+  /// The wire key is `dynamic`, a Dart built-in identifier, hence the name.
+  final bool? isDynamic;
+  final Json? providerMetadata;
+
+  /// Set by the core when the call stays invalid after optional repair.
+  final bool? invalid;
+  final Json? error;
+
+  const ToolCall({
     required this.toolCallId,
     required this.toolName,
     required this.input,
@@ -175,9 +182,27 @@ class ToolCall {
     this.error,
   });
 
-  factory ToolCall.fromJson(Map<String, dynamic> json) =>
-      _$ToolCallFromJson(json);
-  Map<String, dynamic> toJson() => _$ToolCallToJson(this);
+  factory ToolCall.fromJson(Json j) => ToolCall(
+        toolCallId: j['toolCallId'] as String,
+        toolName: j['toolName'] as String,
+        input: j['input'],
+        providerExecuted: j['providerExecuted'] as bool?,
+        isDynamic: j['dynamic'] as bool?,
+        providerMetadata: _opt(j['providerMetadata']),
+        invalid: j['invalid'] as bool?,
+        error: _opt(j['error']),
+      );
+
+  Json toJson() => {
+        'toolCallId': toolCallId,
+        'toolName': toolName,
+        'input': input,
+        if (providerExecuted != null) 'providerExecuted': providerExecuted,
+        if (isDynamic != null) 'dynamic': isDynamic,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+        if (invalid != null) 'invalid': invalid,
+        if (error != null) 'error': error,
+      };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,14 +210,14 @@ class ToolCall {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// A tool call as the model emitted it: [input] is the provider's raw argument
-/// **text**, not a decoded object.
+/// **text**, not a decoded object. Mirrors `RawToolCall.ts`.
 ///
 /// Both the call handed to a [RepairToolCall] hook
 /// ([ToolCallRepairContext.toolCall]) and the replacement it returns. The
 /// replacement is re-parsed and re-validated against the tool's schema, so
 /// [input] must be the argument text the tool expects (usually a JSON object
 /// literal); returning text that still fails validation leaves the call
-/// invalid, now carrying a [ToolCallRepairError].
+/// invalid, now carrying a `ToolCallRepairError`.
 class RawToolCall {
   final String toolCallId;
   final String toolName;
@@ -202,15 +227,12 @@ class RawToolCall {
 
   /// Whether the provider executes the call itself. The core adopts the
   /// replacement as returned, so a hook must carry this over (as
-  /// `copyWith` does) or the call turns into a client-executed one.
+  /// [copyWith] does) or the call turns into a client-executed one.
   final bool? providerExecuted;
 
-  /// Whether the call targets a dynamic tool. `dynamic` is a Dart built-in
-  /// identifier, so the field is `isDynamic` and maps to the `dynamic` key.
+  /// Whether the call targets a dynamic tool (the wire key is `dynamic`).
   final bool? isDynamic;
-
-  /// Additional provider-specific metadata associated with this call.
-  final dynamic providerMetadata;
+  final Json? providerMetadata;
 
   const RawToolCall({
     required this.toolCallId,
@@ -221,13 +243,13 @@ class RawToolCall {
     this.providerMetadata,
   });
 
-  factory RawToolCall.fromJson(Map<String, dynamic> json) => RawToolCall(
-        toolCallId: json['tool_call_id'] as String,
-        toolName: json['tool_name'] as String,
-        input: json['input'] as String,
-        providerExecuted: json['provider_executed'] as bool?,
-        isDynamic: json['dynamic'] as bool?,
-        providerMetadata: json['provider_metadata'],
+  factory RawToolCall.fromJson(Json j) => RawToolCall(
+        toolCallId: j['toolCallId'] as String,
+        toolName: j['toolName'] as String,
+        input: j['input'] as String,
+        providerExecuted: j['providerExecuted'] as bool?,
+        isDynamic: j['dynamic'] as bool?,
+        providerMetadata: _opt(j['providerMetadata']),
       );
 
   /// A copy with [input] (and optionally the id or name) replaced and every
@@ -242,13 +264,13 @@ class RawToolCall {
         providerMetadata: providerMetadata,
       );
 
-  Map<String, dynamic> toJson() => {
-        'tool_call_id': toolCallId,
-        'tool_name': toolName,
+  Json toJson() => {
+        'toolCallId': toolCallId,
+        'toolName': toolName,
         'input': input,
-        if (providerExecuted != null) 'provider_executed': providerExecuted,
+        if (providerExecuted != null) 'providerExecuted': providerExecuted,
         if (isDynamic != null) 'dynamic': isDynamic,
-        if (providerMetadata != null) 'provider_metadata': providerMetadata,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
@@ -262,13 +284,12 @@ class ToolCallRepairContext {
   /// The invalid call, with the provider's raw argument text.
   final RawToolCall toolCall;
 
-  /// The lookup, parse or validation failure, externally tagged
-  /// (`{"InvalidToolInput": {...}}`). Weak type — same shape as
-  /// [ToolCall.error].
-  final Object? error;
+  /// The lookup, parse or validation failure as an `AiMuxError` object keyed by
+  /// `name` — the same shape as [ToolCall.error].
+  final Json? error;
 
-  /// The schema [toolCall] failed to satisfy; null when the tool is unknown.
-  final Map<String, dynamic>? inputSchema;
+  /// The schema [toolCall] failed to satisfy.
+  final Json? inputSchema;
 
   /// The full tool set the call was generated with.
   final List<Tool> tools;
@@ -288,19 +309,13 @@ class ToolCallRepairContext {
     this.instructions,
   });
 
-  factory ToolCallRepairContext.fromJson(Map<String, dynamic> json) =>
-      ToolCallRepairContext(
-        toolCall:
-            RawToolCall.fromJson(json['tool_call'] as Map<String, dynamic>),
-        error: json['error'],
-        inputSchema: json['input_schema'] as Map<String, dynamic>?,
-        tools: (json['tools'] as List<dynamic>? ?? const [])
-            .map((t) => Tool.fromJson(t as Map<String, dynamic>))
-            .toList(),
-        messages: (json['messages'] as List<dynamic>? ?? const [])
-            .map((m) => ModelMessage.fromJson(m as Map<String, dynamic>))
-            .toList(),
-        instructions: json['instructions'] as String?,
+  factory ToolCallRepairContext.fromJson(Json j) => ToolCallRepairContext(
+        toolCall: RawToolCall.fromJson(j['toolCall'] as Json),
+        error: _opt(j['error']),
+        inputSchema: _opt(j['inputSchema']),
+        tools: _list(j['tools'], Tool.fromJson),
+        messages: _list(j['messages'], ModelMessage.fromJson),
+        instructions: j['instructions'] as String?,
       );
 }
 
@@ -309,7 +324,7 @@ class ToolCallRepairContext {
 ///
 /// Return a [RawToolCall] to replace the call, or null to leave it as it is.
 /// Throwing means the repair failed: the call stays invalid and carries a
-/// [ToolCallRepairError] whose cause is the thrown object's `toString()`.
+/// `ToolCallRepairError` whose cause is the thrown object's `toString()`.
 ///
 /// The hook runs on the caller's isolate, after the native call has returned,
 /// so it may itself call back into aimux (including another model call).
@@ -324,27 +339,23 @@ typedef RepairToolCall = FutureOr<RawToolCall?> Function(
 // ─────────────────────────────────────────────────────────────────────────────
 
 class FunctionToolInputExample {
-  final Map<String, dynamic> input;
-  FunctionToolInputExample({required this.input});
-  factory FunctionToolInputExample.fromJson(Map<String, dynamic> json) =>
-      FunctionToolInputExample(input: json['input'] as Map<String, dynamic>);
-  Map<String, dynamic> toJson() => {'input': input};
+  final Json input;
+  const FunctionToolInputExample({required this.input});
+  factory FunctionToolInputExample.fromJson(Json j) =>
+      FunctionToolInputExample(input: j['input'] as Json);
+  Json toJson() => {'input': input};
 }
 
 /// A function tool definition. Mirrors `FunctionTool.ts`.
-@JsonSerializable()
 class FunctionTool {
   final String name;
   final String? description;
-  @JsonKey(name: 'input_schema')
-  final Map<String, dynamic> inputSchema;
+  final Json inputSchema;
   final bool? strict;
-  @JsonKey(name: 'provider_options')
-  final Map<String, dynamic>? providerOptions;
-  @JsonKey(name: 'input_examples')
+  final Json? providerOptions;
   final List<FunctionToolInputExample>? inputExamples;
 
-  FunctionTool({
+  const FunctionTool({
     required this.name,
     this.description,
     required this.inputSchema,
@@ -353,36 +364,52 @@ class FunctionTool {
     this.inputExamples,
   });
 
-  factory FunctionTool.fromJson(Map<String, dynamic> json) =>
-      _$FunctionToolFromJson(json);
-  Map<String, dynamic> toJson() => _$FunctionToolToJson(this);
+  factory FunctionTool.fromJson(Json j) => FunctionTool(
+        name: j['name'] as String,
+        description: j['description'] as String?,
+        inputSchema: j['inputSchema'] as Json,
+        strict: j['strict'] as bool?,
+        providerOptions: _opt(j['providerOptions']),
+        inputExamples:
+            _optList(j['inputExamples'], FunctionToolInputExample.fromJson),
+      );
+
+  Json toJson() => {
+        'name': name,
+        if (description != null) 'description': description,
+        'inputSchema': inputSchema,
+        if (strict != null) 'strict': strict,
+        if (providerOptions != null) 'providerOptions': providerOptions,
+        if (inputExamples != null)
+          'inputExamples': [for (final e in inputExamples!) e.toJson()],
+      };
 }
 
-/// A tool definition: function or provider tool. Mirrors `Tool.ts`.
+/// A tool definition: function or provider tool. Mirrors `Tool.ts`
+/// (`{"type":"function", ...FunctionTool}` / `{"type":"provider", id, name,
+/// args}`).
 class Tool {
   final String type;
   final FunctionTool? function;
   final String? id;
   final String? name;
-  final Map<String, dynamic>? args;
+  final Json? args;
 
-  Tool._({required this.type, this.function, this.id, this.name, this.args});
+  const Tool._({required this.type, this.function, this.id, this.name, this.args});
 
-  factory Tool.function(FunctionTool fn) =>
-      Tool._(type: 'function', function: fn);
-  factory Tool.provider({required String id, required String name, required Map<String, dynamic> args}) =>
+  factory Tool.function(FunctionTool fn) => Tool._(type: 'function', function: fn);
+  factory Tool.provider(
+          {required String id, required String name, required Json args}) =>
       Tool._(type: 'provider', id: id, name: name, args: args);
 
-  Map<String, dynamic> toJson() {
-    if (function != null) return {'type': 'function', ...function!.toJson()};
-    return {'type': 'provider', 'id': id!, 'name': name!, 'args': args ?? {}};
-  }
-  factory Tool.fromJson(Map<String, dynamic> json) {
-    if (json['type'] == 'function') {
-      return Tool._(type: 'function', function: FunctionTool.fromJson(json));
-    }
-    return Tool._(type: 'provider', id: json['id'] as String, name: json['name'] as String, args: json['args'] as Map<String, dynamic>?);
-  }
+  Json toJson() => function != null
+      ? {'type': 'function', ...function!.toJson()}
+      : {'type': 'provider', 'id': id!, 'name': name!, 'args': args ?? {}};
+
+  factory Tool.fromJson(Json j) => j['type'] == 'function'
+      ? Tool.function(FunctionTool.fromJson(j))
+      : Tool.provider(
+          id: j['id'] as String, name: j['name'] as String, args: j['args'] as Json);
 }
 
 /// How the model should choose tools. Mirrors `ToolChoice.ts`.
@@ -395,202 +422,231 @@ class ToolChoice {
   static const required = ToolChoice._('required', null);
   factory ToolChoice.tool(String toolName) => ToolChoice._('tool', toolName);
 
-  dynamic toJson() => _kind == 'tool' ? {'type': 'tool', 'toolName': toolName} : _kind;
-  factory ToolChoice.fromJson(dynamic json) =>
-    json is String ? ToolChoice._(json, null) : ToolChoice._('tool', (json as Map<String, dynamic>)['toolName'] as String);
+  dynamic toJson() =>
+      _kind == 'tool' ? {'type': 'tool', 'toolName': toolName} : _kind;
+  factory ToolChoice.fromJson(dynamic json) => json is String
+      ? ToolChoice._(json, null)
+      : ToolChoice._('tool', (json as Json)['toolName'] as String);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GenerateResult (raw provider result)
+// Request / response metadata
 // ─────────────────────────────────────────────────────────────────────────────
 
-@JsonSerializable()
-class ResponseMetadata {
-  final String? id;
-  final String? timestamp;
-  @JsonKey(name: 'model_id') final String? modelId;
-  ResponseMetadata({this.id, this.timestamp, this.modelId});
-  factory ResponseMetadata.fromJson(Map<String, dynamic> json) => _$ResponseMetadataFromJson(json);
-  Map<String, dynamic> toJson() => _$ResponseMetadataToJson(this);
-}
-
-class GenerateRequest {
+/// Mirrors `RequestInfo.ts`.
+class RequestInfo {
   final dynamic body;
-  GenerateRequest({this.body});
-  factory GenerateRequest.fromJson(Map<String, dynamic> json) => GenerateRequest(body: json['body']);
-  Map<String, dynamic> toJson() => {'body': body};
+  const RequestInfo({this.body});
+  factory RequestInfo.fromJson(Json j) => RequestInfo(body: j['body']);
+  Json toJson() => {if (body != null) 'body': body};
 }
 
-class GenerateResponse {
+/// Mirrors `ResponseInfo.ts`.
+class ResponseInfo {
   final String? id;
   final String? timestamp;
   final String? modelId;
   final Map<String, String>? headers;
   final dynamic body;
-  GenerateResponse({this.id, this.timestamp, this.modelId, this.headers, this.body});
-  factory GenerateResponse.fromJson(Map<String, dynamic> json) => GenerateResponse(id: json['id'] as String?, timestamp: json['timestamp'] as String?, modelId: json['model_id'] as String?, headers: (json['headers'] as Map<String, dynamic>?)?.map((key, value) => MapEntry(key, value as String)), body: json['body']);
-  Map<String, dynamic> toJson() => {'id': id, 'timestamp': timestamp, 'model_id': modelId, if (headers != null) 'headers': headers, if (body != null) 'body': body};
+  const ResponseInfo({this.id, this.timestamp, this.modelId, this.headers, this.body});
+  factory ResponseInfo.fromJson(Json j) => ResponseInfo(
+      id: j['id'] as String?,
+      timestamp: j['timestamp'] as String?,
+      modelId: j['modelId'] as String?,
+      headers: (j['headers'] as Json?)?.cast<String, String>(),
+      body: j['body']);
+  Json toJson() => {
+        if (id != null) 'id': id,
+        if (timestamp != null) 'timestamp': timestamp,
+        if (modelId != null) 'modelId': modelId,
+        if (headers != null) 'headers': headers,
+        if (body != null) 'body': body,
+      };
 }
 
-class GenerateRequest {
-  final dynamic body;
-  GenerateRequest({this.body});
-  factory GenerateRequest.fromJson(Map<String, dynamic> json) => GenerateRequest(body: json['body']);
-  Map<String, dynamic> toJson() => {if (body != null) 'body': body};
+/// Mirrors `ResponseMetadata.ts`.
+class ResponseMetadata {
+  final String? id;
+  final String? timestamp;
+  final String? modelId;
+  const ResponseMetadata({this.id, this.timestamp, this.modelId});
+  factory ResponseMetadata.fromJson(Json j) => ResponseMetadata(
+      id: j['id'] as String?,
+      timestamp: j['timestamp'] as String?,
+      modelId: j['modelId'] as String?);
+  Json toJson() => {
+        if (id != null) 'id': id,
+        if (timestamp != null) 'timestamp': timestamp,
+        if (modelId != null) 'modelId': modelId,
+      };
 }
 
-/// A content item in a `GenerateResult`. Mirrors `GenerateContent.ts`
-/// (`aimux-core/src/result.rs`).
-///
-/// Externally-tagged union — each item is a single-key map whose key is the
-/// variant tag and whose value is the variant payload. Modeled as a sealed
-/// class hierarchy so callers get compile-time types: every known variant is a
-/// typed subclass with named fields, and [GenerateContentUnknown] is the
-/// fallback for tags added by newer core versions so they pass through verbatim
-/// instead of crashing.
-///
-/// Known variants: [GenerateContentText], [GenerateContentToolCall],
-/// [GenerateContentSource], [GenerateContentReasoning], [GenerateContentFile],
-/// [GenerateContentToolResult]. The `File` variant carries model-generated
-/// files (e.g. images or documents) as a `FileData` tagged union under `data`,
-/// alongside a `media_type` (there is **no** `filename` field). Narrow via
-/// `switch`/`is`/`whereType` to read variant-specific fields.
-sealed class GenerateContent {
-  const GenerateContent();
+// ─────────────────────────────────────────────────────────────────────────────
+// File data, generated files, sources
+// ─────────────────────────────────────────────────────────────────────────────
 
-  /// The variant tag — the single top-level key on the wire, e.g. `'Text'`,
-  /// `'ToolCall'`. Useful for logging / generic dispatch.
-  String get tag;
-
-  /// Re-encode to the externally-tagged wire shape (`{tag: payload}`).
-  Map<String, dynamic> toJson();
-
-  /// Decode an externally-tagged content map. Unknown tags fall back to
-  /// [GenerateContentUnknown] instead of throwing.
-  factory GenerateContent.fromJson(Map<String, dynamic> json) {
-    final e = json.entries.first;
-    final payload = e.value as Map<String, dynamic>;
-    return switch (e.key) {
-      'Text' => GenerateContentText.fromJson(payload),
-      'ToolCall' => GenerateContentToolCall.fromJson(payload),
-      'Source' => GenerateContentSource.fromJson(payload),
-      'Reasoning' => GenerateContentReasoning.fromJson(payload),
-      'Custom' => GenerateContentCustom.fromJson(payload),
-      'ReasoningFile' => GenerateContentReasoningFile.fromJson(payload),
-      'ToolApprovalRequest' => GenerateContentToolApprovalRequest.fromJson(payload),
-      'File' => GenerateContentFile.fromJson(payload),
-      'ToolResult' => GenerateContentToolResult.fromJson(payload),
-      _ => GenerateContentUnknown(tag: e.key, data: payload),
-    };
-  }
+/// Raw bytes (a JSON array of ints) or a base64 string — `FileBytes.ts` is the
+/// untagged union `Array<number> | string`.
+sealed class FileBytes {
+  const FileBytes();
+  factory FileBytes.fromJson(Object json) => json is String
+      ? FileBytesBase64(data: json)
+      : FileBytesBinary(data: (json as List).cast<int>());
+  Object toJson();
 }
 
-/// Generated text.
-final class GenerateContentText extends GenerateContent {
+final class FileBytesBinary extends FileBytes {
+  final List<int> data;
+  const FileBytesBinary({required this.data});
+  @override
+  Object toJson() => data;
+}
+
+final class FileBytesBase64 extends FileBytes {
+  final String data;
+  const FileBytesBase64({required this.data});
+  @override
+  Object toJson() => data;
+}
+
+/// File data of a file part. Mirrors `FileData.ts`:
+/// `{"type":"data"|"url"|"reference"|"text", ...}`.
+sealed class FileData {
+  const FileData();
+  factory FileData.fromJson(Json j) => switch (j['type']) {
+        'data' => FileDataData(data: FileBytes.fromJson(j['data'] as Object)),
+        'url' => FileDataUrl(
+            url: j['url'] as String, originalUrl: j['originalUrl'] as String?),
+        'reference' => FileDataReference(reference: j['reference'] as Json),
+        'text' => FileDataText(text: j['text'] as String),
+        _ => throw FormatException('unknown FileData type: ${j['type']}'),
+      };
+  Json toJson();
+}
+
+final class FileDataData extends FileData {
+  final FileBytes data;
+  const FileDataData({required this.data});
+  @override
+  Json toJson() => {'type': 'data', 'data': data.toJson()};
+}
+
+final class FileDataUrl extends FileData {
+  final String url;
+  final String? originalUrl;
+  const FileDataUrl({required this.url, this.originalUrl});
+  @override
+  Json toJson() => {
+        'type': 'url',
+        'url': url,
+        if (originalUrl != null) 'originalUrl': originalUrl,
+      };
+}
+
+final class FileDataReference extends FileData {
+  final Json reference;
+  const FileDataReference({required this.reference});
+  @override
+  Json toJson() => {'type': 'reference', 'reference': reference};
+}
+
+final class FileDataText extends FileData {
   final String text;
-  final Map<String, dynamic>? providerMetadata;
-
-  GenerateContentText({required this.text, this.providerMetadata});
-
+  const FileDataText({required this.text});
   @override
-  String get tag => 'Text';
+  Json toJson() => {'type': 'text', 'text': text};
+}
 
-  factory GenerateContentText.fromJson(Map<String, dynamic> json) =>
-      GenerateContentText(
-        text: json['text'] as String,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
+/// Data or a URL returned for a generated file. Mirrors `GeneratedFileData.ts`.
+sealed class GeneratedFileData {
+  const GeneratedFileData();
+  factory GeneratedFileData.fromJson(Json j) => switch (j['type']) {
+        'data' =>
+          GeneratedFileDataData(data: FileBytes.fromJson(j['data'] as Object)),
+        'url' => GeneratedFileDataUrl(
+            url: j['url'] as String, originalUrl: j['originalUrl'] as String?),
+        _ => throw FormatException('unknown GeneratedFileData type: ${j['type']}'),
+      };
+  Json toJson();
+}
 
+final class GeneratedFileDataData extends GeneratedFileData {
+  final FileBytes data;
+  const GeneratedFileDataData({required this.data});
   @override
-  Map<String, dynamic> toJson() => {
-        'Text': {
-          'text': text,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
+  Json toJson() => {'type': 'data', 'data': data.toJson()};
+}
+
+final class GeneratedFileDataUrl extends GeneratedFileData {
+  final String url;
+  final String? originalUrl;
+  const GeneratedFileDataUrl({required this.url, this.originalUrl});
+  @override
+  Json toJson() => {
+        'type': 'url',
+        'url': url,
+        if (originalUrl != null) 'originalUrl': originalUrl,
       };
 }
 
-/// A tool call requested by the model.
-final class GenerateContentToolCall extends GenerateContent {
-  final String toolCallId;
-  final String toolName;
-  final dynamic input;
-  final bool? providerExecuted;
-  final bool? isDynamic;
-  final Map<String, dynamic>? providerMetadata;
-
-  GenerateContentToolCall({
-    required this.toolCallId,
-    required this.toolName,
-    required this.input,
-    this.providerExecuted,
-    this.isDynamic,
-    this.providerMetadata,
-  });
-
-  @override
-  String get tag => 'ToolCall';
-
-  factory GenerateContentToolCall.fromJson(Map<String, dynamic> json) =>
-      GenerateContentToolCall(
-        toolCallId: json['tool_call_id'] as String,
-        toolName: json['tool_name'] as String,
-        input: json['input'],
-        providerExecuted: json['provider_executed'] as bool?,
-        isDynamic: json['dynamic'] as bool?,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
-  @override
-  Map<String, dynamic> toJson() => {
-        'ToolCall': {
-          'tool_call_id': toolCallId,
-          'tool_name': toolName,
-          'input': input,
-          if (providerExecuted != null) 'provider_executed': providerExecuted,
-          if (isDynamic != null) 'dynamic': isDynamic,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
+/// A file generated by the model. Mirrors `GeneratedFile.ts`.
+class GeneratedFile {
+  final GeneratedFileData data;
+  final String mediaType;
+  final Json? providerMetadata;
+  const GeneratedFile(
+      {required this.data, required this.mediaType, this.providerMetadata});
+  factory GeneratedFile.fromJson(Json j) => GeneratedFile(
+      data: GeneratedFileData.fromJson(j['data'] as Json),
+      mediaType: j['mediaType'] as String,
+      providerMetadata: _opt(j['providerMetadata']));
+  Json toJson() => {
+        'data': data.toJson(),
+        'mediaType': mediaType,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
+/// A source / citation. Mirrors `Source.ts`, tagged by `sourceType`
+/// (`"url"` / `"document"`).
 sealed class Source {
   const Source();
 
-  factory Source.fromJson(Map<String, dynamic> json) => switch (json['source_type']) {
-    'url' => UrlSource(
-        id: json['id'] as String,
-        url: json['url'] as String,
-        title: json['title'] as String?,
-        providerMetadata: json['provider_metadata'] as Map<String, dynamic>?),
-    'document' => DocumentSource(
-        id: json['id'] as String,
-        mediaType: json['media_type'] as String,
-        title: json['title'] as String,
-        filename: json['filename'] as String?,
-        providerMetadata: json['provider_metadata'] as Map<String, dynamic>?),
-    _ => throw FormatException('invalid source type: ${json['source_type']}'),
-  };
+  factory Source.fromJson(Json j) => switch (j['sourceType']) {
+        'url' => UrlSource(
+            id: j['id'] as String,
+            url: j['url'] as String,
+            title: j['title'] as String?,
+            providerMetadata: _opt(j['providerMetadata'])),
+        'document' => DocumentSource(
+            id: j['id'] as String,
+            mediaType: j['mediaType'] as String,
+            title: j['title'] as String,
+            filename: j['filename'] as String?,
+            providerMetadata: _opt(j['providerMetadata'])),
+        _ => throw FormatException('invalid source type: ${j['sourceType']}'),
+      };
 
-  Map<String, dynamic> toJson();
+  Json toJson();
 }
 
 final class UrlSource extends Source {
   final String id;
   final String url;
   final String? title;
-  final Map<String, dynamic>? providerMetadata;
+  final Json? providerMetadata;
 
-  const UrlSource({required this.id, required this.url, this.title, this.providerMetadata});
+  const UrlSource(
+      {required this.id, required this.url, this.title, this.providerMetadata});
 
   @override
-  Map<String, dynamic> toJson() => {
-    'source_type': 'url', 'id': id, 'url': url,
-    if (title != null) 'title': title,
-    if (providerMetadata != null) 'provider_metadata': providerMetadata,
-  };
+  Json toJson() => {
+        'sourceType': 'url',
+        'id': id,
+        'url': url,
+        if (title != null) 'title': title,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+      };
 }
 
 final class DocumentSource extends Source {
@@ -598,107 +654,525 @@ final class DocumentSource extends Source {
   final String mediaType;
   final String title;
   final String? filename;
-  final Map<String, dynamic>? providerMetadata;
+  final Json? providerMetadata;
 
-  const DocumentSource({required this.id, required this.mediaType, required this.title,
-      this.filename, this.providerMetadata});
-
-  @override
-  Map<String, dynamic> toJson() => {
-    'source_type': 'document', 'id': id, 'media_type': mediaType, 'title': title,
-    if (filename != null) 'filename': filename,
-    if (providerMetadata != null) 'provider_metadata': providerMetadata,
-  };
-}
-
-/// A source / citation (e.g. URL citation from search-preview models).
-final class GenerateContentSource extends GenerateContent {
-  final Source source;
-
-  GenerateContentSource({required this.source});
+  const DocumentSource(
+      {required this.id,
+      required this.mediaType,
+      required this.title,
+      this.filename,
+      this.providerMetadata});
 
   @override
-  String get tag => 'Source';
-
-  factory GenerateContentSource.fromJson(Map<String, dynamic> json) =>
-      GenerateContentSource(source: Source.fromJson(json));
-
-  @override
-  Map<String, dynamic> toJson() => {'Source': source.toJson()};
-}
-
-/// A reasoning / thinking segment produced by the model.
-final class GenerateContentReasoning extends GenerateContent {
-  final String text;
-  final Map<String, dynamic>? providerMetadata;
-
-  GenerateContentReasoning({required this.text, this.providerMetadata});
-
-  @override
-  String get tag => 'Reasoning';
-
-  factory GenerateContentReasoning.fromJson(Map<String, dynamic> json) =>
-      GenerateContentReasoning(
-        text: json['text'] as String,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
-  @override
-  Map<String, dynamic> toJson() => {
-        'Reasoning': {
-          'text': text,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
+  Json toJson() => {
+        'sourceType': 'document',
+        'id': id,
+        'mediaType': mediaType,
+        'title': title,
+        if (filename != null) 'filename': filename,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
-/// A file generated by the model (e.g. an image or document). The `data`
-/// field is a `FileData` tagged union; there is **no** `filename` field.
-final class GenerateContentFile extends GenerateContent {
+// ─────────────────────────────────────────────────────────────────────────────
+// ContentPart (message content) — `{"type": "text", ...}`
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The output of a tool call in a `tool-result` part. Mirrors
+/// `ToolResultOutput.ts`: `{"type":"text"|"error-text","value":"…"}`,
+/// `{"type":"json"|"error-json","value":<json>}`,
+/// `{"type":"execution-denied","reason"?}` or `{"type":"content","value":[…]}`
+/// (`value` is then a list of text / file / custom content maps, kept as
+/// weak-typed maps).
+class ToolResultOutput {
+  final String type;
+  final dynamic value;
+  final String? reason;
+  final Json? providerOptions;
+
+  const ToolResultOutput._(this.type, {this.value, this.reason, this.providerOptions});
+
+  factory ToolResultOutput.text(String value, {Json? providerOptions}) =>
+      ToolResultOutput._('text', value: value, providerOptions: providerOptions);
+  factory ToolResultOutput.json(Object? value, {Json? providerOptions}) =>
+      ToolResultOutput._('json', value: value, providerOptions: providerOptions);
+  factory ToolResultOutput.errorText(String value, {Json? providerOptions}) =>
+      ToolResultOutput._('error-text', value: value, providerOptions: providerOptions);
+  factory ToolResultOutput.errorJson(Object? value, {Json? providerOptions}) =>
+      ToolResultOutput._('error-json', value: value, providerOptions: providerOptions);
+  factory ToolResultOutput.executionDenied({String? reason, Json? providerOptions}) =>
+      ToolResultOutput._('execution-denied',
+          reason: reason, providerOptions: providerOptions);
+  factory ToolResultOutput.content(List<Json> value) =>
+      ToolResultOutput._('content', value: value);
+
+  factory ToolResultOutput.fromJson(Json j) => ToolResultOutput._(
+        j['type'] as String,
+        value: j['value'],
+        reason: j['reason'] as String?,
+        providerOptions: _opt(j['providerOptions']),
+      );
+
+  Json toJson() => {
+        'type': type,
+        if (type != 'execution-denied') 'value': value,
+        if (reason != null) 'reason': reason,
+        if (providerOptions != null) 'providerOptions': providerOptions,
+      };
+}
+
+/// One part of a message's content. Mirrors `ContentPart.ts`; unknown `type`
+/// values fall back to [ContentPartUnknown] and pass through verbatim.
+sealed class ContentPart {
+  const ContentPart();
+  factory ContentPart.fromJson(Json j) => switch (j['type']) {
+        'text' => ContentPartText(
+            text: j['text'] as String, providerOptions: _opt(j['providerOptions'])),
+        'custom' => ContentPartCustom(
+            kind: j['kind'] as String, providerOptions: _opt(j['providerOptions'])),
+        'reasoning-file' => ContentPartReasoningFile(
+            data: GeneratedFileData.fromJson(j['data'] as Json),
+            mediaType: j['mediaType'] as String,
+            providerOptions: _opt(j['providerOptions'])),
+        'tool-approval-request' => ContentPartToolApprovalRequest(
+            approvalId: j['approvalId'] as String,
+            toolCallId: j['toolCallId'] as String,
+            reason: j['reason'] as String?,
+            isAutomatic: j['isAutomatic'] as bool?,
+            signature: j['signature'] as String?,
+            inputSchemaInput: j['inputSchemaInput']),
+        'image' => ContentPartImage(
+            image: (j['image'] as List).cast<int>(),
+            mediaType: j['mediaType'] as String,
+            providerOptions: _opt(j['providerOptions'])),
+        'file' => ContentPartFile(
+            data: (j['data'] as List).cast<int>(),
+            mediaType: j['mediaType'] as String,
+            filename: j['filename'] as String?,
+            providerOptions: _opt(j['providerOptions'])),
+        'file-base64' => ContentPartFileBase64(
+            data: j['data'] as String,
+            mediaType: j['mediaType'] as String,
+            filename: j['filename'] as String?,
+            providerOptions: _opt(j['providerOptions'])),
+        'file-url' => ContentPartFileUrl(
+            url: j['url'] as String,
+            mediaType: j['mediaType'] as String,
+            providerOptions: _opt(j['providerOptions'])),
+        'file-reference' => ContentPartFileReference(
+            mediaType: j['mediaType'] as String,
+            reference: j['reference'],
+            filename: j['filename'] as String?,
+            providerOptions: _opt(j['providerOptions'])),
+        'reasoning' => ContentPartReasoning(
+            text: j['text'] as String,
+            signature: j['signature'] as String?,
+            providerOptions: _opt(j['providerOptions'])),
+        'tool-call' => ContentPartToolCall(
+            toolCallId: j['toolCallId'] as String,
+            toolName: j['toolName'] as String,
+            input: j['input'],
+            providerExecuted: j['providerExecuted'] as bool?,
+            providerOptions: _opt(j['providerOptions'])),
+        'tool-result' => ContentPartToolResult(
+            toolCallId: j['toolCallId'] as String,
+            toolName: j['toolName'] as String,
+            output: ToolResultOutput.fromJson(j['output'] as Json),
+            providerOptions: _opt(j['providerOptions'])),
+        _ => ContentPartUnknown(j),
+      };
+  Json toJson();
+}
+
+final class ContentPartText extends ContentPart {
+  final String text;
+  final Json? providerOptions;
+  const ContentPartText({required this.text, this.providerOptions});
+  @override
+  Json toJson() => {
+        'type': 'text',
+        'text': text,
+        if (providerOptions != null) 'providerOptions': providerOptions,
+      };
+}
+
+final class ContentPartCustom extends ContentPart {
+  final String kind;
+  final Json? providerOptions;
+  const ContentPartCustom({required this.kind, this.providerOptions});
+  @override
+  Json toJson() => {
+        'type': 'custom',
+        'kind': kind,
+        if (providerOptions != null) 'providerOptions': providerOptions,
+      };
+}
+
+final class ContentPartReasoningFile extends ContentPart {
   final GeneratedFileData data;
   final String mediaType;
-  final Map<String, dynamic>? providerMetadata;
-
-  GenerateContentFile({
-    required this.data,
-    required this.mediaType,
-    this.providerMetadata,
-  });
-
+  final Json? providerOptions;
+  const ContentPartReasoningFile(
+      {required this.data, required this.mediaType, this.providerOptions});
   @override
-  String get tag => 'File';
-
-  factory GenerateContentFile.fromJson(Map<String, dynamic> json) =>
-      GenerateContentFile(
-        data: GeneratedFileData.fromJson(json['data'] as Map<String, dynamic>),
-        mediaType: json['media_type'] as String,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
-  @override
-  Map<String, dynamic> toJson() => {
-        'File': {
-          'data': data.toJson(),
-          'media_type': mediaType,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
+  Json toJson() => {
+        'type': 'reasoning-file',
+        'data': data.toJson(),
+        'mediaType': mediaType,
+        if (providerOptions != null) 'providerOptions': providerOptions,
       };
 }
 
-/// A tool result from a provider-executed tool (e.g. xAI file_search,
-/// web_search). Emitted alongside the preceding `ToolCall`.
-final class GenerateContentToolResult extends GenerateContent {
+final class ContentPartToolApprovalRequest extends ContentPart {
+  final String approvalId;
+  final String toolCallId;
+  final String? reason;
+  final bool? isAutomatic;
+  final String? signature;
+  final dynamic inputSchemaInput;
+  const ContentPartToolApprovalRequest(
+      {required this.approvalId,
+      required this.toolCallId,
+      this.reason,
+      this.isAutomatic,
+      this.signature,
+      this.inputSchemaInput});
+  @override
+  Json toJson() => {
+        'type': 'tool-approval-request',
+        'approvalId': approvalId,
+        'toolCallId': toolCallId,
+        if (reason != null) 'reason': reason,
+        if (isAutomatic != null) 'isAutomatic': isAutomatic,
+        if (signature != null) 'signature': signature,
+        if (inputSchemaInput != null) 'inputSchemaInput': inputSchemaInput,
+      };
+}
+
+final class ContentPartImage extends ContentPart {
+  final List<int> image;
+  final String mediaType;
+  final Json? providerOptions;
+  const ContentPartImage(
+      {required this.image, required this.mediaType, this.providerOptions});
+  @override
+  Json toJson() => {
+        'type': 'image',
+        'image': image,
+        'mediaType': mediaType,
+        if (providerOptions != null) 'providerOptions': providerOptions,
+      };
+}
+
+final class ContentPartFile extends ContentPart {
+  final List<int> data;
+  final String mediaType;
+  final String? filename;
+  final Json? providerOptions;
+  const ContentPartFile(
+      {required this.data,
+      required this.mediaType,
+      this.filename,
+      this.providerOptions});
+  @override
+  Json toJson() => {
+        'type': 'file',
+        'data': data,
+        'mediaType': mediaType,
+        if (filename != null) 'filename': filename,
+        if (providerOptions != null) 'providerOptions': providerOptions,
+      };
+}
+
+final class ContentPartFileBase64 extends ContentPart {
+  final String data;
+  final String mediaType;
+  final String? filename;
+  final Json? providerOptions;
+  const ContentPartFileBase64(
+      {required this.data,
+      required this.mediaType,
+      this.filename,
+      this.providerOptions});
+  @override
+  Json toJson() => {
+        'type': 'file-base64',
+        'data': data,
+        'mediaType': mediaType,
+        if (filename != null) 'filename': filename,
+        if (providerOptions != null) 'providerOptions': providerOptions,
+      };
+}
+
+final class ContentPartFileUrl extends ContentPart {
+  final String url;
+  final String mediaType;
+  final Json? providerOptions;
+  const ContentPartFileUrl(
+      {required this.url, required this.mediaType, this.providerOptions});
+  @override
+  Json toJson() => {
+        'type': 'file-url',
+        'url': url,
+        'mediaType': mediaType,
+        if (providerOptions != null) 'providerOptions': providerOptions,
+      };
+}
+
+final class ContentPartFileReference extends ContentPart {
+  final String mediaType;
+  final dynamic reference;
+  final String? filename;
+  final Json? providerOptions;
+  const ContentPartFileReference(
+      {required this.mediaType,
+      required this.reference,
+      this.filename,
+      this.providerOptions});
+  @override
+  Json toJson() => {
+        'type': 'file-reference',
+        'mediaType': mediaType,
+        'reference': reference,
+        if (filename != null) 'filename': filename,
+        if (providerOptions != null) 'providerOptions': providerOptions,
+      };
+}
+
+final class ContentPartReasoning extends ContentPart {
+  final String text;
+  final String? signature;
+  final Json? providerOptions;
+  const ContentPartReasoning(
+      {required this.text, this.signature, this.providerOptions});
+  @override
+  Json toJson() => {
+        'type': 'reasoning',
+        'text': text,
+        if (signature != null) 'signature': signature,
+        if (providerOptions != null) 'providerOptions': providerOptions,
+      };
+}
+
+final class ContentPartToolCall extends ContentPart {
+  final String toolCallId;
+  final String toolName;
+  final dynamic input;
+  final bool? providerExecuted;
+  final Json? providerOptions;
+  const ContentPartToolCall(
+      {required this.toolCallId,
+      required this.toolName,
+      required this.input,
+      this.providerExecuted,
+      this.providerOptions});
+  @override
+  Json toJson() => {
+        'type': 'tool-call',
+        'toolCallId': toolCallId,
+        'toolName': toolName,
+        'input': input,
+        if (providerExecuted != null) 'providerExecuted': providerExecuted,
+        if (providerOptions != null) 'providerOptions': providerOptions,
+      };
+}
+
+/// The call-layer tool result a host appends to the transcript: the call's
+/// [toolCallId] and [toolName] plus a typed [output].
+final class ContentPartToolResult extends ContentPart {
+  final String toolCallId;
+  final String toolName;
+  final ToolResultOutput output;
+  final Json? providerOptions;
+  const ContentPartToolResult(
+      {required this.toolCallId,
+      required this.toolName,
+      required this.output,
+      this.providerOptions});
+  @override
+  Json toJson() => {
+        'type': 'tool-result',
+        'toolCallId': toolCallId,
+        'toolName': toolName,
+        'output': output.toJson(),
+        if (providerOptions != null) 'providerOptions': providerOptions,
+      };
+}
+
+/// Forward-compatibility: a `type` this binding does not model, verbatim.
+final class ContentPartUnknown extends ContentPart {
+  final Json data;
+  const ContentPartUnknown(this.data);
+  String get tag => data['type'] as String;
+  @override
+  Json toJson() => data;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Messages
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A single chat message. Mirrors `ModelMessage.ts`.
+///
+/// `content` is either a plain `String` or a `List` of content-part maps
+/// (see [ContentPart]); it is kept as `Object` so both shapes pass through
+/// verbatim.
+class ModelMessage {
+  final String role;
+  final Object content;
+
+  const ModelMessage({required this.role, required this.content});
+
+  factory ModelMessage.fromJson(Json j) =>
+      ModelMessage(role: j['role'] as String, content: j['content'] as Object);
+  Json toJson() => {'role': role, 'content': content};
+
+  /// [content] as a list of content-part maps: a `String` becomes a single
+  /// `{'type': 'text', 'text': content}` part.
+  List<Json> get contentParts {
+    final c = content;
+    if (c is String) {
+      return [
+        {'type': 'text', 'text': c},
+      ];
+    }
+    if (c is List) return c.whereType<Json>().toList();
+    return const [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GenerateResult (provider result) and its content
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A content item in a [GenerateResult]. Mirrors `GenerateContent.ts` with the
+/// provider-level parameters (`RawToolCall`, `RawToolApprovalRequest`,
+/// `GeneratedFile`): `{"type": "text" | "tool-call" | "source" | "reasoning" |
+/// "file" | "reasoning-file" | "custom" | "tool-approval-request" |
+/// "tool-result", ...}`. Unknown types fall back to [GenerateContentUnknown].
+sealed class GenerateContent {
+  const GenerateContent();
+
+  /// The wire `type` value, e.g. `'text'`, `'tool-call'`.
+  String get tag => toJson()['type'] as String;
+
+  Json toJson();
+
+  factory GenerateContent.fromJson(Json j) => switch (j['type']) {
+        'text' => GenerateContentText(
+            text: j['text'] as String,
+            providerMetadata: _opt(j['providerMetadata'])),
+        'tool-call' => GenerateContentToolCall(RawToolCall.fromJson(j)),
+        'source' => GenerateContentSource(source: Source.fromJson(j)),
+        'reasoning' => GenerateContentReasoning(
+            text: j['text'] as String,
+            providerMetadata: _opt(j['providerMetadata'])),
+        'file' => GenerateContentFile(GeneratedFile.fromJson(j)),
+        'reasoning-file' => GenerateContentReasoningFile(GeneratedFile.fromJson(j)),
+        'custom' => GenerateContentCustom(
+            kind: j['kind'] as String,
+            providerMetadata: _opt(j['providerMetadata'])),
+        'tool-approval-request' => GenerateContentToolApprovalRequest(
+            approvalId: j['approvalId'] as String,
+            toolCallId: j['toolCallId'] as String,
+            providerMetadata: _opt(j['providerMetadata'])),
+        'tool-result' => GenerateContentToolResult(ToolResult.fromJson(j)),
+        _ => GenerateContentUnknown(j),
+      };
+}
+
+final class GenerateContentText extends GenerateContent {
+  final String text;
+  final Json? providerMetadata;
+  const GenerateContentText({required this.text, this.providerMetadata});
+  @override
+  Json toJson() => {
+        'type': 'text',
+        'text': text,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+      };
+}
+
+/// A tool call as the provider emitted it (raw argument text).
+final class GenerateContentToolCall extends GenerateContent {
+  final RawToolCall call;
+  const GenerateContentToolCall(this.call);
+  @override
+  Json toJson() => {'type': 'tool-call', ...call.toJson()};
+}
+
+final class GenerateContentSource extends GenerateContent {
+  final Source source;
+  const GenerateContentSource({required this.source});
+  @override
+  Json toJson() => {'type': 'source', ...source.toJson()};
+}
+
+final class GenerateContentReasoning extends GenerateContent {
+  final String text;
+  final Json? providerMetadata;
+  const GenerateContentReasoning({required this.text, this.providerMetadata});
+  @override
+  Json toJson() => {
+        'type': 'reasoning',
+        'text': text,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+      };
+}
+
+final class GenerateContentFile extends GenerateContent {
+  final GeneratedFile file;
+  const GenerateContentFile(this.file);
+  @override
+  Json toJson() => {'type': 'file', ...file.toJson()};
+}
+
+final class GenerateContentReasoningFile extends GenerateContent {
+  final GeneratedFile file;
+  const GenerateContentReasoningFile(this.file);
+  @override
+  Json toJson() => {'type': 'reasoning-file', ...file.toJson()};
+}
+
+final class GenerateContentCustom extends GenerateContent {
+  final String kind;
+  final Json? providerMetadata;
+  const GenerateContentCustom({required this.kind, this.providerMetadata});
+  @override
+  Json toJson() => {
+        'type': 'custom',
+        'kind': kind,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+      };
+}
+
+final class GenerateContentToolApprovalRequest extends GenerateContent {
+  final String approvalId;
+  final String toolCallId;
+  final Json? providerMetadata;
+  const GenerateContentToolApprovalRequest(
+      {required this.approvalId, required this.toolCallId, this.providerMetadata});
+  @override
+  Json toJson() => {
+        'type': 'tool-approval-request',
+        'approvalId': approvalId,
+        'toolCallId': toolCallId,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+      };
+}
+
+/// The result of a provider-executed tool. Mirrors `ToolResult.ts`: [result] is
+/// the tool's output, [isError] / [preliminary] / [isDynamic] (wire key
+/// `dynamic`) its flags.
+class ToolResult {
   final String toolCallId;
   final String toolName;
   final dynamic result;
   final bool? isError;
   final bool? preliminary;
   final bool? isDynamic;
-  final Map<String, dynamic>? providerMetadata;
-
-  GenerateContentToolResult({
+  final Json? providerMetadata;
+  const ToolResult({
     required this.toolCallId,
     required this.toolName,
     required this.result,
@@ -707,141 +1181,110 @@ final class GenerateContentToolResult extends GenerateContent {
     this.isDynamic,
     this.providerMetadata,
   });
-
-  @override
-  String get tag => 'ToolResult';
-
-  factory GenerateContentToolResult.fromJson(Map<String, dynamic> json) =>
-      GenerateContentToolResult(
-        toolCallId: json['tool_call_id'] as String,
-        toolName: json['tool_name'] as String,
-        result: json['result'],
-        isError: json['is_error'] as bool?,
-        preliminary: json['preliminary'] as bool?,
-        isDynamic: json['dynamic'] as bool?,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
+  factory ToolResult.fromJson(Json j) => ToolResult(
+        toolCallId: j['toolCallId'] as String,
+        toolName: j['toolName'] as String,
+        result: j['result'],
+        isError: j['isError'] as bool?,
+        preliminary: j['preliminary'] as bool?,
+        isDynamic: j['dynamic'] as bool?,
+        providerMetadata: _opt(j['providerMetadata']),
       );
-
-  @override
-  Map<String, dynamic> toJson() => {
-        'ToolResult': {
-          'tool_call_id': toolCallId,
-          'tool_name': toolName,
-          'result': result,
-          if (isError != null) 'is_error': isError,
-          if (preliminary != null) 'preliminary': preliminary,
-          if (isDynamic != null) 'dynamic': isDynamic,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
+  Json toJson() => {
+        'toolCallId': toolCallId,
+        'toolName': toolName,
+        'result': result,
+        if (isError != null) 'isError': isError,
+        if (preliminary != null) 'preliminary': preliminary,
+        if (isDynamic != null) 'dynamic': isDynamic,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
-/// Fallback for unknown/forward-compatible `GenerateContent` variants.
-///
-/// Newer core versions may emit tags this binding does not model yet; this
-/// class passes them through verbatim (`{tag: data}`) instead of discarding
-/// or crashing.
-final class GenerateContentCustom extends GenerateContent {
-  final String kind;
-  final Map<String, dynamic>? providerMetadata;
-  GenerateContentCustom({required this.kind, this.providerMetadata});
-  @override String get tag => 'Custom';
-  factory GenerateContentCustom.fromJson(Map<String, dynamic> json) => GenerateContentCustom(kind: json['kind'] as String, providerMetadata: json['provider_metadata'] as Map<String, dynamic>?);
-  @override Map<String, dynamic> toJson() => {'Custom': {'kind': kind, if (providerMetadata != null) 'provider_metadata': providerMetadata}};
+final class GenerateContentToolResult extends GenerateContent {
+  final ToolResult result;
+  const GenerateContentToolResult(this.result);
+  @override
+  Json toJson() => {'type': 'tool-result', ...result.toJson()};
 }
 
-final class GenerateContentReasoningFile extends GenerateContent {
-  final GeneratedFileData data;
-  final String mediaType;
-  final Map<String, dynamic>? providerMetadata;
-  GenerateContentReasoningFile({required this.data, required this.mediaType, this.providerMetadata});
-  @override String get tag => 'ReasoningFile';
-  factory GenerateContentReasoningFile.fromJson(Map<String, dynamic> json) => GenerateContentReasoningFile(data: GeneratedFileData.fromJson(json['data'] as Map<String, dynamic>), mediaType: json['media_type'] as String, providerMetadata: json['provider_metadata'] as Map<String, dynamic>?);
-  @override Map<String, dynamic> toJson() => {'ReasoningFile': {'data': data.toJson(), 'media_type': mediaType, if (providerMetadata != null) 'provider_metadata': providerMetadata}};
-}
-
-final class GenerateContentToolApprovalRequest extends GenerateContent {
-  final String approvalId;
-  final String toolCallId;
-  final Map<String, dynamic>? providerMetadata;
-  GenerateContentToolApprovalRequest({required this.approvalId, required this.toolCallId, this.providerMetadata});
-  @override String get tag => 'ToolApprovalRequest';
-  factory GenerateContentToolApprovalRequest.fromJson(Map<String, dynamic> json) => GenerateContentToolApprovalRequest(approvalId: json['approval_id'] as String, toolCallId: json['tool_call_id'] as String, providerMetadata: json['provider_metadata'] as Map<String, dynamic>?);
-  @override Map<String, dynamic> toJson() => {'ToolApprovalRequest': {'approval_id': approvalId, 'tool_call_id': toolCallId, if (providerMetadata != null) 'provider_metadata': providerMetadata}};
-}
-
+/// Forward-compatibility: a `type` this binding does not model, verbatim.
 final class GenerateContentUnknown extends GenerateContent {
+  final Json data;
+  const GenerateContentUnknown(this.data);
   @override
-  final String tag;
-  final Map<String, dynamic> data;
-
-  GenerateContentUnknown({required this.tag, required this.data});
-
-  @override
-  Map<String, dynamic> toJson() => {tag: data};
+  Json toJson() => data;
 }
 
+/// The raw provider result. Mirrors `GenerateResult.ts`.
 class GenerateResult {
   final List<GenerateContent> content;
   final FinishReason finishReason;
   final Usage usage;
-  final List<Map<String, dynamic>> warnings;
-  final Map<String, dynamic>? providerMetadata;
-  final GenerateResponse? response;
-  final GenerateRequest? request;
-  GenerateResult({required this.content, required this.finishReason, required this.usage, this.warnings = const [], this.providerMetadata, this.response, this.request});
-  factory GenerateResult.fromJson(Map<String, dynamic> json) => GenerateResult(
-    content: (json['content'] as List<dynamic>? ?? []).map((e) => GenerateContent.fromJson(e as Map<String, dynamic>)).toList(),
-    finishReason: FinishReason.fromJson(json['finish_reason'] as Map<String, dynamic>),
-    usage: Usage.fromJson(json['usage'] as Map<String, dynamic>),
-    warnings: (json['warnings'] as List<dynamic>? ?? []).map((e) => e as Map<String, dynamic>).toList(),
-    providerMetadata: json['provider_metadata'] as Map<String, dynamic>?,
-    response: json['response'] == null ? null : GenerateResponse.fromJson(json['response'] as Map<String, dynamic>),
-    request: json['request'] == null ? null : GenerateRequest.fromJson(json['request'] as Map<String, dynamic>),
-  );
-  Map<String, dynamic> toJson() => {'content': content.map((c) => c.toJson()).toList(), 'finish_reason': finishReason.toJson(), 'usage': usage.toJson(), 'warnings': warnings, 'response': response?.toJson(), if (providerMetadata != null) 'provider_metadata': providerMetadata, if (request != null) 'request': request?.toJson()};
+  final List<Json> warnings;
+  final Json? providerMetadata;
+  final RequestInfo? request;
+  final ResponseInfo? response;
+  const GenerateResult({
+    required this.content,
+    required this.finishReason,
+    required this.usage,
+    required this.warnings,
+    this.providerMetadata,
+    this.request,
+    this.response,
+  });
+  factory GenerateResult.fromJson(Json j) => GenerateResult(
+        content: _list(j['content'], GenerateContent.fromJson),
+        finishReason: FinishReason.fromJson(j['finishReason'] as Json),
+        usage: Usage.fromJson(j['usage'] as Json),
+        warnings: _maps(j['warnings']),
+        providerMetadata: _opt(j['providerMetadata']),
+        request: j['request'] == null ? null : RequestInfo.fromJson(j['request'] as Json),
+        response:
+            j['response'] == null ? null : ResponseInfo.fromJson(j['response'] as Json),
+      );
+  Json toJson() => {
+        'content': [for (final c in content) c.toJson()],
+        'finishReason': finishReason.toJson(),
+        'usage': usage.toJson(),
+        'warnings': warnings,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+        if (request != null) 'request': request!.toJson(),
+        if (response != null) 'response': response!.toJson(),
+      };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Result / options
+// Results / options
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Result of `generate_text` (user-facing). Mirrors `GenerateTextResult.ts`.
-@JsonSerializable()
+/// Result of `generate_text`. Mirrors `GenerateTextResult.ts`. The typed-union
+/// fields (`content`, `reasoning`, `files`, `warnings`) stay weak-typed maps.
 class GenerateTextResult {
   final String text;
-  final List<Map<String, dynamic>> content;
-  @JsonKey(name: 'tool_calls')
+  final List<Json> content;
   final List<ToolCall> toolCalls;
-  @JsonKey(name: 'finish_reason')
   final FinishReason finishReason;
   final Usage usage;
-  final List<Map<String, dynamic>> warnings;
+  final List<Json> warnings;
   final GenerateResult raw;
-  // M7: top-level aggregation fields
-  final List<Map<String, dynamic>> reasoning;
-  @JsonKey(name: 'reasoning_text')
+  final List<Json> reasoning;
   final String reasoningText;
   final List<Source> sources;
-  final List<Map<String, dynamic>> files;
-  @JsonKey(name: 'response_messages')
+  final List<Json> files;
+
+  /// Assistant messages ready to append to the prompt for the next turn.
   final List<ModelMessage> responseMessages;
-  /// Raw provider-specific finish reason string (M12, e.g. "stop", "end_turn").
-  @JsonKey(name: 'raw_finish_reason')
   final String? rawFinishReason;
-  /// Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
-  /// raw.provider_metadata for top-level convenience. Weak type.
-  @JsonKey(name: 'provider_metadata')
-  final Map<String, dynamic>? providerMetadata;
-  /// Response metadata (id, timestamp, model_id). Mirrored from raw.response.
-  final ResponseMetadata response;
-  /// Total token usage across all steps. In single-step mode (aimux's
-  /// default), equals usage. Provided for AI SDK parity.
-  @JsonKey(name: 'total_usage')
+  final Json? providerMetadata;
+  final RequestInfo request;
+  final ResponseInfo response;
+
+  /// Total token usage across all steps (equals [usage] in single-step mode).
   final Usage totalUsage;
 
-  GenerateTextResult({
+  const GenerateTextResult({
     required this.text,
     this.content = const [],
     required this.toolCalls,
@@ -856,40 +1299,68 @@ class GenerateTextResult {
     this.responseMessages = const [],
     this.rawFinishReason,
     this.providerMetadata,
+    required this.request,
     required this.response,
     required this.totalUsage,
   });
 
-  factory GenerateTextResult.fromJson(Map<String, dynamic> json) =>
-      _$GenerateTextResultFromJson(json);
-  Map<String, dynamic> toJson() => _$GenerateTextResultToJson(this);
+  factory GenerateTextResult.fromJson(Json j) => GenerateTextResult(
+        text: j['text'] as String,
+        content: _maps(j['content']),
+        toolCalls: _list(j['toolCalls'], ToolCall.fromJson),
+        finishReason: FinishReason.fromJson(j['finishReason'] as Json),
+        usage: Usage.fromJson(j['usage'] as Json),
+        warnings: _maps(j['warnings']),
+        raw: GenerateResult.fromJson(j['raw'] as Json),
+        reasoning: _maps(j['reasoning']),
+        reasoningText: j['reasoningText'] as String,
+        sources: _list(j['sources'], Source.fromJson),
+        files: _maps(j['files']),
+        responseMessages: _list(j['responseMessages'], ModelMessage.fromJson),
+        rawFinishReason: j['rawFinishReason'] as String?,
+        providerMetadata: _opt(j['providerMetadata']),
+        request: RequestInfo.fromJson(j['request'] as Json),
+        response: ResponseInfo.fromJson(j['response'] as Json),
+        totalUsage: Usage.fromJson(j['totalUsage'] as Json),
+      );
+
+  Json toJson() => {
+        'content': content,
+        'text': text,
+        'toolCalls': [for (final c in toolCalls) c.toJson()],
+        'finishReason': finishReason.toJson(),
+        'usage': usage.toJson(),
+        'warnings': warnings,
+        'raw': raw.toJson(),
+        'reasoning': reasoning,
+        'reasoningText': reasoningText,
+        'sources': [for (final s in sources) s.toJson()],
+        'files': files,
+        'responseMessages': [for (final m in responseMessages) m.toJson()],
+        if (rawFinishReason != null) 'rawFinishReason': rawFinishReason,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+        'request': request.toJson(),
+        'response': response.toJson(),
+        'totalUsage': totalUsage.toJson(),
+      };
 }
 
-/// Result of `generate_object` (user-facing, M12). The parsed JSON object plus
-/// convenience fields from the underlying `generate_text` call.
-///
-/// Mirrors `GenerateObjectResult.ts`. `object` is an arbitrary JSON value
-/// (weak type — `Map<String, dynamic>` / primitive).
-@JsonSerializable()
+/// Result of `generate_object`. Mirrors `GenerateObjectResult.ts`; [object] is
+/// an arbitrary JSON value.
 class GenerateObjectResult {
-  /// The parsed JSON object returned by the model (arbitrary JSON, weak type).
   final Object? object;
-  @JsonKey(name: 'finish_reason')
   final FinishReason finishReason;
-  @JsonKey(name: 'raw_finish_reason')
   final String? rawFinishReason;
   final Usage usage;
-  final List<Map<String, dynamic>> warnings;
-  /// Concatenated reasoning text (if the model produced reasoning/thinking).
+  final List<Json> warnings;
+
+  /// Concatenated reasoning text, if the model produced any.
   final String? reasoning;
-  /// Provider-specific metadata (e.g. Anthropic cache info). Weak type.
-  @JsonKey(name: 'provider_metadata')
-  final Map<String, dynamic>? providerMetadata;
-  /// Response metadata (id, timestamp, model_id).
+  final Json? providerMetadata;
   final ResponseMetadata response;
   final GenerateTextResult raw;
 
-  GenerateObjectResult({
+  const GenerateObjectResult({
     this.object,
     required this.finishReason,
     this.rawFinishReason,
@@ -901,49 +1372,55 @@ class GenerateObjectResult {
     required this.raw,
   });
 
-  factory GenerateObjectResult.fromJson(Map<String, dynamic> json) =>
-      _$GenerateObjectResultFromJson(json);
-  Map<String, dynamic> toJson() => _$GenerateObjectResultToJson(this);
+  factory GenerateObjectResult.fromJson(Json j) => GenerateObjectResult(
+        object: j['object'],
+        finishReason: FinishReason.fromJson(j['finishReason'] as Json),
+        rawFinishReason: j['rawFinishReason'] as String?,
+        usage: Usage.fromJson(j['usage'] as Json),
+        warnings: _maps(j['warnings']),
+        reasoning: j['reasoning'] as String?,
+        providerMetadata: _opt(j['providerMetadata']),
+        response: ResponseMetadata.fromJson(j['response'] as Json),
+        raw: GenerateTextResult.fromJson(j['raw'] as Json),
+      );
+
+  Json toJson() => {
+        'object': object,
+        'finishReason': finishReason.toJson(),
+        if (rawFinishReason != null) 'rawFinishReason': rawFinishReason,
+        'usage': usage.toJson(),
+        'warnings': warnings,
+        if (reasoning != null) 'reasoning': reasoning,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+        'response': response.toJson(),
+        'raw': raw.toJson(),
+      };
 }
 
-/// Aggregated result of `stream_text().consume()` (M11). Mirrors
-/// `GenerateTextResult`'s user-facing fields (without `raw`, since streaming
-/// has no `GenerateResult` equivalent).
-///
-/// Mirrors `StreamTextResultAggregated.ts`. reasoning/files use weak
-/// types (`Map<String, dynamic>`) — same strategy as `GenerateTextResult`.
-@JsonSerializable()
+/// Aggregated result of `consume_stream_text`. Mirrors
+/// `StreamTextResultAggregated.ts` (the fields of [GenerateTextResult] except
+/// `raw`).
 class StreamTextResultAggregated {
   final String text;
-  final List<Map<String, dynamic>> content;
-  // reasoning/files use weak types — same strategy as GenerateTextResult.
-  final List<Map<String, dynamic>> reasoning;
-  @JsonKey(name: 'reasoning_text')
+  final List<Json> content;
+  final List<Json> reasoning;
   final String reasoningText;
-  @JsonKey(name: 'tool_calls')
   final List<ToolCall> toolCalls;
   final List<Source> sources;
-  final List<Map<String, dynamic>> files;
-  @JsonKey(name: 'finish_reason')
+  final List<Json> files;
   final FinishReason finishReason;
-  @JsonKey(name: 'raw_finish_reason')
   final String? rawFinishReason;
   final Usage usage;
-  /// Total token usage across all steps. In single-step mode (aimux's
-  /// default), equals usage. Provided for AI SDK parity.
-  @JsonKey(name: 'total_usage')
   final Usage totalUsage;
-  final List<Map<String, dynamic>> warnings;
-  /// Provider-specific metadata from the Finish chunk. Weak type.
-  @JsonKey(name: 'provider_metadata')
-  final Map<String, dynamic>? providerMetadata;
-  /// Response metadata (id, timestamp, model_id) if emitted by the stream.
-  final ResponseMetadata? response;
-  @JsonKey(name: 'response_messages')
+  final List<Json> warnings;
+  final Json? providerMetadata;
+  final RequestInfo request;
+  final ResponseInfo response;
   final List<ModelMessage> responseMessages;
 
-  StreamTextResultAggregated({
-    this.text = '',
+  const StreamTextResultAggregated({
+    required this.text,
+    this.content = const [],
     this.reasoning = const [],
     this.reasoningText = '',
     this.toolCalls = const [],
@@ -955,80 +1432,97 @@ class StreamTextResultAggregated {
     required this.totalUsage,
     this.warnings = const [],
     this.providerMetadata,
-    this.response,
+    required this.request,
+    required this.response,
     this.responseMessages = const [],
   });
 
-  factory StreamTextResultAggregated.fromJson(Map<String, dynamic> json) =>
-      _$StreamTextResultAggregatedFromJson(json);
-  Map<String, dynamic> toJson() => _$StreamTextResultAggregatedToJson(this);
+  factory StreamTextResultAggregated.fromJson(Json j) => StreamTextResultAggregated(
+        text: j['text'] as String,
+        content: _maps(j['content']),
+        reasoning: _maps(j['reasoning']),
+        reasoningText: j['reasoningText'] as String,
+        toolCalls: _list(j['toolCalls'], ToolCall.fromJson),
+        sources: _list(j['sources'], Source.fromJson),
+        files: _maps(j['files']),
+        finishReason: FinishReason.fromJson(j['finishReason'] as Json),
+        rawFinishReason: j['rawFinishReason'] as String?,
+        usage: Usage.fromJson(j['usage'] as Json),
+        totalUsage: Usage.fromJson(j['totalUsage'] as Json),
+        warnings: _maps(j['warnings']),
+        providerMetadata: _opt(j['providerMetadata']),
+        request: RequestInfo.fromJson(j['request'] as Json),
+        response: ResponseInfo.fromJson(j['response'] as Json),
+        responseMessages: _list(j['responseMessages'], ModelMessage.fromJson),
+      );
+
+  Json toJson() => {
+        'content': content,
+        'text': text,
+        'reasoning': reasoning,
+        'reasoningText': reasoningText,
+        'toolCalls': [for (final c in toolCalls) c.toJson()],
+        'sources': [for (final s in sources) s.toJson()],
+        'files': files,
+        'finishReason': finishReason.toJson(),
+        if (rawFinishReason != null) 'rawFinishReason': rawFinishReason,
+        'usage': usage.toJson(),
+        'totalUsage': totalUsage.toJson(),
+        'warnings': warnings,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+        'request': request.toJson(),
+        'response': response.toJson(),
+        'responseMessages': [for (final m in responseMessages) m.toJson()],
+      };
 }
 
-/// Per-call timeout configuration. Mirrors `TimeoutConfiguration.ts`.
-///
-/// All values are milliseconds; `null` disables the corresponding limit.
-@JsonSerializable()
+/// Per-call timeout configuration, in milliseconds; null disables a limit.
+/// Mirrors `TimeoutConfiguration.ts`.
 class TimeoutConfiguration {
-  @JsonKey(name: 'total_ms')
   final int? totalMs;
-  @JsonKey(name: 'step_ms')
   final int? stepMs;
-  @JsonKey(name: 'first_chunk_ms')
   final int? firstChunkMs;
-  @JsonKey(name: 'chunk_ms')
   final int? chunkMs;
 
-  TimeoutConfiguration({this.totalMs, this.stepMs, this.firstChunkMs, this.chunkMs});
+  const TimeoutConfiguration({this.totalMs, this.stepMs, this.firstChunkMs, this.chunkMs});
 
-  factory TimeoutConfiguration.fromJson(Map<String, dynamic> json) =>
-      TimeoutConfiguration(
-        totalMs: json['total_ms'] as int?,
-        stepMs: json['step_ms'] as int?,
-        firstChunkMs: json['first_chunk_ms'] as int?,
-        chunkMs: json['chunk_ms'] as int?,
+  factory TimeoutConfiguration.fromJson(Json j) => TimeoutConfiguration(
+        totalMs: j['totalMs'] as int?,
+        stepMs: j['stepMs'] as int?,
+        firstChunkMs: j['firstChunkMs'] as int?,
+        chunkMs: j['chunkMs'] as int?,
       );
-  Map<String, dynamic> toJson() => {
-        if (totalMs != null) 'total_ms': totalMs,
-        if (stepMs != null) 'step_ms': stepMs,
-        if (firstChunkMs != null) 'first_chunk_ms': firstChunkMs,
-        if (chunkMs != null) 'chunk_ms': chunkMs,
+  Json toJson() => {
+        if (totalMs != null) 'totalMs': totalMs,
+        if (stepMs != null) 'stepMs': stepMs,
+        if (firstChunkMs != null) 'firstChunkMs': firstChunkMs,
+        if (chunkMs != null) 'chunkMs': chunkMs,
       };
 }
 
 /// User-facing options for `generate_text` / `stream_text`. Mirrors
-/// `GenerateTextOptions.ts`.
-@JsonSerializable()
+/// `GenerateTextOptions.ts`; unset fields are omitted from the JSON.
 class GenerateTextOptions {
-  @JsonKey(name: 'max_output_tokens')
   final int? maxOutputTokens;
   final double? temperature;
-  @JsonKey(name: 'stop_sequences')
   final List<String>? stopSequences;
-  @JsonKey(name: 'top_p')
   final double? topP;
-  @JsonKey(name: 'top_k')
   final double? topK;
-  @JsonKey(name: 'presence_penalty')
   final double? presencePenalty;
-  @JsonKey(name: 'frequency_penalty')
   final double? frequencyPenalty;
-  @JsonKey(name: 'response_format')
-  final Map<String, dynamic>? responseFormat;
+
+  /// `{"type": "text"}` or `{"type": "json", "schema"?, "name"?, "description"?}`.
+  final Json? responseFormat;
   final int? seed;
   final List<Tool>? tools;
-  @JsonKey(name: 'tool_choice')
   final ToolChoice? toolChoice;
   final Map<String, String>? headers;
-  @JsonKey(name: 'provider_options')
-  final Map<String, dynamic>? providerOptions;
+  final Json? providerOptions;
   final ReasoningEffort? reasoning;
   final String? instructions;
-  @JsonKey(name: 'max_retries')
   final int? maxRetries;
   final TimeoutConfiguration? timeout;
-  @JsonKey(name: 'include_raw_chunks')
   final bool? includeRawChunks;
-  @JsonKey(name: 'session_id')
   final String? sessionId;
 
   /// Repair a tool call the model got wrong (RFC-0035), mirroring the AI SDK's
@@ -1046,10 +1540,9 @@ class GenerateTextOptions {
   /// argument deltas verbatim, as in the AI SDK.
   ///
   /// Never serialized — it is a host closure, not part of the wire options.
-  @JsonKey(includeFromJson: false, includeToJson: false)
   final RepairToolCall? repairToolCall;
 
-  GenerateTextOptions({
+  const GenerateTextOptions({
     this.maxOutputTokens,
     this.temperature,
     this.stopSequences,
@@ -1072,182 +1565,125 @@ class GenerateTextOptions {
     this.repairToolCall,
   });
 
-  factory GenerateTextOptions.fromJson(Map<String, dynamic> json) {
-    return GenerateTextOptions(
-      maxOutputTokens: json['max_output_tokens'] as int?,
-      temperature: (json['temperature'] as num?)?.toDouble(),
-      stopSequences: (json['stop_sequences'] as List<dynamic>?)?.cast<String>(),
-      topP: (json['top_p'] as num?)?.toDouble(),
-      topK: (json['top_k'] as num?)?.toDouble(),
-      presencePenalty: (json['presence_penalty'] as num?)?.toDouble(),
-      frequencyPenalty: (json['frequency_penalty'] as num?)?.toDouble(),
-      responseFormat: json['response_format'] as Map<String, dynamic>?,
-      seed: json['seed'] as int?,
-      tools: (json['tools'] as List<dynamic>?)
-          ?.map((e) => Tool.fromJson(e as Map<String, dynamic>))
-          .toList(),
-      toolChoice: json['tool_choice'] != null
-          ? ToolChoice.fromJson(json['tool_choice'])
-          : null,
-      headers: (json['headers'] as Map<String, dynamic>?)?.cast<String, String>(),
-      providerOptions: json['provider_options'] as Map<String, dynamic>?,
-      reasoning: json['reasoning'] != null
-          ? ReasoningEffort.fromJson(json['reasoning'] as String)
-          : null,
-      instructions: json['instructions'] as String?,
-      maxRetries: json['max_retries'] as int?,
-      timeout: json['timeout'] != null
-          ? TimeoutConfiguration.fromJson(json['timeout'] as Map<String, dynamic>)
-          : null,
-      includeRawChunks: json['include_raw_chunks'] as bool?,
-      sessionId: json['session_id'] as String?,
-    );
-  }
-  Map<String, dynamic> toJson() => {
-        if (maxOutputTokens != null) 'max_output_tokens': maxOutputTokens,
+  factory GenerateTextOptions.fromJson(Json j) => GenerateTextOptions(
+        maxOutputTokens: j['maxOutputTokens'] as int?,
+        temperature: (j['temperature'] as num?)?.toDouble(),
+        stopSequences: (j['stopSequences'] as List?)?.cast<String>(),
+        topP: (j['topP'] as num?)?.toDouble(),
+        topK: (j['topK'] as num?)?.toDouble(),
+        presencePenalty: (j['presencePenalty'] as num?)?.toDouble(),
+        frequencyPenalty: (j['frequencyPenalty'] as num?)?.toDouble(),
+        responseFormat: _opt(j['responseFormat']),
+        seed: j['seed'] as int?,
+        tools: _optList(j['tools'], Tool.fromJson),
+        toolChoice:
+            j['toolChoice'] == null ? null : ToolChoice.fromJson(j['toolChoice']),
+        headers: (j['headers'] as Json?)?.cast<String, String>(),
+        providerOptions: _opt(j['providerOptions']),
+        reasoning: j['reasoning'] == null
+            ? null
+            : ReasoningEffort.fromJson(j['reasoning'] as String),
+        instructions: j['instructions'] as String?,
+        maxRetries: j['maxRetries'] as int?,
+        timeout: j['timeout'] == null
+            ? null
+            : TimeoutConfiguration.fromJson(j['timeout'] as Json),
+        includeRawChunks: j['includeRawChunks'] as bool?,
+        sessionId: j['sessionId'] as String?,
+      );
+
+  Json toJson() => {
+        if (maxOutputTokens != null) 'maxOutputTokens': maxOutputTokens,
         if (temperature != null) 'temperature': temperature,
-        if (stopSequences != null) 'stop_sequences': stopSequences,
-        if (topP != null) 'top_p': topP,
-        if (topK != null) 'top_k': topK,
-        if (presencePenalty != null) 'presence_penalty': presencePenalty,
-        if (frequencyPenalty != null) 'frequency_penalty': frequencyPenalty,
-        if (responseFormat != null) 'response_format': responseFormat,
+        if (stopSequences != null) 'stopSequences': stopSequences,
+        if (topP != null) 'topP': topP,
+        if (topK != null) 'topK': topK,
+        if (presencePenalty != null) 'presencePenalty': presencePenalty,
+        if (frequencyPenalty != null) 'frequencyPenalty': frequencyPenalty,
+        if (responseFormat != null) 'responseFormat': responseFormat,
         if (seed != null) 'seed': seed,
-        if (tools != null) 'tools': tools!.map((t) => t.toJson()).toList(),
-        if (toolChoice != null) 'tool_choice': toolChoice!.toJson(),
+        if (tools != null) 'tools': [for (final t in tools!) t.toJson()],
+        if (toolChoice != null) 'toolChoice': toolChoice!.toJson(),
         if (headers != null) 'headers': headers,
-        if (providerOptions != null) 'provider_options': providerOptions,
+        if (providerOptions != null) 'providerOptions': providerOptions,
         if (reasoning != null) 'reasoning': reasoning!.toJson(),
         if (instructions != null) 'instructions': instructions,
-        if (maxRetries != null) 'max_retries': maxRetries,
+        if (maxRetries != null) 'maxRetries': maxRetries,
         if (timeout != null) 'timeout': timeout!.toJson(),
-        if (includeRawChunks != null) 'include_raw_chunks': includeRawChunks,
-        if (sessionId != null) 'session_id': sessionId,
+        if (includeRawChunks != null) 'includeRawChunks': includeRawChunks,
+        if (sessionId != null) 'sessionId': sessionId,
       };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Messages
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// A single user-facing chat message. Mirrors `ModelMessage.ts`.
-///
-/// `content` is either a plain `String` or a `List` of content-part maps
-/// (`[{"type":"text","text":"..."}, ...]`); it is kept as `Object` so both
-/// shapes pass through verbatim.
-@JsonSerializable()
-class ModelMessage {
-  final String role;
-  final Object content;
-
-  ModelMessage({required this.role, required this.content});
-
-  factory ModelMessage.fromJson(Map<String, dynamic> json) =>
-      _$ModelMessageFromJson(json);
-  Map<String, dynamic> toJson() => _$ModelMessageToJson(this);
-
-  /// Convenience view of [content] as a list of content-part maps.
-  ///
-  /// If [content] is a `String`, returns `[{'type': 'text', 'text': content}]`;
-  /// if it is a `List`, returns it cast to `List<Map<String, dynamic>>`;
-  /// otherwise an empty list. `content` itself stays `Object` so both the
-  /// string and the part-list wire shapes pass through verbatim.
-  List<Map<String, dynamic>> get contentParts {
-    final c = content;
-    if (c is String) {
-      return <Map<String, dynamic>>[
-        {'type': 'text', 'text': c},
-      ];
-    }
-    if (c is List) {
-      return c.whereType<Map<String, dynamic>>().toList();
-    }
-    return const <Map<String, dynamic>>[];
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Streaming
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A single chunk in the stream returned by `stream_text`. Mirrors
-/// `StreamPart.ts` (`aimux-core/src/stream_part.rs`).
-///
-/// `StreamPart` is an externally-tagged union: each part is a single-key map
-/// like `{"TextDelta": {"id": "...", "delta": "..."}}`. Modeled as a sealed
-/// class hierarchy so callers get compile-time types: every known variant is a
-/// typed subclass with named fields, and [StreamPartUnknown] is the fallback
-/// for tags added by newer core versions.
-///
-/// Known variants: [StreamPartTextStart]/[StreamPartTextDelta]/[StreamPartTextEnd],
-/// [StreamPartStreamStart], [StreamPartFinish], [StreamPartError],
-/// [StreamPartToolInputStart]/[StreamPartToolInputDelta]/[StreamPartToolInputEnd],
-/// [StreamPartToolCall], [StreamPartToolResult], [StreamPartFile],
-/// [StreamPartReasoningStart]/[StreamPartReasoningDelta]/[StreamPartReasoningEnd],
-/// [StreamPartResponseMetadata], [StreamPartSource], [StreamPartRaw]. Narrow
-/// via `switch`/`is`/`whereType` to read variant-specific fields.
+/// A single part of the stream returned by `stream_text`. Mirrors
+/// `TextStreamPart.ts`: `{"type": "text-delta", "id": ..., "delta": ...}` —
+/// the tag values are `text-start`, `text-delta`, `text-end`, `stream-start`,
+/// `finish`, `finish-step`, `error`, `tool-input-start`, `tool-input-delta`,
+/// `tool-input-end`, `tool-call`, `tool-result`, `file`, `reasoning-file`,
+/// `custom`, `tool-approval-request`, `reasoning-start`, `reasoning-delta`,
+/// `reasoning-end`, `source` and `raw`. A `type` this binding does not model
+/// becomes [StreamPartUnknown] and passes through verbatim. Narrow via
+/// `switch` / `is` / `whereType`.
 sealed class StreamPart {
   const StreamPart();
 
-  /// The variant tag — the single top-level key on the wire (e.g.
-  /// `'TextDelta'`, `'ToolCall'`, `'ToolResult'`, `'File'`, `'Finish'`,
-  /// `'Error'`). Empty only for a malformed part.
-  String get type => switch (this) {
-        StreamPartTextStart() => 'TextStart',
-        StreamPartTextDelta() => 'TextDelta',
-        StreamPartTextEnd() => 'TextEnd',
-        StreamPartStreamStart() => 'StreamStart',
-        StreamPartFinish() => 'Finish',
-        StreamPartError() => 'Error',
-        StreamPartToolInputStart() => 'ToolInputStart',
-        StreamPartToolInputDelta() => 'ToolInputDelta',
-        StreamPartToolInputEnd() => 'ToolInputEnd',
-        StreamPartToolCall() => 'ToolCall',
-        StreamPartToolResult() => 'ToolResult',
-        StreamPartCustom() => 'Custom',
-        StreamPartReasoningFile() => 'ReasoningFile',
-        StreamPartToolApprovalRequest() => 'ToolApprovalRequest',
-        StreamPartFile() => 'File',
-        StreamPartReasoningStart() => 'ReasoningStart',
-        StreamPartReasoningDelta() => 'ReasoningDelta',
-        StreamPartReasoningEnd() => 'ReasoningEnd',
-        StreamPartResponseMetadata() => 'ResponseMetadata',
-        StreamPartSource() => 'Source',
-        StreamPartRaw() => 'Raw',
-        StreamPartUnknown(:final tag) => tag,
-      };
+  /// The wire `type` value, e.g. `'text-delta'`.
+  String get type => toJson()['type'] as String;
 
-  /// Re-encode to the externally-tagged wire shape (`{tag: payload}`).
-  Map<String, dynamic> toJson();
+  Json toJson();
 
-  /// Decode an externally-tagged stream-part map. Unknown tags fall back to
-  /// [StreamPartUnknown] instead of throwing.
-  factory StreamPart.fromJson(Map<String, dynamic> json) {
-    final e = json.entries.first;
-    final payload = e.value as Map<String, dynamic>;
-    return switch (e.key) {
-      'TextStart' => StreamPartTextStart.fromJson(payload),
-      'TextDelta' => StreamPartTextDelta.fromJson(payload),
-      'TextEnd' => StreamPartTextEnd.fromJson(payload),
-      'StreamStart' => StreamPartStreamStart.fromJson(payload),
-      'Finish' => StreamPartFinish.fromJson(payload),
-      'Error' => StreamPartError.fromJson(payload),
-      'ToolInputStart' => StreamPartToolInputStart.fromJson(payload),
-      'ToolInputDelta' => StreamPartToolInputDelta.fromJson(payload),
-      'ToolInputEnd' => StreamPartToolInputEnd.fromJson(payload),
-      'ToolCall' => StreamPartToolCall.fromJson(payload),
-      'ToolResult' => StreamPartToolResult.fromJson(payload),
-      'Custom' => StreamPartCustom.fromJson(payload),
-      'ReasoningFile' => StreamPartReasoningFile.fromJson(payload),
-      'ToolApprovalRequest' => StreamPartToolApprovalRequest.fromJson(payload),
-      'File' => StreamPartFile.fromJson(payload),
-      'ReasoningStart' => StreamPartReasoningStart.fromJson(payload),
-      'ReasoningDelta' => StreamPartReasoningDelta.fromJson(payload),
-      'ReasoningEnd' => StreamPartReasoningEnd.fromJson(payload),
-      'ResponseMetadata' => StreamPartResponseMetadata.fromJson(payload),
-      'Source' => StreamPartSource.fromJson(payload),
-      'Raw' => StreamPartRaw.fromJson(payload),
-      _ => StreamPartUnknown(tag: e.key, data: payload),
+  factory StreamPart.fromJson(Json j) {
+    String id() => j['id'] as String;
+    Json? meta() => _opt(j['providerMetadata']);
+    return switch (j['type']) {
+      'text-start' => StreamPartTextStart(id: id(), providerMetadata: meta()),
+      'text-delta' => StreamPartTextDelta(
+          id: id(), delta: j['delta'] as String, providerMetadata: meta()),
+      'text-end' => StreamPartTextEnd(id: id(), providerMetadata: meta()),
+      'stream-start' => StreamPartStreamStart(warnings: _maps(j['warnings'])),
+      'finish' => StreamPartFinish(
+          finishReason: FinishReason.fromJson(j['finishReason'] as Json),
+          usage: Usage.fromJson(j['usage'] as Json),
+          providerMetadata: meta()),
+      'finish-step' => StreamPartFinishStep(
+          finishReason: FinishReason.fromJson(j['finishReason'] as Json),
+          usage: Usage.fromJson(j['usage'] as Json),
+          providerMetadata: meta(),
+          response: ResponseInfo.fromJson(j['response'] as Json)),
+      'error' => StreamPartError(error: j['error'] as Json),
+      'tool-input-start' => StreamPartToolInputStart(
+          id: id(),
+          toolName: j['toolName'] as String,
+          providerExecuted: j['providerExecuted'] as bool?,
+          isDynamic: j['dynamic'] as bool?,
+          title: j['title'] as String?,
+          providerMetadata: meta()),
+      'tool-input-delta' => StreamPartToolInputDelta(
+          id: id(), delta: j['delta'] as String, providerMetadata: meta()),
+      'tool-input-end' => StreamPartToolInputEnd(id: id(), providerMetadata: meta()),
+      'tool-call' => StreamPartToolCall(ToolCall.fromJson(j)),
+      'tool-result' => StreamPartToolResult(ToolResult.fromJson(j)),
+      'file' => StreamPartFile(GeneratedFile.fromJson(j)),
+      'reasoning-file' => StreamPartReasoningFile(
+          file: GeneratedFile.fromJson(j['file'] as Json), providerMetadata: meta()),
+      'custom' => StreamPartCustom(kind: j['kind'] as String, providerMetadata: meta()),
+      'tool-approval-request' => StreamPartToolApprovalRequest(
+          approvalId: j['approvalId'] as String,
+          toolCall: ToolCall.fromJson(j['toolCall'] as Json),
+          reason: j['reason'] as String?,
+          isAutomatic: j['isAutomatic'] as bool?,
+          signature: j['signature'] as String?),
+      'reasoning-start' => StreamPartReasoningStart(id: id(), providerMetadata: meta()),
+      'reasoning-delta' => StreamPartReasoningDelta(
+          id: id(), delta: j['delta'] as String, providerMetadata: meta()),
+      'reasoning-end' => StreamPartReasoningEnd(id: id(), providerMetadata: meta()),
+      'source' => StreamPartSource(source: Source.fromJson(j)),
+      'raw' => StreamPartRaw(rawValue: j['rawValue']),
+      _ => StreamPartUnknown(j),
     };
   }
 
@@ -1255,152 +1691,100 @@ sealed class StreamPart {
   String toString() => 'StreamPart($type)';
 }
 
-// ── Text variants ────────────────────────────────────────────────────────────
-
-/// Start of a text segment.
+/// Start / delta / end of a text segment.
 final class StreamPartTextStart extends StreamPart {
   final String id;
-  final Map<String, dynamic>? providerMetadata;
-
-  StreamPartTextStart({required this.id, this.providerMetadata});
-
-  factory StreamPartTextStart.fromJson(Map<String, dynamic> json) =>
-      StreamPartTextStart(
-        id: json['id'] as String,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
+  final Json? providerMetadata;
+  const StreamPartTextStart({required this.id, this.providerMetadata});
   @override
-  Map<String, dynamic> toJson() => {
-        'TextStart': {
-          'id': id,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
+  Json toJson() => {
+        'type': 'text-start',
+        'id': id,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
-/// A delta of generated text.
 final class StreamPartTextDelta extends StreamPart {
   final String id;
   final String delta;
-  final Map<String, dynamic>? providerMetadata;
-
-  StreamPartTextDelta({
-    required this.id,
-    required this.delta,
-    this.providerMetadata,
-  });
-
-  factory StreamPartTextDelta.fromJson(Map<String, dynamic> json) =>
-      StreamPartTextDelta(
-        id: json['id'] as String,
-        delta: json['delta'] as String,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
+  final Json? providerMetadata;
+  const StreamPartTextDelta(
+      {required this.id, required this.delta, this.providerMetadata});
   @override
-  Map<String, dynamic> toJson() => {
-        'TextDelta': {
-          'id': id,
-          'delta': delta,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
+  Json toJson() => {
+        'type': 'text-delta',
+        'id': id,
+        'delta': delta,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
-/// End of a text segment.
 final class StreamPartTextEnd extends StreamPart {
   final String id;
-  final Map<String, dynamic>? providerMetadata;
-
-  StreamPartTextEnd({required this.id, this.providerMetadata});
-
-  factory StreamPartTextEnd.fromJson(Map<String, dynamic> json) =>
-      StreamPartTextEnd(
-        id: json['id'] as String,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
+  final Json? providerMetadata;
+  const StreamPartTextEnd({required this.id, this.providerMetadata});
   @override
-  Map<String, dynamic> toJson() => {
-        'TextEnd': {
-          'id': id,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
+  Json toJson() => {
+        'type': 'text-end',
+        'id': id,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
-// ── Stream lifecycle ──────────────────────────────────────────────────────────
-
-/// First chunk — carries warnings from the provider.
+/// First part — carries the provider's warnings.
 final class StreamPartStreamStart extends StreamPart {
-  final List<Map<String, dynamic>> warnings;
-
-  StreamPartStreamStart({this.warnings = const <Map<String, dynamic>>[]});
-
-  factory StreamPartStreamStart.fromJson(Map<String, dynamic> json) =>
-      StreamPartStreamStart(
-        warnings: ((json['warnings'] as List<dynamic>?) ?? const <dynamic>[])
-            .map((e) => e as Map<String, dynamic>)
-            .toList(),
-      );
-
+  final List<Json> warnings;
+  const StreamPartStreamStart({this.warnings = const []});
   @override
-  Map<String, dynamic> toJson() => {
-        'StreamStart': {'warnings': warnings},
-      };
+  Json toJson() => {'type': 'stream-start', 'warnings': warnings};
 }
 
-/// Final chunk — carries usage, finish reason, and metadata.
+/// Final part — carries usage, finish reason and metadata.
 final class StreamPartFinish extends StreamPart {
   final FinishReason finishReason;
   final Usage usage;
-  final Map<String, dynamic>? providerMetadata;
+  final Json? providerMetadata;
+  const StreamPartFinish(
+      {required this.finishReason, required this.usage, this.providerMetadata});
+  @override
+  Json toJson() => {
+        'type': 'finish',
+        'finishReason': finishReason.toJson(),
+        'usage': usage.toJson(),
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+      };
+}
 
-  StreamPartFinish({
+/// End of one generation step.
+final class StreamPartFinishStep extends StreamPart {
+  final FinishReason finishReason;
+  final Usage usage;
+  final Json? providerMetadata;
+  final ResponseInfo response;
+  const StreamPartFinishStep({
     required this.finishReason,
     required this.usage,
     this.providerMetadata,
+    required this.response,
   });
-
-  factory StreamPartFinish.fromJson(Map<String, dynamic> json) =>
-      StreamPartFinish(
-        finishReason: FinishReason.fromJson(
-            json['finish_reason'] as Map<String, dynamic>),
-        usage: Usage.fromJson(json['usage'] as Map<String, dynamic>),
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
   @override
-  Map<String, dynamic> toJson() => {
-        'Finish': {
-          'finish_reason': finishReason.toJson(),
-          'usage': usage.toJson(),
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
+  Json toJson() => {
+        'type': 'finish-step',
+        'finishReason': finishReason.toJson(),
+        'usage': usage.toJson(),
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+        'response': response.toJson(),
       };
 }
 
-/// An error occurred mid-stream.
+/// An error mid-stream: an `AiMuxError` object keyed by `name`
+/// (`{"name": "AI_APICallError", ...}`).
 final class StreamPartError extends StreamPart {
-  final dynamic error;
-
-  StreamPartError({required this.error});
-
-  factory StreamPartError.fromJson(Map<String, dynamic> json) =>
-      StreamPartError(error: json['error']);
-
+  final Json error;
+  const StreamPartError({required this.error});
   @override
-  Map<String, dynamic> toJson() => {
-        'Error': {'error': error},
-      };
+  Json toJson() => {'type': 'error', 'error': error};
 }
-
-// ── Tool calls ─────────────────────────────────────────────────────────────────
 
 /// Start of a tool call's input streaming.
 final class StreamPartToolInputStart extends StreamPart {
@@ -1409,9 +1793,8 @@ final class StreamPartToolInputStart extends StreamPart {
   final bool? providerExecuted;
   final bool? isDynamic;
   final String? title;
-  final Map<String, dynamic>? providerMetadata;
-
-  StreamPartToolInputStart({
+  final Json? providerMetadata;
+  const StreamPartToolInputStart({
     required this.id,
     required this.toolName,
     this.providerExecuted,
@@ -1419,772 +1802,183 @@ final class StreamPartToolInputStart extends StreamPart {
     this.title,
     this.providerMetadata,
   });
-
-  factory StreamPartToolInputStart.fromJson(Map<String, dynamic> json) =>
-      StreamPartToolInputStart(
-        id: json['id'] as String,
-        toolName: json['tool_name'] as String,
-        providerExecuted: json['provider_executed'] as bool?,
-        isDynamic: json['dynamic'] as bool?,
-        title: json['title'] as String?,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
   @override
-  Map<String, dynamic> toJson() => {
-        'ToolInputStart': {
-          'id': id,
-          'tool_name': toolName,
-          if (providerExecuted != null) 'provider_executed': providerExecuted,
-          if (isDynamic != null) 'dynamic': isDynamic,
-          if (title != null) 'title': title,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
+  Json toJson() => {
+        'type': 'tool-input-start',
+        'id': id,
+        'toolName': toolName,
+        if (providerExecuted != null) 'providerExecuted': providerExecuted,
+        if (isDynamic != null) 'dynamic': isDynamic,
+        if (title != null) 'title': title,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
-/// A delta of tool call input (partial JSON).
+/// A delta of tool call input (partial JSON text).
 final class StreamPartToolInputDelta extends StreamPart {
   final String id;
   final String delta;
-  final Map<String, dynamic>? providerMetadata;
-
-  StreamPartToolInputDelta({
-    required this.id,
-    required this.delta,
-    this.providerMetadata,
-  });
-
-  factory StreamPartToolInputDelta.fromJson(Map<String, dynamic> json) =>
-      StreamPartToolInputDelta(
-        id: json['id'] as String,
-        delta: json['delta'] as String,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
+  final Json? providerMetadata;
+  const StreamPartToolInputDelta(
+      {required this.id, required this.delta, this.providerMetadata});
   @override
-  Map<String, dynamic> toJson() => {
-        'ToolInputDelta': {
-          'id': id,
-          'delta': delta,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
+  Json toJson() => {
+        'type': 'tool-input-delta',
+        'id': id,
+        'delta': delta,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
-/// End of a tool call's input streaming.
 final class StreamPartToolInputEnd extends StreamPart {
   final String id;
-  final Map<String, dynamic>? providerMetadata;
-
-  StreamPartToolInputEnd({required this.id, this.providerMetadata});
-
-  factory StreamPartToolInputEnd.fromJson(Map<String, dynamic> json) =>
-      StreamPartToolInputEnd(
-        id: json['id'] as String,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
+  final Json? providerMetadata;
+  const StreamPartToolInputEnd({required this.id, this.providerMetadata});
   @override
-  Map<String, dynamic> toJson() => {
-        'ToolInputEnd': {
-          'id': id,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
+  Json toJson() => {
+        'type': 'tool-input-end',
+        'id': id,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
-/// A complete tool call (alternative to the start/delta/end flow).
+/// A complete, parsed tool call ([ToolCall.invalid] marks one that stayed
+/// invalid after optional repair).
 final class StreamPartToolCall extends StreamPart {
-  final String toolCallId;
-  final String toolName;
-  final dynamic input;
-  final bool? providerExecuted;
-  final bool? isDynamic;
-  final Map<String, dynamic>? providerMetadata;
-  /// Set by Core when the tool call stays invalid after optional repair.
-  final bool? invalid;
-  /// The typed lookup, parse, schema, or repair failure for an invalid call.
-  final dynamic error;
-
-  StreamPartToolCall({
-    required this.toolCallId,
-    required this.toolName,
-    required this.input,
-    this.providerExecuted,
-    this.isDynamic,
-    this.providerMetadata,
-    this.invalid,
-    this.error,
-  });
-
-  factory StreamPartToolCall.fromJson(Map<String, dynamic> json) =>
-      StreamPartToolCall(
-        toolCallId: json['tool_call_id'] as String,
-        toolName: json['tool_name'] as String,
-        input: json['input'],
-        providerExecuted: json['provider_executed'] as bool?,
-        isDynamic: json['dynamic'] as bool?,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-        invalid: json['invalid'] as bool?,
-        error: json['error'],
-      );
-
+  final ToolCall call;
+  const StreamPartToolCall(this.call);
   @override
-  Map<String, dynamic> toJson() => {
-        'ToolCall': {
-          'tool_call_id': toolCallId,
-          'tool_name': toolName,
-          'input': input,
-          if (providerExecuted != null) 'provider_executed': providerExecuted,
-          if (isDynamic != null) 'dynamic': isDynamic,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-          if (invalid != null) 'invalid': invalid,
-          if (error != null) 'error': error,
-        },
-      };
+  Json toJson() => {'type': 'tool-call', ...call.toJson()};
 }
 
-/// A tool result (provider-executed tools).
+/// A provider-executed tool's result.
 final class StreamPartToolResult extends StreamPart {
-  final String toolCallId;
-  final String toolName;
-  final dynamic result;
-  final bool? isError;
-  final bool? preliminary;
-  final bool? isDynamic;
-  final Map<String, dynamic>? providerMetadata;
-
-  StreamPartToolResult({
-    required this.toolCallId,
-    required this.toolName,
-    required this.result,
-    this.isError,
-    this.preliminary,
-    this.isDynamic,
-    this.providerMetadata,
-  });
-
-  factory StreamPartToolResult.fromJson(Map<String, dynamic> json) =>
-      StreamPartToolResult(
-        toolCallId: json['tool_call_id'] as String,
-        toolName: json['tool_name'] as String,
-        result: json['result'],
-        isError: json['is_error'] as bool?,
-        preliminary: json['preliminary'] as bool?,
-        isDynamic: json['dynamic'] as bool?,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
+  final ToolResult result;
+  const StreamPartToolResult(this.result);
   @override
-  Map<String, dynamic> toJson() => {
-        'ToolResult': {
-          'tool_call_id': toolCallId,
-          'tool_name': toolName,
-          'result': result,
-          if (isError != null) 'is_error': isError,
-          if (preliminary != null) 'preliminary': preliminary,
-          if (isDynamic != null) 'dynamic': isDynamic,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
-      };
+  Json toJson() => {'type': 'tool-result', ...result.toJson()};
 }
 
-// ── File ──────────────────────────────────────────────────────────────────────
-
-/// A file generated by the model (e.g. an image or document). The `data`
-/// field is a `FileData` tagged union; there is **no** `filename` field.
+/// A file generated by the model.
 final class StreamPartFile extends StreamPart {
-  final GeneratedFileData data;
-  final String mediaType;
-  final Map<String, dynamic>? providerMetadata;
-
-  StreamPartFile({
-    required this.data,
-    required this.mediaType,
-    this.providerMetadata,
-  });
-
-  factory StreamPartFile.fromJson(Map<String, dynamic> json) => StreamPartFile(
-        data: GeneratedFileData.fromJson(json['data'] as Map<String, dynamic>),
-        mediaType: json['media_type'] as String,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
+  final GeneratedFile file;
+  const StreamPartFile(this.file);
   @override
-  Map<String, dynamic> toJson() => {
-        'File': {
-          'data': data.toJson(),
-          'media_type': mediaType,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
+  Json toJson() => {'type': 'file', ...file.toJson()};
+}
+
+/// A file generated as part of reasoning (`ReasoningFileOutput.ts`).
+final class StreamPartReasoningFile extends StreamPart {
+  final GeneratedFile file;
+  final Json? providerMetadata;
+  const StreamPartReasoningFile({required this.file, this.providerMetadata});
+  @override
+  Json toJson() => {
+        'type': 'reasoning-file',
+        'file': file.toJson(),
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
-// ── Reasoning ──────────────────────────────────────────────────────────────────
-
-/// Start of a reasoning / thinking segment.
-final class StreamPartReasoningStart extends StreamPart {
-  final String id;
-  final Map<String, dynamic>? providerMetadata;
-
-  StreamPartReasoningStart({required this.id, this.providerMetadata});
-
-  factory StreamPartReasoningStart.fromJson(Map<String, dynamic> json) =>
-      StreamPartReasoningStart(
-        id: json['id'] as String,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
-  @override
-  Map<String, dynamic> toJson() => {
-        'ReasoningStart': {
-          'id': id,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
-      };
-}
-
-/// A delta of a reasoning / thinking segment.
-final class StreamPartReasoningDelta extends StreamPart {
-  final String id;
-  final String delta;
-  final Map<String, dynamic>? providerMetadata;
-
-  StreamPartReasoningDelta({
-    required this.id,
-    required this.delta,
-    this.providerMetadata,
-  });
-
-  factory StreamPartReasoningDelta.fromJson(Map<String, dynamic> json) =>
-      StreamPartReasoningDelta(
-        id: json['id'] as String,
-        delta: json['delta'] as String,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
-  @override
-  Map<String, dynamic> toJson() => {
-        'ReasoningDelta': {
-          'id': id,
-          'delta': delta,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
-      };
-}
-
-/// End of a reasoning / thinking segment.
-final class StreamPartReasoningEnd extends StreamPart {
-  final String id;
-  final Map<String, dynamic>? providerMetadata;
-
-  StreamPartReasoningEnd({required this.id, this.providerMetadata});
-
-  factory StreamPartReasoningEnd.fromJson(Map<String, dynamic> json) =>
-      StreamPartReasoningEnd(
-        id: json['id'] as String,
-        providerMetadata:
-            json['provider_metadata'] as Map<String, dynamic>?,
-      );
-
-  @override
-  Map<String, dynamic> toJson() => {
-        'ReasoningEnd': {
-          'id': id,
-          if (providerMetadata != null) 'provider_metadata': providerMetadata,
-        },
-      };
-}
-
-// ── Metadata / sources / raw ──────────────────────────────────────────────────
-
-/// Response metadata (id, timestamp, model_id).
-final class StreamPartResponseMetadata extends StreamPart {
-  final String? id;
-  final String? timestamp;
-  final String? modelId;
-
-  StreamPartResponseMetadata({this.id, this.timestamp, this.modelId});
-
-  factory StreamPartResponseMetadata.fromJson(Map<String, dynamic> json) =>
-      StreamPartResponseMetadata(
-        id: json['id'] as String?,
-        timestamp: json['timestamp'] as String?,
-        modelId: json['model_id'] as String?,
-      );
-
-  @override
-  Map<String, dynamic> toJson() => {
-        'ResponseMetadata': {
-          if (id != null) 'id': id,
-          if (timestamp != null) 'timestamp': timestamp,
-          if (modelId != null) 'model_id': modelId,
-        },
-      };
-}
-
-/// A source / citation (e.g. URL citation from search-preview models).
-final class StreamPartSource extends StreamPart {
-  final Source source;
-
-  StreamPartSource({required this.source});
-
-  factory StreamPartSource.fromJson(Map<String, dynamic> json) =>
-      StreamPartSource(source: Source.fromJson(json));
-
-  @override
-  Map<String, dynamic> toJson() => {'Source': source.toJson()};
-}
-
-/// A raw chunk from the provider (for debugging, when `include_raw_chunks`
-/// is set).
-final class StreamPartRaw extends StreamPart {
-  final dynamic rawValue;
-
-  StreamPartRaw({required this.rawValue});
-
-  factory StreamPartRaw.fromJson(Map<String, dynamic> json) =>
-      StreamPartRaw(rawValue: json['raw_value']);
-
-  @override
-  Map<String, dynamic> toJson() => {
-        'Raw': {'raw_value': rawValue},
-      };
-}
-
-/// Fallback for unknown/forward-compatible `StreamPart` variants.
-///
-/// Newer core versions may emit tags this binding does not model yet; this
-/// class passes them through verbatim (`{tag: data}`) instead of discarding
-/// or crashing.
 final class StreamPartCustom extends StreamPart {
   final String kind;
-  final Map<String, dynamic>? providerMetadata;
-  StreamPartCustom({required this.kind, this.providerMetadata});
-  factory StreamPartCustom.fromJson(Map<String, dynamic> json) => StreamPartCustom(kind: json['kind'] as String, providerMetadata: json['provider_metadata'] as Map<String, dynamic>?);
-  @override Map<String, dynamic> toJson() => {'Custom': {'kind': kind, if (providerMetadata != null) 'provider_metadata': providerMetadata}};
+  final Json? providerMetadata;
+  const StreamPartCustom({required this.kind, this.providerMetadata});
+  @override
+  Json toJson() => {
+        'type': 'custom',
+        'kind': kind,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+      };
 }
 
-final class StreamPartReasoningFile extends StreamPart {
-  final GenerateContentFile file;
-  final Map<String, dynamic>? providerMetadata;
-  StreamPartReasoningFile({required this.file, this.providerMetadata});
-  factory StreamPartReasoningFile.fromJson(Map<String, dynamic> json) => StreamPartReasoningFile(file: GenerateContentFile.fromJson(json['file'] as Map<String, dynamic>), providerMetadata: json['provider_metadata'] as Map<String, dynamic>?);
-  @override Map<String, dynamic> toJson() => {'ReasoningFile': {'file': file.toJson(), if (providerMetadata != null) 'provider_metadata': providerMetadata}};
-}
-
+/// A tool call waiting for approval (`ToolApprovalRequestOutput.ts`).
 final class StreamPartToolApprovalRequest extends StreamPart {
   final String approvalId;
   final ToolCall toolCall;
   final String? reason;
   final bool? isAutomatic;
   final String? signature;
-  StreamPartToolApprovalRequest({required this.approvalId, required this.toolCall, this.reason, this.isAutomatic, this.signature});
-  factory StreamPartToolApprovalRequest.fromJson(Map<String, dynamic> json) => StreamPartToolApprovalRequest(approvalId: json['approval_id'] as String, toolCall: ToolCall.fromJson(json['tool_call'] as Map<String, dynamic>), reason: json['reason'] as String?, isAutomatic: json['is_automatic'] as bool?, signature: json['signature'] as String?);
-  @override Map<String, dynamic> toJson() => {'ToolApprovalRequest': {'approval_id': approvalId, 'tool_call': toolCall.toJson(), if (reason != null) 'reason': reason, if (isAutomatic != null) 'is_automatic': isAutomatic, if (signature != null) 'signature': signature}};
-}
-
-final class StreamPartUnknown extends StreamPart {
-  final String tag;
-  final Map<String, dynamic> data;
-
-  StreamPartUnknown({required this.tag, required this.data});
-
+  const StreamPartToolApprovalRequest({
+    required this.approvalId,
+    required this.toolCall,
+    this.reason,
+    this.isAutomatic,
+    this.signature,
+  });
   @override
-  Map<String, dynamic> toJson() => {tag: data};
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FileBytes (shared.rs) — externally-tagged: {"Binary": [...]} / {"Base64": "..."}
-// ─────────────────────────────────────────────────────────────────────────────
-
-sealed class FileBytes {
-  const FileBytes();
-  factory FileBytes.fromJson(Map<String, dynamic> json) {
-    final e = json.entries.first;
-    return switch (e.key) {
-      'Binary' => FileBytesBinary(data: (e.value as List).cast<int>()),
-      'Base64' => FileBytesBase64(data: e.value as String),
-      _ => throw FormatException('unknown FileBytes tag: $e'),
-    };
-  }
-  Map<String, dynamic> toJson();
-}
-
-final class FileBytesBinary extends FileBytes {
-  final List<int> data;
-  const FileBytesBinary({required this.data});
-  @override
-  Map<String, dynamic> toJson() => {'Binary': data};
-}
-
-final class FileBytesBase64 extends FileBytes {
-  final String data;
-  const FileBytesBase64({required this.data});
-  @override
-  Map<String, dynamic> toJson() => {'Base64': data};
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FileData (shared.rs) — externally-tagged: {"Data": {...}} / {"Url": {...}} / ...
-// ─────────────────────────────────────────────────────────────────────────────
-
-sealed class FileData {
-  const FileData();
-  factory FileData.fromJson(Map<String, dynamic> json) {
-    final e = json.entries.first;
-    return switch (e.key) {
-      'Data' => FileDataData(
-          data: FileBytes.fromJson((e.value as Map)['data'] as Map<String, dynamic>)),
-      'Url' => FileDataUrl(url: (e.value as Map)['url'] as String, originalUrl: (e.value as Map)['original_url'] as String?),
-      'Reference' => FileDataReference(
-          reference: (e.value as Map)['reference'] as Map<String, dynamic>),
-      'Text' => FileDataText(text: (e.value as Map)['text'] as String),
-      _ => throw FormatException('unknown FileData tag: $e'),
-    };
-  }
-  Map<String, dynamic> toJson();
-}
-
-final class FileDataData extends FileData {
-  final FileBytes data;
-  const FileDataData({required this.data});
-  @override
-  Map<String, dynamic> toJson() => {'Data': {'data': data.toJson()}};
-}
-
-final class FileDataUrl extends FileData {
-  final String url;
-  final String? originalUrl;
-  const FileDataUrl({required this.url, this.originalUrl});
-  @override
-  Map<String, dynamic> toJson() => {'Url': {'url': url, if (originalUrl != null) 'original_url': originalUrl}};
-}
-
-final class FileDataReference extends FileData {
-  final Map<String, dynamic> reference;
-  const FileDataReference({required this.reference});
-  @override
-  Map<String, dynamic> toJson() => {'Reference': {'reference': reference}};
-}
-
-final class FileDataText extends FileData {
-  final String text;
-  const FileDataText({required this.text});
-  @override
-  Map<String, dynamic> toJson() => {'Text': {'text': text}};
-}
-
-sealed class GeneratedFileData {
-  const GeneratedFileData();
-  factory GeneratedFileData.fromJson(Map<String, dynamic> json) {
-    final e = json.entries.first;
-    return switch (e.key) {
-      'Data' => GeneratedFileDataData(
-          data: FileBytes.fromJson((e.value as Map)['data'] as Map<String, dynamic>)),
-      'Url' => GeneratedFileDataUrl(url: (e.value as Map)['url'] as String, originalUrl: (e.value as Map)['original_url'] as String?),
-      _ => throw FormatException('unknown GeneratedFileData tag: $e'),
-    };
-  }
-  Map<String, dynamic> toJson();
-}
-
-final class GeneratedFileDataData extends GeneratedFileData {
-  final FileBytes data;
-  const GeneratedFileDataData({required this.data});
-  @override
-  Map<String, dynamic> toJson() => {'Data': {'data': data.toJson()}};
-}
-
-final class GeneratedFileDataUrl extends GeneratedFileData {
-  final String url;
-  final String? originalUrl;
-  const GeneratedFileDataUrl({required this.url, this.originalUrl});
-  @override
-  Map<String, dynamic> toJson() => {'Url': {'url': url, if (originalUrl != null) 'original_url': originalUrl}};
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ContentPart (content.rs) — internally-tagged: {"type": "text", "text": "..."}
-// ─────────────────────────────────────────────────────────────────────────────
-
-sealed class ContentPart {
-  const ContentPart();
-  factory ContentPart.fromJson(Map<String, dynamic> json) {
-    final tag = json['type'] as String;
-    return switch (tag) {
-      'custom' => ContentPartCustom.fromJson(json),
-      'reasoning_file' => ContentPartReasoningFile.fromJson(json),
-      'tool_approval_request' => ContentPartToolApprovalRequest.fromJson(json),
-      'text' => ContentPartText.fromJson(json),
-      'image' => ContentPartImage.fromJson(json),
-      'file' => ContentPartFile.fromJson(json),
-      'file_base64' => ContentPartFileBase64.fromJson(json),
-      'file_url' => ContentPartFileUrl.fromJson(json),
-      'file_reference' => ContentPartFileReference.fromJson(json),
-      'reasoning' => ContentPartReasoning.fromJson(json),
-      'tool_call' => ContentPartToolCall.fromJson(json),
-      'tool_result' => ContentPartToolResult.fromJson(json),
-      _ => ContentPartUnknown(tag: tag, data: json),
-    };
-  }
-  Map<String, dynamic> toJson();
-}
-
-final class ContentPartText extends ContentPart {
-  final String text;
-  final Map<String, dynamic>? providerOptions;
-  const ContentPartText({required this.text, this.providerOptions});
-  static ContentPartText fromJson(Map<String, dynamic> json) => ContentPartText(
-        text: json['text'] as String,
-        providerOptions: json['provider_options'] as Map<String, dynamic>?,
-      );
-  @override
-  Map<String, dynamic> toJson() => {
-        'type': 'text',
-        'text': text,
-        if (providerOptions != null) 'provider_options': providerOptions,
-      };
-}
-
-final class ContentPartImage extends ContentPart {
-  final List<int> image;
-  final String mediaType;
-  final Map<String, dynamic>? providerOptions;
-  const ContentPartImage(
-      {required this.image, required this.mediaType, this.providerOptions});
-  static ContentPartImage fromJson(Map<String, dynamic> json) =>
-      ContentPartImage(
-        image: (json['image'] as List).cast<int>(),
-        mediaType: json['media_type'] as String,
-        providerOptions: json['provider_options'] as Map<String, dynamic>?,
-      );
-  @override
-  Map<String, dynamic> toJson() => {
-        'type': 'image',
-        'image': image,
-        'media_type': mediaType,
-        if (providerOptions != null) 'provider_options': providerOptions,
-      };
-}
-
-final class ContentPartFile extends ContentPart {
-  final List<int> data;
-  final String mediaType;
-  final String? filename;
-  final Map<String, dynamic>? providerOptions;
-  const ContentPartFile(
-      {required this.data, required this.mediaType, this.filename, this.providerOptions});
-  static ContentPartFile fromJson(Map<String, dynamic> json) => ContentPartFile(
-        data: (json['data'] as List).cast<int>(),
-        mediaType: json['media_type'] as String,
-        filename: json['filename'] as String?,
-        providerOptions: json['provider_options'] as Map<String, dynamic>?,
-      );
-  @override
-  Map<String, dynamic> toJson() => {
-        'type': 'file',
-        'data': data,
-        'media_type': mediaType,
-        if (filename != null) 'filename': filename,
-        if (providerOptions != null) 'provider_options': providerOptions,
-      };
-}
-
-final class ContentPartFileBase64 extends ContentPart {
-  final String data;
-  final String mediaType;
-  final String? filename;
-  final Map<String, dynamic>? providerOptions;
-  const ContentPartFileBase64(
-      {required this.data, required this.mediaType, this.filename, this.providerOptions});
-  static ContentPartFileBase64 fromJson(Map<String, dynamic> json) =>
-      ContentPartFileBase64(
-        data: json['data'] as String,
-        mediaType: json['media_type'] as String,
-        filename: json['filename'] as String?,
-        providerOptions: json['provider_options'] as Map<String, dynamic>?,
-      );
-  @override
-  Map<String, dynamic> toJson() => {
-        'type': 'file_base64',
-        'data': data,
-        'media_type': mediaType,
-        if (filename != null) 'filename': filename,
-        if (providerOptions != null) 'provider_options': providerOptions,
-      };
-}
-
-final class ContentPartFileUrl extends ContentPart {
-  final String url;
-  final String mediaType;
-  final Map<String, dynamic>? providerOptions;
-  const ContentPartFileUrl(
-      {required this.url, required this.mediaType, this.providerOptions});
-  static ContentPartFileUrl fromJson(Map<String, dynamic> json) =>
-      ContentPartFileUrl(
-        url: json['url'] as String,
-        mediaType: json['media_type'] as String,
-        providerOptions: json['provider_options'] as Map<String, dynamic>?,
-      );
-  @override
-  Map<String, dynamic> toJson() => {
-        'type': 'file_url',
-        'url': url,
-        'media_type': mediaType,
-        if (providerOptions != null) 'provider_options': providerOptions,
-      };
-}
-
-final class ContentPartFileReference extends ContentPart {
-  final String mediaType;
-  final Map<String, dynamic> reference;
-  final String? filename;
-  final Map<String, dynamic>? providerOptions;
-  const ContentPartFileReference(
-      {required this.mediaType, required this.reference, this.filename, this.providerOptions});
-  static ContentPartFileReference fromJson(Map<String, dynamic> json) =>
-      ContentPartFileReference(
-        mediaType: json['media_type'] as String,
-        reference: json['reference'] as Map<String, dynamic>,
-        filename: json['filename'] as String?,
-        providerOptions: json['provider_options'] as Map<String, dynamic>?,
-      );
-  @override
-  Map<String, dynamic> toJson() => {
-        'type': 'file_reference',
-        'media_type': mediaType,
-        'reference': reference,
-        if (filename != null) 'filename': filename,
-        if (providerOptions != null) 'provider_options': providerOptions,
-      };
-}
-
-final class ContentPartReasoning extends ContentPart {
-  final String text;
-  final String? signature;
-  final Map<String, dynamic>? providerOptions;
-  const ContentPartReasoning(
-      {required this.text, this.signature, this.providerOptions});
-  static ContentPartReasoning fromJson(Map<String, dynamic> json) =>
-      ContentPartReasoning(
-        text: json['text'] as String,
-        signature: json['signature'] as String?,
-        providerOptions: json['provider_options'] as Map<String, dynamic>?,
-      );
-  @override
-  Map<String, dynamic> toJson() => {
-        'type': 'reasoning',
-        'text': text,
+  Json toJson() => {
+        'type': 'tool-approval-request',
+        'approvalId': approvalId,
+        'toolCall': toolCall.toJson(),
+        if (reason != null) 'reason': reason,
+        if (isAutomatic != null) 'isAutomatic': isAutomatic,
         if (signature != null) 'signature': signature,
-        if (providerOptions != null) 'provider_options': providerOptions,
       };
 }
 
-final class ContentPartToolCall extends ContentPart {
-  final String toolCallId;
-  final String toolName;
-  final dynamic input;
-  final bool? providerExecuted;
-  final Map<String, dynamic>? providerOptions;
-  const ContentPartToolCall(
-      {required this.toolCallId, required this.toolName, required this.input, this.providerExecuted, this.providerOptions});
-  static ContentPartToolCall fromJson(Map<String, dynamic> json) =>
-      ContentPartToolCall(
-        toolCallId: json['tool_call_id'] as String,
-        toolName: json['tool_name'] as String,
-        input: json['input'],
-        providerExecuted: json['provider_executed'] as bool?,
-        providerOptions: json['provider_options'] as Map<String, dynamic>?,
-      );
+/// Start / delta / end of a reasoning segment.
+final class StreamPartReasoningStart extends StreamPart {
+  final String id;
+  final Json? providerMetadata;
+  const StreamPartReasoningStart({required this.id, this.providerMetadata});
   @override
-  Map<String, dynamic> toJson() => {
-        'type': 'tool_call',
-        'tool_call_id': toolCallId,
-        'tool_name': toolName,
-        'input': input,
-        if (providerExecuted != null) 'provider_executed': providerExecuted,
-        if (providerOptions != null) 'provider_options': providerOptions,
+  Json toJson() => {
+        'type': 'reasoning-start',
+        'id': id,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
-final class ContentPartToolResult extends ContentPart {
-  final String toolCallId;
-  final dynamic result;
-  final String? toolName;
-  final bool? isError;
-  final bool? preliminary;
-  final bool? isDynamic;
-  final Map<String, dynamic>? providerOptions;
-  const ContentPartToolResult(
-      {required this.toolCallId, required this.result, this.toolName, this.isError, this.preliminary, this.isDynamic, this.providerOptions});
-  static ContentPartToolResult fromJson(Map<String, dynamic> json) =>
-      ContentPartToolResult(
-        toolCallId: json['tool_call_id'] as String,
-        result: json['result'],
-        toolName: json['tool_name'] as String?,
-        isError: json['is_error'] as bool?,
-        preliminary: json['preliminary'] as bool?,
-        isDynamic: json['dynamic'] as bool?,
-        providerOptions: json['provider_options'] as Map<String, dynamic>?,
-      );
+final class StreamPartReasoningDelta extends StreamPart {
+  final String id;
+  final String delta;
+  final Json? providerMetadata;
+  const StreamPartReasoningDelta(
+      {required this.id, required this.delta, this.providerMetadata});
   @override
-  Map<String, dynamic> toJson() => {
-        'type': 'tool_result',
-        'tool_call_id': toolCallId,
-        'result': result,
-        if (toolName != null) 'tool_name': toolName,
-        if (isError != null) 'is_error': isError,
-        if (preliminary != null) 'preliminary': preliminary,
-        if (isDynamic != null) 'dynamic': isDynamic,
-        if (providerOptions != null) 'provider_options': providerOptions,
+  Json toJson() => {
+        'type': 'reasoning-delta',
+        'id': id,
+        'delta': delta,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
-final class ContentPartCustom extends ContentPart {
-  final String kind;
-  final Map<String, dynamic>? providerOptions;
-  ContentPartCustom({required this.kind, this.providerOptions});
-  factory ContentPartCustom.fromJson(Map<String, dynamic> json) => ContentPartCustom(kind: json['kind'] as String, providerOptions: json['provider_options'] as Map<String, dynamic>?);
-  @override Map<String, dynamic> toJson() => {'type': 'custom', 'kind': kind, if (providerOptions != null) 'provider_options': providerOptions};
-}
-
-final class ContentPartReasoningFile extends ContentPart {
-  final GeneratedFileData data;
-  final String mediaType;
-  final Map<String, dynamic>? providerOptions;
-  ContentPartReasoningFile({required this.data, required this.mediaType, this.providerOptions});
-  factory ContentPartReasoningFile.fromJson(Map<String, dynamic> json) => ContentPartReasoningFile(data: GeneratedFileData.fromJson(json['data'] as Map<String, dynamic>), mediaType: json['media_type'] as String, providerOptions: json['provider_options'] as Map<String, dynamic>?);
-  @override Map<String, dynamic> toJson() => {'type': 'reasoning_file', 'data': data.toJson(), 'media_type': mediaType, if (providerOptions != null) 'provider_options': providerOptions};
-}
-
-final class ContentPartToolApprovalRequest extends ContentPart {
-  final String approvalId;
-  final String toolCallId;
-  final String? reason;
-  final bool? isAutomatic;
-  final String? signature;
-  final dynamic inputSchemaInput;
-  ContentPartToolApprovalRequest({required this.approvalId, required this.toolCallId, this.reason, this.isAutomatic, this.signature, this.inputSchemaInput});
-  factory ContentPartToolApprovalRequest.fromJson(Map<String, dynamic> json) => ContentPartToolApprovalRequest(approvalId: json['approval_id'] as String, toolCallId: json['tool_call_id'] as String, reason: json['reason'] as String?, isAutomatic: json['is_automatic'] as bool?, signature: json['signature'] as String?, inputSchemaInput: json['input_schema_input']);
-  @override Map<String, dynamic> toJson() => {'type': 'tool_approval_request', 'approval_id': approvalId, 'tool_call_id': toolCallId, if (reason != null) 'reason': reason, if (isAutomatic != null) 'is_automatic': isAutomatic, if (signature != null) 'signature': signature, if (inputSchemaInput != null) 'input_schema_input': inputSchemaInput};
-}
-
-final class ContentPartUnknown extends ContentPart {
-  final String tag;
-  final Map<String, dynamic> data;
-  const ContentPartUnknown({required this.tag, required this.data});
+final class StreamPartReasoningEnd extends StreamPart {
+  final String id;
+  final Json? providerMetadata;
+  const StreamPartReasoningEnd({required this.id, this.providerMetadata});
   @override
-  Map<String, dynamic> toJson() => data;
+  Json toJson() => {
+        'type': 'reasoning-end',
+        'id': id,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+      };
+}
+
+/// A source / citation.
+final class StreamPartSource extends StreamPart {
+  final Source source;
+  const StreamPartSource({required this.source});
+  @override
+  Json toJson() => {'type': 'source', ...source.toJson()};
+}
+
+/// A raw provider chunk (when `includeRawChunks` is set).
+final class StreamPartRaw extends StreamPart {
+  final dynamic rawValue;
+  const StreamPartRaw({required this.rawValue});
+  @override
+  Json toJson() => {'type': 'raw', 'rawValue': rawValue};
+}
+
+/// Forward-compatibility: a `type` this binding does not model, verbatim.
+final class StreamPartUnknown extends StreamPart {
+  final Json data;
+  const StreamPartUnknown(this.data);
+  @override
+  Json toJson() => data;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

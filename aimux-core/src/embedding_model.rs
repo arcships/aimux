@@ -25,6 +25,7 @@ pub type Embedding = Vec<f32>;
 ///
 /// Aligned with V4 `EmbeddingModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct EmbeddingCallOptions {
     /// List of text values to generate embeddings for.
@@ -36,15 +37,23 @@ pub struct EmbeddingCallOptions {
     pub abort_signal: Option<AbortSignal>,
 
     /// Per-call retry override. `None` uses the model default.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
 
     /// Per-call operation timeout.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<crate::options::TimeoutConfiguration>,
 
     /// Additional provider-specific options, keyed by provider name.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 
     /// Additional HTTP headers to send with the request.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
 }
 
@@ -64,6 +73,7 @@ impl EmbeddingCallOptions {
 
 /// Token usage for an embedding call. Embeddings only report input tokens.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct EmbeddingUsage {
     /// Number of input tokens consumed.
@@ -74,18 +84,25 @@ pub struct EmbeddingUsage {
 ///
 /// Aligned with V4 `EmbeddingModelV4Result`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct EmbeddingResult {
     /// Generated embeddings, in the same order as the input `values`.
     pub embeddings: Vec<Embedding>,
 
     /// Token usage (input tokens only).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<EmbeddingUsage>,
 
     /// Additional provider-specific metadata.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<SharedProviderMetadata>,
 
     /// Optional response information for debugging.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<EmbeddingResponse>,
 
     /// Warnings for the call, e.g. unsupported settings.
@@ -94,11 +111,16 @@ pub struct EmbeddingResult {
 
 /// Debugging response info specific to embedding calls.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct EmbeddingResponse {
     /// Response headers.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
     /// The response body (opaque JSON).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<serde_json::Value>,
 }
 

@@ -7,11 +7,11 @@ export type ModelCapabilities = {
 /**
  * Supports function/tool calling.
  */
-tool_call: boolean, 
+toolCall: boolean, 
 /**
  * Supports structured / JSON-schema output.
  */
-structured_output: boolean, 
+structuredOutput: boolean, 
 /**
  * Accepts a `temperature` parameter.
  */

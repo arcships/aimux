@@ -21,7 +21,7 @@ content: Array<GenerateContent<RawToolCall, RawToolApprovalRequest, GeneratedFil
 /**
  * Why generation stopped.
  */
-finish_reason: FinishReason, 
+finishReason: FinishReason, 
 /**
  * Token usage.
  */
@@ -33,12 +33,12 @@ warnings: Array<Warning>,
 /**
  * Provider-specific metadata.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Optional request information for telemetry and debugging.
  */
-request: RequestInfo | null, 
+request?: RequestInfo, 
 /**
  * Optional response metadata, headers, and body.
  */
-response: ResponseInfo | null, };
+response?: ResponseInfo, };

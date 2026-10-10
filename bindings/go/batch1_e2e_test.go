@@ -1,7 +1,7 @@
 package aimux
 
 // RFC-0016 第一批 e2e tests (Go shell):
-//   M2 include_raw_chunks -> StreamPart.Raw emission
+//   M2 includeRawChunks -> "raw" stream part emission
 //   M10 Usage.raw preservation
 //   M9 StreamStart non-empty warnings
 //
@@ -25,7 +25,7 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 	srv.SetContentType("text/event-stream")
 	srv.SetResponse(buildTextDeltaSSE())
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	stream := m.StreamText(`"Say hello"`, mustMarshalOptions(t, &GenerateTextOptions{
@@ -40,15 +40,15 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to parse: %v", err)
 		}
-		switch sp.Tag {
-		case "Raw":
-			raws = append(raws, sp.Payload)
+		switch sp.Type {
+		case "raw":
+			raws = append(raws, sp.Raw)
 			if !rawBeforeFirstDelta {
 				rawBeforeFirstDelta = true
 			}
-		case "TextDelta":
+		case "text-delta":
 			var td TextDeltaPayload
-			json.Unmarshal(sp.Payload, &td)
+			json.Unmarshal(sp.Raw, &td)
 			textBuilder.WriteString(td.Delta)
 		}
 	}
@@ -65,10 +65,10 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 	if err := json.Unmarshal(raws[0], &first); err != nil {
 		t.Fatalf("Raw payload not an object: %v", err)
 	}
-	// Raw payload is wrapped: {"raw_value": {chunk}}.
-	inner, ok := first["raw_value"].(map[string]any)
+	// A raw part is {"type":"raw","rawValue": {chunk}}.
+	inner, ok := first["rawValue"].(map[string]any)
 	if !ok {
-		t.Fatalf("Raw payload missing raw_value, got %#v", first)
+		t.Fatalf("raw part missing rawValue, got %#v", first)
 	}
 	delta, ok := inner["choices"].([]any)[0].(map[string]any)["delta"].(map[string]any)["content"].(string)
 	if !ok || delta != "Hello" {
@@ -88,12 +88,12 @@ func TestE2E_StreamStartCarriesNonEmptyWarnings(t *testing.T) {
 	srv.SetContentType("text/event-stream")
 	srv.SetResponse(buildTextDeltaSSE())
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	// top_k on a provider that supports it produces no warning on the openai
 	// full profile; the Go assertion here is that a non-empty warnings array
-	// in StreamStart decodes without breaking the stream (the warning itself
+	// in stream-start decodes without breaking the stream (the warning itself
 	// is produced by the groq profile — covered in groq_test.rs).
 	stream := m.StreamText(`"Say hello"`, mustMarshalOptions(t, &GenerateTextOptions{
 		TopK: f64Ptr(0.5),
@@ -105,13 +105,13 @@ func TestE2E_StreamStartCarriesNonEmptyWarnings(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to parse: %v", err)
 		}
-		if sp.Tag == "StreamStart" {
+		if sp.Type == "stream-start" {
 			sawStreamStart = true
 			var start struct {
 				Warnings []json.RawMessage `json:"warnings"`
 			}
-			if err := json.Unmarshal(sp.Payload, &start); err != nil {
-				t.Fatalf("failed to decode StreamStart payload: %v", err)
+			if err := json.Unmarshal(sp.Raw, &start); err != nil {
+				t.Fatalf("failed to decode stream-start part: %v", err)
 			}
 			// warnings may be empty on the full profile; the point is that a
 			// non-empty array would decode here without error.
@@ -122,7 +122,7 @@ func TestE2E_StreamStartCarriesNonEmptyWarnings(t *testing.T) {
 		t.Fatalf("stream error: %v", err)
 	}
 	if !sawStreamStart {
-		t.Fatal("no StreamStart part received")
+		t.Fatal("no stream-start part received")
 	}
 }
 

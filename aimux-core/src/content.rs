@@ -4,19 +4,25 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
+use crate::language_model_message::ToolResultOutput;
 use crate::shared::SharedProviderOptions;
 
 /// A part of a multi-part message.
 ///
 /// Shared between `ModelMessage` (user-facing) and `LanguageModelPrompt` (provider-facing).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
 pub enum ContentPart {
     /// A text segment.
     Text {
         text: String,
         /// Provider-specific options for this part (e.g. `openai.promptCacheBreakpoint`).
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -24,6 +30,7 @@ pub enum ContentPart {
     /// Provider-specific custom content.
     Custom {
         kind: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -32,6 +39,7 @@ pub enum ContentPart {
     ReasoningFile {
         data: crate::shared::GeneratedFileData,
         media_type: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -40,12 +48,16 @@ pub enum ContentPart {
     ToolApprovalRequest {
         approval_id: String,
         tool_call_id: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         is_automatic: Option<bool>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         signature: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         input_schema_input: Option<Value>,
     },
@@ -54,6 +66,7 @@ pub enum ContentPart {
     Image {
         image: Vec<u8>,
         media_type: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -62,8 +75,10 @@ pub enum ContentPart {
     File {
         data: Vec<u8>,
         media_type: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -77,8 +92,10 @@ pub enum ContentPart {
     FileBase64 {
         data: String,
         media_type: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -89,6 +106,7 @@ pub enum ContentPart {
     FileUrl {
         url: String,
         media_type: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -101,8 +119,10 @@ pub enum ContentPart {
     FileReference {
         media_type: String,
         reference: Value,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -116,10 +136,13 @@ pub enum ContentPart {
     /// `redacted_thinking` block is emitted).
     Reasoning {
         text: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         signature: Option<String>,
         /// Provider-specific options for this part (e.g.
         /// `anthropic.signature`, `anthropic.redactedData`,
         /// `anthropic.cacheControl`).
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -133,41 +156,24 @@ pub enum ContentPart {
         /// Whether the tool call is executed by the provider rather than by
         /// the client. This is part of the prompt contract because providers
         /// need it to replay server tool calls on a later turn.
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_executed: Option<bool>,
         /// Provider-specific options for this part (e.g.
         /// `anthropic.cacheControl`).
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
 
-    /// The result of executing a tool call.
+    /// The result of executing a tool call (upstream `ToolResultPart`).
     ToolResult {
         tool_call_id: String,
-        /// The tool's output (usually a JSON value or plain text).
-        ///
-        /// Accepts the legacy `output` field name (used by the Vercel AI SDK
-        /// and the 0.1.0 TypeScript bindings) as an alias during deserialization,
-        /// so multi-part tool messages constructed either way round-trip
-        /// correctly. Serialization always emits `result`.
-        #[serde(alias = "output")]
-        result: Value,
-        /// The name of the tool that produced this result (optional on the
-        /// user-input side; providers that need it can look it up from the
-        /// preceding tool call).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        tool_name: Option<String>,
-        /// Whether the result is an error or error message.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        is_error: Option<bool>,
-        /// Whether the result is preliminary (replaces prior, e.g. image previews).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        preliminary: Option<bool>,
-        /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        dynamic: Option<bool>,
+        tool_name: String,
+        output: ToolResultOutput,
         /// Provider-specific options for this part (e.g.
         /// `anthropic.cacheControl`).
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -193,19 +199,6 @@ impl ContentPart {
             tool_name: tool_name.into(),
             input,
             provider_executed: None,
-            provider_options: None,
-        }
-    }
-
-    /// Convenience constructor for a tool-result part (no provider options).
-    pub fn tool_result(tool_call_id: impl Into<String>, result: Value) -> Self {
-        ContentPart::ToolResult {
-            tool_call_id: tool_call_id.into(),
-            result,
-            tool_name: None,
-            is_error: None,
-            preliminary: None,
-            dynamic: None,
             provider_options: None,
         }
     }

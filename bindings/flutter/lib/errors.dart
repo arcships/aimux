@@ -720,8 +720,8 @@ class InvalidToolInputError extends AimuxException {
 /// A `repairToolCall` hook itself failed.
 class ToolCallRepairError extends AimuxException {
   /// The original lookup/parse/validation error the hook was repairing,
-  /// decoded from its externally-tagged wire JSON (the same shape as
-  /// `ToolCall.error`).
+  /// decoded from its wire JSON (an `AiMuxError` object keyed by `name`, the
+  /// same shape as `ToolCall.error`).
   final dynamic originalError;
 
   ToolCallRepairError(super.message,

@@ -154,14 +154,6 @@ void main() {
     );
   });
 
-  test('registerProviders validates raw config_json in Dart', () {
-    expect(
-      () => registerProviders('{not json'),
-      throwsA(isA<FormatException>()
-          .having((e) => e.source, 'source', 'config_json')),
-    );
-  });
-
   test('multimodal use-after-close throws StateError', () {
     final m = EmbeddingModel.openai('sk-test-fake-key', 'text-embedding-3-small');
     m.close();

@@ -20,7 +20,9 @@ use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::{HttpRequest, StreamingToolCallDelta, StreamingToolCallTracker};
+use aimux_provider_utils::{
+    HttpRequest, StreamingToolCallDelta, StreamingToolCallTracker, TypeValidation, generate_id,
+};
 
 use super::config::{OpenAIModelConfig, TransformRequestBody};
 use super::convert::{
@@ -416,7 +418,10 @@ pub(crate) async fn execute_stream(
 
         // Streamed tool calls, correlated by wire id, index and function name
         // (the AI SDK's StreamingToolCallTracker) and finalized on flush.
-        let mut tool_calls = StreamingToolCallTracker::new();
+        // Same options as `@ai-sdk/openai`'s chat model.
+        let mut tool_calls = StreamingToolCallTracker::new()
+            .with_generate_id(generate_id)
+            .with_type_validation(TypeValidation::IfPresent);
         let mut tool_parts = Vec::new();
 
         // Process the first event (already peeked) then the rest.
@@ -560,15 +565,17 @@ pub(crate) async fn execute_stream(
                             for dtc in &tool_call_deltas {
                                 let function = dtc.function.as_ref();
                                 let delta = StreamingToolCallDelta {
-                                    index: dtc.index,
+                                    index: Some(dtc.index),
                                     id: dtc.id.as_deref(),
+                                    r#type: dtc.r#type.as_deref(),
                                     name: function.and_then(|f| f.name.as_deref()),
                                     arguments: function.and_then(|f| f.arguments.as_deref()),
-                                    ..Default::default()
+                                    provider_metadata: None,
                                 };
                                 // A malformed delta (new call without a
-                                // function name) is invalid response data,
-                                // as in the AI SDK; the stream ends.
+                                // function name, or a non-`function` type)
+                                // is invalid response data, as in the AI SDK;
+                                // the stream ends.
                                 if let Err(error) = tool_calls.process(delta, &mut tool_parts) {
                                     yield Err(error.into());
                                     return;
