@@ -55,7 +55,7 @@ unwrap 文件集中度：recording.rs 15 / session.rs 10 / trace/store.rs 9 / go
 ## 4. 注释信号
 
 - TODO/FIXME/HACK/XXX：仅 1 处（显著优于常态）
-- `#[allow]`：28 处，分布：`dead_code` 11、`clippy::*` 9、`unused*` 7、`non_snake_case` 1。11 处 `allow(dead_code)` 位置见 signals-comments.txt（精简度信号：被压制而非删除的死代码）
+- `#[allow]`：28 处，分布：`dead_code` 11、`clippy::*` 9、`unused*` 7、`non_snake_case` 1。11 处 `allow(dead_code)` 是精简度信号：死代码被压制而非删除
 - 重复 `//` 注释（≥3 次出现）：54 组，4c 定性约 20 组为分隔线风格、6 组为合理协议差异说明，其余为 copy-paste 传播候选
 - 注释中的 RFC 引用死链：0（脚本初报 3339/1123 为 IETF RFC 误报）
 
@@ -67,6 +67,7 @@ unwrap 文件集中度：recording.rs 15 / session.rs 10 / trace/store.rs 9 / go
 
 开放 issue 仅 1 个：#95「错误处理 — 参考并对齐 AI SDK 的错误体系(持续跟踪)」。上轮整改均已通过 PR 落地，无滞留 issue。
 
-## 7. 原始数据文件
+## 7. 原始数据
 
-`signals-panic.txt`、`signals-comments.txt`、`signals-ffi-drift.txt`、`clippy-pedantic.log`、`clippy-lint-frequency.txt`、`cargo-doc.log`、`github-issues.json`、`lcov.info`（覆盖率，Phase 2 产出）。
+原始日志、扫描输出、GitHub issue 快照与覆盖率文件属于可重建的临时产物，
+不纳入版本控制。本报告与同目录的专项报告保留其凝练结果和复现命令。
