@@ -33,7 +33,10 @@ use aimux_core::types::{
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::image_model::ImageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+use aimux_provider_utils::{
+    FetchFunction, HeaderMapOpt, Resolvable, TransformStreamController, Transformer, pipe_through,
+    validate_base_url,
+};
 
 use crate::shared::{Credential, EndpointConfig, EndpointHeaders, ProviderHeaders};
 
@@ -453,311 +456,20 @@ impl LanguageModel for OpenResponsesModel {
             ));
         }
 
-        let stream = async_stream::stream! {
-            // First part: StreamStart.
-            yield Ok(StreamPart::StreamStart { warnings });
-
-            let mut final_usage = Usage::default();
-            let mut has_tool_calls = false;
-            let mut finish_reason = FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            };
-            let mut is_active_reasoning = false;
-
-            // Tool-call accumulators keyed by item_id.
-            let mut tool_calls: HashMap<String, ToolCallAccum> = HashMap::new();
-
-            let mut event_iter =
-                futures::stream::iter(first_event.into_iter()).chain(sse_stream);
-
-            while let Some(event) = event_iter.next().await {
-                match event {
-                    Ok(chunk) => {
-                        let chunk_type = chunk
-                            .get("type")
-                            .and_then(|t| t.as_str())
-                            .unwrap_or("");
-
-                        match chunk_type {
-                            // -- Tool call / reasoning / message item added --
-                            "response.output_item.added" => {
-                                if let Some(item) = chunk.get("item") {
-                                    let item_type = item
-                                        .get("type")
-                                        .and_then(|t| t.as_str())
-                                        .unwrap_or("");
-                                    match item_type {
-                                        "function_call" => {
-                                            let id = item
-                                                .get("id")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-                                            tool_calls.insert(
-                                                id,
-                                                ToolCallAccum {
-                                                    tool_name: item
-                                                        .get("name")
-                                                        .and_then(|v| v.as_str())
-                                                        .map(std::string::ToString::to_string),
-                                                    tool_call_id: item
-                                                        .get("call_id")
-                                                        .and_then(|v| v.as_str())
-                                                        .map(std::string::ToString::to_string),
-                                                    arguments: item
-                                                        .get("arguments")
-                                                        .and_then(|v| v.as_str())
-                                                        .map(std::string::ToString::to_string),
-                                                },
-                                            );
-                                        }
-                                        "reasoning" => {
-                                            let id = item
-                                                .get("id")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-                                            yield Ok(StreamPart::ReasoningStart {
-                                                id,
-                                                provider_metadata: None,
-                                            });
-                                            is_active_reasoning = true;
-                                        }
-                                        "message" => {
-                                            let id = item
-                                                .get("id")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-                                            yield Ok(StreamPart::TextStart { id, provider_metadata: None});
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-                            "response.function_call_arguments.delta" => {
-                                let item_id = chunk
-                                    .get("item_id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let delta = chunk
-                                    .get("delta")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                tool_calls
-                                    .entry(item_id)
-                                    .and_modify(|tc| {
-                                        let existing = tc.arguments.take().unwrap_or_default();
-                                        tc.arguments = Some(existing + &delta);
-                                    })
-                                    .or_insert(ToolCallAccum {
-                                        tool_name: None,
-                                        tool_call_id: None,
-                                        arguments: Some(delta),
-                                    });
-                            }
-                            "response.function_call_arguments.done" => {
-                                let item_id = chunk
-                                    .get("item_id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let arguments = chunk
-                                    .get("arguments")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                tool_calls
-                                    .entry(item_id)
-                                    .and_modify(|tc| {
-                                        tc.arguments = Some(arguments.clone());
-                                    })
-                                    .or_insert(ToolCallAccum {
-                                        tool_name: None,
-                                        tool_call_id: None,
-                                        arguments: Some(arguments),
-                                    });
-                            }
-                            "response.output_item.done" => {
-                                if let Some(item) = chunk.get("item") {
-                                    let item_type = item
-                                        .get("type")
-                                        .and_then(|t| t.as_str())
-                                        .unwrap_or("");
-                                    match item_type {
-                                        "function_call" => {
-                                            let id = item
-                                                .get("id")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-                                            let accum = tool_calls.remove(&id);
-                                            let tool_name = accum
-                                                .as_ref()
-                                                .and_then(|a| a.tool_name.clone())
-                                                .or_else(|| {
-                                                    item.get("name")
-                                                        .and_then(|v| v.as_str())
-                                                        .map(std::string::ToString::to_string)
-                                                })
-                                                .unwrap_or_default();
-                                            let tool_call_id = accum
-                                                .as_ref()
-                                                .and_then(|a| a.tool_call_id.clone())
-                                                .or_else(|| {
-                                                    item.get("call_id")
-                                                        .and_then(|v| v.as_str())
-                                                        .map(std::string::ToString::to_string)
-                                                })
-                                                .unwrap_or_default();
-                                            let arguments = accum
-                                                .as_ref()
-                                                .and_then(|a| a.arguments.clone())
-                                                .or_else(|| {
-                                                    item.get("arguments")
-                                                        .and_then(|v| v.as_str())
-                                                        .map(std::string::ToString::to_string)
-                                                })
-                                                .unwrap_or_default();
-                                            let input = arguments;
-                                            yield Ok(StreamPart::ToolCall(RawToolCall {
-                                                tool_call_id,
-                                                tool_name,
-                                                input,
-                                                provider_executed: None,
-                                                dynamic: None,
-                                                provider_metadata: None,
-                                            }));
-                                            has_tool_calls = true;
-                                        }
-                                        "reasoning" => {
-                                            let id = item
-                                                .get("id")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-                                            yield Ok(StreamPart::ReasoningEnd {
-                                                id,
-                                                provider_metadata: None,
-                                            });
-                                            is_active_reasoning = false;
-                                        }
-                                        "message" => {
-                                            let id = item
-                                                .get("id")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-                                            yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-
-                            // -- Reasoning text delta (LM Studio extension) --
-                            "response.reasoning_text.delta" => {
-                                let id = chunk
-                                    .get("item_id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let delta = chunk
-                                    .get("delta")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                yield Ok(StreamPart::ReasoningDelta {
-                                    id,
-                                    delta,
-                                    provider_metadata: None,
-                                });
-                            }
-
-                            // -- Text delta --
-                            "response.output_text.delta" => {
-                                let id = chunk
-                                    .get("item_id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let delta = chunk
-                                    .get("delta")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                yield Ok(StreamPart::TextDelta { id, delta, provider_metadata: None});
-                            }
-
-                            // -- Completion events --
-                            "response.completed" | "response.incomplete" => {
-                                if let Some(response) = chunk.get("response") {
-                                    let reason = response
-                                        .get("incomplete_details")
-                                        .and_then(|d| d.get("reason"))
-                                        .and_then(|r| r.as_str());
-                                    finish_reason = FinishReason {
-                                        unified: map_open_responses_finish_reason(
-                                            reason,
-                                            has_tool_calls,
-                                        ),
-                                        raw: reason.map(std::string::ToString::to_string),
-                                    };
-                                    if let Some(usage_val) = response.get("usage") {
-                                        final_usage = extract_usage_from_value(usage_val);
-                                    }
-                                }
-                            }
-                            "response.failed" => {
-                                if let Some(response) = chunk.get("response") {
-                                    let raw = response
-                                        .get("error")
-                                        .and_then(|e| e.get("code"))
-                                        .and_then(|c| c.as_str())
-                                        .or_else(|| {
-                                            response.get("status").and_then(|s| s.as_str())
-                                        });
-                                    finish_reason = FinishReason {
-                                        unified: FinishReasonUnified::Error,
-                                        raw: raw.map(std::string::ToString::to_string),
-                                    };
-                                    if let Some(usage_val) = response.get("usage") {
-                                        final_usage = extract_usage_from_value(usage_val);
-                                    }
-                                }
-                            }
-                            _ => {
-                                // Ignore unrecognised event types.
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        let recoverable = error.is_recoverable_stream_error();
-                        yield Err(error);
-                        if !recoverable {
-                            return;
-                        }
-                    }
-                }
-            }
-
-            // Flush: close any dangling reasoning segment.
-            if is_active_reasoning {
-                yield Ok(StreamPart::ReasoningEnd {
-                    id: "reasoning-0".to_string(),
-                    provider_metadata: None,
-                });
-            }
-
-            yield Ok(StreamPart::Finish {
-                finish_reason,
-                usage: final_usage,
-                provider_metadata: None,
-            });
-        };
+        let stream = pipe_through(
+            futures::stream::iter(first_event).chain(sse_stream),
+            OpenResponsesStream {
+                warnings,
+                final_usage: Usage::default(),
+                has_tool_calls: false,
+                finish_reason: FinishReason {
+                    unified: FinishReasonUnified::Other,
+                    raw: None,
+                },
+                is_active_reasoning: false,
+                tool_calls: HashMap::new(),
+            },
+        );
 
         Ok(StreamResult {
             stream: Box::pin(stream),
@@ -766,6 +478,325 @@ impl LanguageModel for OpenResponsesModel {
                 headers: Some(response_headers),
             }),
         })
+    }
+}
+
+/// The `TransformStream` of `OpenResponsesLanguageModel.doStream`.
+struct OpenResponsesStream {
+    warnings: Vec<Warning>,
+    final_usage: Usage,
+    has_tool_calls: bool,
+    finish_reason: FinishReason,
+    is_active_reasoning: bool,
+    /// Tool-call accumulators keyed by item_id.
+    tool_calls: HashMap<String, ToolCallAccum>,
+}
+
+impl Transformer for OpenResponsesStream {
+    type Input = Result<Value, AiMuxError>;
+    type Output = StreamPart;
+
+    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+        controller.enqueue(StreamPart::StreamStart {
+            warnings: std::mem::take(&mut self.warnings),
+        });
+    }
+
+    fn transform(
+        &mut self,
+        event: Result<Value, AiMuxError>,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        let Self {
+            ref mut final_usage,
+            ref mut has_tool_calls,
+            ref mut finish_reason,
+            ref mut is_active_reasoning,
+            ref mut tool_calls,
+            ..
+        } = *self;
+        match event {
+            Ok(chunk) => {
+                let chunk_type = chunk.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+                match chunk_type {
+                    // -- Tool call / reasoning / message item added --
+                    "response.output_item.added" => {
+                        if let Some(item) = chunk.get("item") {
+                            let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                            match item_type {
+                                "function_call" => {
+                                    let id = item
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    tool_calls.insert(
+                                        id,
+                                        ToolCallAccum {
+                                            tool_name: item
+                                                .get("name")
+                                                .and_then(|v| v.as_str())
+                                                .map(std::string::ToString::to_string),
+                                            tool_call_id: item
+                                                .get("call_id")
+                                                .and_then(|v| v.as_str())
+                                                .map(std::string::ToString::to_string),
+                                            arguments: item
+                                                .get("arguments")
+                                                .and_then(|v| v.as_str())
+                                                .map(std::string::ToString::to_string),
+                                        },
+                                    );
+                                }
+                                "reasoning" => {
+                                    let id = item
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    controller.enqueue(StreamPart::ReasoningStart {
+                                        id,
+                                        provider_metadata: None,
+                                    });
+                                    *is_active_reasoning = true;
+                                }
+                                "message" => {
+                                    let id = item
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    controller.enqueue(StreamPart::TextStart {
+                                        id,
+                                        provider_metadata: None,
+                                    });
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    "response.function_call_arguments.delta" => {
+                        let item_id = chunk
+                            .get("item_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let delta = chunk
+                            .get("delta")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        tool_calls
+                            .entry(item_id)
+                            .and_modify(|tc| {
+                                let existing = tc.arguments.take().unwrap_or_default();
+                                tc.arguments = Some(existing + &delta);
+                            })
+                            .or_insert(ToolCallAccum {
+                                tool_name: None,
+                                tool_call_id: None,
+                                arguments: Some(delta),
+                            });
+                    }
+                    "response.function_call_arguments.done" => {
+                        let item_id = chunk
+                            .get("item_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let arguments = chunk
+                            .get("arguments")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        tool_calls
+                            .entry(item_id)
+                            .and_modify(|tc| {
+                                tc.arguments = Some(arguments.clone());
+                            })
+                            .or_insert(ToolCallAccum {
+                                tool_name: None,
+                                tool_call_id: None,
+                                arguments: Some(arguments),
+                            });
+                    }
+                    "response.output_item.done" => {
+                        if let Some(item) = chunk.get("item") {
+                            let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                            match item_type {
+                                "function_call" => {
+                                    let id = item
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let accum = tool_calls.remove(&id);
+                                    let tool_name = accum
+                                        .as_ref()
+                                        .and_then(|a| a.tool_name.clone())
+                                        .or_else(|| {
+                                            item.get("name")
+                                                .and_then(|v| v.as_str())
+                                                .map(std::string::ToString::to_string)
+                                        })
+                                        .unwrap_or_default();
+                                    let tool_call_id = accum
+                                        .as_ref()
+                                        .and_then(|a| a.tool_call_id.clone())
+                                        .or_else(|| {
+                                            item.get("call_id")
+                                                .and_then(|v| v.as_str())
+                                                .map(std::string::ToString::to_string)
+                                        })
+                                        .unwrap_or_default();
+                                    let arguments = accum
+                                        .as_ref()
+                                        .and_then(|a| a.arguments.clone())
+                                        .or_else(|| {
+                                            item.get("arguments")
+                                                .and_then(|v| v.as_str())
+                                                .map(std::string::ToString::to_string)
+                                        })
+                                        .unwrap_or_default();
+                                    let input = arguments;
+                                    controller.enqueue(StreamPart::ToolCall(RawToolCall {
+                                        tool_call_id,
+                                        tool_name,
+                                        input,
+                                        provider_executed: None,
+                                        dynamic: None,
+                                        provider_metadata: None,
+                                    }));
+                                    *has_tool_calls = true;
+                                }
+                                "reasoning" => {
+                                    let id = item
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    controller.enqueue(StreamPart::ReasoningEnd {
+                                        id,
+                                        provider_metadata: None,
+                                    });
+                                    *is_active_reasoning = false;
+                                }
+                                "message" => {
+                                    let id = item
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    controller.enqueue(StreamPart::TextEnd {
+                                        id,
+                                        provider_metadata: None,
+                                    });
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    // -- Reasoning text delta (LM Studio extension) --
+                    "response.reasoning_text.delta" => {
+                        let id = chunk
+                            .get("item_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let delta = chunk
+                            .get("delta")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        controller.enqueue(StreamPart::ReasoningDelta {
+                            id,
+                            delta,
+                            provider_metadata: None,
+                        });
+                    }
+
+                    // -- Text delta --
+                    "response.output_text.delta" => {
+                        let id = chunk
+                            .get("item_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let delta = chunk
+                            .get("delta")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        controller.enqueue(StreamPart::TextDelta {
+                            id,
+                            delta,
+                            provider_metadata: None,
+                        });
+                    }
+
+                    // -- Completion events --
+                    "response.completed" | "response.incomplete" => {
+                        if let Some(response) = chunk.get("response") {
+                            let reason = response
+                                .get("incomplete_details")
+                                .and_then(|d| d.get("reason"))
+                                .and_then(|r| r.as_str());
+                            *finish_reason = FinishReason {
+                                unified: map_open_responses_finish_reason(reason, *has_tool_calls),
+                                raw: reason.map(std::string::ToString::to_string),
+                            };
+                            if let Some(usage_val) = response.get("usage") {
+                                *final_usage = extract_usage_from_value(usage_val);
+                            }
+                        }
+                    }
+                    "response.failed" => {
+                        if let Some(response) = chunk.get("response") {
+                            let raw = response
+                                .get("error")
+                                .and_then(|e| e.get("code"))
+                                .and_then(|c| c.as_str())
+                                .or_else(|| response.get("status").and_then(|s| s.as_str()));
+                            *finish_reason = FinishReason {
+                                unified: FinishReasonUnified::Error,
+                                raw: raw.map(std::string::ToString::to_string),
+                            };
+                            if let Some(usage_val) = response.get("usage") {
+                                *final_usage = extract_usage_from_value(usage_val);
+                            }
+                        }
+                    }
+                    _ => {
+                        // Ignore unrecognised event types.
+                    }
+                }
+            }
+            Err(error) => {
+                if error.is_recoverable_stream_error() {
+                    controller.enqueue_error(error);
+                } else {
+                    controller.error(error);
+                }
+            }
+        }
+    }
+
+    fn flush(self, controller: &mut TransformStreamController<StreamPart>) {
+        // Close any dangling reasoning segment.
+        if self.is_active_reasoning {
+            controller.enqueue(StreamPart::ReasoningEnd {
+                id: "reasoning-0".to_string(),
+                provider_metadata: None,
+            });
+        }
+
+        controller.enqueue(StreamPart::Finish {
+            finish_reason: self.finish_reason,
+            usage: self.final_usage,
+            provider_metadata: None,
+        });
     }
 }
 
