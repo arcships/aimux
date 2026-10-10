@@ -34,6 +34,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::RawToolCall;
 use aimux_core::types::ProviderMetadata;
 
+use crate::generate_id::IdGenerator;
 use crate::streaming_tool_call_argument_state::{
     StreamingToolCallArgumentState, starts_with_structured_value,
 };
@@ -110,7 +111,7 @@ enum Resolution {
 /// Tracks the tool calls of one streamed response. See the module docs.
 pub struct StreamingToolCallTracker {
     calls: Vec<ToolCall>,
-    generate_id: Box<dyn Fn() -> String + Send + Sync>,
+    generate_id: IdGenerator,
     type_validation: TypeValidation,
 }
 
@@ -127,7 +128,7 @@ impl StreamingToolCallTracker {
     pub fn new() -> Self {
         Self {
             calls: Vec::new(),
-            generate_id: Box::new(|| FALLBACK_TOOL_CALL_ID.to_string()),
+            generate_id: || FALLBACK_TOOL_CALL_ID.to_string(),
             type_validation: TypeValidation::None,
         }
     }
@@ -135,8 +136,8 @@ impl StreamingToolCallTracker {
     /// Set the generator for calls without a usable wire id. Blank or
     /// repeated outputs are turned into unique ids.
     #[must_use]
-    pub fn with_generate_id(mut self, f: impl Fn() -> String + Send + Sync + 'static) -> Self {
-        self.generate_id = Box::new(f);
+    pub fn with_generate_id(mut self, generate_id: IdGenerator) -> Self {
+        self.generate_id = generate_id;
         self
     }
 

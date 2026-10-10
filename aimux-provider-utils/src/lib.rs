@@ -43,7 +43,7 @@ pub use fetch::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, ReqwestFetch,
     default_fetch,
 };
-pub use generate_id::generate_id;
+pub use generate_id::{IdGenerator, generate_id};
 pub use get_from_api::get_from_api;
 pub use headers::{
     HeaderMapOpt, HeadersFn, combine_headers, normalize_headers, with_user_agent_suffix,

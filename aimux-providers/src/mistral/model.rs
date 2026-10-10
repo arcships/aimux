@@ -13,7 +13,6 @@ use aimux_core::tool::RawToolCall;
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::Value;
-use std::sync::Arc;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
@@ -33,20 +32,19 @@ use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
 pub struct MistralModel {
     model_id: String,
     config: EndpointConfig,
-    generate_id: Arc<dyn Fn() -> String + Send + Sync>,
+    generate_id: aimux_provider_utils::IdGenerator,
 }
 
 impl MistralModel {
     pub(crate) fn from_config(
         model_id: String,
         config: EndpointConfig,
-        generate_id_fn: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+        generate_id_fn: Option<aimux_provider_utils::IdGenerator>,
     ) -> Self {
         Self {
             model_id,
             config,
-            generate_id: generate_id_fn
-                .unwrap_or_else(|| Arc::new(aimux_provider_utils::generate_id)),
+            generate_id: generate_id_fn.unwrap_or(aimux_provider_utils::generate_id),
         }
     }
 }
@@ -296,15 +294,14 @@ impl LanguageModel for MistralModel {
         let stream_error_body = body.clone();
         let stream_response_headers = response_headers.clone();
 
-        let generate_id_fn = self.generate_id.clone();
+        let generate_id_fn = self.generate_id;
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings });
 
             let text_id = 0usize;
             let mut text_started = false;
             let mut reasoning_started = false;
-            let tool_generate_id = generate_id_fn.clone();
-            let mut tool_calls = StreamingToolCallTracker::new().with_generate_id(move || tool_generate_id());
+            let mut tool_calls = StreamingToolCallTracker::new().with_generate_id(generate_id_fn);
             let mut tool_parts = Vec::new();
             let mut reasoning_id: Option<String> = None;
             let mut final_usage = Usage::default();

@@ -20,13 +20,12 @@ use crate::shared::EndpointConfig;
 
 use super::convert::{build_request_body, parse_finish_reason};
 use super::types::{ChatResponse, StreamEvent, UsageResponse};
-use std::sync::Arc;
 
 /// A Cohere language model.
 pub struct CohereModel {
     model_id: String,
     config: EndpointConfig,
-    generate_id: Arc<dyn Fn() -> String + Send + Sync>,
+    generate_id: aimux_provider_utils::IdGenerator,
 }
 
 impl CohereModel {
@@ -34,12 +33,12 @@ impl CohereModel {
         Self {
             model_id,
             config,
-            generate_id: Arc::new(aimux_provider_utils::generate_id),
+            generate_id: aimux_provider_utils::generate_id,
         }
     }
     pub(crate) fn with_generate_id(
         mut self,
-        generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+        generate_id: Option<aimux_provider_utils::IdGenerator>,
     ) -> Self {
         if let Some(generate_id) = generate_id {
             self.generate_id = generate_id;

@@ -132,7 +132,7 @@ pub struct AnthropicProviderSettings {
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
     /// Generates identifiers for returned sources.
-    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    pub generate_id: Option<aimux_provider_utils::IdGenerator>,
 }
 
 impl std::fmt::Debug for AnthropicProviderSettings {
@@ -230,7 +230,7 @@ pub struct AnthropicProvider {
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
     supported_urls: SupportedUrls,
-    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    generate_id: Option<aimux_provider_utils::IdGenerator>,
 }
 
 impl AnthropicProvider {
@@ -265,7 +265,7 @@ impl AnthropicProvider {
             model_id.to_string(),
             self.model_config(self.name.clone()),
         )
-        .with_generate_id(self.generate_id.clone())
+        .with_generate_id(self.generate_id)
     }
 
     /// An alias for the Messages model.

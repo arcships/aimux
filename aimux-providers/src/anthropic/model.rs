@@ -6,8 +6,6 @@
 //! and hands the result to the shared [`super::stream`] core, which sends it
 //! and parses the response or the SSE stream.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use serde_json::Value;
 
@@ -38,7 +36,7 @@ struct PreparedCall {
 pub struct AnthropicMessagesModel {
     model_id: String,
     config: AnthropicModelConfig,
-    generate_id: Arc<dyn Fn() -> String + Send + Sync>,
+    generate_id: aimux_provider_utils::IdGenerator,
 }
 
 impl AnthropicMessagesModel {
@@ -47,14 +45,14 @@ impl AnthropicMessagesModel {
         Self {
             model_id,
             config,
-            generate_id: Arc::new(aimux_provider_utils::generate_id),
+            generate_id: aimux_provider_utils::generate_id,
         }
     }
 
     #[must_use]
     pub(crate) fn with_generate_id(
         mut self,
-        generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+        generate_id: Option<aimux_provider_utils::IdGenerator>,
     ) -> Self {
         if let Some(generate_id) = generate_id {
             self.generate_id = generate_id;
@@ -160,7 +158,7 @@ impl LanguageModel for AnthropicMessagesModel {
             self.uses_custom_options(options),
             call.uses_json_response_tool,
             Self::citation_documents(options),
-            self.generate_id.clone(),
+            self.generate_id,
         )
         .await
     }
@@ -176,7 +174,7 @@ impl LanguageModel for AnthropicMessagesModel {
             self.uses_custom_options(options),
             call.uses_json_response_tool,
             Self::citation_documents(options),
-            self.generate_id.clone(),
+            self.generate_id,
         )
         .await
     }

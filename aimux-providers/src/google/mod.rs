@@ -201,7 +201,7 @@ pub struct GoogleProviderSettings {
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
     /// Generates IDs for tool calls and sources that have no provider ID.
-    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    pub generate_id: Option<aimux_provider_utils::IdGenerator>,
     /// Opens the WebSocket of live transcription (the AI SDK's `webSocket`).
     /// `None` uses the built-in client.
     #[cfg(feature = "realtime")]
@@ -282,7 +282,7 @@ pub struct GoogleProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    generate_id: Option<aimux_provider_utils::IdGenerator>,
     #[cfg(feature = "realtime")]
     web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
 }
@@ -316,7 +316,7 @@ impl GoogleProvider {
     #[must_use]
     pub fn chat(&self, model_id: &str) -> GoogleModel {
         GoogleModel::from_config(model_id.to_string(), self.model_config(self.name.clone()))
-            .with_generate_id(self.generate_id.clone())
+            .with_generate_id(self.generate_id)
     }
 
     /// Alias of [`chat`](Self::chat), matching `generativeAI`.

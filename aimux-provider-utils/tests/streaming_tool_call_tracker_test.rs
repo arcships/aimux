@@ -4,7 +4,6 @@
 //! Tracker parts are projected to a local `Part` enum so the assertions stay
 //! byte-for-byte comparable with the upstream expectations.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use aimux_core::shared::provider_namespace;
@@ -12,7 +11,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::RawToolCall;
 use aimux_core::types::ProviderMetadata;
 use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallTracker, TrackerError, TypeValidation,
+    IdGenerator, StreamingToolCallDelta, StreamingToolCallTracker, TrackerError, TypeValidation,
 };
 use serde_json::json;
 
@@ -207,17 +206,18 @@ fn tool_call(id: &str, name: &str, input: &str) -> Part {
     }
 }
 
-/// Deterministic id generator: `prefix-1`, `prefix-2`, … and a call counter.
-fn counting_generator(ids: &'static [&'static str]) -> (impl Fn() -> String, Arc<AtomicUsize>) {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let counter = Arc::clone(&calls);
-    (
-        move || {
-            let n = counter.fetch_add(1, Ordering::SeqCst);
-            ids[n.min(ids.len() - 1)].to_string()
-        },
-        calls,
-    )
+/// A deterministic id generator returning the given ids in order (the last
+/// one repeats) and its call counter. Each use gets its own counter.
+macro_rules! counting_generator {
+    ($($id:literal),+ $(,)?) => {{
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+        fn generate() -> String {
+            const IDS: &[&str] = &[$($id),+];
+            let n = CALLS.fetch_add(1, Ordering::SeqCst);
+            IDS[n.min(IDS.len() - 1)].to_string()
+        }
+        (generate as IdGenerator, &CALLS)
+    }};
 }
 
 mod process_delta {
@@ -521,7 +521,7 @@ mod process_delta {
 
     #[test]
     fn keeps_id_less_calls_distinct_when_an_index_is_reused_and_type_is_omitted() {
-        let (generate, _) = counting_generator(&["generated-1", "generated-2", "generated-3"]);
+        let (generate, _) = counting_generator!("generated-1", "generated-2", "generated-3");
         let mut h = Harness::with(StreamingToolCallTracker::new().with_generate_id(generate));
 
         h.delta(delta(
@@ -672,7 +672,7 @@ mod process_delta {
 
     #[test]
     fn generates_unique_ids_for_blank_and_repeated_ids() {
-        let (generate, _) = counting_generator(&["generated-1", "generated-2"]);
+        let (generate, _) = counting_generator!("generated-1", "generated-2");
         let mut h = Harness::with(StreamingToolCallTracker::new().with_generate_id(generate));
 
         h.delta(start(0, "", "read_file", "{}")).unwrap();
@@ -734,7 +734,7 @@ mod process_delta {
 
     #[test]
     fn creates_bounded_unique_ids_when_generate_id_returns_duplicates() {
-        let (generate, calls) = counting_generator(&["generated-id"]);
+        let (generate, calls) = counting_generator!("generated-id");
         let mut h = Harness::with(StreamingToolCallTracker::new().with_generate_id(generate));
 
         for (index, name) in [(0, "first"), (1, "second"), (2, "third")] {
@@ -759,7 +759,7 @@ mod process_delta {
 
     #[test]
     fn creates_usable_ids_when_generate_id_returns_blank_values() {
-        let (generate, calls) = counting_generator(&["   "]);
+        let (generate, calls) = counting_generator!("   ");
         let mut h = Harness::with(StreamingToolCallTracker::new().with_generate_id(generate));
 
         for (index, name) in [(0, "first"), (1, "second")] {

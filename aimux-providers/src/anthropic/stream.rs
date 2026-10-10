@@ -364,7 +364,7 @@ pub(crate) fn stream_parts_for_result_block(
     names: &ToolNameMapping,
     mcp_tool_calls: &HashMap<String, (String, String)>,
     server_tool_calls: &HashMap<String, String>,
-    generate_id: &(dyn Fn() -> String + Send + Sync),
+    generate_id: aimux_provider_utils::IdGenerator,
 ) -> Vec<StreamPart> {
     let caller = match block {
         ContentBlock::WebSearchToolResult { caller, .. }
@@ -534,7 +534,7 @@ pub(crate) struct CitationDocument {
 fn citation_source(
     citation: &Value,
     documents: &[CitationDocument],
-    generate_id: &(dyn Fn() -> String + Send + Sync),
+    generate_id: aimux_provider_utils::IdGenerator,
 ) -> Option<Source> {
     match citation["type"].as_str()? {
         "web_search_result_location" => Some(Source::Url {
@@ -617,7 +617,7 @@ pub(crate) fn parse_anthropic_content(
     names: &ToolNameMapping,
     uses_json_response_tool: bool,
     mut citation_documents: Vec<CitationDocument>,
-    generate_id: &(dyn Fn() -> String + Send + Sync),
+    generate_id: aimux_provider_utils::IdGenerator,
 ) -> Vec<GenerateContent> {
     let options_name = CANONICAL;
     let mut content = Vec::new();
@@ -976,7 +976,7 @@ pub(crate) async fn anthropic_generate_core(
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
     citation_documents: Vec<CitationDocument>,
-    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
+    generate_id: aimux_provider_utils::IdGenerator,
 ) -> Result<GenerateResult, AiMuxError> {
     let resp = aimux_provider_utils::post_json_to_api(
         request,
@@ -1000,7 +1000,7 @@ pub(crate) async fn anthropic_generate_core(
         tool_names,
         uses_json_response_tool,
         citation_documents,
-        generate_id.as_ref(),
+        generate_id,
     );
 
     let mut finish_reason = data
@@ -1093,7 +1093,7 @@ pub(crate) async fn anthropic_stream_core(
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
     mut citation_documents: Vec<CitationDocument>,
-    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
+    generate_id: aimux_provider_utils::IdGenerator,
 ) -> Result<StreamResult, AiMuxError> {
     let endpoint = request.url.clone();
     let options_name = config.provider_options_name.clone();
@@ -1342,7 +1342,7 @@ pub(crate) async fn anthropic_stream_core(
                                         &tool_names,
                                         &mcp_tool_calls,
                                         &server_tool_calls,
-                                        generate_id.as_ref(),
+                                        generate_id,
                                     ) {
                                         yield Ok(part);
                                     }
@@ -1364,7 +1364,7 @@ pub(crate) async fn anthropic_stream_core(
                                 if let Some(BlockState::Text { citations }) = blocks.get_mut(&index) {
                                     citations.push(citation.clone());
                                 }
-                                if let Some(source) = citation_source(&citation, &citation_documents, generate_id.as_ref()) {
+                                if let Some(source) = citation_source(&citation, &citation_documents, generate_id) {
                                     yield Ok(StreamPart::Source(source));
                                 }
                             }

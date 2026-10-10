@@ -130,7 +130,7 @@ pub struct MistralProviderSettings {
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
     /// Generates identifiers for reasoning and streamed tool calls.
-    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    pub generate_id: Option<aimux_provider_utils::IdGenerator>,
 }
 
 impl std::fmt::Debug for MistralProviderSettings {
@@ -199,7 +199,7 @@ pub struct MistralProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    generate_id: Option<aimux_provider_utils::IdGenerator>,
 }
 
 impl MistralProvider {
@@ -220,7 +220,7 @@ impl MistralProvider {
             model_id.to_string(),
             self.model_config("chat")
                 .with_supported_urls(Arc::new(|_| chat_supported_urls())),
-            self.generate_id.clone(),
+            self.generate_id,
         )
     }
 

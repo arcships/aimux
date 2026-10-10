@@ -35,7 +35,7 @@ use crate::shared::EndpointConfig;
 pub struct GoogleModel {
     model_id: String,
     config: EndpointConfig,
-    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
+    generate_id: aimux_provider_utils::IdGenerator,
 }
 
 impl GoogleModel {
@@ -43,13 +43,13 @@ impl GoogleModel {
         Self {
             model_id,
             config,
-            generate_id: std::sync::Arc::new(aimux_provider_utils::generate_id),
+            generate_id: aimux_provider_utils::generate_id,
         }
     }
 
     pub(crate) fn with_generate_id(
         mut self,
-        generate_id: Option<std::sync::Arc<dyn Fn() -> String + Send + Sync>>,
+        generate_id: Option<aimux_provider_utils::IdGenerator>,
     ) -> Self {
         if let Some(generate_id) = generate_id {
             self.generate_id = generate_id;
@@ -110,11 +110,8 @@ impl LanguageModel for GoogleModel {
         let candidate = data.candidates.into_iter().next().unwrap_or_default();
         let block_reason = confirmed_prompt_block_reason(data.prompt_feedback.as_ref());
 
-        let (content, has_tool_calls) = extract_content_from_candidate(
-            &candidate,
-            &code_execution_tool_name,
-            &*self.generate_id,
-        );
+        let (content, has_tool_calls) =
+            extract_content_from_candidate(&candidate, &code_execution_tool_name, self.generate_id);
 
         let finish_reason = if candidate.finish_reason.is_none() && block_reason.is_some() {
             FinishReason {
@@ -201,7 +198,7 @@ impl LanguageModel for GoogleModel {
         let stream_request_body = body.clone();
         let stream_error_headers = response_headers.clone();
 
-        let generate_id = self.generate_id.clone();
+        let generate_id = self.generate_id;
         let include_raw_chunks = options.include_raw_chunks.unwrap_or(false);
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: tool_warnings });
@@ -454,7 +451,7 @@ impl LanguageModel for GoogleModel {
                                         .and_then(|v| v.as_str())
                                         .filter(|id| !id.is_empty())
                                         .map(std::string::ToString::to_string)
-                                        .unwrap_or_else(|| generate_id());
+                                        .unwrap_or_else(generate_id);
                                     last_server_tool_call_id = Some(id.clone());
                                     let args = tc.get("args").cloned().unwrap_or(json!({}));
                                     let server_meta = server_tool_metadata(
@@ -482,7 +479,7 @@ impl LanguageModel for GoogleModel {
                                                 .map(std::string::ToString::to_string)
                                         })
                                         .filter(|id| !id.is_empty())
-                                        .unwrap_or_else(|| generate_id());
+                                        .unwrap_or_else(generate_id);
                                     let response =
                                         tr.get("response").cloned().unwrap_or(json!({}));
                                     let server_meta = server_tool_metadata(
@@ -539,7 +536,7 @@ impl LanguageModel for GoogleModel {
                                         .filter(|id| !id.is_empty())
                                         .filter(|id| !id.is_empty())
                                         .map(std::string::ToString::to_string)
-                                        .unwrap_or_else(|| generate_id());
+                                        .unwrap_or_else(generate_id);
                                     let args = fc.get("args").filter(|value| !value.is_null()).cloned().unwrap_or(json!({}));
 
                                     yield Ok(StreamPart::ToolInputStart {
@@ -674,7 +671,7 @@ fn server_tool_metadata(
 fn extract_content_from_candidate(
     candidate: &Candidate,
     code_execution_tool_name: &str,
-    generate_id: &dyn Fn() -> String,
+    generate_id: aimux_provider_utils::IdGenerator,
 ) -> (Vec<GenerateContent>, bool) {
     let mut content = Vec::new();
     let mut has_tool_calls = false;

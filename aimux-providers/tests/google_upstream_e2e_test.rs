@@ -26,7 +26,7 @@ fn settings(mock: &Arc<MockFetch>) -> GoogleProviderSettings {
         base_url: Some(BASE.into()),
         api_key: Some("test-api-key".into()),
         fetch: Some(mock.transport()),
-        generate_id: Some(Arc::new(|| "test-id".into())),
+        generate_id: Some(|| "test-id".into()),
         ..Default::default()
     }
 }
